@@ -1,0 +1,39 @@
+---
+# One read compares each managed file with its intent: a regular file with its mode, owner root, group root and content SHA-256.
+# `managed_files` lists `[path, content, mode]`. `managed_files_repair` names only the paths that differ, so the existing copy
+# tasks still report and trigger a change for a repaired file (docs/reference/node-provisioning.md#check-many-files-in-one-read).
+- name: Check the managed files in one read
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+        import grp, hashlib, json, os, pwd, stat, sys
+        uid, gid = pwd.getpwnam(sys.argv[1]).pw_uid, grp.getgrnam(sys.argv[2]).gr_gid
+        drift = []
+        for index, (path, digest, mode) in enumerate(json.load(sys.stdin)):
+            try:
+                with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as file:
+                    found = os.fstat(file.fileno())
+                    if not (stat.S_ISREG(found.st_mode) and stat.S_IMODE(found.st_mode) == int(mode, 8) and found.st_uid == uid
+                            and found.st_gid == gid and hashlib.sha256(file.read()).hexdigest() == digest):
+                        drift.append(index)
+            except OSError:
+                drift.append(index)
+        print(json.dumps(drift))
+      - root
+      - root
+    stdin: "{{ managed_files | map('first') | zip(managed_files | map(attribute=1) | map('hash', 'sha256'), managed_files | map('last')) | list | to_json }}"
+  register: managed_files_check
+  changed_when: false
+  failed_when: false
+# A failed check or any other output, an index outside the list included, repairs every file.
+- name: Name the managed files that differ
+  ansible.builtin.set_fact:
+    managed_files_repair: >-
+      {{ (managed_files_check.stdout | from_json | unique | map('extract', managed_files) | list
+          if managed_files_check.rc == 0 and managed_files_check.stdout is regex('^\[(\d+(, \d+)*)?\]$')
+             and managed_files_check.stdout | from_json | select('ge', managed_files | length) | list | length == 0
+          else managed_files) | map('first') | list }}

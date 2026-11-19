@@ -15,10 +15,16 @@ ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 TASKS = ANSIBLE / 'tasks'
 
 # The fake prints what dpkg-query --show prints for each named package it holds and fails like it on the others.
+# FAKE_DPKG_EXIT replaces its exit code, as when dpkg's database cannot be read.
 DPKG_QUERY = r'''#!/usr/bin/env python3
 import json, os, sys
 held = json.loads(os.environ['FAKE_DPKG'])
 names = sys.argv[sys.argv.index('--') + 1:]
+if 'FAKE_DPKG_EXIT' in os.environ:
+    for name in names:
+        version, status = held.get(name, ['', 'ii '])
+        sys.stdout.write(f'{name}\t{version}\t{status}\n')
+    sys.exit(int(os.environ['FAKE_DPKG_EXIT']))
 missing = False
 for name in names:
     if name in held:
@@ -38,7 +44,7 @@ def task(path, name):
 
 
 class AptMissingTest(unittest.TestCase):
-    def run_install(self, finder, install, held, variables=None):
+    def run_install(self, finder, install, held, variables=None, fail=None):
         """Run the shipped finder and install task, with the apt module swapped for a record of its arguments."""
         command = shutil.which('ansible-playbook') or str(Path(sys.executable).parent / 'ansible-playbook')
         probe = copy.deepcopy(install)
@@ -62,14 +68,15 @@ class AptMissingTest(unittest.TestCase):
             result = subprocess.run(
                 [command, '-i', 'localhost,', '-c', 'local', '-v', str(playbook)], check=False, capture_output=True, text=True,
                 timeout=60, env={**os.environ, 'PATH': f'{fake.parent}:{os.environ["PATH"]}', 'FAKE_DPKG': json.dumps(held),
+                                 **({'FAKE_DPKG_EXIT': str(fail)} if fail else {}),
                                  'ANSIBLE_STDOUT_CALLBACK': 'default', 'ANSIBLE_CALLBACKS_ENABLED': 'default',
                                  'ANSIBLE_COLLECTIONS_PATH': str(folder)})
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return result.stdout
 
-    def squid(self, held):
+    def squid(self, held, fail=None):
         path = TASKS / 'instance-egress.yml'
-        return self.run_install(task(path, 'Find Squid'), task(path, 'Install Squid'), held)
+        return self.run_install(task(path, 'Find Squid'), task(path, 'Install Squid'), held, fail=fail)
 
     def test_an_installed_package_reads_no_index_and_changes_nothing(self):
         output = self.squid({'squid': ['6.13-0ubuntu0.24.04.3', 'ii ']})
@@ -88,6 +95,11 @@ class AptMissingTest(unittest.TestCase):
 
     def test_removed_with_its_config_left_is_missing(self):
         output = self.squid({'squid': ['6.13', 'rc ']})
+        self.assertRegex(output, r'"update_cache": true')
+
+    def test_a_failed_read_reads_the_index_and_installs(self):
+        # Even a failed read that printed the package as installed runs apt.
+        output = self.squid({'squid': ['6.13', 'ii ']}, fail=2)
         self.assertRegex(output, r'"update_cache": true')
 
     def test_only_the_wrong_pin_or_a_missing_package_reads_the_index(self):

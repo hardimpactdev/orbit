@@ -1,5 +1,94 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
+  # A failed check or any other text repairs every file.
+  managed-files-check-clean:
+    managed_files_check: {rc: 0, stdout: "[]"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-drift:
+    managed_files_check: {rc: 0, stdout: "[1, 2]"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-failed:
+    managed_files_check: {rc: 1, stdout: ""}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-other:
+    managed_files_check: {rc: 0, stdout: "Traceback (most recent call last):"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  # An index outside the list is not a check result: it repairs every file, never aborts.
+  managed-files-check-out-of-range:
+    managed_files_check: {rc: 0, stdout: "[1, 9]"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  # The hold read prints the JSON list of the names that still need the module (nested Gateway, task copy 3734, 2026-11-19:
+  # "[]" when every hold is in place, "[\"git\"]" after `apt-mark unhold git`). A failed read or any other text sends every name.
+  package-holds-clean:
+    package_holds_read: {rc: 0, stdout: "[]"}
+    package_holds_names: [incus, git, php8.4-fpm]
+  package-holds-one-unheld:
+    package_holds_read: {rc: 0, stdout: "[\"git\"]"}
+    package_holds_names: [incus, git, php8.4-fpm]
+  package-holds-failed:
+    package_holds_read: {rc: 1, stdout: ""}
+    package_holds_names: [incus, git, php8.4-fpm]
+  package-holds-other:
+    package_holds_read: {rc: 0, stdout: "Traceback (most recent call last):"}
+    package_holds_names: [incus, git, php8.4-fpm]
+  # A name that was not asked for is not a read result: every package goes to the module.
+  package-holds-unasked:
+    package_holds_read: {rc: 0, stdout: "[\"unrelated\"]"}
+    package_holds_names: [incus, git, php8.4-fpm]
+  # An index outside the list is not a check result: it repairs every file, never aborts.
+  private-dns-check-out-of-range:
+    private_dns_check: {rc: 0, stdout: "[9]"}
+    private_dns:
+      files:
+      - {path: /r/a.php, content: a}
+      - {path: /r/b.php, content: b}
+      - {path: /r/c.php, content: c}
+  # The release file check prints the JSON list of drifted indexes (nested Gateway, task copy 3734, 2026-11-19: "[]" when clean).
+  # A failed check or any other text repairs every file.
+  private-dns-check-clean:
+    private_dns_check: {rc: 0, stdout: "[]"}
+    private_dns:
+      files:
+      - {path: /r/a.php, content: a}
+      - {path: /r/b.php, content: b}
+      - {path: /r/c.php, content: c}
+  private-dns-check-drift:
+    private_dns_check: {rc: 0, stdout: "[0, 2]"}
+    private_dns:
+      files:
+      - {path: /r/a.php, content: a}
+      - {path: /r/b.php, content: b}
+      - {path: /r/c.php, content: c}
+  private-dns-check-failed:
+    private_dns_check: {rc: 1, stdout: ""}
+    private_dns:
+      files:
+      - {path: /r/a.php, content: a}
+      - {path: /r/b.php, content: b}
+      - {path: /r/c.php, content: c}
+  private-dns-check-other:
+    private_dns_check: {rc: 0, stdout: "Traceback (most recent call last):"}
+    private_dns:
+      files:
+      - {path: /r/a.php, content: a}
+      - {path: /r/b.php, content: b}
+      - {path: /r/c.php, content: c}
   # `ss -tanH '( sport = :8080 )'` inside a draining release (state, Recv-Q, Send-Q, local, peer).
   response-wait-queued:
     web_sockets:
@@ -2784,6 +2873,103 @@ cases:
   context: fleet-command-prefix
   expected: false
 
+- file: tasks/private-dns-listener.yml
+  task: Write private DNS release files
+  field: loop
+  context: private-dns-check-clean
+  expected: []
+- file: tasks/private-dns-listener.yml
+  task: Write private DNS release files
+  field: loop
+  context: private-dns-check-drift
+  expected:
+  - {path: /r/a.php, content: a}
+  - {path: /r/c.php, content: c}
+- file: tasks/private-dns-listener.yml
+  task: Write private DNS release files
+  field: loop
+  context: private-dns-check-failed
+  expected:
+  - {path: /r/a.php, content: a}
+  - {path: /r/b.php, content: b}
+  - {path: /r/c.php, content: c}
+- file: tasks/private-dns-listener.yml
+  task: Write private DNS release files
+  field: loop
+  context: private-dns-check-other
+  expected:
+  - {path: /r/a.php, content: a}
+  - {path: /r/b.php, content: b}
+  - {path: /r/c.php, content: c}
+- file: tasks/node-converge-apt.yml
+  task: Select the packages whose hold needs the module
+  field: ansible.builtin.set_fact.package_holds_unheld
+  context: package-holds-clean
+  expected: []
+- file: tasks/node-converge-apt.yml
+  task: Select the packages whose hold needs the module
+  field: ansible.builtin.set_fact.package_holds_unheld
+  context: package-holds-one-unheld
+  expected: [git]
+- file: tasks/node-converge-apt.yml
+  task: Select the packages whose hold needs the module
+  field: ansible.builtin.set_fact.package_holds_unheld
+  context: package-holds-failed
+  expected: [incus, git, php8.4-fpm]
+- file: tasks/node-converge-apt.yml
+  task: Select the packages whose hold needs the module
+  field: ansible.builtin.set_fact.package_holds_unheld
+  context: package-holds-other
+  expected: [incus, git, php8.4-fpm]
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-clean
+  expected: []
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-drift
+  expected:
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-failed
+  expected:
+  - /etc/wireguard/orbit.conf
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-other
+  expected:
+  - /etc/wireguard/orbit.conf
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/private-dns-listener.yml
+  task: Write private DNS release files
+  field: loop
+  context: private-dns-check-out-of-range
+  expected:
+  - {path: /r/a.php, content: a}
+  - {path: /r/b.php, content: b}
+  - {path: /r/c.php, content: c}
+- file: tasks/node-converge-apt.yml
+  task: Select the packages whose hold needs the module
+  field: ansible.builtin.set_fact.package_holds_unheld
+  context: package-holds-unasked
+  expected: [incus, git, php8.4-fpm]
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-out-of-range
+  expected:
+  - /etc/wireguard/orbit.conf
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
 non_command_output:
 - file: tasks/production-release-host.yml
   task: Verify the selected production runtime root and digest

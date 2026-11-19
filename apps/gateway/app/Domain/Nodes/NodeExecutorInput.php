@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Engine\NodeBusAccess;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -31,7 +32,15 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['proof', 'power']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof']];
+
+    /**
+     * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,
+     * so the converge enables a family only once the pinned delivery has it.
+     *
+     * @var array<string, string>
+     */
+    public const array FamilySince = ['firewall' => '0.16.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
@@ -39,23 +48,34 @@ final readonly class NodeExecutorInput
         $roles = array_values($node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all());
         $keys = config('orbit.executor.public_keys');
 
-        return self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
-            app(AgentDelivery::class)->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : []);
+        $delivery = app(AgentDelivery::class);
+        $intent = self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
+            $delivery->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : [], $delivery->version());
+
+        // The machine bus (ADR 0271): only the Gateway's address, and the guard that lets only root reach it. A Node holds no bus
+        // credential; the Gateway admits it by its WireGuard address. Without the engine's key both files are removed, and the
+        // executor serves its socket alone.
+        $guard = NodeBusAccess::guard();
+
+        return $intent === null ? null : [...$intent, 'unit' => self::unit($guard !== null), 'bus_url' => NodeBusAccess::url(),
+            'bus_path' => NodeBusAccess::Path, 'bus_guard' => $guard, 'bus_guard_path' => NodeBusAccess::GuardPath];
     }
 
     /**
      * @param  list<RoleName>  $roles
      * @param  array<string, array{sha256: string, path?: string, url?: string}>  $artifacts
      * @param  list<string>  $keys
+     * @param  string  $version  The Cargo version of the pinned agent delivery.
      * @return array<string,mixed>|null
      */
-    public static function intent(string $nodeId, string $user, string $artifactKey, array $roles, array $artifacts, array $keys): ?array
+    public static function intent(string $nodeId, string $user, string $artifactKey, array $roles, array $artifacts, array $keys, string $version): ?array
     {
         $families = [];
         foreach ($roles as $role) {
             array_push($families, ...(self::RoleFamilies[$role->value] ?? []));
         }
-        $families = array_values(array_unique($families));
+        $families = array_values(array_filter(array_unique($families),
+            static fn (string $family): bool => version_compare($version, self::FamilySince[$family] ?? '0.0.0', '>=')));
         sort($families);
         if ($families === []) {
             return null;
@@ -92,11 +112,15 @@ final readonly class NodeExecutorInput
         ];
     }
 
-    /** A plain service: systemd only starts the executor at boot and restarts it after a crash; nothing else runs on its path. */
-    public static function unit(): string
+    /**
+     * A plain service: systemd only starts the executor at boot and restarts it after a crash. With the machine bus, each start
+     * first loads the bus guard, so the guard is in place whenever the executor can join the bus.
+     */
+    public static function unit(bool $busGuard = false): string
     {
         return "[Unit]\nDescription=Orbit executor: Gateway-signed Node actions (ADR 0266)\n\n"
-            ."[Service]\nExecStart=".self::Binary." serve\nRestart=always\nRestartSec=1\nStateDirectory=orbit/executor\nStateDirectoryMode=0700\n\n"
+            ."[Service]\n".($busGuard ? 'ExecStartPre=/usr/sbin/nft -f '.NodeBusAccess::GuardPath."\n" : '')
+            .'ExecStart='.self::Binary." serve\nRestart=always\nRestartSec=1\nStateDirectory=orbit/executor\nStateDirectoryMode=0700\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
     }
 }

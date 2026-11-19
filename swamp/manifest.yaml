@@ -98,6 +98,7 @@ additionalFiles:
   - ansible/tasks/node-converge-hub-switch.yml
   - ansible/tasks/node-converge-hub-move.yml
   - ansible/tasks/node-hub-source.yml
+  - ansible/tasks/managed-files-check.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml
   - ansible/tasks/node-converge-hub-peers.yml
@@ -196,6 +197,7 @@ additionalFiles:
   - ansible/tasks/private-dns-listener.yml
   - ansible/tasks/private-dns-withdraw.yml
   - ansible/tasks/gateway-runtime.yml
+  - ansible/tasks/gateway-nats.yml
   - ansible/tasks/gateway-retire.yml
   - ansible/tasks/firewall-port.yml
   - ansible/tasks/firewall.yml

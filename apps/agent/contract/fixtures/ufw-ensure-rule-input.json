@@ -1,0 +1,4 @@
+{
+  "intent": {"port": "443", "protocol": "tcp", "source": "192.0.2.1"},
+  "input": {"action": "allow", "port": "443", "protocol": "tcp", "source": "192.0.2.1", "comment": "orbit", "ensure": "present", "retain": false}
+}

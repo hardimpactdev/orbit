@@ -46,3 +46,6 @@
 - name: Run logrotate hourly
   when: logrotate_state.stdout_lines | select('match', '^masked') | list | length == 0
   ansible.builtin.systemd: { name: logrotate.timer, state: started, enabled: true }
+- name: Install the machine bus's server
+  when: rt.gateway.nats | default(None) != None
+  ansible.builtin.include_tasks: gateway-nats.yml

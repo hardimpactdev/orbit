@@ -725,6 +725,20 @@ The Tool helper is the TypeScript policy that judges each Tool. It runs on the S
 
 Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a managed version link, regular `/usr/local/bin/orbit-0.N.0` binaries and the managed root profile `/root/.orbit/config.json`. It preserves unrelated executables, backups and directories. The final check requires these managed files to be absent. A failed phase retains completed changes; a new converge repeats the same desired state.
 
+### Check many files in one read
+
+A phase that runs should spend its time on drift, not on proving that nothing changed. One Ansible module per item costs about 0.2 to 0.3 seconds over SSH and Incus, even when the item is correct. So a task that manages many items reads the whole expected state in one read-only check on the host.
+
+It then passes only the items that differ to the existing repair task. That task keeps its register, handlers and `changed_when`, so a repaired item still reports a change and triggers what follows it. A check that fails or prints an unexpected result repairs every item. An index or a name that is not in the expected list counts as unexpected. The Gateway's [private DNS release files](/reference/private-dns#release-and-sockets) use this rule.
+
+The software phase uses it for package holds. One `dpkg --get-selections` read covers the holds of the file packages and the recipe packages. A package skips the hold module only when dpkg lists it on one line, by exactly its name, as `hold`. A missing hold, a name that dpkg lists with an architecture, and an unknown package still go to the module. So a repair still reports a change, check mode still only reports it, and an unknown package still fails. The installed versions are read and repaired as before.
+
+The network phase uses it for the WireGuard files. `tasks/managed-files-check.yml` is the shared check. It takes a list of path, content and mode. For each file it compares the file type, mode, owner, group and content SHA-256 in one read, and it names the files that differ. Each file group gets one read: the hub's configuration, peer files and forwarding file; the hub's source script, unit and networkd file; and the peer's configuration, peers and DNS marker. A converge of a peer runs the hub's part again on the hub first, so this check runs there too.
+
+Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
+
+The same rule covers an install that a converge would otherwise redo. An archive install, such as Squid on an Instance container host, follows [Package sources](#package-sources). On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. PHP must load `vendor/autoload.php` and find Reverb's service provider. A release that verifies skips Git and Composer. In any other state, a PHP error included, the converge checks out the ref again, discards tracked changes and installs again. The install then reports a change, even when Composer only rewrites the autoloader. A new checkout still restarts Reverb.
+
 ### Role units at a converge
 
 Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
@@ -899,7 +913,7 @@ Not every role can be added the same way.
 
 A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 
-An archive install reads the package index (`apt update`) only when one of its packages is missing. Before the install, one `dpkg-query` reads every package it names (`swamp/ansible/tasks/apt-missing.yml`). A package counts as there when dpkg has it installed, held or not, at its version when the task pins one. When every package is there, the install task is skipped and reports no change.
+An archive install reads the package index (`apt update`) only when one of its packages is missing. Before the install, one `dpkg-query` reads every package it names (`swamp/ansible/tasks/apt-missing.yml`). A package counts as there when dpkg has it installed, held or not, at its version when the task pins one. Config files left after a removal count as missing. When every package is there, the install task is skipped and reports no change. A read that fails names every package, so apt runs and reports the real error.
 
 Otherwise it runs as before: index read, install, same lock timeout. This covers the base packages of `node:add`, the role prerequisites, the update tools, Squid of the Instance egress and `btrfs-progs` on an Instance fleet Node. It never upgrades a package; the [update policy](#update-policy) does that. The index read goes through the Node's proxies, so with old lists it took 134 s for an installed Squid on a nested `app-prod` Node in one refresh.
 
