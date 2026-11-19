@@ -337,7 +337,9 @@ async function softwareCheck(names: string[], vars: Record<string, unknown>, dpk
     const folder = await Deno.makeTempDir();
     try {
         const all = parse(await Deno.readTextFile(`${tasks}node-converge-software-check.yml`)) as Array<Record<string, unknown>>;
-        const picked = names.map((name) => all.find((task) => task.name === name)!)
+        // A block's tasks keep the block's condition.
+        const flat = all.flatMap((task) => task.block ? (task.block as Array<Record<string, unknown>>).map((part) => ({ ...part, when: task.when })) : [task]);
+        const picked = names.map((name) => flat.find((task) => task.name === name)!)
             .map((task) => task["ansible.builtin.import_tasks"] ? { ...task, "ansible.builtin.import_tasks": tasks + task["ansible.builtin.import_tasks"] } : task);
         await Deno.mkdir(`${folder}/bin`);
         await Deno.mkdir(`${folder}/dpkg/updates`, { recursive: true });

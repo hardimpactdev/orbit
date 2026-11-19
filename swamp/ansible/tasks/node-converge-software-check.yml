@@ -41,25 +41,27 @@
 - name: Require the selected JavaScript pins
   when: "'vp' in tool_by_name"
   ansible.builtin.assert: { that: js_current, quiet: true }
-- name: Require the selected browser version read
+- name: Check the selected browser without writes
   when: "'chrome-headless-shell' in tool_by_name"
-  ansible.builtin.assert:
-    that: check_read.commands.browser.rc == 0
-    fail_msg: "chrome-headless-shell --version exited {{ check_read.commands.browser.rc }}: {{ check_read.commands.browser.stderr }}"
-    quiet: true
-- name: Require the selected browser pin
-  when: "'chrome-headless-shell' in tool_by_name"
-  ansible.builtin.assert:
-    that: recipe.tools['chrome-headless-shell'].version in check_read.commands.browser.stdout
-    quiet: true
-- name: Require the selected Deno version read
+  block:
+    - name: Require the selected browser version read
+      ansible.builtin.assert:
+        that: check_read.commands.browser.rc == 0
+        fail_msg: "chrome-headless-shell --version exited {{ check_read.commands.browser.rc }}: {{ check_read.commands.browser.stderr }}"
+        quiet: true
+    - name: Require the selected browser pin
+      ansible.builtin.assert:
+        that: recipe.tools['chrome-headless-shell'].version in check_read.commands.browser.stdout
+        quiet: true
+- name: Check the Tool helper's Deno without writes
   when: "'deno' in tool_by_name"
-  ansible.builtin.assert:
-    that: check_read.commands.deno.rc == 0
-    fail_msg: "deno --version exited {{ check_read.commands.deno.rc }}: {{ check_read.commands.deno.stderr }}"
-    quiet: true
-- name: Require the selected Deno pin
-  when: "'deno' in tool_by_name"
-  ansible.builtin.assert:
-    that: ('deno ' ~ recipe.tools.deno.version) in check_read.commands.deno.stdout
-    quiet: true
+  block:
+    - name: Require the selected Deno version read
+      ansible.builtin.assert:
+        that: check_read.commands.deno.rc == 0
+        fail_msg: "deno --version exited {{ check_read.commands.deno.rc }}: {{ check_read.commands.deno.stderr }}"
+        quiet: true
+    - name: Require the selected Deno pin
+      ansible.builtin.assert:
+        that: ('deno ' ~ recipe.tools.deno.version) in check_read.commands.deno.stdout
+        quiet: true
