@@ -326,4 +326,3 @@ it('cancels through a nudge of its own, never the start event\'s message id', fu
     expect($this->bus->nudges)->toHaveCount(1)
         ->and($this->bus->nudges[0])->toStartWith('cancel-');
 });
-

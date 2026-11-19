@@ -60,4 +60,3 @@ it('enables the firewall family only once the pinned delivery\'s executor knows 
     expect(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.15.0')['enabled'] ?? null)->toBe("power\nproof\n")
         ->and(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.16.0')['enabled'] ?? null)->toBe("firewall\npower\nproof\n");
 });
-

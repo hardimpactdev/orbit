@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Infrastructure\Engine\GatewayBus;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\InstanceHostIntent;
@@ -15,6 +14,7 @@ use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;

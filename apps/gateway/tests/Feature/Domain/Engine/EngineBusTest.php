@@ -68,4 +68,3 @@ it('terminates a message it cannot read, so it never comes back', function (): v
     expect($handler($unreadable))->toBe(EngineBus::Term)
         ->and($handler($elsewhere))->toBe(EngineBus::Term);
 });
-
