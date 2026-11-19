@@ -103,7 +103,7 @@ After review and fleet agent update, prove each selected Node before announcing 
 
 Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` admits its native enrollment Operation through the public API.
 
-`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
+`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and the Swamp control key. It checks no agent, account, package or runtime ownership on the Mac.
 
 Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
 
@@ -174,9 +174,13 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. The `baseline` phase appends the control key to the bootstrap account when it is absent.
+A new Linux machine needs only root SSH access with the Swamp control key: authorize the public key in `ORBIT_SWAMP_SSH_PUBLIC_KEY` for root before `node:add`. The Gateway private key never leaves the Gateway; no execution copy of it goes to Swamp.
 
-The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
+An older Gateway release still sends a `bootstrap-identity-node-<id>` reference. The workflow schema and the vault grants accept it, and no step reads it, so that Gateway can enroll a Node until its next release.
+
+Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. Every enrollment step, the first host-key read included, logs in with that control key.
+
+The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key and the Gateway public key for the managed account. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
 The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window.
 
@@ -650,7 +654,16 @@ The converge variables hold the attempt's intent and the values of its execution
 
 Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the same variables, so a change of any recorded input, secret value or plan moves every phase digest. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
+A few inputs belong to one `node.converge` phase only, and the other phases leave them out of their digest:
+
+| Phase | Its own inputs |
+| --- | --- |
+| `agent` | the agent, executor and CLI pins |
+| `roles` | the role plans of the intent and each role's variables |
+
+The `input` and `check` tags also read them, but those tags never skip. A release moves the agent, executor and CLI pins, so after a release only the agent phase runs again, unless something else changed. A test proves the table against the shipped Ansible files: no other skippable phase can load a task or template that reads one of these inputs.
+
+Every phase reads all other variables, so a change of any other recorded input, secret value or plan moves every phase digest. That also holds for a new intent field that the table does not name. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
 
 Swamp resolves each phase's files from the staged bundle when it prepares the input. The resolver is `phase_code.ts` beside the input behaviour. It works in these steps:
 
@@ -739,7 +752,7 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
-The same rule covers an install that a converge would otherwise redo. On an Instance container host, one `dpkg-query` read of Squid's status replaces apt's cache refresh and package check. Squid has no pinned version, because the host's updates upgrade it. Only a read that succeeds and prints `installed` skips apt. A failed read runs apt. Config files left after a removal count as not installed.
+The same rule covers an install that a converge would otherwise redo. An archive install, such as Squid on an Instance container host, follows [Package sources](#package-sources).
 
 On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. PHP must load `vendor/autoload.php` and find Reverb's service provider. A release that verifies skips Git and Composer. In any other state, a PHP error included, the converge checks out the ref again, discards tracked changes and installs again. The install then reports a change, even when Composer only rewrites the autoloader. A new checkout still restarts Reverb.
 
@@ -916,6 +929,10 @@ Not every role can be added the same way.
 ## Package sources
 
 A role installs its packages from the Ubuntu archive, except PHP and Caddy.
+
+An archive install reads the package index (`apt update`) only when one of its packages is missing. Before the install, one `dpkg-query` reads every package it names (`swamp/ansible/tasks/apt-missing.yml`). A package counts as there when dpkg has it installed, held or not, at its version when the task pins one. Config files left after a removal count as missing. When every package is there, the install task is skipped and reports no change. A read that fails names every package, so apt runs and reports the real error.
+
+Otherwise it runs as before: index read, install, same lock timeout. This covers the base packages of `node:add`, the role prerequisites, the update tools, Squid of the Instance egress and `btrfs-progs` on an Instance fleet Node. It never upgrades a package; the [update policy](#update-policy) does that. The index read goes through the Node's proxies, so with old lists it took 134 s for an installed Squid on a nested `app-prod` Node in one refresh.
 
 | Package | Source | Files Orbit owns |
 | --- | --- | --- |

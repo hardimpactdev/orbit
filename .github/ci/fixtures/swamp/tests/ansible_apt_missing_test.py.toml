@@ -1,0 +1,22 @@
+cases = [
+  "test_an_installed_package_reads_no_index_and_changes_nothing",
+  "test_a_held_package_counts_as_installed",
+  "test_a_missing_package_reads_the_index_and_installs",
+  "test_removed_with_its_config_left_is_missing",
+  "test_a_failed_read_reads_the_index_and_installs",
+  "test_only_the_wrong_pin_or_a_missing_package_reads_the_index",
+  "test_every_index_read_of_an_install_waits_for_a_missing_package",
+]
+file = "swamp/tests/ansible_apt_missing_test.py"
+# The file ran 6.5 s locally (task copy 5971, 2026-11-19); allow for the shared runner and Ansible startup.
+cost = 15
+# The last case scans every play and task file for an apt task that reads the index.
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/*.yml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/*.yml",
+]
