@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Firewall\FirewallEngineFlow;
+use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Throwable;
@@ -21,6 +22,7 @@ final readonly class EngineKinds
         'firewall.allow' => FirewallEngineFlow::class,
         'firewall.deny' => FirewallEngineFlow::class,
         'firewall.remove' => FirewallEngineFlow::class,
+        'route.create' => RouteEngineFlow::class,
     ];
 
     public function __construct(private MachineBus $bus) {}
@@ -45,6 +47,8 @@ final readonly class EngineKinds
                     return false;
                 }
             }
+        } catch (EngineUnsupported) {
+            return false;
         } catch (Throwable $exception) {
             report($exception);
 
