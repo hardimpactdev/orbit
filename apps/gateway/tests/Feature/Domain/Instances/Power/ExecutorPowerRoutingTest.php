@@ -277,7 +277,9 @@ it('signs a headless wake without relaxing a web Instance readiness check', func
         $wake->input = [...$wake->input, 'container' => ['web_config' => $web]];
         $wire = ExecutorPowerIntent::sign($wake)->wire;
         $payload = json_decode(base64_decode(explode('.', $wire, 2)[0], true), true, flags: JSON_THROW_ON_ERROR);
-        expect($payload['power_check'] ?? null)->toBe($web === null ? 'no_web' : null);
+        expect($payload['power_check'] ?? null)->toBe($web === null ? 'no_web' : null)
+            // A web wake carries its readiness bound to the executor; a headless one probes nothing.
+            ->and($payload['input'] ?? null)->toBe($web === null ? null : ['web' => ['ready_seconds' => 30]]);
     }
 });
 
@@ -790,6 +792,28 @@ it('R4: shows a wake that failed before its visit returned on that response', fu
     $visit = app(InstanceWake::class)->activate($instance, 'node');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->error_code)->toBe('instance.web_unready');
     expect($visit)->toBeString()->toContain('instance.web_unready');
+});
+
+it('ends a failed wake on its visit, so the next visit admits a fresh wake that succeeds', function (): void {
+    $instance = managedPowerFixture();
+    $replies = [['status' => 'failed', 'code' => 'instance.web_unready'], ['status' => 'done']];
+    // The failed receipt arrives before its queued completion runs, as during a busy release.
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$replies): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), array_shift($replies));
+    };
+
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
+    $failed = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($visit)->toContain('instance.web_unready')
+        ->and($failed->status)->toBe(OperationStatus::Failed)
+        ->and($failed->error_code)->toBe('instance.web_unready')
+        ->and($failed->lock_key)->toBeNull();
+
+    $reload = app(InstanceWake::class)->activate($instance, 'node');
+    $wakes = Operation::query()->where('kind', InstanceWake::Kind)->orderBy('id')->get();
+    expect($reload)->toBeNull()
+        ->and($wakes)->toHaveCount(2)
+        ->and($wakes->last()->status)->toBe(OperationStatus::Succeeded);
 });
 
 it('R1: keeps a durable freeze when its bound recovery times out', function (): void {

@@ -358,6 +358,10 @@ final readonly class InstanceWake extends InstancePower
             }
             $line = $operation->refresh()->executor_result;
             if (is_array($line) && ! ExecutorResults::succeeded($line)) {
+                // End the failed wake now, not when its queued completion runs: the next visit then admits a fresh wake instead of
+                // joining this one and getting its stored failure again.
+                app(ExecutorWake::class)->completeHandoff($operation);
+
                 return 'The wake failed ('.ExecutorResults::failureCode($line).'). Reload the page to try again.';
             }
         } elseif ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {

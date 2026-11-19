@@ -992,3 +992,23 @@ it('admits a host converge by the automatic converge rules: task work never bloc
     expect($fleet->execute($release))->toBe(10)
         ->and(Operation::query()->where('kind', 'node.converge')->sole()->input['_converge']['intent']['automatic'])->toBeTrue();
 });
+
+it('never refuses or holds power work for an automatic role converge, waiting or running', function (string $kind): void {
+    prepareReleaseTarget();
+    $admit = fn (string $kind, int $instance): Operation => app(OperationStore::class)->create($kind, 'instance', $instance, $this->node->id, [], 'test', null);
+    $holder = $admit('instance.deploy', 99);
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    // The converge waits for the deploy; a visitor's wake or an idle sleep goes on beside that wait.
+    expect($fleet->execute($release))->toBe(15)
+        ->and($admit($kind, 100)->status)->toBe(OperationStatus::Queued);
+    $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    // The open power Operation does not hold the converge back, and a power Operation goes on beside the running converge.
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->state['admitted_beside'] ?? [])->toBe([])
+        ->and($admit($kind, 101)->status)->toBe(OperationStatus::Queued)
+        ->and(fn () => $admit('instance.deploy', 102))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+})->with(['instance.wake', 'instance.sleep', 'instance.start']);

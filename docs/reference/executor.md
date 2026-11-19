@@ -385,6 +385,8 @@ Admission binds a lifecycle phase to resume or discard before signing. Resume fo
 
 A delivered action cannot be cancelled. If the Operation ends without a terminal executor receipt, the Gateway reports an interruption, keeps the Instance fenced and reads the Node's journal again until it answers. Only a signing failure needs no hold: no order left the Gateway.
 
+A wake with a web check also signs `input: {"web": {"ready_seconds": 30}}` from the wake's intent. An executor before this field ignores it and uses its own bound.
+
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 
 The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission.
@@ -613,7 +615,9 @@ The pool holds at most twice its size in threads. Past that cap a new stall star
 
 **Limits.** It writes back exactly the values of the limits record and removes the record. A record of another incarnation names cgroups that are gone. It is dropped, and nothing is written.
 
-**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries until an answer below 500, within one absolute bound of 1.5 s. Every connect, write and read gets only the time left, so a reply sent byte by byte cannot pass after the bound. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays.
+**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries a refused, reset, silent or 5xx attempt until an answer below 500, within one absolute bound: the order's `input.web.ready_seconds` (the Gateway signs 30), or 30 s when the order has none. Each attempt gets at most 2 s. A container without its address yet is read from Incus again until the bound.
+
+Every connect, write and read gets only the time left, so a reply sent byte by byte cannot pass after the bound. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays. The bound was 1.5 s until 2026-11-19: a wake during a role converge on Beast (Operation 30076) failed in 1 s although FrankenPHP answered soon after.
 
 A container that already runs gets only the limits and readiness steps, and reports `done`. So crash recovery, which runs an open wake again, and a repeat after the unfreeze are safe. A container that Incus calls running while its kernel cgroup is still frozen fails `instance.container_frozen_unmanaged` with no write; Incus lost that freeze, and an operator thaws it. Nothing on the wake's path syncs to disk: the journal's syncer covers the order.
 
@@ -630,7 +634,7 @@ A container that already runs gets only the limits and readiness steps, and repo
 | `failed`, `instance.container_stopped` | The container is stopped; the run boots it. |
 | `failed`, `instance.container_start_failed` | Incus did not report the same container running after the unfreeze, or another error. |
 | `failed`, `instance.container_frozen_unmanaged` | The kernel cgroup stayed frozen. |
-| `failed`, `instance.web_unready` | The app gave no answer below 500 within 1.5 s. The marker stays. |
+| `failed`, `instance.web_unready` | The app gave no answer below 500 within its readiness bound (30 s). The marker stays. |
 
 The Rust tests cover the identity checks, pool order, the cut at the bound, resident pages, exact limits, the marker, readiness and crash recovery after the unfreeze; the restore tests read a real buffer of the test process.
 

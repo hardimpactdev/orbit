@@ -18,7 +18,11 @@ use std::time::{Duration, Instant};
 
 /// Pages per pool item: one `process_madvise` and at most one `process_vm_readv` batch (`IOV_MAX`) per failed page plus one.
 const ITEM_PAGES: u64 = 1024;
-const READY_BOUND: Duration = Duration::from_millis(1500);
+/// How long a wake waits for the app when its order names no `web.ready_seconds`. A thaw during a role converge (bridge, ACL and
+/// nftables rewrites, a `FrankenPHP` restart) can take seconds; the Gateway's held visit waits as long.
+pub(crate) const READY_BOUND: Duration = Duration::from_secs(30);
+/// One readiness attempt's own bound, so a connect into a dropped route is tried again before the deadline.
+const ATTEMPT_BOUND: Duration = Duration::from_secs(2);
 const THAW_BOUND: Duration = Duration::from_secs(5);
 
 /// Measured wake result. It contains counts and timings, never addresses or raw process data.
@@ -241,15 +245,19 @@ fn items(targets: Vec<(Arc<Target>, &[Range])>, reader: Reader) -> Vec<Item> {
 }
 
 /// One HTTP request from the Node to the container's web port, retried until an answer below 500 or the bound.
+#[cfg(test)]
 pub(crate) fn ready(address: IpAddr, port: u16, bound: Duration) -> bool {
-    let deadline = Instant::now() + bound;
+    ready_until(address, port, Instant::now() + bound)
+}
+/// [`ready`] against one absolute deadline. A refused, reset, silent or 5xx attempt is tried again until the deadline.
+fn ready_until(address: IpAddr, port: u16, deadline: Instant) -> bool {
     let socket = SocketAddr::new(address, port);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return false;
         }
-        if let Some(status) = ask(socket, deadline) {
+        if let Some(status) = ask(socket, deadline.min(Instant::now() + ATTEMPT_BOUND)) {
             if status < 500 && Instant::now() < deadline {
                 return true;
             }
@@ -303,13 +311,18 @@ impl Power {
     ///
     /// # Errors
     /// Returns a stable power error. A failed wake keeps the asleep marker, so Caddy keeps the visitor away from the app.
-    pub fn wake(&self, id: &str, probe_web: WebProbe) -> io::Result<WakeReceipt> {
-        self.wake_checked(&self.incus, id, probe_web)
+    pub fn wake(
+        &self,
+        id: &str,
+        probe_web: WebProbe,
+        ready: Option<Duration>,
+    ) -> io::Result<WakeReceipt> {
+        self.wake_checked(&self.incus, id, probe_web, ready)
     }
 
     #[cfg(test)]
     pub(crate) fn wake_with(&self, api: &dyn Api, id: &str) -> io::Result<WakeReceipt> {
-        self.wake_checked(api, id, WebProbe::Required)
+        self.wake_checked(api, id, WebProbe::Required, None)
     }
 
     pub(crate) fn wake_checked(
@@ -317,6 +330,7 @@ impl Power {
         api: &dyn Api,
         id: &str,
         probe_web: WebProbe,
+        ready: Option<Duration>,
     ) -> io::Result<WakeReceipt> {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
@@ -391,9 +405,7 @@ impl Power {
         }
         self.close_wake_limits(&base, &identity)?;
         if probe_web == WebProbe::Required
-            && !instance
-                .address
-                .is_some_and(|address| ready(address, self.web_port, READY_BOUND))
+            && !self.web_ready(api, id, &instance, ready.unwrap_or(self.ready_bound))
         {
             return Err(invalid("instance.web_unready"));
         }
@@ -402,6 +414,27 @@ impl Power {
         }
         receipt.total_us = micros(started);
         Ok(receipt)
+    }
+
+    /// Whether the app answers within `bound`. A container without its address yet is read again until the deadline.
+    fn web_ready(&self, api: &dyn Api, id: &str, slept: &Instance, bound: Duration) -> bool {
+        let deadline = Instant::now() + bound;
+        let mut address = slept.address;
+        loop {
+            if let Some(address) = address {
+                return ready_until(address, self.web_port, deadline);
+            }
+            let Some(left) = left(deadline) else {
+                return false;
+            };
+            std::thread::sleep(Duration::from_millis(100).min(left));
+            address = api
+                .instance(id)
+                .ok()
+                .flatten()
+                .filter(|live| live.incarnation == slept.incarnation)
+                .and_then(|live| live.address);
+        }
     }
 
     /// Load the plan and prove every recorded process is the one that slept, before any memory syscall. Any mismatch keeps the
