@@ -367,7 +367,7 @@ The Process must be an active Node-owned Docker Process on an active Linux Node.
 
 The Process must publish exactly one TCP listener on that selected address. A missing or ambiguous listener returns `route.upstream_unresolved` before storing intent. Orbit never rewrites published ports or falls back from a missing LAN listener to WireGuard. Add the LAN publication with `process:update` first. Loopback, wildcard, and UDP listeners are ineligible. A raw `upstream` stays private and loopback-only. Public Process IDs are numeric. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
 
-The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Private DNS answers with the Ingress. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Private DNS answers with the Ingress's WireGuard address, also for a requester on the Router's LAN: the Router serves no site for the hostname, so it never gets the Router LAN answer. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
 
 Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
 
@@ -515,7 +515,7 @@ Public TLS terminates on the Ingress with a Let's Encrypt certificate that Caddy
 
 When Ingress shares a Node with the Router, with `app-prod`, or with both, one Caddy service serves the public Route and never proxies to its own public listener. When the Ingress Node runs a target of the Route, its public site serves that target directly and replaces the target's private site for that host. A Router on another Node then accepts the public certificate, because the Node's system roots include the Orbit root. Until Let's Encrypt issues the certificate, that host does not complete TLS on the Node.
 
-On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` refuses `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
+On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` and `node:role:relocate` refuse `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
 
 The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-https` (port 443) only while the Cluster has at least one live public Route. When the last one leaves the public edge, the Ingress firewall step closes both rules. A new Ingress Node without a public Route has ports 80 and 443 closed to public traffic: UFW denies incoming traffic by default, and neither `orbit:ingress-http` nor `orbit:ingress-https` is present. Its only managed firewall rule is `orbit:wireguard-members`, which allows private WireGuard traffic.
 
@@ -531,11 +531,26 @@ The Gateway refuses to remove an Ingress while any Route in its Cluster has `pub
 
 ### Ingress removal
 
-`node:role:remove NODE ingress --force` is refused with reason `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks this again when it claims the assignment.
+`node:role:remove NODE ingress --force` is refused with reason `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks this again when it claims the assignment. To move the Ingress to another Node, relocate it instead: a [public Process Route](#public-process-hostnames) can't become private, so it would block the removal.
+
+Making a public app Route private on a Node that holds `ingress` with `router` or `app-prod` is a known limit: the intermediate build puts the Ingress site and the private site on the same address and fails with `caddy.render_failed`. Relocate the Ingress first; the private change then works on the remaining Node.
 
 The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node's Caddyfile: the public sites leave, and the Node's other sites stay on their private addresses. Then it closes `orbit:ingress-http` and `orbit:ingress-https` and reconciles service metrics. Caddy stays installed. When Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
 
 The same command removes an Ingress whose convergence failed. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and an `error_code`. Run the same command again to retry. A failure in the build uses `ingress.caddy_config_failed`, as [When a build fails](/reference/caddy-configuration#when-a-build-fails) describes. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists what stays on the Node under `retained_on_node`.
+
+### Ingress relocation
+
+`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
+
+The run follows this order:
+
+1. Admission moves the assignment to the target, so every later build renders the target as the Cluster's Ingress.
+2. The target gets the Ingress role as `node:role:add --converge` gives it: Caddy, the Orbit root, its Caddyfile with every public site (Let's Encrypt, `tls force_automate`), and `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
+3. Private DNS answers with the target in the WireGuard and LAN views.
+4. After the [withdrawal grace period](#withdrawal-grace-period), the source's Caddyfile is rebuilt without the public sites and its two Ingress rules close. When Ingress was the source's last role, public SSH reopens there.
+
+Until step 4 both Nodes serve the public sites, so clients and public resolvers that still name the source keep working. A failure before step 4 leaves the source serving; run the same command with `--from=SOURCE` after you fix the cause. Public DNS is yours: point each public record at the target before the move, or at the latest when it starts. The target obtains its Let's Encrypt certificates once public DNS names it, as [Publish the public edge](#publish-the-public-edge) describes.
 
 ## Change an existing Route
 
