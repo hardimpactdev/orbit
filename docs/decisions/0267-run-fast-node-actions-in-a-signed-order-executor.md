@@ -65,7 +65,7 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 | Idempotency | The done record's key is the Operation, the action and the target. Only a repeat with all three equal returns the first result, marked `repeat` |
 | Replay | A replayed nonce refuses and carries the first result |
 | Journal and recovery | One journal write before and one after each action. At start-up the executor finishes every open order. Each action states how it finishes a half-done run |
-| Relay | `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay`, with the signed order on stdin. The Gateway's SSH fallback and every Swamp step use it |
+| Relay | `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay`, with the signed order on stdin. Every Swamp step uses it; the Gateway never does |
 | Listener and hand-off | `orbit-agent-view.service` records each result on its Operation, then pushes it to the Valkey key `executor:op:<operation>` for a waiting request |
 | Contract | The executor exports its allowlist: each action's input, result and size bound. The Gateway pins it beside the agent's contract and signs no action the Node's executor lacks |
 
@@ -251,7 +251,7 @@ G1 and B1 can run before group 5513 lands. C1–C6 need a nested `app-dev` Node 
 
 Carried from ADR 0266:
 
-1. The 500 ms wake wait, the restore pool size and the 150 ms `accepted` limit are starting values.
+1. The 500 ms wake wait and the restore pool size are starting values.
 2. The effect of recording swapped pages on wake time is unmeasured.
 3. The relay is a second allowed caller beside the observer.
 4. Clock skew is untested; skew over 5 s refuses every order on that Node.
@@ -270,7 +270,7 @@ New:
 14. **"Ends in seconds" for the create.** The measured median is about 10 s for the Node part, but the steps allow 300 s and 240 s, and the checkout fetches from GitHub. The tail is not measured.
 15. **Crash recovery for a half-done copy.** Today's script removes a leftover volume and copies again. Recovery in the executor depends on that staying safe under a repeat.
 16. **Ansible calling the relay for shared rules.** A converge over many Instances then sends one signed order per Instance. The cost of the signing at admission and of the relay calls is not measured.
-17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders, for the shared rules and for the create's second order. A copied run-length create order can start the copy only once for its Operation, and only through the relay. If the short-lived order is lost, the create's Node part starts only when the Swamp step runs, after the Swamp start of about 2 s. The executor's clock check needs a second bound for them. ADR 0266's Swamp fallback reads a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
+17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders, for the shared rules and for the create's second order. A copied run-length create order can start the copy only once for its Operation, and only through the relay. If the short-lived order is lost, the create's Node part starts only when the Swamp step runs, after the Swamp start of about 2 s. The executor's clock check needs a second bound for them. ADR 0266's Swamp phases read a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
 18. **Instances that appear during a run.** An Instance created after the admission has no order in the input. The phase refuses it with its own code, and the next converge covers it.
 19. **Workspace read input size.** A recorded workspace baseline can exceed the 4 KB signed order cap. Decide how to bound and bind larger baseline and publication inputs to the order without dropping work or weakening order checks.
 

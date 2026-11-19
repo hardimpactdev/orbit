@@ -13,7 +13,7 @@ covers:
   - swamp/workflows/workflow-operation-instance-start.yaml
 ---
 
-With signed power enabled, native delivery and relay recovery share one `instance.wake` Operation. A Route visit waits while that Operation runs, up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default), and then gets the app's own response to the original request.
+With signed power enabled, the Gateway sends the wake to the Node once, over its WebSocket, in one `instance.wake` Operation. A Route visit waits while that Operation runs, up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default), and then gets the app's own response to the original request.
 
 Wake one sleeping development container Instance: a clone, a Project's default, or a nested-fleet Instance. A visit to its Route does the same, so you rarely need this command. Planned: a production Instance's live release container wakes the same way, and Caddy holds its visitor instead of the Gateway ([Production containers](/reference/production-containers#sleep-and-wake)). A deployment of a sleeping Instance wakes it too. After an [automatic deployment](/reference/deployments#automatic-development-defaults), a default may sleep again at the next sweep. A clone or a task copy of an asleep default needs no wake: it copies the default's seed snapshot. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
@@ -34,7 +34,7 @@ Orbit resumes a frozen container: its processes continue where they stopped, and
 
 The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake](/reference/executor#the-wake-inside-the-request) for container Instances. When enabled, Orbit records or joins the wake before sending its signed order. A Route visit waits for that wake, as above. Background work finishes the Operation without a deferred wake or Python/SSH path.
 
-With [signed power routing](/reference/executor#signed-power-delivery), the Gateway tries its SSH relay if the Node has not accepted within 150 ms. If the terminal result is still missing after 6 s, Swamp gets a fresh order for the same Operation. A known frozen Instance wakes through the engine that froze it, even if the settings change. The Node-level Process wake keeps its existing behavior.
+With [signed power routing](/reference/executor#signed-power-delivery), the WebSocket is the only way the order reaches the Node. If the Node has not accepted the order after 6 s, the order has expired and the wake fails with `executor.not_accepted`. If the Node accepted it but sent no result, the wake ends `interrupted` with `executor.result_unknown`. A known frozen Instance wakes through the engine that froze it, even if the settings change. The Node-level Process wake keeps its existing behavior.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
@@ -56,7 +56,7 @@ A host reboot, an out-of-memory kill or a stop by hand can leave a clone of a ne
 
 A stopped nested-fleet default does not take this path: it starts only through its deployment.
 
-When signed power routing is on (`ORBIT_EXECUTOR_POWER_ENABLED`, off by default), the wake runs through the Rust executor on the same Operation: the Gateway sends a signed order on the Node's WebSocket, tries the same order over the SSH relay when no `accepted` arrives within 150 ms, and starts a Swamp run that sends a freshly signed order through the relay when no result arrives within six seconds ([Signed power delivery](/reference/executor#signed-power-delivery)). An executor refusal or failure fails the wake; it is never shown as success. An Instance that a Python sleep froze still wakes through Python. With routing off, this command uses the Python path unchanged, except for an Instance that the executor froze: it still wakes through the executor ([Switching engines](/reference/executor#switching-engines)).
+When signed power routing is on (`ORBIT_EXECUTOR_POWER_ENABLED`, off by default), the wake runs through the Rust executor on the same Operation: the Gateway sends a signed order on the Node's WebSocket and waits up to six seconds for the result ([Signed power delivery](/reference/executor#signed-power-delivery)). An executor refusal or failure fails the wake; it is never shown as success. When the executor finds the container stopped, Orbit boots it in the same Operation. An Instance that a Python sleep froze still wakes through Python. With routing off, this command uses the Python path unchanged, except for an Instance that the executor froze: it still wakes through the executor ([Switching engines](/reference/executor#switching-engines)).
 
 ## How it works
 
@@ -89,4 +89,6 @@ For a nested-fleet clone:
 | `executor.wake_failed` | Executor wakes are enabled and the Node reported a failure. The Operation keeps the executor result. |
 | `executor.wake_timeout` | No executor result confirmed the wake before its queued completion. The Node may still finish; a later result does not reopen the Operation. |
 | `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
-| `executor.result_unknown` | Recovery ended without an executor receipt. The Instance stays fenced until the Node's outcome is verified. |
+| `executor.publish_failed` | The Gateway could not send the signed order. Nothing reached the Node, and the Instance is free for a new wake. |
+| `executor.not_accepted` | The Node did not accept the signed order before it expired. It cannot act any more, and the Instance is free for a new wake. |
+| `executor.result_unknown` | The Node accepted the order but sent no result within 6 seconds. The Operation ends `interrupted`, and the Instance stays locked until a late result settles it. |

@@ -199,7 +199,7 @@ The fence follows the release that is about to serve. Before a switch, the candi
 - **Runtime hibernator.** A container timer, enabled only in live. Cost: none.
 - **ADR 0266 result listener** (`orbit:agent-view`). It starts in the new live **before** the switch and stops in the previous live after it, so one listener always runs.
   - Both listeners may receive one result. Recording a result becomes a conditional write that changes only an Operation without a result, so it is recorded once. Each listener still pushes every accepted result to `executor:op:<operation>`, as ADR 0266 says: a repeat that recovers a lost push changes no row, and must still push. A duplicate push does no harm: `BLPOP` takes one, and the key expires after 60 s.
-  - Cost: with a gap, a wake in the gap misses its `accepted` line and pays the SSH relay fallback, *18–190 ms*, or up to the 6 s wait. With the overlap, no wake pays it.
+  - Cost: with a gap, a wake in the gap misses its `accepted` line and fails with `executor.not_accepted` after the 6 s wait, even when the Node woke the container; a reload admits a new wake. With the overlap, no wake pays it.
 - **Reverb clients.** The web app and the agents talk to Reverb on the `websocket` Node, not to the Gateway, so they do not reconnect. The Gateway's broadcasts are HTTP calls to Reverb from whichever release serves. Cost: none.
 - **SSH connections.** The next paragraphs. Cost: one new connection per Node after a switch.
 

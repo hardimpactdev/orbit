@@ -102,7 +102,7 @@ A container Instance's site calls the same endpoint behind its asleep marker. Th
 
 While other lifecycle work holds the Instance, the visit tries to admit the wake again every 250 ms. Orbit keeps no memory of a failed wake: a reload admits a new one. The exception is an interrupted wake whose order is unknown ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), R2). Its fence admits no second wake, so every visit gets its failure until an operator verifies the Node.
 
-An admitted signed Operation tries the SSH relay after 150 ms without WebSocket acceptance. If still missing a terminal result after six seconds, Swamp requests a fresh order for the same Operation and calls the relay. A refusal or deterministic failure does not retry as lost transport. A signed wake does not read the Python wake files or use the Python power helper. See [Signed power delivery](/reference/executor#signed-power-delivery) for handback.
+An admitted signed Operation sends its order once, over the Node's WebSocket. A failed publish or an order that expires without `accepted` fails the wake, and the held visit gets the plain `503`. Nothing retries the order. A signed wake does not read the Python wake files or use the Python power helper. See [Signed power delivery](/reference/executor#signed-power-delivery) for handback.
 
 The Gateway records completion, lifecycle and notice handoffs in SQLite. It queues a newly admitted signed wake's delivery after the response; hooks and notices run in the background. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers lost jobs and unfinished deliveries without another visit.
 

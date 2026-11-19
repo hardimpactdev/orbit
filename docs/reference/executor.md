@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request); since 2026-11-19 the visit is held until the wake ends, with no progress page. Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, the SSH relay, and Swamp recovery.
+> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request); since 2026-11-19 the visit is held until the wake ends, with no progress page. Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, with the relay as the local caller of Swamp start, deploy and boot phases.
 
 ## Where it runs
 
@@ -244,7 +244,7 @@ At start-up the executor reads the journal, keeps the same live records and rewr
 
 ## The relay command
 
-`sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` reads one signed order from stdin, at most 4 KB, hands it to the socket, and copies the reply to stdout, at most 64 KB within 10 s. The Gateway's SSH fallback and Swamp steps use it.
+`sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` reads one signed order from stdin, at most 4 KB, hands it to the socket, and copies the reply to stdout, at most 64 KB within 10 s. Swamp phases on the Node use it: a start or deploy that resumes or discards a signed freeze, and the boot of a container that a signed wake found stopped. The Gateway never calls it.
 
 ## The listener and the hand-off
 
@@ -322,13 +322,22 @@ Operation notices are saved with the change and relayed to `operations-prompt` a
 
 ### Signed power delivery
 
-`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When on, sleep and wake use the existing Instance admissions and Operation kinds. The Gateway sends the signed order on the Node's WebSocket. If the Node has not reported `accepted` after 150 ms, the Gateway tries the same order over the fixed SSH relay. If no terminal result arrives within six seconds, the Gateway starts the native Swamp run for that same Operation.
+`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When on, sleep and wake use the existing Instance admissions and Operation kinds. The Gateway sends the signed order once, on the Node's WebSocket. That is the only delivery: the Gateway has no SSH fallback and starts no Swamp run for a lost result. The Operation then ends in one of these ways:
 
-Swamp requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal prevents another physical action for the same Operation and action. A refusal or deterministic failure is not lost transport. A legitimate stopped container can enter the existing boot flow; a nested default still requires deployment.
+| Case | End |
+| --- | --- |
+| A receipt arrives | The receipt decides ([R1](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). |
+| The publish to Reverb fails | The Operation fails at once with `executor.publish_failed` and frees its lock. |
+| No `accepted` line and no result by the six-second completion deadline | The order expired five seconds after signing, so no Node can act on it. The Operation fails with `executor.not_accepted` and frees its lock. |
+| `accepted`, but no result by the deadline | The executor may have acted. The Operation ends `interrupted` with `executor.result_unknown` and keeps its lock until a late receipt settles it. |
 
-Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting recovery result.
+A visitor's held request sees a failed Operation and gets the plain `503`.
 
-The handoff to Swamp does not make a delivered action cancellable. Recovery allows the Node time to finish the action and read its journal. If the run ends without a terminal executor receipt, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing failure before delivery does not need a hold.
+One receipt continues in Swamp: a wake that fails with `instance.container_stopped`. The Operation starts its Swamp wake run, which boots the container; a nested default still requires deployment. The run's phase requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal returns the first result for the same Operation and action, so it does not act again.
+
+Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting later result.
+
+A delivered action cannot be cancelled. If the Operation ends without a terminal executor receipt after the executor accepted, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing or publish failure, or an order that expired without `accepted`, needs no hold.
 
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 

@@ -3,7 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
-  %% ADR 0266 slice 7: ordinary sleep and the idle sweep share one admitted Operation and one signed action.
+  %% ADR 0266: ordinary sleep and the idle sweep share one admitted Operation and one signed action, delivered only over the WebSocket.
   %% Executor sleep: record and fsync non-max subtree swap limits, open them, freeze through Incus local API, scan every process in parallel (readable mappings, pagemap bits 63 OR 62, excluding bit 58 guard markers), atomically fsync the plan, reclaim until memory.current settles or 2 s, apply the 32 MiB anonymous policy, write the asleep marker. Recovery keeps an existing valid plan. Discard removes plan and limits after stop/fresh boot; destroy deletes the Rust state folder without an order (signed destroy: task 5891).
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
@@ -53,21 +53,26 @@ sequenceDiagram
     GW->>N: Publish signed sleep<br/>executor-order · WebSocket
     %%> - Check the loaded Caddy rule before any freeze and put up the marker before the app stops answering. Without a published Route there is no site to check.
     %%> - The executor owns freeze, capture, swap and the final marker. If sleep fails after the freeze, it reports the incomplete sleep and keeps the state for the same engine to wake. It never stops a nested fleet.
-    opt no accepted line within 150 ms
-      GW->>N: Relay same order<br/>SSH · stdin
+    %%> - The WebSocket is the only delivery; the Gateway publishes once, never relays the order over SSH, and starts no Swamp run.
+    alt a receipt arrives
+      Note over GW: Project sleep or failure<br/>one terminal Operation
+      %%> - A known refusal or failure does not record asleep. Repeated deliveries return the first result without freezing twice.
+      %%> - R1: a recorded `done` receipt is the sleep's outcome even when a later transport fails; the Operation succeeds and records asleep
+      %%> - R3: the freezing engine owns the freeze; a cancelled or failed later sleep does not hand it to the other engine
+      %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
+    else the publish fails
+      %% path: publish-failed
+      Note over GW: Fail, free the lock<br/>executor.publish_failed
+      %%> - No Node received the order; the Operation fails at once.
+    else no accepted line by 6 s
+      %% path: not-accepted
+      Note over GW: Fail, free the lock<br/>executor.not_accepted
+      %%> - The order expired 5 s after signing, so it can act on no Node; nothing holds the fence (R2).
+    else accepted, no result by 6 s
+      %% path: result-unknown
+      Note over GW: Interrupted, keep lock<br/>executor.result_unknown
+      %%> - R2: the executor may have frozen the container, so the Instance lock stays and cancel is refused until a late receipt settles the Operation.
     end
-    opt no terminal result within 6 s
-      GW->>SW: Recover the same Operation<br/>operation-instance-sleep
-      SW->>GW: Sign fresh order<br/>bound Operation
-      SW->>N: Relay fresh order<br/>SSH · stdin
-      SW-->>GW: Return executor receipt
-    end
-    Note over GW: Project sleep or failure<br/>one terminal Operation
-    %%> - A known refusal or failure does not start recovery or record asleep. Repeated deliveries return the first result without freezing twice.
-    %%> - R1: a recorded `done` receipt is the sleep's outcome even when a later relay or Swamp transport fails; the Operation succeeds and records asleep
-    %%> - R2: a signed order with no receipt ends interrupted, `executor.result_unknown`, with the lock held
-    %%> - R3: the freezing engine owns the freeze; a cancelled or failed later sleep does not hand it to the other engine
-    %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
   else signed power disabled at admission
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   SW->>N: Sleep the container<br/>Ansible · tags prepared_sleep

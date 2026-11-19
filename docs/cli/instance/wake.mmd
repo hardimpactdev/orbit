@@ -3,7 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
-  %% ADR 0266 slice 7: signed power applies to ordinary wakes and recovers through the same Operation.
+  %% ADR 0266: signed power applies to ordinary wakes; the WebSocket is its only delivery, and only a stopped container continues in Swamp.
   autonumber
   %% lane CL icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -51,17 +51,14 @@ sequenceDiagram
     %% path: executor
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
-    %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
-    %%> - CLI, API and Conn queue the signed wake and follow the Operation; their relay is not limited by Caddy's request budget
+    %%> - record or join instance.wake under the Instance lock before signing; requests and the background pass share one publication receipt for the same Operation
+    %%> - CLI, API and Conn queue the signed wake and follow the Operation; their wait is not limited by Caddy's request budget
     %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
-    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
+    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it projects recorded results before publishing any missing order for the same Operation
     %%> - record Operation notices locally; delivering them never holds the visitor request
-    %%> - the observer passes the order unread to the executor; the normal path needs no SSH, Python or marker/times command
-    opt no accepted line within 150 ms
-      GW->>N: Relay same order<br/>SSH · stdin
-      %%> - The relay and observer can race. A replay without a terminal result does not prove failure or success.
-    end
+    %%> - the observer passes the order unread to the executor; the path needs no SSH, Python or marker/times command
+    %%> - the WebSocket is the only delivery; the Gateway publishes once and never relays the order over SSH
     opt Caddy, for a visit
       GW->>GW: Hold the visit<br/>ExecutorResultWait · 30 s
       %%> Result:
@@ -79,21 +76,36 @@ sequenceDiagram
         %%> - a failed or refused receipt, or an ended Operation, answers at once with its code; a reload admits a new wake
       end
     end
-    Note over GW: Project the receipt<br/>end the Operation
-    %%> - R1: the matching receipt decides; done or partial succeeds, refused or failed fails with the receipt's code; a transport failure never overrides a recorded receipt
-    %%> - R2: once an order was signed, no receipt ends interrupted with `executor.result_unknown` and keeps the Instance lock; cancel is refused
-    %%> - R4: a visit answers a failed wake with a plain `503` and its code; under an interrupted wake's held lock every visit gets the same failure
-    %%> - the worker sends the Operation's notices without waiting for the sweep
-    %%> - the job after 6 s still recovers an absent result and finishes a known result if the immediate job did not run
-    %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
-    opt no terminal result within 6 s, or a legitimate stopped container needs boot
-      GW->>SW: Continue Operation<br/>operation-instance-wake
-      SW->>GW: Sign fresh order<br/>bound Operation
-      SW->>N: Relay fresh order<br/>SSH · stdin
-      %%> - The journal returns the first result or acts once. A confirmed stopped container takes its existing boot and readiness phase; an unmanaged stopped nested default never boots here.
-      %%> - After that boot, the boot's own readiness result decides, never the earlier `container_stopped` line (R1)
-      %%> - R3: the engine that froze the container wakes it; a later cancelled or failed sleep and the current settings change nothing
-      SW-->>GW: Return result<br/>terminal projection
+    alt a receipt arrives
+      Note over GW: Project the receipt<br/>end the Operation
+      %%> - R1: the matching receipt decides; done or partial succeeds, refused or failed fails with the receipt's code; a transport failure never overrides a recorded receipt
+      %%> - R4: a visit answers a failed wake with a plain `503` and its code; under an interrupted wake's held lock every visit gets the same failure
+      %%> - the worker sends the Operation's notices without waiting for the sweep
+      %%> - the job after 6 s finishes a known result if the immediate job did not run
+      %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
+      opt the receipt is failed with instance.container_stopped
+        GW->>SW: Continue Operation<br/>operation-instance-wake
+        SW->>GW: Sign fresh order<br/>bound Operation
+        SW->>N: Relay fresh order<br/>orbit-executor relay · stdin
+        %%> - the run's phase on the Node is the relay's local caller; the journal returns the first result or acts once. A confirmed stopped container takes its existing boot and readiness phase; an unmanaged stopped nested default never boots here.
+        %%> - After that boot, the boot's own readiness result decides, never the earlier `container_stopped` line (R1)
+        %%> - R3: the engine that froze the container wakes it; a later cancelled or failed sleep and the current settings change nothing
+        SW-->>GW: Return result<br/>terminal projection
+      end
+    else the publish fails
+      %% path: publish-failed
+      Note over GW: Fail, free the lock<br/>executor.publish_failed
+      %%> - no Node received the order; the Operation fails at once
+    else no accepted line by 6 s
+      %% path: not-accepted
+      Note over GW: Fail, free the lock<br/>executor.not_accepted
+      %%> - the order expired 5 s after signing, so it can act on no Node; nothing holds the fence (R2)
+      %%> - a held visit sees the failed Operation and gets the plain `503`; a reload admits a new wake
+    else accepted, no result by 6 s
+      %% path: result-unknown
+      Note over GW: Interrupted, keep lock<br/>executor.result_unknown
+      %%> - R2: the executor may have acted, so the Instance lock stays and cancel is refused until a late receipt settles the Operation
+      %%> - no Swamp run starts
     end
   else Python wake admitted
   opt Caddy, for a development visit
