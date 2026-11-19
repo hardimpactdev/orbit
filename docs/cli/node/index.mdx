@@ -50,7 +50,7 @@ Removing task-host settings or changing the bridge or CIDR withdraws the owned D
 | [`node:wireguard-key`](/cli/node/wireguard-key) | Set an unmanaged Node's WireGuard public key and update its hub peer. |
 | [`node:role:add`](/cli/node/role-add) | Add a role, or converge an existing role. |
 | [`node:role:list`](/cli/node/role-list) | List the roles of a Node. |
-| [`node:role:relocate`](/cli/node/role-relocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
+| [`node:role:relocate`](/cli/node/role-relocate) | Move `gateway`, `websocket`, `metrics`, or a Cluster's `ingress` to another Node. |
 | [`node:role:remove`](/cli/node/role-remove) | Remove a role. |
 | [`node:access:add`](/cli/node/access-add) | Grant one Node access to another. |
 | [`node:access:remove`](/cli/node/access-remove) | Remove an access grant. |
@@ -86,7 +86,7 @@ The Gateway process serves the API. Removing the last `gateway` assignment and a
 
 ### One relocate action for every relocatable role
 
-Each role definition states whether the role is relocatable. Orbit does not infer it from singleton and mutable, because generic add and remove is a wider contract than a move. `gateway`, `websocket`, and `metrics` are relocatable. One relocate action runs the shared steps for all three: the singleton lock, the source check, the settings copy, and the assignment transfer. Role-specific work runs as a step for that role inside the same action. A new relocatable role adds the flag and its step, not a new command.
+Each role definition states whether the role is relocatable. Orbit does not infer it from singleton and mutable, because generic add and remove is a wider contract than a move. `gateway`, `websocket`, `metrics`, and `ingress` are relocatable. One relocate action runs the shared steps for all of them: the singleton lock, the source check, the settings copy, and the assignment transfer. Role-specific work runs as a step for that role inside the same action. A new relocatable role adds the flag and its step, not a new command.
 
 ### The target's credentials win
 

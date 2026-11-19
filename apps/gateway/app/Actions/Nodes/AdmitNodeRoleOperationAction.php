@@ -33,6 +33,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Processes\ProcessOwnershipClaim;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Routes\StaleRouterAssignment;
@@ -243,6 +244,8 @@ final readonly class AdmitNodeRoleOperationAction
             }
             $native = app(NativeNodeRoleRelocateInput::class);
             $before = $native->before($target, $source, $role);
+            // A retry finds the assignment on the target already: an earlier run may have switched private DNS.
+            $retry = $assignment->node_id === $target->id;
             $assignment->update(['node_id' => $target->id]);
             $assignment->claimConvergence();
             app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
@@ -250,10 +253,14 @@ final readonly class AdmitNodeRoleOperationAction
                 app(GrantGatewayRoleAccessAction::class)->execute($target);
             }
             app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
-            $intent = $native->capture($target->refresh(), $source, $assignment, $before);
+            $intent = $native->capture($target->refresh(), $source, $assignment, $before, $operation);
             $this->store->change($operation, ['input' => [...$operation->input, 'intent' => $intent,
                 '_relocate' => ['assignment_id' => $assignment->id, 'role' => $role->value,
-                    'source_node_id' => $source->id, 'target_node_id' => $target->id]]]);
+                    'source_node_id' => $source->id, 'target_node_id' => $target->id, 'retry' => $retry]]]);
+            // The run writes Caddyfiles rendered now, also when it gives the Ingress back, so no Route write may change them meanwhile.
+            if ($role === RoleName::Ingress && ! app(RoutePublicationHolds::class)->holdRun($operation, NativeNodeRoleRelocateInput::heldNodes($target))) {
+                throw new ResourceOperationException('route.publication_held', 'A Route write holds a Node of the Cluster. Run the move again once it ends.', 409);
+            }
 
             return $operation;
         });
