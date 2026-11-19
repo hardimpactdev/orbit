@@ -269,7 +269,7 @@ it('takes the wake\'s own refusal for a clone of a nested-fleet Project on a Nod
 it('takes the start of a nested-fleet clone that no sleep froze from a Route visit, as the command does', function (): void {
     [, $clone] = startPair(true);
 
-    expect(app(InstanceWake::class)->activate($clone, false, 'node:1'))->toBeNull()
+    expect(app(InstanceWake::class)->activate($clone, 'node:1'))->toBe('The Instance is still waking. Reload the page in a moment.')
         ->and(Operation::query()->where('kind', InstanceStart::Kind)->sole()->target_id)->toBe($clone->id)
         ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(0);
 });

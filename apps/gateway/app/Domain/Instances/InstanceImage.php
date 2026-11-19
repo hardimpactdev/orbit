@@ -149,6 +149,23 @@ final readonly class InstanceImage
     }
 
     /**
+     * The two files that let the runtime folder's headless Chrome start: the linker finds the folder's browser libraries and
+     * fontconfig its fonts. Every development container gets them (self::shared), and so does each production preparation
+     * container, which has no other Orbit file (docs/reference/production-containers.md#host-paths).
+     *
+     * @return list<array{path: string, content: string}>
+     */
+    public static function browser(): array
+    {
+        $runtime = InstanceHostIntent::RuntimeFolder.'/current';
+
+        return [
+            ['path' => '/etc/ld.so.conf.d/zz-orbit-browser.conf', 'content' => "# Managed by Orbit.\n{$runtime}/lib\n"],
+            ['path' => '/etc/fonts/fonts.conf', 'content' => self::fonts("{$runtime}/fonts")],
+        ];
+    }
+
+    /**
      * The files that every container needs, also one made from an older image: the converge writes them into each existing
      * container too, marked `existing` (docs/reference/development-containers.md#existing-containers). Each later process reads them
      * by itself, so nothing restarts.
@@ -166,13 +183,11 @@ final readonly class InstanceImage
      */
     public static function shared(): array
     {
-        $runtime = InstanceHostIntent::RuntimeFolder.'/current';
         $file = static fn (string $path, string $content): array => ['path' => $path, 'content' => $content, 'uid' => 0, 'gid' => 0,
             'mode' => '0644', 'existing' => true];
 
         return [
-            $file('/etc/ld.so.conf.d/zz-orbit-browser.conf', "# Managed by Orbit.\n{$runtime}/lib\n"),
-            $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
+            ...array_map(static fn (array $browser): array => $file($browser['path'], $browser['content']), self::browser()),
             $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
             ['path' => self::SudoGrant, 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true],
             [...self::appAccount(), 'uid' => 0, 'gid' => 0, 'mode' => '0755', 'existing' => true],

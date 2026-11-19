@@ -4,21 +4,26 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Hibernation\ScheduleInstanceRuntimeWakeAction;
-use App\Domain\Hibernation\DevelopmentHibernationPolicy;
-use App\Domain\Hibernation\HibernationWakeFailureStore;
+use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
+use App\Domain\Hibernation\HibernationException;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
-use App\Http\Responses\RuntimeActivationPage;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use SensitiveParameter;
+use Throwable;
 
+/**
+ * Caddy's forward_auth for a sleeping Instance. The request is held while the Instance wakes. Caddy returns any non-2xx answer to
+ * the visitor as it is: a woken Instance answers a 307 to the visitor's own URI, which the browser repeats with the same method and
+ * body and the awake app answers; a failed wake answers a plain 503 with a short text. A 2xx would continue the request only where
+ * the route runs the app after forward_auth; routes that hold activation and the app in separate `handle` blocks end it there.
+ */
 #[RequiresNodeAccess(ServingNode::InstanceHost)]
 final class RuntimeActivationsController extends Controller
 {
@@ -26,54 +31,50 @@ final class RuntimeActivationsController extends Controller
         Request $request,
         #[SensitiveParameter]
         Instance $instance,
-        DevelopmentHibernationPolicy $policy,
-        HibernationWakeFailureStore $failures,
-        ScheduleInstanceRuntimeWakeAction $schedule,
-        RuntimeActivationPage $pages,
+        ActivateInstanceRuntimeAction $activate,
         InstanceWake $wake,
     ): Response {
-        $caller = $request->user();
-        $uri = $this->forwardedUri($request);
-
-        if (! $caller instanceof Node) {
-            return $pages->failed('Active WireGuard peer identity required.', $instance, $uri);
+        if (! $request->user() instanceof Node) {
+            return $this->failed('Active WireGuard peer identity required.');
         }
 
         $instance->loadMissing('node');
-        $retry = in_array('orbit-wake-retry=1', explode('&', (string) parse_url($uri, PHP_URL_QUERY)), true);
 
-        // A successful in-bound executor wake lets Caddy continue the original request. Other outcomes keep the existing page.
         if ($instance->runtime()->exists()) {
-            $failure = $wake->activate($instance, $retry, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
+            $failure = $wake->activate($instance, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
 
-            if ($failure === true) {
-                return response('', 200)->header('Cache-Control', 'no-store');
-            }
-
-            return $failure === null ? $pages->progress($instance, $uri) : $pages->failed($failure, $instance, $uri);
+            return $failure === null ? $this->ready($request) : $this->failed($failure);
         }
 
-        if (! $policy->appliesToInstance($instance)) {
-            return $pages->failed("Instance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
+        try {
+            $activate->execute($instance);
+        } catch (HibernationException $exception) {
+            return $this->failed($exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->failed('The runtime wake failed. Check the Gateway log before retrying.');
         }
 
-        if ($retry) {
-            $failures->forget($instance->id);
-        }
-        $failure = $failures->get($instance->id);
-        if ($failure === null) {
-            $schedule->afterResponse($instance);
-        }
-
-        return $failure === null
-            ? $pages->progress($instance, $uri)
-            : $pages->failed($failure, $instance, $uri);
+        return $this->ready($request);
     }
 
-    private function forwardedUri(Request $request): string
+    /** Only a path on the visitor's own host: a forwarded URI that names another origin goes to `/`. */
+    private function ready(Request $request): Response
     {
         $uri = $request->headers->get('X-Forwarded-Uri');
+        $location = is_string($uri) && str_starts_with($uri, '/') && ! str_starts_with($uri, '//') && ! str_starts_with($uri, '/\\') ? $uri : '/';
 
-        return is_string($uri) ? $uri : '/';
+        return response('', 307)
+            ->header('Location', $location)
+            ->header('Cache-Control', 'no-store');
+    }
+
+    private function failed(string $message): Response
+    {
+        return response(trim($message)."\n", 503)
+            ->header('Content-Type', 'text/plain; charset=UTF-8')
+            ->header('Cache-Control', 'no-store, private')
+            ->header('X-Robots-Tag', 'noindex, nofollow');
     }
 }

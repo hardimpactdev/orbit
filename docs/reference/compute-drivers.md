@@ -93,6 +93,8 @@ A part that pins its own artifact may leave `bin` out: it gives the folder files
 | `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>`, with `bin/` and `modules/` |
 | `agent` | `t3` and `conn-server`, the release tarballs; `claude-code` and `codex`, the npm packages of the Linux x64 builds; `chrome-headless-shell`, the Conn preview browser ZIP, which agent-browser opens too; `agent-browser`, the release's Linux x64 binary |
 
+The runtime folder also holds `chrome-headless-shell`, the same pin as the agent folder's, for [production containers](/reference/production-containers#host-paths), which have no agent folder.
+
 #### The Vite+ home
 
 `vp` runs only from a home that holds its locked `vite-plus` package and its Node, and it fetches both on first use. The host builds that home once; containers link its runtime files read-only and use their egress proxy to fetch Project package managers. The home holds absolute paths, so the host builds it at its final path, `/opt/orbit-runtime/vite-plus/<digest>`. The digest names what goes into it: the `vp-cli` release, the [Vite+ runtime lock](#bump-vite) and the recipe's Node release.
