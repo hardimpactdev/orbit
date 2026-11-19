@@ -1263,6 +1263,8 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. Fixture budget and capacity checks are unconditional. Expensive checks run when their inputs change: tooling, documentation and the policy tests' source inputs. API reference inputs also select docs lint and flow checks. Selected policy checks run before Pest and the fixtures.
 
+When API reference inputs change, the `docs-impact` part first runs `bin/build-api`, as CI's Docs job does. The ignored `docs/openapi.json` and MCP manifest of an earlier build then never make the gate call a generator stale.
+
 The `fixtures` part runs the units of CI's fixture plan that the change touches directly first, then those that fit the budget; it names the rest as deferred to CI. A budget stop or deferral keeps exit zero when nothing failed, but the final result explicitly says coverage is incomplete and CI must finish.
 
 Within a selected Pest job, the check runs the project's changed test files and its pin test files: the Gateway and CLI tests that pin a whole intent, digest or command surface, such as `GatewayRuntimeFilesTest` and `CommandSurfaceTest`. A change far from such a test can break it, so the check runs them whenever CI selects their project's Pest job, and a handoff check finds what CI's full suite finds on them. The `PIN_TESTS` table in `bin/task-check` lists them.

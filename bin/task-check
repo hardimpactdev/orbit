@@ -575,7 +575,10 @@ def main(argv=None):
     docs_inputs = tooling or input_jobs['docs'] or input_jobs['api-reference']
     if want('docs-impact'):
         common = Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-        record(timed('docs-impact', [review['docs_impact_command'](ROOT, base, common)], deadline))
+        # As CI's Docs job runs bin/build-api first: the impact gate checks the ignored docs/openapi.json and MCP manifest
+        # against the sources, so an API change must not meet the stale outputs of an earlier build.
+        build = [['bin/build-api']] if jobs['api-reference'] else []
+        record(timed('docs-impact', [*build, review['docs_impact_command'](ROOT, base, common)], deadline))
     if want('check-flows'):
         record(timed('check-flows', [['node', 'bin/check-flows']], deadline, env={'BASE': base}) if docs_inputs
                else Part('check-flows', 'not selected', 0, 'no tooling, docs or API reference input changed'))
