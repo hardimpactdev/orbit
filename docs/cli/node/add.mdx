@@ -42,11 +42,13 @@ orbit node:add beast beast.example.com \
 orbit node:add beast --role=app-dev --role=database
 ```
 
-For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
+For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Swamp control key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
 
 In a terminal, an omitted name is asked for as text, and so are the host and the fingerprint for a new Node or an existing Node with no pinned host key. A noninteractive or `--json` call that omits one is refused with `input.invalid` for the name or host, or `node.ssh_host_fingerprint_required` for the fingerprint, and sends no request.
 
 A Node with Instances cannot be enrolled again, including for a TLD change. Repeating the command for an active Node with unchanged settings converges it again and checks it; it succeeds with the usual result and creates no duplicates.
+
+A new Linux machine needs one thing before the command: root SSH access with the Swamp control key, the public key in the Gateway's `ORBIT_SWAMP_SSH_PUBLIC_KEY`. Every enrollment step logs in with that key, and enrollment authorizes it and the Gateway public key for the managed account. Without it the first step fails with `node.ssh_host_key_scan_failed`.
 
 Orbit checks the machine's SSH host key against the approved fingerprint before it changes anything. It then sets up the machine, the WireGuard tunnel and the Node agent, converges the requested roles, and checks the Node. Each role run compares its phase digests with no record, so every role phase runs ([the skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)). The first role closes public recovery SSH, so the Node is reachable over WireGuard only afterwards. The CLI shows one progress indicator while the Operation runs, then the final result with the Operation and request IDs.
 
