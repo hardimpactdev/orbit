@@ -94,8 +94,9 @@ class CheckTableTest(unittest.TestCase):
 ROOT = plan.ROOT
 
 # Unconditional infrastructure and policy: explicit exceptions so new jobs cannot evade the table.
-NON_CHECKS = {'ci-policy', 'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'proof-eligibility', 'delivery', 'main-required'}
-OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required'}
+NON_CHECKS = {'ci-policy', 'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'proof-eligibility', 'delivery', 'main-required',
+              'main-release-inputs'}
+OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'main-release-inputs'}
 PROOF_GATE_TIMEOUT = "${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}"
 FIXTURES_CONDITION = "${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
 

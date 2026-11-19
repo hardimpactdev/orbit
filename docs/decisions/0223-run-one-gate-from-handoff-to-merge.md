@@ -75,7 +75,7 @@ Once no converted `base_merge` reviewed commit belongs to an open group, delete 
 - **Keep the implementer's full gate and skip Orbit's.** Orbit cannot trust an agent's report of its own run.
 - **Keep the artifact worker for local stores.** It was a second transport and a second failure record for caches that Git refs already carry.
 - **Require an up-to-date branch.** It would bring back the mechanical main merges that part 2 deletes.
-- **GitHub merge queue.** GitHub offers it only for organization-owned repositories, and `hardimpactdev/orbit` belongs to a user.
+- **GitHub merge queue.** Rejected here for task handoffs. Orbit's own pull requests use one since [ADR 0272](/decisions/0272-merge-through-a-github-merge-queue).
 - **A process count per Project.** A Project setting does not know the machine.
 
 ## Consequences
