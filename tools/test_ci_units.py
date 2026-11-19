@@ -194,6 +194,30 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
         self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
 
+    def test_the_fleet_file_yields_to_a_host_task_in_the_same_change_and_runs_whole_for_its_own_change(self):
+        budget, fixtures, defaults = units.configuration()
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        count = len(fixtures[fleet]['cases'])
+        placed = lambda plan: sum(name.split('#')[0] == fleet for name in units.planned_units(plan))
+        named = lambda plan: sum(len(row['units']) for row in plan.get('not_run', []) if row['file'] == fleet)
+        # An input of every fleet case alone: the whole file fits and runs.
+        alone = units.plan(['swamp/ansible/fleet-converge-inputs.json'], budget, fixtures, defaults)
+        self.assertEqual((count, 0), (placed(alone), named(alone)))
+        self.assertNotIn('capacity', alone)
+        # With a host task in the same change both do not fit: the fleet units that fit run, the plan names the rest.
+        paths = ['swamp/ansible/fleet-converge-inputs.json', 'swamp/ansible/tasks/instance-host.yml']
+        both = units.plan(paths, budget, fixtures, defaults)
+        self.assertNotIn('capacity', both)
+        self.assertEqual(count, placed(both) + named(both))
+        self.assertGreater(placed(both), count // 2)
+        self.assertGreater(named(both), 0)
+        self.assertLessEqual(len(both['shards']) + len(both['self_hosted_shards']), budget['runner_shards'])
+        # Without the name the same change fails Required.
+        unnamed = {**budget, 'capacity_gap': [file for file in budget['capacity_gap'] if file != fleet]}
+        self.assertIn('capacity', units.plan(paths, unnamed, fixtures, defaults))
+        # A change to the fleet file itself runs every unit of it.
+        self.assertEqual((count, 0), tuple(f(units.plan([fleet, *paths], budget, fixtures, defaults)) for f in (placed, named)))
+
     def test_a_capacity_gap_must_name_registered_files_and_a_hosted_gap_keeps_the_lane(self):
         original, inventory = units.registry.load(ROOT)
         for gaps in (['swamp/tests/missing_test.ts'], 'swamp/tests/ansible_instance_migrate_move_test.ts',
@@ -206,7 +230,8 @@ class PlanningTest(unittest.TestCase):
         budget, fixtures, _ = units.configuration()
         hosted = [file for file in budget['capacity_gap'] if not fixtures[file].get('self_hosted')]
         self.assertEqual(hosted, ['swamp/tests/ansible_task_copy_turn_test.ts',
-                                  'swamp/tests/ansible_instance_host_image_test.ts'])
+                                  'swamp/tests/ansible_instance_host_image_test.ts',
+                                  'swamp/tests/ansible_instance_fleet_test.ts'])
         # Only a self-hosted gap may hold a unit above the lane.
         config = json.loads(json.dumps(original))
         row = next(f for f in config['fixture'] if f['file'] == hosted[0])

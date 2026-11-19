@@ -53,6 +53,10 @@ capacity_gap = [
   # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.
   "swamp/tests/ansible_task_copy_turn_test.ts",
   "swamp/tests/ansible_instance_host_image_test.ts",
+  # The largest hosted file: 90 units that fill 17 of the 20 shards. A change to an input of every case, such as the
+  # converge inputs list, together with a host task leaves no room for both. The split of this file by phase
+  # (narrow inputs per file) removes this line.
+  "swamp/tests/ansible_instance_fleet_test.ts",
 ]
 
 [runner-pool]

@@ -263,6 +263,8 @@ The report includes distinct runners and this run's peak running and queued fixt
 
 A listed file must be a registered fixture. Most are `self_hosted` files. The two hosted ones, `ansible_task_copy_turn_test.ts` and `ansible_instance_host_image_test.ts`, are the largest hosted files: 70 units and 2,462 declared seconds, more than half of what 16 hosted shards hold. Each fits a plan of its own, and a change to the file itself runs all of its units: the gap applies only when other changes select the file. With much other selected work they pass `runner_shards`, for example when a queue run [also plans a commit that reached main past the queue](#merge-queue).
 
+`ansible_instance_fleet_test.ts` is the third hosted gap file, and the largest: 90 units that fill 17 of the 20 shards. A change to an input of every case selects the whole file; with a host or container task in the same pull request, both do not fit. The author then runs the units that the plan names as not run in the task copy, with `bin/ci-units run`, and reports the results in the pull request. Splitting the file by phase removes it from the list.
+
 A hosted gap file keeps every unit within the 150-second lane; only a `self_hosted` gap file may hold a larger unit. More shards are not the remedy: ten runners already run 20 jobs in two waves, and a third wave ends after the [five-minute budget](#ci-budget).
 
 Each fixture file declares as inputs only the task files its cases run, so a change to one shared task selects only the files that run it. The migration fixture is split by phase into several files to meet this. Each case near the 180-second unit ceiling is split too. A case above the 150-second lane on the pool that cannot split yet makes its file a named capacity gap.
