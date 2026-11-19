@@ -55,12 +55,11 @@ final readonly class TaskInsightsExposition
             if ($projectId !== null && ! $codes->has($projectId)) {
                 continue;
             }
-            $labels = '{project="'.self::label($projectId === null ? 'all' : (string) $codes->get($projectId)).'",period="'.self::label((string) $total->period).'"}';
-            $samples['computed_timestamp_seconds'][] = $labels.' '.CarbonImmutable::parse((string) $total->computed_at, 'UTC')->getTimestamp();
-            /** @var array{current: array<string, mixed>} $payload */
-            $payload = json_decode((string) $total->payload, true, flags: JSON_THROW_ON_ERROR);
+            $labels = '{project="'.self::label($projectId === null ? 'all' : ValidatedData::string($codes->get($projectId))).'",period="'.self::label(ValidatedData::string($total->period)).'"}';
+            $samples['computed_timestamp_seconds'][] = $labels.' '.CarbonImmutable::parse(ValidatedData::string($total->computed_at), 'UTC')->getTimestamp();
+            $current = ValidatedData::object(ValidatedData::object(json_decode(ValidatedData::string($total->payload), true, flags: JSON_THROW_ON_ERROR))['current'] ?? []);
             foreach (self::Gauges as $field => [$suffix, , $factor]) {
-                $value = $payload['current'][$field] ?? null;
+                $value = $current[$field] ?? null;
                 if (is_int($value) || is_float($value)) {
                     $samples[$suffix][] = $labels.' '.self::number($value * $factor);
                 }

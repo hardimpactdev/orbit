@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Metrics/**
   - apps/gateway/app/Actions/Nodes/ShowNodeMetricsAction.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
-  - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
+  - apps/gateway/app/Http/{Controllers/Api/MetricsController,Controllers/Api/GrafanaAccessAuthorizationController,Controllers/Api/TaskInsightsMetricsController,Middleware/RequireMetricsNode}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/MetricsCaddySiteSource.php
   - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/integrations/metrics_*.ts}
@@ -130,7 +130,7 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 ## Task insights scrape
 
-Prometheus also scrapes the Gateway's [task insights exporter](/reference/tasks#prometheus-exporter), job `orbit-task-insights`, every 60 seconds; the stored reports change every five minutes. It connects to `https://gateway.orbit` over WireGuard, as the Nodes do, and trusts only the Orbit root certificate, which the rendered `prometheus.yml` carries inline. The Gateway admits only the active Metrics Node on that path, and the Gateway site admits only the VPN subnet. A Metrics role takes the job when its Prometheus configuration is next rendered: by `metrics:enable`, an exporter change, or a Node role converge.
+Prometheus also scrapes the Gateway's [task insights exporter](/reference/tasks#prometheus-exporter), job `orbit-task-insights`, every 60 seconds; the stored reports change every five minutes. It connects to `https://gateway.orbit` over WireGuard, as the Nodes do, and trusts only the Orbit root certificate, which the rendered `prometheus.yml` carries inline. The Gateway admits only the active Metrics Node on that path and refuses any other WireGuard peer with `metrics.scraper_required` (HTTP 403). The Gateway site admits only the VPN subnet. A Metrics role takes the job when its Prometheus configuration is next rendered: by `metrics:enable`, an exporter change, or a Node role converge.
 
 ## Swamp worker state
 
