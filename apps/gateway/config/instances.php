@@ -30,5 +30,7 @@ return [
     // The marker file of the nested Gateway of an Instance container's fleet (InstanceFleetGateway). Tests point it at a file of their own.
     'fleet_marker' => InstanceFleetGateway::Marker,
     'fleet_environment' => InstanceFleetGateway::Environment,
+    // In a release container (orbit.gateway_container) the Gateway reads the host's copies of both files here instead.
+    'fleet_projection' => InstanceFleetGateway::Projection,
 
 ];
