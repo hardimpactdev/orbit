@@ -48,18 +48,22 @@ exit 0
     return folder;
 }
 
-/** Runs the named plays of the book on localhost, with the facts the first play gives each Node. */
-async function run(folder: string, names: string[], seed: ReturnType<typeof intent>, target = 12) {
+/**
+ * Runs the named plays of the book on localhost, with the facts the first play gives each Node. An `unreachable` run addresses a
+ * Node over SSH on a closed port of this machine instead.
+ */
+async function run(folder: string, names: string[], seed: ReturnType<typeof intent>, target = 12, unreachable = false, tags: string[] = []) {
     const plays = (parse(Deno.readTextFileSync(book)) as Play[]).filter((play) => names.includes(play.name)).map((play) => ({
-        ...play, hosts: "localhost", connection: "local", become: false,
+        ...play, hosts: unreachable ? "gone" : "localhost", ...(unreachable ? {} : { connection: "local" }), become: false,
         vars: { ...(play.vars as Record<string, unknown>), seed_intent: seed, seed_target: seed.targets.find((item) => item.node_id === target),
-            ansible_python_interpreter: "{{ ansible_playbook_python }}" },
+            ansible_python_interpreter: "{{ ansible_playbook_python }}",
+            ...(unreachable ? { ansible_host: "127.0.0.1", ansible_port: 1, ansible_ssh_common_args: "-o ConnectTimeout=2 -o BatchMode=yes" } : {}) },
     }));
     const text = JSON.stringify(plays).replaceAll("/root/.config/incus/servercerts", `${folder}/servercerts`);
     await Deno.writeTextFile(`${folder}/play.yml`, text);
     await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify(seed));
     const result = await new Deno.Command("ansible-playbook", {
-        args: ["-i", "localhost,", `${folder}/play.yml`], stdout: "piped", stderr: "piped",
+        args: ["-i", unreachable ? "gone," : "localhost,", ...(tags.length ? ["--tags", tags.join(",")] : []), `${folder}/play.yml`], stdout: "piped", stderr: "piped",
         env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: folder, ORBIT_TARGET: String(target), ANSIBLE_LOCALHOST_WARNING: "False" },
     }).output();
     const calls = (() => { try { return Deno.readTextFileSync(`${folder}/calls`).trim().split("\n"); } catch { return []; } })();
@@ -104,6 +108,53 @@ Deno.test("a remote with another server certificate fails the target before any 
         const outcome = JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`));
         assertEquals([outcome.status, outcome.detail.includes("another server certificate")], ["failed", true]);
     } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("an unreachable Node fails its phase with the SSH error, in each phase, and a later phase does nothing for the target", { ignore: !hasAnsible }, async () => {
+    for (const play of ["Read the certificate of the CI Node", "Push the seed from the default's Node", "Check the holder on the CI Node"]) {
+        const folder = await fixture([], []);
+        try {
+            const { code, calls } = await run(folder, [play], intent("inner-41"), 12, true);
+            assertEquals(code !== 0, true, play);
+            assertEquals(calls, [], play);
+            const outcome = JSON.parse(await Deno.readTextFile(`${folder}/target-12.json`));
+            assertEquals(outcome.status, "failed", play);
+            assertEquals(outcome.detail.startsWith("The Node is unreachable: "), true, outcome.detail);
+            assertEquals(/ssh|connect|port 1/i.test(outcome.detail), true, outcome.detail);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    }
+});
+
+Deno.test("a target whose earlier phase left no result fails in that phase, and the later phases do nothing for it", { ignore: !hasAnsible }, async () => {
+    // The Node went away in the middle of a phase: no product and no outcome. Ansible rescues no unreachable host.
+    for (const [phase, lost, files] of [["copy", "certificate", []], ["check", "certificate", []], ["check", "copy", ["certificate-12.pem"]]] as [string, string, string[]][]) {
+        const folder = await fixture([], ["seed-abc"]);
+        try {
+            await Deno.remove(`${folder}/certificate-12.pem`);
+            for (const file of files) await Deno.writeTextFile(`${folder}/${file}`, certificate);
+            const first = await run(folder, ["Pin the two Nodes and address them"], intent("inner-41"), 12, false, [phase]);
+            assertEquals(first.code, 0, first.out);
+            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/target-12.json`)), { status: "failed", failed_phase: lost,
+                detail: `The ${lost} phase ended without a result: the Node was unreachable, or the phase was cut` });
+            // The phase's own play gets no host, as for any target that failed earlier: a holder with the seed's name is not checked.
+            assertEquals(first.out.includes("Pin the host keys of both Nodes"), false, first.out);
+            assertEquals(first.calls, []);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    }
+});
+
+Deno.test("a finished copy leaves its mark, and a copy that fails leaves none", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        assertEquals((await run(folder, ["Push the seed from the default's Node"], intent("inner-41"))).code, 0);
+        assertEquals((await Deno.stat(`${folder}/copied-12`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+    const other = await fixture(["proof-node-12"], []);
+    try {
+        await Deno.writeTextFile(`${other}/servercerts/proof-node-12.crt`, "another certificate\n");
+        assertEquals((await run(other, ["Push the seed from the default's Node"], intent("inner-41"))).code !== 0, true);
+        assertEquals(await Deno.stat(`${other}/copied-12`).then(() => true, () => false), false);
+    } finally { await Deno.remove(other, { recursive: true }); }
 });
 
 Deno.test("the check passes a holder with the admitted seed snapshot, and the report names every target", { ignore: !hasAnsible }, async () => {

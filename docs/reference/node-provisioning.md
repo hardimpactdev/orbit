@@ -353,7 +353,7 @@ The Gateway records the listener on the Node, in `nodes.seed_sender_id`: the Nod
 
 The end of a `ci-runner` removal clears it too, passed or failed, because its phase stops the listener. A [seed copy](/reference/development-containers#the-seed-on-each-ci-node) targets only a Node whose record names the default's current Node. A Node without it, or with the Node of a former default, is not a target and is not marked tried. So when the default moves to another Node, the CI Nodes stay untargeted until a `ci-runner` add or converge of each passes again.
 
-The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a seed copy to the Node if it is not the default's Node and its seed is not the proof default's current seed.
+The converge makes no seed. The Gateway admits a seed copy to a Node that offers proof places when its `ci-runner` add or role converge passes, or the roles phase of its `node:converge`. The Node must not be the default's Node, and its seed must be behind the proof default's current seed. So a Node whose copy failed catches up after any passed converge.
 
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
 
