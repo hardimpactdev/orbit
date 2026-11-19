@@ -103,6 +103,8 @@ function managed_overlap_database(): string
     $file = new PDO('sqlite:'.$path);
     $file->exec('PRAGMA foreign_keys = OFF');
     $objects = DB::select("SELECT type, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END");
+    // One transaction: as separate statements the copy synced the file once for every statement and row.
+    $file->beginTransaction();
     foreach ($objects as $object) {
         $file->exec($object->sql);
     }
@@ -113,6 +115,7 @@ function managed_overlap_database(): string
                 ->execute(array_values($row));
         }
     }
+    $file->commit();
 
     return $path;
 }

@@ -254,6 +254,8 @@ function copyLaunchFixtureToFile(string $path): void
 {
     $copy = new PDO('sqlite:'.$path);
     $schema = DB::select("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END");
+    // One transaction: as separate statements the copy synced the file about 3,000 times, seconds on a slow disk.
+    $copy->beginTransaction();
     foreach ($schema as $entry) {
         $copy->exec($entry->sql);
         if ($entry->type === 'table') {
@@ -265,6 +267,7 @@ function copyLaunchFixtureToFile(string $path): void
             }
         }
     }
+    $copy->commit();
 }
 
 beforeEach(function (): void {

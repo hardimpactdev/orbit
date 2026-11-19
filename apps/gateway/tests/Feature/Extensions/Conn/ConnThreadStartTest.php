@@ -1171,6 +1171,8 @@ it('serializes two simultaneous explicit branch admissions before reserving an I
     $copy = new PDO('sqlite:'.$database);
     $copy->exec('PRAGMA journal_mode=WAL');
     $schema = DB::select("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END");
+    // One transaction: as separate statements the copy synced the file once for every statement and row.
+    $copy->beginTransaction();
     foreach ($schema as $entry) {
         if ($entry->type !== 'table') {
             continue;
@@ -1188,6 +1190,7 @@ it('serializes two simultaneous explicit branch admissions before reserving an I
             $copy->exec($entry->sql);
         }
     }
+    $copy->commit();
     $copy = null;
     $pairs = [stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP), stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP)];
     $children = [];

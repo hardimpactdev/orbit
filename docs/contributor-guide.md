@@ -209,7 +209,9 @@ Cover the SDK retry's default clock with one short test that uses real time. Inj
 
 The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
 
-CLI and Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. Unsized Gateway tests have a two-second local limit and a five-second CI limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner. An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
+Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. CLI tests have five seconds, for every test size: on a hosted runner, two seconds cut tests whose cleanup waited on the disk. The limit exists to catch a test that hangs, not to measure speed. Unsized Gateway tests have a five-second limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner.
+
+An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
 
 A task check in a copy also runs on a shared host. So `bin/task-check` passes each Pest run the limit of its project's CI job, which it reads from `.github/workflows/ci.yml`.
 
