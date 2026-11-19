@@ -60,6 +60,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -641,7 +642,7 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
     $node = Node::query()->findOrFail($this->nodes['dev']);
     $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
     $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
-    config(['instances.container_nodes' => [$node->id]]);
+    InstancePool::give($node);
     $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
     $recipe = '/resources/machine-software/recipe.json';
     $gateway = $this->base.'/orbit/apps/gateway';
@@ -716,7 +717,7 @@ it('fingerprints a shared Instance host helper only for the role that runs it', 
         copy($repo.'/'.$file, $root.'/'.$file);
     }
     $dev = Node::query()->findOrFail($this->nodes['dev']);
-    config(['instances.container_nodes' => [$dev->id]]);
+    InstancePool::give($dev);
     $ci = Node::query()->findOrFail($this->nodes['db']);
     $ci->forceFill(['settings' => ['ci' => ['places' => 1]]])->saveQuietly();
     $runner = $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);

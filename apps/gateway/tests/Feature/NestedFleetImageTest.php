@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceImage;
 use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -18,6 +19,7 @@ function nestedImageHost(bool $switch): Node
         'settings' => $switch ? ['nested_fleet' => true] : [],
     ]));
     $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    InstancePool::give($node);
     app(InstanceHostIntent::class)->prepare($node);
 
     return $node->refresh();

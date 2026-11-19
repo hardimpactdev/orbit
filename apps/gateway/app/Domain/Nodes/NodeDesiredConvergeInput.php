@@ -111,7 +111,7 @@ final readonly class NodeDesiredConvergeInput
             $node = Node::query()->findOrFail($node->id);
             $selected = NodeConvergeScope::roles($node, false, null);
             $host = app(InstanceHostIntent::class)->role($node);
-            if ($host !== null && in_array($host->value, $selected, true)) {
+            if ($host === null || in_array($host->value, $selected, true)) {
                 app(InstanceHostIntent::class)->prepare($node);
             }
             $intent = $this->capture($node, $selected, true, $operation, NodeNetworkReservation::hub())['intent'];

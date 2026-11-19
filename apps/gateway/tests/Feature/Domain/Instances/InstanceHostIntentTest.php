@@ -14,6 +14,7 @@ use App\Domain\Instances\InstanceNotes;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
@@ -31,11 +32,13 @@ use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -47,6 +50,7 @@ function instanceHostNode(string $name = 'shark', string $ip = '10.44.0.11', boo
     ]));
     if ($appDev) {
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        InstancePool::give($node);
     }
 
     return $node;
@@ -255,6 +259,7 @@ describe('the container branch of the app-dev converge', function (): void {
             'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2]],
         ]));
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        InstancePool::give($node);
         app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
@@ -275,6 +280,7 @@ describe('the container branch of the app-dev converge', function (): void {
         };
         $beforeCi = $capture($listed, RoleName::CiRunner);
         $listed->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        InstancePool::give($listed);
         app(InstanceHostIntent::class)->prepare($listed);
         app(InstanceHostIntent::class)->prepare($other);
 
@@ -283,6 +289,53 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($capture($listed, RoleName::CiRunner))->toBe($beforeCi)
             ->and($after['instances']['cidr'])->toBe('10.253.0.0/24')
             ->and($other->refresh()->instance_bridge)->toBe('10.253.1.0/24');
+    });
+
+    it('gives an app-dev Node without the Instance pool no branch, no bridge and no Instance input rules, and releases a stray bridge', function (): void {
+        $services = instanceHostNode('services', '10.44.0.17');
+        NodeFact::query()->where('node_id', $services->id)->delete();
+        $services->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
+        // An earlier admission gave it a bridge, as release 2158 did on the live services Node.
+        Node::query()->whereKey($services->id)->update(['instance_bridge' => '10.253.4.0/24']);
+        $services->refresh();
+        $beast = instanceHostNode('beast', '10.44.0.7');
+        app(InstanceHostIntent::class)->prepare($beast);
+
+        expect(app(InstanceHostIntent::class)->role($services))->toBeNull()
+            ->and(app(InstanceHostIntent::class)->for($services))->toBeNull()
+            ->and(app(NodeFirewallRuleCatalog::class)->instanceHostInput($services))->toBe([])
+            ->and(array_intersect(array_map(static fn ($row): string => $row->shape->comment, app(NodeFirewallDesiredRules::class)->forNode($services)),
+                NodeFirewallRuleCatalog::InstanceInputComments))->toBe([]);
+
+        app(InstanceHostIntent::class)->prepare($services);
+
+        expect($services->refresh()->instance_bridge)->toBeNull()
+            ->and(app(NativeNodeRoleRuntimeInput::class)->capture($services, $services->roles()->where('role', RoleName::AppDev)->firstOrFail(), [], new Operation)['intent'])
+            ->not->toHaveKey('instances')
+            // The Instance host beside it keeps its branch and its bridge.
+            ->and(app(InstanceHostIntent::class)->role($beast))->toBe(RoleName::AppDev)
+            ->and($beast->refresh()->instance_bridge)->toBe('10.253.0.0/24')
+            ->and(array_map(static fn ($rule): string => $rule->shape->comment, app(NodeFirewallRuleCatalog::class)->instanceHostInput($beast)))
+            ->toBe(NodeFirewallRuleCatalog::InstanceInputComments);
+    });
+
+    it('takes an Instance runtime on an app-dev Node as its pool, and never releases a bridge in use', function (): void {
+        $node = instanceHostNode();
+        app(InstanceHostIntent::class)->prepare($node);
+        NodeFact::query()->where('node_id', $node->id)->delete();
+        expect(app(InstanceHostIntent::class)->role($node))->toBeNull();
+        $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+            'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/default', 'status' => 'active']);
+        InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+            'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+            'power_state' => InstanceRuntimePowerState::Running]);
+        app(InstanceHostIntent::class)->prepare($node);
+
+        expect(app(InstanceHostIntent::class)->role($node))->toBe(RoleName::AppDev)
+            ->and($node->refresh()->instance_bridge)->toBe('10.253.0.0/24');
+        NodeBridges::releaseUnused($node->id);
+        expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24');
     });
 
     it('lists the bridge\'s DHCP and egress proxy input rules, and no DNS, for an app-dev Node with a bridge', function (): void {

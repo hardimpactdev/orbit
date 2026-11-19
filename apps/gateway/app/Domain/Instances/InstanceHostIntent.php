@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofCopyHosts;
@@ -20,7 +21,7 @@ use LogicException;
 
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
- * Node's pool, the Instance bridge, the image and the two shared folders. Every app-dev Node gets it.
+ * Node's pool, the Instance bridge, the image and the two shared folders. Every app-dev Node with that pool (ContainerNodes) gets it.
  * A CI-only Node (ProofCopyHosts::ciOnly) gets the same branch through its
  * `ci-runner` converge, with its nested part and without the parts that its Caddy would serve: it runs no Caddy
  * (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The admission that writes allocates
@@ -132,17 +133,22 @@ final readonly class InstanceHostIntent
         private PeerDnsPolicy $privateDns,
     ) {}
 
-    /** Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. */
+    /**
+     * Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. A Node without
+     * the branch releases a bridge that no container uses, such as one an earlier admission gave a Node without the pool.
+     */
     public function prepare(Node $node): void
     {
         if ($this->role($node) !== null) {
             $this->bridges->execute($node);
+        } else {
+            NodeBridges::releaseUnused($node->id);
         }
     }
 
     /**
-     * The role whose converge runs the branch: `ci-runner` on a CI-only Node (ProofCopyHosts::ciOnly), `app-dev` on every
-     * app-dev Node, and null for every other Node.
+     * The role whose converge runs the branch: `ci-runner` on a CI-only Node (ProofCopyHosts::ciOnly), `app-dev` on an
+     * app-dev Node with the Instance pool (ContainerNodes), and null for every other Node.
      */
     public function role(Node $node): ?RoleName
     {

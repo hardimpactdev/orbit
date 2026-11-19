@@ -1,5 +1,5 @@
 ---
-# The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
+# The container branch of the app-dev role on an Instance container host (ContainerNodes) (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
 # and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
 # Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
 # `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares

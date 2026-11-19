@@ -16,6 +16,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -255,13 +256,16 @@ describe('Instance runtimes', function (): void {
 });
 
 describe('container hosts', function (): void {
-    it('includes every app-dev Node without an opt-in and no production-only Node', function (): void {
+    it('includes every app-dev Node with the Instance pool, without an opt-in, and no production-only or pool-less Node', function (): void {
         $beast = recordsNode();
         $shark = recordsNode('shark', '10.44.0.11');
         $shark->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+        InstancePool::give($shark);
         expect(app(ContainerNodes::class)->includes($beast))->toBeFalse();
 
         $beast->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+        expect(app(ContainerNodes::class)->includes($beast))->toBeFalse();
+        InstancePool::give($beast);
         expect(app(ContainerNodes::class)->includes($beast))->toBeTrue()
             ->and(app(ContainerNodes::class)->includes($shark))->toBeFalse();
     });

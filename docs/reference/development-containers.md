@@ -51,7 +51,15 @@ The container flows keep the existing Instance kinds. Their charts sit one folde
 
 ## Nodes
 
-Container host preparation applies to every `app-dev` Node. Task VMs are removed.
+Container host preparation applies to every `app-dev` Node with the Incus pool `orbit-instances`. Task VMs are removed.
+
+The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
+
+- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
+- It records an Instance runtime.
+- Its agent reports the Instance bridge's health, which only a converged container branch writes.
+
+Any other `app-dev` Node, such as a services Node without Incus, is no container host. Its converge runs its other roles and no container branch. The Node gets no Instance bridge and no `orbit:instances-*` firewall rules, so Doctor expects none. Its admission releases an Instance bridge that no container uses. A bridge that a container uses always stays.
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
@@ -59,7 +67,7 @@ A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets th
 
 ### Prepare a Node
 
-Every `app-dev` role converge runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every `app-dev` role converge of an Instance container host runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.

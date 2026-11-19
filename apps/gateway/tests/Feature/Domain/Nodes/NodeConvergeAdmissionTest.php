@@ -41,6 +41,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -389,8 +390,9 @@ it('selects only existing assignments without changing their status or settings'
         ->and($a->refresh()->status->value)->toBe('active')->and($b->refresh()->status->value)->toBe('failed');
 });
 
-it('allocates every app-dev Node\'s Instance bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
+it('allocates every Instance host app-dev Node\'s bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    InstancePool::give($this->node);
     // The capture records what it sees and stops the admission there; the test needs nothing after it.
     $seen = new ArrayObject;
     app()->instance(NodeDesiredConvergeInput::class, new class($seen)
