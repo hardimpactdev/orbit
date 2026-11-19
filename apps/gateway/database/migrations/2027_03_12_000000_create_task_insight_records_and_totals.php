@@ -24,11 +24,13 @@ return new class extends Migration
         });
         Schema::create('task_insight_totals', function (Blueprint $table): void {
             $table->id();
+            // `all`, or `project:<id>`: a null project_id would not collide in a unique index, so all Projects would get many rows.
+            $table->string('scope', 32);
             $table->unsignedBigInteger('project_id')->nullable();
             $table->string('period', 8);
             $table->timestamp('computed_at');
             $table->json('payload');
-            $table->unique(['project_id', 'period']);
+            $table->unique(['scope', 'period']);
         });
     }
 

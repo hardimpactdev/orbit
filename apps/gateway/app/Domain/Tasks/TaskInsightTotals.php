@@ -22,19 +22,23 @@ final readonly class TaskInsightTotals
     public function __construct(private TaskInsights $insights, private TaskInsightRecorder $recorder) {}
 
     /**
-     * The stored report. A scope with no stored report yet, such as a new Project before the next refresh, computes and stores it.
+     * The stored report. Before the first refresh has recorded the ended groups and stored its reports, the records may be
+     * incomplete, so the report comes from the source tables and nothing is stored. After it, a scope with no stored report yet,
+     * such as a new Project, computes and stores it from the records.
      *
      * @param  key-of<TaskInsights::Periods>  $period
      * @return array<string, mixed>
      */
     public function read(string $period, ?int $projectId, CarbonImmutable $now): array
     {
-        $payload = DB::table('task_insight_totals')->where('period', $period)
-            ->when($projectId === null, static fn ($query) => $query->whereNull('project_id'), static fn ($query) => $query->where('project_id', $projectId))
-            ->value('payload');
+        $payload = DB::table('task_insight_totals')->where('scope', self::scope($projectId))->where('period', $period)->value('payload');
         if (is_string($payload)) {
             /** @var array<string, mixed> */
             return json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
+        }
+        // Only a finished refresh stores reports before this point, so any stored report means the records are complete.
+        if (! DB::table('task_insight_totals')->exists()) {
+            return $this->insights->report(TaskInsights::Periods[$period], $projectId, $now)->toArray();
         }
 
         return $this->store($projectId, [$period], $this->rows($projectId, $now), $now)[$period];
@@ -114,15 +118,18 @@ final readonly class TaskInsightTotals
         $payloads = [];
         foreach ($periods as $period) {
             $payloads[$period] = $this->insights->aggregate(TaskInsights::Periods[$period], $rows, $now)->toArray();
-            $values = ['computed_at' => $now->utc()->format('Y-m-d H:i:s'), 'payload' => json_encode($payloads[$period], JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR)];
-            $updated = DB::table('task_insight_totals')->where('period', $period)
-                ->when($projectId === null, static fn ($query) => $query->whereNull('project_id'), static fn ($query) => $query->where('project_id', $projectId))
-                ->update($values);
-            if ($updated === 0) {
-                DB::table('task_insight_totals')->insert(['project_id' => $projectId, 'period' => $period, ...$values]);
-            }
+            // An upsert, so two first reads of one scope both store it.
+            DB::table('task_insight_totals')->upsert([[
+                'scope' => self::scope($projectId), 'project_id' => $projectId, 'period' => $period, 'computed_at' => $now->utc()->format('Y-m-d H:i:s'),
+                'payload' => json_encode($payloads[$period], JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR),
+            ]], ['scope', 'period'], ['computed_at', 'payload']);
         }
 
         return $payloads;
+    }
+
+    private static function scope(?int $projectId): string
+    {
+        return $projectId === null ? 'all' : 'project:'.$projectId;
     }
 }

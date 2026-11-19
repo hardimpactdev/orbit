@@ -240,6 +240,8 @@ it('refreshes the stored totals of all Projects and each Project every five minu
 
 it('answers the endpoint from the stored totals without a task query, and computes a missing scope once from the records', function (): void {
     [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->delete();
     insightPeer();
     $queries = [];
     DB::listen(static function ($query) use (&$queries): void {
@@ -248,10 +250,51 @@ it('answers the endpoint from the stored totals without a task query, and comput
     $source = static fn (): array => array_values(array_filter($queries, static fn (string $sql): bool => preg_match('/from "(tasks|agent_threads|task_comments|task_checks|task_questions|gateway_releases)"/', $sql) === 1));
 
     $first = $this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data');
-    expect($source())->toBe([])->and(DB::table('task_insight_totals')->count())->toBe(1);
+    expect($source())->toBe([])->and(DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->count())->toBe(1)
+        ->and($first)->toBe(json_decode((string) json_encode(app(TaskInsights::class)->report(7, $app->id, CarbonImmutable::now())->toArray()), true));
 
     $queries = [];
     expect($this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data'))->toBe($first)
         ->and($source())->toBe([])
         ->and(array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'task_insight_records')))->toBe([]);
 });
+
+it('answers from the source tables and stores nothing before the first refresh has completed the records', function (): void {
+    [$app] = insightWorld();
+    DB::table('task_insight_records')->delete();
+    insightPeer();
+
+    foreach ([null, $app->id] as $projectId) {
+        $report = app(TaskInsights::class)->report(7, $projectId, CarbonImmutable::now())->toArray();
+        expect($report['current']['tasks'])->toBeGreaterThan(0)
+            ->and($this->getJson('/api/v1/task-insights?period=7d'.($projectId === null ? '' : '&project_id='.$projectId))->assertOk()->json('data'))
+            ->toBe(json_decode((string) json_encode($report), true));
+    }
+    expect(DB::table('task_insight_totals')->count())->toBe(0);
+
+    Artisan::call('task:insights-refresh');
+    expect(app(TaskInsightTotals::class)->read('7d', $app->id, CarbonImmutable::now()))->toBe(app(TaskInsights::class)->report(7, $app->id, CarbonImmutable::now())->toArray());
+});
+
+it('stores one report per scope and period when another read stores the same missing scope first', function (?string $scope): void {
+    [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    $projectId = $scope === null ? null : $app->id;
+    $key = $projectId === null ? 'all' : 'project:'.$projectId;
+    $stored = DB::table('task_insight_totals')->where('scope', $key)->where('period', '7d')->first();
+    DB::table('task_insight_totals')->where('scope', $key)->delete();
+    $raced = false;
+    // The other read stores the scope right after this read found it missing.
+    DB::listen(static function ($query) use (&$raced, $stored): void {
+        if (! $raced && str_contains($query->sql, 'select "payload" from "task_insight_totals"')) {
+            $raced = true;
+            DB::table('task_insight_totals')->insert((array) $stored);
+        }
+    });
+
+    $report = app(TaskInsightTotals::class)->read('7d', $projectId, CarbonImmutable::now());
+
+    expect($raced)->toBeTrue()
+        ->and($report)->toBe(app(TaskInsights::class)->report(7, $projectId, CarbonImmutable::now())->toArray())
+        ->and(DB::table('task_insight_totals')->where('scope', $key)->where('period', '7d')->count())->toBe(1);
+})->with(['all Projects' => null, 'one Project' => 'app']);

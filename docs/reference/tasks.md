@@ -1745,7 +1745,7 @@ The response also holds:
 
 The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
 
-Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed after its record, then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact. A Project with no stored report yet, such as a new one, gets it computed from the records on its first read. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed after its record, then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact. Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
 
 ### On the board
 
