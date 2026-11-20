@@ -48,9 +48,10 @@ final class DeploymentEventCollector
             if ($type === 'phase' && is_string($event['phase'] ?? null)) {
                 $phase = DeploymentProgressPhase::tryFrom($event['phase']);
                 $stepName = $event['step_name'] ?? null;
+                $status = $event['status'] ?? null;
 
                 if ($phase instanceof DeploymentProgressPhase) {
-                    $collector->phase($phase, is_string($stepName) ? $stepName : null);
+                    $collector->phase($phase, is_string($stepName) ? $stepName : null, is_string($status) ? $status : null);
                 }
 
                 continue;
@@ -102,12 +103,14 @@ final class DeploymentEventCollector
         ];
     }
 
-    public function phase(DeploymentProgressPhase $phase, ?string $stepName): void
+    /** A step's event may carry how the step ended: `succeeded`, `failed`, `skipped_unchanged` or `not_run`. */
+    public function phase(DeploymentProgressPhase $phase, ?string $stepName, ?string $status = null): void
     {
         $this->events[] = [
             'type' => 'phase',
             'phase' => $phase->value,
             'step_name' => $stepName,
+            ...($status === null ? [] : ['status' => $status]),
         ];
     }
 

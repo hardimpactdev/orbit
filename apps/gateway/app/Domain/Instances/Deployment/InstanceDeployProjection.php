@@ -202,7 +202,11 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $this->members->project($locked, ValidatedData::object($payload['runtime_definitions']));
             }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
-            $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
+            // A container deployment's row is written at the run's end: it takes the Operation's own start and end, and how each step ended.
+            [$steps, $run] = $variant === 'container' && $projected->started_at !== null && $projected->finished_at !== null
+                ? [ContainerDeployOutcome::stepEvents($data, is_array($admitted['steps'] ?? null) ? $admitted['steps'] : []), [$projected->started_at, $projected->finished_at]]
+                : [[], null];
+            $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts, $steps, $run);
 
             return $projected;
         });

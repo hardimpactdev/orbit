@@ -82,18 +82,23 @@ final readonly class InstanceDeploymentRecorder
 
     /** Records a native root's reported domain facts; it performs no runtime validation.
      * @param  array<string,mixed>  $facts
+     * @param  list<array{name:string,phase:DeploymentProgressPhase,status:string}>  $steps  How each development deploy step ended, in order.
+     * @param  array{0:Carbon,1:Carbon}|null  $run  The run's own start and end, which replace the row's when given.
      */
-    public function recordNative(InstanceDeployment $deployment, string $status, ?string $code, array $facts): void
+    public function recordNative(InstanceDeployment $deployment, string $status, ?string $code, array $facts, array $steps = [], ?array $run = null): void
     {
-        $finished = Carbon::now();
+        [$started, $finished] = $run ?? [$deployment->started_at, Carbon::now()];
         $events = DeploymentEventCollector::resume($deployment->events ?? []);
+        foreach ($steps as $step) {
+            $events->phase($step['phase'], $step['name'], $step['status']);
+        }
         if (is_string($facts['output_tail'] ?? null)) {
             $events->output(new DeploymentEvent(ValidatedData::string($facts['failed_step'] ?? 'operation'), DeploymentOutputStream::Stderr, $facts['output_tail']));
         }
         $deployment->update(['release' => $facts['release'], 'selected_release' => $facts['selected_release'],
             'commit' => $facts['commit'], 'status' => $status === 'cancelled' ? 'failed' : $status,
             'failed_step' => $facts['failed_step'], 'error_code' => $status === 'cancelled' ? 'deployment.cancelled' : $code,
-            'finished_at' => $finished, 'duration_seconds' => max(0, $finished->diffInSeconds($deployment->started_at)),
+            'started_at' => $started, 'finished_at' => $finished, 'duration_seconds' => max(0, (int) $started->diffInSeconds($finished)),
             'events' => $events->events(), 'best_effort_steps' => $facts['best_effort_steps'] ?? null]);
         $instance = Instance::query()->lockForUpdate()->findOrFail($deployment->instance_id);
         if ($instance->placedOnAppProd()) {
