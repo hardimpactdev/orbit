@@ -62,6 +62,8 @@ it('refuses deeper hierarchy and a contradictory project', function (): void {
 
 it('updates each level without starting work when the parent moves to todo', function (): void {
     $this->patchJson('/api/v1/tasks/'.$this->child->id, ['title' => 'Edited child'])->assertOk()->assertJsonPath('data.title', 'Edited child');
+    // A task leaves backlog with no subtask or at least two.
+    $this->parent->tasks()->create(['position' => 2, 'title' => 'Second', 'brief' => 'Brief', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done']]]);
     $this->patchJson('/api/v1/tasks/'.$this->parent->id, ['status' => 'todo'])->assertOk()->assertJsonPath('data.status', 'todo');
     expect(Operation::query()->count())->toBe(0);
 });
@@ -221,7 +223,7 @@ it('filters children by status and rejects fields from the other create level', 
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=completed')->assertOk()->assertJsonCount(0, 'data');
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=todo')->assertOk()->assertJsonCount(1, 'data');
     $this->postJson('/api/v1/tasks', ['parent_id' => $this->parent->id, 'title' => 'Child', 'brief' => 'Brief', 'preview' => true])->assertUnprocessable();
-    $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Parent', 'brief' => 'Brief', 'deliverables' => []])->assertUnprocessable();
+    $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Parent', 'brief' => 'Brief', 'topology' => []])->assertUnprocessable();
 });
 
 it('lists the groups of one pull request by repository and number, watched or published, in any case, and none for another', function (): void {

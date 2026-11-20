@@ -13,9 +13,11 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskType;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Illuminate\Support\Facades\DB;
 
 final readonly class CreateTaskGroupAction
 {
@@ -35,13 +37,8 @@ final readonly class CreateTaskGroupAction
             );
         }
 
-        if ($data->status === TaskGroupStatus::Todo && $data->tasks === []) {
-            throw TaskGroupGuard::noSubtasks();
-        }
-
-        $missing = array_keys(array_filter($data->tasks, static fn (TaskInputData $task): bool => $task->deliverables === []));
-        if ($data->status === TaskGroupStatus::Todo && $missing !== []) {
-            throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
+        if ($data->status === TaskGroupStatus::Todo) {
+            TaskGroupGuard::leavesBacklog($data->deliverables === null ? null : $data->deliverables !== [], self::shape($data->tasks));
         }
 
         $group = Task::topLevel()->make([
@@ -62,19 +59,61 @@ final readonly class CreateTaskGroupAction
         // resolves to now. A copy turn never reads them.
         $group->implementer_model = TaskAgent::resolve($group, TaskThreadRole::Implementer)['model']['value'];
         $group->reviewer_model = TaskAgent::resolve($group, TaskThreadRole::Reviewer)['model']['value'];
-        $group->save();
+        // The task and its subtasks or its work commit together.
+        DB::transaction(static function () use ($group, $data): void {
+            $group->save();
 
-        foreach ($data->tasks as $index => $task) {
-            Task::query()->create([
-                'parent_id' => $group->id,
-                'position' => $index + 1,
-                'title' => $task->title,
-                'brief' => $task->brief,
-                'deliverables' => $task->deliverables,
-                'status' => TaskStatus::Todo,
-            ]);
-        }
+            foreach ($data->tasks as $index => $task) {
+                Task::query()->create([
+                    'parent_id' => $group->id,
+                    'position' => $index + 1,
+                    'title' => $task->title,
+                    'brief' => $task->brief,
+                    'deliverables' => $task->deliverables,
+                    'status' => TaskStatus::Todo,
+                ]);
+            }
+
+            if ($data->deliverables !== null) {
+                self::openWork($group, $data->deliverables);
+            }
+        });
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);
+    }
+
+    /**
+     * Whether each subtask input has deliverables, keyed as an error names it, for the rule of a task that leaves backlog.
+     *
+     * @param  list<TaskInputData>  $tasks
+     * @return array<string, bool>
+     */
+    public static function shape(array $tasks): array
+    {
+        $shape = [];
+        foreach ($tasks as $index => $task) {
+            $shape['position '.($index + 1).' "'.$task->title.'"'] = $task->deliverables !== [];
+        }
+
+        return $shape;
+    }
+
+    /**
+     * A task with no subtask holds its work in one row of its own, which repeats the task's title and brief
+     * (docs/reference/tasks.md#a-task-with-no-subtask).
+     *
+     * @param  list<array<string, string|bool|list<string>>>  $deliverables
+     */
+    public static function openWork(Task $group, array $deliverables): Task
+    {
+        return Task::query()->create([
+            'parent_id' => $group->id,
+            'type' => TaskType::Work,
+            'position' => 1,
+            'title' => $group->title,
+            'brief' => $group->brief,
+            'deliverables' => $deliverables,
+            'status' => TaskStatus::Todo,
+        ]);
     }
 }

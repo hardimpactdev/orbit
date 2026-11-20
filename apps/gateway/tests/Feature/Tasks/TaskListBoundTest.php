@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -34,6 +36,7 @@ const TaskListHeavyColumns = [
     'tasks' => ['completion_summary', 'fixup_problem', 'pending_resolution_reason', 'pending_resolution_message', 'handoff_reopen_reason', 'provider_retry', 'maintenance', 'deliverable_correction_resume'],
     'task_checks' => ['output', 'deliverable_evidence'],
     'agent_threads' => ['questions', 'error', 'observation_error'],
+    'operations' => ['input', 'result', 'state'],
 ];
 
 beforeEach(function (): void {
@@ -198,6 +201,43 @@ describe('the task list', function (): void {
             ->and(array_column($page->json('data'), 'pr_mode_source'))->toBe(['gateway', 'gateway', 'gateway'])
             ->and(array_filter($page->json('data'), static fn (array $row): bool => array_key_exists('publication', $row)))->toBe([]);
         taskListSelectsNoHeavyColumn($three);
+    });
+
+    it('reads the review of tasks with no subtask from the newest reviewer turn and handoff check only, in the list and the compact list', function (): void {
+        $reviews = [];
+        foreach (['approved', 'reviewing', 'not_approved'] as $n => $expected) {
+            $group = Task::topLevel()->create(['project_id' => $this->orbit->id, 'title' => 'Alone '.$n, 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
+            $work = CreateTaskGroupAction::openWork($group, [['id' => 'tests', 'type' => 'command', 'description' => 'Tests pass', 'command' => 'vendor/bin/pest']]);
+            $thread = static fn (string $role): AgentThread => AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $work->id, 'driver' => 't3',
+                'runtime_key' => 'node:1', 'external_id' => "{$role}-{$group->id}", 'role' => $role]);
+            $implementer = $thread('implementer');
+            $reviewer = $thread('reviewer');
+            $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
+            $work->update(['status' => $expected === 'reviewing' ? TaskStatus::Running : TaskStatus::Completed]);
+            foreach (['1', '2'] as $sha) {
+                TaskCheck::query()->create(['task_id' => $work->id, 'kind' => TaskCheckKind::Handoff, 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '',
+                    'status' => TaskCheckStatus::Passed, 'commit_sha' => str_repeat($sha, 40), 'started_at' => now(), 'finished_at' => now(), 'exit_code' => 0,
+                    'output' => str_repeat('o', 16 * 1024)]);
+            }
+            // An older reviewer turn on the first check, an implementer turn, then the newest reviewer turn.
+            $turn = fn (AgentThread $by, string $sha, string $status): Operation => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group',
+                'target_id' => $group->id, 'status' => $status, 'input' => ['thread_id' => $by->id, 'subtask' => $work->id, 'candidate' => str_repeat($sha, 40),
+                    'prompt' => str_repeat('p', 16 * 1024)], 'result' => ['state' => 'done', 'ended' => true]]);
+            $turn($reviewer, '1', 'succeeded');
+            $turn($implementer, '2', 'succeeded');
+            $turn($reviewer, $expected === 'not_approved' ? '1' : '2', $expected === 'reviewing' ? 'running' : 'succeeded');
+            $reviews[$group->id] = $expected;
+        }
+
+        [$list, $three] = taskListRead('?limit=3');
+        [$compact, $compactQueries] = taskListRead('?limit=3&compact=true');
+        [, $one] = taskListRead('?limit=1');
+
+        // The list is newest first.
+        expect(array_column($list->json('data'), 'work_review', 'id'))->toBe(array_reverse($reviews, true))
+            ->and(array_column($compact->json('data'), 'work_review', 'id'))->toBe(array_reverse($reviews, true))
+            ->and(count($three))->toBe(count($one));
+        taskListSelectsNoHeavyColumn([...$three, ...$compactQueries]);
     });
 
     it('pages newest first by cursor until the last page', function (): void {

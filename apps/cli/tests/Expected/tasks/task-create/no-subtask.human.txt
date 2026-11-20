@@ -1,0 +1,61 @@
+Creating task group...
+
+┌  Create task group
+│
+├  ● Created task group
+│
+└  Created task group.
+
+
+┌  Task group: ORB-1
+│
+├  ID                   1
+│
+├  Title                Add the tasks CLI
+│
+├  Project              orbit
+│
+├  Status               backlog
+│
+├  Preview              no
+│
+├  Last activity        —
+│
+├  Assistance           no
+│
+├  Kind                 —
+│
+├  Question             —
+│
+├  Reason               —
+│
+├  Instance             —
+│
+├  Pull request         —
+│
+├  Implementer agent    claude / claude-opus-5-5 / medium (gateway)
+│
+├  Reviewer agent       claude / claude-opus-5-5 / high (gateway)
+│
+├  Work status          todo
+│
+├  Implementer thread   —
+│
+├  Tokens               —
+│
+├  Line diff            —
+│
+└  Duration             —
+
+Brief
+  Add task:* commands.
+  Accept when every route has a command.
+
+ ┌─────────────┬─────────┬───────────────────────────────────────────────────────────┬─────────────────────────────────┐
+ │ DELIVERABLE │ TYPE    │ REQUIRES                                                  │ DESCRIPTION                     │
+ ├─────────────┼─────────┼───────────────────────────────────────────────────────────┼─────────────────────────────────┤
+ │ sdk-test    │ command │ vendor/bin/pest tests/Unit/Requests/Tasks/TaskRequestsTes │ Every tasks route has a request │
+ │             │         │ t.php --filter='addresses every tasks route' in packages/ │                                 │
+ │             │         │ php-sdk                                                   │                                 │
+ └─────────────┴─────────┴───────────────────────────────────────────────────────────┴─────────────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

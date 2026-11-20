@@ -7,7 +7,6 @@ namespace App\Domain\Proof;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
-use App\Data\Tasks\TaskInputData;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
@@ -251,7 +250,11 @@ final readonly class ProofRunIntent
                 $case = $assignments[0];
                 // A warm copy of the Node first: its create has ended. Else a new copy from the Node's seed.
                 $group = app(ProofWarmPool::class)->take($nodeId);
-                $group?->update(self::groupText($commit, $case['command']));
+                if ($group !== null) {
+                    // The work of a task with no subtask repeats the task's title and brief (TaskType::Work).
+                    $group->update($text = self::groupText($commit, $case['command']));
+                    $group->work()->first()?->update($text);
+                }
                 $copy = $group !== null ? Instance::query()->findOrFail($group->taskable_id)
                     : Instance::query()->findOrFail(app(TaskStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
@@ -357,15 +360,17 @@ final readonly class ProofRunIntent
      */
     private static function groupText(string $commit, string $command): array
     {
-        return ['title' => 'Proof '.$command.' '.substr($commit, 0, 12), 'brief' => 'Prove '.$command.' at commit '.$commit.'.'];
+        return ['title' => 'Proof '.$command.' '.substr($commit, 0, 12),
+            'brief' => 'Prove '.$command.' at commit '.$commit.'. The Swamp workflow operation-proof-run-copy proves the command in its own copy.'];
     }
 
     private function group(string $commit, string $command): Task
     {
         $text = self::groupText($commit, $command);
 
-        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), $text['title'], $text['brief'], TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-            'The Swamp workflow operation-proof-run-copy proves the command in its own copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+        // A task with no subtask: its own deliverable is the proof's verdict (docs/reference/tasks.md#a-task-with-no-subtask).
+        return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), $text['title'], $text['brief'], TaskGroupStatus::Todo, [],
+            ProofWarmPool::Deliverables));
     }
 
     /**

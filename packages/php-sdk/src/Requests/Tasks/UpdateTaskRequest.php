@@ -22,6 +22,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
     /**
      * @param  list<array<string, mixed>>|null  $deliverables
      * @param  string|null  $reason  why a correction after a failed check replaces a started subtask's deliverables in a task copy
+     * @param  string|null  $workStatus  the status of the work of a task with no subtask (docs/reference/tasks.md#a-task-with-no-subtask)
      */
     public function __construct(
         private readonly int $groupId,
@@ -34,6 +35,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?TaskAgentsInput $agents = null,
         private readonly ?string $prMode = null,
         private readonly ?string $reason = null,
+        private readonly ?string $workStatus = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -68,6 +70,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
                 'position' => $this->position,
                 'deliverables' => $this->deliverables,
                 'reason' => $this->reason,
+                'work_status' => $this->workStatus,
             ],
             static fn (mixed $value): bool => $value !== null,
         ) + ($this->agents?->toArray() ?? []);

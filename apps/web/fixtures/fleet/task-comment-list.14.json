@@ -1,0 +1,25 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/tasks/{task}/comments",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 60,
+                "task_group_id": 14,
+                "task_id": 40,
+                "agent_thread_id": 42,
+                "type": "ready_for_review",
+                "body": "The order history page lists past orders newest first. The handoff check passed.",
+                "author": "implementer",
+                "posted_at": "2026-09-23T10:13:40+00:00",
+                "review_attempt": 1,
+                "commit_sha": "9a4d21c",
+                "pull_request": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

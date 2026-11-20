@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
+use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Data\Tasks\TaskInputData;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
+use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Project;
@@ -32,7 +36,8 @@ trait ValidatesDeliverablePaths
             }
             $task = $this->route('task');
             if ($task instanceof Task && $task->parent_id === null) {
-                $task = null;
+                // A task with no subtask corrects the deliverables of its work row.
+                $task = $task->work()->first();
             }
             if ($task instanceof Task && ($task->status !== TaskStatus::Todo || ! $group instanceof Task || $task->parent_id !== $group->id)) {
                 return;
@@ -55,6 +60,14 @@ trait ValidatesDeliverablePaths
                 }
                 $commit = TaskReviewBase::commit($task);
             } else {
+                // A create in todo meets the rule of a task that leaves backlog before any repository read.
+                if (($data['status'] ?? null) === TaskGroupStatus::Todo->value) {
+                    TaskGroupGuard::leavesBacklog(array_key_exists('deliverables', $data) ? $data['deliverables'] !== [] : null,
+                        CreateTaskGroupAction::shape(array_values(array_map(TaskInputData::from(...), $data['subtasks'] ?? []))));
+                }
+                if (($data['deliverables'] ?? []) !== []) {
+                    $lists['deliverables'] = $data['deliverables'];
+                }
                 foreach ($data['subtasks'] ?? [] as $index => $input) {
                     if (($input['deliverables'] ?? []) !== []) {
                         $lists["subtasks.{$index}.deliverables"] = $input['deliverables'];

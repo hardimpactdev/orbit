@@ -102,7 +102,8 @@ final class ListTaskGroupsCommand extends TaskCommand
             $group->title,
             $group->project ?? $group->projectId,
             $group->status,
-            count(array_filter($group->subtasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->subtasks),
+            // A task with no subtask has no subtask count (docs/reference/tasks.md#a-task-with-no-subtask).
+            $group->work === null ? count(array_filter($group->subtasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->subtasks) : null,
             self::askingKind($group->assistanceRequested, $group->assistanceKind),
             self::assistanceSummary($group->assistanceRequested, $group->assistanceKind, $group->assistanceQuestion, $group->assistanceReason),
         ], array_values(array_filter($groups->taskGroups, static fn ($task): bool => $task instanceof TaskGroupResponse)));

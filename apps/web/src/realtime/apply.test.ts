@@ -234,6 +234,24 @@ describe("task events", () => {
 
         expect(invalidated(invalidate)).toEqual([
             { queryKey: ["tasks", "8", "tasks", "3", "comments"], exact: false },
+            { queryKey: ["tasks", "8", "work", "comments"], exact: false },
+        ]);
+    });
+
+    it("refetches a task with no subtask's comments for a comment of the task or of its work", () => {
+        const invalidate = vi.spyOn(client, "invalidateQueries");
+
+        for (const task of [8, 5]) {
+            applyEvent(
+                client,
+                event("task_comment.created", { id: task, task_group_id: 8, task_id: task }),
+            );
+            flushTaskRefetches();
+        }
+
+        expect(invalidated(invalidate).filter((call) => call.queryKey?.includes("work"))).toEqual([
+            { queryKey: ["tasks", "8", "work", "comments"], exact: false },
+            { queryKey: ["tasks", "8", "work", "comments"], exact: false },
         ]);
     });
 

@@ -6,7 +6,7 @@ sidebarTitle: "task:update"
 Change a task's title, brief, status, copy turn agent, or pull request mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. In a group whose workspace is a task copy, `--status=running` reopens the last completed subtask while the group is open. See [reopen the last subtask](/reference/tasks#reopen-the-last-subtask). See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--reason=TEXT] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--reason=TEXT] [--work-status=STATUS] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
 ```
 
 | Option | Meaning |
@@ -17,7 +17,8 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 | `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
 | `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
 | `--position=N` | A subtask's new position, starting at 1. |
-| `--deliverables=FILE` | A JSON file whose list replaces the subtask's deliverables. |
+| `--deliverables=FILE` | A JSON file whose list replaces the deliverables of a subtask, or of a [task with no subtask](/reference/tasks#a-task-with-no-subtask). |
+| `--work-status=STATUS` | The status of the work of a task with no subtask, by the moves of a subtask's status: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed` or `cancelled`. `completed` approves the work; `running` reopens it. `--status` stays the task's own. Send it alone. Another value returns `task.work_status_invalid` and sends nothing. |
 | `--reason=TEXT` | Why a [correction after a failed check](/reference/tasks#correct-the-deliverables-of-a-started-subtask) replaces a started subtask's deliverables in a task copy, 1 to 500 characters. Only that correction takes it, and it needs it. |
 | `--implementer-provider=NAME` | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude` or `codex`. |
 | `--implementer-model=MODEL` | The implementer's model in a task copy, such as `claude-opus-5-5`. |
@@ -46,8 +47,9 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | Error code | Meaning |
 | --- | --- |
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
-| `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
-| `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
+| `tasks.no_subtasks` | A move to `todo` for a task without subtasks or deliverables of its own. Add at least two subtasks with deliverables. Or give a task with no subtask its own `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
+| `tasks.one_subtask` | A move to `todo` for a task with exactly one subtask, before its deliverables are checked. Add a second subtask, or fold the one into the task: destroy it and give the task its `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
+| `tasks.subtask_deliverables_missing` | A move to `todo` while one of two or more subtasks has no deliverables, and then the error details name them, or for a task whose own deliverables are empty. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
@@ -61,4 +63,4 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `task.agent_invalid` | An agent option is empty. |
 | `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. Also a correction after a failed check without a reason, or a reason over 500 characters. |
 
-The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--reason`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.
+The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--reason`; parents accept preview intent and `--pr-mode`. A [task with no subtask](/reference/tasks#a-task-with-no-subtask) also accepts `--deliverables` with `--reason`, or `--work-status`, each in an update of its own. Each level keeps its existing status rules. Updating a parent to Todo does not start work.

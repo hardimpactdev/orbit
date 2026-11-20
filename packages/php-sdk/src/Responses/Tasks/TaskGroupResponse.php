@@ -61,6 +61,8 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public ?TaskPublicationResponse $publication = null,
         /** The GitHub issue the group's pull request closes; a Gateway before it shipped answers none. */
         public ?int $issue = null,
+        /** The work of a task with no subtask: its deliverables, latest check and implementer; null for a task with subtasks (docs/reference/tasks.md#a-task-with-no-subtask). */
+        public ?SubtaskResponse $work = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -115,6 +117,7 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             prModeSource: TaskFields::nullableText($data, 'pr_mode_source'),
             publication: TaskPublicationResponse::fromGatewayData($data['publication'] ?? null, $requestId),
             issue: TaskFields::nullableInt($data, 'issue'),
+            work: ($data['work'] ?? null) === null ? null : self::subtasks([$data['work']], $requestId)[0],
         );
     }
 
@@ -173,6 +176,7 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
 
                 return $data;
             }, $this->subtasks),
+            ...($this->work === null ? [] : ['work' => array_diff_key($this->work->toArray(), ['request_id' => true])]),
             ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
             ...($this->vmPower === null ? [] : ['vm_power' => $this->vmPower]),
             'preview' => $this->preview,

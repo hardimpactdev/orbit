@@ -5,9 +5,8 @@ import {
     formatDurationMs,
     formatRelativeTime,
     taskCommentsQuery,
+    taskWorkCommentsQuery,
     taskCommentTypeLabel,
-    type Task,
-    type TaskGroup,
     type TaskCheck,
     type TaskComment,
 } from "../api/tasks";
@@ -197,10 +196,23 @@ function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["
     );
 }
 
-/** The task's latest check and its comments and turn receipts, newest first, as stacked cards. */
-export function TaskComments({ groupId, task }: { groupId: number; task: Task | TaskGroup }) {
+/**
+ * The latest check and the task's comments and turn receipts, newest first, as stacked cards. A task
+ * with no subtask passes `work` and its work's check: its comments include its work's.
+ */
+export function TaskComments({
+    groupId,
+    taskId,
+    check,
+    work = false,
+}: {
+    groupId: number;
+    taskId: number;
+    check: TaskCheck | null;
+    work?: boolean;
+}) {
     const query = useQuery({
-        ...taskCommentsQuery(groupId, task.id),
+        ...(work ? taskWorkCommentsQuery(groupId) : taskCommentsQuery(groupId, taskId)),
         refetchInterval: useTaskPoll(),
     });
     const now = useClock();
@@ -213,7 +225,7 @@ export function TaskComments({ groupId, task }: { groupId: number; task: Task | 
             className="max-h-[560px] shrink-0 lg:max-h-none lg:min-h-0"
             bodyClassName="space-y-[var(--panel-padding)]"
         >
-            {"check" in task && task.check && <CheckCard check={task.check} now={now} />}
+            {check && <CheckCard check={check} now={now} />}
             {query.isPending && <p role="status">Loading comments…</p>}
             {query.error && (
                 <p role="alert">

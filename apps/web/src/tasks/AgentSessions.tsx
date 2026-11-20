@@ -45,10 +45,13 @@ function ProviderMark({ model, status }: { model?: string | null; status: string
 export function AgentSessions({
     groupId,
     subtaskId,
+    workId,
     projectCode,
 }: {
     groupId: number;
     subtaskId?: string;
+    /** The work of a task with no subtask: its threads name the task, as its ID is no route member. */
+    workId?: number;
     projectCode?: string;
 }) {
     // Every tab's indicator shows its thread's state from this list. An `agent_thread.updated`
@@ -137,7 +140,13 @@ export function AgentSessions({
                                         className={`flex items-baseline justify-between gap-[1ch] text-dim ${sessionMetaClassName}`}
                                     >
                                         <span>
-                                            {taskIdentity(session.task_id ?? groupId, projectCode)}
+                                            {taskIdentity(
+                                                session.task_id == null ||
+                                                    session.task_id === workId
+                                                    ? groupId
+                                                    : session.task_id,
+                                                projectCode,
+                                            )}
                                         </span>
                                         {provider?.name}
                                     </span>

@@ -21,17 +21,19 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 ### Split into subtasks
 
-Plan one subtask unless a reason below calls for more. Split when:
+A task stands alone, or it has at least two subtasks; never one. By default, plan a task with no subtask: it holds its own deliverables and does its own work. Split it into two or more subtasks only when:
 
 - a later part builds on an earlier part that can be checked on its own;
 - a finding or a decision must come first, and it can change what follows;
 - the work is more than one session can finish and check.
 
+When no reason holds for a second subtask, the work is a task with no subtask. The Gateway refuses a task with exactly one subtask when it leaves Backlog, with `tasks.one_subtask`: fold that subtask into the task. The [tasks reference](../../../docs/reference/tasks.md#a-task-with-no-subtask) states the rule.
+
 Results that depend on each other, or that touch the same files, are subtasks of one group. Results that can ship alone and touch different files are separate groups.
 
-An outcome found during the task becomes an appended subtask when it must ship in the same pull request, and a new group when it can ship alone.
+In a task with subtasks, an outcome found during the task becomes an appended subtask when it must ship in the same pull request, and a new group when it can ship alone. A started task with no subtask takes no subtask: an outcome found during it is a new task.
 
-The last subtask owns the full proof. These are never a subtask: the final gate, the pull request preparation, a merge of `main`, and a split by file or by layer. Every handoff runs the task check, and the last approval proposes the pull request.
+The last subtask, or the task with no subtask itself, owns the full proof. These are never a subtask: the final gate, the pull request preparation, a merge of `main`, and a split by file or by layer. Every handoff runs the task check, and the last approval proposes the pull request.
 
 ### Choose the deliverables
 
@@ -104,13 +106,9 @@ Guardrails holds only those four kinds of line.
 
 ### Subtask brief
 
-Repeat nothing from the group brief. With one subtask in the group, the brief is one line:
+A task with no subtask has no subtask brief: the group brief and the task's own deliverables are the whole plan. Put its read-first paths in the group brief.
 
-```markdown
-All expected outcomes of the group. Read first: <paths>.
-```
-
-With several subtasks:
+With subtasks, repeat nothing from the group brief:
 
 ```markdown
 **Slice:** Expected outcomes <numbers>. Builds on <subtask>. After this
@@ -152,9 +150,9 @@ The Gateway refuses to change a running group: a `PATCH` of its brief answers `t
 
 A task that the outer loop filed arrives in Backlog with a docs subtask and a placeholder test deliverable. Its owner rewrites it into the shape above before Todo.
 
-Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
+Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. For a task with no subtask, show its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
+Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. For a task with no subtask, pass its `deliverables` to the same call. Otherwise create its subtasks, at least two, with the same tool and `parent_id`. Select either level by its existing Task ID. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`, or a task with no subtask by its own ID.
 
 ## Implement a subtask
 

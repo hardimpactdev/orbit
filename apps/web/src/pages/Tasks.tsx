@@ -1,6 +1,7 @@
 import { SwampRuns } from "../tasks/SwampRuns";
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
+import { TaskDeliverables } from "../tasks/TaskDeliverables";
 import { TaskInsightsStrip } from "../tasks/TaskInsights";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type CSSProperties } from "react";
@@ -27,6 +28,7 @@ import {
     tasksForInstance,
     taskIdentity,
     taskStatusLabels,
+    taskWorkReviewLabels,
     type Task,
     type TaskGroup,
     type TaskColumn,
@@ -139,6 +141,13 @@ function taskProperties(
             title: `${taskColumn(detail.status)} · ${taskStatusLabels[detail.status]}`,
             warn: taskColumn(detail.status) === "In progress",
         },
+        // A task with no subtask does its own work. Its review state comes from Orbit's review records, not the work's status.
+        ...(detail === group && group.work !== null
+            ? [{ name: "Work", value: taskStatusLabels[group.work.status] }]
+            : []),
+        ...(detail === group && group.work_review
+            ? [{ name: "Review", value: taskWorkReviewLabels[group.work_review] }]
+            : []),
         {
             name: "Project",
             value: projectName,
@@ -483,48 +492,47 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             </p>
                         </Frame>
                     </div>
-                    {subtaskId === undefined && (
+                    {subtaskId === undefined && task.work !== null && (
+                        <TaskDeliverables work={task.work} />
+                    )}
+                    {subtaskId === undefined && task.subtasks.length > 0 && (
                         <section
                             aria-label="Subtasks"
                             className="min-h-[400px] shrink-0 lg:flex lg:flex-1 lg:basis-0 lg:flex-col"
                         >
-                            {subtaskLanes.length === 0 ? (
-                                <p className="text-dim">No subtasks yet.</p>
-                            ) : (
-                                <div
-                                    className="kanban-board grid min-h-[400px] grid-cols-1 lg:flex-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
-                                    style={laneWidths(subtaskLanes.length)}
-                                >
-                                    {subtaskLanes.map(({ column, cards: subtasks }) => (
-                                        <Frame
-                                            key={column}
-                                            title={column}
-                                            topRight={subtasks.length}
-                                            className="min-h-[160px]"
-                                            bodyClassName="space-y-[var(--panel-padding)]"
-                                        >
-                                            {subtasks.map((subtask) => (
-                                                <Link
-                                                    to="/tasks/$id/subtasks/$subtaskId"
-                                                    params={{ id, subtaskId: String(subtask.id) }}
-                                                    key={subtask.id}
-                                                    data-testid="subtask-card"
-                                                    aria-label={`Open subtask: ${subtask.title}`}
-                                                    className={kanbanCardClassName}
-                                                >
-                                                    <KanbanCardBody
-                                                        identity={taskIdentity(
-                                                            subtask.id,
-                                                            task.project_code,
-                                                        )}
-                                                        task={subtask}
-                                                    />
-                                                </Link>
-                                            ))}
-                                        </Frame>
-                                    ))}
-                                </div>
-                            )}
+                            <div
+                                className="kanban-board grid min-h-[400px] grid-cols-1 lg:flex-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
+                                style={laneWidths(subtaskLanes.length)}
+                            >
+                                {subtaskLanes.map(({ column, cards: subtasks }) => (
+                                    <Frame
+                                        key={column}
+                                        title={column}
+                                        topRight={subtasks.length}
+                                        className="min-h-[160px]"
+                                        bodyClassName="space-y-[var(--panel-padding)]"
+                                    >
+                                        {subtasks.map((subtask) => (
+                                            <Link
+                                                to="/tasks/$id/subtasks/$subtaskId"
+                                                params={{ id, subtaskId: String(subtask.id) }}
+                                                key={subtask.id}
+                                                data-testid="subtask-card"
+                                                aria-label={`Open subtask: ${subtask.title}`}
+                                                className={kanbanCardClassName}
+                                            >
+                                                <KanbanCardBody
+                                                    identity={taskIdentity(
+                                                        subtask.id,
+                                                        task.project_code,
+                                                    )}
+                                                    task={subtask}
+                                                />
+                                            </Link>
+                                        ))}
+                                    </Frame>
+                                ))}
+                            </div>
                         </section>
                     )}
                     {"tasks" in detail ? (
@@ -543,9 +551,17 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             <AgentSessions
                                 groupId={task.id}
                                 subtaskId={subtaskId}
+                                workId={task.work?.id}
                                 projectCode={task.project_code}
                             />
-                            <TaskComments groupId={task.id} task={detail} />
+                            <TaskComments
+                                groupId={task.id}
+                                taskId={detail.id}
+                                check={
+                                    "check" in detail ? detail.check : (task.work?.check ?? null)
+                                }
+                                work={detail === task && task.work !== null}
+                            />
                         </div>
                     )}
                 </>
