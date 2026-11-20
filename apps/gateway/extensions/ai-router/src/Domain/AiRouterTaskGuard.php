@@ -20,7 +20,8 @@ use App\Support\ValidatedData;
  * The model router's task VM guard ([Credentials in task VMs](/reference/tasks#credentials-in-task-vms)): its own Caddy on the router's
  * Node, on the WireGuard address at port 8318. It passes a request on only when it comes from the task VM WireGuard range or a
  * [forwarder Node](/reference/ai-router#container-model-forwarder), is a POST to exactly one of the inference routes, with no query or
- * Claude Code's `beta=true` on the messages routes, and carries the task key; it then swaps in the anchor key. Any other request from
+ * Claude Code's `beta=true` on the messages routes, and carries the task key, or a POST to one of Antigravity's Gemini routes with its
+ * key header; it then swaps in the anchor key. Any other request from
  * those sources gets 401, and every request from elsewhere 403. The unit loads both keys as systemd credentials, so its Caddyfile holds no secret and no other user reads them; UFW admits port
  * 8318 from those sources only.
  */
@@ -44,6 +45,16 @@ final readonly class AiRouterTaskGuard
 
     /** The routes where Claude Code's fixed `?beta=true` passes; it sends it on every call and has no setting to drop it. */
     public const array BetaPaths = ['/v1/messages', '/v1/messages/count_tokens'];
+
+    /**
+     * The Gemini routes Antigravity calls, model name then method, as RE2 patterns of the whole path: a model name is letters and digits
+     * joined by single `.`, `_` or `-`, so `..`, `/` and an empty name do not pass. Streaming takes exactly `alt=sse`, the other two no query.
+     */
+    public const string GeminiModel = '[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*';
+
+    public const string GeminiStreamPath = '^/v1beta/models/'.self::GeminiModel.':streamGenerateContent$';
+
+    public const string GeminiPath = '^/v1beta/models/'.self::GeminiModel.':(?:generateContent|countTokens)$';
 
     /** Guard and forwarder runs share it: two at once could each drop the other's forwarder Node from the guard. */
     public const string LockPrefix = 'ai_router_guard:';
@@ -78,6 +89,8 @@ final readonly class AiRouterTaskGuard
         $betaPaths = $list(self::BetaPaths);
         $credentials = self::Credentials;
         $upstream = '127.0.0.1:'.$this->routerPort();
+        $streamPath = self::GeminiStreamPath;
+        $geminiPath = self::GeminiPath;
 
         return <<<CADDY
             # Managed by Orbit: the ai-router task VM guard (/reference/tasks#credentials-in-task-vms).
@@ -85,6 +98,14 @@ final readonly class AiRouterTaskGuard
             	admin off
             	persist_config off
             	auto_https off
+            }
+
+            (router) {
+            	reverse_proxy {$upstream} {
+            		header_up Authorization "Bearer {file.{$credentials}/anchor.key}"
+            		header_up -X-Api-Key
+            		header_up -X-Goog-Api-Key
+            	}
             }
 
             http://:{$port} {
@@ -96,12 +117,18 @@ final readonly class AiRouterTaskGuard
             		expression {http.request.orig_uri.path} in [{$paths}] && ({http.request.orig_uri.query} == "" || ({http.request.orig_uri.query} == "beta=true" && {http.request.orig_uri.path} in [{$betaPaths}]))
             		header Authorization "Bearer {file.{$credentials}/task.key}"
             	}
+            	# Antigravity's Gemini routes, with the task key in X-Goog-Api-Key, the one header it sends a key in.
+            	@gemini {
+            		remote_ip {$sources}
+            		method POST
+            		expression ({http.request.orig_uri.path}.matches('{$streamPath}') && {http.request.orig_uri.query} == "alt=sse") || ({http.request.orig_uri.path}.matches('{$geminiPath}') && {http.request.orig_uri.query} == "")
+            		header X-Goog-Api-Key "{file.{$credentials}/task.key}"
+            	}
             	handle @task {
-            		reverse_proxy {$upstream} {
-            			header_up Authorization "Bearer {file.{$credentials}/anchor.key}"
-            			header_up -X-Api-Key
-            			header_up -X-Goog-Api-Key
-            		}
+            		import router
+            	}
+            	handle @gemini {
+            		import router
             	}
             	# An admitted source with a refused request: a forwarder run's end check tells this from a source the guard refuses.
             	@source remote_ip {$sources}

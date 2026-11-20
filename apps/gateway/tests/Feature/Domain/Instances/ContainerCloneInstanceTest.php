@@ -286,7 +286,8 @@ describe('a clone of the container default', function (): void {
             ->and($clone['files'][5])->toBe(['path' => '/etc/systemd/system/t3.service.d/20-orbit-server.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"])
             ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
-            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
+            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment',
+                'key_value' => '#orbit-model-key'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'])
             // WireGuard peers reach T3; no rule refuses the reserved range.
             ->and($container['firewall'])->toBe([
@@ -403,7 +404,7 @@ it('starts the run with the placeholder model key in the vault and the template 
     [, $complete] = completionRunOf($operation);
     $fill = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($complete['intent'])['server_database'])['fill']);
     expect(array_keys($run['execution_secrets']))->not->toContain('model_environment')
-        ->and($put['value'])->toContain("ANTHROPIC_BASE_URL=http://10.253.0.1:8319\n")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
+        ->and($put['value'])->toContain("ANTHROPIC_BASE_URL=http://10.253.0.1:8319\n")->toContain("GOOGLE_GEMINI_BASE_URL=http://10.253.0.1:8319\n")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and($fill[13])->toStartWith('DROP DATABASE IF EXISTS')
         ->and($fill[14])->toContain(' TEMPLATE ');
@@ -1970,7 +1971,11 @@ describe('the server a container records', function (): void {
             // An intent built after the Project changed back still names the container's own server.
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
-            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n")
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\nEnvironment=AGY_CLI_DISABLE_AUTO_UPDATE=true\n")
+            // Only the Conn Server has the Antigravity driver: its instance holds the place of the model key, never the key.
+            ->and(collect($intent['clone']['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true,
+                'providerInstances' => ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
+                    'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => InstanceContainer::ModelKeyValue]]]])
             ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 

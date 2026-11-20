@@ -72,6 +72,12 @@ it('records the guard intent without a key: the Caddyfile, the UFW pair and vaul
             .' && ({http.request.orig_uri.query} == "" || ({http.request.orig_uri.query} == "beta=true"'
             .' && {http.request.orig_uri.path} in ["/v1/messages", "/v1/messages/count_tokens"]))')
         ->toContain('header Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/task.key}"')
+        ->toContain("expression ({http.request.orig_uri.path}.matches('^/v1beta/models/[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*:streamGenerateContent\$')"
+            .' && {http.request.orig_uri.query} == "alt=sse")'
+            ." || ({http.request.orig_uri.path}.matches('^/v1beta/models/[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*:(?:generateContent|countTokens)\$')"
+            .' && {http.request.orig_uri.query} == "")')
+        ->toContain('header X-Goog-Api-Key "{file./run/credentials/orbit-ai-router-guard.service/task.key}"')
+        ->toContain("handle @gemini {\n\t\timport router\n")
         ->toContain("reverse_proxy 127.0.0.1:8317 {\n")
         ->toContain('header_up Authorization "Bearer {file./run/credentials/orbit-ai-router-guard.service/anchor.key}"')
         ->toContain("@source remote_ip 10.44.0.128/25\n")

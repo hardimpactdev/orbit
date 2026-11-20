@@ -2003,7 +2003,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         $instances = $files['/home/agent/.t3/userdata/settings.json']['json']['providerInstances'];
         expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax',
-            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra'])
+            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra', 'antigravity'])
             ->and($instances['claudeMedium'])->toBe(['driver' => 'claudeAgent', 'displayName' => 'Claude, medium effort',
                 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => 'medium']]])
             // Codex takes its effort from the thread's model options, not from its instance (InstanceContainer::providerOptions).

@@ -107,6 +107,22 @@ def public_text(text, values, room):
     return "\n".join(reversed(kept))
 
 
+def with_model_key(settings, value, key):
+    """The JSON settings with each string equal to `value` replaced by the placeholder model key. A Gateway that names no value
+    leaves them as they are; a value with no key in the model environment refuses the create."""
+    if value is None:
+        return settings
+    if isinstance(settings, dict):
+        return {name: with_model_key(item, value, key) for name, item in settings.items()}
+    if isinstance(settings, list):
+        return [with_model_key(item, value, key) for item in settings]
+    if settings == value:
+        if not key:
+            raise RuntimeError("instance.clone_t3_files_refused")
+        return key
+    return settings
+
+
 def purpose(argv):
     """What a command did, in public words: its program and plain arguments, such as `incus file push - instance-7/usr/...`.
     Options, their values, `-c` programs and configuration pairs, long values and values with `=` never appear."""
@@ -586,16 +602,20 @@ def main():
         condition = clone["t3"]["condition"]
         files = [dict(clone["model_environment"], content=model)] + sorted(
             [item for item in clone["files"] if item.get("before_start")], key=lambda item: item["path"] == condition)
+        # A JSON setting holds the model environment's `key_value` where the placeholder model key goes: the intent holds no key.
+        key = next((line.partition("=")[2] for line in model.splitlines() if line.startswith("ORBIT_MODEL_KEY=")), None)
+        value = clone["model_environment"].get("key_value")
         for item in files:
             content = item.get("content")
             if "json" in item:
+                settings = with_model_key(item["json"], value, key)
                 held = file_read(item["path"], "instance.clone_t3_files_refused")
                 old = json.loads(held["content"]) if held is not None else {}
                 # A seed file that holds the keys with the agent part's owner and mode stays as it is.
-                if held is not None and old | item["json"] == old and (held["uid"], held["gid"], held["mode"]) == (
+                if held is not None and old | settings == old and (held["uid"], held["gid"], held["mode"]) == (
                         str(item["uid"]), str(item["gid"]), item["mode"].zfill(4)):
                     continue
-                content = json.dumps(old | item["json"], separators=(",", ":")) + "\n"
+                content = json.dumps(old | settings, separators=(",", ":")) + "\n"
             parents = []
             for parent in Path(item["path"]).parents:
                 if str(parent) in ("/", "/home", "/etc"):

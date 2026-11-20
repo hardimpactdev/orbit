@@ -1136,11 +1136,12 @@ function cloneFixture() {
         t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
           url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
           project_mark: "/home/agent/.config/orbit/t3-project" },
-        model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+        model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600", key_value: "#orbit-model-key" },
         files: [
           { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
           { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
-          { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+          // The Conn Server's Antigravity instance names the key's place; the agent part puts the vault's model key there.
+          { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true, ...antigravity("#orbit-model-key") } },
           // A folder the image lacks: the push makes it (a migrate builds the container from the image).
           { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
           // The runtime's container server (docs/reference/development-containers.md#container-server).
@@ -1155,6 +1156,11 @@ function cloneFixture() {
     f.cleanup();
     throw error;
   }
+}
+
+/** The Antigravity provider instance of a Conn Server container's T3 settings, with the given API key. */
+function antigravity(apiKey: string) {
+  return { providerInstances: { antigravity: { driver: "antigravity", enabled: true, config: { authMethod: "gemini-api-key", apiKey } } } };
 }
 
 Deno.test({
@@ -1195,7 +1201,7 @@ Deno.test({
       // The agent part wrote the drop-ins into a running container: systemd reads them before the unit starts.
       const units = state.systemctl.map((call: string[]) => call.join(" "));
       assertEquals(units[units.indexOf("start -- t3.service") - 1], "daemon-reload");
-      assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true });
+      assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true, ...antigravity("placeholder") });
       assertEquals(Deno.statSync(`${clone}/home/agent/.t3/userdata`).mode! & 0o777, 0o700);
       assertEquals(Deno.readTextFileSync(`${clone}/home/agent/.config/orbit/model.env`), "ORBIT_MODEL_KEY=placeholder\n");
       assertEquals(state.files["/home/agent/.config/orbit/model.env"], { uid: "2750", gid: "2750", mode: "0600" });

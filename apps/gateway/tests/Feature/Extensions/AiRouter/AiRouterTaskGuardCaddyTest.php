@@ -25,7 +25,7 @@ function guardFreePort(): int
  * Runs the Caddyfile the Gateway renders on a real Caddy, moved onto loopback: loopback stands in for the task VM range, the key files
  * for the systemd credentials, and a second Caddy site for CLIProxyAPI, which echoes what it receives.
  */
-it('passes only a POST of the task key from the range to the inference routes, with the anchor key in its place', function (): void {
+it('passes only a POST of the task key from the range to the inference and Gemini routes, with the anchor key in its place', function (): void {
     if (! is_executable(trim((string) shell_exec('command -v caddy')))) {
         $this->markTestSkipped('Caddy is not installed.');
     }
@@ -41,7 +41,7 @@ it('passes only a POST of the task key from the range to the inference routes, w
     $caddyfile = strtr(app(AiRouterTaskGuard::class)->caddyfile($node, []), [
         'bind 10.44.0.3' => 'bind 127.0.0.1', 'remote_ip 10.44.0.128/25' => 'remote_ip 127.0.0.1/32',
         AiRouterTaskGuard::Credentials => $directory, 'http://:'.AiRouterTaskGuard::Port => "http://:{$guard}",
-    ])."http://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} api={header.X-Api-Key} uri={uri}\"\n}\n";
+    ])."http://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} api={header.X-Api-Key} goog={header.X-Goog-Api-Key} uri={uri}\"\n}\n";
     file_put_contents("{$directory}/Caddyfile", $caddyfile);
     $caddy = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/Caddyfile"]);
     try {
@@ -55,7 +55,7 @@ it('passes only a POST of the task key from the range to the inference routes, w
 
         foreach (['/v1/responses', '/v1/chat/completions', '/v1/messages', '/v1/messages/count_tokens',
             '/v1/messages?beta=true', '/v1/messages/count_tokens?beta=true'] as $uri) {
-            expect($send('POST', $uri))->toBe([200, "auth=Bearer anchor-key api= uri={$uri}"]);
+            expect($send('POST', $uri))->toBe([200, "auth=Bearer anchor-key api= goog= uri={$uri}"]);
         }
         // The HTTP client resolves `..` before it sends, so a dot-segment path is not among these; the matcher reads the path as sent.
         foreach ([['GET', '/v1/responses', 'task-key'], ['POST', '/v1/responses', 'wrong'], ['POST', '/v1/responses', null],
@@ -67,6 +67,35 @@ it('passes only a POST of the task key from the range to the inference routes, w
             ['POST', '/v1/messages?beta=true', 'wrong']] as [$method, $uri, $key]) {
             expect($send($method, $uri, $key)[0])->toBe(401, "{$method} {$uri} with ".($key ?? 'no key'));
         }
+
+        // Antigravity's Gemini routes: the task key in X-Goog-Api-Key, the anchor key upstream as Bearer, the Google key header dropped.
+        $gemini = static fn (string $method, string $uri, array $headers): array => [
+            ($response = Http::withHeaders($headers)->send($method, "http://127.0.0.1:{$guard}{$uri}"))->status(), $response->body()];
+        foreach (['/v1beta/models/gemini-3.1-flash-lite-preview:streamGenerateContent?alt=sse', '/v1beta/models/gemini-2.5-pro:generateContent',
+            '/v1beta/models/gemini_3.1-pro:countTokens'] as $uri) {
+            expect($gemini('POST', $uri, ['X-Goog-Api-Key' => 'task-key']))->toBe([200, "auth=Bearer anchor-key api= goog= uri={$uri}"]);
+        }
+        foreach ([['GET', '/v1beta/models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'wrong']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'anchor-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent', ['Authorization' => 'Bearer task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent', []],
+            ['POST', '/v1/responses', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:streamGenerateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=x', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent?alt=sse', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent?key=task-key', []],
+            ['POST', '/v1beta/models/gemini-2.5-pro:countTokens?key=x', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini..pro:generateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/:generateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/a/b:generateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta//models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:generateContent/x', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models/gemini-2.5-pro:embedContent', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1beta/models', ['X-Goog-Api-Key' => 'task-key']],
+            ['POST', '/v1/models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'task-key']]] as [$method, $uri, $headers]) {
+            expect($gemini($method, $uri, $headers)[0])->toBe(401, "{$method} {$uri} with ".json_encode($headers));
+        }
         $caddy->stop(2);
 
         // From a source outside the range, the task key gets 403.
@@ -76,7 +105,8 @@ it('passes only a POST of the task key from the range to the inference routes, w
             Http::post("http://127.0.0.1:{$upstream}/");
             Http::post("http://127.0.0.1:{$guard}/");
         }, 100);
-        expect($send('POST', '/v1/responses')[0])->toBe(403);
+        expect($send('POST', '/v1/responses')[0])->toBe(403)
+            ->and($gemini('POST', '/v1beta/models/gemini-2.5-pro:generateContent', ['X-Goog-Api-Key' => 'task-key'])[0])->toBe(403);
     } finally {
         $caddy->stop(2);
         Process::run(['rm', '-rf', $directory]);
