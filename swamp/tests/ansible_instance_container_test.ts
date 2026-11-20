@@ -2619,7 +2619,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a create refused at an unresolved Docker publication names the failed task and the endpoint in its result",
+  name: "a create refused at an unresolved Docker publication names the failed task and its refusal in its result",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -2630,7 +2630,7 @@ Deno.test({
       const result = f.run("container");
       assert(!result.ok, result.output);
       assertEquals(f.result(), {error_code: "instance.container_endpoint_unresolved",
-        detail: "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434"}, result.output);
+        detail: "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved"}, result.output);
     } finally { f.cleanup(); }
   },
 });

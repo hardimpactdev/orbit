@@ -1265,7 +1265,7 @@ it('records a default container phase refusal from its written result as the fai
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
     $operation = containerCreate($project, $node);
     $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
-    $detail = 'Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434';
+    $detail = 'Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved';
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
         'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'error_code' => 'instance.container_endpoint_unresolved',

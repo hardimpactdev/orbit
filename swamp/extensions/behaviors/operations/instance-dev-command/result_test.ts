@@ -385,7 +385,7 @@ Deno.test("a container default whose Project has setup steps and no development 
 });
 
 Deno.test("a default's failed container phase keeps its written refusal and the failed task as its detail", () => {
-    const detail = "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434";
+    const detail = "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved";
     assertEquals(defaultContainerFailure({error_code: "instance.container_endpoint_unresolved", detail}),
         {error_code: "instance.container_endpoint_unresolved", detail});
     // The phase's generic code stays the create's own code; its detail still says why.
