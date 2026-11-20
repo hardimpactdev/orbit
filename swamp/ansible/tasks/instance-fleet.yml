@@ -132,7 +132,7 @@
           # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
-      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service'] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service', 'orbit-gateway-engine.service'] -%}
       {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
       {%- endfor -%}
       {{ out }}

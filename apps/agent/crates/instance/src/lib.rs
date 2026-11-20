@@ -321,9 +321,11 @@ fn check(input: &CloneInput) -> Result<(), String> {
         return Err("root.size is not a size".to_owned());
     }
     let key = |value: &str| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
-    let value = |value: &str| !value.is_empty() && !value.bytes().any(|byte| byte.is_ascii_control() || byte == b',');
+    // A `--config` value may hold commas, such as a NO_PROXY list; only a `--device` value splits on them.
+    let value = |value: &str| !value.is_empty() && !value.bytes().any(|byte| byte.is_ascii_control());
+    let device = |value: &str| value.bytes().all(|byte| byte != b',');
     for (k, v) in input.config.iter().chain(&input.filters) {
-        if !key(k) || !value(v) {
+        if !key(k) || !value(v) || (input.filters.contains_key(k) && !device(v)) {
             return Err(format!("{k} is not a config key and value"));
         }
     }

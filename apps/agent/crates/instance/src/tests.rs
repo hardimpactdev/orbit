@@ -190,7 +190,7 @@ fn values_that_could_carry_another_option_are_refused() {
         ("/name", json!("instance-12 --force")),
         ("/snapshot", json!("next-abc")),
         ("/address", json!("10.253.0.1,eth1")),
-        ("/config", json!({"limits.cpu": "4,root,pool=x"})),
+        ("/config", json!({"limits.cpu": "4\nx"})),
         ("/filters", json!({"security.acls": "none"})),
         ("/proxy/listen", json!("tcp:0.0.0.0:22 --x")),
         ("/routes/0/comment", json!("--force")),

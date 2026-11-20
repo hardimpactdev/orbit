@@ -31,7 +31,8 @@ const outerBypass = "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,1
 const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
 const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf",
-  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf"];
+  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf",
+  "/etc/systemd/system/orbit-gateway-engine.service.d/50-inner-fleet-proxy.conf"];
 /** The Gateway's PHP-FPM pool `orbit-gateway` gets the egress proxy from a file of its own: php-fpm merges a repeated pool section. */
 const pool = "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf";
 const poolFile = "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\n" +
