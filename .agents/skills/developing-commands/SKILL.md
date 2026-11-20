@@ -38,3 +38,5 @@ Follow [stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd) for independe
 Watch CI, fix failures caused by the change and repeat affected proofs after fixes. Report unrelated failures separately. Publication is not merge or release approval. After the gate, the author queues the pull request; the [merge queue](../../../docs/reference/implementation-loop.md#merge-queue) runs the fixture shards and merges it.
 
 Report the PR, tested checkout, cases and verdicts, checks, unresolved coverage and actual delivery state.
+
+Cache interpreter-independent Ansible collections separately from lint virtual environments. Size the CI job for a cold collection install plus lint and cache publication; a timeout before cache save makes the next run cold again.
