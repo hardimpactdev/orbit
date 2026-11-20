@@ -1183,7 +1183,9 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 {"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
 ```
 
-Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it. The phase resolves the Git directory first and inspects the literal `orbit-handoff` entry in it. A link, as that folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it.
+
+The phase resolves the Git directory first and inspects the literal `orbit-handoff` entry in it. A link, as that folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
 
 The turn result returns it as `receipts.delivery`, or null. It keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative.
 
