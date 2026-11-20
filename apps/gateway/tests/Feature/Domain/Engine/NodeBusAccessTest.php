@@ -137,3 +137,15 @@ it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, a
         ->and($vpn['unit'])->toContain('ExecStartPre=/usr/sbin/nft');
     @unlink($manifest);
 });
+
+it('makes only seeds the NATS client reads back, also when the last byte would be zero', function (): void {
+    // The client's Base32 decoder strips a seed's last byte, the CRC high byte, when it is zero: one seed in 256.
+    for ($i = 0; $i < 2000; $i++) {
+        expect(strlen(SecretKey::fromSeed(NatsCredentials::newSeed())->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
+    }
+    $account = 'SAAAOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOB6O4U';
+
+    // `node-228`'s first derivation ends in a zero byte, so it takes the next round; `gateway`'s first round keeps its key.
+    expect(strlen(SecretKey::fromSeed(NatsCredentials::userSeed($account, 'node-228'))->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES)
+        ->and(NatsCredentials::publicKey(NatsCredentials::userSeed($account, 'gateway')))->toBe('UCM7UXV5YX3VUSJY35QZRAJ4BJV7DRMF7EQOHUGGX2SHGOPGBVSAIQVC');
+});
