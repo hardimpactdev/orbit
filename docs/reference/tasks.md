@@ -1296,11 +1296,21 @@ When a copy turn asks a question, Orbit stores it, with the run that owns its re
 
 The next turn of that thread answers it: Orbit first resolves exactly the stored question requests in T3, then sends the answer with the questions quoted for context. Stopping the run alone can leave a question pending. Already resolved requests need no action. If resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for another attempt. See [turn questions](/cli/task/turn#a-task-that-runs-in-a-copy).
 
-Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. A new copy thread resolves each of the three values on its own:
+Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. The provider is `claude`, `codex` or `antigravity`. A new copy thread resolves the provider first:
 
 1. the task's value, set with [`task:create`](/cli/task/create) or [`task:update`](/cli/task/update);
 2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
 3. else the Gateway's setting.
+
+The model and the effort follow the same order, but a Project or Gateway value counts only for its own provider. The Project's provider is its own default, else the Gateway's. When no level pairs a value with the resolved provider, the provider's own default applies:
+
+| Provider | Own model | Own effort |
+| --- | --- | --- |
+| `claude` | `claude-opus-5-5` | `medium` |
+| `codex` | `gpt-6.1-sol` | `medium` |
+| `antigravity` | `gemini-3.8-flash` | `high` |
+
+So a task that sets only `--implementer-provider=antigravity` runs `gemini-3.8-flash`, never the Project's Claude model. The task's own model and effort always count.
 
 | Gateway setting | Shipped default |
 | --- | --- |
@@ -1309,7 +1319,7 @@ Each role of a copy turn, implementer and reviewer, runs with a provider, a mode
 | `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT` | `medium` |
 | `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | `high` |
 
-The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`.
+The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project`, `gateway` or `provider`.
 
 A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
@@ -1321,14 +1331,14 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
-| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra`; `antigravity` at `high`, on a copy with the Conn Server only | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
 | Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if Orbit cannot resolve the driver or the Codex probe is inconclusive. Nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
 
 When the catalog omits a Codex model or cannot be read, the copy sends one bounded, tool-free request through the Codex configuration it uses for turns. The provider must return a usable response for the exact requested model. The probe leaves the cached catalog alone.
 
-For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed`. The error keeps no text of T3, which may quote the prompt.
+For other drivers, without a readable catalog the model check is skipped. The Conn Server keeps no cached catalog, so a Claude or Antigravity model is not checked there. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed`. The error keeps no text of T3, which may quote the prompt.
 
 ### Archive finished threads
 
@@ -2215,7 +2225,9 @@ Tokens are summed from the threads, not from the task `tokens`. The task total l
 
 ### Metrics stay on the thread
 
-The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. A [copy turn](/cli/task/turn) records the split from the provider turns that T3 keeps for its thread, and their sum replaces the thread's metrics. A provider turn without complete usage leaves them as they were, because a partial sum would look complete. Tokens of tasks from before copy turns recorded usage stay unknown: their copies are gone, and the transcript archive holds no usage.
+The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. A [copy turn](/cli/task/turn) records the split from the provider turns that T3 keeps for its thread, and their sum replaces the thread's metrics. A provider turn without complete usage leaves them as they were, because a partial sum would look complete.
+
+Conn Server 0.3.0 reports no usage for an Antigravity turn: its status is `unavailable`, so the thread's tokens stay unknown. Tokens of tasks from before copy turns recorded usage stay unknown: their copies are gone, and the transcript archive holds no usage.
 
 ### Task agents run on Pi
 

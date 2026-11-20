@@ -261,6 +261,7 @@ final readonly class ConnTaskPanel
         return match (true) {
             str_starts_with((string) $thread->model, 'claude-') => 'claude',
             str_starts_with((string) $thread->model, 'gpt-') => 'codex',
+            str_starts_with((string) $thread->model, 'gemini-') => 'antigravity',
             default => null,
         };
     }

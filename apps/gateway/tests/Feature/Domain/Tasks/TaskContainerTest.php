@@ -1975,7 +1975,8 @@ describe('a turn of a group that owns a copy', function (): void {
             $this->fail('The turn was admitted.');
         } catch (ResourceOperationException $error) {
             expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
-                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
+                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+                    'antigravity' => ['high']]);
         }
         expect(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     })->with([
@@ -1985,6 +1986,69 @@ describe('a turn of a group that owns a copy', function (): void {
         'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
         'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi'])],
     ]);
+
+    it('starts an Antigravity implementer on the Conn Server\'s antigravity instance with gemini-3.8-flash, never the Project\'s Claude model', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->project->update(['task_implementer_model' => 'claude-sonnet-5-5', 'task_implementer_effort' => 'low']);
+        $group->update(['implementer_agent_provider' => 'antigravity']);
+
+        $turn = copyTurn($group);
+
+        expect(TaskAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
+            'provider' => ['value' => 'antigravity', 'source' => 'group'],
+            'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'],
+            'effort' => ['value' => 'high', 'source' => 'provider'],
+        ])
+            ->and($turn->input['turn'])->toMatchArray(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'thread' => 'new', 'provider' => 'antigravity',
+                'model' => 'gemini-3.8-flash', 'options' => []])
+            ->and(AgentThread::query()->findOrFail($turn->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
+            ->toBe(['model' => 'gemini-3.8-flash', 'effort' => 'high', 'provider_instance' => 'antigravity']);
+    });
+
+    it('refuses an Antigravity thread on a copy whose server is stock T3, which has no Antigravity, and offers it on the Conn Server', function (): void {
+        // A runtime keeps the server it was reserved with, and a task copy is reserved with the Conn Server; an older copy may run stock T3.
+        $group = copyGroup(copySource()->project);
+        $group->update(['implementer_agent_provider' => 'antigravity']);
+
+        try {
+            TaskAgent::forNewThread($group, TaskThreadRole::Implementer, ContainerServer::T3);
+            $this->fail('The thread was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
+                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
+        }
+        expect(TaskAgent::forNewThread($group, TaskThreadRole::Implementer, ContainerServer::Conn))
+            ->toBe(['provider' => 'antigravity', 'instance' => 'antigravity', 'model' => 'gemini-3.8-flash', 'effort' => 'high', 'options' => []]);
+    });
+
+    it('takes a Project or Gateway model and effort only for the provider they are set with, else the provider\'s own', function (): void {
+        $group = copyGroup(copySource()->project);
+        $group->project->update(['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.2-sol', 'task_implementer_provider' => 'antigravity']);
+
+        // The Project pairs its Codex model with Codex; the Gateway's Claude effort is not Codex's, so Codex's own effort applies.
+        expect(TaskAgent::resolve($group, TaskThreadRole::Reviewer))->toBe([
+            'provider' => ['value' => 'codex', 'source' => 'project'],
+            'model' => ['value' => 'gpt-6.2-sol', 'source' => 'project'],
+            'effort' => ['value' => 'medium', 'source' => 'provider'],
+        ])
+            // A Project provider with no model of its own takes the provider's, not the Gateway's Claude model.
+            ->and(TaskAgent::resolve($group, TaskThreadRole::Implementer))->toBe([
+                'provider' => ['value' => 'antigravity', 'source' => 'project'],
+                'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'],
+                'effort' => ['value' => 'high', 'source' => 'provider'],
+            ]);
+
+        // A group's own model counts whatever its provider; a Gateway that names Antigravity pairs its own values with it.
+        $group->update(['implementer_agent_model' => 'gemini-3.7-flash', 'reviewer_agent_provider' => 'antigravity']);
+        config(['orbit.tasks.copy_agents.reviewer' => ['provider' => 'antigravity', 'model' => 'gemini-4-argon', 'effort' => 'high']]);
+        expect(TaskAgent::resolve($group, TaskThreadRole::Implementer)['model'])->toBe(['value' => 'gemini-3.7-flash', 'source' => 'group'])
+            ->and(TaskAgent::resolve($group, TaskThreadRole::Reviewer))->toBe([
+                'provider' => ['value' => 'antigravity', 'source' => 'group'],
+                'model' => ['value' => 'gemini-4-argon', 'source' => 'gateway'],
+                'effort' => ['value' => 'high', 'source' => 'gateway'],
+            ]);
+    });
 
     it('refuses a new thread whose Gateway model is no model name, and records nothing', function (): void {
         $group = copyGroup(copySource()->project);

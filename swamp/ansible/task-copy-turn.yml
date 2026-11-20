@@ -90,7 +90,7 @@
           {{ model_entries is not none
              and intent.turn.model in (model_entries | map(attribute='slug') | list
                  + (model_entries | map(attribute='aliases', default=[]) | flatten)) }}
-        driver_known: "{{ model_driver | default(none) in ['claudeAgent', 'codex'] }}"
+        driver_known: "{{ model_driver | default(none) in ['claudeAgent', 'codex', 'antigravity'] }}"
         codex_model: "{{ model_driver | default(none) == 'codex' }}"
         probe_exit: "{{ model_probe.rc | default(none) }}"
         model_accepted: "{{ driver_known and (catalog_match or (probe_exit == 0 if codex_model else model_entries is none)) }}"

@@ -19,12 +19,12 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 | `--review=MODE` | `manual` | How the gate of the task pull request is passed. `manual`: Nick approves the exact head. `automatic`: its review rounds are removed, so the [gate check](/reference/tasks#gate-check) switches the group to manual mode when its pull request leaves draft. Any other value returns `tasks.review_invalid`. `task:show` returns the mode as `review`. |
-| `--implementer-provider=NAME` | Project's, else Gateway's | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude` or `codex`. |
-| `--implementer-model=MODEL` | Project's, else Gateway's | The implementer's model in a task copy, such as `claude-opus-5-5`. |
-| `--implementer-effort=LEVEL` | Project's, else Gateway's | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--implementer-provider=NAME` | Project's, else Gateway's | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude`, `codex` or `antigravity`. Antigravity needs a copy on the Conn Server. |
+| `--implementer-model=MODEL` | Project's, else Gateway's, else the provider's | The implementer's model in a task copy, such as `claude-opus-5-5`. Antigravity's own default is `gemini-3.8-flash`. |
+| `--implementer-effort=LEVEL` | Project's, else Gateway's, else the provider's | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. Codex adds `ultra`. Antigravity takes `high` only. |
 | `--reviewer-provider=NAME` | Project's, else Gateway's | The reviewer's provider in a task copy. |
-| `--reviewer-model=MODEL` | Project's, else Gateway's | The reviewer's model in a task copy. |
-| `--reviewer-effort=LEVEL` | Project's, else Gateway's | The reviewer's effort in a task copy. |
+| `--reviewer-model=MODEL` | Project's, else Gateway's, else the provider's | The reviewer's model in a task copy. |
+| `--reviewer-effort=LEVEL` | Project's, else Gateway's, else the provider's | The reviewer's effort in a task copy. |
 | `--pr-mode=MODE` | the Project's, else the Gateway's | What Orbit does once the work of a task in a task copy is done. `review_before_pr`: it waits for `task:publish <task>`. `pr_when_done`: it opens a ready pull request by itself. Any other value returns `task.pr_mode_invalid`. `task:show` returns the mode as `pr_mode` with its source. See [Task group modes](/reference/tasks#task-group-modes). |
 | `--issue=NUMBER` | none | The GitHub issue of the Project's repository that the task works on. The pull request of its task copy then closes it: Orbit adds `Closes #NUMBER` when the reviewer's body does not close it. A number from 1 up; anything else returns `task.issue_invalid`, and the API answers `validation.failed` on `issue`. `task:show` returns it as `issue`. See [Closes the issue](/reference/tasks#closes-the-issue). |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |

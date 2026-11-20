@@ -991,6 +991,18 @@ describe('the copy turn agent of a task group', function (): void {
             ->toBe(['project_id' => 1, 'title' => 'Agent', 'brief' => 'Work', 'implementer_model' => 'claude-sonnet-5-5', 'reviewer_effort' => 'max']);
     });
 
+    it('sends Antigravity for both roles on task:create, and names it in the help of each command that sets a provider', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+        expect(Artisan::call('task:create', ['title' => 'Agent', '--project' => '1', '--brief' => 'Work', '--implementer-provider' => 'antigravity',
+            '--reviewer-provider' => 'antigravity', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['project_id' => 1, 'title' => 'Agent', 'brief' => 'Work', 'implementer_provider' => 'antigravity', 'reviewer_provider' => 'antigravity']);
+        foreach (['task:create' => '--implementer-provider', 'task:update' => '--reviewer-provider', 'project:update' => '--task-implementer-provider'] as $command => $option) {
+            $description = Artisan::all()[$command]->getDefinition()->getOption(ltrim($option, '-'))->getDescription();
+            expect($description)->toContain('claude, codex, or antigravity');
+        }
+    });
+
     it('sets one role and clears the other on task:update', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/task-update/updated'));
         expect(Artisan::call('task:update', ['task' => '1', '--implementer-provider' => 'claude', '--implementer-effort' => 'low', '--clear-reviewer-agent' => true, '--json' => true]))->toBe(0);

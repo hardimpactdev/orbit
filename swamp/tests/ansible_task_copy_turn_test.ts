@@ -127,7 +127,8 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
             sys.exit(1)
         print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
                                                 'codexHigh': {'driver': os.environ.get('T3_CODEX_DRIVER', 'codex'),
-                                                              'displayName': 'Codex, high effort'}}}))
+                                                              'displayName': 'Codex, high effort'},
+                                                'antigravity': {'driver': 'antigravity', 'enabled': True}}}))
         sys.exit(0)
     assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
     if catalog == 'missing':
@@ -650,6 +651,16 @@ Deno.test({ name: "without T3's cached catalog the check is skipped and the turn
     const done = await phase("completed", { model: "claude-opus-9" }, "clean", "questions", "", { T3_CATALOG: "missing" });
     assert(done.ok, done.output);
     assertEquals([done.model, done.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
+} });
+
+Deno.test({ name: "an Antigravity thread starts on the antigravity instance with its model and no options; no catalog lists it", ignore: !available, async fn() {
+    const agy = { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-3.8-flash", T3_CATALOG: "missing" };
+    const done = await phase("completed", { provider: "antigravity", model: "gemini-3.8-flash", options: [] }, "clean", "questions", "", agy);
+    assert(done.ok, done.output);
+    assertEquals([done.model, done.launched], [{ model: "gemini-3.8-flash", offered: null, accepted: true }, true]);
+    const create = done.calls.find((call) => call.args[20] === "create")!;
+    assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, "antigravity", "gemini-3.8-flash", []]);
+    assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
 } });
 
 Deno.test({ name: "a continued thread keeps its model: the catalog is not read", ignore: !available, async fn() {

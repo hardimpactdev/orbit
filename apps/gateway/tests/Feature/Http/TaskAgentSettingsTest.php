@@ -125,6 +125,22 @@ describe('the copy turn agent of a task group', function (): void {
         expect($this->project->refresh()->only(['task_reviewer_provider', 'task_reviewer_effort']))->toBe(['task_reviewer_provider' => 'codex', 'task_reviewer_effort' => 'high']);
     });
 
+    it('takes Antigravity for either role on a task and as the Project\'s default, resolving its own model over the Project\'s Claude model', function (): void {
+        $this->project->update(['task_implementer_model' => 'claude-sonnet-5-5']);
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'implementer_provider' => 'antigravity',
+            'reviewer_provider' => 'antigravity', 'reviewer_effort' => 'high'])->assertCreated()
+            ->assertJsonPath('data.implementer_provider', 'antigravity')
+            ->assertJsonPath('data.resolved_agents.implementer', ['provider' => ['value' => 'antigravity', 'source' => 'group'],
+                'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'], 'effort' => ['value' => 'high', 'source' => 'provider']])
+            ->assertJsonPath('data.resolved_agents.reviewer.effort', ['value' => 'high', 'source' => 'group']);
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+        $this->patchJson('/api/v1/tasks/'.$group->id, ['reviewer_provider' => 'antigravity'])->assertOk()
+            ->assertJsonPath('data.resolved_agents.reviewer.model', ['value' => 'gemini-3.8-flash', 'source' => 'provider']);
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_implementer_provider' => 'antigravity', 'task_reviewer_provider' => 'antigravity'])
+            ->assertOk()->assertJsonPath('data.task_implementer_provider', 'antigravity');
+    });
+
     it('changes and clears a role\'s values with task:update until the role\'s first thread, then refuses them with tasks.agent_settings_locked', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo,
             'implementer_agent_model' => 'claude-fable-5-2', 'reviewer_agent_effort' => 'max']);

@@ -104,8 +104,21 @@ final readonly class InstanceContainer
     /** The Codex efforts of a task copy's T3, as gpt-6.1-sol advertises them: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
     public const array CodexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
-    /** What a task copy's T3 offers: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold them. */
-    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts];
+    /**
+     * Antigravity's one effort in a task copy (docs/reference/development-containers.md#turn-model-and-effort). The Conn Server's
+     * antigravity driver gives its models no effort option, and the model router runs a base Gemini name such as `gemini-3.8-flash`
+     * at its high tier, so the one instance self::AntigravityInstance runs at `high`.
+     */
+    public const array AntigravityEfforts = ['high'];
+
+    /** The Conn Server's one Antigravity provider instance (self::antigravityInstance). */
+    public const string AntigravityInstance = 'antigravity';
+
+    /**
+     * What a task copy's T3 can offer: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold
+     * them. Only a copy on the Conn Server offers Antigravity (self::copyProviders).
+     */
+    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::AntigravityEfforts];
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
@@ -580,16 +593,31 @@ final readonly class InstanceContainer
         ];
     }
 
-    /** The T3 provider instance of a provider and effort in a task copy: `claudeMedium` for `claude` at `medium`. */
+    /**
+     * What the task copy's T3 offers on its server: self::CopyProviders, without Antigravity unless the server is the Conn Server,
+     * whose settings alone hold the Antigravity instance.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function copyProviders(ContainerServer $server): array
+    {
+        return $server === ContainerServer::Conn ? self::CopyProviders : array_diff_key(self::CopyProviders, ['antigravity' => true]);
+    }
+
+    /**
+     * The T3 provider instance of a provider and effort in a task copy: `claudeMedium` for `claude` at `medium`, and the one
+     * self::AntigravityInstance for `antigravity`.
+     */
     public static function providerInstance(string $provider, string $effort): string
     {
-        return $provider.ucfirst($effort);
+        return $provider === 'antigravity' ? self::AntigravityInstance : $provider.ucfirst($effort);
     }
 
     /**
      * The model options a new thread of the provider and effort starts with. T3 0.1.7 sends Codex the effort of the thread's
      * `reasoningEffort` option on every turn and none otherwise, whatever Codex's own configuration says, so a Codex thread carries it.
-     * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort.
+     * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort. An Antigravity thread carries none
+     * either: the Conn Server's antigravity driver offers no model option.
      *
      * @return list<array{id: string, value: string}>
      */
@@ -644,7 +672,7 @@ final readonly class InstanceContainer
      */
     private static function antigravityInstance(): array
     {
-        return ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
+        return [self::AntigravityInstance => ['driver' => 'antigravity', 'enabled' => true,
             'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => self::ModelKeyValue]]];
     }
 

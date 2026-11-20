@@ -20,9 +20,9 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 | `--deliverables=FILE` | A JSON file whose list replaces the deliverables of a subtask, or of a [task with no subtask](/reference/tasks#a-task-with-no-subtask). |
 | `--work-status=STATUS` | The status of the work of a task with no subtask, by the moves of a subtask's status: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed` or `cancelled`. `completed` approves the work; `running` reopens it. `--status` stays the task's own. Send it alone. Another value returns `task.work_status_invalid` and sends nothing. |
 | `--reason=TEXT` | Why a [correction after a failed check](/reference/tasks#correct-the-deliverables-of-a-started-subtask) replaces a started subtask's deliverables in a task copy, 1 to 500 characters. Only that correction takes it, and it needs it. |
-| `--implementer-provider=NAME` | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude` or `codex`. |
-| `--implementer-model=MODEL` | The implementer's model in a task copy, such as `claude-opus-5-5`. |
-| `--implementer-effort=LEVEL` | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--implementer-provider=NAME` | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents): `claude`, `codex` or `antigravity`. Antigravity needs a copy on the Conn Server. |
+| `--implementer-model=MODEL` | The implementer's model in a task copy, such as `claude-opus-5-5`. Antigravity's own default is `gemini-3.8-flash`. |
+| `--implementer-effort=LEVEL` | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. Codex adds `ultra`. Antigravity takes `high` only. |
 | `--reviewer-provider=NAME` | The reviewer's provider in a task copy. |
 | `--reviewer-model=MODEL` | The reviewer's model in a task copy. |
 | `--reviewer-effort=LEVEL` | The reviewer's effort in a task copy. |
