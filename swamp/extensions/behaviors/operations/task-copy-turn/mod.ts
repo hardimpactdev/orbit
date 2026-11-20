@@ -375,14 +375,19 @@ async function evidence<T>(path: string, limit: number, schema: z.ZodType<T>): P
     }
 }
 
-/** The delivery receipt's validated fields, each part's name redacted; `invalid` for any other text. Other fields never leave. */
+/**
+ * The delivery receipt's validated fields, each part's name redacted and the whole valid again after redaction; `invalid` for any
+ * other text, also one whose name redaction empties. Other fields never leave.
+ */
 function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
     const receipt = parse(DeliveryReceipt, text);
-    return receipt === null ? "invalid" : {
+    if (receipt === null) return "invalid";
+    const redacted = DeliveryReceipt.safeParse({
         commit: receipt.commit,
         tree: receipt.tree,
         parts: receipt.parts.map((part) => ({ name: redactText(part.name), result: part.result, seconds: part.seconds })),
-    };
+    });
+    return redacted.success ? redacted.data : "invalid";
 }
 
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };

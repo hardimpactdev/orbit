@@ -33,6 +33,8 @@ beforeEach(function (): void {
     app(TaskExtensionState::class)->enable();
 });
 
+const HandedHead = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
 const HandedTree = 'cccccccccccccccccccccccccccccccccccccccc';
 
 /** A gated group whose subtask runs, with its implementer's turn that ended STATE and left RECEIPT. */
@@ -61,9 +63,9 @@ function deliveryTurn(TaskDoneFixture $world, mixed $receipt, string $state = 'd
  * @param  list<array{0: string, 1: string}>  $parts
  * @return array<string, mixed>
  */
-function deliveryReceipt(string $tree, array $parts): array
+function deliveryReceipt(string $tree, array $parts, string $commit = HandedHead): array
 {
-    return ['commit' => str_repeat('a', 40), 'tree' => $tree, 'parts' => array_map(static fn (array $part): array => ['name' => $part[0], 'result' => $part[1], 'seconds' => 1.5], $parts)];
+    return ['commit' => $commit, 'tree' => $tree, 'parts' => array_map(static fn (array $part): array => ['name' => $part[0], 'result' => $part[1], 'seconds' => 1.5], $parts)];
 }
 
 /** The handoff check of the world's subtask ends with this result, as the check workflows write it. */
@@ -89,7 +91,7 @@ function deliveryCheckOperation(TaskDoneFixture $world, TaskCheck $check): Opera
 /** @param list<array{0: string, 1: string}> $parts */
 function deliveryPassed(array $parts = [['pest', 'passed']], string $outcome = 'passed'): array
 {
-    return ['outcome' => $outcome, 'exit_code' => $outcome === 'passed' ? 0 : 1, 'output' => '', 'head_before' => str_repeat('e', 40), 'handed_off_tree' => HandedTree,
+    return ['outcome' => $outcome, 'exit_code' => $outcome === 'passed' ? 0 : 1, 'output' => '', 'head_before' => str_repeat('e', 40), 'handed_off_head' => HandedHead, 'handed_off_tree' => HandedTree,
         'tree_before' => str_repeat('b', 40), 'head' => str_repeat('e', 40), 'tree' => str_repeat('b', 40), 'changed_paths' => [], 'failed_step' => null,
         'evidence' => null, 'phase' => 'handoff', 'deliverables' => [], 'commit' => TaskDoneFixture::Commit, 'ci' => null,
         'parts' => array_map(static fn (array $part): array => ['name' => $part[0], 'result' => $part[1], 'seconds' => 2.0], $parts)];
@@ -124,17 +126,20 @@ it('rejects a delivery with one reason', function (mixed $receipt, string $statu
     'a receipt without a tree' => [['commit' => str_repeat('a', 40), 'parts' => [['name' => 'pest', 'result' => 'passed', 'seconds' => 1]]], 'succeeded', deliveryPassed(), TaskHandoffs::NoReceipt],
     'a receipt with no part' => [deliveryReceipt(HandedTree, []), 'succeeded', deliveryPassed(), TaskHandoffs::NoReceipt],
     'a receipt whose part has an unknown result' => [deliveryReceipt(HandedTree, [['pest', 'failed']]), 'succeeded', deliveryPassed(), TaskHandoffs::NoReceipt],
+    'a receipt for another commit of the same tree' => [deliveryReceipt(HandedTree, [['pest', 'passed']], str_repeat('b', 40)), 'succeeded', deliveryPassed(), TaskHandoffs::OtherCommit],
+    'a passed check that observed no handed-off work' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'succeeded',
+        array_diff_key(deliveryPassed(), ['handed_off_head' => true, 'handed_off_tree' => true]), TaskHandoffs::CheckFailed],
     'a receipt for another tree' => [deliveryReceipt(str_repeat('f', 40), [['pest', 'passed']]), 'succeeded', deliveryPassed(), TaskHandoffs::OtherCommit],
     'a receipt that shows a failed part' => [deliveryReceipt(HandedTree, [['pest', 'FAILED']]), 'succeeded', deliveryPassed(), TaskHandoffs::FailedPart],
     'a failed check' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'succeeded', deliveryPassed([['pest', 'passed'], ['docs-lint', 'FAILED']], 'failed'), TaskHandoffs::CheckFailed],
     'a failed check that observed no handed-off tree' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'failed',
         ['error_code' => 'tasks.repository_execution_unknown'], TaskHandoffs::CheckFailed],
-    'a check conflict' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'failed', ['error_code' => 'tasks.check_conflict', 'handed_off_tree' => HandedTree,
+    'a check conflict' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'failed', ['error_code' => 'tasks.check_conflict', 'handed_off_head' => HandedHead, 'handed_off_tree' => HandedTree,
         'base' => 'current', 'default_commit' => str_repeat('9', 40), 'merged_default' => null, 'conflicting_paths' => ['a.php'], 'conflicting_more' => 0], TaskHandoffs::CheckFailed],
     'a passed part that failed in the check' => [deliveryReceipt(HandedTree, [['pest', 'passed']]), 'succeeded', deliveryPassed([['pest', 'FAILED']], 'failed'), TaskHandoffs::ClaimDisproved],
 ]);
 
-it('rejects the delivery when Swamp refuses to start its check', function (): void {
+it('rejects the delivery and ends the check failed when Swamp refuses to start it', function (): void {
     $world = deliveryWorld(deliveryReceipt(HandedTree, [['pest', 'passed']]));
     $check = TaskCheck::query()->create(['task_id' => $world->subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Running, 'pid' => 1,
         'process_started' => 'x', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
@@ -142,7 +147,10 @@ it('rejects the delivery when Swamp refuses to start its check', function (): vo
     app(TaskCheckProjection::class)->refused(deliveryCheckOperation($world, $check));
 
     expect(TaskHandoff::query()->sole()->only(['rejected', 'rejection_reason', 'task_check_id']))
-        ->toBe(['rejected' => true, 'rejection_reason' => TaskHandoffs::CheckFailed, 'task_check_id' => $check->id]);
+        ->toBe(['rejected' => true, 'rejection_reason' => TaskHandoffs::CheckFailed, 'task_check_id' => $check->id])
+        // The check ends failed, as its Operation did.
+        ->and($check->refresh()->status)->toBe(TaskCheckStatus::Failed)
+        ->and($check->finished_at)->not->toBeNull();
 });
 
 it('writes one row per delivery: none for a second check of the same turn, before the first turn, or after a newer question or failed turn', function (): void {

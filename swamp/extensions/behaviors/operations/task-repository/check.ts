@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     CheckInput,
-    CheckPart,
+    checkParts,
     classifyCi,
     deliverableResults,
     Local,
@@ -13,7 +13,7 @@ import {
     type Run,
     run,
 } from "../tasks/publish.ts";
-import { readPublicTail, redactText } from "../../_lib/public_output.ts";
+import { readPublicTail } from "../../_lib/public_output.ts";
 
 /*
  * Typed data for tasks.check and its scheduled CI observations. Instance
@@ -249,10 +249,7 @@ function stepRefusal(input: Input, steps: Steps): string | null {
  */
 export function receiptParts(text: string | undefined) {
     try {
-        const parts = z.array(CheckPart).min(1).safeParse(JSON.parse(text ?? ""));
-        return parts.success
-            ? parts.data.map((part) => ({ ...part, name: redactText(part.name) }))
-            : null;
+        return checkParts(JSON.parse(text ?? ""));
     } catch {
         return null;
     }
@@ -269,7 +266,7 @@ export async function localResult(
     outputs: string,
 ) {
     // A part table the Project check left is kept whatever fails after it.
-    const parts = receiptParts(run(steps, "parts").stdout);
+    const parts = receiptParts(run(steps, "parts").stdout) ?? checkParts(prepared.parts);
     if (prepared.error_code) {
         return {
             error_code: String(prepared.error_code),
@@ -325,7 +322,15 @@ export async function localResult(
             }]];
         }),
     );
-    const changed = before.head !== after.head || before.tree !== after.tree;
+    // The work as it stood when the phase started, before any command: a setup or Project command that moved it moved the workspace
+    // too, so the check never pins a tree other than the one handed off (docs/reference/tasks.md#the-delivery-gate).
+    const started = {
+        head: (run(steps, "original").stdout ?? "").trim(),
+        tree: (run(steps, "handed-tree").stdout ?? "").trim(),
+    };
+    const changed = before.head !== after.head || before.tree !== after.tree ||
+        (started.head !== "" && started.head !== before.head) ||
+        (started.tree !== "" && started.tree !== before.tree);
     const local = Local.parse({
         outcome: changed
             ? "changed"
@@ -352,7 +357,8 @@ export async function localResult(
         subtask_start_commit: input.base ||
             (run(steps, "original").stdout ?? "").trim(),
         parts,
-        handed_off_tree: (run(steps, "handed-tree").stdout ?? "").trim() || undefined,
+        handed_off_head: started.head || undefined,
+        handed_off_tree: started.tree || undefined,
     });
     const deliverables = deliverableResults(input, local);
     const failed = local.outcome === "passed"
@@ -601,7 +607,8 @@ export function baseFields(
     }
     const merge = ObjectValue.parse(base.merge ?? {});
     const fields = {
-        // The tree of the work the implementer handed off, before the base-merge (docs/reference/tasks.md#handoffs).
+        // HEAD and the tree of the work the implementer handed off, before the base-merge (docs/reference/tasks.md#handoffs).
+        ...(typeof merge.handed_head === "string" ? { handed_off_head: merge.handed_head } : {}),
         ...(typeof merge.handed_tree === "string" ? { handed_off_tree: merge.handed_tree } : {}),
         base: "current",
         default_commit: typeof merge.default_commit === "string"

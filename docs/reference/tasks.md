@@ -1187,20 +1187,20 @@ The turn result returns them as `receipts.delivery` and `receipts.review`, or nu
 
 #### The delivery gate
 
-The handoff check is the delivery gate. It removes any receipt before its commands run and after them. It keeps only the validated part table of the receipt its Project check wrote, as the check's `parts`, also when a later step fails.
+The handoff check is the delivery gate. It removes any receipt before its commands run and after them. It keeps only the validated part table of the receipt its Project check wrote, as the check's `parts`, also when a later step or the phase fails. Part names are redacted before any result is stored, and a name that redaction empties leaves no table.
 
-When the check ends, other than cancelled, or when Swamp refuses to start it, the Gateway writes one delivery row. The row belongs to the subtask's latest implementer turn before the check, only when that turn ended done and has no delivery row yet. A check before the first turn, after a newer question or failed turn, or a second check of the same turn writes none.
+When the check ends, other than cancelled, or when Swamp refuses to start it, the Gateway writes one delivery row. A refused start also ends the check `failed`. The row belongs to the subtask's latest implementer turn before the check, only when that turn ended done and has no delivery row yet. A check before the first turn, after a newer question or failed turn, or a second check of the same turn writes none.
 
-The gate compares the receipt's tree with the tree of the work handed off: the working tree before the check [merged main](#the-handoff-check-merges-main-first) or ran any command, uncommitted work included. The result names it `handed_off_tree`. So a check run before the commit still matches the committed work, and an edit after the check does not.
+The gate compares the receipt's commit and tree with the work handed off: HEAD and the working tree before the check [merged main](#the-handoff-check-merges-main-first) or ran any command, uncommitted work included. The result names them `handed_off_head` and `handed_off_tree`. The implementer commits, then runs the check, so its receipt names its last commit. A check that observed neither rejects the delivery as `check_failed`. A setup or Project command that moves the handed-off work ends the check `changed`; only the base-merge may change it.
 
 | Result | When |
 | --- | --- |
 | Accepted | The turn left a receipt for the handed-off tree with no failed part, and the check passed |
 | `no_receipt` | The turn left no receipt, or an invalid one |
-| `other_commit` | The receipt names another tree than the one the check observed |
+| `other_commit` | The receipt names another commit or tree than the check observed |
 | `failed_part` | The receipt shows a failed part |
 | `claim_disproved` | A part the receipt shows passed failed in the check |
-| `check_failed` | The check failed, `tasks.check_conflict` and a refused start included |
+| `check_failed` | The check failed, `tasks.check_conflict` and a refused start included, or it observed no handed-off work |
 
 A merge-main implementer turn after `tasks.check_conflict` stays allowed: that check wrote a rejected delivery row.
 

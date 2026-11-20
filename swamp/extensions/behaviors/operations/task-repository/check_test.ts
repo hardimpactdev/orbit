@@ -494,8 +494,11 @@ Deno.test("a check keeps the part table of the receipt its Project check wrote, 
         outputs({ project: "fine" }),
     );
     assertEquals("parts" in named && JSON.stringify(named.parts).includes(secret), false);
+    // A failed phase that collected a table before it failed passes the table in its refusal.
+    const refused = await localResult(input, { valid: true, error_code: "tasks.workspace_phase_failed", parts }, {}, outputs());
+    assertEquals(refused, { error_code: "tasks.workspace_phase_failed", check_id: 5, parts });
     for (const receipt of [undefined, "not json", "[]", "{}", '[{"name": 1}]', '[{"name": "pest", "result": "failed", "seconds": 1}]',
-        '[{"name": "pest", "result": "passed", "seconds": 1e400}]']) {
+        '[{"name": "pest", "result": "passed", "seconds": 1e400}]', JSON.stringify([{ name: "\u001b[31m\u001b[0m", result: "passed", seconds: 1 }])]) {
         const none = await localResult(
             { ...input, command: "true" },
             valid,
@@ -508,6 +511,25 @@ Deno.test("a check keeps the part table of the receipt its Project check wrote, 
         );
         assertEquals("parts" in none && none.parts, null);
     }
+});
+
+Deno.test("a setup or Project command that moved the handed-off work ends CHANGED", async () => {
+    for (const started of [{ original: ran(0, "f".repeat(40) + "\n") }, { "handed-tree": ran(0, "f".repeat(40) + "\n") }]) {
+        const value = await localResult(
+            { ...input, command: "true" },
+            valid,
+            { ...snapshots(), project: ran(0), ...started },
+            outputs({ project: "fine" }),
+        );
+        assertEquals("outcome" in value && value.outcome, "changed");
+    }
+    const kept = await localResult(
+        { ...input, command: "true" },
+        valid,
+        { ...snapshots(), project: ran(0), "handed-tree": ran(0, commit + "\n") },
+        outputs({ project: "fine" }),
+    );
+    assertEquals("outcome" in kept && [kept.outcome, kept.handed_off_head, kept.handed_off_tree], ["passed", commit, commit]);
 });
 
 Deno.test("a long Project output gives way to the deliverables block and the outcome line", async () => {
@@ -892,9 +914,9 @@ Deno.test("a copy's handoff check states its base, and a check without one state
         baseFields({
             requested: true,
             status: "succeeded",
-            merge: { handed_tree: commit, default_commit: head, merged_default: head, changed: true },
+            merge: { handed_head: head, handed_tree: commit, default_commit: head, merged_default: head, changed: true },
         }),
-        { handed_off_tree: commit, base: "current", default_commit: head, merged_default: head },
+        { handed_off_head: head, handed_off_tree: commit, base: "current", default_commit: head, merged_default: head },
     );
     // A conflict keeps its bounded paths in the result.
     assertEquals(

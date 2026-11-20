@@ -133,14 +133,17 @@ final readonly class TaskHandoffs
      */
     private static function verdict(?array $receipt, array $result, bool $passed): array
     {
-        // The work the implementer handed off: the tree of its working tree, uncommitted work included, before the check merged the
-        // default head in. A check that observed none compares no tree.
-        $handed = is_string($result['handed_off_tree'] ?? null) ? $result['handed_off_tree'] : null;
+        // The work the implementer handed off, as the check observed it before it merged the default head in or ran any command: HEAD
+        // and the tree of the working tree, uncommitted work included. A check that observed neither cannot establish the receipt's
+        // candidate, so it rejects it as a failed check.
+        $head = is_string($result['handed_off_head'] ?? null) ? $result['handed_off_head'] : null;
+        $tree = is_string($result['handed_off_tree'] ?? null) ? $result['handed_off_tree'] : null;
         $failed = static fn (array $parts): array => array_column(array_filter($parts, static fn (array $part): bool => $part['result'] === 'FAILED'), 'name');
         $passedParts = $receipt === null ? [] : array_column(array_filter($receipt['parts'], static fn (array $part): bool => $part['result'] === 'passed'), 'name');
         $reason = match (true) {
             $receipt === null => self::NoReceipt,
-            $handed !== null && $receipt['tree'] !== $handed => self::OtherCommit,
+            $head === null || $tree === null => self::CheckFailed,
+            $receipt['commit'] !== $head || $receipt['tree'] !== $tree => self::OtherCommit,
             $failed($receipt['parts']) !== [] => self::FailedPart,
             array_intersect($passedParts, $failed(self::parts($result['parts'] ?? null) ?? [])) !== [] => self::ClaimDisproved,
             ! $passed => self::CheckFailed,

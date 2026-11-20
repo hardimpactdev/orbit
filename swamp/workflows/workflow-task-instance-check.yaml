@@ -215,8 +215,8 @@ jobs:
           methodName: local
           inputs:
             intent: '${{ inputs.intent }}'
-            # An invalid intent keeps its own refusal; a failed phase returns its workspace code.
-            prepared: '${{ !steps.prepare.outputs.valid || ("checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence) ? steps.prepare.outputs : {"error_code": "merged" in steps && "outputs" in steps.merged && "error_code" in steps.merged.outputs.evidence ? steps.merged.outputs.evidence.error_code : ("checked" in steps && "outputs" in steps.checked && "error_code" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.error_code : "tasks.repository_execution_unknown")} }}'
+            # An invalid intent keeps its own refusal; a failed phase returns its workspace code, and the part table it collected first.
+            prepared: '${{ !steps.prepare.outputs.valid || ("checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence) ? steps.prepare.outputs : {"error_code": "merged" in steps && "outputs" in steps.merged && "error_code" in steps.merged.outputs.evidence ? steps.merged.outputs.evidence.error_code : ("checked" in steps && "outputs" in steps.checked && "error_code" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.error_code : "tasks.repository_execution_unknown"), "parts": "checked" in steps && "outputs" in steps.checked && "parts" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.parts : null} }}'
             steps: '${{ "checked" in steps && "outputs" in steps.checked && "check" in steps.checked.outputs.evidence ? steps.checked.outputs.evidence.check.steps : {} }}'
             outputs: '${{ "/tmp/orbit-ansible-" + run.id + "/output" }}'
       - name: Commit the candidate

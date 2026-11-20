@@ -119,9 +119,16 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
         });
     }
 
-    /** Swamp refused to start the check: a definitively failed delivery gate rejects the delivery it would have judged. */
+    /**
+     * Swamp refused to start the check: the check ends failed, as its Operation did, and the definitively failed delivery gate rejects
+     * the delivery it would have judged.
+     */
     public function refused(Operation $operation): void
     {
+        $check = TaskCheck::query()->find(ValidatedData::integer($operation->input['check_id']));
+        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running) {
+            self::record($check, 'failed', ['failed_step' => null]);
+        }
         TaskHandoffs::delivery($operation, [], false);
     }
 

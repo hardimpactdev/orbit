@@ -25,7 +25,7 @@ final readonly class TaskTurnPrompt
     {
         $steps = [
             "Check each deliverable: the file change is there, each command passes, and\neach receipt shows what its deliverable asks.",
-            ...($checkCommand === null ? [] : ["Run the Project's check: `{$checkCommand}`. If it fails, fix the cause\nand run it again. Leave the Project's other long gates to CI."]),
+            ...($checkCommand === null ? [] : ["Commit your work, then run the Project's check: `{$checkCommand}`. If it fails,\nfix the cause, commit and run it again: its receipt must name your last commit.\nLeave the Project's other long gates to CI."]),
             "Give the proof that the briefs and the deliverables ask for. Use no\nstand-in where they ask for the real thing. Fix what you can fix in this\n"
                 ."copy. If a proof still cannot run, or a deliverable is still not met,\ncommit your work and ask. Do not hand off.",
             "Remove what you created outside the checkout for a proof: records,\nprocesses, Instances and temporary files. Keep the receipts.",

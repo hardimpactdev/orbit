@@ -40,7 +40,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         commit = self.git('rev-parse', 'HEAD')
         # The tree of the work as the implementer handed it off, uncommitted work included: the tree its delivery receipt names.
         first, second = self.git('rev-parse', 'HEAD^1'), self.git('rev-parse', 'HEAD^2')
-        self.assertEqual(result, {'handed_tree': self.git('rev-parse', first + '^{tree}'), 'default_commit': self.head, 'merged_default': self.head,
+        self.assertEqual(result, {'handed_head': self.work, 'handed_tree': self.git('rev-parse', first + '^{tree}'), 'default_commit': self.head, 'merged_default': self.head,
                                   'commit': commit, 'changed': True})
         self.assertEqual(self.git('symbolic-ref', 'HEAD'), 'refs/heads/task-42')
         self.assertEqual(second, self.head)
@@ -60,7 +60,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         merged = self.merge()['commit']
         before = self.state()
         again = self.merge()
-        self.assertEqual(again, {'handed_tree': self.git('rev-parse', merged + '^{tree}'), 'default_commit': self.head, 'merged_default': None, 'changed': False})
+        self.assertEqual(again, {'handed_head': merged, 'handed_tree': self.git('rev-parse', merged + '^{tree}'), 'default_commit': self.head, 'merged_default': None, 'changed': False})
         self.assertEqual(self.evidence('base-merge'), again)
         self.assertEqual(self.state(), before)
 
@@ -71,7 +71,7 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         objects_before = self.git('for-each-ref')
         work = self.worktree()
         result = self.merge()
-        self.assertEqual(result, {'error_code': 'tasks.check_conflict', 'handed_tree': work, 'default_commit': self.head, 'conflicting_paths': ['work.txt'],
+        self.assertEqual(result, {'error_code': 'tasks.check_conflict', 'handed_head': self.work, 'handed_tree': work, 'default_commit': self.head, 'conflicting_paths': ['work.txt'],
                                   'conflicting_more': 0, 'changed': False})
         # The typed reader keeps the paths: the plain refusal shape would drop them.
         self.assertEqual(self.evidence('base-merge'), result)

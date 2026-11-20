@@ -276,7 +276,9 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),
-            JSON.stringify(receipt).replace('"seconds":1.5', '"seconds":1e400')]) {
+            JSON.stringify(receipt).replace('"seconds":1.5', '"seconds":1e400'),
+            // A name that is only terminal formatting is empty once redacted.
+            JSON.stringify({ ...receipt, parts: [{ name: "\u001b[31m\u001b[0m", result: "passed", seconds: 1 }] })]) {
             Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery: invalid }));
             assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.delivery, "invalid");
         }
