@@ -89,10 +89,31 @@ pub struct Filesystem {
     pub stale: bool,
 }
 
-pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem], bridge: Value) -> Value {
+/// Whether the kernel's clock is synchronized to a time source, as chrony or timesyncd set it; None where the kernel
+/// cannot say. A read-only `adjtimex`: it changes nothing.
+pub fn clock_synchronized() -> Option<bool> {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: `timex` is a plain C struct of integers, for which all zero bytes are a valid value.
+        let mut timex: libc::timex = unsafe { std::mem::zeroed() };
+        // SAFETY: `modes` is 0, so adjtimex only reads the kernel's clock state into the struct it is given.
+        let state = unsafe { libc::adjtimex(&mut timex) };
+        if state < 0 {
+            return None;
+        }
+        Some(state != libc::TIME_ERROR && timex.status & libc::STA_UNSYNC == 0)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem], bridge: Value, clock: Option<bool>) -> Value {
     json!({
         "os": os,
         "arch": arch,
+        "clock_synchronized": clock,
         "instance_bridge": bridge,
         "filesystems": filesystems
             .iter()
@@ -1034,7 +1055,7 @@ mod tests {
         }];
 
         assert_eq!(
-            host_data("linux", "x86_64", &fs, Value::Null),
+            host_data("linux", "x86_64", &fs, Value::Null, Some(true)),
             json!({"os": "linux", "arch": "x86_64", "instance_bridge": null, "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
         );
     }

@@ -144,6 +144,18 @@ final readonly class FactDoctor
             }
             $check->observed($node->id, 'node.disk_low');
         });
+        // Signed orders expire seconds after the Gateway signs them, so a Node's clock must follow a time source.
+        $check->read($node->id, ['node.clock_unsynchronized'], function () use ($check, $node): void {
+            $synchronized = $check->fact(NodeFactKind::Host)['clock_synchronized'] ?? null;
+            // A Mac's agent, and an agent before the field, cannot say: the check does not run for that Node.
+            if (! is_bool($synchronized)) {
+                return;
+            }
+            if (! $synchronized) {
+                $check->issue('node.clock_unsynchronized', $node->id, $node->name, 'The Node\'s clock does not follow a time source.', 'synchronized', 'not synchronized');
+            }
+            $check->observed($node->id, 'node.clock_unsynchronized');
+        });
         $check->read($node->id, ['node.instance_bridge_unhealthy'], function () use ($check, $node): void {
             $bridge = $check->fact(NodeFactKind::Host)['instance_bridge'] ?? null;
             if (is_array($bridge) && is_string($bridge['error_code'] ?? null)) {
