@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
+use App\Models\InstanceRuntime;
 use App\Models\Task;
 use App\Rules\NotBlank;
 use Illuminate\Validation\Rule;
@@ -15,9 +16,11 @@ use Illuminate\Validation\Rules\In;
 /**
  * The agent of each role of a task copy turn: its provider, model and effort (docs/reference/tasks.md#copy-turn-agents). Each value
  * comes from the group's `<role>_agent_<value>` column, else from the Project's `task_<role>_<value>` default, else from the
- * Gateway's `orbit.tasks.copy_agents`. The group's task VM columns `implementer_model` and `reviewer_model` are never read here.
+ * Gateway's `orbit.tasks.copy_agents`. An Antigravity role takes `orbit.tasks.copy_antigravity` in place of a model that is no Gemini
+ * model and an effort Antigravity does not offer, so a Claude model or effort set for another provider never reaches `agy`. The
+ * group's task VM columns `implementer_model` and `reviewer_model` are never read here.
  * The provider and the effort pick the copy's T3 provider instance, which Orbit writes into the copy's T3 settings
- * (InstanceContainer::CopyProviders).
+ * (InstanceContainer::offered).
  * T3 offers its models in a catalog it fetches itself, so the turn's first step checks the model in the copy.
  */
 final readonly class TaskAgent
@@ -104,7 +107,7 @@ final readonly class TaskAgent
     }
 
     /**
-     * Each value of the role and where it comes from: `group`, `project` or `gateway`.
+     * Each value of the role and where it comes from: `group`, `project` or `gateway`, or `provider` for Antigravity's own value.
      *
      * @return array{provider: array{value: string, source: string}, model: array{value: string, source: string}, effort: array{value: string, source: string}}
      */
@@ -120,24 +123,33 @@ final readonly class TaskAgent
                 default => ['value' => config()->string('orbit.tasks.copy_agents.'.$role->value.'.'.$value), 'source' => 'gateway'],
             };
         }
+        if ($resolved['provider']['value'] === 'antigravity') {
+            if (! str_starts_with($resolved['model']['value'], 'gemini-')) {
+                $resolved['model'] = ['value' => config()->string('orbit.tasks.copy_antigravity.model'), 'source' => 'provider'];
+            }
+            if (! in_array($resolved['effort']['value'], InstanceContainer::AntigravityEfforts, true)) {
+                $resolved['effort'] = ['value' => config()->string('orbit.tasks.copy_antigravity.effort'), 'source' => 'provider'];
+            }
+        }
 
         /** @var array{provider: array{value: string, source: string}, model: array{value: string, source: string}, effort: array{value: string, source: string}} $resolved */
         return $resolved;
     }
 
     /**
-     * The agent a new copy thread of the role starts with. A provider and effort the copy's T3 has no instance for is refused here,
-     * before Swamp runs anything, with what the copy offers.
+     * The agent a new copy thread of the role starts with, in the copy of `$runtime`. A provider and effort the copy's T3 has no
+     * instance for, such as Antigravity in a copy made before it, is refused here, before Swamp runs anything, with what the copy offers.
      *
      * @return array{provider: string, instance: string, model: string, effort: string, options: list<array{id: string, value: string}>}
      */
-    public static function forNewThread(Task $group, TaskThreadRole $role): array
+    public static function forNewThread(Task $group, TaskThreadRole $role, InstanceRuntime $runtime): array
     {
         $resolved = self::resolve($group, $role);
         ['provider' => ['value' => $provider], 'model' => ['value' => $model], 'effort' => ['value' => $effort]] = $resolved;
-        if (! in_array($effort, InstanceContainer::CopyProviders[$provider] ?? [], true)) {
+        $offered = InstanceContainer::offered($runtime);
+        if (! in_array($effort, $offered[$provider] ?? [], true)) {
             throw new ResourceOperationException('tasks.copy_turn_unoffered', "The task copy's T3 offers no provider instance for {$provider} at {$effort} effort.", 422,
-                details: ['role' => $role->value, 'provider' => $resolved['provider'], 'effort' => $resolved['effort'], 'offered' => InstanceContainer::CopyProviders]);
+                details: ['role' => $role->value, 'provider' => $resolved['provider'], 'effort' => $resolved['effort'], 'offered' => $offered]);
         }
         if (preg_match(self::ModelPattern, $model) !== 1) {
             throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_'.strtoupper($role->value).'_MODEL must be a model name.', 503);

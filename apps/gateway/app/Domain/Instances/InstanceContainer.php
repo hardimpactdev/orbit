@@ -23,10 +23,12 @@ use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use RuntimeException;
 
 /**
@@ -64,6 +66,9 @@ final readonly class InstanceContainer
 
     /** The Node's WireGuard interface, where T3's clients come in. */
     public const string WireGuardInterface = 'orbit';
+
+    /** T3's settings in a container, with the provider instances Orbit writes (self::clone). */
+    public const string T3Settings = '/home/agent/.t3/userdata/settings.json';
 
     /** The file whose presence starts T3: the Instance, its Project and its URL. */
     public const string InstanceFile = '/etc/orbit/instance';
@@ -104,8 +109,21 @@ final readonly class InstanceContainer
     /** The Codex efforts of a task copy's T3, as gpt-6.1-sol advertises them: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
     public const array CodexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
-    /** What a task copy's T3 offers: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold them. */
-    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts];
+    /**
+     * Antigravity's one effort in a task copy (docs/reference/development-containers.md#turn-model-and-effort). The Conn Server's
+     * antigravity driver gives its models no effort option, and the model router runs a base Gemini name such as `gemini-3.8-flash`
+     * at its high tier, so the one instance self::AntigravityInstance runs at `high`.
+     */
+    public const array AntigravityEfforts = ['high'];
+
+    /** The Conn Server's one Antigravity provider instance (self::antigravityInstance). */
+    public const string AntigravityInstance = 'antigravity';
+
+    /**
+     * What a task copy's T3 can offer: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold
+     * them. A copy offers the providers its runtime records (self::offered).
+     */
+    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::AntigravityEfforts];
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
@@ -549,7 +567,7 @@ final readonly class InstanceContainer
                 ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none. Only the Conn Server has
                 // the Antigravity driver.
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                ['path' => self::T3Settings, 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($providers === [] ? [] : ['providerInstances' => $providers])]],
                 // No default dependencies, and the runtime's recorded server; the Node converge keeps both current (t3DropIns).
                 ...array_map(static fn (array $file): array => ['path' => $file['path'], 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'],
@@ -580,16 +598,38 @@ final readonly class InstanceContainer
         ];
     }
 
-    /** The T3 provider instance of a provider and effort in a task copy: `claudeMedium` for `claude` at `medium`. */
+    /**
+     * What the task copy's T3 offers: Claude and Codex, which every copy turn has always had, and Antigravity only when the settings
+     * Orbit wrote at the copy's create, kept in its `instance.create` input, hold self::AntigravityInstance. The Node converge rewrites
+     * no settings, so a copy made before Antigravity, or one on stock T3, never offers it.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function offered(InstanceRuntime $runtime): array
+    {
+        $input = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $runtime->instance_id)
+            ->orderBy('id')->value('input');
+        $files = is_array($input) ? Arr::get($input, 'direct_provisioning.container.clone.files') : null;
+        $settings = collect(is_array($files) ? $files : [])->first(static fn (mixed $file): bool => is_array($file) && ($file['path'] ?? null) === self::T3Settings);
+        $antigravity = is_array($settings) && is_array(Arr::get($settings, 'json.providerInstances.'.self::AntigravityInstance));
+
+        return array_diff_key(self::CopyProviders, $antigravity ? [] : ['antigravity' => true]);
+    }
+
+    /**
+     * The T3 provider instance of a provider and effort in a task copy: `claudeMedium` for `claude` at `medium`, and the one
+     * self::AntigravityInstance for `antigravity`.
+     */
     public static function providerInstance(string $provider, string $effort): string
     {
-        return $provider.ucfirst($effort);
+        return $provider === 'antigravity' ? self::AntigravityInstance : $provider.ucfirst($effort);
     }
 
     /**
      * The model options a new thread of the provider and effort starts with. T3 0.1.7 sends Codex the effort of the thread's
      * `reasoningEffort` option on every turn and none otherwise, whatever Codex's own configuration says, so a Codex thread carries it.
-     * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort.
+     * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort. An Antigravity thread carries none
+     * either: the Conn Server's antigravity driver offers no model option.
      *
      * @return list<array{id: string, value: string}>
      */
@@ -644,7 +684,7 @@ final readonly class InstanceContainer
      */
     private static function antigravityInstance(): array
     {
-        return ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
+        return [self::AntigravityInstance => ['driver' => 'antigravity', 'enabled' => true,
             'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => self::ModelKeyValue]]];
     }
 

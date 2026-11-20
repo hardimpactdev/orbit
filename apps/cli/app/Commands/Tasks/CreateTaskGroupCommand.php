@@ -36,10 +36,10 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--preview : Keep the sandbox running during review}
         {--current-recipe : Wait for the current machine recipe image; never start from a fallback image}
         {--review= : manual (default; Nick approves the head) or automatic (a fresh reviewer passes the head)}
-        {--implementer-provider= : Implementer provider in a task copy, such as claude}
+        {--implementer-provider= : Implementer provider in a task copy: claude, codex, or antigravity}
         {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
-        {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max}
-        {--reviewer-provider= : Reviewer provider in a task copy}
+        {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max; codex adds ultra, antigravity takes high only}
+        {--reviewer-provider= : Reviewer provider in a task copy: claude, codex, or antigravity}
         {--reviewer-model= : Reviewer model in a task copy}
         {--reviewer-effort= : Reviewer effort in a task copy}
         {--pr-mode= : review_before_pr or pr_when_done: what Orbit does once the work of a task copy is done}

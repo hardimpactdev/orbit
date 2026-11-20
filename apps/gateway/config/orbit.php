@@ -138,6 +138,9 @@ return [
                 'effort' => $copyAgent('ORBIT_TASKS_COPY_REVIEWER_EFFORT', 'high'),
             ],
         ],
+        // Antigravity's own model and effort (TaskAgent): an Antigravity thread takes them in place of a model that is no Gemini model
+        // and an effort Antigravity does not offer.
+        'copy_antigravity' => ['model' => 'gemini-3.8-flash', 'effort' => 'high'],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         // An upper bound on the nested-fleet task copies (docs/cli/task/start.mmd) one Node holds at once, counted at each task start. The
