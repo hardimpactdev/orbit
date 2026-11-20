@@ -158,6 +158,7 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
+            Action::InstanceClone => instance(order),
         }
     }
 }
@@ -303,6 +304,18 @@ fn dns(order: &VerifiedOrder) -> Outcome {
             Outcome::Failed { code: failure.code.to_owned() }
         },
         |changes| Outcome::Applied { changes },
+    )
+}
+
+/// The instance family (ADR 0271): an Instance container made from its default's seed. A failure's code goes to the
+/// Gateway, its detail only to the log.
+fn instance(order: &VerifiedOrder) -> Outcome {
+    orbit_executor_instance::clone(&orbit_executor_instance::NodeSystem, order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::Failed { code: failure.code.to_owned() }
+        },
+        |stdout| Outcome::Output { stdout },
     )
 }
 

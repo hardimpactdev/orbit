@@ -1,0 +1,332 @@
+//! The instance family of the executor (ADR 0271): an Instance container made from its default's seed.
+//!
+//! - [`clone`] (`instance.clone`): the copy's network ACL, then a copy of the seed snapshot with the copy's config, root
+//!   disk and guarded NIC, then the T3 proxy device. A repeat finds the copy and only completes what is missing.
+//!
+//! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
+//! the fixed `incus` binary with fixed arguments.
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::BTreeMap;
+use std::io::Write as _;
+use std::process::{Command, Stdio};
+
+use serde::Deserialize;
+use serde_json::Value;
+
+const TIMEOUT: &str = "/usr/bin/timeout";
+const INCUS: &str = "/usr/bin/incus";
+
+/// Why the primitive failed: a stable code, and a detail for the executor's log only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    /// The code the receipt carries.
+    pub code: &'static str,
+    /// What the executor logs. Never sent to the Gateway.
+    pub detail: String,
+}
+
+impl Failure {
+    fn new(code: &'static str, detail: impl Into<String>) -> Self {
+        Self { code, detail: detail.into() }
+    }
+}
+
+/// What the primitive needs from the Node. The Node itself in production; a double in the tests.
+pub trait System {
+    /// Runs a command with a time limit, with `stdin` as its standard input, and returns its standard output.
+    ///
+    /// # Errors
+    ///
+    /// The command's standard error when it fails or cannot start.
+    fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String>;
+}
+
+/// The Node's own system: `timeout`-bounded commands.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NodeSystem;
+
+impl System for NodeSystem {
+    fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+        let mut child = Command::new(TIMEOUT)
+            .arg(seconds.to_string())
+            .args(argv)
+            .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        if let (Some(bytes), Some(mut pipe)) = (stdin, child.stdin.take()) {
+            pipe.write_all(bytes).map_err(|error| error.to_string())?;
+        }
+        let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+        }
+    }
+}
+
+/// What `instance.clone` makes.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CloneInput {
+    project: String,
+    name: String,
+    /// The default whose seed snapshot the copy starts from.
+    source: String,
+    /// The admitted seed, `seed-<commit>`.
+    snapshot: String,
+    acl: Acl,
+    /// The bridge's shared ACL, listed before the copy's own on the NIC.
+    nic_acl: String,
+    address: String,
+    config: BTreeMap<String, String>,
+    root: Root,
+    /// The NIC's address filters, `security.ipv4_filtering` and `security.mac_filtering`.
+    filters: BTreeMap<String, String>,
+    proxy: Proxy,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Acl {
+    name: String,
+    /// `{description, egress, ingress}`, as Incus answers them.
+    rules: Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Root {
+    pool: String,
+    size: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Proxy {
+    device: String,
+    /// `tcp:<address>:<port>` on the Node.
+    listen: String,
+    /// `tcp:<address>:<port>` in the copy.
+    connect: String,
+}
+
+/// Makes the copy, or completes a copy an earlier run made: its own ACL with the admitted rules, then, when the copy does
+/// not exist, a copy of the seed snapshot, then the T3 proxy device. The copy is never started here.
+///
+/// The admitted seed is copied when it exists. A deployment that replaced it with a newer seed leaves that newer seed, which
+/// is copied instead; a retake that has not renamed its `next-` snapshot yet refuses, so the create can run again.
+///
+/// Answers `{"snapshot": <the seed copied, or null for an existing copy>}`.
+///
+/// # Errors
+///
+/// `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`,
+/// `instance.pool_driver_unsupported` or `instance.clone_failed`.
+pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
+    let input: CloneInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.clone_input_invalid", error.to_string()))?;
+    check(&input).map_err(|detail| Failure::new("instance.clone_input_invalid", detail))?;
+    let incus = Incus { system };
+    let instance = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
+    ensure_acl(&incus, &input.acl)?;
+    let (devices, snapshot) = match instance {
+        Some(found) => (found.get("devices").cloned().unwrap_or(Value::Null), None),
+        None => {
+            let snapshot = seed(&incus, &input)?;
+            copy(&incus, &input, &snapshot)?;
+            (Value::Null, Some(snapshot))
+        }
+    };
+    if devices.get(&input.proxy.device).is_none() {
+        incus.change(&[
+            "--project",
+            &input.project,
+            "config",
+            "device",
+            "add",
+            &input.name,
+            &input.proxy.device,
+            "proxy",
+            &format!("listen={}", input.proxy.listen),
+            &format!("connect={}", input.proxy.connect),
+            "nat=true",
+        ])?;
+    }
+    Ok(serde_json::json!({"snapshot": snapshot}).to_string())
+}
+
+/// The shapes the Node accepts: names Incus allows, and values that cannot carry a second device key or option.
+fn check(input: &CloneInput) -> Result<(), String> {
+    let name = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 63
+            && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            && !value.starts_with('-')
+    };
+    for (field, value) in [
+        ("project", &input.project),
+        ("name", &input.name),
+        ("source", &input.source),
+        ("acl", &input.acl.name),
+        ("nic_acl", &input.nic_acl),
+        ("root.pool", &input.root.pool),
+        ("proxy.device", &input.proxy.device),
+    ] {
+        if !name(value) {
+            return Err(format!("{field} is not a name"));
+        }
+    }
+    let seed = input.snapshot.strip_prefix("seed-").unwrap_or_default();
+    if seed.is_empty() || !seed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("snapshot is not seed-<commit>".to_owned());
+    }
+    let octets: Vec<&str> = input.address.split('.').collect();
+    if octets.len() != 4 || octets.iter().any(|octet| octet.parse::<u8>().is_err()) {
+        return Err("address is not IPv4".to_owned());
+    }
+    let size = input.root.size.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    if size.is_empty() || !size.bytes().all(|byte| byte.is_ascii_digit()) || !matches!(&input.root.size[size.len()..], "GiB" | "MiB" | "GB" | "MB") {
+        return Err("root.size is not a size".to_owned());
+    }
+    let key = |value: &str| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
+    let value = |value: &str| !value.is_empty() && !value.bytes().any(|byte| byte.is_ascii_control() || byte == b',');
+    for (k, v) in input.config.iter().chain(&input.filters) {
+        if !key(k) || !value(v) {
+            return Err(format!("{k} is not a config key and value"));
+        }
+    }
+    if input.filters.keys().any(|k| !k.starts_with("security.")) {
+        return Err("a filter is not a security key".to_owned());
+    }
+    let endpoint = |value: &str| {
+        let Some(rest) = value.strip_prefix("tcp:") else { return false };
+        let Some((host, port)) = rest.rsplit_once(':') else { return false };
+        host.split('.').count() == 4 && host.split('.').all(|octet| octet.parse::<u8>().is_ok()) && port.parse::<u16>().is_ok_and(|port| port > 0)
+    };
+    if !endpoint(&input.proxy.listen) || !endpoint(&input.proxy.connect) {
+        return Err("proxy endpoint is not tcp:<IPv4>:<port>".to_owned());
+    }
+    if !input.acl.rules.is_object() {
+        return Err("acl.rules is not an object".to_owned());
+    }
+    Ok(())
+}
+
+/// The copy's own ACL: made when missing, its rules written when they differ.
+fn ensure_acl(incus: &Incus<'_, impl System>, acl: &Acl) -> Result<(), Failure> {
+    let found = incus.query(&format!("/1.0/network-acls/{}?project=default", acl.name))?;
+    if found.is_none() {
+        incus.change(&["network", "acl", "create", &acl.name, "--project", "default"])?;
+    }
+    let held = |key: &str| found.as_ref().and_then(|found| found.get(key)).cloned().unwrap_or(Value::Null);
+    let wanted = |key: &str| acl.rules.get(key).cloned().unwrap_or(Value::Null);
+    if found.is_none() || ["description", "egress", "ingress"].iter().any(|key| held(key) != wanted(key)) {
+        let rules = acl.rules.to_string();
+        incus.write(&["network", "acl", "edit", &acl.name, "--project", "default"], rules.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// The seed to copy: the admitted one, or the newest seed when a deployment replaced it.
+fn seed(incus: &Incus<'_, impl System>, input: &CloneInput) -> Result<String, Failure> {
+    let listed = incus
+        .query(&format!("/1.0/instances/{}/snapshots?project={}&recursion=1", input.source, input.project))?
+        .ok_or_else(|| Failure::new("instance.default_seed_missing", format!("{} not found", input.source)))?;
+    let snapshots: Vec<(String, String)> = listed
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let name = row.get("name")?.as_str()?.rsplit('/').next()?.to_owned();
+                    Some((name, row.get("created_at").and_then(Value::as_str).unwrap_or_default().to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if snapshots.iter().any(|(name, _)| *name == input.snapshot) {
+        return Ok(input.snapshot.clone());
+    }
+    if !snapshots.iter().any(|(name, _)| name.starts_with("seed-") || name.starts_with("next-")) {
+        return Err(Failure::new("instance.default_seed_missing", "no seed"));
+    }
+    let retake = format!("next-{}", &input.snapshot["seed-".len()..]);
+    let newest = snapshots.iter().filter(|(name, _)| name.starts_with("seed-")).max_by(|a, b| a.1.cmp(&b.1));
+    match newest {
+        Some((name, _)) if !snapshots.iter().any(|(held, _)| *held == retake) => Ok(name.clone()),
+        _ => Err(Failure::new("instance.default_seed_moved", "the admitted seed is being retaken")),
+    }
+}
+
+/// The copy of `snapshot`, with the copy's config, its root disk and a NIC that admits only the copy's own address.
+fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> Result<(), Failure> {
+    let pool = incus
+        .query(&format!("/1.0/storage-pools/{}", input.root.pool))?
+        .ok_or_else(|| Failure::new("instance.clone_failed", format!("pool {} not found", input.root.pool)))?;
+    let driver = pool.get("driver").and_then(Value::as_str).unwrap_or_default();
+    // Incus sizes a btrfs root with qgroups, which a nested Node refuses; the copy's own volume bounds that pool.
+    let sized = match driver {
+        "zfs" => true,
+        "btrfs" => false,
+        _ => return Err(Failure::new("instance.pool_driver_unsupported", driver.to_owned())),
+    };
+    let mut argv: Vec<String> = ["--project", &input.project, "copy", &format!("{}/{snapshot}", input.source), &input.name]
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect();
+    for (key, value) in &input.config {
+        argv.extend(["--config".to_owned(), format!("{key}={value}")]);
+    }
+    let mut devices = vec!["root,type=disk".to_owned(), "root,path=/".to_owned(), format!("root,pool={}", input.root.pool)];
+    if sized {
+        devices.push(format!("root,size={}", input.root.size));
+    }
+    devices.extend([
+        format!("eth0,ipv4.address={}", input.address),
+        format!("eth0,security.acls={},{}", input.nic_acl, input.acl.name),
+        "eth0,security.acls.default.egress.action=reject".to_owned(),
+        "eth0,security.acls.default.ingress.action=reject".to_owned(),
+    ]);
+    devices.extend(input.filters.iter().map(|(key, value)| format!("eth0,{key}={value}")));
+    for device in devices {
+        argv.extend(["--device".to_owned(), device]);
+    }
+    incus.run(&argv, None).map(drop)
+}
+
+/// The `incus` binary.
+struct Incus<'a, S: System> {
+    system: &'a S,
+}
+
+impl<S: System> Incus<'_, S> {
+    /// `incus query`: the answer, or None when Incus answers that the object does not exist.
+    fn query(&self, url: &str) -> Result<Option<Value>, Failure> {
+        match self.system.run(60, &[INCUS.to_owned(), "query".to_owned(), url.to_owned()], None) {
+            Ok(text) => serde_json::from_str(&text).map(Some).map_err(|error| Failure::new("instance.clone_failed", format!("{url}: {error}"))),
+            Err(detail) if detail.to_ascii_lowercase().contains("not found") => Ok(None),
+            Err(detail) => Err(Failure::new("instance.clone_failed", format!("query {url}: {detail}"))),
+        }
+    }
+
+    fn change(&self, argv: &[&str]) -> Result<(), Failure> {
+        self.run(&argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None).map(drop)
+    }
+
+    fn write(&self, argv: &[&str], stdin: &[u8]) -> Result<(), Failure> {
+        self.run(&argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), Some(stdin)).map(drop)
+    }
+
+    fn run(&self, argv: &[String], stdin: Option<&[u8]>) -> Result<String, Failure> {
+        let mut full = vec![INCUS.to_owned()];
+        full.extend_from_slice(argv);
+        // A copy reads the whole seed: the bound covers a large one on a busy Node.
+        self.system
+            .run(300, &full, stdin)
+            .map_err(|detail| Failure::new("instance.clone_failed", format!("{}: {detail}", argv.iter().take(4).cloned().collect::<Vec<_>>().join(" "))))
+    }
+}

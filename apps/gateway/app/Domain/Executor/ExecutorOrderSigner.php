@@ -18,7 +18,7 @@ use SensitiveParameter;
  */
 final readonly class ExecutorOrderSigner
 {
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone'];
 
     public const int MaxWireBytes = 4096;
 
