@@ -10,6 +10,7 @@ use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolInventoryScan;
 use App\Domain\Tools\ToolInventoryScanState;
+use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperationException;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
@@ -86,5 +87,15 @@ it('reads a cask version without its comma build and leaves formula versions unc
         ->and($cask->normalizeVersion('140.0'))->toBe('140.0.0')
         ->and($cask->normalizeVersion('3.003'))->toBeNull()
         ->and($cask->normalizeVersion(',5999302598852608'))->toBeNull()
+        ->and($cask->normalizeVersion("1.5.13,5999302598852608\n"))->toBeNull()
+        ->and($cask->normalizeVersion('1.5.13,5999302598852608'.str_repeat('1', 233)))->toBeNull()
         ->and(app(HomebrewToolManager::class)->normalizeVersion('1.5.13,5999302598852608'))->toBeNull();
+});
+
+it('installs a Linux cask into the existing Homebrew prefix without a Homebrew setup plan', function (): void {
+    $node = linux_cask_node(brew: true);
+    $intent = app(ToolManagerIntent::class);
+
+    expect($intent->nativeInput($node, ToolManagerName::BrewCask))->toBeNull()
+        ->and($intent->nativeInput($node, ToolManagerName::Brew)['manager'] ?? null)->toBe('homebrew');
 });

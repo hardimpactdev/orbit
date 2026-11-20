@@ -55,7 +55,8 @@ export function commands(input: Input) {
                 "HOMEBREW_NO_INSTALL_CLEANUP=1",
                 "HOMEBREW_NO_AUTOREMOVE=1",
                 "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1",
-                ...(input.platform === "macos"
+                // Casks refresh the API metadata on Linux too, so Orbit sees a new cask build without `brew update`.
+                ...(input.platform === "macos" || cask
                     ? ["HOMEBREW_FORCE_API_AUTO_UPDATE=1"]
                     : []),
             ]

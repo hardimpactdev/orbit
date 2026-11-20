@@ -54,6 +54,12 @@ final readonly class HomebrewCaskToolManager implements ToolManager
     /** A cask version carries its build after a comma, such as `1.5.13,5253791805734912`; SemVer reads the part before it. */
     public function normalizeVersion(string $rawVersion): ?string
     {
+        // The raw version passes Swamp's checks first: 1 to 255 UTF-16 units and no control character.
+        $units = strlen((string) mb_convert_encoding($rawVersion, 'UTF-16LE', 'UTF-8')) / 2;
+        if ($units < 1 || $units > 255 || preg_match('/[\x00-\x1f\x7f]/', $rawVersion) === 1) {
+            return null;
+        }
+
         return $this->versions->normalize(explode(',', $rawVersion, 2)[0]);
     }
 

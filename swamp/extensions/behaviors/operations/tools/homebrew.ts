@@ -57,6 +57,12 @@ function caskArtifactBlock(
         p.length > 0 && !p.includes("..") && !/[\x00-\x1f\x7f]/.test(p) &&
         (!p.includes("/") ||
             bases.some((b) => p === b || p.startsWith(b + "/")));
+    // A command wrapper puts a command on the prefix's PATH, so it may not land in the home.
+    const prefixPath = (p: string) =>
+        userPath(p) &&
+        ["$HOMEBREW_PREFIX", z.string().parse(facts.prefix)].some((b) =>
+            p === b || p.startsWith(b + "/")
+        );
     let installs = 0, authorization = false;
     for (const artifact of z.array(Row).parse(value.artifacts)) {
         for (const [kind, item] of Object.entries(artifact)) {
@@ -112,13 +118,29 @@ function caskArtifactBlock(
             }
             if (
                 privilegedKinds.includes(kind) ||
-                !z.array(z.string()).parse(paths).every(userPath)
+                !z.array(z.string()).parse(paths).every(
+                    kind === "command_wrapper" ? prefixPath : userPath,
+                )
             ) authorization = true;
         }
     }
     if (!removal && !installs) return "unsupported_artifact";
     if (authorization) return "authorization_required";
     return null;
+}
+/** A cask ships a build for this Linux tag: Homebrew lists the tag, and the resolved record needs no macOS or other CPU. */
+function linuxBuild(value: Record<string, unknown>, tag: string): boolean {
+    const platforms = z.array(z.string()).safeParse(value.supported_platforms);
+    const needs = Row.safeParse(value.depends_on ?? {});
+    if (!platforms.success || !platforms.data.includes(tag) || !needs.success) {
+        return false;
+    }
+    if (Object.keys(needs.data).some((k) => k.includes("macos"))) return false;
+    if (needs.data.arch === undefined) return true;
+    const arch = z.array(z.object({ type: z.string(), bits: z.number() }))
+        .safeParse(needs.data.arch);
+    return arch.success &&
+        arch.data.some((a) => a.type === "intel" && a.bits === 64);
 }
 export function homebrewRemovalBlock(
     input: BrewInput,
@@ -178,11 +200,9 @@ export function homebrewBlock(
         typeof value.url !== "string" || !/^https:\/\/\S+$/.test(value.url)
     ) return "unsupported_source";
     if (z.boolean().parse(value.disabled)) return "unsupported_artifact";
-    // A cask with a Linux build clears `depends_on.macos` in its Linux variation.
-    if (
-        input.platform === "linux" &&
-        "macos" in Row.parse(value.depends_on ?? {})
-    ) return "unsupported_artifact";
+    if (input.platform === "linux" && !linuxBuild(value, tag)) {
+        return "unsupported_artifact";
+    }
     const block = caskArtifactBlock(value, facts);
     if (block) return block;
     if (!sha(value.sha256)) return "checksum_unavailable";

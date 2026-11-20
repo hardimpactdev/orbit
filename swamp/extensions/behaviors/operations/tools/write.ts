@@ -9,6 +9,7 @@ import {
     normalizeVersion,
     PackageInput,
     platformSupports,
+    publicVersion,
     safeVersion,
     Step,
     ToolRefusal,
@@ -139,7 +140,9 @@ export function decide(input: Input, phase: Phase): Decision {
                 mutate: false,
                 outcome: "unchanged",
                 manager_version: managerVersion,
-                installed_version: present ? installed : null,
+                installed_version: present
+                    ? publicVersion(installed!, input.manager)
+                    : null,
                 candidate_json: "null",
             };
         }
@@ -155,7 +158,9 @@ export function decide(input: Input, phase: Phase): Decision {
             mutate: outcome === "applied",
             outcome,
             manager_version: managerVersion,
-            installed_version: present ? installed : null,
+            installed_version: present
+                ? publicVersion(installed!, input.manager)
+                : null,
             candidate_json: JSON.stringify(phase.candidate),
         };
     } catch (error) {
@@ -292,7 +297,9 @@ export const behavior = {
                     );
                 }
                 const value = {
-                    installed_version,
+                    installed_version: installed_version === null
+                        ? null
+                        : publicVersion(installed_version, args.input.manager),
                     present: facts.versions.length === 1,
                     absent: facts.versions.length === 0,
                     compliant: args.input.manager !== "apt" ||

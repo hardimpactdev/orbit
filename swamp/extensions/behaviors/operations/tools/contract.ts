@@ -129,6 +129,16 @@ export function normalizeVersion(
         : null;
 }
 
+/** The installed version Orbit reports: a cask's SemVer without its comma build, which only the package reads compare. */
+export function publicVersion(
+    raw: string,
+    manager: ToolInput["manager"],
+): string {
+    return manager === "brew-cask"
+        ? normalizeVersion(raw, manager) ?? raw
+        : raw;
+}
+
 export function validateConstraint(input: ToolInput): void {
     if (input.version_constraint === null) return;
     try {
