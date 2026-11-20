@@ -65,7 +65,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $container = self::container($operation);
         $clone = ValidatedData::object($container['clone']);
         $t3 = ValidatedData::object($clone['t3']);
-        $instance = Instance::query()->findOrFail($operation->target_id);
+        // Only the steps that render the Instance's own files read it.
+        $instance = static fn (): Instance => Instance::query()->findOrFail($operation->target_id);
         $where = ['project' => ValidatedData::string($container['project']), 'name' => ValidatedData::string($container['name'])];
 
         return match ($step) {
@@ -82,15 +83,15 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'prepare' => [...$where, 'units' => array_map(static fn (mixed $unit): string => ValidatedData::string(ValidatedData::object($unit)['name']),
                 self::rows($container['processes'] ?? [])), 'process_ids' => [],
                 // The clone's files are kilobytes and an order holds 4 KB: the list goes as one blob, its contents inline.
-                'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance, $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
+                'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance(), $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
             'start' => [...$where, 'source' => $clone['source'], 'network' => $container['network'], 'nic' => 'eth0',
                 'hostname' => ValidatedData::string(ValidatedData::object($container['machine_name'])['hostname']),
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
                     self::rows($container['private_names'] ?? []))],
-            'checkout' => [...$where, 'instance_id' => $instance->id, 'workspace' => $container['workspace'], 'branch' => $container['branch'],
+            'checkout' => [...$where, 'instance_id' => ValidatedData::integer($operation->target_id), 'workspace' => $container['workspace'], 'branch' => $container['branch'],
                 ...self::start($run, $clone, ValidatedData::string($container['mirror'])),
                 'environment_file' => $container['environment_file'], 'group' => ValidatedData::integer(ValidatedData::object($container['workspace_ids'])['group']),
-                'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance)]],
+                'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance())]],
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
                 'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
