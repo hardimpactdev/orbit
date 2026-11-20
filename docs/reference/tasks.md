@@ -1226,10 +1226,11 @@ When a reviewer turn of a gated group ends `done`, the Gateway validates the rec
 | `changes_without_finding` | The verdict is `changes` and `findings` is empty |
 | `approve_with_finding` | The verdict is `approve` and `findings` is not empty |
 
-A rejected review is sent again. The admissions of a gated group read the rows and refuse with `tasks.handoff_required` (409):
+A rejected review is sent again. The admissions of a gated group read the rows and refuse a skipped gate with `tasks.handoff_required` (409).
 
-- An implementer turn after an accepted delivery, until an accepted review row comes after it. An accepted `changes` lets the implementer fix them, and its next accepted delivery waits for a review again. A newer handoff check of the subtask that did not pass lets the turn run, so a merge turn after `tasks.check_conflict` stays allowed.
-- Completing a subtask of a task copy, or publishing a check of it, unless the subtask's latest review row is an accepted `approve` that came after its latest delivery row.
+An implementer turn after an accepted delivery waits until an accepted review row comes after it. An accepted `changes` lets the implementer fix the findings. Its next accepted delivery waits for a review again. A newer handoff check of the subtask that did not pass also lets the turn run. So a merge turn after `tasks.check_conflict` stays allowed.
+
+Completing a subtask of a task copy needs an accepted `approve` as the subtask's latest review row, after its latest delivery row. Publishing a check of the subtask needs the same.
 
 #### Question handoffs
 

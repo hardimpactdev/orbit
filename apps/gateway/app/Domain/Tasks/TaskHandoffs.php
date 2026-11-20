@@ -149,8 +149,8 @@ final readonly class TaskHandoffs
             return;
         }
         $review = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->orderByDesc('id')->first();
-        $delivery = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)->max('id');
-        if ($review instanceof TaskHandoff && ! $review->rejected && ($review->receipt['verdict'] ?? null) === 'approve' && $review->id > (int) $delivery) {
+        if ($review instanceof TaskHandoff && ! $review->rejected && ($review->receipt['verdict'] ?? null) === 'approve'
+            && ! TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)->where('id', '>', $review->id)->exists()) {
             return;
         }
 
