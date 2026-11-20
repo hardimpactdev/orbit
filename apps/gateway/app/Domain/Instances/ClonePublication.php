@@ -131,7 +131,8 @@ final readonly class ClonePublication
 
             return is_string($reason) ? $reason : null;
         }
-        $reason = str_starts_with((string) ($operation->state['swamp_run_id'] ?? ''), 'engine-') ? self::EngineCompletion : self::NodeRefused;
+        $run = $operation->state['swamp_run_id'] ?? null;
+        $reason = is_string($run) && str_starts_with($run, 'engine-') ? self::EngineCompletion : self::NodeRefused;
         DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => $reason]));
 
         return $reason;

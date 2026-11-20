@@ -260,12 +260,13 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
      */
     private function result(Operation $operation, EngineRun $run): array
     {
-        $checkout = json_decode($run->output('checkout') ?? '{}', true, flags: JSON_THROW_ON_ERROR);
-        $t3 = json_decode($run->output('t3') ?? '{}', true, flags: JSON_THROW_ON_ERROR);
-        $sealed = json_decode($this->signer->open(ValidatedData::string($t3['sealed'] ?? null)), true, flags: JSON_THROW_ON_ERROR);
-        $environment = json_decode(ValidatedData::string($sealed['environment'] ?? null), true, flags: JSON_THROW_ON_ERROR);
+        $json = static fn (?string $text): array => ValidatedData::object(json_decode($text ?? '{}', true, flags: JSON_THROW_ON_ERROR));
+        $checkout = $json($run->output('checkout'));
+        $t3 = $json($run->output('t3'));
+        $sealed = $json($this->signer->open(ValidatedData::string($t3['sealed'] ?? null)));
+        $environment = $json(ValidatedData::string($sealed['environment'] ?? null));
         $gateway = ValidatedData::object($sealed['gateway'] ?? []);
-        $body = json_decode(ValidatedData::string($gateway['body'] ?? null), true, flags: JSON_THROW_ON_ERROR);
+        $body = $json(ValidatedData::string($gateway['body'] ?? null));
 
         return [[
             'ready' => true, 'instance_id' => $operation->target_id, 'commit' => ValidatedData::string($checkout['commit'] ?? null),
