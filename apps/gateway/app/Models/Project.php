@@ -58,7 +58,7 @@ final class Project extends Model
     protected $attributes = [
         'nested_fleet' => false,
         'default_auto_deploy' => true,
-        'container_server' => 't3',
+        'container_server' => 'conn',
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'review_and_merge' => false,

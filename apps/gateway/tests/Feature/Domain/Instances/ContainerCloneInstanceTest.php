@@ -233,6 +233,8 @@ describe('a clone of the container default', function (): void {
     it('hands the run the seed snapshot, T3\'s port and files, its firewall rules and no deploy step', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
+        // The T3 server's files: a Project that chose T3.
+        $default->project->update(['container_server' => ContainerServer::T3]);
 
         $operation = containerCreate($default->project, $node, 'feature');
 
@@ -390,6 +392,7 @@ it('starts the run with the placeholder model key in the vault and the template 
     $node = containerDefaultNode();
     databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
     $default = Instance::query()->findOrFail(containerCreate(containerDefaultProject(), $node, 'default', 'pg')->target_id);
+    $default->project->update(['container_server' => ContainerServer::T3]);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('c', 40)]);
     $operation = containerCreate($default->project, $node, 'feature');
@@ -1943,14 +1946,17 @@ describe('a Process that is stopped on the default', function (): void {
 
 // The container server a clone records (docs/reference/development-containers.md#container-server).
 describe('the server a container records', function (): void {
-    it('records the Project\'s server on a clone and none on the default, and the clone runs T3 by default', function (): void {
+    it('records the Project\'s server on a clone and none on the default: the Conn Server by default, T3 when the Project chose it', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
 
-        $clone = containerCreate($default->project, $node, 'feature');
+        $conn = containerCreate($default->project, $node, 'feature');
+        $default->project->update(['container_server' => ContainerServer::T3]);
+        $clone = containerCreate($default->project, $node, 'other');
 
         $intent = containerIntentOf($clone);
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->value('container_server'))->toBeNull()
+            ->and(InstanceRuntime::query()->where('instance_id', $conn->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::Conn)
             ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3)
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
@@ -2004,7 +2010,7 @@ describe('the server a container records', function (): void {
         $default = seededDefault($node);
         $clone = containerCreate($default->project, $node, 'feature');
 
-        expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 'conn']))
+        expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 't3']))
             ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
     });
 });

@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Instances\ContainerModelRoute;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -1299,6 +1300,8 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
+    // The recorded client snapshot is of a T3 Project.
+    $default->project->update(['container_server' => ContainerServer::T3]);
     $response = threadCall($this->phone, 'POST', "projects/{$default->project->id}/instances", ['name' => 'fix-login'])
         ->assertAccepted()->assertJsonPath('data.status', 'queued');
     $operation = Operation::query()->findOrFail($response->json('data.id'));

@@ -1,7 +1,7 @@
 ---
 title: "ADR 0258: Choose the container server per Project"
 sidebarTitle: "0258 Container server"
-description: "In progress. Every task copy runs the Conn Server. A Project chooses which server runs in its other Instance containers: the T3 server (default) or the Conn Server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Credentials and the client contract stay. The recipe pins Conn Server 0.3.0 and its headless Chrome."
+description: "In progress. Every task copy runs the Conn Server. A Project chooses which server runs in its other Instance containers: the Conn Server (default since 2026-11-20) or the T3 server. The runtime records the choice when Orbit reserves it, and every later step reads that record. Credentials and the client contract stay. The recipe pins Conn Server 0.3.0 and its headless Chrome."
 ---
 
 # ADR 0258: Choose the container server per Project
@@ -16,6 +16,8 @@ The owner decided on 2026-11-15. The recipe pins Conn Server 0.3.0 as the agent 
 
 On 2026-11-19 the owner made the Conn Server the server of every task copy, after a task group on Project 20 ran its question, Stop, reviewer turn and thread index on it with every field Orbit reads matching T3, at a twentieth of T3's memory. Dev containers keep the Project's choice while Conn clients still call methods that only T3 serves.
 
+On 2026-11-20 the owner switched every Project to `conn` and made `conn` the default for new Projects, before full client parity. In a clone's create the Conn Server is ready about 0.2 s after it starts, against 1.2–5.8 s for T3. Orbit and Swamp use no method the Conn Server lacks. Conn clients lose, in new dev containers only: agents driving the browser tab open in Conn desktop, the resource and usage panels, session import, clone from the client, the saved-login menu and Linear issues. The Conn Server work closes that gap.
+
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles).
 
 ## Context
@@ -27,7 +29,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 ## Decision
 
 - **Task copies.** A task copy, a clone that a task group owns, always runs the Conn Server, for every Project. No Project setting changes that, and a new Project needs none.
-- **Setting.** The Project field `container_server`: `t3` (default) or `conn`. It chooses the server of the Project's dev containers only: clones that are not task copies, and checkout Instances that move into containers. `project:update --container-server`, the API, the SDK and MCP set it. It changes only what each reservation after the change records, so it may change while the Project has Instances.
+- **Setting.** The Project field `container_server`: `conn` (default since 2026-11-20) or `t3`. It chooses the server of the Project's dev containers only: clones that are not task copies, and checkout Instances that move into containers. `project:update --container-server`, the API, the SDK and MCP set it. It changes only what each reservation after the change records, so it may change while the Project has Instances.
 - **Record.** When Orbit reserves the runtime of a container with a server (a clone, or a checkout Instance that moves into a container), the runtime records its server as its own `container_server`: `conn` for a task copy, the Project's choice for any other. A runtime without a server, the default's, records none. Each step after the reservation reads the runtime's record, never the Project's setting. Existing runtimes record `t3`.
 - **Program.** The record names one program of the agent folder: `bin/t3` or `bin/conn-server`. The create's sessions and `project add`, and a task turn's `thread` commands and RPC helper, run that program.
 - **Unit.** A drop-in, `t3.service.d/20-orbit-server.conf`, sets the unit's `ExecStart` to the recorded program, with the same arguments. A clone gets it before its first start, with T3's other files; a migrated checkout gets it with the agent's files, and the T3 phase reloads systemd before it starts the unit. For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`, the unpacked executable beside its support files, rather than its `bin` link. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, its `PATH` (the runtime folder's `node`, which the Conn Server's SDK host needs) and its credentials (`model.env` and Codex's `config.toml`).
@@ -42,7 +44,6 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 - Read the Project's setting at each call. A setting changed after a create would point an existing container at the other server, whose store does not hold its threads.
 - A Node or Gateway setting. The trial is per Project.
 - A second Project setting for task copies. The owner wants every Project's task copies on the Conn Server, so the setting would have one useful value.
-- Flip `container_server` to `conn` for every Project. Dev containers would lose the T3-only client methods they still need.
 
 ## Consequences
 

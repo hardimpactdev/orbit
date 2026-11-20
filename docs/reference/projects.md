@@ -47,7 +47,7 @@ Change it alone: a request that sends `nested_fleet` with any other Project sett
 
 ## Container server
 
-`container_server` chooses the server that runs in the Project's dev containers, its clones that are not task copies and its checkout Instances moved into containers: `t3`, the T3 server and the default, or `conn`, the Conn Server. A task copy always runs the Conn Server, whatever this field says.
+`container_server` chooses the server that runs in the Project's dev containers, its clones that are not task copies and its checkout Instances moved into containers: `conn`, the Conn Server and the default, or `t3`, the T3 server. A task copy always runs the Conn Server, whatever this field says.
 
 Both serve the same client contract and use the same credentials; only the program differs. A container's runtime records the choice when Orbit reserves it, so a change reaches only containers made after it. Existing containers keep their server, because the two servers store threads and pairings differently. To move a container to the other server, destroy it and create it again. [Container server](/reference/development-containers#container-server) describes the program, the unit and the record.
 
@@ -73,7 +73,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `container_server` | `t3` (default) or `conn`: the server that runs in the Project's new dev containers. Task copies always run `conn`. See [Container server](#container-server). |
+| `container_server` | `conn` (default) or `t3`: the server that runs in the Project's new dev containers. Task copies always run `conn`. See [Container server](#container-server). |
 | `nested_fleet` | Boolean, default false. It is for the Orbit Project: its Instances are containers with an inner fleet, which only `instance:create` makes. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `default_auto_deploy` | Boolean, default true. Whether each new commit of the default branch deploys the Project's container default by itself. See [Automatic development defaults](/reference/deployments#automatic-development-defaults). |
