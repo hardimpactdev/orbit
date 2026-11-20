@@ -134,7 +134,10 @@ impl System for NodeSystem {
             return Err("the blob reference is not a SHA-256".to_owned());
         }
         let bytes = std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())?;
-        let held: String = sha2::Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect();
+        let held = sha2::Sha256::digest(&bytes).iter().fold(String::new(), |mut out, byte| {
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{byte:02x}"));
+            out
+        });
         if held != sha256 {
             return Err("the blob does not match its SHA-256".to_owned());
         }
