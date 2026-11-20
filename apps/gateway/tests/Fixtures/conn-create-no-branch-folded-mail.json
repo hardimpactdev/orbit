@@ -242,7 +242,8 @@
                         "uid": 2750,
                         "gid": 2750,
                         "mode": "0600",
-                        "frame": "#orbit-model-environment"
+                        "frame": "#orbit-model-environment",
+                        "key_value": "#orbit-model-key"
                     },
                     "boot_files": [
                         {
@@ -700,7 +701,8 @@
                         "uid": 2750,
                         "gid": 2750,
                         "mode": "0600",
-                        "frame": "#orbit-model-environment"
+                        "frame": "#orbit-model-environment",
+                        "key_value": "#orbit-model-key"
                     },
                     "boot_files": [
                         {
