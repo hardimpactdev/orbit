@@ -1,7 +1,8 @@
 // Reads a waiting T3 run's question, resolves its stored answered requests, interrupts that run, stops a thread's active run, or creates a new thread, through the stock
 // T3 server's own WebSocket RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of
-// the runtime's Node: `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD RUN` and
+// the runtime's Node: `node - T3 read THREAD`, `node - T3 usage THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD RUN` and
 // `node - T3 answered THREAD OWNER REQUEST...` and `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command.
+// `usage` prints the token use T3 keeps on each provider turn of the thread, which the result step sums (task-copy-turn/mod.ts).
 // Interrupt's REQUESTS are stored ids joined by newlines; answered takes one argument per id. OPTIONS is the thread's model options
 // as JSON. `create` makes the thread with no message: stock T3's `thread start` takes
 // no model options, and T3 0.1.7 runs a Codex thread at the effort of its `reasoningEffort` option alone. The first turn is then
@@ -40,18 +41,18 @@ const [threadId, runId, stored] = command === "create" || launchCommand ? [] : r
 const answeredOwner = command === "answered" ? rest[1] : undefined;
 const answeredRequests = command === "answered" ? rest.slice(2) : [];
 const [title, instance, model, options] = command === "create" ? rest : [];
-if (!T3 || (!launchCommand && (!["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)))
+if (!T3 || (!launchCommand && (!["read", "usage", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)))
     || (command === "inspect-launch" && (rest.length < 1 || rest.length > 2)) || (["launch", "reconcile-launch"].includes(command) && rest.length !== 0)
     || (command === "interrupt" && (!runId || !stored)) || (command === "stop" && !runId)
     || (command === "answered" && (!answeredOwner || answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
     || (command === "create" && (!title || !instance || !model || options === undefined))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD OWNER REQUEST... | T3 stop THREAD RUN | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT [PROVIDER] | T3 launch | T3 reconcile-launch\n");
+    process.stderr.write("usage: T3 read THREAD | T3 usage THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD OWNER REQUEST... | T3 stop THREAD RUN | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT [PROVIDER] | T3 launch | T3 reconcile-launch\n");
     process.exit(64);
 }
 
 const userdata = `${process.env.HOME}/.t3/userdata`;
 let origin;
-const readOnly = ["read", "inspect-launch", "reconcile-launch"].includes(command);
+const readOnly = ["read", "usage", "inspect-launch", "reconcile-launch"].includes(command);
 const scopes = readOnly ? ["orchestration:read"] : ["orchestration:read", "orchestration:operate"];
 
 /** One RPC socket on a fresh ticket; T3's RPC frames are newline-separated JSON. */
@@ -413,6 +414,11 @@ try {
         const seen = await state(rpc);
         const read = { runs: seen.runs, requests: seen.requests };
         out = { ...read, stoppable: stoppable(seen) && Buffer.byteLength(JSON.stringify(read)) < ReadBytes };
+    } else if (command === "usage") {
+        // Each provider turn's usage as T3 keeps it, or null without one; only the fields the result step reads.
+        const projection = await rpc.call("orchestration.getThreadProjection", { threadId });
+        out = { turns: (projection.providerTurns ?? []).map(({ turnTokenUsage: usage }) => usage == null ? null : { usageStatus: usage.usageStatus,
+            inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens }) };
     } else if (command === "interrupt") {
         // Only the run whose questions the phase stored, while it waits for exactly those: a run that someone answered meanwhile, or that
         // now asks something else, goes on.

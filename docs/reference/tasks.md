@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens}.php"
 ---
 
 # Tasks
@@ -1756,11 +1756,13 @@ A task **merged** when it has a `merged_at`. Every merge path writes it, so a pu
 
 Durations and token counts are medians. Shares are between 0 and 1. A number is null when nothing in the period has the data it needs.
 
+A task group's tokens are unknown when none of its threads reports tokens, as for a copy turn whose T3 thread had no complete usage. Unknown tokens are null in its record, never 0. Every token number counts only the tasks whose tokens are known, and is null when there is none: `tokens`, `tokens_per_merged_pr`, `cost_usd`, `cost_per_merged_pr`, `wasted_share`, `cache_hit` and `tokens_per_hundred_lines`, in the summaries, the weekly trend and the breakdowns. A group with some threads that report tokens sums those.
+
 | Field | Meaning |
 | --- | --- |
 | `tasks`, `merged` | Ended tasks, and the merged ones among them |
 | `tokens` | The `tokens` of every agent thread of every ended task, replaced threads included |
-| `tokens_per_merged_pr` | `tokens` divided by `merged`. This is the headline number: it falls when the pipeline delivers more for less |
+| `tokens_per_merged_pr` | `tokens` divided by the merged tasks whose tokens are known. This is the headline number: it falls when the pipeline delivers more for less |
 | `cost_usd`, `cost_per_merged_pr` | The same with the thread `cost_usd`. Null when a thread with tokens has no cost |
 | `lead_time_ms` | `ready_at` to `merged_at` of each merged task |
 | `queue_ms` | `ready_at` to `started_at` |
@@ -1815,6 +1817,8 @@ A stored `24h` report keeps the hour window of the refresh that computed it: a r
 A record keeps the Project's id, and the report labels it with the Project's current code, so a renamed Project stays one breakdown row.
 
 Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
+
+Records and reports stored before unknown tokens stayed null held 0 for them; a migration deletes them all, so the endpoint answers from the task tables until the next refresh records the groups of the trend again.
 
 ### Prometheus exporter
 
@@ -2107,7 +2111,7 @@ Tokens are summed from the threads, not from the task `tokens`. The task total l
 
 ### Metrics stay on the thread
 
-The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. Pi reports the split on the session usage object. A missing field stays null, because a partial sum would look complete.
+The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. A [copy turn](/cli/task/turn) records the split from the provider turns that T3 keeps for its thread, and their sum replaces the thread's metrics. A provider turn without complete usage leaves them as they were, because a partial sum would look complete. Tokens of tasks from before copy turns recorded usage stay unknown: their copies are gone, and the transcript archive holds no usage.
 
 ### Task agents run on Pi
 

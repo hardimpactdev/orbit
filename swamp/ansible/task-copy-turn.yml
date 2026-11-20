@@ -650,6 +650,17 @@
               failed_when: false
               changed_when: false
               no_log: true
+            # The token use T3 keeps on each provider turn of the thread, which the result step sums. A read that fails leaves the use
+            # unknown and fails nothing.
+            - name: Read the thread's token use
+              when: turn_found | length == 1
+              ansible.builtin.command:
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'usage', (turn_found | first).threadId] }}"
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_usage
+              failed_when: false
+              changed_when: false
+              no_log: true
           rescue:
             # A list that is not JSON reads as no thread found: the start evidence above still decides the turn.
             - name: Read no thread
@@ -665,6 +676,18 @@
                       'status': ((turn_found | first).status | default(none)) if turn_found | default([]) | length == 1 else none,
                       'show_exit': turn_show.rc | default(none), 'show': turn_show.stdout | default('')} | to_json }}
                 dest: "{{ run }}/read.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            - name: Write the usage evidence
+              when: turn_usage.rc is defined
+              ansible.builtin.copy:
+                content: "{{ {'usage_exit': turn_usage.rc, 'usage': turn_usage.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/usage.json"
                 mode: "0600"
               delegate_to: localhost
               become: false

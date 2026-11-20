@@ -28,10 +28,11 @@ use Illuminate\Support\Collection;
  * Computes [task insights](/reference/tasks#task-insights) from the ended tasks, their threads, verdicts,
  * handoff checks, and questions. Every number is defined here and nowhere else: `rowsOf` builds the row of each
  * task group, which `TaskInsightRecorder` stores, and `aggregate` reduces rows to a report, which `TaskInsightTotals` stores.
+ * A token count no thread reported is unknown: null, never 0, and every token number counts only the rows whose tokens are known.
  *
  * @phpstan-type Row array{
  *     id: int, project_id: int, model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
- *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
+ *     tokens: ?int, cost: ?float, input: ?int, cached: ?int, wasted: ?int, lines: int,
  *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
  *     questions: int, causes: array<string, int>
@@ -176,8 +177,8 @@ final class TaskInsights
             $threads[self::number($thread->task_group_id)][] = [
                 'id' => self::number($thread->id), 'task' => self::number($thread->task_id),
                 'role' => ValidatedData::string($thread->role), 'model' => ValidatedData::nullableString($thread->model),
-                'tokens' => self::number($thread->tokens), 'input' => self::number($thread->input_tokens),
-                'cached' => self::number($thread->cached_input_tokens),
+                'tokens' => self::tokenCount($thread->tokens), 'input' => self::tokenCount($thread->input_tokens),
+                'cached' => self::tokenCount($thread->cached_input_tokens),
                 'cost' => is_numeric($thread->cost_usd) ? (float) $thread->cost_usd : null,
             ];
         }
@@ -221,19 +222,17 @@ final class TaskInsights
                     $newest[$thread['task']] = max($newest[$thread['task']] ?? 0, $thread['id']);
                 }
             }
-            $tokens = 0;
+            // Each sum counts the threads that reported it, and stays null when none did.
+            $tokens = self::sum(array_column($groupThreads, 'tokens'));
+            $input = self::sum(array_column($groupThreads, 'input'));
+            $cached = self::sum(array_column($groupThreads, 'cached'));
             $replaced = 0;
-            $cost = 0.0;
-            $input = 0;
-            $cached = 0;
+            $cost = $tokens === null ? null : 0.0;
             foreach ($groupThreads as $thread) {
-                $tokens += $thread['tokens'];
-                $input += $thread['input'];
-                $cached += $thread['cached'];
                 if ($thread['role'] === 'implementer' && $newest[$thread['task']] !== $thread['id']) {
-                    $replaced += $thread['tokens'];
+                    $replaced += $thread['tokens'] ?? 0;
                 }
-                $cost = $cost === null || ($thread['cost'] === null && $thread['tokens'] > 0) ? null : $cost + ($thread['cost'] ?? 0.0);
+                $cost = $cost === null || ($thread['cost'] === null && ($thread['tokens'] ?? 0) > 0) ? null : $cost + ($thread['cost'] ?? 0.0);
             }
             // A task's pull request merged, by Orbit or by a person, when it has a merge time.
             $mergedAt = $group['merged_at'];
@@ -252,7 +251,7 @@ final class TaskInsights
                 'cost' => $cost,
                 'input' => $input,
                 'cached' => $cached,
-                'wasted' => $merged ? $replaced : $tokens,
+                'wasted' => $tokens === null ? null : ($merged ? $replaced : $tokens),
                 'lines' => $group['lines'],
                 'lead' => self::span($group['ready_at'], $mergedAt),
                 'queue' => $merged ? self::span($group['ready_at'], $group['started_at']) : null,
@@ -279,13 +278,16 @@ final class TaskInsights
     private function summary(array $rows): TaskInsightsSummaryData
     {
         $merged = array_values(array_filter($rows, static fn (array $row): bool => $row['merged']));
-        $tokens = array_sum(array_column($rows, 'tokens'));
-        $costs = array_column($rows, 'cost');
-        $cost = $rows === [] || in_array(null, $costs, true) ? null : array_sum($costs);
-        $input = array_sum(array_column($rows, 'input')) + array_sum(array_column($rows, 'cached'));
+        $known = self::known($rows);
+        $knownMerged = self::known($merged);
+        $tokens = self::sum(array_column($rows, 'tokens'));
+        $costs = array_column($known, 'cost');
+        $cost = $known === [] || in_array(null, $costs, true) ? null : array_sum($costs);
+        $cacheRows = array_filter($known, static fn (array $row): bool => $row['input'] !== null && $row['cached'] !== null);
+        $input = array_sum(array_column($cacheRows, 'input')) + array_sum(array_column($cacheRows, 'cached'));
         $verdictSubtasks = array_sum(array_column($rows, 'verdict_subtasks'));
         $handoffSubtasks = array_sum(array_column($rows, 'handoff_subtasks'));
-        $lines = array_sum(array_column($merged, 'lines'));
+        $lines = array_sum(array_column($knownMerged, 'lines'));
         $causes = array_fill_keys(array_map(static fn (QuestionCause $cause): string => $cause->value, QuestionCause::cases()), 0);
         foreach ($rows as $row) {
             foreach ($row['causes'] as $cause => $count) {
@@ -301,7 +303,7 @@ final class TaskInsights
             tokens: $tokens,
             costUsd: $cost,
             tokensPerMergedPr: $this->tokensPerMergedPr($rows),
-            costPerMergedPr: $cost !== null && $merged !== [] ? $cost / count($merged) : null,
+            costPerMergedPr: $cost !== null && $knownMerged !== [] ? $cost / count($knownMerged) : null,
             leadTimeMs: self::median($merged, 'lead'),
             queueMs: self::median($merged, 'queue'),
             workMs: self::median($merged, 'work'),
@@ -311,14 +313,14 @@ final class TaskInsights
             deployWaitMs: self::median($merged, 'deploy_wait'),
             yield: self::share(count($merged), count($rows)),
             prFirstPass: self::share(count(array_filter($merged, static fn (array $row): bool => $row['first_pass'])), count($merged)),
-            wastedShare: self::share(array_sum(array_column($rows, 'wasted')), $tokens),
+            wastedShare: self::share(array_sum(array_column($known, 'wasted')), $tokens ?? 0),
             subtaskFirstPass: self::share(array_sum(array_column($rows, 'first_approved')), $verdictSubtasks),
             reviewRounds: self::share(array_sum(array_column($rows, 'verdicts')), $verdictSubtasks),
             handoffFirstTry: self::share(array_sum(array_column($rows, 'handoff_passed')), $handoffSubtasks),
             questionsPerTask: self::share(array_sum(array_column($rows, 'questions')), count($rows)),
             questionsByCause: $causes,
-            cacheHit: self::share(array_sum(array_column($rows, 'cached')), $input),
-            tokensPerHundredLines: $lines > 0 ? intdiv(array_sum(array_column($merged, 'tokens')) * 100, $lines) : null,
+            cacheHit: self::share(array_sum(array_column($cacheRows, 'cached')), $input),
+            tokensPerHundredLines: $lines > 0 ? intdiv(array_sum(array_column($knownMerged, 'tokens')) * 100, $lines) : null,
         );
     }
 
@@ -352,12 +354,40 @@ final class TaskInsights
         return $result;
     }
 
-    /** @param  list<Row>  $rows */
+    /**
+     * The known tokens of the rows divided by their merged rows with known tokens; null without such a row.
+     *
+     * @param  list<Row>  $rows
+     */
     private function tokensPerMergedPr(array $rows): ?int
     {
-        $merged = $this->mergedCount($rows);
+        $known = self::known($rows);
+        $merged = $this->mergedCount($known);
 
-        return $merged === 0 ? null : intdiv(array_sum(array_column($rows, 'tokens')), $merged);
+        return $merged === 0 ? null : intdiv(array_sum(array_column($known, 'tokens')), $merged);
+    }
+
+    /**
+     * The rows whose tokens are known.
+     *
+     * @param  list<Row>  $rows
+     * @return list<Row>
+     */
+    private static function known(array $rows): array
+    {
+        return array_values(array_filter($rows, static fn (array $row): bool => $row['tokens'] !== null));
+    }
+
+    /**
+     * The sum of the known values; null when none is known.
+     *
+     * @param  array<?int>  $values
+     */
+    private static function sum(array $values): ?int
+    {
+        $known = array_filter($values, static fn (?int $value): bool => $value !== null);
+
+        return $known === [] ? null : array_sum($known);
     }
 
     /** @param  list<Row>  $rows */
@@ -399,6 +429,12 @@ final class TaskInsights
     private static function number(mixed $value): int
     {
         return is_numeric($value) ? (int) $value : 0;
+    }
+
+    /** A count column read without model casts; null stays null: unknown, not none. */
+    private static function tokenCount(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
     }
 
     private static function share(int|float $part, int|float $whole): ?float

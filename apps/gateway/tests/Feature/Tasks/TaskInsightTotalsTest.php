@@ -27,6 +27,7 @@ use App\Models\TaskQuestion;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -42,7 +43,7 @@ function insightProject(string $slug): Project
 /**
  * One ended group with a subtask, threads, verdicts, a handoff check and a question, ended `$daysAgo` days before now.
  *
- * @param  array{merged?: bool, fixup?: bool, cost?: ?float, approved?: bool, passed?: bool, cause?: ?QuestionCause, deployed?: bool, opened?: bool}  $facts
+ * @param  array{merged?: bool, fixup?: bool, cost?: ?float, approved?: bool, passed?: bool, cause?: ?QuestionCause, deployed?: bool, opened?: bool, unknown?: bool}  $facts
  */
 function insightGroup(Project $project, float $daysAgo, array $facts = []): Task
 {
@@ -62,7 +63,8 @@ function insightGroup(Project $project, float $daysAgo, array $facts = []): Task
     }
     foreach ([['implementer', 'claude-opus-5-5', 900, $facts['cost'] ?? 0.25], ['implementer', 'claude-sonnet-5-5', 1300, 0.5], ['reviewer', 'claude-haiku-5-5', 401, 0.1]] as [$role, $model, $tokens, $cost]) {
         AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'driver' => 't3', 'runtime_key' => 'x', 'external_id' => (string) Str::uuid(),
-            'role' => $role, 'model' => $model, 'tokens' => $tokens, 'input_tokens' => $tokens - 100, 'cached_input_tokens' => 70, 'cost_usd' => $cost]);
+            'role' => $role, 'model' => $model, ...(($facts['unknown'] ?? false) ? ['cost_usd' => null]
+                : ['tokens' => $tokens, 'input_tokens' => $tokens - 100, 'cached_input_tokens' => 70, 'cost_usd' => $cost])]);
     }
     foreach (($facts['approved'] ?? true) ? [TaskCommentType::Approved] : [TaskCommentType::ChangesRequested, TaskCommentType::Approved] as $type) {
         TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'completion_attempt' => 1, 'type' => $type, 'body' => 'Verdict.', 'author' => 'reviewer', 'posted_at' => now()]);
@@ -427,4 +429,52 @@ it('computes a stored 24h report again when it lacks its 24 hourly buckets', fun
 
     expect($this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data'))->toBe($fresh)
         ->and(json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true)['hourly'])->toHaveCount(24);
+});
+
+it('keeps unknown tokens null in rows, records, summaries, weeks and breakdowns, and counts only the known ones in a mix', function (): void {
+    test()->travelTo(CarbonImmutable::parse('2026-11-19 12:00:00'));
+    app(TaskExtensionState::class)->enable();
+    $app = insightProject('app');
+    $unknown = insightGroup($app, 0.5, ['unknown' => true]);
+    $report = static fn (): array => app(TaskInsights::class)->report('7d', null, CarbonImmutable::now())->toArray();
+
+    $row = app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey($unknown->id))[0];
+    expect(Arr::only($row, ['tokens', 'cost', 'input', 'cached', 'wasted']))->toBe(['tokens' => null, 'cost' => null, 'input' => null, 'cached' => null, 'wasted' => null]);
+    Artisan::call('task:insights-refresh');
+    $facts = json_decode((string) DB::table('task_insight_records')->where('task_id', $unknown->id)->value('facts'), true);
+    expect(Arr::only($facts, ['tokens', 'input', 'cached', 'wasted']))->toBe(['tokens' => null, 'input' => null, 'cached' => null, 'wasted' => null]);
+    $nulls = ['tokens' => null, 'cost_usd' => null, 'tokens_per_merged_pr' => null, 'cost_per_merged_pr' => null, 'wasted_share' => null, 'cache_hit' => null, 'tokens_per_hundred_lines' => null];
+    $stored = app(TaskInsightTotals::class)->read('7d', null, CarbonImmutable::now());
+    expect(Arr::only($stored['current'], array_keys($nulls)))->toBe($nulls)
+        ->and($stored['current']['merged'])->toBe(1)
+        ->and(array_column($stored['weekly'], 'tokens_per_merged_pr'))->each->toBeNull()
+        ->and($stored['breakdowns']['model'][0]['tokens_per_merged_pr'])->toBeNull()
+        ->and($stored)->toBe($report());
+
+    // A known group next to the unknown one: every token number counts the known group alone.
+    insightGroup($app, 1.5);
+    // One thread that reports tokens among threads that do not: the group sums the known one.
+    AgentThread::query()->where('task_group_id', $unknown->id)->where('model', 'claude-haiku-5-5')
+        ->update(['tokens' => 40, 'input_tokens' => 30, 'cached_input_tokens' => 10, 'cost_usd' => 0.1]);
+    $mixed = app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey($unknown->id))[0];
+    expect(Arr::only($mixed, ['tokens', 'input', 'cached', 'wasted']))->toBe(['tokens' => 40, 'input' => 30, 'cached' => 10, 'wasted' => 0]);
+    AgentThread::query()->where('task_group_id', $unknown->id)->update(['tokens' => null, 'input_tokens' => null, 'cached_input_tokens' => null, 'cost_usd' => null]);
+    $current = $report()['current'];
+    expect(Arr::only($current, array_keys($nulls)))->toBe(['tokens' => 2601, 'cost_usd' => 0.85, 'tokens_per_merged_pr' => 2601, 'cost_per_merged_pr' => 0.85,
+        'wasted_share' => 900 / 2601, 'cache_hit' => 210 / 2511, 'tokens_per_hundred_lines' => intdiv(2601 * 100, 133)]);
+});
+
+it('drops the records and totals stored with 0 for unknown tokens, so reports come from the source tables until the refresh records them again', function (): void {
+    [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    DB::table('task_insight_records')->update(['facts' => DB::raw("json_set(facts, '$.tokens', 0)")]);
+    $recorded = DB::table('task_insight_records')->count();
+
+    (require database_path('migrations/2027_03_15_000000_rerecord_task_insights_with_unknown_tokens.php'))->up();
+
+    expect(DB::table('task_insight_records')->count())->toBe(0)->and(DB::table('task_insight_totals')->count())->toBe(0)
+        ->and(app(TaskInsightTotals::class)->read('7d', $app->id, CarbonImmutable::now()))->toBe(app(TaskInsights::class)->report('7d', $app->id, CarbonImmutable::now())->toArray());
+    Artisan::call('task:insights-refresh');
+    expect(DB::table('task_insight_records')->count())->toBe($recorded)
+        ->and(app(TaskInsightTotals::class)->read('7d', null, CarbonImmutable::now()))->toBe(app(TaskInsights::class)->report('7d', null, CarbonImmutable::now())->toArray());
 });
