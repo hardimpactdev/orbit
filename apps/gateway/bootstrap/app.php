@@ -79,6 +79,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $schedule->command('operations:repair-fence')->everyFiveMinutes()->withoutOverlapping(5);
         GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
         GatewaySchedule::command($schedule, 'activitylog:clean', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--days='.config()->integer('retention.activity_log_days'), '--force'])->daily();
+        // The daily release check of Process artifacts: GitHub only, no Node and no Swamp work (ADR 0273).
+        GatewaySchedule::command($schedule, 'process:artifacts:check-latest', uniqueFor: 3600, overlapMinutes: 60)->daily();
         // A failed destroy starts again with backoff through the same admission as instance:destroy (InstanceRemovalReaper).
         GatewaySchedule::command($schedule, InstanceRemovalReaper::Trigger, uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         // Horizon's metrics for its dashboard, only while Horizon runs.

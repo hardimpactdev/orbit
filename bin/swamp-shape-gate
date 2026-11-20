@@ -119,7 +119,7 @@ def plan(base, reports, cache, collections, tracked_paths=None):
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
         Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/ai-router-model-forwarder.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/operation-node-role-add-local-dns.yml', 'ansible/operation-node-converge-local-dns.yml', 'ansible/swamp-worker-renewal.yml',
-                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-instance-workspace.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml', 'ansible/conn-environment-restart.yml'], env=ansible_env, parallel=True),
+                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-instance-workspace.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml', 'ansible/conn-environment-restart.yml', 'ansible/operation-process-upgrade.yml'], env=ansible_env, parallel=True),
     ]
     deno_files = deno_test_files(tracked_paths)
 

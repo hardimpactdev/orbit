@@ -46,6 +46,8 @@ The Gateway runs `orbit:vault-sync` every minute without overlap while the `vaul
 
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
+The Gateway runs `process:artifacts:check-latest` daily. It reads the latest GitHub release once for each repository that a [Process artifact](/reference/processes-and-schedules#upgrade-a-process) names, and keeps the last answer when a read fails.
+
 The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
 
 A recurring Schedule for a containerized AppProd Instance resolves its serving release at each fire. A manual change or fire binds to the confirmed release under the same lock as cutover. A queued host fire cannot start on a checkout after migration.

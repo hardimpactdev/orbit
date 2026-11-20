@@ -10,6 +10,7 @@ use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\GatewayReleases\GatewayReleaseFollowUp;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Processes\Artifacts\ProcessArtifactPreset;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Infrastructure\Caddy\Build\ContributedCaddySiteSource;
@@ -28,6 +29,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
+use Orbit\Extensions\AiRouter\Domain\CliProxyApiArtifactPreset;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterContainerModelRoute;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
@@ -91,6 +93,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
         $this->contribute(ContributedPrivateHostnames::class, AiRouterPrivateHostnames::class);
         $this->contribute(DirectOperationContribution::class, AiRouterDirectOperations::class);
         $this->contribute(ContributedNodeFirewallRules::class, AiRouterTaskGuardFirewall::class);
+        $this->contribute(ProcessArtifactPreset::class, CliProxyApiArtifactPreset::class);
         $this->contribute(GatewayReleaseFollowUp::class, AiRouterTaskGuardRelease::class);
     }
 

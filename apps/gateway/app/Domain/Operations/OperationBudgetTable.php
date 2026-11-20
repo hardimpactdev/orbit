@@ -17,6 +17,9 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
+        // No run yet. Basis: a 300 s download and unpack, the binary check, two restarts with their 10 s run checks (the upgrade and a
+        // rollback), plus input, result and cleanup, rounded up to five minutes. Replace with the 14-day p95 after the first successes.
+        'process.upgrade' => 600,
         // The 30 s marker phase and the 90 s freeze phase (a 30 s clean stop when swap is full), plus input, result and cleanup.
         // Measured by hand on a fixture clone: the pause and the reclaim of a frozen container take under 0.5 s.
         'instance.sleep' => 150,

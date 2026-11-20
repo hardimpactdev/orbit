@@ -193,6 +193,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'operation:cancel',
         'operation:list',
         'operation:show',
+        'process:artifact:set',
+        'process:artifact:unset',
         'process:create',
         'process:destroy',
         'process:list',
@@ -202,6 +204,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:start',
         'process:stop',
         'process:update',
+        'process:upgrade',
         'profile',
         'project:create',
         'project:destroy',
@@ -927,6 +930,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'process:show' => [['name'], ['project' => null, 'json' => false]],
         'process:start' => [['process'], ['idempotency-key' => null, 'json' => false]],
         'process:stop' => [['process'], ['idempotency-key' => null, 'json' => false]],
+        'process:upgrade' => [['process', 'version'], ['idempotency-key' => null, 'json' => false]],
+        'process:artifact:set' => [['process'], ['preset' => null, 'repository' => null, 'asset' => null, 'binary' => null, 'checksums' => null, 'version-args' => [], 'json' => false]],
+        'process:artifact:unset' => [['process'], ['json' => false]],
         'process:update' => [
             ['name'],
             [
@@ -1379,6 +1385,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'process:show' => [['name' => 'worker', '--project' => '1'], ...$profileMissing],
         'process:start' => [['process' => '1'], ...$profileMissing],
         'process:stop' => [['process' => '1'], ...$profileMissing],
+        'process:upgrade' => [['process' => '1', 'version' => '8.0.80'], ...$profileMissing],
+        'process:artifact:set' => [['process' => '1', '--preset' => 'cliproxyapi'], ...$profileMissing],
+        'process:artifact:unset' => [['process' => '1'], ...$profileMissing],
         'process:update' => [[
             'name' => 'worker',
             '--project' => '1',
