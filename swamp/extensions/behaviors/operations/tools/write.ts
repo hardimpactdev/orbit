@@ -146,6 +146,9 @@ function choose(input: Input, phase: Phase): Decision {
         }
         const { facts, present } = writeInventory(phase.facts);
         installed = present ? facts.versions![0]! : installed;
+        if (typeof phase.refresh_error === "string") {
+            return refused(phase.refresh_error);
+        }
         if (!before(input, facts, present)) {
             return {
                 ready: true,
@@ -253,11 +256,18 @@ export const behavior = {
                         args.os,
                     );
                     phase = { facts, candidate: null };
-                    // A stale Linux cask API would hide a new build, so the candidate needs a successful refresh.
+                    // A stale Linux cask API would hide a new build, so every Linux cask write needs a successful refresh.
                     if (
                         args.input.platform === "linux" &&
                         args.input.manager === "brew-cask"
-                    ) native.refreshed(args.refresh ?? null);
+                    ) {
+                        try {
+                            native.refreshed(args.refresh ?? null);
+                        } catch (error) {
+                            if (!(error instanceof ToolRefusal)) throw error;
+                            phase.refresh_error = error.code;
+                        }
+                    }
                     phase.candidate = native.candidate(
                         args.input,
                         args.check,

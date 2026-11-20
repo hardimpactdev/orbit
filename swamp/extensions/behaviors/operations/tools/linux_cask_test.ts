@@ -377,21 +377,43 @@ Deno.test("a failed or stale Linux cask API refresh stops the candidate read", a
         version,
     ]);
     assertEquals((await run(ok(""))).mutate, true);
-    for (
-        const refresh of [
-            ok(
-                "",
-                "Warning: packages.x86_64_linux.jws.json: update failed, falling back to cached version.\n",
-            ),
-            ok("", "", 1),
-            null,
-        ]
-    ) {
+    const warning = ok(
+        "",
+        "Warning: packages.x86_64_linux.jws.json: update failed, falling back to cached version.\n",
+    );
+    for (const refresh of [warning, ok("", "", 1), null]) {
         const stale = await run(refresh);
         assertEquals([stale.mutate, stale.error_code], [
             false,
             "tool.candidate_version_probe_failed",
         ]);
+    }
+    // An install of a cask already present stops too: a repeated install of an installed Tool, and a failed install's retry.
+    for (
+        const changes of [
+            { tool_id: 1, tool_status: "installed" },
+            { tool_id: 1, tool_status: "failed" },
+        ]
+    ) {
+        const repeat = (refresh: ReturnType<typeof ok>) =>
+            behavior.methods.decide.execute({
+                input: write(changes),
+                version: ok("Homebrew 7.0.13\n"),
+                query: ok(JSON.stringify({
+                    formulae: [],
+                    casks: [{ ...cask, installed: version }],
+                })),
+                os: null,
+                check: null,
+                refresh,
+            }, ctx);
+        const stale = await repeat(warning);
+        assertEquals([stale.ready, stale.error_code], [
+            false,
+            "tool.candidate_version_probe_failed",
+        ]);
+        const fresh = await repeat(ok(""));
+        assertEquals([fresh.ready, fresh.outcome], [true, "unchanged"]);
     }
 });
 
