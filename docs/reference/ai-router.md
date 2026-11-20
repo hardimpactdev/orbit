@@ -276,18 +276,38 @@ UFW rules sit above the WireGuard member trust. One admits port 8318 from the ta
 
 ### Apply or remove the guard
 
-Run `php artisan ai-router:task-guard` on the Gateway after setup, and after a key changes. It admits `ai_router.task_guard`, which applies the guard with Ansible. The run ends with two checks, both from sources outside the range:
+Run [`orbit ai-router:task-guard`](/cli/ai-router/task-guard) after setup, and after a key changes. It calls `POST /api/v1/ai-router/task-guard`, which the MCP tool of the same route also calls. `php artisan ai-router:task-guard` on the Gateway does the same. Each admits `ai_router.task_guard`, which applies the guard with Ansible. The run ends with two checks, both from sources outside the range:
 
 - On the router's Node, the task key gets 403.
 - From the swamp Node, the router's Node answers on SSH and port 8318 does not answer.
 
-`php artisan ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown. It takes every installed allow of a forwarder Node with them, including a stray one. The forwarders stay, and no forwarder run starts until a guard run puts the guard back and admits them again. `firewall:list --managed` lists the rules while the last succeeded run of the guard, or of a forwarder, applied the guard.
+`ai-router:task-guard --remove` takes the guard, its keys and its rules off the Node, before a teardown. It takes every installed allow of a forwarder Node with them, including a stray one. The forwarders stay, and no forwarder run starts until a guard run puts the guard back and admits them again. `firewall:list --managed` lists the rules while the last succeeded run of the guard, or of a forwarder, applied the guard.
 
-Both commands take the lock `ai_router_guard:<router Node>`. While one guard or forwarder run holds it, another fails with `operation.target_busy` (409) and does not wait. Two runs at once could each drop the other's forwarder Node from the guard.
+Guard and forwarder runs take the lock `ai_router_guard:<router Node>`. While one guard or forwarder run holds it, another fails with `operation.target_busy` (409) and does not wait. Two runs at once could each drop the other's forwarder Node from the guard.
 
 Each forwarder Node's allow moves with the guard's pair: when a run re-places the pair above the WireGuard member trust, it re-places these allows above the deny too. A run also removes an installed allow of a Node that its rules do not name, such as one whose forwarder run failed after its guard phase, or a Node that is inactive or has no WireGuard address.
 
-Rotate the task key only on an incident, never on a schedule. Delete the setting, run the command again, and start new task VMs. A task VM that runs keeps the old key in its Pi models file, and the guard refuses it until its group ends.
+Rotate the task key only on an incident, never on a schedule. Delete the setting, run `ai-router:task-guard` again, and start new task VMs. The release does not apply a new key by itself: the digest holds no secret. A task VM that runs keeps the old key in its Pi models file, and the guard refuses it until its group ends.
+
+### The guard follows its config
+
+No operator step applies a changed guard. Each guard run, and the guard phase of each forwarder run, records a digest of what it applies. The digest covers the guard's Caddyfile with its routes and sources, its UFW rules, its state, and the bytes of the playbooks that apply it: `ai-router-task-guard.yml`, `tasks/address-node.yml` and `tasks/firewall.yml`. It holds no key.
+
+Each serving release has an `ai_router_guard` phase. It is a [follow-up phase](/reference/gateway-recovery#follow-up-phases): it runs after the release's fleet phase settles, also when a Node failed. The phase renders the guard as a run would now and compares the digest with the one the last succeeded guard or forwarder run applied:
+
+| Status | When |
+| --- | --- |
+| `current` | The digests match, or the run the phase started succeeded |
+| `pending` | The phase started a run, `triggered_by` `release:<commit>`, and waits for it. A run with no recorded digest, as before this phase, counts as different |
+| `absent` | The guard is not in place: `ai-router:task-guard --remove` took it off, or no run applied it. The phase never applies it then |
+| `disabled` | The ai-router is not set up, or its extension switch is off |
+| `failed` | The run failed, or the phase could not start one. The phase records the `error_code` |
+
+The check and the admission are one SQLite writer transaction that takes the guard's lock. A guard or forwarder run that ends first is in the check and in the rendered guard, so the phase never applies an older set of sources, and never a guard that `--remove` took off. Every guard run renders inside that transaction too.
+
+While another guard or forwarder run holds the lock, the phase stays `pending` with `error_code` `operation.target_busy` and asks again on the next pass. After 30 minutes it fails. A failed phase raises the [`release_follow_up_failed`](/reference/gateway-recovery#release-alerts) alert once and never undoes or blocks the release. The next release tries again.
+
+So a release that changes the guard's routes, such as the Gemini routes, applies them on the router's Node. A forwarder run that adds a Node applies the guard itself, so its digest moves with it.
 
 ## Container model forwarder
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\Requests\AiRouter\AiRouterTaskGuardRequest;
 use Orbit\Sdk\Requests\AiRouter\DestroyAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
@@ -28,6 +29,7 @@ it('exposes ai-router read and account routes', function (string $class, Method 
     [ListAiRouterModelsRequest::class, Method::GET, '/api/v1/ai-router/models'],
     [ShowAiRouterProviderRequest::class, Method::GET, '/api/v1/ai-router/providers/codex'],
     [DisableAiRouterAccountRequest::class, Method::POST, '/api/v1/ai-router/accounts/plus.json/disable'],
+    [AiRouterTaskGuardRequest::class, Method::POST, '/api/v1/ai-router/task-guard'],
 ]);
 
 it('sends setup and account payloads without extra keys', function (): void {
@@ -38,4 +40,12 @@ it('sends setup and account payloads without extra keys', function (): void {
             'cliproxy_url' => 'http://127.0.0.1:8317',
             'cliproxy_management_key' => 'management-key',
         ]);
+});
+
+it('sends the guard removal flag and the idempotency key', function (): void {
+    $apply = new AiRouterTaskGuardRequest;
+    $remove = new AiRouterTaskGuardRequest(true, 'guard-key');
+
+    expect($apply->body()->all())->toBe(['remove' => false])->and($apply->headers()->all())->not->toHaveKey('Idempotency-Key')
+        ->and($remove->body()->all())->toBe(['remove' => true])->and($remove->headers()->get('Idempotency-Key'))->toBe('guard-key');
 });
