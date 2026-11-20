@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone` and `instance.fetch_branch`. Sleep, `instance.prepare` and `instance.start` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone` and `instance.fetch_branch`. Sleep, `instance.prepare`, `instance.start`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -257,9 +257,10 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 - JSON merged over the copy's own file;
 - a link;
 - the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
-- an NSS store entry.
+- an NSS store entry;
+- a folder made again with exactly its files, owned by root, with an empty `.skills` folder: the agent instructions.
 
-It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 
 #### instance.start
 
@@ -279,11 +280,32 @@ Git may use only https, with no hooks, no redirects and no system or global conf
 
 It answers `{"commit"}`, or null when the branch starts at the seed. Codes: `instance.fetch_input_invalid`, `instance.fetch_credential_missing`, `instance.branch_fetch_failed`.
 
+#### instance.checkout
+
+`instance.checkout` targets the copy. Git runs inside the copy as the workspace's writer, with no hooks. First the writer gets its Git identity: the workspace as its one safe directory, and a name and an e-mail when it has none.
+
+The workspace goes on the Instance's branch once per Instance. A root-only mark in `/var/lib/orbit/workspace-checkout` records which Instance it was checked out for. When the Node's mirror holds the branch, a bundle of it goes into the copy and is removed after the fetch. Without a mirror, the branch starts at the seed's commit.
+
+Then the `.env` is the default's file from the seed, merged with the Gateway's render, which comes as a blob:
+
+- the keys the clone owns come from the render;
+- the dropped keys go, and so does every key whose value holds one of the default's connection credentials;
+- the default's hosts in the copied values become the clone's;
+- the render's other keys are added.
+
+Git never takes the `.env`: one line in the checkout's `info/exclude` names it. It answers `{"commit", "environment"}` with the key names only. Codes: `instance.checkout_input_invalid`, `instance.checkout_content_missing`, `instance.container_checkout_failed`.
+
+#### instance.t3
+
+`instance.t3` targets the copy. It starts T3 when it is not running, and waits up to 30 s until T3 answers its environment. Then it issues the Gateway's and Swamp's sessions as the workspace's writer. Each token is checked against T3, with the token on curl's standard input, never in an argument. The workspace becomes a T3 project once; a mark file records it.
+
+The tokens leave only sealed to the Gateway's key, `seal_to` in the signed input. It answers `{"environment_id", "at_boot", "sealed"}`. Codes: `instance.t3_input_invalid`, `instance.t3_unready`, `instance.create_agent_failed`, `instance.t3_session_failed`.
+
 ## The Gateway signer and the event
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`, `instance.checkout`, `instance.t3`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
