@@ -368,7 +368,9 @@ The OS packages of the image change rarely. The Node's patch run of ADR 0250 upg
 
 ## Container server
 
-A container with a server runs the T3 server, `t3`, or the [Conn Server](https://github.com/nckrtl/conn), `conn`. Every [task copy](/reference/tasks#task-copy) runs the Conn Server, for every Project. A Project chooses the server of its other containers, its dev clones and [migrated checkouts](#migrate-a-checkout-instance), in its [`container_server`](/reference/projects#container-server) field: `t3`, the default, or `conn`. Dev containers keep the Project's choice because some clients still need methods that only T3 serves. The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
+A container with a server runs the T3 server, `t3`, or the [Conn Server](https://github.com/nckrtl/conn), `conn`. Every [task copy](/reference/tasks#task-copy) runs the Conn Server, for every Project. A Project chooses the server of its other containers, its dev clones and [migrated checkouts](#migrate-a-checkout-instance), in its [`container_server`](/reference/projects#container-server) field: `conn`, the default, or `t3`. The Conn Server is ready about 0.2 s after it starts, against 1.2–5.8 s for T3 in a clone's create. A few client features still need T3, such as agents driving the browser tab open in Conn desktop; a Project that needs one sets `t3`.
+
+The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
 
 | Choice | Program in the agent folder |
 | --- | --- |

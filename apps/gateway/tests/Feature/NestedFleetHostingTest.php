@@ -12,6 +12,7 @@ use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
@@ -1414,7 +1415,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         $this->freezeTime();
         $node = containerDefaultNode();
         nestedSwitch($node, true);
-        $project = containerDefaultProject();
+        // The intents main recorded are of a T3 Project.
+        $project = tap(containerDefaultProject())->update(['container_server' => ContainerServer::T3]);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
         $containers = app(InstanceContainer::class);
         $runtime = $containers->reserve($instance, $node);

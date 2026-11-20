@@ -1735,6 +1735,7 @@ describe('a turn of a group that owns a copy', function (): void {
     it('runs a t3 Project\'s copy on the Conn Server through a completed implementer and reviewer turn, while its dev clone runs T3', function (): void {
         Storage::fake('local');
         $source = copySource();
+        $source->project->update(['container_server' => ContainerServer::T3]);
         $group = copyGroup($source->project);
         $copy = finishedCopy($group, startCopy($group));
 
