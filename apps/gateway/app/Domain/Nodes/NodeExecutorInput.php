@@ -32,7 +32,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'instance', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns']];
 
     /**
      * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,
@@ -40,7 +40,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
