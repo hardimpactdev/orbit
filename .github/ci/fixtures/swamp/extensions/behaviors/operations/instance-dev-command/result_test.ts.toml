@@ -18,6 +18,7 @@ cases = [
   "a container step that did not succeed reports no mail result and no mail warning",
   "a container default whose Project has setup steps and no development deploy steps warns that they were ignored",
   "a default's failed container phase keeps its written refusal and the failed task as its detail",
+  "an oversized container failure detail stays within 4096 UTF-8 bytes, keeps its task name and never splits a character",
   "default and clone finish workspace T3 and registration despite bounded mail failure",
   "a Node without the main Mailpit gets no mail warning or failure",
   "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
@@ -27,7 +28,7 @@ cases = [
   "a ready create's finish removes its run folder; a failed create keeps it for the container stop and the cleanup step",
 ]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
-cost = 25
+cost = 26
 inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts", "swamp/extensions/behaviors/operations/instance-dev-command/manifest.yaml", "swamp/workflows/workflow-operation-instance-create.yaml"]
 [case_costs]
 "create returns only the commit when every step finished" = 1
@@ -48,6 +49,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "a container step that did not succeed reports no mail result and no mail warning" = 1
 "a container default whose Project has setup steps and no development deploy steps warns that they were ignored" = 1
 "a default's failed container phase keeps its written refusal and the failed task as its detail" = 1
+"an oversized container failure detail stays within 4096 UTF-8 bytes, keeps its task name and never splits a character" = 1
 "default and clone finish workspace T3 and registration despite bounded mail failure" = 1
 "a Node without the main Mailpit gets no mail warning or failure" = 1
 "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else" = 1

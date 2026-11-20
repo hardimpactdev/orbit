@@ -74,7 +74,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 if (trim($result['detail']) !== '') {
                     $native = ValidatedData::object($data['failure'] ?? []);
                     $data['failure'] = app(NativeStepFailure::class)->written(
-                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation);
+                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation, head: true);
                 }
                 unset($result['detail']);
             }
