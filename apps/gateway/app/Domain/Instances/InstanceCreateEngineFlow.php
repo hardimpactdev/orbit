@@ -86,6 +86,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance(), $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
             'start' => [...$where, 'source' => $clone['source'], 'network' => $container['network'], 'nic' => 'eth0',
                 'hostname' => ValidatedData::string(ValidatedData::object($container['machine_name'])['hostname']),
+                'app_account' => ValidatedData::string(ValidatedData::object($container['app_account'])['path']),
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
                     self::rows($container['private_names'] ?? []))],
             'checkout' => [...$where, 'instance_id' => ValidatedData::integer($operation->target_id), 'workspace' => $container['workspace'], 'branch' => $container['branch'],

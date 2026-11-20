@@ -268,7 +268,7 @@ The list may come as one blob, `files_blob`, with each file's content inline. It
 
 On a Node without idmapped mounts, the seed's files are shifted. There a stopped copy's owners, file capabilities and ACLs are shifted back first. A failed shift deletes the copy, so a retry copies again.
 
-Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block.
+Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block. Last, root runs the app-account swap file that prepare wrote (`app_account`, `/usr/local/libexec/orbit-app-user`). A copy of an older default moves from `orbit` and `work` to `www-data` there, before checkout runs Git as `agent`. On a copy that already uses `www-data`, the swap only reads.
 
 It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
 
