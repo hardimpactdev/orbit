@@ -11,6 +11,7 @@ enum ProcessDoctorIssueCode: string implements DoctorIssueCode
     case CrashLoop = 'process.crash_loop';
     case InspectionFailed = 'process.inspection_failed';
     case NodeUnreachable = 'process.node_unreachable';
+    case UpdateAvailable = 'process.update_available';
 
     public function code(): string
     {

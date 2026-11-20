@@ -35,6 +35,7 @@ final readonly class DocsImpact
         'project-documents:cleanup:work' => 'docs/reference/project-documents.md',
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
+        'process:artifacts:check-latest' => 'docs/reference/processes-and-schedules.md',
         'task:pr-gate' => 'docs/reference/tasks.md',
         'task:pr-when-done' => 'docs/reference/tasks.md',
         'task:merge-round' => 'docs/reference/tasks.md',

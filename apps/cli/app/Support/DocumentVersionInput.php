@@ -7,7 +7,7 @@ namespace App\Support;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputInterface;
 
-/** Keeps a Document's --version value from becoming Symfony's application-version switch. */
+/** Keeps a Document's or a Process artifact's --version value from becoming Symfony's application-version switch. */
 final readonly class DocumentVersionInput implements InputInterface
 {
     public function __construct(private InputInterface $input) {}

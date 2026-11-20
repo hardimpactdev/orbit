@@ -1,16 +1,18 @@
 ---
 title: "ADR 0214: Pin the AI router version and flag upgrades"
 sidebarTitle: "0214 AI router upgrades"
-description: "In progress. The ai-router extension pins the driver version, a daily check stores the latest upstream release, Doctor reports an informational update finding that the problem collector still records, and ai-router:update upgrades the router, also while task groups run."
+description: "Withdrawn. Replaced by ADR 0273: process:upgrade upgrades the router. The ai-router extension pins the driver version, a daily check stores the latest upstream release, Doctor reports an informational update finding that the problem collector still records, and ai-router:update upgrades the router, also while task groups run."
 ---
 
 # ADR 0214: Pin the AI router version and flag upgrades
+
+> Withdrawn on 2026-11-20 before it was built. [ADR 0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version) replaces it: the router is a Process, and the generic `process:upgrade` upgrades it. `ai-router:update` is not built.
 
 The `ai-router` extension of [ADR 0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) pins its driver version. A daily check stores the latest upstream release. Doctor reports `role.update_available` as an informational finding, and the problem collector records it as a named exception. The operator upgrades with `ai-router:update VERSION`, also while task groups run. Orbit never upgrades the router by itself.
 
 ## Status
 
-In progress.
+Withdrawn on 2026-11-20.
 
 Principle: [Agents operate, humans steer](/mission#principles). Orbit reports a newer router release and files a task for it, and the operator chooses when to run the upgrade command.
 

@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 273,
+      "pages": [
+        "decisions/0273-upgrade-a-process-to-a-new-upstream-version"
+      ]
+    }
+  ]
+}

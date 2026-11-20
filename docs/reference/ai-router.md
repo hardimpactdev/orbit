@@ -69,6 +69,10 @@ The Gateway records the delivered agent digest as the collector revision. Before
 
 Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `ai-router:destroy` first.
 
+## Upgrade CLIProxyAPI
+
+The extension declares the artifact preset `cliproxyapi`: releases of `router-for-me/CLIProxyAPI`, asset `CLIProxyAPI_{version}_linux_amd64.tar.gz`, binary `cli-proxy-api`, `checksums.txt`, and `--help` to print the version. Record it on the router Process with `process:artifact:set PROCESS --preset=cliproxyapi`, then upgrade with `process:upgrade PROCESS VERSION`. [Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process) describes the steps and the rollback. A restart drops the model calls in flight; Tasks retries them after a backoff.
+
 ## Follow the cache connection
 
 The Gateway runs no scheduled collector converge. Its Caddy publication used the agent's `caddy.publish`, which [#1901](https://github.com/hardimpactdev/orbit/pull/1901) removed, so the per-minute tick failed every time. Setup and a Database connection update converge the collector. A release leaves it as it is until the AI router's publication runs in Swamp.

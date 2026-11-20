@@ -7,6 +7,7 @@ namespace App\Domain\Problems;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Activity;
@@ -273,6 +274,15 @@ final readonly class ProblemCollector
         });
     }
 
+    /**
+     * Doctor health ignores informational findings, so they are not problems either. The one named exception is an
+     * available Process update, so a stale Process still gets a fingerprint and a Backlog task (ADR 0273).
+     */
+    public static function records(DoctorIssueData $issue): bool
+    {
+        return $issue->kind !== DoctorIssueKind::Informational || $issue->code === ProcessDoctorIssueCode::UpdateAvailable->value;
+    }
+
     /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string, doctor_node: string, doctor_family: string, doctor_code: string, doctor_resource: string|null, doctor_issue_count: int}> */
     private function doctorIssues(DoctorReportData $report): array
     {
@@ -281,8 +291,7 @@ final readonly class ProblemCollector
         foreach ($report->nodes as $node) {
             foreach ($node->families as $family) {
                 foreach ($family->issues as $issue) {
-                    // Doctor health ignores informational findings, so they are not problems either.
-                    if ($issue->kind === DoctorIssueKind::Informational) {
+                    if (! self::records($issue)) {
                         continue;
                     }
 

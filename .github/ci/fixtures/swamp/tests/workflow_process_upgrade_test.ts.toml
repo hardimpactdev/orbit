@@ -1,0 +1,49 @@
+cases = [
+  "the upgrade runs one tagged phase per step, switches back only after a failure of the switch, restart or verify, and takes no secret",
+  "an upgrade unpacks the checked release, switches the relative link, restarts once and keeps only the release before",
+  "a current that is not a relative link to a release fails with process.artifact_layout_invalid before any change",
+  "a download whose checksum or binary does not match fails before the switch and leaves current alone",
+  "a failed prune keeps the passed upgrade, names only the versions removed, and never removes a folder that is not a version",
+  "a release that restarts after the switch is switched back to the release before and fails with process.upgrade_rolled_back",
+  "a switch back whose release does not run either fails with process.rollback_failed",
+  "a switch back that cannot reach the Node fails with process.rollback_failed",
+  "a current that already names the requested release is checked, restarted and verified, never taken as installed",
+  "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched",
+  "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one",
+  "an existing folder of the version is checked in place and kept, never replaced by the staged copy",
+  "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept",
+  "the prune keeps the recorded previous version",
+  "a release store with a link, or a current link that follows one, is refused before any change and nothing is pruned",
+]
+file = "swamp/tests/workflow_process_upgrade_test.ts"
+cost = 210
+# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11, 7, 13, 6 s for the six release-folder cases; no hosted receipt yet.
+slices = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-process-upgrade.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/process-upgrade-verify.yml",
+  "swamp/workflows/workflow-operation-process-upgrade.yaml",
+]
+
+[case_costs]
+  "the upgrade runs one tagged phase per step, switches back only after a failure of the switch, restart or verify, and takes no secret" = 2
+  "an upgrade unpacks the checked release, switches the relative link, restarts once and keeps only the release before" = 15
+  "a current that is not a relative link to a release fails with process.artifact_layout_invalid before any change" = 12
+  "a download whose checksum or binary does not match fails before the switch and leaves current alone" = 27
+  "a failed prune keeps the passed upgrade, names only the versions removed, and never removes a folder that is not a version" = 17
+  "a release that restarts after the switch is switched back to the release before and fails with process.upgrade_rolled_back" = 18
+  "a switch back whose release does not run either fails with process.rollback_failed" = 18
+  "a switch back that cannot reach the Node fails with process.rollback_failed" = 14
+  "a current that already names the requested release is checked, restarted and verified, never taken as installed" = 18
+  "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched" = 7
+  "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one" = 14
+  "an existing folder of the version is checked in place and kept, never replaced by the staged copy" = 14
+  "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept" = 9
+  "the prune keeps the recorded previous version" = 17
+  "a release store with a link, or a current link that follows one, is refused before any change and nothing is pruned" = 8

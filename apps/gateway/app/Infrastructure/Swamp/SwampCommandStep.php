@@ -213,7 +213,7 @@ final readonly class SwampCommandStep
 
         // Family projections read/clean native secrets outside their own short result transaction.
         $projected = $direct->projection($current)->apply($current, [
-            'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+            'run_id' => $runId, 'status' => $status, 'native_run' => $run, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
             'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
             'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
         ]);

@@ -1,0 +1,424 @@
+---
+# The upgrade of a systemd Process to a new upstream release (docs/decisions/0273-upgrade-a-process-to-a-new-upstream-version.md,
+# docs/reference/processes-and-schedules.md#upgrade-a-process). The Gateway resolved the release: the intent holds its URL and SHA-256,
+# never a version for the Node to resolve. Releases sit in `<folder>/releases/<version>/`, and `<folder>/current` is a relative link
+# to one of them. Files are owned by the owner of `<folder>`. One tag per phase of the workflow:
+#   read      `<folder>` and `<folder>/releases` must be real folders, no link on their path and no link directly in `releases`,
+#             and `current` a relative link whose text is exactly `releases/<name>`, to
+#             a real folder `releases/<version>`, and an existing `releases/<VERSION>` a real folder whose `.orbit-sha256` marker holds the
+#             admitted SHA-256, else process.artifact_layout_invalid before any change.
+#   download  the asset into `releases/.staging-<VERSION>`, checked against the SHA-256, unless `releases/<VERSION>` exists.
+#   unpack    unpacked inside the staging folder. An existing `releases/<VERSION>` is never moved, replaced or removed.
+#   check     the binary that will run must exist and, with version_args, print VERSION: an existing `releases/<VERSION>` is checked in
+#             place, else the staged copy, which then takes the free name. The staging folder is removed on every path.
+#   switch    first records process.rollback_failed as the result, so a run that stops from here on without a verified switch back
+#             reports it; then a new relative link renamed over `current` in one step.
+#   restart   the unit restarts, as process:restart does.
+#   verify    the unit is active, and 10 s later still active with the same restart count; then writes the pass result.
+#   keep      keeps VERSION, `before`, the recorded previous version, the folder `current` resolves to and every link target, and
+#             removes the other real folders under `releases/` whose names are versions; a same-version re-check prunes nothing. A
+#             removal that fails is skipped; the result is rewritten with the versions removed. It never fails the upgrade.
+#   rollback  after a failure of `switch`, `restart` or `verify`: `current` back to `before`, restart, verify; only then the result
+#             becomes process.upgrade_rolled_back. Any other end, an unreachable Node included, leaves process.rollback_failed.
+# `read` writes `installed.json` (before, owner, group) in the run folder; the later phases read it. Each phase writes `result.json` on
+# failure: `{"error_code": …, "before", "after", "pruned": []}`; `keep` writes `{"before", "after", "outcome", "pruned"}`. An upgrade to
+# the release `current` already names still checks, restarts and verifies it: only the Gateway's record makes an upgrade `unchanged`.
+# No command output reaches the result.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: process_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Upgrade the Process
+  hosts: process_node
+  gather_facts: false
+  become: true
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    up: "{{ intent.upgrade }}"
+    folder: "{{ up.folder }}"
+    releases: "{{ up.folder }}/releases"
+    target: "{{ up.folder }}/releases/{{ up.version }}"
+    staging: "{{ up.folder }}/releases/.staging-{{ up.version }}"
+    installed: "{{ lookup('ansible.builtin.file', run ~ '/installed.json') | from_json }}"
+    # The wait of the verify phase between its two reads.
+    verify_delay: 10
+  tasks:
+    - name: Read the installed release
+      tags: [read]
+      vars: { failure_code: process.artifact_layout_invalid }
+      block:
+        - name: Read the folder
+          ansible.builtin.stat: { path: "{{ folder }}", follow: false }
+          register: upgrade_folder
+        - name: Read the release store
+          ansible.builtin.stat: { path: "{{ releases }}", follow: false }
+          register: upgrade_store
+        # A link anywhere on the path could point the releases this run prunes at another Process's store.
+        - name: Resolve the folder and the release store
+          ansible.builtin.command: { argv: [realpath, -e, --, "{{ folder }}", "{{ releases }}"] }
+          register: upgrade_real
+          changed_when: false
+          failed_when: false
+        - name: Read the current link
+          ansible.builtin.stat: { path: "{{ folder }}/current", follow: false }
+          register: upgrade_current
+        - name: Refuse a layout without a relative current link to a release
+          ansible.builtin.assert:
+            that:
+              - upgrade_folder.stat.isdir | default(false)
+              - upgrade_store.stat.isdir | default(false)
+              - upgrade_real.rc == 0 and upgrade_real.stdout_lines == [folder, releases]
+              - upgrade_current.stat.islnk | default(false)
+              - upgrade_current.stat.lnk_target is match('^releases/[A-Za-z0-9][A-Za-z0-9._+-]*$')
+            fail_msg: process.artifact_layout_invalid
+            quiet: true
+        # A link in the release store could make a kept release depend on a pruned one, or point the run outside the store.
+        - name: Read the links in the release store
+          ansible.builtin.find: { paths: "{{ releases }}", file_type: link, hidden: true, recurse: false }
+          register: upgrade_store_links
+        - name: Refuse a release store that holds a link
+          ansible.builtin.assert: { that: [upgrade_store_links.matched == 0], fail_msg: process.artifact_layout_invalid, quiet: true }
+        - name: Read the installed release folder
+          ansible.builtin.stat: { path: "{{ folder }}/{{ upgrade_current.stat.lnk_target }}", follow: false }
+          register: upgrade_installed
+        - name: Refuse a current link that names no release folder
+          ansible.builtin.assert: { that: [upgrade_installed.stat.isdir | default(false)], fail_msg: process.artifact_layout_invalid, quiet: true }
+        # An existing folder of the version is reused only as the admitted release: a real folder whose marker holds the admitted
+        # SHA-256. Anything else is refused and left alone; no self-reported version stands in for the digest.
+        - name: Read the folder of the requested version
+          ansible.builtin.stat: { path: "{{ target }}", follow: false }
+          register: upgrade_target
+        - name: Read the marker of the folder of the requested version
+          when: upgrade_target.stat.exists
+          ansible.builtin.slurp: { src: "{{ target }}/.orbit-sha256" }
+          register: upgrade_target_marker
+          failed_when: false
+        - name: Refuse a folder of the requested version that is not the admitted release
+          when: upgrade_target.stat.exists
+          ansible.builtin.assert:
+            that:
+              - upgrade_target.stat.isdir | default(false)
+              - (upgrade_target_marker.content | default('') | b64decode | trim) == up.sha256
+            fail_msg: process.artifact_layout_invalid
+            quiet: true
+        - name: Write the installed release
+          ansible.builtin.copy:
+            content: >-
+              {{ {'before': upgrade_current.stat.lnk_target | regex_replace('^releases/', '') | regex_replace('/$', ''),
+                  'owner': upgrade_folder.stat.pw_name, 'group': upgrade_folder.stat.gr_name} | to_json }}
+            dest: "{{ run }}/installed.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - &failure
+          name: Write the failure
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg if (ansible_failed_result.msg | default('') | string).startswith('process.') else failure_code,
+                  'before': none if failure_code == 'process.artifact_layout_invalid' else installed.before, 'after': up.version, 'pruned': []} | to_json }}
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - &fail
+          name: Fail the phase
+          ansible.builtin.fail: { msg: "{{ ansible_failed_result.msg | default('The upgrade failed.') }}" }
+
+    # An existing `releases/<VERSION>` is never moved, replaced or removed: `current` or the switch back may name it. The candidate
+    # lives in its own staging folder, is checked there, and takes the name only while the name is free.
+    - name: Download the release
+      tags: [download]
+      vars: { failure_code: process.upgrade_failed }
+      block:
+        - &existing
+          name: Read an existing folder of this version
+          ansible.builtin.stat: { path: "{{ target }}", follow: false }
+          register: upgrade_existing
+        - name: Download and check the asset
+          when: not upgrade_existing.stat.exists
+          block:
+            - name: Make the staging folder
+              ansible.builtin.file: { path: "{{ staging }}", state: directory, owner: "{{ installed.owner }}", group: "{{ installed.group }}", mode: "0755" }
+            # get_url checks the SHA-256 and removes a file that does not match. A transient error is retried twice, 5 s apart.
+            - name: Download the asset
+              ansible.builtin.get_url:
+                url: "{{ up.url }}"
+                dest: "{{ staging }}/{{ up.asset }}"
+                checksum: "sha256:{{ up.sha256 }}"
+                owner: "{{ installed.owner }}"
+                group: "{{ installed.group }}"
+                mode: "0644"
+                timeout: 60
+              register: upgrade_download
+              retries: 2
+              delay: 5
+              until: upgrade_download is succeeded
+      rescue:
+        - &clear_staging
+          name: Remove the staging folder
+          ansible.builtin.file: { path: "{{ staging }}", state: absent }
+          failed_when: false
+        - *failure
+        - *fail
+
+    - name: Unpack the release
+      tags: [unpack]
+      vars: { failure_code: process.upgrade_failed }
+      block:
+        - *existing
+        - name: Unpack into the staging folder
+          when: not upgrade_existing.stat.exists
+          block:
+            - name: Clear a partial unpack
+              ansible.builtin.file: { path: "{{ staging }}/unpacked", state: absent }
+            - name: Make the unpack folder
+              ansible.builtin.file:
+                path: "{{ staging }}/unpacked"
+                state: directory
+                owner: "{{ installed.owner }}"
+                group: "{{ installed.group }}"
+                mode: "0755"
+            - name: Unpack the asset
+              ansible.builtin.unarchive:
+                src: "{{ staging }}/{{ up.asset }}"
+                dest: "{{ staging }}/unpacked"
+                remote_src: true
+                owner: "{{ installed.owner }}"
+                group: "{{ installed.group }}"
+            - name: Mark the copy as checked
+              ansible.builtin.copy:
+                content: "{{ up.sha256 }}"
+                dest: "{{ staging }}/unpacked/.orbit-sha256"
+                owner: "{{ installed.owner }}"
+                group: "{{ installed.group }}"
+                mode: "0644"
+      rescue:
+        - *clear_staging
+        - *failure
+        - *fail
+
+    # The binary that will run: the existing `releases/<VERSION>` in place, else the staged copy, which then takes the free name.
+    - name: Check the binary
+      tags: [check]
+      vars:
+        failure_code: process.upgrade_failed
+        checked: "{{ target if upgrade_existing.stat.exists else staging ~ '/unpacked' }}"
+      block:
+        - *existing
+        - name: Read the binary
+          ansible.builtin.stat: { path: "{{ checked }}/{{ up.binary }}" }
+          register: upgrade_binary
+        - name: Refuse a release without the binary
+          ansible.builtin.assert:
+            that: [upgrade_binary.stat.isreg | default(false), upgrade_binary.stat.xusr | default(false)]
+            fail_msg: "{{ 'process.upgrade_failed' if upgrade_existing.stat.exists else 'process.artifact_invalid' }}"
+            quiet: true
+        # As the owner of the folder, bounded to 10 s. Its output stays out of the log; only the version match counts.
+        - name: Run the binary
+          when: up.version_args | length > 0
+          ansible.builtin.command: { argv: "{{ ['timeout', '10', checked ~ '/' ~ up.binary] + up.version_args }}", chdir: "{{ checked }}" }
+          become: true
+          become_user: "{{ installed.owner }}"
+          register: upgrade_check
+          changed_when: false
+          failed_when: false
+          no_log: true
+        - name: Refuse a binary that does not print the version
+          when: up.version_args | length > 0
+          ansible.builtin.assert:
+            that: [up.version in ((upgrade_check.stdout | default('')) ~ (upgrade_check.stderr | default('')))]
+            fail_msg: process.upgrade_failed
+            quiet: true
+        # `mv -T` onto a name that appeared since the read fails rather than replace it.
+        - name: Give the checked copy the free name
+          when: not upgrade_existing.stat.exists
+          ansible.builtin.command: { argv: [mv, -T, --no-clobber, "{{ staging }}/unpacked", "{{ target }}"] }
+          changed_when: true
+        - name: Read the named release
+          ansible.builtin.stat: { path: "{{ target }}/{{ up.binary }}" }
+          register: upgrade_named
+        - name: Refuse a name the checked copy did not take
+          ansible.builtin.assert: { that: [upgrade_named.stat.isreg | default(false)], fail_msg: process.upgrade_failed, quiet: true }
+        - *clear_staging
+      rescue:
+        - *clear_staging
+        - *failure
+        - *fail
+
+    - name: Switch current
+      tags: [switch]
+      vars: { failure_code: process.rollback_failed, link_to: "{{ up.version }}" }
+      block:
+        - name: Record a failed rollback until one is verified
+          ansible.builtin.copy:
+            content: "{{ {'error_code': 'process.rollback_failed', 'before': installed.before, 'after': up.version, 'pruned': []} | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Switch the link
+          block: &switch
+            - name: Write the new link
+              ansible.builtin.file:
+                path: "{{ folder }}/.current.new"
+                src: "releases/{{ link_to }}"
+                state: link
+                force: true
+                follow: false
+                owner: "{{ installed.owner }}"
+                group: "{{ installed.group }}"
+            # rename(2): `current` names the old or the new release at every moment.
+            - name: Rename it over current
+              ansible.builtin.command: { argv: [mv, -T, "{{ folder }}/.current.new", "{{ folder }}/current"] }
+              changed_when: true
+            - name: Read the current link
+              ansible.builtin.stat: { path: "{{ folder }}/current", follow: false }
+              register: upgrade_current
+            - name: Check that current names the release
+              ansible.builtin.assert: { that: [upgrade_current.stat.lnk_target == 'releases/' ~ link_to], quiet: true }
+      rescue:
+        - *failure
+        - *fail
+
+    - name: Restart the Process
+      tags: [restart]
+      vars: { failure_code: process.rollback_failed }
+      block:
+        - &restart
+          name: Restart the unit
+          ansible.builtin.systemd_service: { name: "{{ up.name }}", state: restarted }
+      rescue:
+        - *failure
+        - *fail
+
+    - name: Verify it runs
+      tags: [verify]
+      vars: { failure_code: process.rollback_failed }
+      block:
+        - name: Verify the unit
+          ansible.builtin.import_tasks: tasks/process-upgrade-verify.yml
+        - name: Write the pass
+          ansible.builtin.copy:
+            content: "{{ {'before': installed.before, 'after': up.version, 'outcome': 'upgraded', 'pruned': []} | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+      rescue:
+        - *failure
+        - *fail
+
+    # The upgrade passed and its result is written. Only folders whose names are versions go, never `current`'s, `before`'s or the
+    # rollback copy's; a
+    # removal that fails stays, and the result names only the versions removed.
+    - name: Keep the previous release
+      tags: [keep]
+      vars:
+        # The real version folders; a link is never one.
+        upgrade_versions: >-
+          {{ upgrade_releases.files | selectattr('path', 'search', '/v?[0-9][0-9A-Za-z._+-]*$')
+             | map(attribute='path') | map('basename') | list }}
+        # Kept: the new release, `before`, the recorded previous version, and every release that `current` or a link reaches into.
+        upgrade_kept: >-
+          {{ [up.version, installed.before, up.previous_version | default('', true)]
+             + ((upgrade_links.stdout_lines | default([])) + (upgrade_current_real.stdout_lines | default([])))
+              | map('replace', releases ~ '/', '', 1) | map('split', '/') | map('first') | list }}
+        # A same-version re-check has no distinct `before`: it prunes nothing.
+        upgrade_pruned: "{{ [] if installed.before == up.version else upgrade_versions | reject('in', upgrade_kept) | sort }}"
+      block:
+        - name: Read the release folders
+          ansible.builtin.find: { paths: "{{ releases }}", file_type: directory, hidden: true, recurse: false }
+          register: upgrade_releases
+        - name: Resolve the links in the release store
+          ansible.builtin.command: { argv: [find, "{{ releases }}", -mindepth, "1", -maxdepth, "1", -type, l, -exec, realpath, -m, --, "{}", +] }
+          register: upgrade_links
+          changed_when: false
+        - name: Resolve current
+          ansible.builtin.command: { argv: [realpath, -m, --, "{{ folder }}/current"] }
+          register: upgrade_current_real
+          changed_when: false
+        - name: Remove the other release folders
+          ansible.builtin.file: { path: "{{ releases }}/{{ item }}", state: absent }
+          loop: "{{ upgrade_pruned }}"
+          failed_when: false
+        # What is gone is read back, not taken from the removals: a removal can fail part-way.
+        - name: Read the release folders that remain
+          ansible.builtin.find: { paths: "{{ releases }}", file_type: directory, hidden: true, recurse: false }
+          register: upgrade_remaining
+        - name: Write the result
+          ansible.builtin.copy:
+            content: >-
+              {{ {'before': installed.before, 'after': up.version, 'outcome': 'upgraded',
+                  'pruned': upgrade_pruned | difference(upgrade_remaining.files | map(attribute='path') | map('basename')) | sort} | to_json }}
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+
+    - name: Switch back
+      tags: [rollback]
+      vars: { link_to: "{{ installed.before }}" }
+      block:
+        - name: Read the current link
+          ansible.builtin.stat: { path: "{{ folder }}/current", follow: false }
+          register: upgrade_back
+        - name: Switch current back
+          when: upgrade_back.stat.lnk_target | default('') != 'releases/' ~ installed.before
+          block: *switch
+        - *restart
+        - name: Verify the unit
+          ansible.builtin.import_tasks: tasks/process-upgrade-verify.yml
+      rescue:
+        - name: Write the failed rollback
+          ansible.builtin.copy:
+            content: "{{ {'error_code': 'process.rollback_failed', 'before': installed.before, 'after': up.version, 'pruned': []} | to_json }}"
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the rollback
+          ansible.builtin.fail: { msg: process.rollback_failed }
+
+    - name: Write the rollback
+      tags: [rollback]
+      ansible.builtin.copy:
+        content: >-
+          {{ {'error_code': 'process.upgrade_rolled_back', 'before': installed.before, 'after': up.version, 'outcome': 'rolled_back', 'pruned': []} | to_json }}
+        dest: "{{ run }}/result.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      vars: *local
+
+    - name: Fail the rolled-back upgrade
+      tags: [rollback]
+      ansible.builtin.fail: { msg: process.upgrade_rolled_back }
