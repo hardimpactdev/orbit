@@ -114,6 +114,12 @@ describe('process:artifact:set and unset', function (): void {
         'folder in a later argument' => [['/usr/bin/stat', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
         'working directory in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi'], '/home/orbit/.local/share/cliproxyapi/releases/8.0.17'],
         'config in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi/releases/8.0.17/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
+        'relative config in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', 'releases/8.0.17/config.yaml'], 'systemd', ['preset' => 'cliproxyapi'], '/home/orbit/.local/share/cliproxyapi'],
+        'relative config behind current' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', 'current/config.yaml'], 'systemd', ['preset' => 'cliproxyapi'], '/home/orbit/.local/share/cliproxyapi'],
+        'config reached through ..' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi/static/../releases/8.0.17/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
+        'assignment naming current' => [['/usr/bin/env', 'STATIC=/home/orbit/.local/share/cliproxyapi/current', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
+        'assignment naming releases' => [['/usr/bin/env', 'STATIC=/home/orbit/.local/share/cliproxyapi/releases', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
+        'option value in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '--config=/home/orbit/.local/share/cliproxyapi/releases/8.0.17/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
         'config behind current' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi/current/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
         'folder after an env flag' => [['/usr/bin/env', '-i', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
         'Docker Process' => [['cli-proxy-api'], 'docker', ['preset' => 'cliproxyapi']],
@@ -142,6 +148,16 @@ it('accepts Process 103 as it runs on services', function (): void {
 
     $this->putJson('/api/v1/processes/'.$process->id.'/artifact', ['preset' => 'cliproxyapi'])->assertOk();
 });
+
+it('accepts a path that only shares a string prefix or contains the release folder as text', function (array $command): void {
+    $process = upgrade_router(command: $command);
+    $process->update(['working_directory' => '/home/orbit/.local/share/cliproxyapi']);
+
+    $this->putJson('/api/v1/processes/'.$process->id.'/artifact', ['preset' => 'cliproxyapi'])->assertOk();
+})->with([
+    'prefix only' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi-old/x']],
+    'contained as text' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/srv/copy/home/orbit/.local/share/cliproxyapi/releases/config.yaml']],
+]);
 
 describe('process:upgrade admission', function (): void {
     it('holds the Process: no other mutation is admitted while the upgrade is open', function (string $verb): void {

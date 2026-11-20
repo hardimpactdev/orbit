@@ -53,29 +53,66 @@ final class ProcessArtifactFolder
     }
 
     /**
-     * A release folder is pruned and `current` moves: the Process itself may name neither in its working directory or in any
-     * argument but its executable, or an upgrade would remove or swap a file it reads.
+     * A release folder is pruned and `current` moves: the Process itself may name neither in its working directory, in an argument
+     * or in a NAME=VALUE value, beside its executable, or an upgrade would remove or swap a file it reads. Each value is read as a path,
+     * a relative one against the working directory, and compared by path components.
      */
     private static function assertOwnPaths(Process $process, string $folder, string $executable): void
     {
-        $inside = static fn (string $path): bool => array_any([$folder.'/releases', $folder.'/current'],
-            static fn (string $root): bool => $path === $root || str_contains($path, $root.'/'));
+        $roots = [self::components($folder.'/releases'), self::components($folder.'/current')];
+        $directory = is_string($process->working_directory) && str_starts_with($process->working_directory, '/') ? $process->working_directory : null;
+        $inside = static function (string $path) use ($roots, $directory): bool {
+            if (! str_starts_with($path, '/')) {
+                if ($directory === null) {
+                    return false;
+                }
+                $path = $directory.'/'.$path;
+            }
+            $parts = self::components($path);
+
+            return array_any($roots, static fn (array $root): bool => array_slice($parts, 0, count($root)) === $root);
+        };
         $command = $process->runtime_config['command'] ?? null;
         $skipped = false;
         foreach (is_array($command) ? $command : [] as $argument) {
+            if (! is_string($argument)) {
+                continue;
+            }
             if (! $skipped && $argument === $executable) {
                 $skipped = true;
 
                 continue;
             }
-            if (is_string($argument) && $inside($argument)) {
+            $values = [$argument];
+            if (preg_match('/\A-{0,2}[A-Za-z_][A-Za-z0-9_.-]*=(.*)\z/s', $argument, $match) === 1) {
+                $values[] = $match[1];
+            }
+            if (array_any($values, $inside)) {
                 throw new ResourceOperationException('process.artifact_invalid', "Process [{$process->name}] names a path inside {$folder}/releases or {$folder}/current beside its executable.", 422);
             }
         }
-        $directory = $process->working_directory;
-        if (is_string($directory) && $inside($directory)) {
+        if ($directory !== null && $inside($directory)) {
             throw new ResourceOperationException('process.artifact_invalid', "Process [{$process->name}] works inside {$folder}/releases or {$folder}/current.", 422);
         }
+    }
+
+    /** @return list<string> The components of an absolute path, with `.` and `..` resolved. */
+    private static function components(string $path): array
+    {
+        $parts = [];
+        foreach (explode('/', $path) as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+            if ($part === '..') {
+                array_pop($parts);
+
+                continue;
+            }
+            $parts[] = $part;
+        }
+
+        return $parts;
     }
 
     /** Pruning assumes the folder's releases belong to one Process: refuse a folder that another Process on the Node names in its command or works in. */
