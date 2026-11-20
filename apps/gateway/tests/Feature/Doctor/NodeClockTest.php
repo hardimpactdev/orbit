@@ -48,7 +48,7 @@ function clock_doctor(?bool $clock): array
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'vpn', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.1',
-        'wireguard_ip' => '10.44.0.1', 'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.1', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fingerprint',
     ]));
     app()->instance(MachineBus::class, clock_bus($clock));
     $report = app(FactDoctor::class)->report([$node], [DoctorFamily::Node])->toArray();
