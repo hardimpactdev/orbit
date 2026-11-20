@@ -17,7 +17,8 @@ final class TaskInsightsSummaryData extends Data
         public int $tasks,
         public int $merged,
         public int $excluded,
-        public int $tokens,
+        /** Null when no task group's tokens are known. */
+        public ?int $tokens,
         public ?float $costUsd,
         public ?int $tokensPerMergedPr,
         public ?float $costPerMergedPr,

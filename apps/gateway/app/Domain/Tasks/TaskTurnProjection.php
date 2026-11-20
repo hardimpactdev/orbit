@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
  * Records a copy turn: the thread's state and error, and its transcript in the Gateway's archive,
  * which outlives the copy. A turn that asked keeps its questions on the thread until the thread's next turn. The result names the
  * provider instance, the model and the effort the thread started with, the agent thread's id and the agent's last reply; the transcript
- * stays out of it. T3's CLI reports no token use, so the metrics stay null.
+ * stays out of it. The thread's token use is the sum over its provider turns that the result reports; unknown use stays null.
  */
 final readonly class TaskTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
@@ -193,14 +193,16 @@ final readonly class TaskTurnProjection implements DirectOperationProjection, Di
     }
 
     /**
-     * Records the thread's final state and error, and archives its transcript. T3 reports no token use, so no metric is recorded.
+     * Records the thread's final state and error, and archives its transcript. A result's `usage` is the T3 thread's whole token use, so
+     * it replaces the thread's metrics; a result without it, unknown or from an older worker, leaves them as they are.
      *
      * @param  array<string,mixed>  $result
      */
     private static function recordThread(int $group, int $thread, array $result): void
     {
         $record = AgentThread::query()->where('task_group_id', $group)->lockForUpdate()->findOrFail($thread);
-        $record->update(['state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(), 'observation_error' => null]);
+        $record->update(['state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(), 'observation_error' => null,
+            ...self::usage($result['usage'] ?? null)]);
         if (isset($result['transcript'])) {
             // A user message keeps only its ID, author and time, also from a worker that still sends its text: the prompt stays out of the archive.
             app(ArchiveAgentTranscriptsAction::class)->record($record, array_map(static function (mixed $entry): array {
@@ -209,5 +211,24 @@ final readonly class TaskTurnProjection implements DirectOperationProjection, Di
                 return ($entry['label'] ?? null) === 'user' ? [...$entry, 'text' => ''] : $entry;
             }, is_array($result['transcript']) ? array_values($result['transcript']) : []));
         }
+    }
+
+    /**
+     * The thread's metrics from a result's usage, or none when it is absent or not a set of non-negative counts.
+     *
+     * @return array<string, int>
+     */
+    private static function usage(mixed $usage): array
+    {
+        $metrics = [];
+        foreach (['tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls'] as $column) {
+            $count = is_array($usage) ? ($usage[$column] ?? null) : null;
+            if (! is_int($count) || $count < 0) {
+                return [];
+            }
+            $metrics[$column] = $count;
+        }
+
+        return $metrics;
     }
 }
