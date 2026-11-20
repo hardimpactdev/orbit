@@ -39,7 +39,10 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
     /** The result's `failed_step` and code for a failed step (swamp result.ts). */
     private const array Failures = ['clone-container' => ['clone', 'instance.create_clone_failed'], 'clone-t3' => ['t3', 'instance.create_agent_failed']];
 
-    public function __construct(private ExecutorOrderSigner $signer, private DevelopmentInstanceCreateProjection $projection) {}
+    /** The first line of Orbit's proxy drop-ins (instance_node_services.py `MARKER`). */
+    private const string ProxyMarker = "# Managed by Orbit: attached Node service.\n";
+
+    public function __construct(private DevelopmentInstanceCreateProjection $projection) {}
 
     public function steps(Operation $operation): array
     {
@@ -88,7 +91,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance)]],
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
-                'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => $this->signer->sealRecipient()],
+                'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
             default => throw new LogicException("Step [{$step}] is not an instance step."),
         };
     }
@@ -136,7 +139,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'a task copy' => isset($clone['clean_workspace']),
             'a branch selection' => isset($input['branch_selection']) || isset($container['branch_selection']),
             'Node services' => ($container['node_services'] ?? []) !== [],
-            'Processes' => ($container['processes'] ?? []) !== [] || ($container['units'] ?? []) !== [],
+            'Processes' => ($container['processes'] ?? []) !== [],
             'a CI hold' => isset($input['ci_hold']) || isset($container['ci_hold']),
             'a shared Route publication' => ClonePublication::sharesNodes($operation),
         ] as $case => $present) {
@@ -250,7 +253,18 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             }
         }
 
-        return [...$items, ...$last];
+        // The proxy bypass for units and login shells, after T3's files, which may share T3's unit folder (instance_node_services.py).
+        $proxy = $clone['proxy_environment'] ?? null;
+        $after = [];
+        if (is_array($proxy)) {
+            $assignments = implode(' ', array_map(static fn (string $key): string => $key.'='.ValidatedData::string($proxy[$key] ?? ''), ['NO_PROXY', 'no_proxy']));
+            foreach (['/etc/systemd/system.conf.d/99-orbit-node-services.conf' => "[Manager]\nDefaultEnvironment={$assignments}\n",
+                '/etc/profile.d/99-orbit-node-services.sh' => "export {$assignments}\n"] as $path => $text) {
+                $after[] = ['file' => ['path' => $path, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'blob' => $blob(self::ProxyMarker.$text)]];
+            }
+        }
+
+        return [...$items, ...$last, ...$after];
     }
 
     /**
@@ -263,7 +277,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $json = static fn (?string $text): array => ValidatedData::object(json_decode($text ?? '{}', true, flags: JSON_THROW_ON_ERROR));
         $checkout = $json($run->output('checkout'));
         $t3 = $json($run->output('t3'));
-        $sealed = $json($this->signer->open(ValidatedData::string($t3['sealed'] ?? null)));
+        $sealed = $json(ExecutorOrderSigner::fromConfig()->open(ValidatedData::string($t3['sealed'] ?? null)));
         $environment = $json(ValidatedData::string($sealed['environment'] ?? null));
         $gateway = ValidatedData::object($sealed['gateway'] ?? []);
         $body = $json(ValidatedData::string($gateway['body'] ?? null));
