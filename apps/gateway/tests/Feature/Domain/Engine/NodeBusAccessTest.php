@@ -137,3 +137,13 @@ it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, a
         ->and($vpn['unit'])->toContain('ExecStartPre=/usr/sbin/nft');
     @unlink($manifest);
 });
+
+it('makes only seeds the NATS client reads back, also when a checksum ends in a zero byte', function (): void {
+    // One seed in 256 has such a checksum; the client's Base32 decoder strips that byte. 2,000 of each find one almost surely.
+    for ($i = 0; $i < 2000; $i++) {
+        foreach ([NatsCredentials::newSeed(), NatsCredentials::userSeed($this->seed, "user-{$i}")] as $seed) {
+            expect(strlen(SecretKey::fromSeed($seed)->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
+        }
+    }
+    expect(NatsCredentials::userSeed($this->seed, 'gateway'))->toBe(NatsCredentials::userSeed($this->seed, 'gateway'));
+});
