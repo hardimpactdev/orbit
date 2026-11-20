@@ -62,6 +62,16 @@ it('sends a clone the engine does not cover to Swamp before anything starts', fu
 
         return $input;
     }],
+    'a CI hold' => [static function (array $input): array {
+        $input['direct_provisioning']['container']['clone']['ci_hold'] = ['node_id' => 12];
+
+        return $input;
+    }],
+    'Node services' => [static function (array $input): array {
+        $input['direct_provisioning']['container']['node_services'] = [['id' => 1]];
+
+        return $input;
+    }],
     'an already active create' => [static function (array $input): array {
         $input['direct_provisioning']['already_active'] = true;
 

@@ -71,6 +71,14 @@ Some clones start on Swamp:
 
 A default's own create stays on Swamp.
 
+An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
+
+`clock_synchronized` comes from a read-only `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false, because a clock that follows no time source drifts until the executor refuses the Gateway's signed orders.
+
+Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+
+`instance.create` needs agent 0.21.0 on the Node: an executor at 0.20.0 reports the same `instance` actions but refuses the clone's route rules and its `files_blob`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.21.0 or newer.
+
 ## Steps and transitions
 
 `Engine::start` records one row per step in `operation_engine_steps` and sets `state.swamp_run_id` to `engine-<id>`. It then publishes a start event. Every transition happens in `advance`, inside one transaction that locks the Operation and its steps:

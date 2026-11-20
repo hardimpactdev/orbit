@@ -120,6 +120,10 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             $data = ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []];
         }
         $this->projection->apply($operation, [...$data, ...$run->times()], $session);
+        if ($data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done') {
+            // The copy started before the create failed: it runs until a retry or a destroy, and the record says so.
+            Instance::query()->findOrFail($operation->target_id)->runtime()->first()?->update(['power_state' => InstanceRuntimePowerState::Running]);
+        }
     }
 
     /**
@@ -143,7 +147,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'a branch selection' => isset($input['branch_selection']) || isset($container['branch_selection']),
             'Node services' => ($container['node_services'] ?? []) !== [],
             'Processes' => ($container['processes'] ?? []) !== [],
-            'a CI hold' => isset($input['ci_hold']) || isset($container['ci_hold']),
+            'a CI hold' => isset($clone['ci_hold']),
         ] as $case => $present) {
             if ($present) {
                 throw new EngineUnsupported("A clone with {$case} runs on Swamp.");

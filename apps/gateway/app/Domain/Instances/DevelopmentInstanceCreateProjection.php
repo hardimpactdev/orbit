@@ -281,20 +281,18 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
     public function server(array $t3, array $result, #[\SensitiveParameter] ?string $opened = null): array
     {
         $server = $result['t3'] ?? null;
-        $session = is_array($server) ? ($server['gateway_session'] ?? null) : null;
-        if ($opened !== null) {
-            // An engine run's session: the Gateway opened it from the sealed `t3` output; it never touched the vault.
-            $session = ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-engine'];
-        }
+        // An engine run's session: the Gateway opened it from the sealed `t3` output; it names no vault key.
+        $session = $opened !== null ? null : (is_array($server) ? ($server['gateway_session'] ?? null) : null);
         $environment = is_array($server) ? ($server['environment_id'] ?? null) : null;
         $expires = is_array($server) ? ($server['expires_at'] ?? null) : null;
-        if (! is_array($server) || ! is_array($session) || ($session['vault'] ?? null) !== 'orbit-control-inputs'
-            || ! is_string($session['key'] ?? null) || ! str_starts_with($session['key'], 'nckrtl-instance-t3-')
+        $vaulted = $opened !== null || (is_array($session) && ($session['vault'] ?? null) === 'orbit-control-inputs'
+            && is_string($session['key'] ?? null) && str_starts_with($session['key'], 'nckrtl-instance-t3-'));
+        if (! is_array($server) || ! $vaulted
             || ! is_string($environment) || preg_match('/\A[A-Za-z0-9._-]{1,255}\z/D', $environment) !== 1
             || ! is_string($server['server_version'] ?? null) || ! is_string($expires) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/D', $expires) !== 1) {
             throw new ResourceOperationException('instance.result_invalid', 'The clone did not prove its registered T3 server.');
         }
-        $secret = $opened ?? app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
+        $secret = $opened ?? app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', ValidatedData::string(ValidatedData::object($session)['key']));
         if ($secret === '') {
             throw new ResourceOperationException('instance.result_invalid', 'The T3 session of the clone is missing from the vault.');
         }
