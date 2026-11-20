@@ -44,15 +44,16 @@ final readonly class TaskGroupDone
             return null;
         }
 
-        return $this->reviewed($group, $last, $newest) && $this->idle($group) ? $newest : null;
+        return self::reviewed($group, $last, $newest) && $this->idle($group) ? $newest : null;
     }
 
     /**
      * The newest turn of the group's reviewer thread reviewed exactly the done check's commit, for the last subtask, and ended done. A copy
      * turn is admitted only on the current subtask, and a subtask of a task copy cannot be completed while a turn of the group runs
-     * ({@see TaskTurn::refuseSubtaskMoveWhileRunning()}), so this turn ended before the subtask was completed.
+     * ({@see TaskTurn::refuseSubtaskMoveWhileRunning()}), so this turn ended before the subtask was completed. The approval of a task with
+     * no subtask reads it too (TaskWorkReview).
      */
-    private function reviewed(Task $group, Task $last, TaskCheck $check): bool
+    public static function reviewed(Task $group, Task $last, TaskCheck $check): bool
     {
         $turn = self::reviewerTurn($group);
 

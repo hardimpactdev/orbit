@@ -101,7 +101,7 @@ final class TaskGroupData extends Data
         public ?TaskData $work = null,
         /**
          * Show only: where the review of a task with no subtask stands, `reviewing`, `approved` or `not_approved` (TaskWorkReview). Null
-         * for a task with subtasks and for an ended task (docs/reference/tasks.md#a-task-with-no-subtask).
+         * for a task with subtasks (docs/reference/tasks.md#a-task-with-no-subtask).
          */
         public Lazy|string|null $workReview = null,
         /** When GitHub opened the group's pull request; null when Orbit has not read it (docs/reference/tasks.md#task-insights). */
@@ -186,7 +186,7 @@ final class TaskGroupData extends Data
             prOpenedAt: $group->pr_opened_at?->toIso8601String(),
             deployedAt: $group->deployed_at?->toIso8601String(),
             publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
-            workReview: Lazy::create(static fn (): ?string => app(TaskWorkReview::class)->of($group))->defaultIncluded(),
+            workReview: Lazy::create(static fn (): ?string => TaskWorkReview::of($group))->defaultIncluded(),
 
             id: $group->id,
             parentId: null,

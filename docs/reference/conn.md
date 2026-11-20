@@ -628,10 +628,10 @@ A subtask's `deliverables` are `{id, type, description}`. Its `status` is the ra
 A task with no subtask has `subtasks: []` and shows its work in `work`. Its `status` is the work's raw status. It does not say whether the work is reviewed: a reviewer turn runs while the work stays `running`, and a completion without a reviewer turn on the done check is no approval. `review` says it, from Orbit's records:
 
 - `reviewing`: the newest turn of the task's reviewer thread has not ended.
-- `approved`: the work is done by [the done rule](/reference/tasks#when-the-work-is-done), also once its pull request is open.
+- `approved`: the work is completed, its newest handoff check passed, and the reviewer thread's newest turn reviewed exactly that check's commit and ended `done`.
 - `not_approved`: neither holds.
 
-`review` is null once the task ended; the task's `status` then says how. Its `deliverables` and `current_implementer_agent_id` read as a subtask's. `check` is the work's latest check, `{id, kind, status, started_at, finished_at, exit_code, failed_step}`, or null before the first: `kind` is `baseline` or `handoff`, and `status` is `running`, `passed`, `failed`, `changed`, `lost` or `cancelled`. The work's ID is no route member, so `work` names none. The task's `metrics` cover its work.
+`approved` is the approval of the reviewed check, not readiness to publish it. A publish, the copy's removal and the task's end keep it. A reopen of the work or a newer handoff check drops it. Its `deliverables` and `current_implementer_agent_id` read as a subtask's. `check` is the work's latest check, `{id, kind, status, started_at, finished_at, exit_code, failed_step}`, or null before the first: `kind` is `baseline` or `handoff`, and `status` is `running`, `passed`, `failed`, `changed`, `lost` or `cancelled`. The work's ID is no route member, so `work` names none. The task's `metrics` cover its work.
 
 Each agent:
 

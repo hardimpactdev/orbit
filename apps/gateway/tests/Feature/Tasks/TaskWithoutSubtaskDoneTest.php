@@ -118,6 +118,8 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     // The release publishes C0, and the publish conflicts with main.
     $publish = $this->withHeader('Idempotency-Key', 'solo-publish')->postJson("/api/v1/tasks/{$id}/publish", ['check' => $world->check->id])->assertStatus(202)
         ->assertJsonPath('data.kind', 'tasks.publish')->json('data.id');
+    // Approval is of the reviewed check, not readiness to publish it: a running publish keeps it.
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
     $publish = soloEnd(Operation::query()->findOrFail($publish), OperationStatus::Failed, ['error_code' => RunTaskMergeRoundAction::ConflictCode, 'conflicting_paths' => ['app/Export.php']]);
     expect($publish->input['check'])->toBe($world->check->id);
 
@@ -128,6 +130,8 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
         'branch_commit' => TaskDoneFixture::Commit, 'behind_by' => 1, 'start' => str_repeat('a', 40)]);
     $round->execute();
     $turn = soloStep($group, $publish, 'turn');
+    // The reopened work does not inherit the approval.
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'not_approved');
     expect($work->refresh()->status)->toBe(TaskStatus::Running)
         ->and($turn->input['subtask'])->toBe($work->id)->and($turn->input['role'])->toBe('implementer');
     soloEnd($turn);
@@ -138,6 +142,10 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     $merged = str_repeat('d', 40);
     $c1->update(['status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x', 'head_before' => TaskDoneFixture::Commit, 'tree_before' => str_repeat('4', 40),
         'head_after' => $merged, 'tree_after' => str_repeat('5', 40), 'commit_sha' => $merged, 'exit_code' => 0, 'finished_at' => now(), 'pr_mode' => $group->pr_mode]);
+    $work->update(['status' => TaskStatus::Completed]);
+    // Completed work whose newest handoff check is newer than the reviewed commit is not approved.
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'not_approved');
+    $work->update(['status' => TaskStatus::Running]);
     soloEnd($check, result: ['outcome' => 'passed', 'check_id' => $c1->id, 'commit' => $merged, 'head' => $merged, 'tree' => str_repeat('5', 40), 'ci' => null]);
     $round->execute();
     $reviewed = soloStep($group, $publish, 'review');
@@ -148,13 +156,16 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     $republish = soloStep($group, $publish, 'publish');
     expect($republish->kind)->toBe(OperationKinds::TasksPublish)->and($republish->input['check'])->toBe($c1->id)
         ->and($work->refresh()->status)->toBe(TaskStatus::Completed);
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
     soloEnd($republish, result: ['branch' => 'task-'.$id, 'commit' => $merged, 'pull_request_number' => 7, 'pull_request_url' => 'https://github.com/example/trial/pull/7']);
 
     // The pull request merged and the copy is gone: the task completes, and Insights count its work once.
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_completion' => 'merged',
         'merged_at' => now(), 'taskable_type' => null, 'taskable_id' => null]);
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
     $this->postJson("/api/v1/tasks/{$id}/complete")->assertOk()->assertJsonPath('data.status', 'completed')
         ->assertJsonPath('data.work.status', 'completed')->assertJsonPath('data.subtasks', []);
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
 
     $insights = app(TaskInsights::class)->report(30, null, CarbonImmutable::now())->current;
     expect($insights->tasks)->toBe(1)->and($insights->handoffFirstTry)->toBe(1.0);

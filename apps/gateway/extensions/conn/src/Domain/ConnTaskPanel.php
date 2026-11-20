@@ -29,7 +29,7 @@ use Spatie\LaravelData\Optional;
  */
 final readonly class ConnTaskPanel
 {
-    public function __construct(private ConnServerAccess $access, private TaskWorkReview $review) {}
+    public function __construct(private ConnServerAccess $access) {}
 
     /**
      * The rows of one page of top-level tasks. Each relation a row shows is read once for the whole page.
@@ -85,7 +85,7 @@ final readonly class ConnTaskPanel
             agents: $this->agents($group, $threads, $environment, $work),
             work: $work instanceof Task ? [
                 'status' => $work->status->value,
-                'review' => $this->review->of($group),
+                'review' => TaskWorkReview::of($group),
                 'deliverables' => self::deliverables($work),
                 'current_implementer_agent_id' => $work->implementer_agent_thread_id,
                 'check' => ($check = $work->latestCheck) instanceof TaskCheck ? [
