@@ -97,6 +97,10 @@ final readonly class TaskTurn
         $settle = array_map(self::earlier(...), self::unsettled($group));
         $candidate = null;
         $review = null;
+        if ($role === TaskThreadRole::Implementer) {
+            // An accepted delivery waits for its review before the implementer goes on (docs/reference/tasks.md#the-review-gate).
+            TaskHandoffs::requireReview($group, $task);
+        }
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
             // The delivery gate comes first (docs/reference/tasks.md#handoffs): only an accepted delivery for this commit is reviewed.

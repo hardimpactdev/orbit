@@ -7,15 +7,18 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskHandoff;
 use App\Support\ValidatedData;
+use JsonException;
 
 /**
  * The handoff gates of a group that left backlog after they shipped (docs/reference/tasks.md#handoffs). The handoff check is the
  * delivery gate: when it ends it writes one delivery row for the implementer turn that handed off, accepted or rejected with one reason.
+ * The end of a copy turn is the gate of a review and of a question. The admissions of the next steps read the rows.
  */
 final readonly class TaskHandoffs
 {
@@ -29,6 +32,16 @@ final readonly class TaskHandoffs
     public const string ClaimDisproved = 'claim_disproved';
 
     public const string CheckFailed = 'check_failed';
+
+    /** The rejection reasons of a review, in the order the gate tries them; a review without a receipt is NoReceipt. */
+    public const string InvalidReceipt = 'invalid_receipt';
+
+    public const string ChangesWithoutFinding = 'changes_without_finding';
+
+    public const string ApproveWithFinding = 'approve_with_finding';
+
+    /** Where the reviewer writes its review receipt, under the copy's Git directory: `git rev-parse --git-path` names it. */
+    public const string ReviewPath = 'orbit-handoff/review.json';
 
     /** The results `bin/task-check` gives a part. */
     public const array PartResults = ['passed', 'FAILED', 'skipped', 'not selected'];
@@ -80,6 +93,72 @@ final readonly class TaskHandoffs
     }
 
     /**
+     * Writes the handoff row of a copy turn of a gated group that ended: a turn that asked leaves an accepted question row whose
+     * receipt holds its questions; a reviewer turn that ended done leaves a review row, accepted or rejected with one reason. A failed
+     * turn hands nothing off and writes none; an implementer turn that ended done waits for the delivery gate.
+     *
+     * @param  array<string, mixed>  $result  the turn's result, its state already one of done, asking_for_input or failed
+     */
+    public static function turn(Operation $turn, array $result): void
+    {
+        if ($turn->status !== OperationStatus::Succeeded || ! (Task::topLevel()->whereKey($turn->target_id)->value('handoffs_gated') ?? false)) {
+            return;
+        }
+        $row = ['task_id' => ValidatedData::integer($turn->input['subtask']), 'operation_id' => $turn->id];
+        $questions = is_array($result['questions'] ?? null) ? array_values($result['questions']) : [];
+        if ($result['state'] === AgentThreadState::AskingForInput->value && $questions !== []) {
+            TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Question, 'receipt' => ['questions' => $questions]]);
+        } elseif ($result['state'] === AgentThreadState::Done->value && ($turn->input['role'] ?? null) === TaskThreadRole::Reviewer->value) {
+            $receipts = $result['receipts'] ?? null;
+            [$receipt, $reason] = self::review(is_array($receipts) ? $receipts['review'] ?? null : null);
+            TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Review, 'receipt' => $receipt,
+                'rejected' => $reason !== '', 'rejection_reason' => $reason]);
+        }
+    }
+
+    /**
+     * Refuses an implementer turn of a gated group after an accepted delivery until an accepted review of it exists: the reviewer
+     * judges each delivery before the work goes on. A newer handoff check of the subtask that did not pass, such as one that ended with
+     * `tasks.check_conflict`, lets the merge turn run: its work is a new delivery.
+     */
+    public static function requireReview(Task $group, Task $subtask): void
+    {
+        if (! $group->handoffs_gated) {
+            return;
+        }
+        $delivery = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)
+            ->where('rejected', false)->orderByDesc('id')->first();
+        if (! $delivery instanceof TaskHandoff
+            || TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->where('rejected', false)->where('id', '>', $delivery->id)->exists()
+            || TaskCheck::query()->where('task_id', $subtask->id)->where('kind', TaskCheckKind::Handoff->value)->where('id', '>', (int) $delivery->task_check_id)
+                ->whereNot('status', TaskCheckStatus::Passed->value)->exists()) {
+            return;
+        }
+
+        throw new ResourceOperationException('tasks.handoff_required',
+            'The delivery is accepted and waits for its review: a reviewer turn on its check comes before the next implementer turn.', 409);
+    }
+
+    /**
+     * Refuses to complete a subtask, or to publish a check of it, in a gated group with a task copy unless the subtask's latest review
+     * row is an accepted `approve` that came after its latest delivery row.
+     */
+    public static function requireApproval(Task $group, Task $subtask, string $step): void
+    {
+        if (! $group->handoffs_gated || ! $group->taskable instanceof Instance) {
+            return;
+        }
+        $review = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->orderByDesc('id')->first();
+        $delivery = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)->max('id');
+        if ($review instanceof TaskHandoff && ! $review->rejected && ($review->receipt['verdict'] ?? null) === 'approve' && $review->id > (int) $delivery) {
+            return;
+        }
+
+        throw new ResourceOperationException('tasks.handoff_required',
+            "{$step} requires an accepted approving review of the subtask's latest delivery: a reviewer turn on its check comes first.", 409);
+    }
+
+    /**
      * The part table of a receipt or a check: a non-empty list of parts, each with a name, one of PartResults and finite, non-negative
      * seconds. Anything else is none.
      *
@@ -124,6 +203,42 @@ final readonly class TaskHandoffs
         }
 
         return ['commit' => $commit, 'tree' => $tree, 'parts' => $parts];
+    }
+
+    /**
+     * The review receipt as the turn returned it, its redacted text, and the gate's reason: empty when it is a JSON object of exactly
+     * `verdict` (`approve` or `changes`) and `findings`, a list of objects of exactly a non-empty `summary`, with a finding only for
+     * `changes`. The row keeps the receipt when it parses to a JSON object.
+     *
+     * @return array{0: array<string, mixed>|null, 1: string}
+     */
+    private static function review(mixed $text): array
+    {
+        if (! is_string($text)) {
+            return [null, self::NoReceipt];
+        }
+        try {
+            $receipt = json_decode($text, true, 16, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [null, self::InvalidReceipt];
+        }
+        if (! is_array($receipt) || ($receipt !== [] && array_is_list($receipt))) {
+            return [null, self::InvalidReceipt];
+        }
+        $findings = $receipt['findings'] ?? null;
+        $keys = array_keys($receipt);
+        sort($keys);
+        $valid = $keys === ['findings', 'verdict'] && in_array($receipt['verdict'], ['approve', 'changes'], true)
+            && is_array($findings) && array_is_list($findings)
+            && array_filter($findings, static fn (mixed $finding): bool => ! is_array($finding) || array_keys($finding) !== ['summary']
+                || ! is_string($finding['summary']) || trim($finding['summary']) === '') === [];
+
+        return [$receipt, match (true) {
+            ! $valid => self::InvalidReceipt,
+            $receipt['verdict'] === 'changes' && $findings === [] => self::ChangesWithoutFinding,
+            $receipt['verdict'] === 'approve' && $findings !== [] => self::ApproveWithFinding,
+            default => '',
+        }];
     }
 
     /**

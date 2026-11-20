@@ -1206,6 +1206,35 @@ A merge-main implementer turn after `tasks.check_conflict` stays allowed: that c
 
 A reviewer turn of a gated group requires the subtask's latest delivery row to be accepted for the commit under review: the commit of the check its gate ran. The gate answers before candidate eligibility. Otherwise the turn is refused with `tasks.handoff_required` (409): the implementer hands off again and the handoff check runs.
 
+#### The review receipt
+
+A reviewer turn of a gated group writes the review receipt to `$(git rev-parse --git-path orbit-handoff/review.json)`. Its prompt names the path and the schema. `verdict` is `approve` or `changes`. `findings` lists the blocking findings, each with a `summary` of one line, and nothing else:
+
+```json
+{"verdict": "changes", "findings": [{"summary": "The export drops the header row."}]}
+```
+
+#### The review gate
+
+When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. The row keeps the receipt when it parses to a JSON object, so the verdict and the number of findings read from it. A turn that fails writes none.
+
+| Result | When |
+| --- | --- |
+| Accepted | The receipt matches the schema, with at least one finding for `changes` and none for `approve` |
+| `no_receipt` | The turn left no receipt |
+| `invalid_receipt` | The receipt is not JSON, or does not match the schema: another verdict, a missing or extra field, or a finding without a non-empty `summary` |
+| `changes_without_finding` | The verdict is `changes` and `findings` is empty |
+| `approve_with_finding` | The verdict is `approve` and `findings` is not empty |
+
+A rejected review is sent again. The admissions of a gated group read the rows and refuse with `tasks.handoff_required` (409):
+
+- An implementer turn after an accepted delivery, until an accepted review row comes after it. An accepted `changes` lets the implementer fix them, and its next accepted delivery waits for a review again. A newer handoff check of the subtask that did not pass lets the turn run, so a merge turn after `tasks.check_conflict` stays allowed.
+- Completing a subtask of a task copy, or publishing a check of it, unless the subtask's latest review row is an accepted `approve` that came after its latest delivery row.
+
+#### Question handoffs
+
+A copy turn of a gated group that ends asking, in either role, writes an accepted `question` row. Its receipt holds the questions as the turn read them: `{"questions": [...]}`. A turn that asked but whose question Orbit could not read failed, and writes none.
+
 ### Workspace ownership
 
 When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.

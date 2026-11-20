@@ -69,7 +69,7 @@ A turn in a task copy adds these answers and Operation errors:
 | `validation.failed` (422) | The request names the role `consult` or a `model`, as an older CLI may send. Both were options of the removed task VM turn. |
 | `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |
 | `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
-| `tasks.handoff_required` (409) | A reviewer turn of a gated group: the subtask's latest delivery is not accepted for the commit under review ([Handoffs](/reference/tasks#the-delivery-gate)). |
+| `tasks.handoff_required` (409) | A reviewer turn of a gated group: the subtask's latest delivery is not accepted for the commit under review ([Handoffs](/reference/tasks#the-delivery-gate)). An implementer turn of a gated group: the subtask's latest accepted delivery has no accepted review yet ([The review gate](/reference/tasks#the-review-gate)). |
 | `tasks.copy_turn_unended` (409) | A check, a publish or a proof of the copy: an earlier turn is not settled; `details.operation_id` names it. The next turn stops its run and settles it. |
 | `tasks.copy_turn_unoffered` (422) | A new thread's provider and effort, from the group, the Project or the Gateway, name no provider instance that the copy's T3 has. `details.offered` lists each provider with its efforts. Nothing is recorded. |
 | `tasks.copy_turn_model_invalid` (503) | The role's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` is not a model name. |
