@@ -56,11 +56,13 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
+use Tests\Support\ObservedReleaseInputs;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -387,6 +389,54 @@ it('recognizes a Node\'s approval of an earlier release from its Git commit, and
     'a Gateway-only change' => ['swamp/ansible/tasks/gateway-runtime.yml', false],
     'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
 ]);
+
+it('reads every release input and Git tree before it takes the SQLite writer, and cleans up the trees', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $approved = previousReleaseCommit('swamp/ansible/tasks/gateway-runtime.yml');
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $dev->forceFill(['release_inputs' => ['host' => $approved]])->save();
+    $reads = new ArrayObject;
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs($reads));
+    $before = glob(sys_get_temp_dir().'/orbit-release-host-*');
+    // The test database wraps each test in a transaction of its own.
+    $outside = DB::transactionLevel();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // The legacy tree, each Node's baseline, host and role digests, and the legacy comparison: all outside the transaction.
+    expect(array_count_values(array_column($reads->getArrayCopy(), 0)))->toEqual(['extractHostTree' => 1, 'host' => 6, 'roles' => 3])
+        ->and(array_unique(array_column($reads->getArrayCopy(), 1)))->toBe([$outside])
+        ->and(glob(sys_get_temp_dir().'/orbit-release-host-*'))->toBe($before);
+    $fleet = $release->refresh()->phases['fleet'];
+    expect($fleet['status'])->toBe('failed')
+        ->and($fleet['nodes'][$dev->id]['host'])->toBe('unchanged')
+        ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->refresh()->release_inputs['host'])->toBe(app(ReleaseNodeInputs::class)->host(node: $dev));
+});
+
+it('waits for the next pass when a Node joins after the release inputs were read', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $joined = null;
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs(new ArrayObject, static function (Node $node) use (&$joined): void {
+        if ($joined === null && $node->id === test()->nodes['prod']) {
+            $joined = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'late', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit',
+                'wireguard_ip' => '10.44.0.40', 'ssh_host_fingerprint' => 'SHA256:late', 'status' => LifecycleStatus::Active,
+                'platform' => 'linux', 'architecture' => 'x86_64']));
+            $joined->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        }
+    }));
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10)
+        ->and($release->refresh()->phases['fleet'])->toBe(['status' => 'pending', 'nodes' => []])
+        ->and($joined?->refresh()->release_inputs)->toBeNull();
+
+    $fleet->execute($release);
+    expect($release->refresh()->phases['fleet']['nodes'][$joined->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($joined->refresh()->release_inputs['host'])->toBe(app(ReleaseNodeInputs::class)->host(node: $joined));
+});
 
 it('records the current host inputs, with a visible reason, when the release tree a legacy approval names cannot be read', function (): void {
     $release = GatewayRelease::query()->sole();
@@ -750,6 +800,8 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
         $dev->refresh()->forceFill(['release_inputs' => null])->saveQuietly();
     } elseif ($change === 'agent drift') {
         app(AgentReportedVersions::class)->record($dev->id, '1.2.3+0000000000000000');
+        // The report lives in the agent view's file store, outside the test database: a later test must not see it.
+        $this->beforeApplicationDestroyed(static fn () => app(AgentReportedVersions::class)->forget($dev->id));
     }
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);

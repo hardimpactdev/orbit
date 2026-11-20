@@ -6,10 +6,13 @@ use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Nodes\AdmitNodeEnrollmentOperationAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\CliReleaseName;
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
@@ -41,11 +44,14 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
+use Tests\Support\ObservedReleaseInputs;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -1007,6 +1013,55 @@ it('converges the serving Gateway Node\'s changed host inputs itself, last', fun
         ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
         ->and($release->phases['fleet']['nodes'][$this->control->id])->toMatchArray(['status' => 'current', 'host' => 'converged']);
 });
+
+it('admits a release role converge and a CI runner\'s full host converge without reading release inputs or the CLI catalog under the SQLite writer', function (bool $host): void {
+    prepareReleaseTarget();
+    $this->node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $release = releaseWithRow(['status' => 'pending']);
+    $manifest = tmpfile();
+    fwrite($manifest, json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
+        'assets' => [['platform' => 'linux-x86_64', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('c', 64)]]], JSON_THROW_ON_ERROR));
+    $static = new StaticCliRelease(stream_get_meta_data($manifest)['uri']);
+    app()->instance(ReleaseHistory::class, $static);
+    $lookups = new ArrayObject;
+    app()->instance(CliReleaseCatalog::class, new readonly class($static, $lookups) implements CliReleaseCatalog
+    {
+        /** @param ArrayObject<int, int> $lookups */
+        public function __construct(private CliReleaseCatalog $catalog, private ArrayObject $lookups) {}
+
+        public function find(string $commit, CliReleaseName $release): DesiredCliReleaseData
+        {
+            $this->lookups->append(DB::transactionLevel());
+
+            return $this->catalog->find($commit, $release);
+        }
+    });
+    $cli = app(DesiredFleetState::class)->current()->cli;
+    $inputs = app(ReleaseNodeInputs::class);
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs, 'cli' => $cli->version,
+        'host' => $host ? ReleaseNodeInputs::NodeScope.str_repeat('d', 64) : $inputs->host(node: $this->node),
+        'roles' => $host ? array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->node)) : []]])->save();
+    // The cached catalog answer is gone once the pass has read its inputs, so a lookup under the writer would reach the catalog.
+    $reads = new ArrayObject;
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs($reads, static fn () => Cache::flush()));
+    $lookups->exchangeArray([]);
+    // The test database wraps each test in a transaction of its own.
+    $outside = DB::transactionLevel();
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10);
+
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBe(! $host)
+        ->and(array_keys($converge->input['_converge']['release_inputs']['roles']))->toBe($host ? $this->node->roles()->where('role', '!=', RoleName::Gateway)->orderBy('id')->pluck('id')->all()
+            : $this->node->roles()->whereIn('role', [RoleName::AppProd, RoleName::CiRunner])->orderBy('id')->pluck('id')->all())
+        ->and($converge->input['_converge']['release_inputs']['host'])->toBe($host ? $inputs->host(node: $this->node) : null)
+        ->and(array_unique(array_column($reads->getArrayCopy(), 1)))->toBe([$outside])
+        ->and(array_column($reads->getArrayCopy(), 0))->toContain('host', 'roles')
+        ->and(array_filter($lookups->getArrayCopy(), static fn (int $level): bool => $level !== $outside))->toBe([]);
+    if ($host) {
+        expect($converge->input['_converge']['intent']['cli']['release']['version'] ?? null)->toBe($cli->version);
+    }
+})->with(['a role-only release converge' => false, 'a full host converge' => true]);
 
 it('admits a host converge by the automatic converge rules: task work never blocks it, Instance work queues it', function (): void {
     prepareReleaseTarget();
