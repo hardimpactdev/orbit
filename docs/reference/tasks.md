@@ -1185,7 +1185,7 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 
 Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes both receipt paths; a copy where they cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json` once and removes them. A link, a folder or a file over 64 KiB is removed unread.
 
-The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt is its text, each JSON string redacted on its own ([The review gate](#the-review-gate)).
+The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt of the review schema's shape keeps it, each string redacted on its own; any other is its redacted text ([The review gate](#the-review-gate)).
 
 #### The delivery gate
 
@@ -1220,7 +1220,7 @@ A reviewer turn of a gated group writes the review receipt to `$(git rev-parse -
 
 When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. The row keeps a valid receipt as its verdict and findings, so both read from it. It keeps an invalid receipt only as its text, `{"text": ...}`, so storing it never fails the turn. A turn that fails writes none.
 
-In the turn, Swamp redacts each string of a receipt that parses as JSON on its own and serializes it again, so redaction never breaks a valid receipt. A rejected review counts for no review round: the retry is a first review again.
+In the turn, Swamp serializes a receipt of the review schema's shape again with each string redacted on its own, so redaction never breaks a valid receipt. It redacts any other receipt as text, field names included, so a secret under a field such as `password` never reaches the row. A rejected review counts for no review round: the retry repeats the same round.
 
 | Result | When |
 | --- | --- |

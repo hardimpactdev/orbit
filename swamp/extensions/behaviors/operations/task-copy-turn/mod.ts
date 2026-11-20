@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { redactText, redactValue } from "../../_lib/public_output.ts";
+import { redactText } from "../../_lib/public_output.ts";
 
 /** The longest public transcript of one turn, as for a task VM turn. */
 const TranscriptBytes = 262144;
@@ -153,7 +153,7 @@ export const Turn = z.object({
     spent: z.array(z.string()),
     transcript: z.array(Entry),
     // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
-    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its text, each JSON string redacted on its own. Null
+    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt of the review shape keeps it, each string redacted on its own; any other is its redacted text. Null
     // for a receipt the turn did not leave.
     receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
@@ -420,8 +420,9 @@ function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
 }
 
 /**
- * The review receipt as the Gateway gets it: a receipt that parses as JSON is serialized again with each key and string redacted on
- * its own, so redaction never breaks its JSON; any other text is redacted as text.
+ * The review receipt as the Gateway gets it. A receipt of exactly the review schema's shape, `verdict` and a list of findings of
+ * exactly a `summary`, all strings, is serialized again with each string redacted on its own, so redaction never breaks it. The shape
+ * is read without recursion. Any other text, deep or not JSON, is redacted as text, field names included; the Gateway rejects it.
  */
 function reviewed(text: string): string {
     let receipt: unknown;
@@ -430,10 +431,16 @@ function reviewed(text: string): string {
     } catch {
         return redactText(text);
     }
-    const keys = (value: unknown): unknown => Array.isArray(value) ? value.map(keys)
-        : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [redactText(key), keys(item)]))
-        : value;
-    return JSON.stringify(keys(redactValue(receipt)));
+    const exactly = (value: unknown, keys: string[]): value is Record<string, unknown> =>
+        value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join() === keys.join();
+    if (!exactly(receipt, ["findings", "verdict"]) || typeof receipt.verdict !== "string" || !Array.isArray(receipt.findings)
+        || !receipt.findings.every((finding) => exactly(finding, ["summary"]) && typeof finding.summary === "string")) {
+        return redactText(text);
+    }
+    return JSON.stringify({
+        verdict: redactText(receipt.verdict),
+        findings: (receipt.findings as { summary: string }[]).map((finding) => ({ summary: redactText(finding.summary) })),
+    });
 }
 
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
@@ -441,7 +448,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.3",
+    version: "2026.11.20.4",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
