@@ -55,8 +55,8 @@ fn input() -> Value {
 
 const MISSING: Result<Value, &str> = Err("Error: Not Found");
 
-fn snapshots(names: &[(&str, &str)]) -> Result<Value, &'static str> {
-    Ok(Value::Array(names.iter().map(|(name, at)| json!({"name": name, "created_at": at})).collect()))
+fn snapshots(names: &[(&str, &str)]) -> Value {
+    Value::Array(names.iter().map(|(name, at)| json!({"name": name, "created_at": at})).collect())
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn a_new_copy_gets_its_acl_the_seed_copy_and_the_t3_proxy() {
     let fake = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", MISSING),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[("seed-abc123", "2026-11-19")])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
         ("query /1.0/storage-pools/", Ok(json!({"driver": "zfs"}))),
     ]);
 
@@ -96,7 +96,7 @@ fn a_btrfs_root_carries_no_size() {
     let fake = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[("seed-abc123", "")])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "")]))),
         ("query /1.0/storage-pools/", Ok(json!({"driver": "btrfs"}))),
     ]);
 
@@ -122,7 +122,7 @@ fn a_replaced_seed_copies_the_newest_and_a_retake_refuses() {
     let replaced = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[("seed-old", "2026-11-01"), ("seed-new", "2026-11-18")])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-old", "2026-11-01"), ("seed-new", "2026-11-18")]))),
         ("query /1.0/storage-pools/", Ok(json!({"driver": "zfs"}))),
     ]);
     assert_eq!(clone(&replaced, &input()).expect("clone"), r#"{"snapshot":"seed-new"}"#);
@@ -130,14 +130,14 @@ fn a_replaced_seed_copies_the_newest_and_a_retake_refuses() {
     let retake = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[("seed-new", "2026-11-18"), ("next-abc123", "2026-11-19")])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-new", "2026-11-18"), ("next-abc123", "2026-11-19")]))),
     ]);
     assert_eq!(clone(&retake, &input()).map_err(|failure| failure.code), Err("instance.default_seed_moved"));
 
     let none = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[]))),
     ]);
     assert_eq!(clone(&none, &input()).map_err(|failure| failure.code), Err("instance.default_seed_missing"));
 }
@@ -147,7 +147,7 @@ fn a_dir_pool_refuses_before_any_copy() {
     let fake = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
-        ("query /1.0/instances/instance-2/snapshots", snapshots(&[("seed-abc123", "")])),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "")]))),
         ("query /1.0/storage-pools/", Ok(json!({"driver": "dir"}))),
     ]);
 
@@ -177,6 +177,6 @@ fn values_that_could_carry_another_option_are_refused() {
         *input.pointer_mut(pointer).expect("field") = value;
         let fake = Fake::new(&[]);
         assert_eq!(clone(&fake, &input).map_err(|failure| failure.code), Err("instance.clone_input_invalid"), "{pointer}");
-        assert!(fake.calls().is_empty());
+        assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }
