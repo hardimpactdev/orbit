@@ -6,10 +6,10 @@ namespace App\Domain\Instances;
 
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\InstancePower;
-use App\Domain\Proof\ProofCopyHosts;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Proof\ProofCopyHosts;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRuntime;
