@@ -118,6 +118,14 @@ final readonly class ProblemRecovery
 
             return null;
         }
+        if (str_starts_with($resource, 'release-phase:')) {
+            // A release follow-up phase recovers when a later release, or a later pass of the same one, settles it current.
+            $phase = substr($resource, 14);
+
+            return GatewayRelease::query()->where('outcome', 'verified')->where('updated_at', '>', $row->first_seen ?? $row->filed_at)
+                ->get()->contains(static fn (GatewayRelease $record): bool => data_get($record->phases, $phase.'.status') === 'current')
+                ? 'release_phase_current' : null;
+        }
         if (str_starts_with($resource, 'instance:')) {
             $instance = Instance::query()->find((int) substr($resource, 9));
             if (! $instance instanceof Instance) {

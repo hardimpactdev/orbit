@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AiRouter\AiRouterTaskGuardRequest;
 use Orbit\Sdk\Requests\AiRouter\DestroyAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
@@ -16,6 +17,8 @@ use Orbit\Sdk\Requests\AiRouter\ShowAiRouterProviderRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -230,6 +233,37 @@ it('shows fleet status including a null collected_at', function (): void {
  * @param  array<string, mixed>  $arguments
  * @return array{0: int, 1: string}
  */
+it('applies or removes the guard and follows its Operation to the end', function (array $arguments, bool $remove): void {
+    $queued = ['id' => 77, 'kind' => 'ai_router.task_guard', 'target_type' => 'node', 'target_id' => 4,
+        'status' => 'queued', 'sequence' => 1, 'poll_after_seconds' => 0];
+    $mock = MockClient::global([
+        ListExtensionsRequest::class => ai_router_cli_extensions_response(),
+        AiRouterTaskGuardRequest::class => MockResponse::make(['data' => $queued, 'meta' => ['request_id' => ai_router_cli_request_id()]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => [...$queued, 'status' => 'succeeded', 'sequence' => 5,
+            'result' => ['origin' => 'http://10.44.0.3:8318']], 'meta' => ['request_id' => ai_router_cli_request_id()]]),
+    ]);
+
+    [$exit, $output] = ai_router_cli_display('ai-router:task-guard', [...$arguments, '--idempotency-key' => 'guard-key', '--json' => true]);
+
+    expect($exit)->toBe(0)
+        ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['id' => 77, 'kind' => 'ai_router.task_guard', 'status' => 'succeeded']);
+    $mock->assertSent(static fn ($pending): bool => $pending instanceof AiRouterTaskGuardRequest
+        && $pending->body()->all() === ['remove' => $remove] && $pending->headers()->get('Idempotency-Key') === 'guard-key');
+})->with([
+    'apply' => [[], false],
+    'remove' => [['--remove' => true, '--yes' => true], true],
+]);
+
+it('requires --yes for a non-interactive guard removal and sends nothing', function (): void {
+    $mock = MockClient::global([ListExtensionsRequest::class => ai_router_cli_extensions_response()]);
+
+    [$exit, $output] = ai_router_cli_display('ai-router:task-guard', ['--remove' => true, '--json' => true]);
+
+    expect($exit)->toBe(1)->and($output)->toContain('input.confirmation_required');
+    $mock->assertNotSent(AiRouterTaskGuardRequest::class);
+});
+
 function ai_router_cli_display(string $command, array $arguments = []): array
 {
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);

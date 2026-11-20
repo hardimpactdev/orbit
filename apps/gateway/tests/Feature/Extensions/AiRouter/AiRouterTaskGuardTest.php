@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Firewall\ListManagedFirewallRulesAction;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -134,4 +135,53 @@ it('refuses a second guard run while one holds the guard', function (): void {
     expect($first->lock_key)->toBe('ai_router_guard:'.$services->id)
         ->and(fn () => app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'))
         ->toThrow(ResourceOperationException::class, 'Another Operation owns this target.');
+});
+
+/** An operator Node with access to the active Gateway, which calls the API from its WireGuard address. */
+function guardApiCaller(): Node
+{
+    $gateway = guardNode('gateway', '10.44.0.2');
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $caller = guardNode('laptop', '10.44.0.9');
+    $caller->accessibleNodes()->attach($gateway);
+    app(ExtensionStore::class)->set('ai-router', true);
+
+    return $caller;
+}
+
+it('applies or removes the guard through the API, as the artisan command does', function (): void {
+    $services = guardRouter();
+    $caller = guardApiCaller();
+    $call = fn (array $body, string $key) => $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/ai-router/task-guard', $body, ['Idempotency-Key' => $key]);
+
+    $applied = $call([], 'apply-key')->assertStatus(202)->assertJsonPath('data.kind', 'ai_router.task_guard')->assertJsonPath('data.status', 'queued');
+    $operation = Operation::query()->findOrFail($applied->json('data.id'));
+    expect($operation->node_id)->toBe($services->id)->and($operation->triggered_by)->toBe('ai-router:task-guard')
+        ->and($operation->input['intent']['state'])->toBe('present')
+        ->and($operation->input['guard_digest'])->toStartWith('sha256:')
+        ->and($applied->getContent())->not->toContain(app(AiRouterSecrets::class)->task());
+
+    // The same key replays the run; another key meets the guard's lock.
+    $call([], 'apply-key')->assertStatus(202)->assertJsonPath('data.id', $operation->id);
+    $call(['remove' => true], 'remove-key')->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy');
+
+    $operation->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null])->save();
+    $removal = $call(['remove' => true], 'remove-key')->assertStatus(202);
+    expect(Operation::query()->findOrFail($removal->json('data.id'))->input['intent']['state'])->toBe('absent');
+});
+
+it('refuses a guard API call that is not a boolean removal, from a caller without Gateway access, or while the ai-router is off', function (): void {
+    guardRouter();
+    $caller = guardApiCaller();
+    $call = fn (Node $from, array $body) => $this->withServerVariables(['REMOTE_ADDR' => $from->wireguard_ip])->postJson('/api/v1/ai-router/task-guard', $body);
+
+    $call($caller, ['remove' => 'yes'])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+    $call(guardNode('stranger', '10.44.0.11'), [])->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    app(AiRouterState::class)->disable();
+    $call($caller, [])->assertStatus(409)->assertJsonPath('error.code', 'ai_router.disabled');
+    app(ExtensionStore::class)->set('ai-router', false);
+    $call($caller, [])->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
+
+    expect(Operation::query()->count())->toBe(0);
 });

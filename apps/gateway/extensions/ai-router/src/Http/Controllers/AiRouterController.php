@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Http\Controllers;
 
+use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Operations\StartsOperation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Extensions\AiRouter\Actions\AdmitAiRouterTaskGuardAction;
 use Orbit\Extensions\AiRouter\Actions\DisableAiRouterAction;
 use Orbit\Extensions\AiRouter\Actions\EnableAiRouterAction;
 use Orbit\Extensions\AiRouter\Actions\ListAiRouterModelsAction;
@@ -19,6 +22,7 @@ use Orbit\Extensions\AiRouter\Actions\UpdateAiRouterAccountAction;
 use Orbit\Extensions\AiRouter\Data\AiRouterModelData;
 use Orbit\Extensions\AiRouter\Data\AiRouterStatusData;
 use Orbit\Extensions\AiRouter\Domain\AiRouterModel;
+use Orbit\Extensions\AiRouter\Http\Requests\AiRouterTaskGuardRequest;
 use Orbit\Extensions\AiRouter\Http\Requests\EnableAiRouterRequest;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
@@ -57,6 +61,14 @@ final class AiRouterController extends Controller
     public function disableAccount(Request $request, string $account, UpdateAiRouterAccountAction $action): JsonResponse
     {
         return $this->payload($request, $action->execute($account, true));
+    }
+
+    #[StartsOperation('ai_router.task_guard')]
+    public function taskGuard(AiRouterTaskGuardRequest $request, AdmitAiRouterTaskGuardAction $action): JsonResponse
+    {
+        $requestId = $request->attributes->getString('orbit.request_id');
+
+        return $this->payload($request, OperationData::fromModel($action->execute($request->remove(), 'ai-router:task-guard', $requestId))->toArray(), 202);
     }
 
     public function models(Request $request, ListAiRouterModelsAction $action): JsonResponse

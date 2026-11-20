@@ -12,6 +12,7 @@ enum ReleaseAlertKind: string
     case ReleaseCleanupPaused = 'release_cleanup_paused';
     case ReleaseSchedulerSilent = 'release_scheduler_silent';
     case ReleaseGatewayAgentFailed = 'release_gateway_agent_failed';
+    case ReleaseFollowUpFailed = 'release_follow_up_failed';
     case RolloutHalted = 'rollout_halted';
     case RebootHalted = 'reboot_halted';
     case RebootUnconfirmed = 'reboot_unconfirmed';
@@ -29,6 +30,7 @@ enum ReleaseAlertKind: string
             self::ReleaseCleanupPaused => 'Document cleanup paused after release',
             self::ReleaseSchedulerSilent => 'Scheduler silent after release',
             self::ReleaseGatewayAgentFailed => 'Gateway agent update failed after release',
+            self::ReleaseFollowUpFailed => 'Follow-up phase failed after release',
             self::RolloutHalted => 'Rollout halted',
             self::RebootHalted => 'Fleet reboot halted',
             self::RebootUnconfirmed => 'Fleet reboot unconfirmed',

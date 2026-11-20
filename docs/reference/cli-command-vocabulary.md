@@ -126,6 +126,7 @@ Six commands end in a noun.
 
 | Command | Result |
 | --- | --- |
+| `ai-router:task-guard` | The CLI applies the [task VM guard](/reference/ai-router#task-vm-guard) of the model router, or with `--remove` takes it off. |
 | `analytics:credentials` | The CLI shows whether a Plausible Stats API key is stored, stores one, or clears it. It never prints the key. |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
