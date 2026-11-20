@@ -1608,6 +1608,7 @@ dependencies = [
  "async-nats",
  "base64 0.22.1",
  "futures-util",
+ "libc",
  "orbit-executor-core",
  "orbit-executor-dns",
  "orbit-executor-firewall",
