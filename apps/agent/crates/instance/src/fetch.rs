@@ -78,7 +78,7 @@ fn check(input: &FetchInput) -> Result<(), String> {
     let valid = !branch.is_empty()
         && !branch.starts_with(['-', '/', '.'])
         && !branch.ends_with(['/', '.'])
-        && !branch.ends_with(".lock")
+        && !std::path::Path::new(branch.as_str()).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("lock"))
         && !branch.contains("..")
         && !branch.contains("//")
         && !branch.contains("@{")
