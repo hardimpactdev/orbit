@@ -6,4 +6,4 @@ Creating task group...
 │
 └  Operation failed.
 
-A task group needs at least one subtask before it moves to todo.
+A task leaves backlog with its own deliverables, or with at least two subtasks that each have deliverables.

@@ -101,6 +101,11 @@ describe('tasks contract', function (): void {
         run_task_contract('task-create/created', 'task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
         run_task_contract('tasks/task-create/external', 'task:create', ['title' => 'External work', '--project' => '1', '--brief' => 'An orchestrator drives it.', '--orchestration' => 'external'], 0);
         run_task_contract('task-create/no-subtasks', 'task:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
+        // A task with no subtask shows its work and deliverables, and no subtask table (docs/reference/tasks.md#a-task-with-no-subtask).
+        $deliverables = $this->orbitHome.'/deliverables.json';
+        is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
+        file_put_contents($deliverables, '[{"id":"sdk-test","type":"command","description":"The SDK tests pass","command":"vendor/bin/pest","directory":"packages/php-sdk"}]');
+        run_task_contract('tasks/task-create/no-subtask', 'task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--deliverables' => $deliverables], 0);
     });
 
     it('renders group updates, a refused update, and complete', function (): void {

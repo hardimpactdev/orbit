@@ -96,16 +96,22 @@ final readonly class CompleteTaskGroupAction
         }
 
         if (! $this->removeOrFinish($group, $finishWhenRemovalFails)) {
-            $group->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
+            DB::transaction(static function () use ($group): void {
+                self::endOpenWork($group);
+                $group->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
+            });
 
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
-        $group->refresh();
-        $group->taskable()->dissociate();
-        $group->status = TaskGroupStatus::Completed;
-        $group->settled_at ??= now();
-        $group->save();
+        DB::transaction(static function () use ($group): void {
+            self::endOpenWork($group);
+            $group->refresh();
+            $group->taskable()->dissociate();
+            $group->status = TaskGroupStatus::Completed;
+            $group->settled_at ??= now();
+            $group->save();
+        });
 
         return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
@@ -185,6 +191,20 @@ final readonly class CompleteTaskGroupAction
         if ($copy !== null) {
             TaskEnd::assertDiscardable($this->end->workspace($group, $copy->instance), discard: false);
         }
+    }
+
+    /**
+     * A settling or waiting task with no subtask ends its open work with it, as a running task ends its open subtasks: no turn or check
+     * runs, since cancelOpen() ended the task's Operations (docs/reference/tasks.md#a-task-with-no-subtask).
+     */
+    private static function endOpenWork(Task $group): void
+    {
+        $work = $group->work()->whereIn('status', [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing])->lockForUpdate()->first();
+        if (! $work instanceof Task) {
+            return;
+        }
+        $work->checks()->where('status', TaskCheckStatus::Running)->update(['status' => TaskCheckStatus::Cancelled, 'finished_at' => now()]);
+        $work->update(['status' => TaskStatus::Cancelled, 'completion_summary' => 'Cancelled by operator.']);
     }
 
     /** Remote stops precede the transaction; no subtask is ended unless the parent can end with it. */

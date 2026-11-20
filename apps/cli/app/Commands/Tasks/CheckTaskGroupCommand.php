@@ -16,7 +16,7 @@ final class CheckTaskGroupCommand extends TaskCommand
 
     #[\Override]
     protected $signature = 'task:check
-        {task? : Numeric Task ID}
+        {task? : Numeric subtask ID, or the ID of a task with no subtask}
         {--phase= : baseline or handoff}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
@@ -39,7 +39,7 @@ final class CheckTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
         $connector = $connectors->make($profile);
-        $groupId ??= (int) $this->promptText('Subtask ID', 20);
+        $groupId ??= (int) $this->promptText('Subtask or task ID', 20);
 
         $phase ??= $this->promptChoice('Phase', ['baseline' => 'Baseline', 'handoff' => 'Handoff']);
         $key = $this->option('idempotency-key');

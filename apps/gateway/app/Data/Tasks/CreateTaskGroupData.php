@@ -25,6 +25,12 @@ final class CreateTaskGroupData extends Data
         public string $brief,
         public TaskGroupStatus $status,
         public array $tasks,
+        /**
+         * The deliverables of a task with no subtask; null for a task that has or takes subtasks (docs/reference/tasks.md#a-task-with-no-subtask).
+         *
+         * @var list<array<string, string|bool|list<string>>>|null
+         */
+        public ?array $deliverables = null,
         public bool $preview = false,
         public bool $currentRecipe = false,
         public TaskOrchestration $orchestration = TaskOrchestration::External,

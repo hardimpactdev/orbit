@@ -12,7 +12,9 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskStatusMoves;
+use App\Domain\Tasks\TaskType;
 use App\Models\Task;
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +29,7 @@ final readonly class UpdateTaskGroupAction
     {
         $this->requireExtension->execute();
         if ($data->status === TaskGroupStatus::Todo && $group->status === TaskGroupStatus::Backlog) {
-            self::requireDeliverables($group->tasks()->get());
+            self::leavesBacklog($group->tasks()->get());
         }
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.
         $updated = $this->execution->synchronized($group->id, fn (): Task => DB::transaction(static function () use ($group, $data): Task {
@@ -40,12 +42,8 @@ final readonly class UpdateTaskGroupAction
             if ($data->status !== null && $data->status !== $locked->status) {
                 TaskStatusMoves::group($locked, $data->status);
 
-                if ($data->status === TaskGroupStatus::Todo && $locked->tasks->isEmpty()) {
-                    throw TaskGroupGuard::noSubtasks();
-                }
-
                 if ($data->status === TaskGroupStatus::Todo) {
-                    self::requireDeliverables($locked->tasks);
+                    self::leavesBacklog($locked->tasks);
                 }
 
                 $locked->status = $data->status;
@@ -68,6 +66,10 @@ final readonly class UpdateTaskGroupAction
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;
             if ($locked->isDirty()) {
+                // The work row of a task with no subtask repeats the task's title and brief (TaskType::Work).
+                if ($locked->isDirty(['title', 'brief'])) {
+                    $locked->work()->first()?->update(['title' => $locked->title, 'brief' => $locked->brief]);
+                }
                 $locked->save();
             }
 
@@ -78,15 +80,49 @@ final readonly class UpdateTaskGroupAction
     }
 
     /**
-     * ADR 0133: a group moves to Todo only when every subtask has deliverables.
+     * Applies UPDATE to the work of a task with no subtask. A task in backlog with no subtask and no work opens its work here, in
+     * one transaction with UPDATE, so a refused update leaves the task as it was (docs/reference/tasks.md#a-task-with-no-subtask).
      *
-     * @param  Collection<int, Task>  $tasks
+     * @param  Closure(Task): Task  $update
      */
-    private static function requireDeliverables(Collection $tasks): void
+    public function work(Task $group, Closure $update): Task
     {
-        $missing = $tasks->sortBy('position')->filter(static fn (Task $task): bool => $task->deliverableList() === []);
-        if ($missing->isNotEmpty()) {
-            throw TaskGroupGuard::deliverablesMissing(array_values($missing->map(static fn (Task $task): string => '#'.$task->id.' "'.$task->title.'"')->all()));
+        $this->requireExtension->execute();
+        // An existing work takes its update as a subtask does, with its repository reads outside any transaction.
+        $existing = $group->work()->first();
+        if ($existing instanceof Task) {
+            return $update($existing);
         }
+
+        return DB::transaction(static function () use ($group, $update): Task {
+            $locked = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
+            $work = $locked->work()->first();
+            if ($work instanceof Task) {
+                return $update($work);
+            }
+            if ($locked->status !== TaskGroupStatus::Backlog) {
+                throw TaskGroupGuard::notInBacklog();
+            }
+            if (Task::query()->where('parent_id', $locked->id)->exists()) {
+                throw TaskGroupGuard::deliverablesLocked();
+            }
+
+            return $update(CreateTaskGroupAction::openWork($locked, []));
+        });
+    }
+
+    /**
+     * The rule of a task that leaves backlog, read from its rows: its work, or its subtasks (TaskGroupGuard::leavesBacklog).
+     *
+     * @param  Collection<int, Task>  $rows
+     */
+    public static function leavesBacklog(Collection $rows): void
+    {
+        $work = $rows->first(static fn (Task $task): bool => $task->type === TaskType::Work);
+        $subtasks = [];
+        foreach ($rows->reject(static fn (Task $task): bool => $task->type === TaskType::Work)->sortBy('position') as $task) {
+            $subtasks['#'.$task->id.' "'.$task->title.'"'] = $task->deliverableList() !== [];
+        }
+        TaskGroupGuard::leavesBacklog($work instanceof Task ? $work->deliverableList() !== [] : null, $subtasks);
     }
 }

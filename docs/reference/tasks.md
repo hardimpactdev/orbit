@@ -210,7 +210,7 @@ No `tasks.provision` Operation starts any more: a task start makes a task copy. 
 
 A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt from one fixed text for each role and records it as the admitted prompt. `TaskTurnPrompt` holds both texts. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
 
-Both texts open with one line on the role and its copy. Then come the group's title and brief in `<task_brief>`, the subtask's title and brief in `<subtask_brief>`, and its deliverables in `<deliverables>`. A subtask without deliverables gets no deliverables block. The caller's prompt comes last, in `<turn>`, and a final line gives the end of the turn's bound: the admission's time plus 3,600 seconds, in UTC. On a thread whose last turn asked, the quoted questions and `Answer:` come first inside `<turn>`.
+Both texts open with one line on the role and its copy. Then come the group's title and brief in `<task_brief>`, the subtask's title and brief in `<subtask_brief>`, and its deliverables in `<deliverables>`. A [task with no subtask](#a-task-with-no-subtask) gets no `<subtask_brief>`: its texts name the task, not a subtask. A subtask without deliverables gets no deliverables block. The caller's prompt comes last, in `<turn>`, and a final line gives the end of the turn's bound: the admission's time plus 3,600 seconds, in UTC. On a thread whose last turn asked, the quoted questions and `Answer:` come first inside `<turn>`.
 
 No role gets a rule of the other role. The texts name nothing of one Project except its task check command.
 
@@ -461,7 +461,7 @@ C1 is published once. The round publishes it only while no publish of C1 exists.
 
 ### Task lifecycle
 
-A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
+A group starts in `backlog` or `todo`. Moving it to `todo` requires at least two subtasks and a deliverable on every subtask, or, for a [task with no subtask](#a-task-with-no-subtask), at least one deliverable of its own. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
 
 One group uses one task copy and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
@@ -494,11 +494,11 @@ List, show, and `task:question:list` accept any authorized peer. Update and the 
 | `task:egress` | `GET /api/v1/tasks/{task}/egress` | Gateway |
 | `task:agent:show` | `GET /api/v1/tasks/{task}/agents/{session}` | Gateway |
 
-Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child. Start, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
+Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child, or a [task with no subtask](#a-task-with-no-subtask) by its own ID. Start, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
 
 Parent creation requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). Child creation uses `parent_id` instead of `project_id` and inherits the Project; a contradictory Project is refused. The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App.
 
-Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` creates the parent's task copy. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
+Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects, or the task's own `deliverables` instead, and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` creates the parent's task copy. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
 Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. The strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) remains a stored create-time field; it selects no VM image and changes no task-copy start behavior. Update cannot change it. [List tasks](#list-tasks) pages the groups. Show returns the task and its subtasks in position order.
 
@@ -506,7 +506,62 @@ Update changes a task's `title`, `brief`, or `status`. Title and brief change on
 
 For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
-A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
+A task stands alone, or it has at least two subtasks; never one. The Gateway checks this when the task leaves `backlog`. A task moves to `todo`, by create or update, only when it is a task with no subtask that has at least one deliverable, or when it has at least two subtasks and every subtask has at least one deliverable.
+
+A task with exactly one subtask is refused with HTTP 422 `tasks.one_subtask`, and nothing changes: fold the subtask into the task, by giving the task its deliverables and no subtask. The shape is checked first, so a lone subtask gets this refusal before its deliverables or their paths are checked. In `backlog` a task can still hold one subtask while it is prepared.
+
+The rule reads only the move out of `backlog`. A task with one subtask that left `backlog` before the rule keeps working until it ends, and every client still reads it. A [subtask can be cancelled](#cancel-a-subtask) in a running task, also when one subtask is left.
+
+Orbit's own tasks have no subtask: [project maintenance](/reference/projects#maintenance), each copy of a [proof run](/cli/proof/run), each warm proof copy, and a Horizon New Dawn plan with one task, such as its parity baseline. Project maintenance moves its task out of `backlog` by this same rule, whether its run created the task or reuses one.
+
+### A task with no subtask
+
+A task with no subtask holds its own deliverables and does its own work. Create it with `deliverables` in place of `subtasks`; a create that names both, even as empty lists, answers `422` with `validation.failed` and stores nothing. The deliverables follow the rules of [Deliverables](#deliverables).
+
+Such a task takes, by its own ID, the calls that a subtask takes:
+
+| Call | By the task's ID |
+| --- | --- |
+| `task:check` | The baseline and handoff checks of the task's work |
+| `task:turn` | The implementer and reviewer turns |
+| `task:check:cancel` | Cancels the running check |
+| `task:update` with `deliverables` | Replaces the deliverables, with the [corrections of a started subtask](#correct-the-deliverables-of-a-started-subtask) and their `reason`. Such an update takes no other field |
+| `task:update` with `work_status` | Moves the work's status by the [subtask moves](#change-subtasks), the reopen included. Such an update takes no other field |
+| `task:comment:create` | A comment, on the work while it is open, as on a subtask |
+| `task:comment:list` | The task's comments and its work's comments |
+
+`status` stays the task's own status, with its moves and its no-op repeat; `work_status` is the work's. A `work_status` on a task without work answers `422` with `validation.failed`, and so does one with `deliverables`.
+
+An `assistance_requested` comment on open work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. Once the work ended, a comment goes to the task.
+
+A `resolution` goes where the request it answers is recorded, the work or the task, also after the work ended or the task took its own deliverables. When both hold a request, a task's own `direction` request apart from the work's goes first; one request recorded on both is resolved on the work, which clears both. A resolution clears only `direction` assistance on the task, as for a task with subtasks.
+
+A resolution clears the assistance request. It does not close the question: `task:question:close <question> --status=answered` does. An ended task takes no comment and answers `409` with `tasks.group_closed`.
+
+Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part.
+
+Review, publish and completion follow the rules of a task with subtasks, with the work as its one and last subtask:
+
+- A reviewer turn by the task's ID reviews a passed handoff check of the work. Its prompt names the task, not a subtask.
+- `task:update` with `work_status` `completed` after that turn is the approval that [the done rule](#when-the-work-is-done) reads.
+- After a completion, `work_status` `running` reopens the work as the [reopen of the last subtask](#reopen-the-last-subtask) does. A person repairs a merge round that stopped this way.
+- `task:publish` and the automatic publish of `pr_when_done` publish the done check. A conflict with main starts the [merge round](#the-merge-round) on the work: it reopens and completes the work as it does the last subtask.
+- `task:complete` completes the task and cancels its open work, from every status it completes.
+- [Task insights](#task-insights) count the work once, as one subtask.
+
+A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
+
+In `backlog`, a task without subtasks takes its own deliverables by `task:update`, also after its last subtask was destroyed. A task with subtasks takes none: the update answers `422` with `validation.failed`. In `backlog`, a task whose own deliverables are empty takes a subtask: the first subtask create replaces its own empty work. While it holds deliverables, subtask create answers `409` with `tasks.own_work`; clear them first to split the task. A work with comments or questions is not replaced: subtask create answers `409` with `tasks.own_work`, and the split needs a new task.
+
+A create writes the task and its work, or its subtasks, in one transaction. The body alone chooses the shape: a query parameter named `deliverables` is no field of it.
+
+Show and list return the task's work as `work`: the fields of a subtask, with its deliverables, latest check and implementer. `subtasks` is then empty, and a list with `parent_id` lists nothing. A task with subtasks has `work: null`.
+
+Show and list also return `work_review`, where the review of the work stands, read from Orbit's records. It is `reviewing` while the newest turn of the reviewer thread has not ended. It is `approved` while the work is completed, its newest handoff check passed, and the reviewer thread's newest turn reviewed exactly that check's commit and ended `done`; otherwise it is `not_approved`.
+
+That is the approval of the reviewed check, as in [the done rule](#when-the-work-is-done), without the rule's readiness to publish: a publish, the copy's removal and the task's end keep it, and a reopen or a newer handoff check drops it. The work's `status` says none of this. `work_review` is null for a task with subtasks.
+
+The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask, and its ID in `work.id` is no route member: every route answers `404` for it. Address the work by the task's ID.
 
 ### List tasks
 
@@ -524,7 +579,7 @@ The list reads each row's columns, subtasks, latest checks, reviewed commits, wo
 
 ### Change subtasks
 
-Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
+Subtask create appends a `todo` subtask at the next position. It works while the group has not ended, except in a [task with no subtask](#a-task-with-no-subtask). Outside `backlog`, the new subtask needs at least one deliverable.
 
 Swamp selects the next subtask and records its status through the API.
 
@@ -607,9 +662,11 @@ The task and subtask operations return these errors.
 | --- | --- | --- |
 | `tasks.orchestration_unsupported` | 422 | A subtask would declare a topology |
 | `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
-| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
-| `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
+| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables. The message names both valid shapes |
+| `tasks.one_subtask` | 422 | A move to `todo`, by create or update, for a task with exactly one subtask, before its deliverables or their paths are checked. Fold the subtask into the task |
+| `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each, or while the task's own deliverables are empty. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
+| `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` whose work holds deliverables, comments or questions |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
 | `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |
@@ -623,7 +680,7 @@ The task and subtask operations return these errors.
 
 ## Deliverables
 
-A deliverable is one item that a subtask must deliver, in a form Orbit can check. The ADE or an operator writes the deliverables next to the brief. The implementer confirms each one at handoff. Orbit verifies the mechanical ones before the reviewer starts.
+A deliverable is one item that a subtask, or a [task with no subtask](#a-task-with-no-subtask), must deliver, in a form Orbit can check. The ADE or an operator writes the deliverables next to the brief. The implementer confirms each one at handoff. Orbit verifies the mechanical ones before the reviewer starts.
 
 Each deliverable has an `id`, a `type`, a `description`, and the fields of its type.
 
@@ -983,7 +1040,7 @@ A driver reads a turn from its result alone; the whole transcript stays in the a
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 
-[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and one in each free CI place. Proof groups own them; each group has one subtask row and no agent thread. Proof copies take CI places, not the copy places of task groups, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and one in each free CI place. Proof groups own them; each is a [task with no subtask](#a-task-with-no-subtask), whose work holds the proof's verdict, and has no agent thread. Proof copies take CI places, not the copy places of task groups, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 
@@ -1724,6 +1781,8 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `tokens_per_hundred_lines` | The tokens of merged tasks divided by their added and deleted lines, times 100 |
 
 A replaced implementer thread is one whose subtask has a newer implementer thread. Its tokens bought nothing that shipped.
+
+The work of a [task with no subtask](#a-task-with-no-subtask) counts as one subtask in each subtask number.
 
 ### Deploy times
 

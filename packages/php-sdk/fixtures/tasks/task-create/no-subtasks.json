@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tasks.no_subtasks",
-            "message": "A task group needs at least one subtask before it moves to todo.",
+            "message": "A task leaves backlog with its own deliverables, or with at least two subtasks that each have deliverables.",
             "details": {}
         }
     }

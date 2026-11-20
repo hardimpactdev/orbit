@@ -6,7 +6,6 @@ namespace App\Domain\Proof;
 
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
-use App\Data\Tasks\TaskInputData;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
@@ -37,6 +36,9 @@ final readonly class ProofWarmPool
 
     /** The Gateway setting that holds a drain until the resume. */
     public const string DrainKey = 'proof.warm_pool_drained';
+
+    /** The own deliverable of a proof's task, which has no subtask: the proof's verdict (docs/reference/tasks.md#a-task-with-no-subtask). */
+    public const array Deliverables = [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']];
 
     public function __construct(private ProofSettings $settings, private SettingRepository $store) {}
 
@@ -247,8 +249,8 @@ final readonly class ProofWarmPool
     private function group(): Task
     {
         return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof warm copy',
-            'A warm proof copy that waits for a proof.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'The Swamp workflow operation-proof-run-copy proves a command in this copy once a proof takes it.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+            'A warm proof copy that waits for a proof. The Swamp workflow operation-proof-run-copy proves a command in this copy once a proof takes it.',
+            TaskGroupStatus::Todo, [], self::Deliverables));
     }
 
     private static function scope(): SettingScope

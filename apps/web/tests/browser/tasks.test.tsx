@@ -65,6 +65,8 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         duration_ms: null,
         questions: 0,
         escalations: 0,
+        work: null,
+        work_review: null,
         subtasks: [
             {
                 id: 1,
@@ -316,7 +318,7 @@ it("hides empty task lanes and shares the width as cards move between statuses",
     expect(document.querySelector(".kanban-board")).toBeNull();
 });
 
-it("hides empty subtask lanes, shares their width, and explains an empty board", async () => {
+it("hides empty subtask lanes, shares their width, and shows no subtask list for a draft without one", async () => {
     let task = group(1, "running");
     task.subtasks = [
         { ...task.subtasks[0]!, status: "running" },
@@ -340,8 +342,9 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
     expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, ["Done"]);
     task = { ...task, subtasks: [] };
     await queryClient.invalidateQueries();
-    await expect.element(pane("Subtasks")).toMatchTextContent("No subtasks yet.");
-    expect(document.querySelector('[aria-label="Subtasks"] .kanban-board')).toBeNull();
+    // A draft with no subtask and no work yet shows no empty subtask list.
+    await expect.element(page.getByRole("region", { name: "Subtasks" })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-label="Deliverables"]')).toBeNull();
 });
 
 it("explains a disabled extension and can retry a failed request", async () => {
@@ -516,6 +519,114 @@ it("opens a subtask with its own detail and returns to the parent board", async 
         .click();
     await expect.element(pane("Subtasks")).toBeVisible();
     expect(app.url()).toBe("/tasks/1");
+});
+
+it("shows a task with no subtask with its deliverables, check, agents and review state", async () => {
+    const base = group(1, "reviewing");
+    const work = {
+        ...base.subtasks[0]!,
+        id: 7,
+        type: "work" as const,
+        title: base.title,
+        brief: base.brief,
+        status: "reviewing" as const,
+        implementer_agent_thread_id: 70,
+        deliverables: [
+            {
+                id: "tests",
+                type: "command",
+                description: "The feature tests pass",
+                command: "vendor/bin/pest",
+                directory: ".",
+            },
+            {
+                id: "regression",
+                type: "command",
+                description: "The regression test fails before the fix",
+                command: "vendor/bin/pest tests/Feature/ExportTest.php",
+                directory: ".",
+                fails_on_base: true,
+                paths: ["tests/Feature/ExportTest.php"],
+            },
+        ] as unknown as (typeof base.subtasks)[0]["deliverables"],
+        check: {
+            id: 3,
+            kind: "handoff" as const,
+            status: "passed" as const,
+            started_at: "2026-09-23T09:41:05+00:00",
+            finished_at: "2026-09-23T09:42:17+00:00",
+            exit_code: 0,
+            changed_paths: [],
+            failed_step: null,
+            output: "Tests: 4 passed",
+        },
+    };
+    // The work stays running while the reviewer reviews: the Review row reads work_review, not the work's status.
+    const task: TaskGroup = {
+        ...base,
+        subtasks: [],
+        work: { ...work, status: "running" },
+        work_review: "reviewing",
+    };
+    const comments: string[] = [];
+    const app = await openApp("/tasks", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path.endsWith("/comments")) comments.push(path);
+            return path.endsWith("/agents")
+                ? Promise.resolve({
+                      status: 200,
+                      payload: {
+                          data: [
+                              {
+                                  id: 70,
+                                  task_group_id: 1,
+                                  task_id: 7,
+                                  role: "implementer",
+                                  model: "claude-opus-5-5",
+                                  state: "done",
+                              },
+                              {
+                                  id: 71,
+                                  task_group_id: 1,
+                                  task_id: 7,
+                                  role: "reviewer",
+                                  model: "claude-opus-5-5",
+                                  state: "working",
+                              },
+                          ],
+                      },
+                  })
+                : path.endsWith("/comments")
+                  ? Promise.resolve({ status: 200, payload: { data: [] } })
+                  : path.startsWith("/api/v1/tasks")
+                    ? Promise.resolve({
+                          status: 200,
+                          payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
+                      })
+                    : inner(method, path, body);
+        },
+    });
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+
+    await expect.element(pane("Deliverables")).toMatchTextContent("The feature tests pass");
+    await expect.element(pane("Deliverables")).toMatchTextContent("vendor/bin/pest in .");
+    await expect.element(pane("Task")).toMatchTextContent("WorkRunning");
+    await expect.element(pane("Task")).toMatchTextContent("ReviewIn review");
+    await expect
+        .element(pane("Deliverables").getByRole("article", { name: "tests" }))
+        .not.toMatchTextContent("Must fail on the start commit");
+    await expect
+        .element(pane("Deliverables").getByRole("article", { name: "regression" }))
+        .toMatchTextContent(
+            "Must fail on the start commit and pass on the working tree; paths tests/Feature/ExportTest.php; vendor/bin/pest tests/Feature/ExportTest.php in .",
+        );
+    await expect.element(pane("Comments")).toMatchTextContent("Passed");
+    await expect.element(pane("Agents")).toMatchTextContent("Reviewer");
+    await expect.element(pane("Agents")).toMatchTextContent("Implementer");
+    await expect.element(pane("Agents")).toMatchTextContent("EXA-1");
+    await expect.element(pane("Agents")).not.toMatchTextContent("EXA-7");
+    expect(document.querySelector('[aria-label="Subtasks"]')).toBeNull();
+    expect(comments).toContain("/api/v1/tasks/1/comments");
 });
 
 it("links the group's pull request in the task properties", async () => {

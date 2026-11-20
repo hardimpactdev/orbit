@@ -13,7 +13,8 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `title` | prompt | Short name of the feature. |
 | `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
-| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and leaves it ready for `task:start`. |
+| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` follows the rule of [a task that leaves backlog](/reference/tasks#tasks-and-subtasks): its own `--deliverables`, or at least two `--subtasks`, each with deliverables. It leaves the task ready for `task:start`. |
+| `--deliverables=FILE` | none | JSON file with the deliverables of a [task with no subtask](/reference/tasks#a-task-with-no-subtask), or of the subtask that `--parent` appends. With `--subtasks`, the Gateway answers `validation.failed`. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
@@ -30,12 +31,13 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 
 ```bash
 orbit task:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)"
+orbit task:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)" --deliverables=deliverables.json --status=todo
 orbit task:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)" --subtasks=subtasks.json --status=todo
 ```
 
 Plan one group, and one pull request, for the whole feature. Build and prove the feature end to end in the copy before its pull request opens: [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy).
 
-The CLI does not prompt for the status, the subtasks, or the notification. After the Gateway answers, the CLI shows the task as `task:show` does. A task created in `todo` waits for an explicit `task:start <id>`.
+The CLI does not prompt for the status, the deliverables, the subtasks, or the notification. After the Gateway answers, the CLI shows the task as `task:show` does: a task with no subtask shows its work's status and deliverables in place of the subtask table. A task created in `todo` waits for an explicit `task:start <id>`.
 
 ## Errors
 
@@ -44,15 +46,17 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.project_required`, `tasks.title_required`, `tasks.brief_required` | A `--json` or `-n` call omits a required input. |
 | `task.project_invalid`, `task.title_invalid`, `task.brief_invalid`, `task.status_invalid` | A supplied value is outside the accepted form. |
 | `task.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
-| `tasks.no_subtasks` | `--status=todo` without subtasks. |
-| `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
+| `task.deliverables_invalid` | The CLI cannot read the deliverables file, or its content is not a list of deliverables. Nothing is sent. |
+| `tasks.no_subtasks` | `--status=todo` without subtasks or deliverables. Pass `--deliverables`, or at least two subtasks with deliverables. |
+| `tasks.one_subtask` | `--status=todo` with exactly one subtask, before its deliverables are checked. Add a second subtask, or fold the subtask into the task: pass its deliverables with `--deliverables` and no `--subtasks`. |
+| `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables, or with an empty `--deliverables` list. Give every subtask, or the task, deliverables. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `task.issue_invalid` | `--issue` is not a number from 1 up. |
 | `task.agent_invalid` | An agent option is empty. |
 | `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
 
-Use `--parent=ID` in place of `--project=ID` to append a subtask. Its Project and workspace are inherited. A contradictory Project, a child parent, or a deeper hierarchy is refused. `--deliverables=FILE` applies to child creation. Creating in Todo changes board state only. Use `task:start` to start the parent VM.
+Use `--parent=ID` in place of `--project=ID` to append a subtask. Its Project and workspace are inherited. A contradictory Project, a child parent, or a deeper hierarchy is refused. `--deliverables=FILE` gives the subtask its deliverables. Creating in Todo changes board state only. Use `task:start` to start the parent VM.
 
-Parent creation refuses `--deliverables`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--pr-mode`, `--issue`, `--preview`, `--current-recipe` and the agent options.
+Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--pr-mode`, `--issue`, `--preview`, `--current-recipe` and the agent options.
 
 A task that names no agent value takes each one from its Project's default, then from the Gateway; [copy turn agents](/reference/tasks#copy-turn-agents) describes the order and how a turn checks the values against the copy.

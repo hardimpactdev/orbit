@@ -115,7 +115,7 @@ describe('omitted and invalid input', function (): void {
         'question close without reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded'], 'task.reason_required'],
         'question close with a long reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'task.reason_invalid'],
         'create without project' => ['task:create', ['title' => 'T', '--brief' => 'B'], 'task.project_required'],
-        'parent with child deliverables' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.option_invalid'],
+        'parent with an unreadable deliverables file' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.deliverables_invalid'],
         'child with parent status' => ['task:create', ['--parent' => '1', '--status' => 'todo'], 'task.option_invalid'],
         'child with parent orchestration' => ['task:create', ['--parent' => '1', '--orchestration' => 'external'], 'task.option_invalid'],
         'child with parent subtasks' => ['task:create', ['--parent' => '1', '--subtasks' => '/unused'], 'task.option_invalid'],
