@@ -1058,6 +1058,13 @@ contexts:
           parent: orbitinst0
           security.acls: ' orbitinst0-egress , instance-8 '
     item: {key: inherited, value: *inherited_nic}
+  # `systemctl show --property=ActiveState --property=NRestarts` read twice, 10 s apart, by the verify of process:upgrade.
+  process-upgrade-steady:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+  process-upgrade-restarted:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=3]}
   moved-process-ready:
     moved_process_ready:
       rc: 0
@@ -1505,6 +1512,16 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-steady
+  expected: true
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-restarted
+  expected: false
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
   field: vars.guest_result
@@ -3112,6 +3129,18 @@ cases:
     libc6:i386: [2.42-0ubuntu2]
     tzdata: [2025b]
 non_command_output:
+- file: operation-process-upgrade.yml
+  task: Refuse a layout without a relative current link to a release
+  field: ansible.builtin.assert.that[2]
+  reason: Matches the target of the `current` link that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Write the installed release
+  field: ansible.builtin.copy.content
+  reason: Strips `releases/` and a trailing slash from the `current` link target that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Write the result
+  field: ansible.builtin.copy.content
+  reason: Drops the hidden staging folders from the release folder names that the find module listed; it parses no command output.
 - file: tasks/instance-container-phase.yml
   task: Merge Orbit's changed JSON settings
   field: vars.model_key

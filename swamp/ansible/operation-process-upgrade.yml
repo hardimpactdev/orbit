@@ -90,7 +90,7 @@
           name: Write the failure
           ansible.builtin.copy:
             content: >-
-              {{ {'error_code': ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^process\\.[a-z_]+$')) else failure_code,
+              {{ {'error_code': ansible_failed_result.msg if (ansible_failed_result.msg | default('') | string).startswith('process.') else failure_code,
                   'before': none if failure_code == 'process.artifact_layout_invalid' else installed.before, 'after': up.version, 'pruned': []} | to_json }}
             dest: "{{ run }}/result.json"
             mode: "0600"
