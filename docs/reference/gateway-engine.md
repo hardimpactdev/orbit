@@ -53,22 +53,23 @@ A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a producti
 
 The engine runs a container clone's create from its admitted intent (`direct_provisioning.container`). Its steps are the executor's `instance` family ([Executor: The instance family](/reference/executor#the-instance-family)):
 
-1. `clone` and `fetch`, on the Node, side by side: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule; and the branch into the Node's mirror. The Gateway mints the read credential for `fetch` and sends it as a blob.
-2. `prepare`, on the copy: its files before the first start. The list goes as one blob, because a clone's files are kilobytes and an order holds 4 KB.
-3. `start`, on the copy: the network guard, the start and the copy's names.
-4. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render.
-5. `t3`, on the copy: T3 running, its project, and its two sessions sealed to the Gateway's key.
+1. `clone`, on the Node: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule.
+2. `fetch`, on the Node, beside `clone`: the branch into the Node's mirror. The Gateway mints the read credential and sends it as a blob.
+3. `prepare`, on the copy: its files before the first start. The list goes as one blob, because an order holds at most 4 KB.
+4. `start`, on the copy: the network guard, the start and the copy's names.
+5. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render.
+6. `t3`, on the copy: T3 running, its project, and its two sessions sealed to the Gateway's key.
 
-The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion: its result says `route_publication: deferred`, with the reason `engine_completion`. The completion runs on Swamp, as before.
+The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. The completion runs on Swamp, as before.
 
-A clone the engine does not cover starts on Swamp: a nested-fleet default's copy, a task copy, a branch selection, attached Node services or Processes, a CI hold, an already active create, or a firewall row other than a TCP route allow. A default's own create stays on Swamp.
+Some clones start on Swamp:
 
+- a nested-fleet default's copy, a task copy or a branch selection;
+- a clone with attached Node services, Processes or a CI hold;
+- an already active create;
+- a clone with a firewall row other than a TCP route allow.
 
-An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
-
-`clock_synchronized` comes from a read-only `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false, because a clock that follows no time source drifts until the executor refuses the Gateway's signed orders.
-
-Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+A default's own create stays on Swamp.
 
 ## Steps and transitions
 
