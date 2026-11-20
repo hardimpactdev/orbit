@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { behavior, type Evidence, shapeTurn, ThreadOver } from "./mod.ts";
+import { behavior, type Evidence, shapeTurn, ThreadOver, usage } from "./mod.ts";
 
 const thread = "mcp:66105c2c-4331-449b-90ef-e108d0a5db3d";
 const run = "run:thread:mcp%3A66105c2c:ordinal:1";
@@ -18,9 +18,9 @@ const started = (status: string, error: string | null = null) =>
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const none = { resumed: null, review: null, model: null, detached: false, ask: null, interrupt: null, stop: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
-const named = { sent: true, launched: true, spent: [], provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
-const unlaunched = { sent: false, launched: false, spent: [], provider_instance: null, model: null, questions: [], settled: [] };
-const unnamed = { sent: true, launched: true, spent: [], provider_instance: null, model: null, questions: [], settled: [] };
+const named = { sent: true, launched: true, spent: [], usage: null, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
+const unlaunched = { sent: false, launched: false, spent: [], usage: null, provider_instance: null, model: null, questions: [], settled: [] };
+const unnamed = { sent: true, launched: true, spent: [], usage: null, provider_instance: null, model: null, questions: [], settled: [] };
 // As `t3_copy_rpc.mjs read` printed it on a stock T3 0.1.7 server, 2026-11-14: one request with two questions.
 const request = "runtime-request:provider:claudeAgent:native-request:toolu_01TbF9dLFChexV5BVoUsSdii";
 const asked = {
@@ -476,4 +476,38 @@ Deno.test("a question that another run owns is not stored, and the turn holds", 
     const foreign = { ...asked, requests: asked.requests.map((request) => ({ ...request, run_id: "run:B" })) };
     const held = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(foreign) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
     assertEquals([held.state, held.error_code, held.questions, held.ended], ["asking_for_input", "tasks.copy_question_unread", [], false]);
+});
+
+Deno.test("a thread's token use is the sum of its provider turns in Orbit's columns; unknown use is null, never zeros", () => {
+    const read = (turns: unknown[], exit = 0) => ({ usage_exit: exit, usage: JSON.stringify({ turns }) });
+    // As conn-server 0.2.0 keeps it: inputTokens holds the cache reads, which Orbit's input excludes.
+    const first = { usageStatus: "complete", inputTokens: 1000, cachedInputTokens: 800, outputTokens: 50 };
+    const second = { usageStatus: "complete", inputTokens: 300, outputTokens: 20 };
+    assertEquals(usage(read([first, second])), { tokens: 1370, input_tokens: 500, cached_input_tokens: 800, output_tokens: 70, model_calls: 2 });
+    // The turn carries it, so a continued thread's total replaces the stored one.
+    assertEquals(turn(0, started("completed"), { usage: read([first]) }).usage, { tokens: 1050, input_tokens: 200, cached_input_tokens: 800, output_tokens: 50, model_calls: 1 });
+    for (const unknown of [
+        read([]), read([first, null]), read([first, { ...second, usageStatus: "partial" }]), read([{ ...second, usageStatus: "unavailable" }]),
+        read([{ usageStatus: "complete", outputTokens: 1 }]), read([{ ...first, cachedInputTokens: 2000 }]), read([first], 1),
+        { usage_exit: 0, usage: "not json" }, null, undefined,
+    ]) {
+        assertEquals(usage(unknown), null, JSON.stringify(unknown));
+    }
+    assertEquals(turn(0, started("completed")).usage, null);
+});
+
+Deno.test("the method reads the usage evidence", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    Deno.mkdirSync(folder);
+    try {
+        Deno.writeTextFileSync(`${folder}/launch.json`, "{}");
+        Deno.writeTextFileSync(`${folder}/start.json`, JSON.stringify({ start_exit: 0, start: started("completed") }));
+        Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify(read));
+        Deno.writeTextFileSync(`${folder}/usage.json`, JSON.stringify({ usage_exit: 0,
+            usage: JSON.stringify({ turns: [{ usageStatus: "complete", inputTokens: 10, cachedInputTokens: 4, outputTokens: 3 }] }) }));
+        const result = await behavior.methods.result.execute({ folder }, { writeResource: () => Promise.resolve() });
+        assertEquals(result.turn.usage, { tokens: 13, input_tokens: 6, cached_input_tokens: 4, output_tokens: 3, model_calls: 1 });
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
 });

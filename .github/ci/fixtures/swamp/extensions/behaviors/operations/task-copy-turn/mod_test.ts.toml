@@ -32,6 +32,8 @@ cases = [
   "ended follows the rows of over(), judged on this turn's run",
   "the phase knows the same run and thread states that run nothing as the result step",
   "a question that another run owns is not stored, and the turn holds",
+  "a thread's token use is the sum of its provider turns in Orbit's columns; unknown use is null, never zeros",
+  "the method reads the usage evidence",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
 cost = 2

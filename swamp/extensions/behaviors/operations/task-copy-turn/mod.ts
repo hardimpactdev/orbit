@@ -18,7 +18,7 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 // `start.json` with the exit code, stdout and a failed start's stderr tail of `t3 thread start` or `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
 // read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, for a wait the bound cut `stop.json` with the exit code and
 // stdout of `t3_copy_rpc.mjs stop`, `read.json` with what `t3 thread list` found and `t3 thread show`
-// read, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
+// read, `usage.json` with the exit code and stdout of `t3_copy_rpc.mjs usage` for the thread it found, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
 const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.array(z.number().int()), open: z.array(z.number().int()),
     stopped: z.array(z.object({ operation_id: z.number().int(), run: z.string() }).strict()) }).strict();
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
@@ -32,6 +32,11 @@ const Model = z.object({ model: z.string(), offered: z.array(z.string()).nullabl
 const Ask = z.object({ ask_exit: z.number().int(), ask: z.string() }).strict();
 const Interrupt = z.object({ interrupt_exit: z.number().int(), interrupt: z.string() }).strict();
 const Stop = z.object({ stop_exit: z.number().int(), stop: z.string() }).strict();
+const UsageRead = z.object({ usage_exit: z.number().int(), usage: z.string() }).strict();
+const Count = z.number().int().nonnegative();
+// What `t3_copy_rpc.mjs usage` prints: the usage T3 keeps on each provider turn of the thread, null on a turn that has none.
+const ProviderUsage = z.object({ turns: z.array(z.object({ usageStatus: z.string().nullish(), inputTokens: Count.nullish(),
+    cachedInputTokens: Count.nullish(), outputTokens: Count.nullish() }).nullable()) });
 // One question as `t3_copy_rpc.mjs read` prints it from T3's `user_input_request` item: the agent's own words and options, with what T3
 // may leave out made explicit. The evidence file's bound is the only size bound, so a read the phase stopped on always parses.
 const Question = z.object({
@@ -84,6 +89,7 @@ export type Evidence = {
     interrupt: z.infer<typeof Interrupt> | null;
     stop: z.infer<typeof Stop> | null;
     read: z.infer<typeof Read> | null;
+    usage?: z.infer<typeof UsageRead> | null;
     restore: z.infer<typeof Restore> | null;
 };
 const Started = z.object({
@@ -150,6 +156,8 @@ export const Turn = z.object({
     // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its redacted text. Null
     // for a receipt the turn did not leave.
     receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
+    // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
+    usage: z.object({ tokens: Count, input_tokens: Count, cached_input_tokens: Count, output_tokens: Count, model_calls: Count }).strict().nullable(),
 });
 export type Turn = z.infer<typeof Turn>;
 const Receipts = z.object({ delivery: z.string().optional(), review: z.string().optional() }).strict();
@@ -164,7 +172,27 @@ const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
 };
 
 /**
- * Message text only: T3's CLI gives no tool items and no token use. Newest entries first within the bound. A user message keeps only its
+ * The thread's token use in Orbit's columns, summed over every provider turn T3 holds for it, so a continued thread's use is its
+ * total. T3's `inputTokens` holds the cache reads, which Orbit's input excludes. No provider turn, a turn without complete usage (still
+ * running, partial or unavailable), or a read that failed, is unknown: null, never zeros.
+ */
+export function usage(read: z.infer<typeof UsageRead> | null | undefined): Turn["usage"] {
+    const turns = read?.usage_exit === 0 ? parse(ProviderUsage, read.usage)?.turns ?? [] : [];
+    let input = 0, cached = 0, output = 0;
+    for (const turn of turns) {
+        if (turn?.usageStatus !== "complete" || turn.inputTokens == null || turn.outputTokens == null) return null;
+        const reads = turn.cachedInputTokens ?? 0;
+        if (reads > turn.inputTokens) return null;
+        input += turn.inputTokens - reads;
+        cached += reads;
+        output += turn.outputTokens;
+    }
+    return turns.length === 0 ? null
+        : { tokens: input + cached + output, input_tokens: input, cached_input_tokens: cached, output_tokens: output, model_calls: turns.length };
+}
+
+/**
+ * Message text only: T3's CLI gives no tool items. Newest entries first within the bound. A user message keeps only its
  * ID, author and time: redaction does not catch an ordinary private prompt, and the Gateway holds the prompt in the turn's input.
  */
 function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
@@ -222,6 +250,7 @@ function shapeRun(evidence: Evidence): Turn {
         settled: evidence.settle?.settled ?? [],
         spent: [],
         transcript: transcript(shown),
+        usage: usage(evidence.usage),
     };
     if (evidence.settle && evidence.settle.open.length > 0) {
         return { ...base, state: "failed", error: `An earlier turn may still run in the copy (Operation ${evidence.settle.open.join(", ")}); nothing was launched.`,
@@ -395,7 +424,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.1",
+    version: "2026.11.20.2",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -416,6 +445,7 @@ export const behavior = {
                     interrupt: await evidence(args.folder + "/interrupt.json", AskBytes, Interrupt),
                     stop: await evidence(args.folder + "/stop.json", 65536, Stop),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
+                    usage: await evidence(args.folder + "/usage.json", AskBytes, UsageRead),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
                 }));
                 const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);

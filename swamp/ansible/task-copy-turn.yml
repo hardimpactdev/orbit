@@ -681,6 +681,36 @@
               vars:
                 ansible_connection: local
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        # The token use T3 keeps on each provider turn of the thread, which the result step sums. It is read only after the read
+        # evidence is written and is optional: an exit, an error or a lost connection writes no usage evidence, so the use is unknown
+        # (null), and nothing else of the turn changes.
+        - name: Read the thread's token use
+          when: turn_found | default([]) | length == 1
+          block:
+            - name: Read the token use of the thread's provider turns
+              ansible.builtin.command:
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'usage', (turn_found | first).threadId] }}"
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_usage
+              ignore_unreachable: true
+              failed_when: false
+              changed_when: false
+              no_log: true
+            - name: Write the usage evidence
+              when: turn_usage.rc is defined and not turn_usage.unreachable | default(false)
+              ansible.builtin.copy:
+                content: "{{ {'usage_exit': turn_usage.rc, 'usage': turn_usage.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/usage.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
+          rescue:
+            - name: Leave the token use unknown
+              ansible.builtin.meta: noop
       always:
         # Whether the turn's run is over, by the rows of the result step's `over` (task-copy-turn/mod.ts): nothing sent; the start read
         # its own run in a status that ends it; a run that asks whose interrupt the helper read ended; or, with no status of its run, T3
