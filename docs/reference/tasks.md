@@ -1749,7 +1749,9 @@ The response also holds:
 
 The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
 
-Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact. A stored `24h` report keeps the hour window of the refresh that computed it: a refresh at 12:55 stores the 24 hours up to 13:00, and the refresh at 13:00 moves the window to 14:00.
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
+
+A stored `24h` report keeps the hour window of the refresh that computed it: a refresh at 12:55 stores the 24 hours up to 13:00, and the refresh at 13:00 moves the window to 14:00.
 
 A record keeps the Project's id, and the report labels it with the Project's current code, so a renamed Project stays one breakdown row.
 
