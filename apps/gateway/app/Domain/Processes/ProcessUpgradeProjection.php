@@ -51,7 +51,7 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
         $after = ValidatedData::string($operation->input['version']);
         $result = match ($status) {
             OperationStatus::Succeeded => ['before' => $before, 'after' => $after,
-                'outcome' => ($reported['outcome'] ?? null) === 'unchanged' ? 'unchanged' : 'upgraded', 'pruned' => self::versions($reported['pruned'] ?? null)],
+                'outcome' => 'upgraded', 'pruned' => self::versions($reported['pruned'] ?? null)],
             OperationStatus::Failed, OperationStatus::Interrupted => $code === self::RolledBack
                 ? ['before' => $before, 'after' => $before, 'outcome' => 'rolled_back', 'pruned' => [], 'error_code' => $code]
                 : ['error_code' => $code],

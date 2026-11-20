@@ -3131,16 +3131,16 @@ cases:
 non_command_output:
 - file: operation-process-upgrade.yml
   task: Refuse a layout without a relative current link to a release
-  field: ansible.builtin.assert.that[2]
+  field: ansible.builtin.assert.that[4]
   reason: Matches the target of the `current` link that the stat module read; it parses no command output.
 - file: operation-process-upgrade.yml
   task: Write the installed release
   field: ansible.builtin.copy.content
   reason: Strips `releases/` and a trailing slash from the `current` link target that the stat module read; it parses no command output.
 - file: operation-process-upgrade.yml
-  task: Write the result
-  field: ansible.builtin.copy.content
-  reason: Drops the hidden staging folders from the release folder names that the find module listed; it parses no command output.
+  task: Keep the previous release
+  field: vars.upgrade_pruned
+  reason: Keeps the release folder names that the find module listed and that are versions; it parses no command output.
 - file: tasks/instance-container-phase.yml
   task: Merge Orbit's changed JSON settings
   field: vars.model_key

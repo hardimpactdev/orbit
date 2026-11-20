@@ -1,16 +1,18 @@
 cases = [
-  "the upgrade runs one tagged phase per step, switches back only after a failure from the switch on, and takes no secret",
+  "the upgrade runs one tagged phase per step, switches back only after a failure of the switch, restart or verify, and takes no secret",
   "an upgrade unpacks the checked release, switches the relative link, restarts once and keeps only the release before",
   "a current that is not a relative link to a release fails with process.artifact_layout_invalid before any change",
   "a download whose checksum or binary does not match fails before the switch and leaves current alone",
+  "a failed prune keeps the passed upgrade, names only the versions removed, and never removes a folder that is not a version",
   "a release that restarts after the switch is switched back to the release before and fails with process.upgrade_rolled_back",
   "a switch back whose release does not run either fails with process.rollback_failed",
-  "an upgrade to the installed release changes nothing and ends unchanged",
+  "a switch back that cannot reach the Node fails with process.rollback_failed",
+  "a current that already names the requested release is checked, restarted and verified, never taken as installed",
 ]
 file = "swamp/tests/workflow_process_upgrade_test.ts"
-cost = 95
-# ESTIMATES from one local run in a task copy (12, 5, 21, 14, 14, 7 s for the Ansible cases) + 25%, rounded up; no hosted receipt yet.
-slices = 2
+cost = 141
+# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up; no hosted receipt yet.
+slices = 3
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -24,10 +26,12 @@ inputs = [
 ]
 
 [case_costs]
-  "the upgrade runs one tagged phase per step, switches back only after a failure from the switch on, and takes no secret" = 2
+  "the upgrade runs one tagged phase per step, switches back only after a failure of the switch, restart or verify, and takes no secret" = 2
   "an upgrade unpacks the checked release, switches the relative link, restarts once and keeps only the release before" = 15
-  "a current that is not a relative link to a release fails with process.artifact_layout_invalid before any change" = 7
+  "a current that is not a relative link to a release fails with process.artifact_layout_invalid before any change" = 12
   "a download whose checksum or binary does not match fails before the switch and leaves current alone" = 27
+  "a failed prune keeps the passed upgrade, names only the versions removed, and never removes a folder that is not a version" = 17
   "a release that restarts after the switch is switched back to the release before and fails with process.upgrade_rolled_back" = 18
   "a switch back whose release does not run either fails with process.rollback_failed" = 18
-  "an upgrade to the installed release changes nothing and ends unchanged" = 8
+  "a switch back that cannot reach the Node fails with process.rollback_failed" = 14
+  "a current that already names the requested release is checked, restarted and verified, never taken as installed" = 18
