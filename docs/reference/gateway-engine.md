@@ -53,7 +53,7 @@ An executor reports its primitives when it connects to the bus, and again every 
 
 `clock_synchronized` comes from a read-only `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false, because a clock that follows no time source drifts until the executor refuses the Gateway's signed orders.
 
-Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families and `vpn` Nodes the `dns` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
 ## Steps and transitions
 

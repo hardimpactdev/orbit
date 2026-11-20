@@ -16,7 +16,7 @@ covers:
 
 ## Where it runs
 
-The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `firewall`, `power`, `proof` and `route` families. A Node with several roles enables the union of their families.
+The role converge installs the executor only on a Node whose roles enable an action family. Today `app-dev` enables the `firewall`, `instance`, `power`, `proof` and `route` families, `vpn` the `dns` family, and `gateway` the `proof` family, so the Gateway's own Node joins the bus and reports its clock. A Node with several roles enables the union of their families.
 
 The converge writes:
 
