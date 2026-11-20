@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
+use App\Console\Commands\TaskInsightsBackfillCommand;
+use App\Console\Commands\TaskInsightsRefreshCommand;
 use App\Console\Commands\TaskMergeRoundCommand;
 use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
@@ -111,6 +113,8 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             TaskPublishWhenDoneCommand::class,
             TaskMergeRoundCommand::class,
             TaskSettleCommand::class,
+            TaskInsightsBackfillCommand::class,
+            TaskInsightsRefreshCommand::class,
         ]);
 
         // A canonical member selects either level. Internal Task queries keep their child scope. The work row of a task with no

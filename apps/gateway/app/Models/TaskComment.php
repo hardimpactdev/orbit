@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskInsightObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,7 +21,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, string>|null $deliverables the confirmations of a turn receipt, by deliverable ID
  * @property QuestionCause|null $cause
  */
-#[ObservedBy([TaskBroadcastObserver::class])]
+#[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class TaskComment extends Model
 {
     #[\Override]

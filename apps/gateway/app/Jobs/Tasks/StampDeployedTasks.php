@@ -107,7 +107,8 @@ final class StampDeployedTasks implements ShouldQueue
                 continue;
             }
             if ($carried) {
-                Task::topLevel()->whereKey($group->id)->whereNull('deployed_at')->toBase()->update(['deployed_at' => $at]);
+                // `updated_at` moves too, so the next task insights refresh records the new delivery and deploy wait.
+                Task::topLevel()->whereKey($group->id)->whereNull('deployed_at')->toBase()->update(['deployed_at' => $at, 'updated_at' => now()]);
             }
         }
     }
