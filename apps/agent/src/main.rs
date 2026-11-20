@@ -840,7 +840,6 @@ async fn report_facts(
                             facts::instance_bridge_health(std::path::Path::new(
                                 facts::INSTANCE_BRIDGE_HEALTH,
                             )),
-                            facts::clock_synchronized(),
                         ),
                     )
                     .await;

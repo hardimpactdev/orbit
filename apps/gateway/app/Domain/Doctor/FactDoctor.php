@@ -8,6 +8,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallSnapshot;
 use App\Domain\Fleet\FleetReboot;
@@ -31,8 +32,8 @@ use Carbon\CarbonImmutable;
 use UnexpectedValueException;
 
 /**
- * Doctor from the facts each Node's agent reported (`host`, `units`, `ufw`) and its liveness, compared with what the
- * Gateway records. It starts no run and never reaches a Node. A check whose fact has not arrived is unverifiable,
+ * Doctor from the facts each Node's agent reported (`host`, `units`, `ufw`), its liveness and its executor's report on the
+ * machine bus, compared with what the Gateway records. It starts no run and never reaches a Node. A check whose fact has not arrived is unverifiable,
  * never guessed. The families it does not check report nothing.
  */
 final readonly class FactDoctor
@@ -55,6 +56,7 @@ final readonly class FactDoctor
         private NodeRoleServiceCatalog $services,
         private RuntimeDoctorIntent $runtime,
         private FirewallInspectionInput $firewall,
+        private MachineBus $bus,
     ) {}
 
     /**
@@ -111,6 +113,15 @@ final readonly class FactDoctor
         }
         $check->observed($node->id, 'node.reboot_due');
         $this->idRanges($check);
+        // Signed orders expire seconds after the Gateway signs them, so a Node's clock must follow a time source. The Node's
+        // executor reports it on the machine bus; a Node without a fresh executor report is not checked.
+        $synchronized = $this->bus->nodeClock($node->id);
+        if ($synchronized === false) {
+            $check->issue('node.clock_unsynchronized', $node->id, $node->name, 'The Node\'s clock does not follow a time source.', 'synchronized', 'not synchronized');
+        }
+        if ($synchronized !== null) {
+            $check->observed($node->id, 'node.clock_unsynchronized');
+        }
         if ($check->agent === null) {
             return $check->report();
         }
@@ -143,18 +154,6 @@ final readonly class FactDoctor
                 $check->issue('node.disk_low', $node->id, $node->name, 'The root filesystem has low free space.', 'at least 2 GiB and 10% free', "{$free} KiB free of {$size} KiB");
             }
             $check->observed($node->id, 'node.disk_low');
-        });
-        // Signed orders expire seconds after the Gateway signs them, so a Node's clock must follow a time source.
-        $check->read($node->id, ['node.clock_unsynchronized'], function () use ($check, $node): void {
-            $synchronized = $check->fact(NodeFactKind::Host)['clock_synchronized'] ?? null;
-            // A Mac's agent, and an agent before the field, cannot say: the check does not run for that Node.
-            if (! is_bool($synchronized)) {
-                return;
-            }
-            if (! $synchronized) {
-                $check->issue('node.clock_unsynchronized', $node->id, $node->name, 'The Node\'s clock does not follow a time source.', 'synchronized', 'not synchronized');
-            }
-            $check->observed($node->id, 'node.clock_unsynchronized');
         });
         $check->read($node->id, ['node.instance_bridge_unhealthy'], function () use ($check, $node): void {
             $bridge = $check->fact(NodeFactKind::Host)['instance_bridge'] ?? null;

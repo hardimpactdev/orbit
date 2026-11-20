@@ -14,6 +14,7 @@ name = "orbit-executor"
 path = "src/main.rs"
 
 [dependencies]
+libc = "0.2"
 orbit-executor-core = { path = "../executor-core" }
 
 orbit-executor-power = { path = "../power" }
