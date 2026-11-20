@@ -189,6 +189,28 @@
                 rule: "{{ (item | regex_replace(\" comment '.*$\", '')).split() }}"
               loop: "{{ destroy_firewall.stdout_lines | select('search', \" comment '\" ~ (container.firewall_prefix | regex_escape)) | list }}"
               changed_when: true
+            # The bridge endpoint records that only this Instance needed go with it, through the helper's own withdrawal under its
+            # writer lock (docs/reference/development-containers.md#destroy). `bridge.endpoints` is what every other Instance on the Node
+            # still needs, read after the admission stamp, so a record admitted since stays, and an endpoint another Instance uses is
+            # never removed. The Node's own baseline comes from its stored bridge configuration. A refusal, such as a busy writer or
+            # a still-needed endpoint without its record, changes nothing and leaves the records to host convergence; the removal
+            # goes on and names it.
+            - name: Read the bridge configuration
+              when: container.bridge is defined
+              ansible.builtin.slurp: { src: /var/lib/orbit/instance-bridge/config.json }
+              register: destroy_bridge_config
+              failed_when: false
+            - name: Withdraw the bridge endpoints that no other Instance needs
+              when: container.bridge is defined and destroy_bridge_config.content is defined and not ansible_check_mode
+              ansible.builtin.command:
+                argv: [python3, /usr/local/libexec/orbit-instance-bridge, --state-dir, /var/lib/orbit/instance-bridge, --intent, --reconcile, --withdraw]
+                stdin: >-
+                  {{ {'network': container.bridge.network, 'cidr': container.bridge.cidr, 'endpoints': container.bridge.endpoints,
+                      'admitted_at': container.bridge.admitted_at | int,
+                      'baseline': (destroy_bridge_config.content | b64decode | from_json).baseline | default({})} | to_json }}
+              register: destroy_bridge
+              failed_when: false
+              changed_when: destroy_bridge.rc == 0 and (destroy_bridge.stdout | from_json).changed > 0
             - name: Remove this Instance's pending mail activation state
               ansible.builtin.file: {path: "/var/lib/orbit/instance-mail/{{ container.name }}", state: absent}
             # A removal saved before the marker joined its intent has none to name; a sleep never ran for it.
@@ -253,7 +275,12 @@
               changed_when: true
         - name: Write the phase result
           ansible.builtin.copy:
-            content: "{{ {'container_present': present | length > 0, 'removed': phase == 'remove'} | to_json }}"
+            content: >-
+              {{ ({'container_present': present | length > 0, 'removed': phase == 'remove'}
+                  | combine({'bridge_withdrawal': 'withdrawn' if destroy_bridge.rc == 0
+                             else (((destroy_bridge.stdout | default('') | trim) if destroy_bridge.stdout | default('') is match('^\\s*[{]') else '{}') | from_json).error_code
+                                  | default('instance.container_bridge_write_failed')}
+                            if destroy_bridge.rc is defined else {})) | to_json }}
             dest: "{{ run }}/{{ phase }}.json"
             mode: "0600"
           changed_when: false

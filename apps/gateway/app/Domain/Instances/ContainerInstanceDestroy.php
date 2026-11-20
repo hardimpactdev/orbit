@@ -13,7 +13,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRuntime;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** The container identity of the saved removal; no execution. */
 final readonly class ContainerInstanceDestroy
@@ -91,6 +93,11 @@ final readonly class ContainerInstanceDestroy
             'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
             // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
             'asleep_marker' => InstancePower::markerPath($instance),
+            // The bridge endpoints that every other Instance on the Node still needs, read after the admission stamp: the destroy withdraws
+            // the records that only this Instance needed, and keeps any admitted after the stamp (docs/reference/development-containers.md#destroy).
+            'bridge' => ['network' => InstanceHostIntent::Network, 'cidr' => ValidatedData::string(Node::query()->whereKey($instance->node_id)->value('instance_bridge')),
+                'admitted_at' => (int) now()->format('Uu'),
+                'endpoints' => app(InstanceContainer::class)->nodeEndpoints(Node::query()->findOrFail($instance->node_id), $instance->id)],
             // The removal deletes an inner volume with its snapshots, after the container.
             ...($runtime->inner_volume === null ? [] : ['inner_volume' => $runtime->inner_volume]),
             // A proof copy's removal releases its CI place: the last hold on the Node starts the runners that the holds stopped
