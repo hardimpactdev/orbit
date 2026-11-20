@@ -41,5 +41,6 @@ final class TaskInsightsSummaryData extends Data
         public ?int $deliveryTimeMs,
         /** Merge to that deploy. */
         public ?int $deployWaitMs,
+        public TaskInsightsHandoffsData $handoffs,
     ) {}
 }

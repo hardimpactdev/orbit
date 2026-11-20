@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\TaskHandoffType;
+use App\Domain\Tasks\TaskInsightObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -22,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $task_check_id the handoff check of a delivery
  * @property Carbon|null $created_at
  */
+#[ObservedBy([TaskInsightObserver::class])]
 final class TaskHandoff extends Model
 {
     public const ?string UPDATED_AT = null;

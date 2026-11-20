@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens,2027_03_18_000000_rerecord_task_insights_with_handoffs}.php"
 ---
 
 # Tasks
@@ -1859,6 +1859,21 @@ A replaced implementer thread is one whose subtask has a newer implementer threa
 
 The work of a [task with no subtask](#a-task-with-no-subtask) counts as one subtask in each subtask number.
 
+### Handoff numbers
+
+Each summary holds `handoffs`, read from the [handoff](#handoffs) rows of the tasks in it that have `handoffs_gated`. Its numbers count only those tasks; a task without the gates has no rows.
+
+| Field | Meaning |
+| --- | --- |
+| `tasks` | Ended tasks with the gates |
+| `handoffs_per_subtask` | Handoff rows, rejected ones included, divided by the subtasks that have one |
+| `first_review_approval` | Subtasks whose first accepted review row has the verdict `approve`, divided by subtasks with an accepted review row. A rejected review row has no verdict |
+| `findings_per_first_review` | The blocking findings of those first reviews, divided by their number |
+| `questions_per_task` | `question` rows divided by `tasks` |
+| `rejected_deliveries` | Rejected delivery rows for each [rejection reason](#the-delivery-gate), zeros included |
+| `check_parts` | Each part of the handoff checks of the delivery rows, by name: `runs`, `failures` (`FAILED` runs) and the mean `seconds` of a run |
+| `unresolved_tasks` | Ended tasks with a rejected row that no later accepted row of the same subtask and type follows. It must be 0 |
+
 ### Deploy times
 
 A production deploy is a succeeded `deploy` of an app-prod Instance of the Project, or a `verified` [Gateway release](/reference/gateway-recovery) when the Project's repository is the release repository. Orbit's own tasks get their stamp from Gateway releases. The release repository must match the `github.com` owner and name of exactly one Project, ignoring case; otherwise the release stamps nothing and logs a warning. A Gateway release uses its commit and the time it was recorded `verified`.
@@ -1894,9 +1909,9 @@ Each is the summary field of the same name over the tasks that ended in that buc
 
 ### Freshness
 
-The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
+The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a handoff row, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
 
-Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a handoff row of either, a thread, a verdict, a question, and a verified release that began before the group started. A handoff row counts from its `created_at`, since it never changes. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
 
 A stored report whose `daily` or `hourly` buckets lack a field they hold now, stored before that field existed, is computed again from the records on its next read and stored.
 
@@ -1906,7 +1921,7 @@ A record keeps the Project's id, and the report labels it with the Project's cur
 
 Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
 
-Records and reports stored before unknown tokens stayed null held 0 for them; a migration deletes them all, so the endpoint answers from the task tables until the next refresh records the groups of the trend again.
+Records and reports stored before unknown tokens stayed null held 0 for them; a migration deletes them all, so the endpoint answers from the task tables until the next refresh records the groups of the trend again. Records stored before the [handoff numbers](#handoff-numbers) lack their facts, and a second migration deletes records and reports the same way.
 
 ### Prometheus exporter
 

@@ -56,6 +56,17 @@ final readonly class TaskInsightRecorder
         foreach (ValidatedData::object($row['causes'] ?? []) as $cause => $count) {
             $causes[$cause] = ValidatedData::integer($count);
         }
+        $rejected = [];
+        foreach (ValidatedData::object($row['rejected_deliveries'] ?? []) as $reason => $count) {
+            $rejected[$reason] = ValidatedData::integer($count);
+        }
+        $parts = [];
+        foreach (ValidatedData::object($row['check_parts'] ?? []) as $name => $part) {
+            $part = ValidatedData::object($part);
+            $seconds = $part['seconds'] ?? null;
+            $parts[$name] = ['runs' => ValidatedData::integer($part['runs'] ?? null), 'failures' => ValidatedData::integer($part['failures'] ?? null),
+                'seconds' => is_int($seconds) || is_float($seconds) ? (float) $seconds : throw new \InvalidArgumentException('Validated input must be a number.')];
+        }
 
         return [
             'id' => $int('id'), 'project_id' => $int('project_id'),
@@ -74,6 +85,10 @@ final readonly class TaskInsightRecorder
             'verdict_subtasks' => $int('verdict_subtasks'), 'first_approved' => $int('first_approved'), 'verdicts' => $int('verdicts'),
             'handoff_subtasks' => $int('handoff_subtasks'), 'handoff_passed' => $int('handoff_passed'),
             'questions' => $int('questions'), 'causes' => $causes,
+            'gated' => ($row['gated'] ?? null) === true, 'handoffs' => $int('handoffs'), 'handoff_rows_subtasks' => $int('handoff_rows_subtasks'),
+            'reviewed_subtasks' => $int('reviewed_subtasks'), 'first_review_approved' => $int('first_review_approved'),
+            'first_review_findings' => $int('first_review_findings'), 'handoff_questions' => $int('handoff_questions'),
+            'rejected_deliveries' => $rejected, 'check_parts' => $parts, 'unresolved' => ($row['unresolved'] ?? null) === true,
         ];
     }
 
