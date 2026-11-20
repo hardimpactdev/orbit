@@ -9,6 +9,7 @@ use App\Models\GatewayRelease;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskHandoff;
 use App\Models\TaskQuestion;
 use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Database\Eloquent\Model;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Records the [task insights](/reference/tasks#task-insights) row of the group a model save changes: a group ending, merging or
- * deploying, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release. It runs after
+ * deploying, a subtask, a thread's tokens, a review verdict, a handoff check, a handoff, a question, or a verified release. It runs after
  * the commit and never fails the write that fired it: a failed record is logged, and the next totals refresh records it again.
  */
 final readonly class TaskInsightObserver implements ShouldHandleEventsAfterCommit
@@ -41,7 +42,7 @@ final readonly class TaskInsightObserver implements ShouldHandleEventsAfterCommi
             $model instanceof AgentThread => $model->task_group_id,
             $model instanceof TaskComment => $model->task_group_id,
             $model instanceof TaskQuestion => $model->task_id,
-            $model instanceof TaskCheck => Task::query()->whereKey($model->task_id)->value('parent_id') ?? $model->task_id,
+            $model instanceof TaskCheck, $model instanceof TaskHandoff => Task::query()->whereKey($model->task_id)->value('parent_id') ?? $model->task_id,
             default => null,
         };
         if ($model instanceof GatewayRelease) {

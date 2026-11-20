@@ -2273,6 +2273,7 @@ The Operation's result names:
 - the waiting request IDs, their owner run and their questions;
 - one fixed outcome code;
 - the reviewer's checkout and restore, as [Calls](#calls) describes.
+- `receipts`: the delivery and review receipts the turn left under the copy's Git directory, or null ([The delivery receipt](/reference/tasks#the-delivery-receipt)).
 
 The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
 

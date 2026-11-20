@@ -18,6 +18,7 @@ cases = [
   "a detached reviewer checkout without a restore holds the group whatever the run did",
   "a message without a run id keeps the transcript; a user message keeps only its ID, author and time",
   "transcript text is redacted and bounded to the newest entries",
+  "the turn returns the handoff receipts that its phase read and removed, and null for one it did not leave",
   "the method reads each evidence file on its own, so an oversized read keeps the start's end",
   "the method reads the stop of a cut run and the runs the settle stopped",
   "the method reads the model evidence: a model the catalog does not offer fails without naming the catalog",

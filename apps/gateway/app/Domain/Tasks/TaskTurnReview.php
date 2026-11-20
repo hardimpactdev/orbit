@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskHandoff;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -38,13 +39,17 @@ final readonly class TaskTurnReview
 
     /**
      * A finished turn ended its Operation as succeeded and did not end in a question; a turn that failed, was cancelled or asked counts
-     * for no round and gives no handoff note.
+     * for no round and gives no handoff note. In a gated group a reviewer turn whose review row was rejected counts for no round either.
      *
      * @param  Operation  $owner  the handoff check Operation that recorded CHECK (TaskCheckedCandidate::owner)
      */
     public static function of(Task $group, Task $subtask, TaskCheck $check, Operation $owner): self
     {
-        $reviews = self::finished($group, $subtask, TaskThreadRole::Reviewer)->get();
+        $reviews = self::finished($group, $subtask, TaskThreadRole::Reviewer)
+            // In a gated group a review counts only once its gate accepted it (docs/reference/tasks.md#the-review-gate).
+            ->when($group->handoffs_gated, static fn (Builder $turns): Builder => $turns->whereIn('id', TaskHandoff::query()
+                ->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->where('rejected', false)->select('operation_id')))
+            ->get();
         $handoff = self::finished($group, $subtask, TaskThreadRole::Implementer)->first();
         $note = $handoff?->result['reply'] ?? null;
         $results = [];

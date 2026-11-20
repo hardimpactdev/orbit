@@ -61,6 +61,7 @@ final readonly class TaskPublishIntent
         if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
             throw new ResourceOperationException('tasks.commit_not_checked', 'Publish requires this group\'s passed handoff candidate and required CI.', 422);
         }
+        TaskHandoffs::requireApproval($group, $check->task()->firstOrFail(), 'Publishing', $check->commit_sha);
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         $base = $group->project->default_branch;
         if ($repository === null || ! is_string($base) || ! GitBranchName::isValid($base)) {

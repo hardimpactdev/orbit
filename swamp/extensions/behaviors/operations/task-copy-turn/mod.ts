@@ -117,6 +117,18 @@ const AskedQuestion = z.object({
     initial_answer: z.string().nullable(),
     required: z.boolean().nullable(),
 });
+// A Git object ID, SHA-1 or SHA-256: kept as it is, since a credential pattern would redact a 64-hex ID.
+const GitId = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
+// The delivery receipt that `bin/task-check` writes: the commit and the tree it checked, and each part.
+const DeliveryReceipt = z.object({
+    commit: GitId,
+    tree: GitId,
+    parts: z.array(z.object({
+        name: z.string().min(1).max(200),
+        result: z.enum(["passed", "FAILED", "skipped", "not selected"]),
+        seconds: z.number().nonnegative(),
+    })).min(1),
+});
 export const Turn = z.object({
     state: z.enum(["done", "asking_for_input", "failed"]),
     error: z.string().nullable(),
@@ -140,10 +152,15 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
+    // The delivery receipt the turn left under the Git directory; the phase removed it (docs/reference/tasks.md#handoffs). It keeps only
+    // its validated fields, its part names redacted, or is `invalid`; null when the turn left none. The reviewer posts its review
+    // receipt to the Gateway instead.
+    receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
     usage: z.object({ tokens: Count, input_tokens: Count, cached_input_tokens: Count, output_tokens: Count, model_calls: Count }).strict().nullable(),
 });
 export type Turn = z.infer<typeof Turn>;
+const Receipts = z.object({ delivery: z.string().optional() }).strict();
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -387,12 +404,27 @@ async function evidence<T>(path: string, limit: number, schema: z.ZodType<T>): P
     }
 }
 
+/**
+ * The delivery receipt's validated fields, each part's name redacted and the whole valid again after redaction; `invalid` for any
+ * other text, also one whose name redaction empties. Other fields never leave.
+ */
+function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
+    const receipt = parse(DeliveryReceipt, text);
+    if (receipt === null) return "invalid";
+    const redacted = DeliveryReceipt.safeParse({
+        commit: receipt.commit,
+        tree: receipt.tree,
+        parts: receipt.parts.map((part) => ({ name: redactText(part.name), result: part.result, seconds: part.seconds })),
+    });
+    return redacted.success ? redacted.data : "invalid";
+}
+
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.1",
+    version: "2026.11.20.9",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -416,6 +448,10 @@ export const behavior = {
                     usage: await evidence(args.folder + "/usage.json", AskBytes, UsageRead),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
                 }));
+                const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
+                turn.receipts = {
+                    delivery: left?.delivery === undefined ? null : delivered(left.delivery),
+                };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
                 await ctx.writeResource("result", "result", result);

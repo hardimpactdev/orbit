@@ -124,6 +124,19 @@
         "test_a_published_commit_counts_and_holds_the_approved_commit": 0.574,
         "test_a_copy_that_changed_nothing_is_empty": 0.799
       }
+    },
+    "swamp/tests/task_instance_check_receipt_test.py": {
+      "case_seconds": {
+        "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt": 31.576
+      }
+    },
+    "swamp/tests/task_instance_check_receipt_failure_test.py": {
+      "case_seconds": {
+        "test_a_project_command_that_moves_the_handed_off_work_ends_changed_only_at_the_delivery_gate": 11.252,
+        "test_a_guest_failure_after_the_table_keeps_the_table": 1.840,
+        "test_a_transfer_failure_after_the_guest_succeeded_keeps_the_table": 3.541,
+        "test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table": 0.065
+      }
     }
   }
 }
