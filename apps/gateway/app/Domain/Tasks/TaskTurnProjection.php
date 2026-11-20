@@ -82,6 +82,11 @@ final readonly class TaskTurnProjection implements DirectOperationProjection, Di
                     $data['status'] = ($data['status'] ?? null) === 'succeeded' ? 'failed' : ($data['status'] ?? null);
                 }
                 $result = [...array_diff_key($result, ['diagnostic' => true]), ...self::error($result)];
+                // A review receipt that its gate rejects is kept as its reason alone, also from an older worker that sent its content.
+                if (is_array($result['receipts'] ?? null) && is_string($result['receipts']['review'] ?? null)) {
+                    [, $reason] = TaskHandoffs::review($result['receipts']['review']);
+                    $result['receipts']['review'] = $reason === '' ? $result['receipts']['review'] : $reason;
+                }
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];

@@ -212,14 +212,19 @@ final readonly class TaskHandoffs
      * The review receipt as the turn returned it, which Swamp validated before it redacted the summaries, and the gate's reason: empty
      * when it is a JSON object of exactly `verdict` (`approve` or `changes`) and `findings`, a JSON list of objects of exactly a non-empty
      * `summary`, with a finding only for `changes`. JSON objects decode as objects, so an object never passes for a list. An accepted row
-     * keeps the receipt's verdict and summaries; a rejected row keeps no receipt content.
+     * keeps the receipt's verdict and summaries; a rejected row keeps no receipt content. Swamp's reason codes map to their reasons.
      *
      * @return array{0: array<string, mixed>|null, 1: string}
      */
-    private static function review(mixed $text): array
+    public static function review(mixed $text): array
     {
         if (! is_string($text)) {
             return [null, self::NoReceipt];
+        }
+        // Swamp passes on a receipt it found rejected as its reason alone (docs/reference/tasks.md#the-review-gate).
+        $code = ['invalid' => self::InvalidReceipt, self::InvalidReceipt => self::InvalidReceipt, self::ChangesWithoutFinding => self::ChangesWithoutFinding, self::ApproveWithFinding => self::ApproveWithFinding][$text] ?? null;
+        if ($code !== null) {
+            return [null, $code];
         }
         try {
             $receipt = json_decode($text, false, 16, JSON_THROW_ON_ERROR);

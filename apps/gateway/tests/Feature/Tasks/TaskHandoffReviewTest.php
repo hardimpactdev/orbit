@@ -125,8 +125,10 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     expect($row->only(['type', 'rejected', 'rejection_reason']))->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => $reason])
         // A rejected receipt never fails the turn: its Operation ends.
         ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded)
-        // A rejected row keeps no receipt content.
-        ->and($row->receipt)->toBeNull();
+        // A rejected row keeps no receipt content, nor does the turn's stored result: it keeps the reason alone.
+        ->and($row->receipt)->toBeNull()
+        ->and(Operation::query()->findOrFail($row->operation_id)->result['receipts']['review'] ?? null)
+        ->toBe($receipt === null ? null : ($reason === TaskHandoffs::InvalidReceipt ? 'invalid_receipt' : $reason));
 })->with([
     'no receipt' => [null, TaskHandoffs::NoReceipt],
     'text that is not JSON' => ['VERDICT: APPROVE', TaskHandoffs::InvalidReceipt],
@@ -140,6 +142,8 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     'an empty object for findings' => ['{"verdict":"approve","findings":{}}', TaskHandoffs::InvalidReceipt],
     'an object with list keys for findings' => ['{"verdict":"changes","findings":{"0":{"summary":"Missing column"}}}', TaskHandoffs::InvalidReceipt],
     'a receipt Swamp found invalid' => ['invalid', TaskHandoffs::InvalidReceipt],
+    'a receipt Swamp found to change with no finding' => ['changes_without_finding', TaskHandoffs::ChangesWithoutFinding],
+    'a receipt Swamp found to approve with a finding' => ['approve_with_finding', TaskHandoffs::ApproveWithFinding],
     'a verdict in terminal formatting' => [json_encode(['verdict' => "\u{1b}[31mapprove\u{1b}[0m", 'findings' => []], JSON_THROW_ON_ERROR), TaskHandoffs::InvalidReceipt],
     'a secret under a field of another name' => ["{\"verdict\":\"approve\",\"findings\":[],\"password\":\n\"hunter2\"}", TaskHandoffs::InvalidReceipt],
     'a number that does not encode again' => ['{"verdict":"approve","findings":[],"size":1e400}', TaskHandoffs::InvalidReceipt],

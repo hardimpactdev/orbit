@@ -291,6 +291,20 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
             Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: other }));
             assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review, "invalid");
         }
+        // A receipt of the right shape that the Gateway rejects passes on only its reason, also to the stored result: a blank summary,
+        // also one that redaction empties, a verdict that disagrees with its findings.
+        const written: unknown[] = [];
+        const recording = { writeResource: (_spec: string, _name: string, value: unknown) => Promise.resolve(written.push(value)) };
+        for (const [rejected, reason] of [
+            [{ verdict: "changes", findings: [{ summary: "The export drops the header row." }, { summary: " " }] }, "invalid"],
+            [{ verdict: "changes", findings: [{ summary: "\u001b[31m\u001b[0m" }] }, "invalid"],
+            [{ verdict: "approve", findings: [{ summary: "The export drops the header row." }] }, "approve_with_finding"],
+            [{ verdict: "changes", findings: [] }, "changes_without_finding"],
+        ] as const) {
+            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: JSON.stringify(rejected) }));
+            assertEquals((await behavior.methods.result.execute({ folder }, recording)).turn.receipts?.review, reason);
+            assertEquals(JSON.stringify(written.at(-1)).includes("header row"), false);
+        }
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),
