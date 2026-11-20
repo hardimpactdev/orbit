@@ -19,6 +19,8 @@ import subprocess
 import sys
 
 MANIFEST = "/etc/orbit/seed-manifest.json"
+# The agent folder's owner: root, so the agent reads it and writes nothing in it.
+FOLDER_OWNER = (0, 0)
 AGENT_IGNORE = "/home/agent/.config/git/ignore"
 # The folders and rules of instance.prepare's purge, with no unit of the clone's own.
 PURGE = [
@@ -100,7 +102,7 @@ def place(item, ca):
         for entry in value["files"]:
             path = value["path"] + "/" + entry["path"]
             os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
-            write(path, entry["content"].encode(), 0, 0, "0644")
+            write(path, entry["content"].encode(), *FOLDER_OWNER, "0644")
         os.makedirs(value["path"] + "/.skills", mode=0o755, exist_ok=True)
         for top, dirs, _ in os.walk(value["path"]):
             os.chmod(top, 0o755)
@@ -201,4 +203,5 @@ def main():
     print(json.dumps({"placed": len(data["items"]), "units": len(manifest["units"]), "workspace_clean": manifest["workspace_clean"]}))
 
 
-main()
+if __name__ == "__main__":
+    main()

@@ -138,21 +138,12 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
 
     public function finish(Operation $operation, EngineRun $run): void
     {
-        $failed = $run->failed();
         $session = null;
-        if ($failed === null && $run->succeeded()) {
+        if ($run->failed() === null && $run->succeeded()) {
             [$result, $session] = $this->result($operation, $run);
             $data = ['status' => 'succeeded', 'error_code' => null, 'result' => $result];
-        } elseif ($failed !== null) {
-            [$step, $code] = self::Failures[$failed->name] ?? ['clone', 'instance.create_clone_failed'];
-            $data = ['status' => 'failed', 'error_code' => $failed->error_code ?? $code,
-                'failure' => ['failed_step' => self::Labels[$failed->name] ?? $failed->name, 'stderr_recorded' => false],
-                // The engine never publishes the address: a failed create leaves it to a retry's completion, as a succeeded one does.
-                'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => $step, 'error_code' => $failed->error_code ?? $code,
-                    'route_publication' => 'deferred',
-                    ...self::observed($run)]];
         } else {
-            $data = ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []];
+            $data = self::ended($operation, $run);
         }
         $this->projection->apply($operation, [...$data, ...$run->times()], $session);
         if ($data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done') {
@@ -162,6 +153,28 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             Instance::query()->findOrFail($operation->target_id)->runtime()->first()
                 ?->update(['power_state' => $stopped ? InstanceRuntimePowerState::Stopped : InstanceRuntimePowerState::Running]);
         }
+    }
+
+    /**
+     * The end of a create that did not succeed: a failed step's code, the step the Swamp result names and its chart label, or a cancel.
+     *
+     * @return array<string, mixed>
+     */
+    public static function ended(Operation $operation, EngineRun $run): array
+    {
+        $failed = $run->failed();
+        if ($failed !== null) {
+            [$step, $code] = self::Failures[$failed->name] ?? ['clone', 'instance.create_clone_failed'];
+
+            return ['status' => 'failed', 'error_code' => $failed->error_code ?? $code,
+                'failure' => ['failed_step' => self::Labels[$failed->name] ?? $failed->name, 'stderr_recorded' => false],
+                // The engine never publishes the address: a failed create leaves it to a retry's completion, as a succeeded one does.
+                'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => $step, 'error_code' => $failed->error_code ?? $code,
+                    'route_publication' => 'deferred',
+                    ...self::observed($run)]];
+        }
+
+        return ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []];
     }
 
     /**

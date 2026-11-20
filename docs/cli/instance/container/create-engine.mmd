@@ -1,0 +1,75 @@
+sequenceDiagram
+  %% A container clone's create on the Gateway engine (ADR 0271, docs/reference/gateway-engine.md#instancecreate): the steps of container/create.mmd as the executor's `instance` family, each a small repeatable order, so a failure names its step and a retry resumes there. The first orders go at once; each later step waits only for what it reads. The default's seed already holds what every clone needs (docs/reference/development-containers.md#the-seed-manifest), so a clone writes only its own files.
+  %% Today the completion still publishes the address (`route_publication: deferred`) and starts Node services and Processes; the Route steps and a seed-ready event are later work.
+  %% status: draft
+  %% command: instance:create
+  %% kind: instance.create
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane C icon=server pill=copy tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway service · NATS
+  participant N as app-dev Node<br/>executor
+  participant C as Container<br/>via executor
+  CLI->>GW: instance:create<br/>PROJECT NODE NAME
+  Note over GW: Validate, reserve Instance<br/>address · T3 port · .env
+  %%> Same admission as container/create.mmd, in one transaction.
+  %%> The engine runs it when every step's Node reports the step's action (agent 0.23.0); else Swamp runs it.
+  %%> Secrets go as blobs to the target Node, never to a vault.
+  Note over GW: Commit, publish first orders<br/>answer 202
+  GW-->>CLI: 202 Accepted<br/>task ID
+  par first orders, at once
+    EN->>N: Clone the seed<br/>clone · ACL · copy · T3 proxy
+    %%> Each Node step locks only its own part of the Node, so these run side by side.
+  and
+    EN->>N: Fetch the branch<br/>fetch · into the mirror
+  and
+    EN->>N: Copy the inner volume<br/>copy_volume · nested only
+    %%> A spare of the same seed is taken by a rename; else the volume is copied.
+  and
+    EN->>N: Make the Route key<br/>route_csr · web Projects
+    %%> Later work: today the completion publishes the address.
+  end
+  N-->>EN: receipts<br/>clone · fetch · volume · csr
+  EN->>C: Write the files<br/>prepare · per copy only
+  %%> Needs clone. The seed's manifest names what the seed holds.
+  %%> Settings are merged into the seed's own, never replaced.
+  EN->>C: Start the copy<br/>start · guard · names
+  %%> Needs prepare and copy_volume. The app-user swap runs only on an older seed.
+  par after start
+    EN->>C: Deliver the Club key<br/>club_key · tmpfs · nested only
+  and
+    EN->>C: Start Node services<br/>services
+    %%> Later work: today the completion applies them.
+  and
+    EN->>C: Check out the branch<br/>checkout · clean · .env
+    %%> Needs fetch too. A task copy cleans only when the seed was not clean.
+  and
+    EN->>N: Make a spare volume<br/>spare · nested only
+    %%> In the background: the create neither waits for it nor fails by it.
+  and
+    EN->>N: Publish the address<br/>route · when its Nodes are free
+    %%> Later work, as route_csr.
+  end
+  par after checkout
+    EN->>C: Start Conn or T3<br/>t3 · sealed sessions · project
+  and
+    EN->>C: Start the Processes<br/>processes
+    %%> Later work: today the completion starts them.
+  end
+  alt all steps pass in budget
+    C-->>EN: last receipt<br/>sealed sessions
+    Note over EN: Open sessions, read baseline<br/>record, admit instance.complete
+  else a step fails or the budget ends
+    C--xEN: failed receipt<br/>step, error_code
+    EN->>C: Stop the copy<br/>stop · kept for retry or destroy
+    Note over EN: Record the failure<br/>failed step, error_code
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

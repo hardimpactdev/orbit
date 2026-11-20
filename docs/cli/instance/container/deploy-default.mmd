@@ -56,6 +56,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
   %%> - Orbit's Git calls, the repack, the `.env` exclude line and the deploy steps' record run as `agent` (ADR 0268)
+  %%> - after the checkout, the default's untracked files that Git does not ignore go, as the workspace's owner with the task check's Git settings, in a task copy's clean rounds; `.env` is excluded first and stays, ignored and tracked files stay; a file it cannot remove never fails the deployment; the result's `workspace_cleaned` names what went, names only
   %%> - after the checkout, a bounded repack in the foreground (`git repack -d --geometric=2`, 30 s): each fetch adds a pack and Orbit's Git calls start no automatic maintenance; it first removes the temporary files of an earlier repack that are an hour old; a repack that fails or times out prints one `orbit-workspace-repack=` line and never fails the deployment
   %%> - after the repack and before the steps, root's workspace pass gives the group back what the owner has and gives `agent` each entry that `www-data` owns; it never follows a link and prints only a count above 20 entries; phase `processes` runs it again after the steps
   Note over SW: Read the steps to skip<br/>run folder
@@ -93,6 +94,7 @@ sequenceDiagram
   %%> - prepares a Node/Vite default’s private Node store as www-data before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
+  %%> - right before the snapshot, the files every clone needs go into the default (the container intent's `seed_files`), and `/etc/orbit/seed-manifest.json` records what the seed holds, its Orbit units that no clone keeps, and whether its tree is clean; a clone's prepare reads it once and writes only what differs (development-containers.md#the-seed-manifest)
   %%> - every passed deployment retakes `seed-<commit>`, also at the same commit, so a clone copies the default's current caches and built files
   %%> - deletes older seed snapshots that no clone uses
   %%> - the proof default keeps its previous seed as `base-<commit>` when a CI Node that is ready for the seed copy records that seed, so the next seed copy to that Node sends only the change; the Gateway names that seed in the intent (`seed_base`, from `ProofSeeds`); every older `base-` pair goes; a rename needs no free ID range (development-containers.md#a-retake-keeps-the-seed)

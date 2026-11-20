@@ -175,3 +175,44 @@ it('makes the default\'s one spare from the same seed the copy takes, under the 
         'source' => 'instance-2', 'snapshot' => $operation->input['direct_provisioning']['container']['clone']['snapshot'], 'volume_source' => 'inner-2',
         'volume' => 'inner-6', 'pool' => 'orbit-instances']);
 });
+
+/** A run whose named steps are done with the given outputs. */
+function engineRunWith(array $outputs): EngineRun
+{
+    return new EngineRun(288, array_map(static fn (string $output): OperationEngineStep => (new OperationEngineStep)->forceFill(['status' => 'done', 'node_id' => 3,
+        'output' => $output]), $outputs), 0, null);
+}
+
+it('skips the app-account swap when the seed ran it with the same swap file', function (): void {
+    $flow = app(InstanceCreateEngineFlow::class);
+    $current = engineRunWith(['prepare' => '{"changes":3,"manifest":true,"app_account_current":true,"workspace_clean":true}']);
+    $older = engineRunWith(['prepare' => '{"changes":4,"manifest":true,"app_account_current":false,"workspace_clean":true}']);
+
+    expect($flow->input(engineCloneOperation(), 'start', $current))->not->toHaveKey('app_account')
+        ->and($flow->input(engineCloneOperation(), 'start', $older)['app_account'])->toBe('/usr/local/libexec/orbit-app-user');
+});
+
+it('lets a task copy skip its clean only on a clean seed at the seed\'s own commit', function (): void {
+    $operation = engineCloneOperation(nestedTaskCopy(...));
+    $clone = $operation->input['direct_provisioning']['container']['clone'];
+    $seedClean = static fn (array $outputs): bool => (new ReflectionMethod(InstanceCreateEngineFlow::class, 'seedClean'))->invoke(null, engineRunWith($outputs), $clone);
+    $clean = '{"changes":3,"manifest":true,"app_account_current":true,"workspace_clean":true}';
+
+    expect($seedClean(['prepare' => $clean, 'fetch' => '{"commit":null}', 'clone' => '{"snapshot":"'.$clone['snapshot'].'"}']))->toBeTrue()
+        // A branch at another commit may hold files that the seed's commit ignored.
+        ->and($seedClean(['prepare' => $clean, 'fetch' => '{"commit":"'.str_repeat('c', 40).'"}', 'clone' => '{"snapshot":null}']))->toBeFalse()
+        // A newer seed than the admitted one: its tree is not the one the manifest was checked against.
+        ->and($seedClean(['prepare' => $clean, 'fetch' => '{"commit":null}', 'clone' => '{"snapshot":"seed-'.str_repeat('d', 40).'"}']))->toBeFalse()
+        ->and($seedClean(['prepare' => str_replace('true}', 'false}', $clean), 'fetch' => '{"commit":null}', 'clone' => '{"snapshot":null}']))->toBeFalse();
+});
+
+it('ends a failed create with the step Swamp names, the step\'s own code and the address left to a retry\'s completion', function (): void {
+    $failed = static fn (string $step): OperationEngineStep => (new OperationEngineStep)->forceFill(['name' => $step, 'status' => 'failed', 'node_id' => 3,
+        'error_code' => 'instance.container_checkout_failed']);
+    $run = new EngineRun(288, ['clone' => (new OperationEngineStep)->forceFill(['name' => 'clone', 'status' => 'done', 'node_id' => 3]), 'checkout' => $failed('checkout'),
+        'stop' => (new OperationEngineStep)->forceFill(['name' => 'stop', 'status' => 'failed', 'node_id' => 3, 'on_failure' => true, 'error_code' => 'instance.stop_failed'])], 0, null);
+
+    expect(InstanceCreateEngineFlow::ended(engineCloneOperation(), $run))->toBe(['status' => 'failed', 'error_code' => 'instance.container_checkout_failed',
+        'failure' => ['failed_step' => 'clone-t3', 'stderr_recorded' => false],
+        'result' => ['ready' => false, 'instance_id' => 6, 'failed_step' => 'workspace', 'error_code' => 'instance.container_checkout_failed', 'route_publication' => 'deferred']]);
+});
