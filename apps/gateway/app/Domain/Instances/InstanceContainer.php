@@ -505,9 +505,7 @@ final readonly class InstanceContainer
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
         $note = InstanceHostIntent::AgentFolder.'/current/notes/'.InstanceNotes::for($project->type).'.md';
-        $codex = "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\n"
-            ."base_url = \"http://{$gateway}:".InstanceHostIntent::ModelForwarderPort."/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\n"
-            ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
+        $codex = self::codexConfig($gateway);
         $providers = [...($instance->task_workspace_owner_id === null ? [] : [...self::claudeInstances(), ...self::codexInstances()]),
             ...($runtime->server() === ContainerServer::Conn ? self::antigravityInstance() : [])];
 
@@ -562,6 +560,55 @@ final readonly class InstanceContainer
                 ? [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]]
                 : InstanceAgentInstructions::links(),
         ];
+    }
+
+    /** Codex's settings in a container with a T3: the Node's model forwarder as its one provider, and the workspace trusted. */
+    private static function codexConfig(string $gateway): string
+    {
+        $workspace = InstanceHostIntent::Workspace;
+
+        return "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\n"
+            ."base_url = \"http://{$gateway}:".InstanceHostIntent::ModelForwarderPort."/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\n"
+            ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
+    }
+
+    /**
+     * The files that every clone of this default gets, in the items of the executor's `instance.prepare`: the boot and trust files,
+     * Codex's settings for the default's Node, T3's drop-ins for the Conn Server (a task copy's server), the agent folder with the
+     * Project's instructions, and its links. The default's seed phase places them before the seed and records the seed's manifest, so
+     * a clone places only what differs (swamp/ansible/instance_seed_files.py). Per-copy files stay with the clone: its identity, model
+     * key, settings with providers, proxy bypass and Instance file.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function seedFiles(Instance $default, InstanceRuntime $runtime): array
+    {
+        $folders = $this->folders();
+        $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
+        $agent = InstanceHostIntent::AgentUid;
+        $items = [];
+        foreach (self::bootFiles($folders) as $file) {
+            $items[] = match (true) {
+                isset($file['source']) => ['trust' => array_intersect_key($file, array_flip(['source', 'path', 'hash_directory', 'uid', 'gid', 'mode']))],
+                isset($file['entry']) => ['nss' => array_intersect_key($file, array_flip(['home', 'directories', 'path', 'entry', 'uid', 'gid', 'mode',
+                    'directory_mode', 'library', 'version']))],
+                default => ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'], 'content' => $file['content']]],
+            };
+        }
+        $items[] = ['file' => ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => self::codexConfig($gateway),
+            'parents' => true]];
+        $conn = (new InstanceRuntime)->forceFill(['container_server' => ContainerServer::Conn]);
+        foreach (self::t3DropIns($conn, $folders) as $file) {
+            $items[] = ['file' => ['path' => $file['path'], 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'], 'content' => $file['content'], 'parents' => true]];
+        }
+        $instructions = app(InstanceAgentInstructions::class);
+        $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
+        $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
+        foreach (InstanceAgentInstructions::links() as $link) {
+            $items[] = ['link' => [...$link, 'owner' => ['uid' => $agent, 'gid' => $agent]]];
+        }
+
+        return $items;
     }
 
     /**

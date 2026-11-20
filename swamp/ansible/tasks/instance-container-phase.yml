@@ -970,6 +970,7 @@
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
 
+
 - name: Read the checked-out commit
   tags: [workspace]
   when: phase == 'workspace'
@@ -1123,6 +1124,26 @@
     - name: Remove the bundle in the container
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
+
+# A default's tree keeps no untracked file that Git does not ignore, so its seed is clean and a task copy's clean finds nothing: a
+# file an earlier commit tracked, or ignored by a `.gitignore` the commit removed, would otherwise stay in every seed. It runs after the
+# checkout and before the deploy steps, as the workspace's owner, with the task check's Git settings, in the rounds of a task copy's
+# clean. The `.env` stays: it is excluded first. Ignored files stay. Tracked files are never touched; a changed one refused the
+# checkout already. A file it cannot remove never fails the deployment: the line names it, and a task copy's own clean still runs.
+- name: Remove the untracked files of the default
+  tags: [checkout]
+  when: phase == 'checkout' and container.name is defined
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '60'] + as_owner + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_default_clean.py'), container.workspace, container.environment_file] }}"
+  register: default_clean
+  changed_when: (default_clean.stdout | from_json).removed_count > 0
+  failed_when: default_clean.rc != 0
+
+- name: Report the default's clean
+  tags: [checkout]
+  when: phase == 'checkout' and default_clean.stdout is defined
+  ansible.builtin.debug: { msg: "orbit-workspace-clean={{ default_clean.stdout }}" }
+
 
 # A proof run in a copy brings the commit under proof into the copy's workspace (tasks/instance-proof-checkout.yml).
 - name: Bring in the commit under proof
@@ -1796,6 +1817,25 @@
     apply: {tags: [seed]}
   vars:
     node_fetch: false
+
+# Every clone of this default needs the same files (boot and trust files, T3's boot drop-in, the agent folder and its links): the
+# default holds them before its seed, so a clone's prepare reads the seed's manifest once and places only what differs
+# (instance_seed_files.py). The manifest also names the default's Orbit units that no clone keeps, and whether its workspace is clean.
+- name: Place the clone files in the default and record the seed's manifest
+  tags: [seed]
+  when: phase == 'seed' and container.seed_files is defined
+  block:
+    - name: Read the Node's Orbit root
+      ansible.builtin.slurp: { src: /etc/orbit/agent/ca.pem }
+      register: seed_ca
+    - name: Place the clone files and record the manifest
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '60'] + as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_seed_files.py')] }}"
+        stdin: "{{ {'items': container.seed_files, 'ca': seed_ca.content | b64decode, 'workspace': container.workspace} | to_json }}"
+      register: seed_files_placed
+      changed_when: true
+    - name: Report the seed's manifest
+      ansible.builtin.debug: { msg: "orbit-seed-files={{ seed_files_placed.stdout }}" }
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it. Every passed deployment
 # retakes it, also at the same commit: the default's files (caches, built assets) move on between deployments, and a clone must start

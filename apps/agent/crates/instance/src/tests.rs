@@ -216,7 +216,7 @@ fn prepare_input(files: &Value) -> Value {
 fn a_running_copy_is_left_alone() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
 
-    assert_eq!(prepare(&fake, &prepare_input(&json!([]))), Ok(0));
+    assert_eq!(prepare(&fake, &prepare_input(&json!([]))).expect("prepare"), r#"{"app_account_current":false,"changes":0,"manifest":false,"workspace_clean":false}"#);
     assert_eq!(fake.calls().len(), 1);
 }
 
@@ -254,7 +254,53 @@ fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
         named("--type=symlink").0,
         "--project orbit-instances file create --type=symlink --force instance-12/home/agent/.claude/CLAUDE.md /home/agent/.config/orbit/agent/AGENTS.md"
     );
-    assert_eq!(changes, 4 + 1 + 3);
+    assert_eq!(serde_json::from_str::<Value>(&changes).expect("json")["changes"], json!(4 + 1 + 3));
+}
+
+#[test]
+fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() {
+    let manifest = json!({
+        "files": {"/usr/local/libexec/orbit-app-user": {"sha256": "c0b4aab4ac1e1efac0b0f2ee6e0b7ce8e1b5b1f0d36e1ad5c75f6c1fe9b3b4cd", "uid": 0, "gid": 0, "mode": "0755"},
+            "/etc/gitconfig": {"sha256": sha256_hex("[safe]\n"), "uid": 0, "gid": 0, "mode": "0644"}},
+        "links": {"/home/agent/.claude/CLAUDE.md": "/home/agent/.config/orbit/agent/AGENTS.md"},
+        "folders": {"/home/agent/.config/orbit/agent": {"files": {"AGENTS.md": sha256_hex("# Note\n")}, "skills": true}},
+        "units": ["/etc/systemd/system/multi-user.target.wants/orbit-process-3.service", "/etc/systemd/system/orbit-process-3.service",
+            "/etc/systemd/system/orbit-process-7.service", "/etc/orbit/processes/3"],
+        "workspace_clean": true,
+    });
+    let fake = Fake::new(&[
+        ("query /1.0/instances/instance-12?", Ok(stopped())),
+        ("file pull instance-12/etc/orbit/seed-manifest.json", Ok(manifest)),
+    ]);
+    let files = json!([
+        {"file": {"path": "/etc/gitconfig", "uid": 0, "gid": 0, "mode": "0644", "content": "[safe]\n"}},
+        {"file": {"path": "/usr/local/libexec/orbit-app-user", "uid": 0, "gid": 0, "mode": "0755", "content": "#!/bin/sh\n"}},
+        {"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "AGENTS.md", "content": "# Note\n"}]}},
+        {"link": {"path": "/home/agent/.claude/CLAUDE.md", "target": "/home/agent/.config/orbit/agent/AGENTS.md"}},
+    ]);
+    let mut input = prepare_input(&files);
+    input["app_account"] = json!("/usr/local/libexec/orbit-app-user");
+
+    let output: Value = serde_json::from_str(&prepare(&fake, &input).expect("prepare")).expect("json");
+
+    let calls = fake.calls();
+    // No folder listing: the manifest names the units, and the copy's own Process 7 stays.
+    assert!(!calls.iter().any(|call| call.contains("/files?project=")), "{calls:?}");
+    assert!(calls.iter().any(|call| call.ends_with("file delete instance-12/etc/systemd/system/multi-user.target.wants/orbit-process-3.service")));
+    assert!(calls.iter().any(|call| call.ends_with("file delete --force instance-12/etc/systemd/system/orbit-process-3.service instance-12/etc/orbit/processes/3")));
+    // Only the swap file differs from the seed's: it alone is placed, and so the swap runs again.
+    let pushed: Vec<&String> = calls.iter().filter(|call| call.contains("file push") || call.contains("--type=symlink")).collect();
+    assert_eq!(pushed.len(), 2, "{pushed:?}");
+    assert!(pushed[1].ends_with("instance-12/usr/local/libexec/orbit-app-user"));
+    assert_eq!(output, json!({"changes": 5, "manifest": true, "app_account_current": false, "workspace_clean": true}));
+}
+
+fn sha256_hex(text: &str) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(text.as_bytes()).iter().fold(String::new(), |mut out, byte| {
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{byte:02x}"));
+        out
+    })
 }
 
 #[test]

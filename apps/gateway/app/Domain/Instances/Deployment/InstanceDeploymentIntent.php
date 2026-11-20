@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\DefaultInstanceName;
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\InstanceContainer;
@@ -70,7 +71,9 @@ final readonly class InstanceDeploymentIntent
                 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
-                'container' => $runtime !== null ? app(InstanceContainer::class)->intent($instance, $runtime) : null,
+                // A default holds the files every clone of it needs before its seed (InstanceContainer::seedFiles).
+                'container' => $runtime !== null ? [...app(InstanceContainer::class)->intent($instance, $runtime),
+                    ...($instance->name === DefaultInstanceName::Name ? ['seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime)] : [])] : null,
                 ...($runtime === null ? [] : ExecutorPowerIntent::lifecycle($instance, $runtime)),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];

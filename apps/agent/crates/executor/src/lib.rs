@@ -322,7 +322,7 @@ fn instance(order: &VerifiedOrder) -> Outcome {
         Action::InstanceCopyVolume => orbit_executor_instance::copy_volume(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstanceStop => orbit_executor_instance::stop(&system, order.input()).map(|changes| Outcome::Applied { changes }),
         Action::InstanceSpareVolume => orbit_executor_instance::spare_volume(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
-        Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         _ => orbit_executor_instance::start(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {

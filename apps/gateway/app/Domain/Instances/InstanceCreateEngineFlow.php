@@ -104,11 +104,14 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'prepare' => [...$where, 'units' => array_map(static fn (mixed $unit): string => ValidatedData::string(ValidatedData::object($unit)['name']),
                 self::rows($container['processes'] ?? [])),
                 'process_ids' => array_map(static fn (mixed $unit): string => (string) ValidatedData::integer(ValidatedData::object($unit)['id']), self::rows($container['processes'] ?? [])),
+                'app_account' => ValidatedData::string(ValidatedData::object($container['app_account'])['path']),
                 // The clone's files are kilobytes and an order holds 4 KB: the list goes as one blob, its contents inline.
                 'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance(), $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
             'start' => [...$where, 'source' => $clone['source'], 'network' => $container['network'], 'nic' => 'eth0',
                 'hostname' => ValidatedData::string(ValidatedData::object($container['machine_name'])['hostname']),
-                'app_account' => ValidatedData::string(ValidatedData::object($container['app_account'])['path']),
+                // A seed whose own swap ran with this create's swap file is converted already (prepare reads it from the seed's manifest).
+                ...((self::prepared($run)['app_account_current'] ?? false) === true ? []
+                    : ['app_account' => ValidatedData::string(ValidatedData::object($container['app_account'])['path'])]),
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
                     self::rows($container['private_names'] ?? [])), ...self::allowed($container),
                 ...(isset($container['inner_volume']) ? ['volume' => ['device' => ValidatedData::object($container['inner_volume'])['device'],
@@ -120,7 +123,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 ...self::start($run, $clone, ValidatedData::string($container['mirror'])),
                 'environment_file' => $container['environment_file'], 'group' => ValidatedData::integer(ValidatedData::object($container['workspace_ids'])['group']),
                 'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance())]],
-                ...(($clone['clean_workspace'] ?? false) === true ? ['clean' => true] : []),
+                ...(($clone['clean_workspace'] ?? false) === true && ! self::seedClean($run, $clone) ? ['clean' => true] : []),
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
                 'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
@@ -236,6 +239,36 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $club = $output('club_key')['club_key'] ?? null;
 
         return [...(is_array($cleaned) ? ['workspace_cleaned' => $cleaned] : []), ...(is_string($club) ? ['club_key' => $club] : [])];
+    }
+
+    /**
+     * What prepare read from the seed's manifest.
+     *
+     * @return array<string, mixed>
+     */
+    private static function prepared(EngineRun $run): array
+    {
+        $output = json_decode($run->output('prepare') ?? 'null', true);
+
+        return is_array($output) ? $output : [];
+    }
+
+    /**
+     * Whether a task copy's tree is clean without its own clean: the seed recorded a clean workspace, and the checkout keeps the
+     * seed's commit. A branch at another commit, or a newer seed than the admitted one, may hold files that the seed's commit ignored.
+     *
+     * @param  array<string, mixed>  $clone
+     */
+    private static function seedClean(EngineRun $run, array $clone): bool
+    {
+        $fetched = json_decode($run->output('fetch') ?? 'null', true);
+        $copied = json_decode($run->output('clone') ?? 'null', true);
+        $commit = is_array($fetched) ? ($fetched['commit'] ?? null) : null;
+        $snapshot = is_array($copied) ? ($copied['snapshot'] ?? null) : null;
+
+        return (self::prepared($run)['workspace_clean'] ?? false) === true
+            && ($commit === null || $commit === ($clone['seed_commit'] ?? null))
+            && ($snapshot === null || $snapshot === ($clone['snapshot'] ?? null));
     }
 
     /** @return list<mixed> */

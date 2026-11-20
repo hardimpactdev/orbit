@@ -29,8 +29,10 @@ struct StartInput {
     #[serde(default)]
     private_names: Vec<PrivateName>,
     /// The app-account swap file that prepare wrote (`/usr/local/libexec/orbit-app-user`): root runs it in the running copy
-    /// before any command as `agent` or `www-data`, so a copy of an older default moves from `orbit`/`work` to `www-data`.
-    app_account: String,
+    /// before any command as `agent` or `www-data`, so a copy of an older default moves from `orbit`/`work` to `www-data`. None when
+    /// the seed's own swap ran with the same file: the seed is converted already.
+    #[serde(default)]
+    app_account: Option<String>,
     /// A nested-fleet copy's exact config, devices and volumes: it starts only when its effective ones are these.
     #[serde(default)]
     allowed: Option<Allowed>,
@@ -110,10 +112,11 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
         changes += 1;
     }
     changes += names(&incus, &input).map_err(|failure| Failure::new("instance.clone_private_names_failed", failure.detail))?;
-    let swap = ["--project", input.project.as_str(), "exec", input.name.as_str(), "--", input.app_account.as_str()].map(str::to_owned);
-    let moved = incus.run(&swap, None)?;
-    if moved.contains("moved to www-data") {
-        changes += 1;
+    if let Some(app_account) = &input.app_account {
+        let swap = ["--project", input.project.as_str(), "exec", input.name.as_str(), "--", app_account.as_str()].map(str::to_owned);
+        if incus.run(&swap, None)?.contains("moved to www-data") {
+            changes += 1;
+        }
     }
     Ok(changes)
 }
@@ -142,9 +145,11 @@ fn check(input: &StartInput) -> Result<(), String> {
             return Err("volume is not a device and a volume name".to_owned());
         }
     }
-    let path = Path::new(&input.app_account);
-    if !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
-        return Err("app_account is not an absolute path".to_owned());
+    if let Some(app_account) = &input.app_account {
+        let path = Path::new(app_account);
+        if !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+            return Err("app_account is not an absolute path".to_owned());
+        }
     }
     let host = |value: &str| value.len() <= 253 && value.split('.').all(label);
     if !host(&input.hostname) {
