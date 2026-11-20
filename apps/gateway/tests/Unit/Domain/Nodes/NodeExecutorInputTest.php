@@ -61,6 +61,11 @@ it('enables the firewall family only once the pinned delivery\'s executor knows 
         ->and(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.16.0')['enabled'] ?? null)->toBe("firewall\npower\nproof\n");
 });
 
+it('enables the instance family on an app-dev Node once the pinned delivery\'s executor knows it', function () use ($artifacts): void {
+    expect(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.18.1')['enabled'] ?? null)->toBe("firewall\npower\nproof\nroute\n")
+        ->and(NodeExecutorInput::intent('7', 'orbit', 'executor-linux-x86_64', [RoleName::AppDev], $artifacts, ['k'], '0.19.0')['enabled'] ?? null)->toBe("firewall\ninstance\npower\nproof\nroute\n");
+});
+
 it('installs the executor on a VPN Node for the private DNS records once the pinned delivery knows the dns family', function () use ($artifacts): void {
     expect(NodeExecutorInput::intent('1', 'orbit', 'executor-linux-x86_64', [RoleName::Vpn], $artifacts, ['k'], '0.17.0'))->toBeNull()
         ->and(NodeExecutorInput::intent('1', 'orbit', 'executor-linux-x86_64', [RoleName::Vpn], $artifacts, ['k'], '0.18.0')['enabled'] ?? null)->toBe("dns\n");
