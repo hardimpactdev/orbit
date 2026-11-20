@@ -9,6 +9,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Where the review of a task with no subtask stands, from Orbit's records alone (docs/reference/tasks.md#a-task-with-no-subtask). The
@@ -25,7 +26,7 @@ final readonly class TaskWorkReview
     public const string NotApproved = 'not_approved';
 
     /**
-     * The review of each group, by id, with the reviewer turns and handoff checks of the whole page read once. `reviewing` while the newest
+     * The review of each group, by id, with the newest reviewer turn and newest handoff check of the whole page read once, and only the fields the review reads. `reviewing` while the newest
      * turn of the reviewer thread has not ended. `approved` while the work is completed, its newest handoff check passed, and the reviewer
      * thread's newest turn reviewed exactly that check's commit and ended done (TaskGroupDone::reviewedBy). `not_approved` otherwise. Null
      * for a task with subtasks.
@@ -47,19 +48,11 @@ final readonly class TaskWorkReview
             return $review;
         }
         $reviewers = array_filter($groups->whereIn('id', array_keys($works))->pluck('reviewer_agent_thread_id', 'id')->all(), is_int(...));
-        $turns = [];
-        if ($reviewers !== []) {
-            $operations = Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->where('target_type', OperationKinds::TaskGroupTarget)
-                ->whereIn('target_id', array_keys($reviewers))->orderByDesc('id')->get();
-            foreach ($operations as $operation) {
-                $group = (int) $operation->target_id;
-                if (! isset($turns[$group]) && ($operation->input['thread_id'] ?? null) === $reviewers[$group]) {
-                    $turns[$group] = $operation;
-                }
-            }
-        }
-        $checks = TaskCheck::query()->whereIn('task_id', array_map(static fn (Task $work): int => $work->id, array_values($works)))
-            ->where('kind', TaskCheckKind::Handoff->value)->orderByDesc('id')->get()->unique('task_id')->keyBy('task_id');
+        $turns = self::newestReviewerTurns($reviewers);
+        $completed = array_values(array_map(static fn (Task $work): int => $work->id, array_filter($works, static fn (Task $work): bool => $work->status === TaskStatus::Completed)));
+        $newest = $completed === [] ? [] : TaskCheck::query()->whereIn('task_id', $completed)->where('kind', TaskCheckKind::Handoff->value)
+            ->groupBy('task_id')->selectRaw('max(id) as id')->pluck('id')->all();
+        $checks = $newest === [] ? new Collection : TaskCheck::query()->whereIn('id', $newest)->get(['id', 'task_id', 'status', 'commit_sha'])->keyBy('task_id');
         foreach ($works as $id => $work) {
             $turn = $turns[$id] ?? null;
             $check = $checks->get($work->id);
@@ -72,5 +65,39 @@ final readonly class TaskWorkReview
         }
 
         return $review;
+    }
+
+    /**
+     * The newest turn of each group's reviewer thread, by group id, holding only what the review reads: its status, the subtask and
+     * candidate of its input, and the state and end of its result. A turn's prompt and other fields stay unread.
+     *
+     * @param  array<int, int>  $reviewers  the reviewer thread of each group, by group id
+     * @return array<int, Operation>
+     */
+    private static function newestReviewerTurns(array $reviewers): array
+    {
+        if ($reviewers === []) {
+            return [];
+        }
+        $newest = Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->where('target_type', OperationKinds::TaskGroupTarget)
+            ->where(static function ($query) use ($reviewers): void {
+                foreach ($reviewers as $group => $thread) {
+                    $query->orWhere(static fn ($turn) => $turn->where('target_id', $group)->where('input->thread_id', $thread));
+                }
+            })->groupBy('target_id')->selectRaw('max(id) as id')->pluck('id')->all();
+        $turns = [];
+        foreach (DB::table('operations')->whereIn('id', $newest)->get(['id', 'target_id', 'status', DB::raw("json_extract(input, '$.subtask') as subtask"),
+            DB::raw("json_extract(input, '$.candidate') as candidate"), DB::raw("json_extract(result, '$.state') as state"),
+            DB::raw("json_type(result, '$.ended') as ended")]) as $row) {
+            $turns[(int) $row->target_id] = (new Operation)->forceFill([
+                'status' => $row->status,
+                'input' => ['subtask' => is_numeric($row->subtask) ? (int) $row->subtask : $row->subtask, 'candidate' => $row->candidate],
+                'result' => ['state' => $row->state, 'ended' => match ($row->ended) {
+                    'true' => true, 'false' => false, default => null
+                }],
+            ]);
+        }
+
+        return $turns;
     }
 }
