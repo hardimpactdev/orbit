@@ -557,9 +557,9 @@ A create writes the task and its work, or its subtasks, in one transaction. The 
 
 Show and list return the task's work as `work`: the fields of a subtask, with its deliverables, latest check and implementer. `subtasks` is then empty, and a list with `parent_id` lists nothing. A task with subtasks has `work: null`.
 
-Show also returns `work_review`, where the review of the work stands, read from Orbit's records. It is `reviewing` while the newest turn of the reviewer thread has not ended. It is `approved` while the work is completed, its newest handoff check passed, and the reviewer thread's newest turn reviewed exactly that check's commit and ended `done`; otherwise it is `not_approved`.
+Show and list also return `work_review`, where the review of the work stands, read from Orbit's records. It is `reviewing` while the newest turn of the reviewer thread has not ended. It is `approved` while the work is completed, its newest handoff check passed, and the reviewer thread's newest turn reviewed exactly that check's commit and ended `done`; otherwise it is `not_approved`.
 
-That is the approval of the reviewed check, as in [the done rule](#when-the-work-is-done), without the rule's readiness to publish: a publish, the copy's removal and the task's end keep it, and a reopen or a newer handoff check drops it. The work's `status` says none of this. `work_review` is null for a task with subtasks. A list leaves it out.
+That is the approval of the reviewed check, as in [the done rule](#when-the-work-is-done), without the rule's readiness to publish: a publish, the copy's removal and the task's end keep it, and a reopen or a newer handoff check drops it. The work's `status` says none of this. `work_review` is null for a task with subtasks.
 
 The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask, and its ID in `work.id` is no route member: every route answers `404` for it. Address the work by the task's ID.
 

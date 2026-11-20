@@ -242,7 +242,8 @@
                         "parent_id": 12
                     }
                 ],
-                "work": null
+                "work": null,
+                "work_review": null
             },
             {
                 "id": 13,
@@ -305,7 +306,8 @@
                 "duration_ms": 600000,
                 "parent_id": null,
                 "subtasks": [],
-                "work": null
+                "work": null,
+                "work_review": null
             }
         ],
         "meta": {

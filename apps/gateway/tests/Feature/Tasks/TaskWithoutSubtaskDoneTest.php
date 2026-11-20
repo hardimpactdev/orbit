@@ -113,7 +113,7 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
         ->assertJsonPath('data.status', 'running')->assertJsonPath('data.work.status', 'completed')->assertJsonPath('data.subtasks', []);
     expect(app(TaskGroupDone::class)->check($group->refresh())?->id)->toBe($world->check->id);
     $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
-    $this->getJson('/api/v1/tasks')->assertOk()->assertJsonMissingPath('data.0.work_review');
+    $this->getJson('/api/v1/tasks')->assertOk()->assertJsonPath('data.0.work_review', 'approved');
 
     // The release publishes C0, and the publish conflicts with main.
     $publish = $this->withHeader('Idempotency-Key', 'solo-publish')->postJson("/api/v1/tasks/{$id}/publish", ['check' => $world->check->id])->assertStatus(202)

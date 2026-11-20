@@ -100,10 +100,10 @@ final class TaskGroupData extends Data
          */
         public ?TaskData $work = null,
         /**
-         * Show only: where the review of a task with no subtask stands, `reviewing`, `approved` or `not_approved` (TaskWorkReview). Null
-         * for a task with subtasks (docs/reference/tasks.md#a-task-with-no-subtask).
+         * Where the review of a task with no subtask stands, `reviewing`, `approved` or `not_approved` (TaskWorkReview). Null for a task
+         * with subtasks (docs/reference/tasks.md#a-task-with-no-subtask).
          */
-        public Lazy|string|null $workReview = null,
+        public ?string $workReview = null,
         /** When GitHub opened the group's pull request; null when Orbit has not read it (docs/reference/tasks.md#task-insights). */
         public ?string $prOpenedAt = null,
         /** When a production deploy first carried the merge commit; null until then (docs/reference/tasks.md#task-insights). */
@@ -113,7 +113,7 @@ final class TaskGroupData extends Data
     /** @return array<string, mixed> */
     public function toListArray(bool $compact = false): array
     {
-        $this->exclude('publication', 'workReview');
+        $this->exclude('publication');
         if ($compact) {
             return $this->toCompactArray();
         }
@@ -153,14 +153,16 @@ final class TaskGroupData extends Data
     {
         $groups->loadMissing(self::Relations);
         $activity = TaskGroupActivity::of(array_values($groups->modelKeys()));
+        $reviews = TaskWorkReview::of($groups);
 
-        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id]))->all());
+        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id], $reviews[$group->id]))->all());
     }
 
     /**
      * @param  string|null  $lastActivityAt  when an Operation on the group was last created, started or ended
+     * @param  string|null  $workReview  the review of a task with no subtask (TaskWorkReview), read for the whole page
      */
-    private static function fromLoaded(Task $group, ?string $lastActivityAt): self
+    private static function fromLoaded(Task $group, ?string $lastActivityAt, ?string $workReview): self
     {
         $taskable = $group->taskable;
         $status = $group->groupStatus();
@@ -186,7 +188,7 @@ final class TaskGroupData extends Data
             prOpenedAt: $group->pr_opened_at?->toIso8601String(),
             deployedAt: $group->deployed_at?->toIso8601String(),
             publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
-            workReview: Lazy::create(static fn (): ?string => TaskWorkReview::of($group))->defaultIncluded(),
+            workReview: $workReview,
 
             id: $group->id,
             parentId: null,

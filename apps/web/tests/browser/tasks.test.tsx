@@ -66,6 +66,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         questions: 0,
         escalations: 0,
         work: null,
+        work_review: null,
         subtasks: [
             {
                 id: 1,

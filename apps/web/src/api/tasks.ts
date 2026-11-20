@@ -13,8 +13,8 @@ export type TaskGroup = Omit<
         subtasks: Task[];
         /** The work of a task with no subtask: its deliverables, latest check and implementer. Null for a task with subtasks. */
         work: Task | null;
-        /** Show only: where the work's review stands, from Orbit's records. A list leaves it out. */
-        work_review?: TaskWorkReview | null;
+        /** Where the work's review stands, from Orbit's records. Null for a task with subtasks. */
+        work_review: TaskWorkReview | null;
         project_code?: string;
     };
 /** One deliverable, as `task:create` takes it: a file change, a command that passes, or an item the reviewer confirms. */

@@ -85,7 +85,7 @@ final readonly class ConnTaskPanel
             agents: $this->agents($group, $threads, $environment, $work),
             work: $work instanceof Task ? [
                 'status' => $work->status->value,
-                'review' => TaskWorkReview::of($group),
+                'review' => TaskWorkReview::of(new Collection([$group]))[$group->id],
                 'deliverables' => self::deliverables($work),
                 'current_implementer_agent_id' => $work->implementer_agent_thread_id,
                 'check' => ($check = $work->latestCheck) instanceof TaskCheck ? [

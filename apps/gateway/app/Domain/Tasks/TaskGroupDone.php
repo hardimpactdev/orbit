@@ -51,12 +51,16 @@ final readonly class TaskGroupDone
      * The newest turn of the group's reviewer thread reviewed exactly the done check's commit, for the last subtask, and ended done. A copy
      * turn is admitted only on the current subtask, and a subtask of a task copy cannot be completed while a turn of the group runs
      * ({@see TaskTurn::refuseSubtaskMoveWhileRunning()}), so this turn ended before the subtask was completed. The approval of a task with
-     * no subtask reads it too (TaskWorkReview).
+     * no subtask reads it too, with a page's turns read at once (TaskWorkReview).
      */
     public static function reviewed(Task $group, Task $last, TaskCheck $check): bool
     {
-        $turn = self::reviewerTurn($group);
+        return self::reviewedBy(self::reviewerTurn($group), $last, $check);
+    }
 
+    /** Whether TURN, the newest turn of the reviewer thread, reviewed exactly the check's commit for that subtask and ended done. */
+    public static function reviewedBy(?Operation $turn, Task $last, TaskCheck $check): bool
+    {
         return $turn instanceof Operation && $turn->status === OperationStatus::Succeeded && ($turn->input['subtask'] ?? null) === $last->id
             && ($turn->input['candidate'] ?? null) === $check->commit_sha && ($turn->result['state'] ?? null) === AgentThreadState::Done->value
             && ($turn->result['ended'] ?? null) === true;
