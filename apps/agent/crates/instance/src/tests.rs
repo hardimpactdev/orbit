@@ -347,8 +347,8 @@ fn checkout_input() -> Value {
 fn a_checked_out_workspace_only_gets_its_env_merged() {
     let fake = Fake::new(&[
         ("file pull instance-12/var/lib/orbit/workspace-checkout", Ok(json!({"instance_id": 12, "commit": "a".repeat(40)}))),
-        ("&path=/srv/workspace/.env", Ok(json!("200 file"))),
         ("x-incus-uid", Ok(json!("2750 2760 640"))),
+        ("&path=/srv/workspace/.env", Ok(json!("200 file"))),
         ("file pull instance-12/srv/workspace/.env", Ok(json!("APP_URL=old\nKEEP=1\n"))),
         ("&path=/srv/workspace/.git/info/exclude", Ok(json!("200 file"))),
         ("file pull instance-12/srv/workspace/.git/info/exclude", Ok(json!("/.env\n"))),
@@ -371,7 +371,7 @@ fn a_fresh_copy_checks_its_branch_out_at_the_seeds_commit_and_marks_it() {
         ("symbolic-ref --quiet --short HEAD", Ok(json!("main\n"))),
         ("rev-parse HEAD", Ok(json!(format!("{}\n", "a".repeat(40))))),
         ("symbolic-ref --short HEAD", Ok(json!("feature/x\n"))),
-        ("files?project=orbit-instances&path=", MISSING),
+        ("%{http_code}", Ok(json!("404 "))),
     ]);
 
     checkout(&fake, &input).expect("checkout");
