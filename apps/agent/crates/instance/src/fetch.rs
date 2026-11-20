@@ -67,32 +67,37 @@ fn failed(error: impl std::fmt::Display) -> Failure {
 }
 
 fn check(input: &FetchInput) -> Result<(), String> {
-    let id = input
-        .mirror
-        .strip_prefix(MIRRORS)
-        .and_then(|rest| rest.strip_prefix('/'))
-        .and_then(|rest| rest.strip_suffix(".git"))
-        .ok_or("mirror is not an Orbit mirror")?;
-    if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+    if !mirror_path(&input.mirror) {
         return Err("mirror is not an Orbit mirror".to_owned());
     }
     if input.protocol != "https" || !input.repository.starts_with("https://") || input.repository.bytes().any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control()) {
         return Err("repository is not an https URL".to_owned());
     }
-    // A branch name Git accepts and that cannot read as an option or leave refs/heads.
-    let branch = &input.branch;
-    let valid = !branch.is_empty()
-        && !branch.starts_with(['-', '/', '.'])
-        && !branch.ends_with(['/', '.'])
-        && !std::path::Path::new(branch.as_str()).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("lock"))
-        && !branch.contains("..")
-        && !branch.contains("//")
-        && !branch.contains("@{")
-        && !branch.bytes().any(|byte| byte.is_ascii_control() || b" ~^:?*[\\".contains(&byte));
-    if !valid {
+    if !branch_name(&input.branch) {
         return Err("branch is not a branch name".to_owned());
     }
     Ok(())
+}
+
+/// An Orbit mirror: a `<id>.git` folder directly inside the mirrors folder.
+pub(crate) fn mirror_path(mirror: &str) -> bool {
+    mirror
+        .strip_prefix(MIRRORS)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .and_then(|rest| rest.strip_suffix(".git"))
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+/// A branch name Git accepts that cannot read as an option or leave `refs/heads`.
+pub(crate) fn branch_name(branch: &str) -> bool {
+    !branch.is_empty()
+        && !branch.starts_with(['-', '/', '.'])
+        && !branch.ends_with(['/', '.'])
+        && !std::path::Path::new(branch).extension().is_some_and(|extension| extension.eq_ignore_ascii_case("lock"))
+        && !branch.contains("..")
+        && !branch.contains("//")
+        && !branch.contains("@{")
+        && !branch.bytes().any(|byte| byte.is_ascii_control() || b" ~^:?*[\\".contains(&byte))
 }
 
 fn fetch(system: &impl System, input: &FetchInput, mirror: &Path, credential: &Path) -> Result<Option<String>, Failure> {

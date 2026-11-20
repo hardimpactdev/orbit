@@ -42,6 +42,9 @@ impl System for Fake {
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        if sha256 == "env" {
+            return Ok(b"APP_URL=new\n".to_vec());
+        }
         Ok(format!("blob {sha256}").into_bytes())
     }
 
@@ -332,4 +335,77 @@ fn fetch_refuses_a_mirror_elsewhere_a_branch_that_reads_as_an_option_and_another
         assert_eq!(fetch_branch(&fake, &input).map_err(|failure| failure.code), Err("instance.fetch_input_invalid"), "{pointer}");
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
+}
+
+fn checkout_input() -> Value {
+    json!({"project": "orbit-instances", "name": "instance-12", "instance_id": 12, "workspace": "/srv/workspace", "branch": "feature/x",
+        "expected_commit": "a".repeat(40), "environment_file": "/srv/workspace/.env", "group": 2760,
+        "environment": {"blob": {"sha256": "env"}}, "merge": {"own": ["APP_URL"], "drop": [], "guard": []}})
+}
+
+#[test]
+fn a_checked_out_workspace_only_gets_its_env_merged() {
+    let fake = Fake::new(&[
+        ("file pull instance-12/var/lib/orbit/workspace-checkout", Ok(json!({"instance_id": 12, "commit": "a".repeat(40)}))),
+        ("x-incus-uid", Ok(json!("2750 2760 640"))),
+        ("&path=/srv/workspace/.env", Ok(json!("200 file"))),
+        ("file pull instance-12/srv/workspace/.env", Ok(json!("APP_URL=old\nKEEP=1\n"))),
+        ("&path=/srv/workspace/.git/info/exclude", Ok(json!("200 file"))),
+        ("file pull instance-12/srv/workspace/.git/info/exclude", Ok(json!("/.env\n"))),
+    ]);
+
+    let output: Value = serde_json::from_str(&checkout(&fake, &checkout_input()).expect("checkout")).expect("json");
+
+    assert_eq!(output["environment"]["copied"], json!(["KEEP"]));
+    assert_eq!(output["commit"], json!("a".repeat(40)), "the commit the mark records");
+    assert!(!fake.calls().iter().any(|call| call.contains("checkout --quiet") || call.contains("rev-parse")), "no checkout when the mark names this Instance");
+    let pushed = fake.calls.borrow().iter().find(|(call, _)| call.ends_with("instance-12/srv/workspace/.env")).and_then(|(_, stdin)| stdin.clone());
+    assert_eq!(pushed.as_deref(), Some("APP_URL=new\nKEEP=1\n"));
+}
+
+#[test]
+fn a_fresh_copy_checks_its_branch_out_at_the_seeds_commit_and_marks_it() {
+    let mut input = checkout_input();
+    input["environment"] = json!({"blob": {"sha256": "env"}});
+    let fake = Fake::new(&[
+        ("file pull instance-12/var/lib/orbit/workspace-checkout", MISSING),
+        ("symbolic-ref --quiet --short HEAD", Ok(json!("main\n"))),
+        ("rev-parse HEAD", Ok(json!(format!("{}\n", "a".repeat(40))))),
+        ("symbolic-ref --short HEAD", Ok(json!("feature/x\n"))),
+        ("%{http_code}", Ok(json!("404 "))),
+    ]);
+
+    checkout(&fake, &input).expect("checkout");
+
+    let calls = fake.calls();
+    assert!(calls.iter().any(|call| call.contains("--user 2750 --group 2760 --cwd /srv/workspace") && call.ends_with("checkout --quiet -B feature/x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")), "{calls:?}");
+    let mark = fake.calls.borrow().iter().find(|(call, _)| call.ends_with("instance-12/var/lib/orbit/workspace-checkout")).and_then(|(_, stdin)| stdin.clone());
+    assert_eq!(serde_json::from_str::<Value>(mark.as_deref().expect("mark")).expect("json"), json!({"instance_id": 12, "commit": "a".repeat(40)}));
+}
+
+#[test]
+fn checkout_refuses_an_env_outside_the_workspace_and_a_commit_that_is_no_commit() {
+    for (pointer, value) in [("/environment_file", json!("/etc/shadow")), ("/expected_commit", json!("HEAD")), ("/branch", json!("-x"))] {
+        let mut input = checkout_input();
+        *input.pointer_mut(pointer).expect("field") = value;
+        let fake = Fake::new(&[]);
+        assert_eq!(checkout(&fake, &input).map_err(|failure| failure.code), Err("instance.checkout_input_invalid"), "{pointer}");
+    }
+}
+
+#[test]
+fn an_agent_folder_is_made_again_with_exactly_its_files_and_refuses_a_path_outside_it() {
+    let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(stopped())), ("query /1.0/instances/instance-12/files", MISSING), ("%{http_code}", Ok(json!("200 directory")))]);
+    let folder = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "AGENTS.md", "blob": {"blob": {"sha256": "rules"}}}, {"path": ".skills/x/SKILL.md", "blob": {"blob": {"sha256": "skill"}}}]}}]);
+
+    prepare(&fake, &prepare_input(&folder)).expect("prepare");
+
+    let calls = fake.calls();
+    let delete = calls.iter().position(|call| call.ends_with("file delete --force instance-12/home/agent/.config/orbit/agent")).expect("folder goes first");
+    let pushed = calls.iter().position(|call| call.ends_with("--uid 0 --gid 0 --mode 0644 - instance-12/home/agent/.config/orbit/agent/AGENTS.md")).expect("file");
+    assert!(delete < pushed);
+    assert!(calls.iter().any(|call| call.ends_with("--mode 0755 instance-12/home/agent/.config/orbit/agent/.skills")));
+
+    let outside = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "../../.ssh/authorized_keys", "blob": {"blob": {"sha256": "k"}}}]}}]);
+    assert_eq!(prepare(&Fake::new(&[]), &prepare_input(&outside)).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"));
 }
