@@ -177,7 +177,7 @@ struct CloneInput {
     /// The NIC's address filters, `security.ipv4_filtering` and `security.mac_filtering`.
     filters: BTreeMap<String, String>,
     proxy: Proxy,
-    /// The ufw route rules that let the Node's WireGuard side reach the copy, such as T3's port.
+    /// The `ufw` route rules that let the Node's `WireGuard` side reach the copy, such as T3's port.
     #[serde(default)]
     routes: Vec<RouteRule>,
 }
