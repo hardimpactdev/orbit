@@ -1688,15 +1688,15 @@
                 }
             },
             "conn-server": {
-                "version": "0.2.0",
+                "version": "0.3.0",
                 "artifacts": {
                     "amd64": {
-                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.2.0/conn-server-0.2.0-linux-x64.tar.gz",
-                        "sha256": "e1f861432b2740f41899bf9ec315cc4ddf97aa5fe9f9414d5f687b00c338c734"
+                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.3.0/conn-server-0.3.0-linux-x64.tar.gz",
+                        "sha256": "d20bc9c4b77e056611c356e3ffeb8b5227850127019df176bc421ad8d9cb2eaf"
                     }
                 },
                 "bin": {
-                    "conn-server": "conn-server-0.2.0-linux-x64/conn-server"
+                    "conn-server": "conn-server-0.3.0-linux-x64/conn-server"
                 }
             },
             "chrome-headless-shell": {
