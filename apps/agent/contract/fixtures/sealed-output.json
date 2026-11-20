@@ -1,0 +1,8 @@
+{
+    "note": "A libsodium sealed box shared by the executor (Rust) and Gateway (PHP) tests. The keys are test-only: the X25519 pair is derived from an Ed25519 key whose seed is 32 bytes of 0x07.",
+    "signing_secret": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwfqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLA==",
+    "recipient_secret": "KK05/v1/o+IAqcYm7vWZ5hotBVxIqCiKTn5MS8o5KHg=",
+    "recipient": "dh2I7IMEE5Gd/p1NHVbxfmU8jJlAgt9bE3uQoK5u33Q=",
+    "plaintext": "orbit-t3-session-fixture",
+    "sealed": "FzCeEz9gX5+x1MsqGLgQh4I4kqb4uCMUV5shW3ut/0zq32OnCM0Md9NtJ2rwJ2lLWFRtDuZDlwwoI4c7oQXkQ4bb9W4df5w8"
+}
