@@ -79,6 +79,8 @@ Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `v
 
 `instance.create` needs agent 0.21.0 on the Node: an executor at 0.20.0 reports the same `instance` actions but refuses the clone's route rules and its `files_blob`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.21.0 or newer.
 
+The `files_blob` holds the model environment inline. The Gateway also puts the placeholder model key into the JSON settings there, in place of the intent's `key_value` ([Antigravity](/reference/development-containers#antigravity)). The agent's prepare step still replaces each top-level settings key whole. That drops a provider instance of the agent's own, and it rewrites a key that the Conn Server already moved into its store. So `instance.create` also stays out of `ORBIT_ENGINE_KINDS` until prepare merges as the other settings writers do.
+
 ## Steps and transitions
 
 `Engine::start` records one row per step in `operation_engine_steps` and sets `state.swamp_run_id` to `engine-<id>`. It then publishes a start event. Every transition happens in `advance`, inside one transaction that locks the Operation and its steps:
