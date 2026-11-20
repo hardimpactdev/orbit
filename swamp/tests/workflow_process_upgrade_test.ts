@@ -313,12 +313,30 @@ Deno.test({ name: "a folder of the version that is a link, unmarked, or marked f
     }
 } });
 
-Deno.test({ name: "the prune keeps the recorded previous version and every link target", ignore: !available, async fn() {
-    const run = await upgrade({ releases: { "8.0.10": "good", "8.0.17": "good", "8.0.40": "good", "8.0.63": "good" }, links: { pinned: "8.0.17" }, previous: "8.0.40" });
+Deno.test({ name: "the prune keeps the recorded previous version", ignore: !available, async fn() {
+    const run = await upgrade({ releases: { "8.0.10": "good", "8.0.17": "good", "8.0.40": "good", "8.0.63": "good" }, previous: "8.0.40" });
     try {
-        assertEquals(run.result, { before: "8.0.63", after: "8.0.80", outcome: "upgraded", pruned: ["8.0.10"] }, run.output);
-        assertEquals(run.releases, ["8.0.17", "8.0.40", "8.0.63", "8.0.80", "pinned"]);
+        assertEquals(run.result, { before: "8.0.63", after: "8.0.80", outcome: "upgraded", pruned: ["8.0.10", "8.0.17"] }, run.output);
+        assertEquals(run.releases, ["8.0.40", "8.0.63", "8.0.80"]);
     } finally {
         cleanup(run.folder);
+    }
+} });
+
+Deno.test({ name: "a release store with a link, or a current link that follows one, is refused before any change and nothing is pruned", ignore: !available, async fn() {
+    for (const fixture of [
+        { releases: { "8.0.17": "good" }, links: { "8.0.63": "8.0.17" }, current: "releases/8.0.63/" },
+        { releases: { "8.0.17": "good" }, links: { "8.0.63": "8.0.17" }, current: "releases/8.0.63" },
+        { releases: { "8.0.17": "good", "8.0.63": "good" }, links: { "pinned-cli": "8.0.17/cli-proxy-api" } },
+    ] as Fixture[]) {
+        const run = await upgrade(fixture);
+        try {
+            assertEquals(run.result.error_code, "process.artifact_layout_invalid", run.output);
+            assertEquals(run.ran, ["Read the installed release"]);
+            assertEquals(run.releases, Object.keys({ ...fixture.releases, ...fixture.links }).sort());
+            assertEquals(run.restarts, 0);
+        } finally {
+            cleanup(run.folder);
+        }
     }
 } });

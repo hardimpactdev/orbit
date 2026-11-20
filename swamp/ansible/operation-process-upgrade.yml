@@ -3,7 +3,8 @@
 # docs/reference/processes-and-schedules.md#upgrade-a-process). The Gateway resolved the release: the intent holds its URL and SHA-256,
 # never a version for the Node to resolve. Releases sit in `<folder>/releases/<version>/`, and `<folder>/current` is a relative link
 # to one of them. Files are owned by the owner of `<folder>`. One tag per phase of the workflow:
-#   read      `<folder>` and `<folder>/releases` must be real folders, no link on their path, and `current` a relative link to
+#   read      `<folder>` and `<folder>/releases` must be real folders, no link on their path and no link directly in `releases`,
+#             and `current` a relative link whose text is exactly `releases/<name>`, to
 #             a real folder `releases/<version>`, and an existing `releases/<VERSION>` a real folder whose `.orbit-sha256` marker holds the
 #             admitted SHA-256, else process.artifact_layout_invalid before any change.
 #   download  the asset into `releases/.staging-<VERSION>`, checked against the SHA-256, unless `releases/<VERSION>` exists.
@@ -81,9 +82,15 @@
               - upgrade_store.stat.isdir | default(false)
               - upgrade_real.rc == 0 and upgrade_real.stdout_lines == [folder, releases]
               - upgrade_current.stat.islnk | default(false)
-              - upgrade_current.stat.lnk_target is match('^releases/[A-Za-z0-9][A-Za-z0-9._+-]*/?$')
+              - upgrade_current.stat.lnk_target is match('^releases/[A-Za-z0-9][A-Za-z0-9._+-]*$')
             fail_msg: process.artifact_layout_invalid
             quiet: true
+        # A link in the release store could make a kept release depend on a pruned one, or point the run outside the store.
+        - name: Read the links in the release store
+          ansible.builtin.find: { paths: "{{ releases }}", file_type: link, hidden: true, recurse: false }
+          register: upgrade_store_links
+        - name: Refuse a release store that holds a link
+          ansible.builtin.assert: { that: [upgrade_store_links.matched == 0], fail_msg: process.artifact_layout_invalid, quiet: true }
         - name: Read the installed release folder
           ansible.builtin.stat: { path: "{{ folder }}/{{ upgrade_current.stat.lnk_target }}", follow: false }
           register: upgrade_installed
@@ -335,10 +342,11 @@
         upgrade_versions: >-
           {{ upgrade_releases.files | selectattr('path', 'search', '/v?[0-9][0-9A-Za-z._+-]*$')
              | map(attribute='path') | map('basename') | list }}
-        # Kept: the new release, `before`, the recorded previous version, the folder `current` resolves to and every link target.
+        # Kept: the new release, `before`, the recorded previous version, and every release that `current` or a link reaches into.
         upgrade_kept: >-
           {{ [up.version, installed.before, up.previous_version | default('', true)]
-             + ((upgrade_links.stdout_lines | default([])) + (upgrade_current_real.stdout_lines | default([]))) | map('basename') | list }}
+             + ((upgrade_links.stdout_lines | default([])) + (upgrade_current_real.stdout_lines | default([])))
+              | map('replace', releases ~ '/', '', 1) | map('split', '/') | map('first') | list }}
         # A same-version re-check has no distinct `before`: it prunes nothing.
         upgrade_pruned: "{{ [] if installed.before == up.version else upgrade_versions | reject('in', upgrade_kept) | sort }}"
       block:

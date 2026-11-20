@@ -12,11 +12,12 @@ cases = [
   "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one",
   "an existing folder of the version is checked in place and kept, never replaced by the staged copy",
   "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept",
-  "the prune keeps the recorded previous version and every link target",
+  "the prune keeps the recorded previous version",
+  "a release store with a link, or a current link that follows one, is refused before any change and nothing is pruned",
 ]
 file = "swamp/tests/workflow_process_upgrade_test.ts"
-cost = 202
-# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11, 7, 13 s for the five release-folder cases; no hosted receipt yet.
+cost = 210
+# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11, 7, 13, 6 s for the six release-folder cases; no hosted receipt yet.
 slices = 5
 inputs = [
   "bin/swamp-shape-gate",
@@ -44,4 +45,5 @@ inputs = [
   "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one" = 14
   "an existing folder of the version is checked in place and kept, never replaced by the staged copy" = 14
   "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept" = 9
-  "the prune keeps the recorded previous version and every link target" = 17
+  "the prune keeps the recorded previous version" = 17
+  "a release store with a link, or a current link that follows one, is refused before any change and nothing is pruned" = 8
