@@ -39,6 +39,9 @@ final readonly class ClonePublication
     /** A Node refused the merge of the site in `clone-route`; the step's log names the Node's code. */
     public const string NodeRefused = 'node_refused';
 
+    /** The create ran on the Gateway engine, which leaves the address to the completion (docs/reference/gateway-engine.md). */
+    public const string EngineCompletion = 'engine_completion';
+
     /** A clone's create that captured its Route publication: it takes the Route Nodes only when they are free. */
     public static function takesFreeNodesOnly(Operation $operation): bool
     {
@@ -128,9 +131,10 @@ final readonly class ClonePublication
 
             return is_string($reason) ? $reason : null;
         }
-        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => self::NodeRefused]));
+        $reason = str_starts_with((string) ($operation->state['swamp_run_id'] ?? ''), 'engine-') ? self::EngineCompletion : self::NodeRefused;
+        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => $reason]));
 
-        return self::NodeRefused;
+        return $reason;
     }
 
     /**

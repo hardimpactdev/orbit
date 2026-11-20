@@ -42,7 +42,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         return app(NativeDevelopmentInstanceInput::class)->create($operation);
     }
 
-    public function apply(Operation $operation, array $data): Operation
+    /** `$session`: the Gateway's T3 session an engine run opened from its sealed output; a Swamp run's is in the vault. */
+    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null): Operation
     {
         // A clone's T3 session is read from the vault, and its workspace baseline from its Node, before the transaction, so no lock waits
         // on the network.
@@ -50,7 +51,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         $clone = $container === null ? null : (ValidatedData::object($container)['clone'] ?? null);
         $alreadyActive = (ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true;
         $handover = $clone !== null && $data['status'] === 'succeeded' && ! $alreadyActive;
-        $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? [])) : null;
+        $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? []), $session) : null;
         $baseline = $handover && ! $operation->status->terminal() ? $this->baseline($operation) : null;
         if ($baseline === false) {
             // The run succeeded, but nothing proves what the workspace held before the user could work: the create fails, and no
@@ -277,10 +278,14 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
-    public function server(array $t3, array $result): array
+    public function server(array $t3, array $result, #[\SensitiveParameter] ?string $opened = null): array
     {
         $server = $result['t3'] ?? null;
         $session = is_array($server) ? ($server['gateway_session'] ?? null) : null;
+        if ($opened !== null) {
+            // An engine run's session: the Gateway opened it from the sealed `t3` output; it never touched the vault.
+            $session = ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-engine'];
+        }
         $environment = is_array($server) ? ($server['environment_id'] ?? null) : null;
         $expires = is_array($server) ? ($server['expires_at'] ?? null) : null;
         if (! is_array($server) || ! is_array($session) || ($session['vault'] ?? null) !== 'orbit-control-inputs'
@@ -289,7 +294,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             || ! is_string($server['server_version'] ?? null) || ! is_string($expires) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/D', $expires) !== 1) {
             throw new ResourceOperationException('instance.result_invalid', 'The clone did not prove its registered T3 server.');
         }
-        $secret = app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
+        $secret = $opened ?? app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
         if ($secret === '') {
             throw new ResourceOperationException('instance.result_invalid', 'The T3 session of the clone is missing from the vault.');
         }
