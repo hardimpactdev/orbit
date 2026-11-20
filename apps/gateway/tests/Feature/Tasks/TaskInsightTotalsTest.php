@@ -378,8 +378,8 @@ it('stores the 24h report on each refresh with the hour window of the refresh ti
         ->and(array_sum(array_column($day['breakdowns']['project'], 'tasks')))->toBe(2)
         ->and($day['daily'])->toBe([])
         ->and($day['hourly'])->toHaveCount(24)
-        ->and($day['hourly'][0])->toBe(['hour' => '2026-11-18T13:00:00+00:00', 'merged' => 0, 'not_merged' => 1])
-        ->and($day['hourly'][23])->toBe(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0])
+        ->and($day['hourly'][0])->toMatchArray(['hour' => '2026-11-18T13:00:00+00:00', 'merged' => 0, 'not_merged' => 1])
+        ->and($day['hourly'][23])->toMatchArray(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0])
         ->and([$stored('7d')['hourly'], count($stored('7d')['daily']), $stored('30d')['hourly'], count($stored('30d')['daily'])])->toBe([[], 7, [], 30])
         ->and(app(TaskInsightsExposition::class)->render())->toContain('orbit_task_insights_tasks{project="all",period="24h"} 2');
 
@@ -390,46 +390,95 @@ it('stores the 24h report on each refresh with the hour window of the refresh ti
     Artisan::call('task:insights-refresh');
     $next = $this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data');
     expect([$next['from'], $next['to'], $next['current']['tasks']])->toBe(['2026-11-18T14:00:00+00:00', '2026-11-19T14:00:00+00:00', 1])
-        ->and($next['hourly'][22])->toBe(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0]);
+        ->and($next['hourly'][22])->toMatchArray(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0]);
 });
 
-it('serves a 7d or 30d report stored before hourly buckets with an empty hourly list and its stored numbers', function (?string $scope): void {
-    [$app] = insightWorld();
-    Artisan::call('task:insights-refresh');
-    insightPeer();
-    $key = $scope === null ? 'all' : 'project:'.$app->id;
-    $query = static fn (?string $period): string => '/api/v1/task-insights?'.http_build_query(array_filter(['period' => $period, 'project_id' => $scope === null ? null : $app->id]));
-    $refreshes = DB::table('task_insight_totals')->max('computed_at');
-
-    foreach (['7d', '30d'] as $period) {
-        // The report as #4116 stored it: no hourly key, and numbers the source tables no longer give.
-        $old = json_decode((string) DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->value('payload'), true);
-        unset($old['hourly']);
-        $old['current']['tasks'] = 999;
-        DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->update(['payload' => json_encode($old)]);
-
-        $expected = [...$old, 'hourly' => []];
-        foreach ($period === '30d' ? [$period, null] : [$period] as $requested) {
-            $data = $this->getJson($query($requested))->assertOk()->json('data');
-            expect(array_keys($data))->toBe(['period', 'from', 'to', 'current', 'previous', 'weekly', 'daily', 'hourly', 'breakdowns'])
-                ->and($data)->toEqual($expected);
-        }
-    }
-    expect(DB::table('task_insight_totals')->max('computed_at'))->toBe($refreshes);
-})->with(['all Projects' => null, 'one Project' => 'app']);
-
-it('computes a stored 24h report again when it lacks its 24 hourly buckets', function (): void {
+it('computes a stored report again when it lacks hourly buckets or its buckets lack the tile numbers', function (string $period, string $stale): void {
     insightWorld();
     Artisan::call('task:insights-refresh');
     insightPeer();
-    $old = json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true);
-    $fresh = json_decode((string) json_encode(app(TaskInsights::class)->report('24h', null, CarbonImmutable::now())->toArray()), true);
-    unset($old['hourly']);
-    DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->update(['payload' => json_encode($old)]);
+    $stored = static fn (): array => json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', $period)->value('payload'), true);
+    $old = $stored();
+    $fresh = json_decode((string) json_encode(app(TaskInsights::class)->report($period, null, CarbonImmutable::now())->toArray()), true);
+    // The report as an earlier Gateway stored it, with numbers the records no longer give.
+    $old['current']['tasks'] = 999;
+    if ($stale === 'no hourly') {
+        unset($old['hourly']);
+    } else {
+        foreach (['daily', 'hourly'] as $list) {
+            $old[$list] = array_map(static fn (array $bucket): array => Arr::only($bucket, ['date', 'hour', 'merged', 'not_merged']), $old[$list]);
+        }
+    }
+    DB::table('task_insight_totals')->where('scope', 'all')->where('period', $period)->update(['payload' => json_encode($old)]);
 
-    expect($this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data'))->toBe($fresh)
-        ->and(json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true)['hourly'])->toHaveCount(24);
+    expect($this->getJson('/api/v1/task-insights?period='.$period)->assertOk()->json('data'))->toBe($fresh)
+        ->and($stored())->toBe($fresh);
+})->with(['24h', '7d', '30d'])->with(['no hourly', 'buckets without tile numbers']);
+
+/** A merged group, unless `$facts` says otherwise, that ended at `$ended` UTC, `$leadHours` after it was ready. */
+function insightBucketGroup(Project $project, string $ended, int $leadHours, array $facts = []): Task
+{
+    $group = insightGroup($project, 0, $facts);
+    $end = CarbonImmutable::parse($ended, 'UTC');
+    $merged = $facts['merged'] ?? true;
+    $time = static fn (?CarbonImmutable $at): ?string => $at?->format('Y-m-d H:i:s');
+    // The refresh re-records the group after this write, which bypasses the observers.
+    DB::table('tasks')->where('id', $group->id)->update(['ended_at' => $time($end), 'merged_at' => $time($merged ? $end : null),
+        'ready_at' => $time($end->subHours($leadHours)), 'started_at' => $time($end->subHours($leadHours)), 'settled_at' => $time($end->subMinutes(30)),
+        'pr_opened_at' => $time($end->subMinutes(20)), 'deployed_at' => $time($merged ? $end->addMinutes(37) : null), 'updated_at' => now()]);
+
+    return $group;
+}
+
+it('gives each hourly and daily bucket the tile numbers of its own tasks alone, with exact medians and unknown tokens null', function (): void {
+    test()->travelTo(CarbonImmutable::parse('2026-11-19 12:07:00', 'UTC'));
+    app(TaskExtensionState::class)->enable();
+    $app = insightProject('app');
+    $nine = [
+        insightBucketGroup($app, '2026-11-19 09:05:00', 2),
+        insightBucketGroup($app, '2026-11-19 09:20:00', 6, ['fixup' => true, 'approved' => false]),
+        insightBucketGroup($app, '2026-11-19 09:40:00', 3),
+        insightBucketGroup($app, '2026-11-19 09:50:00', 4, ['merged' => false]),
+    ];
+    insightBucketGroup($app, '2026-11-19 11:30:00', 1, ['unknown' => true]);
+    insightBucketGroup($app, '2026-11-18 08:00:00', 5);
+    test()->travel(1)->seconds();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $tiles = ['tokens', 'tokens_per_merged_pr', 'wasted_share', 'lead_time_ms', 'delivery_time_ms', 'pr_first_pass', 'pr_merge_wait_ms', 'review_rounds'];
+    $summary = static fn (array $groups): array => Arr::only(app(TaskInsights::class)
+        ->aggregate('24h', app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey(array_map(static fn (Task $group): int => $group->id, $groups))), CarbonImmutable::now())
+        ->current->toArray(), $tiles);
+    $hourly = $this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data.hourly');
+    $daily = $this->getJson('/api/v1/task-insights?period=7d')->assertOk()->json('data.daily');
+
+    // Hour 09:00 is bucket 20 of the window from 2026-11-18 13:00; its medians are those of its own tasks: 3 of 2, 3 and 6 hours.
+    expect($hourly[20])->toMatchArray(['hour' => '2026-11-19T09:00:00+00:00', 'merged' => 3, 'not_merged' => 1, ...$summary($nine)])
+        ->and([$hourly[20]['tokens'], $hourly[20]['tokens_per_merged_pr'], $hourly[20]['lead_time_ms'], $hourly[20]['delivery_time_ms'], $hourly[20]['pr_merge_wait_ms']])
+        ->toBe([4 * 2601, intdiv(4 * 2601, 3), 3 * 3_600_000, 3 * 3_600_000 + 37 * 60_000, 20 * 60_000])
+        ->and([$hourly[20]['pr_first_pass'], $hourly[20]['review_rounds'], $hourly[20]['wasted_share']])->toEqual([2 / 3, 5 / 4, (3 * 900 + 2601) / (4 * 2601)])
+        // An hour with no task: merged 0 and every number null.
+        ->and($hourly[21])->toBe(['hour' => '2026-11-19T10:00:00+00:00', 'merged' => 0, 'not_merged' => 0, ...array_fill_keys($tiles, null)])
+        // The hour whose only task reported no tokens: its token numbers stay null, its times are known.
+        ->and($hourly[22])->toMatchArray(['merged' => 1, 'tokens' => null, 'tokens_per_merged_pr' => null, 'wasted_share' => null, 'lead_time_ms' => 3_600_000])
+        // The day holds the five tasks of 2026-11-19 alone: the median of 1, 2, 3 and 6 hours is 2, not the 3 of hour 09:00.
+        ->and($daily[6])->toMatchArray(['date' => '2026-11-19', 'merged' => 4, 'not_merged' => 1, 'lead_time_ms' => 2 * 3_600_000, 'tokens' => 4 * 2601])
+        ->and($daily[5])->toMatchArray(['date' => '2026-11-18', 'merged' => 1, 'lead_time_ms' => 5 * 3_600_000]);
 });
+
+it('gives every bucket of each period the tile numbers', function (string $period, string $list, int $count): void {
+    test()->travelTo(CarbonImmutable::parse('2026-11-19 12:07:00', 'UTC'));
+    app(TaskExtensionState::class)->enable();
+    insightBucketGroup(insightProject('app'), '2026-11-19 09:05:00', 2);
+    insightPeer();
+
+    $buckets = $this->getJson('/api/v1/task-insights?period='.$period)->assertOk()->json('data.'.$list);
+
+    expect($buckets)->toHaveCount($count)
+        ->and(array_unique(array_map(static fn (array $bucket): string => implode(',', array_keys($bucket)), $buckets)))->toBe([
+            ($list === 'daily' ? 'date' : 'hour').',merged,not_merged,tokens,tokens_per_merged_pr,wasted_share,lead_time_ms,delivery_time_ms,pr_first_pass,pr_merge_wait_ms,review_rounds',
+        ]);
+})->with([['24h', 'hourly', 24], ['7d', 'daily', 7], ['30d', 'daily', 30]]);
 
 it('keeps unknown tokens null in rows, records, summaries, weeks and breakdowns, and counts only the known ones in a mix', function (): void {
     test()->travelTo(CarbonImmutable::parse('2026-11-19 12:00:00'));

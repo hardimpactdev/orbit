@@ -1799,18 +1799,33 @@ The merge commit comes from the pull request that set `merged_at`: the watched p
 The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
-- `daily`: merged and not merged tasks for each day of a `7d` or `30d` period. It is empty for `24h`.
-- `hourly`: merged and not merged tasks for each hour of a `24h` period, oldest first. It is empty for `7d` and `30d`.
-- An `hourly` entry's `hour` is the ISO 8601 start of its hour.
+- `daily`: a bucket for each day of a `7d` or `30d` period, oldest first. It is empty for `24h`.
+- `hourly`: a bucket for each hour of a `24h` period, oldest first. It is empty for `7d` and `30d`.
 - `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
 - A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
 - A task's release is the last verified release that began before its `started_at`.
+
+A `daily` bucket's `date` is its UTC day, and an `hourly` bucket's `hour` is the ISO 8601 start of its hour. Each bucket holds `merged` and `not_merged`, and the numbers the insights tiles draw:
+
+| Bucket field | Tile |
+| --- | --- |
+| `tokens` | Tokens spent |
+| `tokens_per_merged_pr` | Tokens per task |
+| `wasted_share` | Wasted tokens |
+| `lead_time_ms`, `delivery_time_ms` | Delivery time, which shows `lead_time_ms` when `delivery_time_ms` is null |
+| `pr_first_pass` | PR first pass |
+| `pr_merge_wait_ms` | Merge wait |
+| `review_rounds` | Review rounds |
+
+Each is the summary field of the same name over the tasks that ended in that bucket alone, so a median is that bucket's exact median. A bucket number is null where the summary would give null: a bucket with no ended task has `merged` 0 and null numbers.
 
 ### Freshness
 
 The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
 
 Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
+
+A stored report whose `daily` or `hourly` buckets lack a field they hold now, stored before that field existed, is computed again from the records on its next read and stored.
 
 A stored `24h` report keeps the hour window of the refresh that computed it: a refresh at 12:55 stores the 24 hours up to 13:00, and the refresh at 13:00 moves the window to 14:00.
 
@@ -1824,7 +1839,7 @@ Records and reports stored before unknown tokens stayed null held 0 for them; a 
 
 `GET /api/v1/metrics/task-insights` exposes the stored reports in the Prometheus text format. The [Metrics role](/reference/metrics#task-insights-scrape)'s Prometheus scrapes it once a minute. The Gateway admits only the active Metrics Node, by its WireGuard address; any other caller gets `metrics.scraper_required` or `peer.identity_unknown` (HTTP 403). A scrape reads the stored reports and the Project codes, never the task tables or the records. Before the first refresh it answers HTTP 200 with no samples.
 
-Each gauge carries `project`, the Project's code or `all`, and `period`, and takes the value of the period's current summary. A null number has no sample.
+Each gauge carries `project`, the Project's code or `all`, and `period`, and takes the value of the period's current summary. A null number has no sample. The `weekly`, `daily`, and `hourly` series are endpoint-only: Prometheus keeps its own history of each gauge by scraping it.
 
 | Metric `orbit_task_insights_…` | Field |
 | --- | --- |

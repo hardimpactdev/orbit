@@ -124,15 +124,13 @@ final class TaskInsights
             }, range(0, self::Weeks - 1)),
             daily: $hourly ? [] : array_map(function (int $day) use ($from, $in): TaskInsightsDayData {
                 $start = $from->addDays($day);
-                $ended = $in($start, $start->addDay());
 
-                return new TaskInsightsDayData($start->toDateString(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
+                return TaskInsightsDayData::of($start->toDateString(), $this->summary($in($start, $start->addDay())));
             }, range(0, $days - 1)),
             hourly: $hourly ? array_map(function (int $hour) use ($from, $in): TaskInsightsHourData {
                 $start = $from->addHours($hour);
-                $ended = $in($start, $start->addHour());
 
-                return new TaskInsightsHourData($start->toIso8601String(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
+                return TaskInsightsHourData::of($start->toIso8601String(), $this->summary($in($start, $start->addHour())));
             }, range(0, 23)) : [],
             breakdowns: new TaskInsightsBreakdownsData(
                 model: $this->breakdown($current, 'model'),
