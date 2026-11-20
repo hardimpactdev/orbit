@@ -534,7 +534,7 @@ The minute pass stays the retry: it projects an end that the prompt projection c
 
 When serve refused a read of the prompt projection with `429`, the job runs once more after serve's `Retry-After` plus one second, so the end does not wait for the next pass. When serve refuses the read of a finished run's step times with `429`, `FillNativeRunStepTimes` reads them once more after the same wait.
 
-A kind listed in `ORBIT_ENGINE_KINDS` runs on the [Gateway engine](/reference/gateway-engine) instead, once every Node it touches supports the kind's primitives. Its steps live in `operation_engine_steps`, its `state.swamp_run_id` is `engine-<id>`, and `operation:show` shows its steps the same way. The engine records its end through the kind's own projection.
+A kind listed in `ORBIT_ENGINE_KINDS` runs on the [Gateway engine](/reference/gateway-engine) instead, once every Node it touches supports the kind's primitives. Its steps live in `operation_engine_steps`, its `state.swamp_run_id` is `engine-<id>`, and `operation:show` shows its steps the same way. The engine records its end through the kind's own projection. A kind's failure steps run only after another step failed, such as the stop of a copy whose create failed; its optional steps neither hold nor fail the Operation ([Steps and transitions](/reference/gateway-engine#steps-and-transitions)).
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 

@@ -249,7 +249,11 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
      */
     public static function observed(EngineRun $run): array
     {
-        $output = static fn (string $step): mixed => json_decode($run->output($step) ?? 'null', true);
+        $output = static function (string $step) use ($run): array {
+            $decoded = json_decode($run->output($step) ?? 'null', true);
+
+            return is_array($decoded) ? $decoded : [];
+        };
         $cleaned = $output('checkout')['cleaned'] ?? null;
         $club = $output('club_key')['club_key'] ?? null;
 

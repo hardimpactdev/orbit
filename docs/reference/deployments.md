@@ -133,6 +133,8 @@ The seed changes only after a successful deployment and determines the files a c
 
 A new development Instance on the same Node starts from the default: Orbit records the default's checkout as its `seed_path` and the default's `seed_commit`, and creates a linked worktree of the default's repository at that commit. [Setup steps](/reference/instance-setup#run-setup) receive the two values as `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and copy dependency folders from the checkout. The checkout can change while they copy, because a deployment can run at the same time. A copied folder is a quick start, not a matching set: setup must still run its locked installs. A default's own setup gets no seed.
 
+A container default's deployment removes the default's untracked files that Git does not ignore after its checkout, and names them in the result as `workspace_cleaned` ([The default keeps a clean tree](/reference/development-containers#the-default-keeps-a-clean-tree)). Before the seed, it places the files that every clone needs and records the [seed manifest](/reference/development-containers#the-seed-manifest).
+
 ## Deploy steps
 
 Development deploy steps run at the checkout's repository root, and production deploy steps at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
