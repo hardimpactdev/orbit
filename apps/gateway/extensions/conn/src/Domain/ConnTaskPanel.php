@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskStatus;
@@ -258,12 +259,13 @@ final readonly class ConnTaskPanel
             }
         }
 
-        return match (true) {
-            str_starts_with((string) $thread->model, 'claude-') => 'claude',
-            str_starts_with((string) $thread->model, 'gpt-') => 'codex',
-            str_starts_with((string) $thread->model, 'gemini-') => 'antigravity',
-            default => null,
-        };
+        foreach (TaskAgent::ModelPrefixes as $provider => $prefix) {
+            if (str_starts_with((string) $thread->model, $prefix)) {
+                return $provider;
+            }
+        }
+
+        return null;
     }
 
     /**

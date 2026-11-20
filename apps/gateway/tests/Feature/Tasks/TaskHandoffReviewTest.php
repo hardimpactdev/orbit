@@ -50,7 +50,7 @@ function reviewWorld(bool $gated = true): TaskDoneFixture
     $runtime = InstanceRuntime::query()->where('instance_id', $world->instance->id)->sole();
     $runtime->delete();
     InstanceRuntime::query()->create([...$runtime->only(['node_id', 'power_state', 'runtime_version', 'agent_version', 'instance_id', 'incus_project', 'container_name',
-        'bridge_address', 'seed_commit']), 't3_port' => 3800, 'container_server' => ContainerServer::T3]);
+        'bridge_address', 'seed_commit']), 't3_port' => 3800, 'container_server' => ContainerServer::T3, 'copy_providers' => ['claude', 'codex']]);
     reviewDelivery($world, false);
 
     return $world;

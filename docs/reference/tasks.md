@@ -1302,7 +1302,7 @@ Each role of a copy turn, implementer and reviewer, runs with a provider, a mode
 2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
 3. else the Gateway's setting.
 
-The model and the effort follow the same order, but a Project or Gateway value counts only for its own provider. The Project's provider is its own default, else the Gateway's. When no level pairs a value with the resolved provider, the provider's own default applies:
+The model and the effort follow the same order, but every level passes over a value that belongs to another provider. A model belongs to the provider whose prefix it has: `claude-`, `gpt-` or `gemini-`. An effort belongs to other providers when only they offer it, such as `medium` for Antigravity or `ultra` for Claude. Any other value counts. When no level gives one that fits, the provider's own default applies:
 
 | Provider | Own model | Own effort |
 | --- | --- | --- |
@@ -1310,7 +1310,9 @@ The model and the effort follow the same order, but a Project or Gateway value c
 | `codex` | `gpt-6.1-sol` | `medium` |
 | `antigravity` | `gemini-3.8-flash` | `high` |
 
-So a task that sets only `--implementer-provider=antigravity` runs `gemini-3.8-flash`, never the Project's Claude model. The task's own model and effort always count.
+So a task, a Project or the Gateway that switches only its provider to `antigravity` runs `gemini-3.8-flash` at `high`, never a Claude model left from before. A Claude or Codex model or effort that fits keeps counting, whichever level names the provider.
+
+Each task copy's runtime records the providers whose instances its settings got at its create. A copy made before Antigravity records Claude and Codex only, so an Antigravity thread there is refused with `tasks.copy_turn_unoffered`, and nothing is recorded. Start the task on a new copy to run Antigravity.
 
 | Gateway setting | Shipped default |
 | --- | --- |

@@ -116,7 +116,7 @@ final readonly class InstanceContainer
 
     /**
      * What a task copy's T3 can offer: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold
-     * them. Only a copy on the Conn Server offers Antigravity (self::copyProviders).
+     * them. A copy offers the providers its runtime records (self::offered).
      */
     public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::AntigravityEfforts];
 
@@ -244,6 +244,8 @@ final readonly class InstanceContainer
         return InstanceRuntime::query()->create([
             'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port, 'container_server' => $server,
+            // A task copy runs the Conn Server, so its create writes the instances of every copy provider (self::clone).
+            'copy_providers' => $instance->task_workspace_owner_id === null ? null : array_keys(self::CopyProviders),
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
             // A new nested-fleet default gets an inner volume, and a copy of a default with one gets its own copy of it; every other
@@ -594,14 +596,14 @@ final readonly class InstanceContainer
     }
 
     /**
-     * What the task copy's T3 offers on its server: self::CopyProviders, without Antigravity unless the server is the Conn Server,
-     * whose settings alone hold the Antigravity instance.
+     * What the task copy's T3 offers: self::CopyProviders of the providers whose instances its settings got at its create, as its
+     * runtime records them. A copy made before Antigravity offers only Claude and Codex.
      *
      * @return array<string, list<string>>
      */
-    public static function copyProviders(ContainerServer $server): array
+    public static function offered(InstanceRuntime $runtime): array
     {
-        return $server === ContainerServer::Conn ? self::CopyProviders : array_diff_key(self::CopyProviders, ['antigravity' => true]);
+        return array_intersect_key(self::CopyProviders, array_flip($runtime->copy_providers ?? []));
     }
 
     /**
