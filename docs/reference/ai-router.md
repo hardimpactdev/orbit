@@ -148,6 +148,8 @@ Orbit owns one list of the router's configuration: the `antigravity` channel of 
 | --- | --- |
 | `gemini-4-argon-high` | `gemini-4-argon`, `gemini-3.1-pro`, `gemini-3.1-pro-preview` |
 | `gemini-3.8-flash-high` | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.1-flash-lite-preview` |
+| `gemini-4-carbon-high` | `gemini-4-carbon` |
+| `gemini-4-hydrogen-xhigh` | `gemini-4-hydrogen` |
 
 Before each collection round, the collector reads `~/.config/cliproxyapi/config.yaml` of its own account, which is the router's account and file. It decides from that file, not from the router's management API: the router can hold a list in memory that its file lacks, and that list is lost on the next restart.
 
