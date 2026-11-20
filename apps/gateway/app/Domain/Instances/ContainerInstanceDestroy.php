@@ -9,6 +9,7 @@ use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRuntime;
 
 /** The container identity of the saved removal; no execution. */
@@ -29,12 +30,26 @@ final readonly class ContainerInstanceDestroy
         if ($runtime === null) {
             return;
         }
-        if ($instance->name === DefaultInstanceName::Name) {
+        if ($instance->name === DefaultInstanceName::Name && ! self::failedDefault($instance)) {
             $this->assertRemovableDefault($instance);
         }
         if (! $force) {
             throw new ResourceOperationException('instance.container_destroy_force_required', 'Non-default container removal currently requires --force. Guarded removal follows separately.', 409);
         }
+    }
+
+    /**
+     * A default whose create failed and is retained for a retry, or the removal of one: it never served, no Instance copies it, and
+     * its create names its removal (docs/reference/development-containers.md#destroy), so the operator list does not apply.
+     */
+    private static function failedDefault(Instance $instance): bool
+    {
+        if ($instance->status === InstanceState::Removing) {
+            return InstanceRemovalMember::query()->where('instance_id', $instance->id)->live()->where('runtime_published', false)->exists();
+        }
+
+        return in_array($instance->status, [InstanceState::Reserved, InstanceState::SourceResolved], true)
+            && $instance->failed_step !== null && $instance->error_code !== null;
     }
 
     /**

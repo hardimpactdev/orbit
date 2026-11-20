@@ -110,7 +110,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
                   | combine(executor_carried)
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
@@ -156,6 +156,20 @@
                        or failure_inactive_units | length > 0
                        or ansible_failed_result._ansible_no_log | default(false) | bool
                        or ansible_failed_task.no_log | default(false) | bool
+                 else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[-(failure_checkout_budget | int):])
+                                 if failure_checkout_stderr != '' and failure_checkout_budget | int > 0 else failure_checkout_head} }}
+            # A create's container phase names its failed task in every failure, as the Operation's detail
+            # (docs/reference/development-containers.md#create): a refusal adds its code, or for an unresolved bridge endpoint the bridge
+            # helper's words naming each host:port without a live Docker publication; any other failure adds the end of its stderr.
+            failure_container_bridge: >-
+              {{ (bridge_rule_write.stderr | default('') | string | trim)[-1000:]
+                 if ansible_failed_task.name | default('') == 'Refuse an unresolved bridge endpoint' else '' }}
+            failure_container_detail: >-
+              {{ {} if failure_phase != 'container' or failure_inactive_units | length > 0
+                       or ansible_failed_result._ansible_no_log | default(false) | bool
+                       or ansible_failed_task.no_log | default(false) | bool
+                 else {'detail': (ansible_failed_task.name | default('A container task')) ~ ': ' ~ failure_container_bridge}
+                   if failure_container_bridge != ''
                  else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[-(failure_checkout_budget | int):])
                                  if failure_checkout_stderr != '' and failure_checkout_budget | int > 0 else failure_checkout_head} }}
         - name: Fail the phase

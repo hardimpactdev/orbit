@@ -908,7 +908,7 @@ The stock image supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks 
 
 ### Apply and retry
 
-Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. `instance:mail:update` retains a real failure when its mail work fails.
+Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. A container step that did not succeed reports no `mail` and no mail warning: the mail work never ran. `instance:mail:update` retains a real failure when its mail work fails.
 
 Network changes precede unit writes. A failure after admission can leave the exact ACL rule, its confirmed bridge endpoint and some unit files in place; no application Process is restarted. A rerun keeps the admitted path, completes missing or changed units and enables both sockets.
 
@@ -1318,6 +1318,8 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 ### Create
 
+A default's failed `container` phase writes its refusal code and a `detail` into the run's `result.json`: the failed task with the refusal, or with the end of its stderr. The create's Operation takes that code as its `error_code` (the phase's generic failure stays `instance.create_container_failed`) and the detail as its failure's recorded stderr (`stderr_recorded: true`). An unresolved bridge endpoint names each `host:port` that has no live Docker publication, as `instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434`. A clone's `clone-container` step already keeps its own stderr. A container default runs no Project setup steps; when its Project has setup steps and no development deploy steps, the create warns with `instance.setup_steps_ignored` (step `setup`) and does not fail.
+
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
 Then one step, `clone-t3`, runs until the thread is usable. It runs the `checkout` part of the workspace phase beside T3: the branch, the checkout mark and `.env`. Beside it, the step checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 part never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs.
@@ -1634,6 +1636,8 @@ Another Project gets only the connection keys, and its app must keep its keys un
 A clone refuses with `instance.database_clone_unsupported` when the default has more than one Valkey target. The same code refuses a default whose Valkey connection has no Orbit-made user, or whose user grants pub/sub. Destroy deletes the clone's user; the default's user stays.
 
 ### Destroy
+
+A default whose create failed and is retained for a retry (`reserved` or `source_resolved`, with its failed step) is removable without the operator list: it never served, and no Instance copies it. Its create's `recovery.destroy` is `available: true`, and `instance:destroy --force` removes its container, ACL, bridge endpoint records and Route, and its databases by the removal's own rules.
 
 `orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal follows separately. A call without force refuses with `instance.container_destroy_force_required`.
 

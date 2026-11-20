@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { CompletePhases, completeResult } from "./complete_result.ts";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
-import { containerFailure, CreateArgs, createResult, removeRun, routeDeferred, Step } from "./result.ts";
+import { containerFailure, CreateArgs, defaultContainerFailure, createResult, removeRun, routeDeferred, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -50,7 +50,8 @@ export const behavior = {
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
                     // The phase owns redaction; preserve its public evidence in the Operation.
-                    const failure = containerFailure(file ?? await resultFile(args.folder));
+                    const written = file ?? await resultFile(args.folder);
+                    const failure = result.failed_step === "container" ? defaultContainerFailure(written) : containerFailure(written);
                     if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                 }
                 // A ready create's run folder goes here, so no cleanup step runs after the result (docs/cli/instance/container/create.mmd).

@@ -212,6 +212,26 @@ it('destroys a listed container default without a copy and frees its records', f
         ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
 })->with(['inner volume' => true, 'no inner volume' => false]);
 
+it('destroys an unlisted container default whose create failed and is retained for a retry', function (InstanceState $state): void {
+    $default = destroyDefault();
+    $default->update(['status' => $state, 'failed_step' => 'container', 'error_code' => 'instance.container_endpoint_unresolved']);
+    config(['instances.default_destroy_projects' => []]);
+
+    $operation = app(StartInstanceDestroyAction::class)->execute($default->refresh(), true);
+    expect($operation->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$default->id, 'acl' => 'instance-'.$default->id])
+        ->and($default->fresh()->status)->toBe(InstanceState::Removing);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
+    expect($default->fresh())->toBeNull()
+        ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
+})->with(['reserved' => InstanceState::Reserved, 'source resolved' => InstanceState::SourceResolved]);
+
+it('keeps an unlisted container default refused while its create runs or after it served', function (): void {
+    $default = destroyDefault();
+    config(['instances.default_destroy_projects' => []]);
+    $default->update(['status' => InstanceState::SourceResolved, 'failed_step' => null, 'error_code' => null]);
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('operation.kind_unavailable');
+});
+
 it('requires force for non-default cleanup until guarded removal is built', function (bool $migrated): void {
     $clone = destroyClone(destroyDefault(), $migrated);
     $before = Operation::query()->count();

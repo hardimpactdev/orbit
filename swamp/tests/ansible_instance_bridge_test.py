@@ -541,6 +541,26 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue()), {'error_code': 'instance.bridge_busy'})
             self.assertEqual(list(root.rglob('*.json')), [])
 
+    def test_cli_refusal_names_every_unresolved_docker_publication_before_any_acl_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            incoming = {**intent(1), 'endpoints': [{'host': '10.44.0.7', 'port': 3306, 'docker': True},
+                                                   {'host': '10.44.0.7', 'port': 5434, 'docker': True},
+                                                   {'host': '10.44.0.8', 'port': 6379, 'docker': True}]}
+            output, errors = io.StringIO(), io.StringIO()
+            with patch.object(bridge.sys, 'argv', ['instance_bridge.py', '--state-dir', directory, '--intent']), \
+                    patch.object(bridge.sys, 'stdin', io.StringIO(json.dumps(incoming))), \
+                    patch.object(bridge.subprocess, 'check_output', return_value=nat()), \
+                    patch.object(bridge, 'api', side_effect=AssertionError('ACL touched before every publication resolved')), \
+                    redirect_stdout(output), redirect_stderr(errors):
+                with self.assertRaises(SystemExit) as result:
+                    bridge.main()
+            self.assertEqual(result.exception.code, 1)
+            self.assertEqual(json.loads(output.getvalue()), {'error_code': 'instance.container_endpoint_unresolved',
+                                                             'endpoints': ['10.44.0.7:5434', '10.44.0.8:6379']})
+            self.assertEqual(errors.getvalue().strip(), 'instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434, 10.44.0.8:6379')
+            self.assertEqual(list((root / 'endpoints').glob('*.json')), [])
+
     def test_nat_and_incus_timeouts_release_the_lock_and_record_named_failure(self):
         for command in ['nat', 'incus']:
             with self.subTest(command=command), tempfile.TemporaryDirectory() as directory:

@@ -1257,6 +1257,30 @@ it('renders database removal fence recovery with PostgreSQL boolean keywords', f
         ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
 });
 
+it('records a default container phase refusal from its written result as the failure stderr', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $operation = containerCreate($project, $node);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+    $detail = 'Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434';
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.container_endpoint_unresolved',
+        'failure' => ['failed_step' => 'container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'container',
+            'error_code' => 'instance.container_endpoint_unresolved', 'detail' => $detail],
+    ]);
+    $operation->refresh();
+    expect($operation->error_code)->toBe('instance.container_endpoint_unresolved')
+        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'container', 'detail' => $detail, 'stderr_recorded' => true])
+        ->and($operation->result)->not->toHaveKey('detail')
+        ->and($operation->result['recovery']['destroy']['available'])->toBeTrue()
+        ->and(Instance::query()->findOrFail($operation->target_id)->error_code)->toBe('instance.container_endpoint_unresolved');
+});
+
 it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit, string $status): void {
     $node = containerDefaultNode();
     $node->update(['tld' => 'beast.test']);
@@ -1291,8 +1315,7 @@ it('names retained create resources and proves the advertised recovery paths', f
         'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
             'reuse_original_options' => true, 'new_idempotency_key' => true],
         'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
-            'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-            ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+            'available' => true, 'options' => ['yes' => true, 'force' => true]],
     ])->and($instance->fresh()->status)->toBe($hasCommit ? InstanceState::SourceResolved : InstanceState::Reserved)
         ->and($instance->fresh()->failed_step)->toBe($phase)
         ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending');
@@ -1304,7 +1327,7 @@ it('names retained create resources and proves the advertised recovery paths', f
         ->and($repeat->input['route_id'])->toBe($routeId)
         ->and($instance->runtime()->firstOrFail()->id)->toBe($runtime->id);
     expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))
-        ->toBe($clone ? 'admitted' : 'operation.kind_unavailable');
+        ->toBe('admitted');
 })->with([
     'clone-container' => [true, 'clone', false, 'failed'],
     'clone-t3, its checkout' => [true, 'workspace', false, 'failed'],
@@ -1352,8 +1375,7 @@ it('names retained resources when a container create is cancelled before its run
             'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
                 'reuse_original_options' => true, 'new_idempotency_key' => true],
             'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
-                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+                'available' => true, 'options' => ['yes' => true, 'force' => true]],
         ]])
         ->and($instance->fresh()->status)->toBe(InstanceState::Reserved)
         ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending')

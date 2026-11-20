@@ -82,6 +82,21 @@ export function containerFailure(raw: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * The public part of a container default's failed `container` phase, from the run's result.json, or null: what containerFailure
+ * keeps, else the phase's refusal code (its generic `instance.container_container_failed` stays the create's own
+ * `instance.create_container_failed`) and its detail, the failed task with the refusal or the end of its stderr. The command step keeps
+ * no stderr of a failed playbook, so the Gateway records the detail as the failure's stderr and redacts it again.
+ */
+export function defaultContainerFailure(raw: unknown): Record<string, unknown> | null {
+    const kept = containerFailure(raw);
+    const failure = z.object({ error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), detail: z.string().optional() }).safeParse(raw);
+    if (!failure.success) return kept;
+    const { error_code, detail } = failure.data;
+    const refusal = kept ?? (error_code === "instance.container_container_failed" ? {} : { error_code });
+    return { ...refusal, ...(detail ? { detail: detail.slice(-4096) } : {}) };
+}
+
+/**
  * The public part of a nested-fleet clone's failed `fleet` phase, from the run's result.json, or null: the fleet phase's own code
  * (`instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`), why it
  * failed in the phase's own safe words (the Doctor body for a readiness wait), and each drift line. The Gateway redacts the detail again.
@@ -311,7 +326,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const failed = outcomes.find(([, , failure]) => failure) ??
         outcomes.find(([, finished]) => !finished);
     const server = failed === undefined && container?.server ? JSON.parse(container.server) : null;
-    const mail = (intent.container as {mail?: unknown} | null)?.mail != null
+    // The mail work runs inside the container step: a step that did not succeed says nothing about mail, so no mail result is reported.
+    const mail = (intent.container as {mail?: unknown} | null)?.mail != null && container?.launch === "succeeded"
         ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
         : null;
     const environment = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneEnvironment(container?.workspace) : null;
@@ -334,6 +350,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const warnings = [
         ...(mail?.status === "failed" ? [{code: "instance.mail_update_failed", step: "mail"}] : []),
         ...(publication === "failed" ? [{code: "instance.create_route_failed", step: "route"}] : []),
+        // A container default runs no Project setup steps; with no development deploy steps either, nothing installed its code.
+        ...(intent.setup_steps_ignored === true ? [{code: "instance.setup_steps_ignored", step: "setup"}] : []),
     ];
     const result = {
         instance_id: intent.instance_id,

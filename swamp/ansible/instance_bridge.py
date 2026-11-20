@@ -32,7 +32,11 @@ MAX_HEALTH_WARNINGS = 20
 
 
 class PolicyError(Exception):
-    pass
+    """A public refusal code; `endpoints` names the admitted host:port publications it could not resolve."""
+
+    def __init__(self, code, endpoints=()):
+        super().__init__(code)
+        self.endpoints = list(endpoints)
 
 
 def resolve(endpoints, nat):
@@ -41,8 +45,9 @@ def resolve(endpoints, nat):
     resolved = set()
     for endpoint in endpoints:
         host, port = str(ipaddress.IPv4Address(endpoint['host'])), int(endpoint['port'])
+        unresolved = PolicyError('instance.container_endpoint_unresolved', [host + ':' + str(port)])
         if not 1 <= port <= 65535:
-            raise PolicyError('instance.container_endpoint_unresolved')
+            raise unresolved
         if not endpoint['docker']:
             resolved.add((host, port))
             continue
@@ -54,12 +59,12 @@ def resolve(endpoints, nat):
                     and nat_value('--dport') == str(port) and nat_value('-j') == 'DNAT'):
                 target = nat_value('--to-destination').split(':')
                 if len(target) != 2 or not target[1].isdigit():
-                    raise PolicyError('instance.container_endpoint_unresolved')
+                    raise unresolved
                 if not 1 <= int(target[1]) <= 65535:
-                    raise PolicyError('instance.container_endpoint_unresolved')
+                    raise unresolved
                 matches.append((str(ipaddress.IPv4Address(target[0])), int(target[1])))
         if len(matches) != 1:
-            raise PolicyError('instance.container_endpoint_unresolved')
+            raise unresolved
         resolved.add(matches[0])
     return sorted(resolved)
 
@@ -389,6 +394,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
     resolved = {}
     active = []
     warnings = []
+    unresolved = []
     for endpoint in endpoints:  # Admission stays strict; refresh isolates unjudgeable publications.
         if withdraw:
             previous = recorded.get((endpoint['host'], endpoint['port']), {})
@@ -400,9 +406,11 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         else:
             try:
                 targets = resolve([endpoint], nat)
-            except PolicyError:
+            except PolicyError as error:
                 if incoming is not None:
-                    raise
+                    # Admission refuses, after naming every admitted publication it cannot resolve.
+                    unresolved += error.endpoints
+                    continue
                 warnings.append({'code': 'instance.container_endpoint_unresolved',
                                  'host': endpoint['host'], 'port': endpoint['port']})
                 continue
@@ -410,6 +418,8 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         endpoint['translated'] = {'host': host, 'port': port}
         resolved[(host, port)] = max(resolved.get((host, port), 0), endpoint['admitted_at'])
         active.append(endpoint)
+    if unresolved:
+        raise PolicyError('instance.container_endpoint_unresolved', unresolved)
     endpoints = active
     changed = 0  # ACL writes that admit or withdraw something; the files count once, by admitted_state.
     # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
@@ -447,8 +457,10 @@ def main():
         print(json.dumps({'changed': changed}))
     except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
         code = failure_code(error)
-        print(json.dumps({'error_code': code}))
-        print(str(error), file=sys.stderr)
+        endpoints = getattr(error, 'endpoints', [])
+        # The refusal names each publication without a live Docker DNAT rule, so the phase's failure says which one.
+        print(json.dumps({'error_code': code, **({'endpoints': endpoints} if endpoints else {})}))
+        print(str(error) + (': no live Docker publication for ' + ', '.join(endpoints) if endpoints else ''), file=sys.stderr)
         raise SystemExit(1) from error
 
 

@@ -2619,6 +2619,23 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a create refused at an unresolved Docker publication names the failed task and the endpoint in its result",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5434, docker: true}];
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "");
+      const result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_endpoint_unresolved",
+        detail: "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved: no live Docker publication for 10.44.0.7:5434"}, result.output);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
   name: "a copied seed with an unguarded extra local NIC refuses before the clone starts",
   ignore: !hasAnsible,
   fn() {
@@ -2925,7 +2942,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/nested-image.json`, JSON.stringify(record));
       const result = f.run("container");
       assert(!result.ok, result.output);
-      assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable"});
+      assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable",
+        detail: "Refuse a nested-fleet create while its image build has failed: instance.nested_fleet_image_unavailable"});
       // Only the read of the container ran: no ACL, no container, no init.
       assertEquals(incusCalls(f).map((call) => call.slice(0, 2)), [["query", "--"]]);
       assertEquals(f.state().containers?.["instance-7"], undefined);
@@ -3417,7 +3435,8 @@ for (const unsafe of unsafeTransfers) {
         nestedClub(f);
         const result = f.run("container", {ORBIT_CLUB_KEY: CLUB, ...unsafe.env}, unsafe.extra);
         assert(!result.ok, result.output);
-        assertEquals(f.result(), {error_code: "instance.nested_club_key_unsafe_transfer"});
+        assertEquals(f.result(), {error_code: "instance.nested_club_key_unsafe_transfer",
+          detail: "Refuse a key transfer that writes the module arguments on the Node: instance.nested_club_key_unsafe_transfer"});
         assertEquals(f.state().club_key_runs, undefined);
         assertEquals(filesHolding(f, CLUB), []);
       } finally { f.cleanup(); }
@@ -3435,7 +3454,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({...f.state(), run_fstype: "zfs"}));
       const result = f.run("container", {ORBIT_CLUB_KEY: CLUB});
       assert(!result.ok, result.output);
-      assertEquals(f.result(), {error_code: "instance.nested_club_key_not_tmpfs"});
+      assertEquals(f.result(), {error_code: "instance.nested_club_key_not_tmpfs",
+        detail: "Refuse a /run that a snapshot would hold: instance.nested_club_key_not_tmpfs"});
       assertEquals(f.state().club_key_runs, undefined);
     } finally { f.cleanup(); }
   },

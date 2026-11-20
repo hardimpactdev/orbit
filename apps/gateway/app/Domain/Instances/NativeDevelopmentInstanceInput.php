@@ -85,6 +85,10 @@ final readonly class NativeDevelopmentInstanceInput
             // The program a clone's first step runs: it stages the launch copy's public part, then runs the container part.
             ...($stage === null ? [] : ['clone_launcher' => $stage->launcher()]),
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
+            // A container default runs no Project setup steps; when it has no development deploy steps either, nothing installs, so
+            // its create warns with `instance.setup_steps_ignored` (docs/reference/development-containers.md#create).
+            'setup_steps_ignored' => $container !== null && ! $clone && (ValidatedData::object($club['container'])['steps'] ?? []) === []
+                && InstanceLifecycleInput::members(['members' => $programs['steps']]) !== [],
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
             // A clone's own Valkey user: the clone run's second `operation-database-create` child.
             'server_valkey' => $valkey === null ? null : array_diff_key($valkey, ['secrets' => true]),
