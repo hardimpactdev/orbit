@@ -18,6 +18,10 @@ struct StartInput {
     name: String,
     /// The default the copy came from: a source whose files Incus shifted needs the copy's files shifted back.
     source: String,
+    /// The Instance bridge: every NIC on it must be guarded before the copy starts.
+    network: String,
+    /// The one NIC the copy has on the bridge.
+    nic: String,
     /// The presented machine name, `<instance>.<project slug>`.
     hostname: String,
     /// The access plan's private names: `<host> <name>` lines in Orbit's block of `/etc/hosts`.
@@ -41,7 +45,8 @@ struct PrivateName {
 /// # Errors
 ///
 /// `instance.start_input_invalid`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`,
-/// `instance.container_start_failed` or `instance.clone_private_names_failed`.
+/// `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.container_start_failed` or
+/// `instance.clone_private_names_failed`.
 pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
     let input: StartInput =
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.start_input_invalid", error.to_string()))?;
@@ -50,6 +55,7 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
     let copy = incus
         .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
         .ok_or_else(|| Failure::new("instance.container_start_failed", "the copy does not exist"))?;
+    guard(&copy, &input.network, &input.nic)?;
     let mut changes = 0;
     if copy.get("status").and_then(Value::as_str) == Some("Stopped") {
         if unshift(&incus, &input, &copy)? {
@@ -63,7 +69,13 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
 }
 
 fn check(input: &StartInput) -> Result<(), String> {
-    for (field, value) in [("project", &input.project), ("name", &input.name), ("source", &input.source)] {
+    for (field, value) in [
+        ("project", &input.project),
+        ("name", &input.name),
+        ("source", &input.source),
+        ("network", &input.network),
+        ("nic", &input.nic),
+    ] {
         if !crate::name(value) {
             return Err(format!("{field} is not a name"));
         }
@@ -83,6 +95,35 @@ fn check(input: &StartInput) -> Result<(), String> {
         let address = name.host.parse::<std::net::IpAddr>().is_ok();
         if !address || !host(&name.name) {
             return Err(format!("{} {} is not a private name", name.host, name.name));
+        }
+    }
+    Ok(())
+}
+
+/// Each Instance NIC accepts only its own IPv4 and MAC address.
+const FILTERS: [(&str, &str); 2] = [("security.ipv4_filtering", "true"), ("security.mac_filtering", "true")];
+
+/// The copy's effective NICs on the bridge, before it starts: the one expected NIC, an ACL on each with default egress
+/// reject and never the bridge's union ACL, and the address filters on a NIC with its own address.
+fn guard(copy: &Value, network: &str, nic: &str) -> Result<(), Failure> {
+    let devices = copy.get("expanded_devices").and_then(Value::as_object).cloned().unwrap_or_default();
+    let field = |device: &Value, key: &str| device.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+    let unsafe_nic = |detail: String| Failure::new("instance.container_network_unsafe", detail);
+    let expected = devices.get(nic).ok_or_else(|| unsafe_nic(format!("{nic} is missing")))?;
+    if field(expected, "type") != "nic" || field(expected, "network") != network {
+        return Err(unsafe_nic(format!("{nic} is not a NIC on {network}")));
+    }
+    for (name, device) in &devices {
+        if field(device, "type") != "nic" || (field(device, "network") != network && field(device, "parent") != network) {
+            continue;
+        }
+        let acls = field(device, "security.acls");
+        let acls: Vec<&str> = acls.split(',').map(str::trim).filter(|acl| !acl.is_empty()).collect();
+        if name != nic || acls.is_empty() || field(device, "security.acls.default.egress.action") != "reject" || acls.contains(&format!("{network}-egress").as_str()) {
+            return Err(unsafe_nic(format!("{name} needs an effective ACL with default egress reject and no bridge union ACL")));
+        }
+        if !field(device, "ipv4.address").is_empty() && FILTERS.iter().any(|(key, value)| field(device, key) != *value) {
+            return Err(Failure::new("instance.nic_filters_missing", format!("{name} lacks the address filters")));
         }
     }
     Ok(())
@@ -221,6 +262,28 @@ impl crate::shift::Map for Range {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn copy(eth0: &Value) -> Value {
+        serde_json::json!({"expanded_devices": {"root": {"type": "disk"}, "eth0": eth0}})
+    }
+
+    #[test]
+    fn only_a_guarded_filtered_nic_passes() {
+        let good = serde_json::json!({"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.9",
+            "security.acls": "orbitinst0-proxy,instance-9", "security.acls.default.egress.action": "reject",
+            "security.ipv4_filtering": "true", "security.mac_filtering": "true"});
+        assert_eq!(guard(&copy(&good), "orbitinst0", "eth0"), Ok(()));
+        let with = |key: &str, value: Value| {
+            let mut nic = good.clone();
+            nic[key] = value;
+            guard(&copy(&nic), "orbitinst0", "eth0").map_err(|failure| failure.code)
+        };
+        assert_eq!(with("security.acls", "".into()), Err("instance.container_network_unsafe"));
+        assert_eq!(with("security.acls", "orbitinst0-egress".into()), Err("instance.container_network_unsafe"));
+        assert_eq!(with("security.acls.default.egress.action", "allow".into()), Err("instance.container_network_unsafe"));
+        assert_eq!(with("security.mac_filtering", "false".into()), Err("instance.nic_filters_missing"));
+        assert_eq!(with("network", "other".into()), Err("instance.container_network_unsafe"));
+    }
 
     #[test]
     fn hosts_get_the_machine_line_and_the_private_names_block_and_keep_every_other_line() {
