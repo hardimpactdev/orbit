@@ -22,6 +22,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\LifecyclePhase;
@@ -39,6 +40,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -474,3 +476,18 @@ describe('the container PHP runtime development SSR origin', function (): void {
         expect(json_encode($operation->input, JSON_THROW_ON_ERROR))->not->toContain('INERTIA_SSR_HOT_URL');
     });
 });
+
+it('warns a container default create that its Project setup steps are ignored only when it has no development deploy steps', function (bool $deploy): void {
+    swampVaultStandIn();
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    ProjectLifecycleStep::query()->create(['project_id' => $project->id, 'phase' => LifecyclePhase::Setup->value, 'position' => 1,
+        'name' => 'install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 300]);
+    if ($deploy) {
+        ProjectDevelopmentDeployStep::query()->create(['project_id' => $project->id, 'name' => 'install', 'position' => 1, 'command' => 'bun install', 'required' => true, 'timeout_seconds' => 300]);
+    }
+
+    $intent = app(NativeDevelopmentInstanceInput::class)->create(containerCreate($project, $node))['intent'];
+
+    expect($intent['setup_steps_ignored'])->toBe(! $deploy)->and($intent['setup_steps'])->toBe([]);
+})->with(['no development deploy steps' => false, 'development deploy steps' => true]);

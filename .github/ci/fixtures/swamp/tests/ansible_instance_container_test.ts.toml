@@ -58,6 +58,8 @@ cases = [
   "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
   "start refuses an unguarded extra bridge NIC beside guarded eth0",
   "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes",
+  "a create refused at an unresolved Docker publication names the failed task and its refusal in its result",
+  "a create's failed container task keeps its name and phase code: a private one only its name, a long one its head and stderr tail",
   "a copied seed with an unguarded extra local NIC refuses before the clone starts",
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read",
   "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish",
@@ -118,13 +120,13 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 9280
+cost = 9300
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 115
+slices = 117
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -203,6 +205,8 @@ inputs = [
   "start refuses a NIC with bridge union ACL before starting the container" = 47 # hosted run 43787856522: 40.4s x 1.15, rounded up
   "start refuses an unguarded extra bridge NIC beside guarded eth0" = 26 # hosted run 43787856522: 22.5s x 1.15, rounded up
   "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 43 # hosted run 43787856522: 37.1s x 1.15, rounded up
+  "a create refused at an unresolved Docker publication names the failed task and its refusal in its result" = 12 # ESTIMATE: 5s local observation x 2.1, rounded up + 1s
+  "a create's failed container task keeps its name and phase code: a private one only its name, a long one its head and stderr tail" = 8 # ESTIMATE: 3s local observation x 2.1, rounded up + 1s
   "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 96 # hosted run 43787856522: 83.1s x 1.15, rounded up
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 106 # hosted run 43787856522: 91.4s x 1.15, rounded up
   "PHP ini write and try-restart precede nonblocking Process start, and readiness waits for an active queued job to finish" = 95 # hosted run 43787856522: 82.5s x 1.15, rounded up

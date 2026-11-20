@@ -106,7 +106,7 @@ A timed-out GET or ambiguous PUT gets one readback under the same lock; a confir
 
 The internal `--withdraw --reconcile` writer mode retains persisted translated tuples without resolving stopped Docker publications. Readers deduplicate each tuple by its latest admission. Host convergence and explicit writer withdrawal compact or remove records, retaining admissions at or after their captured time. A systemd oneshot refreshes resolved endpoint rules at boot after Docker and Incus, then every 15 seconds. It only adds rules. An unresolved or duplicate publication leaves its saved allow and record unchanged while other publications still refresh.
 
-The records are Node-wide: every container on the bridge shares them, so a destroy removes none. A confirmed record removes the older records of its host and port, so the Node keeps one record per endpoint. The newest record always stays, also when an attach admitted earlier runs later. The shared admission itself goes only at host convergence or an explicit writer withdrawal.
+The records are Node-wide: every container on the bridge shares them, so a destroy removes none, also of a failed default; host convergence owns their removal. A confirmed record removes the older records of its host and port, so the Node keeps one record per endpoint. The newest record always stays, also when an attach admitted earlier runs later. The shared admission itself goes only at host convergence or an explicit writer withdrawal.
 
 Each confirmed endpoint removal also removes its obsolete refresh records under the same writer lock, including confirmations from bounded readback after a timeout. Retained shared endpoints and admissions at or after the reconciliation capture stay eligible. A Docker record without a saved translated tuple refuses reconciliation before any ACL mutation. Partial reconciliation persists `reconcile.pending`: ordinary refresh cannot clear its failure health, and a refresh after a crash reports `instance.bridge_state_unresolved`. A subsequent successful full reconciliation removes that marker and clears the warning.
 
@@ -908,7 +908,7 @@ The stock image supplies `/usr/lib/systemd/systemd-socket-proxyd`; setup checks 
 
 ### Apply and retry
 
-Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. `instance:mail:update` retains a real failure when its mail work fails.
+Create and clone treat mail failures as advisory: the container launch succeeds and workspace, T3 and registration continue. The receipt carries `mail.status=failed` with a bounded reason and `warnings: [{code: "instance.mail_update_failed", step: "mail"}]`. A Node without the main Mailpit adds no warning. A container step that did not succeed reports no `mail` and no mail warning: the mail work never ran. `instance:mail:update` retains a real failure when its mail work fails.
 
 Network changes precede unit writes. A failure after admission can leave the exact ACL rule, its confirmed bridge endpoint and some unit files in place; no application Process is restarted. A rerun keeps the admitted path, completes missing or changed units and enables both sockets.
 
@@ -1318,6 +1318,10 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 ### Create
 
+A default's failed `container` phase writes its code and a `detail` into the run's `result.json`: the failed task's name, its message (a refusal's code) bounded to 1,000 characters, and the end of its stderr, at most 4,096 characters. A private (`no_log`) task gives only its name. The create's result bounds the detail to 4,096 UTF-8 bytes, and the Gateway bounds it again after redaction: a longer one keeps its head, which names the task, and its tail, cut between whole characters only.
+
+The create's Operation takes that code as its `error_code`, a refusal's or the phase's own `instance.container_container_failed`, and the detail as its failure's recorded stderr (`stderr_recorded: true`). Any other step's `detail`, such as a proof copy's CI hold guidance, stays in the result. An unresolved bridge endpoint reads `Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved`. A clone's `clone-container` step already keeps its own stderr. A container default runs no Project setup steps; when its Project has setup steps and no development deploy steps, the create warns with `instance.setup_steps_ignored` (step `setup`) and does not fail.
+
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
 Then one step, `clone-t3`, runs until the thread is usable. It runs the `checkout` part of the workspace phase beside T3: the branch, the checkout mark and `.env`. Beside it, the step checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 part never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs.
@@ -1504,7 +1508,9 @@ A failed or cancelled create keeps its reservation, runtime, and any container, 
 
 A run that succeeded can still fail the create in the Gateway: when the [baseline read](#workspace-work-state) fails, the create fails with `instance.workspace_baseline_unavailable` and `failed_step: register`. The T3 server is not recorded and no completion starts. The run already ended without its container stop, so the container keeps running; a retry runs the create again over it, and every phase of the create accepts a running copy.
 
-Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. A resume also issues new T3 sessions. When it succeeds, it admits a new completion, also when an earlier completion of the clone failed or never ran. The `Orbit Gateway` session of the failed run stays valid in T3 until the cleanup after the next renewal revokes it; its `Orbit Swamp` session stays valid until it ends.
+Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`.
+
+A failed or cancelled default create reports the same retry path, with destroy available: a default retained for a retry is removable without the operator list ([Destroy](#destroy)). A resume also issues new T3 sessions. When it succeeds, it admits a new completion, also when an earlier completion of the clone failed or never ran. The `Orbit Gateway` session of the failed run stays valid in T3 until the cleanup after the next renewal revokes it; its `Orbit Swamp` session stays valid until it ends.
 
 A resume never moves a branch that this Instance checked out. After its first checkout, the workspace phase checks that the branch and the commit are the fetched ones. Then it writes the mark `/var/lib/orbit/workspace-checkout`, owned by root, with the Instance id and that commit. A default never writes this mark, and a mark that names another Instance does not count. So the first run checks out the fetched commit, even when the copy is already on a branch with the same name.
 
@@ -1635,9 +1641,11 @@ A clone refuses with `instance.database_clone_unsupported` when the default has 
 
 ### Destroy
 
+A default retained for a retry after its create failed or was cancelled (`reserved` or `source_resolved`) is removable without the operator list while no create Operation owns it: it never served, and no Instance copies it. A retry owns it again, so a destroy then refuses with `operation.kind_unavailable` and never cancels the retry. The create's `recovery.destroy` says `available` by the same check, and `instance:destroy --force` removes its container, ACL and Route, and its databases by the removal's own rules.
+
 `orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal follows separately. A call without force refuses with `instance.container_destroy_force_required`.
 
-A container default refuses with `operation.kind_unavailable`, except a default whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` and that no Instance copies (else `instance.default_has_copies`). The operator lists only the Project of a nested-fleet trial default, made with an [inner volume](#the-inner-volume) or before it; the code does not check the kind of Project.
+A container default refuses with `operation.kind_unavailable`, except a default retained for a retry that no create owns, and a default whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` and that no Instance copies (else `instance.default_has_copies`). The operator lists only the Project of a nested-fleet trial default, made with an [inner volume](#the-inner-volume) or before it; the code does not check the kind of Project.
 
 The same removal deletes its container and its seed snapshots, and its inner volume when it has one; a stopped container needs no start. Only the list tells a trial default from the first nested-fleet default: the operator never lists that Project, and while any copy of it exists the copy check refuses too.
 

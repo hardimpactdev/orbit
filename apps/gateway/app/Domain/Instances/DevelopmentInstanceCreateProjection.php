@@ -15,6 +15,7 @@ use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ContainerWorkspaceRead;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -66,6 +67,17 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
+            if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null)) {
+                // A default's container phase writes its failed task and its refusal or stderr tail into the run's result file, because
+                // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again. Any
+                // other step's detail, such as a proof copy's CI hold guidance, stays in the result.
+                if (trim($result['detail']) !== '') {
+                    $native = ValidatedData::object($data['failure'] ?? []);
+                    $data['failure'] = app(NativeStepFailure::class)->written(
+                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation, head: true);
+                }
+                unset($result['detail']);
+            }
             if (is_array($operation->input['model_route'] ?? null)) {
                 $result['model_route'] = $operation->input['model_route'];
             }
@@ -236,7 +248,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         if ($retained === null) {
             return null;
         }
-        $clone = ($container['clone'] ?? null) !== null;
+
+        // The receipt names the destroy that admission takes: a clone's, or a retained default's once no create owns it
+        // (ContainerInstanceDestroy::failedDefault, docs/reference/development-containers.md#destroy).
+        $available = $retained->name !== DefaultInstanceName::Name || ContainerInstanceDestroy::failedDefault($retained, $operation);
 
         return [
             'state' => 'retained_for_retry',
@@ -247,8 +262,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             ],
             'destroy' => [
                 'command' => 'instance:destroy', 'instance_id' => $operation->target_id,
-                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
+                'available' => $available, 'options' => ['yes' => true, 'force' => true],
+                ...($available ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
             ],
         ];
     }

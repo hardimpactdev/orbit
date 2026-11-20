@@ -110,7 +110,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
                   | combine(executor_carried)
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
@@ -158,6 +158,22 @@
                        or ansible_failed_task.no_log | default(false) | bool
                  else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[-(failure_checkout_budget | int):])
                                  if failure_checkout_stderr != '' and failure_checkout_budget | int > 0 else failure_checkout_head} }}
+            # A create's container phase names its failed task and keeps its phase code in every failure, as the Operation's detail
+            # (docs/reference/development-containers.md#create): the task's name, then its message (a refusal's code) bounded to 1000
+            # characters, then the end of its stderr, at most 4096 characters in all, so the head survives. A private task gives only
+            # its name, never its arguments or output.
+            failure_container_private: >-
+              {{ ansible_failed_result._ansible_no_log | default(false) | bool or ansible_failed_task.no_log | default(false) | bool }}
+            failure_container_head: >-
+              {{ ansible_failed_task.name | default('A container task')
+                 if failure_container_private | bool
+                 else (ansible_failed_task.name | default('A container task')) ~ ': ' ~ failure_message[:1000] }}
+            failure_container_budget: "{{ 4094 - failure_container_head | length }}"
+            failure_container_detail: >-
+              {{ {} if failure_phase != 'container' or failure_inactive_units | length > 0
+                 else {'detail': (failure_container_head ~ ': ' ~ failure_checkout_stderr[-(failure_container_budget | int):])
+                                 if not failure_container_private | bool and failure_checkout_stderr != ''
+                                    and failure_container_budget | int > 0 else failure_container_head} }}
         - name: Fail the phase
           tags: [always]
           ansible.builtin.fail:
