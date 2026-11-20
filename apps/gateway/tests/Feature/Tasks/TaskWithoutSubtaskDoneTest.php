@@ -167,7 +167,7 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
         ->assertJsonPath('data.work.status', 'completed')->assertJsonPath('data.subtasks', []);
     $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
 
-    $insights = app(TaskInsights::class)->report(30, null, CarbonImmutable::now())->current;
+    $insights = app(TaskInsights::class)->report('30d', null, CarbonImmutable::now())->current;
     expect($insights->tasks)->toBe(1)->and($insights->handoffFirstTry)->toBe(1.0);
 });
 
