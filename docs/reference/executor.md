@@ -237,17 +237,45 @@ It answers `applied` with the number of changed files. Codes: `dns.input_invalid
 
 The `instance` family (enabled by the `app-dev` role) makes a clone of a default's seed, the work of the Swamp `clone-container` step. The Gateway renders every value. The Node checks each value's shape, builds every command itself and moves the copy's files only through Incus. No action runs a shell or delivered code.
 
-- **`instance.clone`** (target: the Node) makes the copy's network ACL, or rewrites its rules when they differ. When the copy does not exist, it copies the admitted seed snapshot, or the newest seed when a deployment replaced it. The copy gets its config, its root disk (no size on a btrfs pool), an `eth0` with its own address, both ACLs, default egress and ingress reject, and the address filters. Last comes the T3 proxy device. A retake whose `next-` snapshot is not renamed yet refuses. It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
-- **`instance.prepare`** (target: the copy) places a stopped copy's files before its first start. The seed's Orbit Process, Schedule and Node service units that are not the copy's go, and the copy gets its own machine id. Then each item goes in, in order:
-  - a file, inline or from a blob for a secret;
-  - JSON merged over the copy's own file;
-  - a link;
-  - the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
-  - an NSS store entry.
+#### instance.clone
 
-  A running copy is left alone. It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
-- **`instance.start`** (target: the copy) refuses a copy whose NICs on the Instance bridge are not guarded. On a Node without idmapped mounts, the seed's files are shifted, so a stopped copy's owners, file capabilities and ACLs are shifted back first. A failed shift deletes the copy, so a retry copies again. Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block. It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
-- **`instance.fetch_branch`** (target: the Node) asks the origin for the Instance's branch. When the origin has it, the branch is fetched into the Node's bare mirror under `/var/lib/orbit/instance-repositories`. Only https is allowed, with no hooks, no redirects and no system or global Git config. The credential comes as a blob. It is written root-only for the two Git calls and removed after them. It answers `{"commit"}`, or null when the branch starts at the seed. Codes: `instance.fetch_input_invalid`, `instance.fetch_credential_missing`, `instance.branch_fetch_failed`.
+`instance.clone` targets the Node. It makes the copy's network ACL, or rewrites its rules when they differ. When the copy does not exist, it copies the admitted seed snapshot. When a deployment replaced that seed, it copies the newest seed. A retake whose `next-` snapshot is not renamed yet refuses.
+
+The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Last comes the T3 proxy device.
+
+It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
+
+#### instance.prepare
+
+`instance.prepare` targets the copy. It places a stopped copy's files before its first start. A running copy is left alone.
+
+First the seed's Orbit Process, Schedule and Node service units that are not the copy's go. The copy gets its own machine id. Then each item goes in, in order:
+
+- a file, inline or from a blob for a secret;
+- JSON merged over the copy's own file;
+- a link;
+- the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
+- an NSS store entry.
+
+It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+
+#### instance.start
+
+`instance.start` targets the copy. It refuses a copy whose NICs on the Instance bridge are not guarded.
+
+On a Node without idmapped mounts, the seed's files are shifted. There a stopped copy's owners, file capabilities and ACLs are shifted back first. A failed shift deletes the copy, so a retry copies again.
+
+Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block.
+
+It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
+
+#### instance.fetch_branch
+
+`instance.fetch_branch` targets the Node. It asks the origin for the Instance's branch. When the origin has it, the branch is fetched into the Node's bare mirror under `/var/lib/orbit/instance-repositories`.
+
+Git may use only https, with no hooks, no redirects and no system or global config. The credential comes as a blob. It is written root-only for the two Git calls and removed after them.
+
+It answers `{"commit"}`, or null when the branch starts at the seed. Codes: `instance.fetch_input_invalid`, `instance.fetch_credential_missing`, `instance.branch_fetch_failed`.
 
 ## The Gateway signer and the event
 
