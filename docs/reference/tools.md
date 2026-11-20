@@ -409,7 +409,9 @@ Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_N
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on Linux and macOS. On Linux it uses the Node's existing `/home/linuxbrew/.linuxbrew` prefix, and a cask must ship a Linux build: its `x86_64_linux` variation must clear the cask's macOS `depends_on`. A macOS-only cask is `unsupported_artifact`. Linux arm64 has no cask tag, so a cask there fails with `tool.version_probe_failed`. The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
+`brew-cask` supports official Homebrew casks on Linux and macOS. On Linux it uses the Node's existing `/home/linuxbrew/.linuxbrew` prefix, and a cask must ship a Linux build: its `x86_64_linux` variation must clear the cask's macOS `depends_on`. A macOS-only cask is `unsupported_artifact`. Linux arm64 has no cask tag, so a cask there fails with `tool.version_probe_failed`.
+
+The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
 
 Before install or update, the Gateway reads `brew info --json=v2 --cask` for that coordinate. The cask must come from the `homebrew/cask` tap, use an `https` URL, and name itself with the same unqualified token. The Gateway then applies one refusal, in this order: an unsupported artifact, interactive or administrator authorization, the checksum policy, then an unreadable version.
 
