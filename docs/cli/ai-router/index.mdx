@@ -27,6 +27,7 @@ Enabling the extension deploys nothing, and disabling it removes nothing. `ai-ro
 | `ai-router:account:enable ACCOUNT` | Enable one CLIProxyAPI account. |
 | `ai-router:account:disable ACCOUNT` | Disable one CLIProxyAPI account. |
 | [`ai-router:model:list`](/cli/ai-router/model-list) | List models from the collector snapshot. |
+| [`ai-router:task-guard`](/cli/ai-router/task-guard) | Apply the task VM guard, or take it off with `--remove`. |
 | [`ai-router:account:enable`](/cli/ai-router/account-enable) | Enables one account. |
 | [`ai-router:account:disable`](/cli/ai-router/account-disable) | Disable one CLIProxyAPI account. |
 
@@ -38,7 +39,7 @@ Every command accepts `--json`.
 | --- | --- |
 | `extension.disabled` | The `ai-router` extension is disabled at the Gateway. |
 | `extension.state_unknown` | The CLI could not read the extension state from the Gateway. |
-| `input.confirmation_required` | `ai-router:destroy` ran without `--yes` where it cannot ask. |
+| `input.confirmation_required` | `ai-router:destroy` or `ai-router:task-guard --remove` ran without `--yes` where it cannot ask. |
 | `input.cancelled` | The operator declined the `ai-router:destroy` question. |
 | `extension.required` | `ai-router:destroy` ran while the `tasks` extension is enabled. |
 | `ai_router.key_required` | `ai-router:setup` has no `--cliproxy-management-key-file`. |

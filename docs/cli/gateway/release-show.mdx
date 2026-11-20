@@ -14,4 +14,4 @@ orbit gateway:release:show [<release>] [--json]
 
 JSON returns the record. `gateway.release_not_found` means no record matches, and `gateway.release_id_invalid` means the selector has another form.
 
-For a verified release, `phases.fleet.status` is `current` when every eligible Node has applied the agent pin and its selected role inputs. With `--json`, `phases.fleet.nodes` shows each Node, its Operation IDs and role outcomes. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+For a verified release, `phases.fleet.status` is `current` when every eligible Node has applied the agent pin and its selected role inputs. With `--json`, `phases.fleet.nodes` shows each Node, its Operation IDs and role outcomes. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout). A [follow-up phase](/reference/gateway-recovery#follow-up-phases), such as `phases.ai_router_guard`, has its own `status`, `error_code` and Operation ID.
