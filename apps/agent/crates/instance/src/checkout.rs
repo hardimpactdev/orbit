@@ -122,15 +122,15 @@ fn branch(system: &impl System, incus: &Incus<'_, impl System>, files: &Files<'_
 /// Git in the copy's workspace as its writer, with no hooks and no file system monitor.
 fn git(incus: &Incus<'_, impl System>, input: &CheckoutInput, args: &[&str]) -> Result<String, Failure> {
     let (writer, group) = (AGENT.to_string(), input.group.to_string());
-    let mut argv: Vec<String> = [
+    let mut command: Vec<String> = [
         "--project", &input.project, "exec", &input.name, "--user", &writer, "--group", &group, "--cwd", &input.workspace, "--env", "HOME=/home/agent", "--",
         GIT, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
     ]
     .iter()
     .map(|part| (*part).to_owned())
     .collect();
-    argv.extend(args.iter().map(|part| (*part).to_owned()));
-    incus.run(&argv, None)
+    command.extend(args.iter().map(|part| (*part).to_owned()));
+    incus.run(&command, None)
 }
 
 /// Git never takes the `.env`: one line in the checkout's own `info/exclude`, written once with the file's owner.
