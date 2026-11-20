@@ -80,7 +80,9 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'protocol' => ValidatedData::stringList($container['protocols'])[0],
                 'credential' => ['blob' => ['content' => app(InstanceGitHubReadTokens::class)->line($operation)]]],
             'prepare' => [...$where, 'units' => array_map(static fn (mixed $unit): string => ValidatedData::string(ValidatedData::object($unit)['name']),
-                self::rows($container['processes'] ?? [])), 'process_ids' => [], 'files' => $this->files($operation, $instance, $container, $clone)],
+                self::rows($container['processes'] ?? [])), 'process_ids' => [],
+                // The clone's files are kilobytes and an order holds 4 KB: the list goes as one blob, its contents inline.
+                'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance, $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
             'start' => [...$where, 'source' => $clone['source'], 'network' => $container['network'], 'nic' => 'eth0',
                 'hostname' => ValidatedData::string(ValidatedData::object($container['machine_name'])['hostname']),
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
@@ -205,7 +207,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
      */
     private function files(Operation $operation, Instance $instance, array $container, array $clone): array
     {
-        $blob = static fn (string $content): array => ['blob' => ['content' => $content]];
+        // Inside the one `files_blob`, every content is inline.
+        $blob = static fn (string $content): string => $content;
         $items = [];
         foreach (self::rows($clone['boot_files'] ?? []) as $raw) {
             $file = ValidatedData::object($raw);
@@ -215,12 +218,12 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 isset($file['entry']) => ['nss' => array_intersect_key($file, array_flip(['home', 'directories', 'path', 'entry', 'uid', 'gid', 'mode',
                     'directory_mode', 'library', 'version']))],
                 default => ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
-                    'blob' => $blob(ValidatedData::string($file['content'] ?? ''))]],
+                    'content' => $blob(ValidatedData::string($file['content'] ?? ''))]],
             };
         }
         $model = ValidatedData::object($clone['model_environment']);
         $content = app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(ContainerModelRoute::class)->key());
-        $items[] = ['file' => ['path' => $model['path'], 'uid' => $model['uid'], 'gid' => $model['gid'], 'mode' => $model['mode'], 'blob' => $blob($content), 'parents' => true]];
+        $items[] = ['file' => ['path' => $model['path'], 'uid' => $model['uid'], 'gid' => $model['gid'], 'mode' => $model['mode'], 'content' => $blob($content), 'parents' => true]];
         $condition = ValidatedData::object($clone['t3'])['condition'] ?? null;
         $files = array_values(array_filter(self::rows($clone['files'] ?? []), static fn (mixed $file): bool => (ValidatedData::object($file)['before_start'] ?? false) === true));
         usort($files, static fn (mixed $a, mixed $b): int => (int) (ValidatedData::object($a)['path'] === $condition) <=> (int) (ValidatedData::object($b)['path'] === $condition));
@@ -230,13 +233,13 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             $item = isset($file['json'])
                 ? ['json' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'], 'json' => (object) ValidatedData::object($file['json'])]]
                 : ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
-                    'blob' => $blob(ValidatedData::string($file['content'] ?? '')), 'parents' => true]];
+                    'content' => $blob(ValidatedData::string($file['content'] ?? '')), 'parents' => true]];
             $file['path'] === $condition ? $last[] = $item : $items[] = $item;
         }
         $agent = $clone['agent_instructions'] ?? null;
         if (is_array($agent)) {
             $items[] = ['folder' => ['path' => $agent['folder'], 'files' => array_map(static fn (mixed $file): array => ['path' => ValidatedData::object($file)['path'],
-                'blob' => $blob(ValidatedData::string(ValidatedData::object($file)['content']))], self::rows($agent['files'] ?? []))]];
+                'content' => $blob(ValidatedData::string(ValidatedData::object($file)['content']))], self::rows($agent['files'] ?? []))]];
         }
         foreach (self::rows($clone['links'] ?? []) as $raw) {
             $link = ValidatedData::object($raw);
@@ -245,7 +248,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         foreach (self::rows($container['mail_units'] ?? []) as $raw) {
             $unit = ValidatedData::object($raw);
             $name = ValidatedData::string($unit['name']);
-            $items[] = ['file' => ['path' => '/etc/systemd/system/'.$name, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'blob' => $blob(ValidatedData::string($unit['content']))]];
+            $items[] = ['file' => ['path' => '/etc/systemd/system/'.$name, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $blob(ValidatedData::string($unit['content']))]];
             if (str_ends_with($name, '.socket')) {
                 $items[] = ['link' => ['path' => '/etc/systemd/system/sockets.target.wants/'.$name, 'target' => '/etc/systemd/system/'.$name,
                     'owner' => ['uid' => 0, 'gid' => 0]]];
@@ -259,7 +262,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             $assignments = implode(' ', array_map(static fn (string $key): string => $key.'='.ValidatedData::string($proxy[$key] ?? ''), ['NO_PROXY', 'no_proxy']));
             foreach (['/etc/systemd/system.conf.d/99-orbit-node-services.conf' => "[Manager]\nDefaultEnvironment={$assignments}\n",
                 '/etc/profile.d/99-orbit-node-services.sh' => "export {$assignments}\n"] as $path => $text) {
-                $after[] = ['file' => ['path' => $path, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'blob' => $blob(self::ProxyMarker.$text)]];
+                $after[] = ['file' => ['path' => $path, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $blob(self::ProxyMarker.$text)]];
             }
         }
 
