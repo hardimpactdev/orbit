@@ -47,7 +47,22 @@ The probes wait for the sites alone: they reach each Node by its WireGuard addre
 
 A failed step records the chart's step name, such as `Install cert, publish site-3`, so the Route gets the same `failed_step` and error code as on Swamp.
 
-A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` and `vpn` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `instance.create` and `route.update`, keep their Swamp flows.
+A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` and `vpn` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `route.update`, keep their Swamp flows.
+
+### instance.create
+
+The engine runs a container clone's create from its admitted intent (`direct_provisioning.container`). Its steps are the executor's `instance` family ([Executor: The instance family](/reference/executor#the-instance-family)):
+
+1. `clone` and `fetch`, on the Node, side by side: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule; and the branch into the Node's mirror. The Gateway mints the read credential for `fetch` and sends it as a blob.
+2. `prepare`, on the copy: its files before the first start. The list goes as one blob, because a clone's files are kilobytes and an order holds 4 KB.
+3. `start`, on the copy: the network guard, the start and the copy's names.
+4. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render.
+5. `t3`, on the copy: T3 running, its project, and its two sessions sealed to the Gateway's key.
+
+The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion: its result says `route_publication: deferred`, with the reason `engine_completion`. The completion runs on Swamp, as before.
+
+A clone the engine does not cover starts on Swamp: a nested-fleet default's copy, a task copy, a branch selection, attached Node services or Processes, a CI hold, an already active create, or a firewall row other than a TCP route allow. A default's own create stays on Swamp.
+
 
 An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 
