@@ -143,6 +143,8 @@ it('copies the default\'s inner volume and guards the nested copy\'s exact confi
         'snapshot' => $operation->input['direct_provisioning']['container']['clone']['snapshot'], 'device' => 'inner-pool', 'volume_source' => 'inner-2',
         'volume' => 'inner-6', 'pool' => 'orbit-instances', 'size' => '30GiB'])
         ->and($flow->input($operation, 'clone', $run))->not->toHaveKey('inner_volume')
+        ->and($flow->input($operation, 'clone', $run)['exact_seed'])->toBeTrue()
+        ->and($flow->input(engineCloneOperation(), 'clone', $run))->not->toHaveKey('exact_seed')
         ->and($start['volume'])->toBe(['device' => 'inner-pool', 'name' => 'inner-6'])
         ->and((array) $start['allowed']['config'])->toBe($operation->input['direct_provisioning']['container']['config'])
         // The admitted root is the intent's own root device, as the clone wrote it.
@@ -167,12 +169,12 @@ it('names a task copy\'s clean and the Club key\'s word in the create\'s result,
         ->and(InstanceCreateEngineFlow::observed(new EngineRun(288, ['club_key' => $step('{"club_key":null}'), 'checkout' => $step('{"commit":"a"}')], 0, null)))->toBe([]);
 });
 
-it('makes the default\'s one spare from the same seed the copy takes, under the copy\'s own builder name', function (): void {
+it('makes the default\'s one spare from the same seed the copy takes', function (): void {
     $operation = engineCloneOperation(nestedTaskCopy(...));
 
     expect(app(InstanceCreateEngineFlow::class)->input($operation, 'spare', new EngineRun(288, [], 0, null)))->toBe(['project' => 'orbit-instances-nested',
         'source' => 'instance-2', 'snapshot' => $operation->input['direct_provisioning']['container']['clone']['snapshot'], 'volume_source' => 'inner-2',
-        'volume' => 'inner-6', 'pool' => 'orbit-instances']);
+        'pool' => 'orbit-instances']);
 });
 
 /** A run whose named steps are done with the given outputs. */

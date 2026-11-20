@@ -245,17 +245,19 @@ The `instance` family (enabled by the `app-dev` role) makes a clone of a default
 
 The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Then comes the T3 proxy device, and last the copy's ufw route rules, such as the one from WireGuard to its T3 port; ufw skips a rule that is there.
 
+A nested-fleet copy's clone has `exact_seed`: it copies only the admitted seed, as `instance.copy_volume` copies its volume, and refuses a replaced one with `instance.default_seed_moved`, so its container and volume come from one take.
+
 It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
 
 #### instance.copy_volume
 
-`instance.copy_volume` targets the Node. It makes the inner volume of a nested-fleet copy ([The inner volume](/reference/development-containers#the-inner-volume)). It reads the seed as `instance.clone` does.
+`instance.copy_volume` targets the Node. It makes the inner volume of a nested-fleet copy ([The inner volume](/reference/development-containers#the-inner-volume)). It copies only the admitted seed, as `instance.clone` with `exact_seed` does; a replaced seed refuses with `instance.default_seed_moved`.
 
-- A spare of that seed is taken by a rename ([Spare volumes](/reference/development-containers#spare-volumes)).
+- A spare of that snapshot take is taken by a rename ([Spare volumes](/reference/development-containers#spare-volumes)).
 - When another create took the spare first, the volume is copied.
 - The default's volume must hold a snapshot with the seed's name, or it refuses with `instance.default_seed_incomplete`.
 - A volume of the copy's name that its disk does not name yet is left from a failed run. It is made again.
-- Spares of an older seed go.
+- Spares of any other take go.
 
 The volume records its size. `instance.start` names it in the copy's disk.
 
@@ -263,7 +265,7 @@ It answers `{"snapshot", "spare"}`. Codes: `instance.copy_volume_input_invalid`,
 
 #### instance.spare_volume
 
-`instance.spare_volume` targets the Node's part for one default. It makes that default's one spare from its current seed when none exists: a copy under the create's own builder name `next-<volume>`, renamed into place when complete. A spare that another builder placed first wins, and the builder goes. Spares of an older seed go. It answers `{"spare": "made" | "present"}`. Codes: `instance.spare_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.spare_volume_failed`.
+`instance.spare_volume` targets the Node's part for one default. It makes that default's one spare from the admitted seed's volume snapshot when none of that take exists: a copy under the default's builder name `build-<volume>`, renamed into place when complete. A builder left by an interrupted run goes first; a builder whose snapshot was retaken during the copy goes too. A spare that another builder placed first wins. Spares of any other take go. It answers `{"spare": "made" | "present" | "retaken"}`. Codes: `instance.spare_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.spare_volume_failed`.
 
 #### instance.prepare
 

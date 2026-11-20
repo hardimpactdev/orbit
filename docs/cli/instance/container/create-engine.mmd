@@ -42,6 +42,7 @@ sequenceDiagram
   %%> Needs prepare and copy_volume. The app-user swap runs only on an older seed.
   par after start
     EN->>C: Deliver the Club key<br/>club_key · tmpfs · nested only
+    %%> club_key and checkout lock the same copy, so they run one after the other.
   and
     EN->>C: Start Node services<br/>services
     %%> Later work: today the completion applies them.

@@ -190,6 +190,9 @@ struct CloneInput {
     /// The `ufw` route rules that let the Node's `WireGuard` side reach the copy, such as T3's port.
     #[serde(default)]
     routes: Vec<RouteRule>,
+    /// Copy only the admitted seed: a nested-fleet copy's container and volume must come from one seed take.
+    #[serde(default)]
+    exact_seed: bool,
 }
 
 /// What `instance.copy_volume` makes: a nested-fleet copy's own inner volume (docs/reference/development-containers.md#the-inner-volume).
@@ -268,7 +271,7 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     let (devices, snapshot) = if let Some(found) = instance {
         (found.get("devices").cloned().unwrap_or(Value::Null), None)
     } else {
-        let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+        let snapshot = if input.exact_seed { exact(&incus, &input.project, &input.source, &input.snapshot)? } else { seed(&incus, &input.project, &input.source, &input.snapshot)? };
         copy(&incus, &input, &snapshot)?;
         (Value::Null, Some(snapshot))
     };
@@ -438,6 +441,12 @@ fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &
     }
 }
 
+/// The admitted seed alone, or `instance.default_seed_moved` when a deployment replaced it.
+fn exact(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<String, Failure> {
+    let snapshot = seed(incus, project, source, admitted)?;
+    if snapshot == admitted { Ok(snapshot) } else { Err(Failure::new("instance.default_seed_moved", format!("{admitted} was replaced by {snapshot}"))) }
+}
+
 /// The copy of `snapshot`, with the copy's config, its root disk and a NIC that admits only the copy's own address.
 fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> Result<(), Failure> {
     let pool = incus
@@ -474,12 +483,13 @@ fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> R
     incus.run(&argv, None).map(drop)
 }
 
-/// Makes a nested-fleet copy's own inner volume from the default's volume snapshot of the seed that `instance.clone` copies,
-/// read the same way: the admitted seed, or the newest one a deployment left. A spare made from that same seed
-/// ([`spare_volume`]) is taken by a rename, which Incus does at once; a copy rewrites the whole volume. A rename that fails,
-/// because another create took the spare first, falls back to the copy. Spares of an older seed go. A volume of the copy's
-/// name that its disk does not name yet is left from a failed run, and is made again. The volume records its size, which the
-/// start guard requires. `instance.start` then names it in the copy's disk.
+/// Makes a nested-fleet copy's own inner volume from the default's volume snapshot of the admitted seed, the one that
+/// `instance.clone` copies (`exact_seed`); a seed that a deployment replaced refuses with `instance.default_seed_moved`. A
+/// spare made from that same snapshot take ([`spare_volume`]) is taken by a rename, which Incus does at once; a copy rewrites
+/// the whole volume. A rename that fails, because another create took the spare first, falls back to the copy. Spares of any
+/// other take go, also of an older take of the same seed name. A volume of the copy's name that its disk does not name yet is
+/// left from a failed run, and is made again. The volume records its size, which the start guard requires. `instance.start`
+/// then names it in the copy's disk.
 /// Answers `{"snapshot": <the seed, or null for a volume in use>, "spare": <whether a spare was taken>}`.
 ///
 /// # Errors
@@ -503,17 +513,16 @@ pub fn copy_volume(system: &impl System, input: &Value) -> Result<String, Failur
     if attached == Some(input.volume.as_str()) {
         return Ok(serde_json::json!({"snapshot": null, "spare": false}).to_string());
     }
-    let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+    let snapshot = exact(&incus, &input.project, &input.source, &input.snapshot)?;
     let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
     let names = pool.volumes()?;
     if names.contains(&input.volume) {
         pool.change(&["delete", &input.pool, &input.volume])?;
     }
-    let spare = spare_name(&input.volume_source, &snapshot);
+    let spare = spare_name(&input.volume_source, &pool.take(&input.volume_source, &snapshot)?);
     // Incus renames a volume or refuses: a spare goes to one create only.
     let taken = names.contains(&spare) && pool.change(&["rename", &input.pool, &spare, &input.volume]).is_ok();
     if !taken {
-        pool.seeded(&input.volume_source, &snapshot)?;
         pool.change(&["copy", &format!("{}/{}/{snapshot}", input.pool, input.volume_source), &format!("{}/{}", input.pool, input.volume)])?;
     }
     pool.drop_stale(&names, &input.volume_source, &spare);
@@ -531,16 +540,16 @@ struct SpareInput {
     source: String,
     snapshot: String,
     volume_source: String,
-    /// The copy whose create makes the spare: its builder volume is `next-<volume>`, so two builders never share one.
-    volume: String,
     pool: String,
 }
 
-/// Makes the one spare of a default's inner volume, `spare-<volume>-<seed>`, from its current seed, when none exists, so the
-/// next copy takes it by a rename instead of a copy ([`copy_volume`]). The spare is built under the copy's own builder
-/// name and renamed into place when complete, so no create ever takes a spare that is still being copied. A spare that another
-/// builder placed first wins, and this one goes. Spares of an older seed go.
-/// Answers `{"spare": "made" | "present"}`.
+/// Makes the one spare of a default's inner volume, `spare-<volume>-<take>`, from the admitted seed's volume snapshot, when
+/// none of that take exists, so the next copy takes it by a rename instead of a copy ([`copy_volume`]). `<take>` names the
+/// snapshot's take, its name and creation time, so a retake of the same seed name is another take. The spare is built under
+/// the default's one builder name, `build-<volume>`, and renamed into place when complete, so no create ever takes a spare
+/// that is still being copied. A builder that an interrupted run left goes first. A builder whose snapshot was retaken during
+/// the copy goes too. A spare that another builder placed first wins. Spares of any other take go.
+/// Answers `{"spare": "made" | "present" | "retaken"}`.
 ///
 /// # Errors
 ///
@@ -548,26 +557,30 @@ struct SpareInput {
 /// `instance.default_seed_incomplete` or `instance.spare_volume_failed`.
 pub fn spare_volume(system: &impl System, input: &Value) -> Result<String, Failure> {
     let input: SpareInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.spare_volume_input_invalid", error.to_string()))?;
-    let checked = [&input.project, &input.source, &input.volume_source, &input.volume, &input.pool].iter().all(|value| name(value)) && input.volume != input.volume_source;
-    if !checked {
+    if ![&input.project, &input.source, &input.volume_source, &input.pool].iter().all(|value| name(value)) {
         return Err(Failure::new("instance.spare_volume_input_invalid", "a name is not valid"));
     }
     seed_name(&input.snapshot).map_err(|detail| Failure::new("instance.spare_volume_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.spare_volume_failed" };
-    let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+    let snapshot = exact(&incus, &input.project, &input.source, &input.snapshot)?;
     let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
     let names = pool.volumes()?;
-    let spare = spare_name(&input.volume_source, &snapshot);
+    let take = pool.take(&input.volume_source, &snapshot)?;
+    let spare = spare_name(&input.volume_source, &take);
     pool.drop_stale(&names, &input.volume_source, &spare);
     if names.contains(&spare) {
         return Ok(serde_json::json!({"spare": "present"}).to_string());
     }
-    pool.seeded(&input.volume_source, &snapshot)?;
-    let builder = format!("next-{}", input.volume);
+    let builder = builder_name(&input.volume_source);
     if names.contains(&builder) {
         pool.change(&["delete", &input.pool, &builder])?;
     }
     pool.change(&["copy", &format!("{}/{}/{snapshot}", input.pool, input.volume_source), &format!("{}/{builder}", input.pool)])?;
+    if pool.take(&input.volume_source, &snapshot)? != take {
+        // The seed was retaken while the copy ran: the builder may hold either take.
+        let _ = pool.change(&["delete", &input.pool, &builder]);
+        return Ok(serde_json::json!({"spare": "retaken"}).to_string());
+    }
     if pool.change(&["rename", &input.pool, &builder, &spare]).is_err() {
         let _ = pool.change(&["delete", &input.pool, &builder]);
         return Ok(serde_json::json!({"spare": "present"}).to_string());
@@ -575,9 +588,23 @@ pub fn spare_volume(system: &impl System, input: &Value) -> Result<String, Failu
     Ok(serde_json::json!({"spare": "made"}).to_string())
 }
 
-/// The spare of a default's inner volume made from one seed.
-fn spare_name(volume: &str, snapshot: &str) -> String {
-    format!("spare-{volume}-{snapshot}")
+/// The spare of a default's inner volume made from one snapshot take.
+fn spare_name(volume: &str, take: &str) -> String {
+    format!("spare-{volume}-{take}")
+}
+
+/// The one volume under which a default's spare is built.
+fn builder_name(volume: &str) -> String {
+    format!("build-{volume}")
+}
+
+/// A SHA-256 in lowercase hex.
+pub(crate) fn sha256(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes).iter().fold(String::new(), |mut out, byte| {
+        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{byte:02x}"));
+        out
+    })
 }
 
 /// The custom volumes of one pool in one project.
@@ -603,20 +630,22 @@ impl<S: System> Pool<'_, S> {
         self.incus.change(&command)
     }
 
-    /// The default's volume holds a snapshot of the seed's name. A container seed without its volume half was taken before
-    /// the pair existed: the default's next deployment takes the pair.
-    fn seeded(&self, volume: &str, snapshot: &str) -> Result<(), Failure> {
+    /// The take of the default's volume snapshot of the seed's name: 12 hex digits of its name and creation time, so a retake
+    /// of the same name is another take. A container seed without its volume half was taken before the pair existed
+    /// (`instance.default_seed_incomplete`): the default's next deployment takes the pair.
+    fn take(&self, volume: &str, snapshot: &str) -> Result<String, Failure> {
         let seeds = self.incus.query(&format!("/1.0/storage-pools/{}/volumes/custom/{volume}/snapshots?project={}&recursion=1", self.name, self.project)).ok().flatten();
-        let held = seeds
+        seeds
             .as_ref()
             .and_then(Value::as_array)
-            .is_some_and(|rows| rows.iter().any(|row| row.get("name").and_then(Value::as_str).and_then(|name| name.rsplit('/').next()) == Some(snapshot)));
-        if held { Ok(()) } else { Err(Failure::new("instance.default_seed_incomplete", format!("{volume} has no {snapshot}"))) }
+            .and_then(|rows| rows.iter().find(|row| row.get("name").and_then(Value::as_str).and_then(|name| name.rsplit('/').next()) == Some(snapshot)))
+            .map(|row| sha256(format!("{snapshot}\n{}", row.get("created_at").and_then(Value::as_str).unwrap_or_default()).as_bytes())[..12].to_owned())
+            .ok_or_else(|| Failure::new("instance.default_seed_incomplete", format!("{volume} has no {snapshot}")))
     }
 
-    /// Spares of the default's volume made from another seed: no create takes them any more. A failed delete waits for the next.
+    /// Spares of the default's volume made from another take: no create takes them any more. A failed delete waits for the next.
     fn drop_stale(&self, names: &[String], volume: &str, spare: &str) {
-        let prefix = format!("spare-{volume}-seed-");
+        let prefix = format!("spare-{volume}-");
         for stale in names.iter().filter(|name| name.starts_with(&prefix) && *name != spare) {
             let _ = self.change(&["delete", self.name, stale]);
         }

@@ -8,7 +8,8 @@ targets, the trust bundle's certificates, the NSS store's lines and the trust mo
 default's Orbit units that no clone keeps, and whether the workspace is clean as a task copy's clean reads it. A clone's prepare
 reads the manifest once and places only what differs (docs/reference/executor.md#instanceprepare).
 
-Prints one JSON line: `{"placed": <count>, "units": <count>, "workspace_clean": <bool>}`. Names only.
+Prints one JSON line: `{"placed": <count>, "units": <count>}`. Names only. With the argument `clean`, it only records whether the
+workspace is clean, right before the snapshot with the Processes stopped, and prints `{"workspace_clean": <bool>}`.
 """
 
 import hashlib
@@ -195,12 +196,21 @@ def workspace_clean(workspace):
 
 def main():
     data = json.load(sys.stdin)
+    if sys.argv[1:] == ["clean"]:
+        # Right before the snapshot, with the Processes stopped: the manifest's word on the tree is what the seed holds.
+        with open(MANIFEST) as stream:
+            manifest = json.load(stream)
+        manifest["workspace_clean"] = workspace_clean(data["workspace"])
+        write(MANIFEST, (json.dumps(manifest, sort_keys=True) + "\n").encode(), 0, 0, "0644")
+        print(json.dumps({"workspace_clean": manifest["workspace_clean"]}))
+        return
     for item in data["items"]:
         place(item, data["ca"])
-    manifest = {"version": 1, **record(data["items"], data["ca"]), "units": units(), "workspace_clean": workspace_clean(data["workspace"])}
+    # Not clean until the seed phase checks the tree right before the snapshot (`clean`).
+    manifest = {"version": 1, **record(data["items"], data["ca"]), "units": units(), "workspace_clean": False}
     os.makedirs(os.path.dirname(MANIFEST), exist_ok=True)
     write(MANIFEST, (json.dumps(manifest, sort_keys=True) + "\n").encode(), 0, 0, "0644")
-    print(json.dumps({"placed": len(data["items"]), "units": len(manifest["units"]), "workspace_clean": manifest["workspace_clean"]}))
+    print(json.dumps({"placed": len(data["items"]), "units": len(manifest["units"])}))
 
 
 if __name__ == "__main__":

@@ -199,19 +199,11 @@ fn remove(files: &Files<'_, impl System>, input: &PrepareInput, listed: &[Value]
     Ok(count)
 }
 
-fn sha256(bytes: &[u8]) -> String {
-    use sha2::Digest as _;
-    sha2::Sha256::digest(bytes).iter().fold(String::new(), |mut out, byte| {
-        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{byte:02x}"));
-        out
-    })
-}
-
 /// Whether the seed holds an item as this create renders it, by the manifest alone.
 fn held(system: &impl System, manifest: &Value, item: &Item) -> bool {
     let file = |path: &str, bytes: &[u8], uid: u32, gid: u32, mode: &str| {
         manifest.pointer(&format!("/files/{}", pointer(path)))
-            == Some(&serde_json::json!({"sha256": sha256(bytes), "uid": uid, "gid": gid, "mode": four(mode)}))
+            == Some(&serde_json::json!({"sha256": crate::sha256(bytes), "uid": uid, "gid": gid, "mode": four(mode)}))
     };
     let link = |path: &str, target: &str| manifest.pointer(&format!("/links/{}", pointer(path))).and_then(Value::as_str) == Some(target);
     match item {
@@ -221,14 +213,14 @@ fn held(system: &impl System, manifest: &Value, item: &Item) -> bool {
         Item::Folder { path, files } => {
             let Some(held) = manifest.pointer(&format!("/folders/{}", pointer(path))) else { return false };
             let wanted: Option<serde_json::Map<String, Value>> =
-                files.iter().map(|entry| entry.content.as_ref().map(|content| (entry.path.clone(), Value::String(sha256(content.as_bytes()))))).collect();
+                files.iter().map(|entry| entry.content.as_ref().map(|content| (entry.path.clone(), Value::String(crate::sha256(content.as_bytes()))))).collect();
             held.get("skills") == Some(&Value::Bool(true)) && wanted.is_some_and(|wanted| held.get("files") == Some(&Value::Object(wanted)))
         }
         Item::Trust { source, path, hash_directory, uid, gid, mode } => {
             let Ok(content) = system.read(source) else { return false };
             let Some(hash) = subject_hash(system, &content) else { return false };
             let named = format!("{hash_directory}/{}.pem", path.rsplit('/').next().unwrap_or_default().trim_end_matches(".crt"));
-            let bodies: BTreeSet<String> = certificates(&String::from_utf8_lossy(&content)).iter().map(|body| sha256(body.as_bytes())).collect();
+            let bodies: BTreeSet<String> = certificates(&String::from_utf8_lossy(&content)).iter().map(|body| crate::sha256(body.as_bytes())).collect();
             let bundle = manifest.pointer(&format!("/bundles/{}", pointer(&format!("{hash_directory}/ca-certificates.crt")))).and_then(Value::as_array);
             file(path, &content, *uid, *gid, mode)
                 && link(&named, path)

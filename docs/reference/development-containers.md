@@ -1210,13 +1210,13 @@ Every clone of a default needs the same files: the boot and trust files, Codex's
 | `files`, `links`, `folders` | Each file's SHA-256, owner and mode, each link's target, each folder's files |
 | `bundles`, `nss` | The trust bundle's certificates by digest, the NSS store's lines and the trust module's version |
 | `units` | The default's Orbit units that no clone keeps |
-| `workspace_clean` | Whether a task copy's clean would find nothing in the tree |
+| `workspace_clean` | Whether a task copy's clean would find nothing in the tree, checked right before the snapshot with the Processes stopped |
 
 A clone's prepare reads the manifest once. It writes only the items that differ from it, removes the units it names, and skips the app-account swap when the seed's swap ran with the same file. A task copy skips its clean when the tree was clean and its checkout keeps the seed's commit. A seed without the manifest, taken before it, gets every file as before. Only a clone's own files stay per copy: its identity, model key, settings with providers, proxy bypass and Instance file.
 
 #### The default keeps a clean tree
 
-A deployment's checkout removes the default's untracked files that Git does not ignore, before the deploy steps and the seed. It runs as the workspace's owner with the task check's Git settings, in the rounds of a task copy's clean. `.env` is excluded first and stays; ignored files and tracked files stay. A file it cannot remove never fails the deployment. The deployment's result names what went as `workspace_cleaned`: `removed_count`, the first 20 `removed` names and `left_count` for what stayed. So a file that an earlier commit tracked, or that a removed `.gitignore` ignored, does not reach every seed.
+A deployment's checkout removes the default's untracked files that Git does not ignore, before the deploy steps and the seed. It runs as the workspace's owner with the task check's Git settings, in the rounds of a task copy's clean. `.env` is excluded first and stays; ignored files and tracked files stay. A file it cannot remove does not fail the deployment; a clean that fails or runs past 60 seconds does. The deployment's result names what went as `workspace_cleaned`: `removed_count`, the first 20 `removed` names and `left_count` for what stayed. So a file that an earlier commit tracked, or that a removed `.gitignore` ignored, does not reach every seed.
 
 #### The seed hold
 
@@ -2726,9 +2726,9 @@ Incus 7.0.2 writes the `size` of each snapshot that it sends from the size of th
 
 #### Spare volumes
 
-On ZFS, `incus storage volume copy` of the inner volume takes about 11 seconds, most of an Orbit task copy's create. On the engine the volume has its own step, `copy_volume`, beside the container copy. It first looks for the default's spare, `spare-<default's volume>-<seed>`, made from the same seed, and takes it by `incus storage volume rename`, which takes milliseconds. Incus renames a volume or refuses, so two creates never take one spare; the one refused copies. Spares of an older seed go.
+On ZFS, `incus storage volume copy` of the inner volume takes about 11 seconds, most of an Orbit task copy's create. On the engine the volume has its own step, `copy_volume`, beside the container copy. It copies only the admitted seed, as the nested copy's container copy does; a seed that a deployment replaced refuses with `instance.default_seed_moved`. It first looks for the default's spare made from the same snapshot take, `spare-<default's volume>-<take>`, and takes it by `incus storage volume rename`, which takes milliseconds. The take names the volume snapshot's name and creation time, so a retake at the same commit is another take and its old spare is never used. Incus renames a volume or refuses, so two creates never take one spare; the one refused copies. Spares of any other take go.
 
-A background step after the start, `spare`, makes the next spare from the current seed when none exists: under the copy's own builder name `next-<copy's volume>`, renamed into place when complete, so no create takes a half-copied spare. The create neither waits for it nor fails by it. One spare per default at a time.
+A background step after the start, `spare`, makes the next spare from the admitted seed when none of its take exists: under the default's one builder name, `build-<default's volume>`, renamed into place when complete, so no create takes a half-copied spare. A builder that an interrupted run left goes first, and a builder whose snapshot was retaken during the copy goes too. The create neither waits for it nor fails by it. One spare per default at a time. A destroy of the default deletes its spares and its builder with its inner volume.
 
 #### The btrfstune wrapper
 

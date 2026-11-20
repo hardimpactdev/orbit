@@ -1129,13 +1129,15 @@
 # file an earlier commit tracked, or ignored by a `.gitignore` the commit removed, would otherwise stay in every seed. It runs after the
 # checkout and before the deploy steps, as the workspace's owner, with the task check's Git settings, in the rounds of a task copy's
 # clean. The `.env` stays: it is excluded first. Ignored files stay. Tracked files are never touched; a changed one refused the
-# checkout already. A file it cannot remove never fails the deployment: the result's `workspace_cleaned` counts it as `left_count`, the
-# seed's manifest says the tree is not clean, and a task copy's own clean runs.
+# checkout already. A file it cannot remove does not fail the deployment: the result's `workspace_cleaned` counts it as `left_count`,
+# the seed's manifest says the tree is not clean, and a task copy's own clean runs. A clean that fails or runs past its 60 s fails it.
 - name: Remove the untracked files of the default
   tags: [checkout]
   when: phase == 'checkout' and container.name is defined
   ansible.builtin.command:
-    argv: "{{ ['timeout', '60'] + as_owner + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_default_clean.py'), container.workspace, container.environment_file] }}"
+    argv: >-
+      {{ ['timeout', '60'] + as_owner + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_default_clean.py'),
+         container.workspace, container.environment_file] }}
   register: default_clean
   changed_when: (default_clean.stdout | from_json).removed_count > 0
   failed_when: default_clean.rc != 0
@@ -1826,7 +1828,8 @@
       register: seed_ca
     - name: Place the clone files and record the manifest
       ansible.builtin.command:
-        argv: "{{ ['timeout', '60'] + as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_seed_files.py')] }}"
+        argv: >-
+          {{ ['timeout', '60'] + as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_seed_files.py')] }}
         stdin: "{{ {'items': container.seed_files, 'ca': seed_ca.content | b64decode, 'workspace': container.workspace} | to_json }}"
       register: seed_files_placed
       changed_when: true
@@ -1959,6 +1962,16 @@
         - name: Stop the Processes
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'stop', '--'] + units }}" }
+          changed_when: true
+        # With the Processes stopped, right before the snapshot: no Process can write an untracked file after the manifest says the
+        # tree is clean, so a task copy that skips its clean on this seed starts clean (instance_seed_files.py `clean`).
+        - name: Record whether the seed's tree is clean
+          when: container.seed_files is defined
+          ansible.builtin.command:
+            argv: >-
+              {{ ['timeout', '60'] + as_root
+                 + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_seed_files.py'), 'clean'] }}
+            stdin: "{{ {'workspace': container.workspace} | to_json }}"
           changed_when: true
         # Both halves at once, with the Processes still stopped. A failure deletes only what this take made, a new name or `next-`,
         # so every older seed, a pair whole, stays for a clone and a restore.

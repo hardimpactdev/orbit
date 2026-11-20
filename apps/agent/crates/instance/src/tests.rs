@@ -216,7 +216,8 @@ fn prepare_input(files: &Value) -> Value {
 fn a_running_copy_is_left_alone() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
 
-    assert_eq!(prepare(&fake, &prepare_input(&json!([]))).expect("prepare"), r#"{"app_account_current":false,"changes":0,"manifest":false,"workspace_clean":false}"#);
+    let output: Value = serde_json::from_str(&prepare(&fake, &prepare_input(&json!([]))).expect("prepare")).expect("json");
+    assert_eq!(output, json!({"app_account_current": false, "changes": 0, "manifest": false, "workspace_clean": false}));
     assert_eq!(fake.calls().len(), 1);
 }
 
@@ -631,90 +632,64 @@ fn volume_input() -> Value {
         "volume_source": "inner-2", "volume": "inner-12", "pool": "orbit-instances", "size": "30GiB"})
 }
 
-#[test]
-fn a_nested_copys_volume_comes_from_the_defaults_volume_snapshot_of_the_same_seed() {
-    let fake = Fake::new(&[
-        ("query /1.0/instances/instance-12?", MISSING),
-        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-old", "2026-11-18"), ("seed-new", "2026-11-19")]))),
-        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-new"}]))),
-        ("volumes/custom?", Ok(volumes(&["inner-2", "inner-12", "spare-inner-2-seed-old"]))),
-    ]);
-
-    // The admitted seed is gone: the newest one a deployment left is copied, as instance.clone copies it.
-    assert_eq!(copy_volume(&fake, &volume_input()).expect("copy"), r#"{"snapshot":"seed-new","spare":false}"#);
-
-    let calls = fake.calls();
-    let at = |part: &str| calls.iter().position(|call| call.contains(part)).unwrap_or_else(|| panic!("{part} not run: {calls:?}"));
-    // A volume of the copy's name that its disk does not name yet is left from a failed run: it is copied again.
-    assert!(at("storage volume delete orbit-instances inner-12") < at("storage volume copy orbit-instances/inner-2/seed-new orbit-instances/inner-12"));
-    assert!(at("storage volume copy") < at("storage volume set orbit-instances inner-12 size=30GiB"));
-    // A spare of an older seed is never taken: it goes.
-    assert!(calls.iter().any(|call| call.ends_with("storage volume delete orbit-instances spare-inner-2-seed-old")));
-}
-
 fn volumes(names: &[&str]) -> Value {
     Value::Array(names.iter().map(|name| json!(format!("/1.0/storage-pools/orbit-instances/volumes/custom/{name}?project=orbit-instances-nested"))).collect())
 }
 
-fn spare_answers(rename: Result<Value, &'static str>) -> Fake {
+/// The take of the volume snapshot `seed-abc123` made at `at`, as the Node names it.
+fn take(at: &str) -> String {
+    sha256_hex(&format!("seed-abc123\n{at}"))[..12].to_owned()
+}
+
+fn volume_answers(volumes_held: &[&str], rename: Result<Value, &'static str>) -> Fake {
     Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
-        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-abc123"}]))),
-        ("volumes/custom?", Ok(volumes(&["inner-2", "spare-inner-2-seed-abc123"]))),
+        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-abc123", "created_at": "2026-11-20T10:00:00Z"}]))),
+        ("volumes/custom?", Ok(volumes(volumes_held))),
         ("storage volume rename", rename),
     ])
 }
 
 #[test]
-fn a_spare_of_the_same_seed_is_taken_by_a_rename_and_one_another_create_took_falls_back_to_a_copy() {
-    let spare = spare_answers(Ok(json!("")));
-    assert_eq!(copy_volume(&spare, &volume_input()).expect("take"), r#"{"snapshot":"seed-abc123","spare":true}"#);
-    let calls = spare.calls();
-    assert!(calls.iter().any(|call| call.ends_with("storage volume rename orbit-instances spare-inner-2-seed-abc123 inner-12")));
+fn a_spare_of_the_same_take_is_taken_by_a_rename_and_one_another_create_took_falls_back_to_a_copy() {
+    let spare = format!("spare-inner-2-{}", take("2026-11-20T10:00:00Z"));
+    let fake = volume_answers(&["inner-2", &spare], Ok(json!("")));
+    assert_eq!(copy_volume(&fake, &volume_input()).expect("take"), r#"{"snapshot":"seed-abc123","spare":true}"#);
+    let calls = fake.calls();
+    assert!(calls.iter().any(|call| call.ends_with(&format!("storage volume rename orbit-instances {spare} inner-12"))), "{calls:?}");
     assert!(!calls.iter().any(|call| call.contains("storage volume copy")));
     assert!(calls.last().expect("calls").ends_with("storage volume set orbit-instances inner-12 size=30GiB"));
 
-    let taken = spare_answers(Err("Error: Storage volume not found"));
+    let taken = volume_answers(&["inner-2", &spare], Err("Error: Storage volume not found"));
     assert_eq!(copy_volume(&taken, &volume_input()).expect("copy"), r#"{"snapshot":"seed-abc123","spare":false}"#);
     assert!(taken.calls().iter().any(|call| call.contains("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/inner-12")));
 }
 
-fn spare_input() -> Value {
-    json!({"project": "orbit-instances-nested", "source": "instance-2", "snapshot": "seed-abc123", "volume_source": "inner-2", "volume": "inner-12",
-        "pool": "orbit-instances"})
-}
-
 #[test]
-fn a_spare_is_built_under_the_copys_builder_name_and_renamed_into_place_once() {
-    let none = Fake::new(&[
-        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
-        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-abc123"}]))),
-        ("volumes/custom?", Ok(volumes(&["inner-2", "next-inner-12", "spare-inner-2-seed-old"]))),
-    ]);
-    assert_eq!(spare_volume(&none, &spare_input()).expect("spare"), r#"{"spare":"made"}"#);
-    let calls = none.calls();
+fn a_spare_of_an_older_take_of_the_same_seed_is_never_taken_and_goes() {
+    // A deployment at the same commit retook `seed-abc123`: the spare holds the older take's inner fleet.
+    let older = format!("spare-inner-2-{}", take("2026-11-19T08:00:00Z"));
+    let fake = volume_answers(&["inner-2", "inner-12", &older], Ok(json!("")));
+
+    assert_eq!(copy_volume(&fake, &volume_input()).expect("copy"), r#"{"snapshot":"seed-abc123","spare":false}"#);
+
+    let calls = fake.calls();
     let at = |part: &str| calls.iter().position(|call| call.ends_with(part)).unwrap_or_else(|| panic!("{part} not run: {calls:?}"));
-    assert!(at("storage volume delete orbit-instances spare-inner-2-seed-old") < at("storage volume delete orbit-instances next-inner-12"));
-    assert!(at("storage volume delete orbit-instances next-inner-12") < at("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/next-inner-12"));
-    assert!(at("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/next-inner-12") < at("storage volume rename orbit-instances next-inner-12 spare-inner-2-seed-abc123"));
-
-    let present = spare_answers(Ok(json!("")));
-    assert_eq!(spare_volume(&present, &spare_input()).expect("present"), r#"{"spare":"present"}"#);
-    assert!(!present.calls().iter().any(|call| call.contains("storage volume copy")));
-
-    let lost = Fake::new(&[
-        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
-        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-abc123"}]))),
-        ("volumes/custom?", Ok(volumes(&["inner-2"]))),
-        ("storage volume rename", Err("Error: Volume by that name already exists")),
-    ]);
-    assert_eq!(spare_volume(&lost, &spare_input()).expect("lost"), r#"{"spare":"present"}"#);
-    assert!(lost.calls().last().expect("calls").ends_with("storage volume delete orbit-instances next-inner-12"));
+    assert!(!calls.iter().any(|call| call.contains("storage volume rename")));
+    // A volume of the copy's name that its disk does not name yet is left from a failed run: it is copied again.
+    assert!(at("storage volume delete orbit-instances inner-12") < at("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/inner-12"));
+    assert!(calls.iter().any(|call| call.ends_with(&format!("storage volume delete orbit-instances {older}"))));
 }
 
 #[test]
-fn a_volume_the_copys_disk_names_stays_and_a_seed_without_its_volume_half_refuses() {
+fn a_volume_copy_takes_only_the_admitted_seed_and_a_seed_without_its_volume_half_refuses() {
+    let moved = Fake::new(&[
+        ("query /1.0/instances/instance-12?", MISSING),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-old", "2026-11-18"), ("seed-new", "2026-11-19")]))),
+    ]);
+    assert_eq!(copy_volume(&moved, &volume_input()).map_err(|failure| failure.code), Err("instance.default_seed_moved"));
+
     let used = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"devices": {"inner-pool": {"source": "inner-12"}}})))]);
     assert_eq!(copy_volume(&used, &volume_input()).expect("repeat"), r#"{"snapshot":null,"spare":false}"#);
     assert_eq!(used.calls().len(), 1);
@@ -722,7 +697,7 @@ fn a_volume_the_copys_disk_names_stays_and_a_seed_without_its_volume_half_refuse
     let incomplete = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
         ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
-        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-old"}]))),
+        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-old", "created_at": "x"}]))),
         ("volumes/custom?", Ok(volumes(&["inner-2"]))),
     ]);
     assert_eq!(copy_volume(&incomplete, &volume_input()).map_err(|failure| failure.code), Err("instance.default_seed_incomplete"));
@@ -731,6 +706,46 @@ fn a_volume_the_copys_disk_names_stays_and_a_seed_without_its_volume_half_refuse
     let mut same = volume_input();
     same["volume"] = json!("inner-2");
     assert_eq!(copy_volume(&Fake::new(&[]), &same).map_err(|failure| failure.code), Err("instance.copy_volume_input_invalid"));
+}
+
+#[test]
+fn a_nested_clone_copies_only_the_admitted_seed() {
+    let mut input = input();
+    input["exact_seed"] = json!(true);
+    let fake = Fake::new(&[
+        ("query /1.0/instances/instance-12?", MISSING),
+        ("query /1.0/network-acls/", MISSING),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-new", "2026-11-19")]))),
+    ]);
+
+    assert_eq!(clone(&fake, &input).map_err(|failure| failure.code), Err("instance.default_seed_moved"));
+    assert!(!fake.calls().iter().any(|call| call.contains(" copy ")));
+}
+
+fn spare_input() -> Value {
+    json!({"project": "orbit-instances-nested", "source": "instance-2", "snapshot": "seed-abc123", "volume_source": "inner-2", "pool": "orbit-instances"})
+}
+
+#[test]
+fn a_spare_is_built_under_the_defaults_builder_name_and_renamed_into_place_once() {
+    let spare = format!("spare-inner-2-{}", take("2026-11-20T10:00:00Z"));
+    let older = format!("spare-inner-2-{}", take("2026-11-19T08:00:00Z"));
+    let none = volume_answers(&["inner-2", "build-inner-2", &older], Ok(json!("")));
+    assert_eq!(spare_volume(&none, &spare_input()).expect("spare"), r#"{"spare":"made"}"#);
+    let calls = none.calls();
+    let at = |part: &str| calls.iter().position(|call| call.ends_with(part)).unwrap_or_else(|| panic!("{part} not run: {calls:?}"));
+    // A spare of an older take goes, and so does a builder that an interrupted run left.
+    assert!(at(&format!("storage volume delete orbit-instances {older}")) < at("storage volume delete orbit-instances build-inner-2"));
+    assert!(at("storage volume delete orbit-instances build-inner-2") < at("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/build-inner-2"));
+    assert!(at("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/build-inner-2") < at(&format!("storage volume rename orbit-instances build-inner-2 {spare}")));
+
+    let present = volume_answers(&["inner-2", &spare], Ok(json!("")));
+    assert_eq!(spare_volume(&present, &spare_input()).expect("present"), r#"{"spare":"present"}"#);
+    assert!(!present.calls().iter().any(|call| call.contains("storage volume copy")));
+
+    let lost = volume_answers(&["inner-2"], Err("Error: Volume by that name already exists"));
+    assert_eq!(spare_volume(&lost, &spare_input()).expect("lost"), r#"{"spare":"present"}"#);
+    assert!(lost.calls().last().expect("calls").ends_with("storage volume delete orbit-instances build-inner-2"));
 }
 
 #[test]

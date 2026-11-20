@@ -66,7 +66,7 @@ The engine runs a container clone's create from its admitted intent (`direct_pro
 | `t3` | `checkout` | copy | Starts T3 or the Conn Server and seals its two sessions to the Gateway |
 | `stop` | `clone` | copy | Runs only after a failed step |
 
-Each Node step locks only its own part of the Node. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
+Each Node step locks only its own part of the Node, so the Node steps run side by side. Steps on the copy lock the copy: `club_key` and `checkout` run one after the other. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
 
 `spare` is optional: the create neither waits for it nor fails by it. `stop` keeps the copy stopped for a retry or a destroy. The [engine chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-engine.mmd) has the graph.
 
