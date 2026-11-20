@@ -149,9 +149,22 @@ Orbit owns one key of the router's configuration: the `antigravity` list of `oau
 | `gemini-4-argon-high` | `gemini-4-argon`, `gemini-3.1-pro`, `gemini-3.1-pro-preview` |
 | `gemini-3.8-flash-high` | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.1-flash-lite-preview` |
 
-Before each collection round, the collector reads `GET /v0/management/oauth-model-alias` with the management key. When the `antigravity` list differs from `ANTIGRAVITY`, it sends `PATCH /v0/management/oauth-model-alias` with only that channel. CLIProxyAPI saves the change to `config.yaml` and reloads it. An unchanged list sends no write. A failed read or write is logged and retried in the next round, and collection still runs.
+Before each collection round, the collector reads `~/.config/cliproxyapi/config.yaml` of its own account, which is the router's account and file. It decides from that file, not from the router's management API: the router can hold a list in memory that its file lacks, and that list is lost on the next restart.
 
-The rule: Orbit replaces the `antigravity` list and nothing else. The lists of other channels, the key list, the account files, and every other key stay as the operator or the router set them. A hand change to the `antigravity` list is replaced within a minute; change `ANTIGRAVITY` instead. Setup, a release converge, and a Node rebuild start the collector, so a new router gets the list in its first round.
+When the persisted `antigravity` list differs from `ANTIGRAVITY`, the collector replaces only the lines of that node and writes the file in place. CLIProxyAPI watches the file, sees the write, and reloads it. An unchanged list writes nothing.
+
+The collector never asks the router to save its configuration, because a router save rewrites the whole file and drops keys it does not know, such as legacy Amp settings and stored keys in older fields.
+
+| Case | What the collector does |
+| --- | --- |
+| No `oauth-model-alias` key | Appends the key with the `antigravity` list at the end of the file. |
+| The key without an `antigravity` channel | Adds the channel after the last channel. |
+| The `antigravity` list in block or flow form, with other values | Replaces the lines of that channel with the list in block form. |
+| A form it cannot edit line by line, such as a flow mapping for the whole key, or a channel named twice | Writes nothing and logs `Router configuration has an unsupported oauth-model-alias form`. |
+| The file changed between its read and its write | Writes nothing. The next round reads it again. |
+| The write fails, for example on a read-only file | The file stays as it was. The next round finds the list missing and writes again. |
+
+The in-place write keeps the file's owner, mode, and inode. A rename would not keep the router's file watch, so the router would not reload.
 
 ## Collector endpoints
 

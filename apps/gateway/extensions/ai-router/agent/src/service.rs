@@ -51,6 +51,7 @@ struct Config {
     key: String,
     read_token: String,
     control_token: String,
+    home: String,
 }
 impl Config {
     fn load(env: impl Fn(&str) -> Option<String>) -> Result<Self, Error> {
@@ -78,17 +79,20 @@ impl Config {
             key: required("AI_ROUTER_MANAGEMENT_KEY")?,
             read_token: required("AI_ROUTER_READ_TOKEN")?,
             control_token: required("AI_ROUTER_CONTROL_TOKEN")?,
+            home: required("HOME")?,
         })
     }
 }
 struct App {
     collector: Collector<Valkey, Management>,
+    router_config: std::path::PathBuf,
     read_token: String,
     control_token: String,
 }
 async fn serve(config: Config) -> Result<(), Error> {
     let app = Arc::new(App {
         collector: Collector::new(config.cache, Management::new(config.origin, config.key)?),
+        router_config: std::path::Path::new(&config.home).join(aliases::CONFIG),
         read_token: config.read_token,
         control_token: config.control_token,
     });
@@ -98,7 +102,7 @@ async fn serve(config: Config) -> Result<(), Error> {
     let worker = app.clone();
     let task = tokio::spawn(async move {
         loop {
-            if let Err(error) = aliases::converge(&worker.collector.api).await {
+            if let Err(error) = aliases::converge(&worker.router_config) {
                 eprintln!("Model alias convergence failed: {}", error.message());
             }
             if let Err(error) = worker.collector.collect(now()).await {
@@ -262,6 +266,7 @@ mod tests {
             ("AI_ROUTER_MANAGEMENT_KEY", "management"),
             ("AI_ROUTER_READ_TOKEN", "read"),
             ("AI_ROUTER_CONTROL_TOKEN", "control"),
+            ("HOME", "/home/orbit"),
         ];
         assert!(Config::load(|key| config
             .iter()
@@ -312,6 +317,7 @@ mod tests {
                 cache.client(),
                 Management::new(origin, "management-secret".into()).unwrap(),
             ),
+            router_config: "/nonexistent".into(),
             read_token: "read".into(),
             control_token: "control".into(),
         });
