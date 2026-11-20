@@ -243,7 +243,7 @@ The `instance` family (enabled by the `app-dev` role) makes a clone of a default
 
 `instance.clone` targets the Node. It makes the copy's network ACL, or rewrites its rules when they differ. When the copy does not exist, it copies the admitted seed snapshot. When a deployment replaced that seed, it copies the newest seed. A retake whose `next-` snapshot is not renamed yet refuses.
 
-The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Last comes the T3 proxy device.
+The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Then comes the T3 proxy device, and last the copy's ufw route rules, such as the one from WireGuard to its T3 port; ufw skips a rule that is there.
 
 It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
 
@@ -260,7 +260,7 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 - an NSS store entry;
 - a folder made again with exactly its files, each a blob, owned by root, with an empty `.skills` folder: the agent instructions.
 
-It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+The list may come as one blob, `files_blob`, with each file's content inline. It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 
 #### instance.start
 

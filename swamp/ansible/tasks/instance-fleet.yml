@@ -132,7 +132,7 @@
           # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
-      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service'] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service', 'orbit-gateway-engine.service'] -%}
       {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
       {%- endfor -%}
       {{ out }}
@@ -156,6 +156,9 @@
       # Docker reads no /etc/environment: without this drop-in a Database server's `docker pull` on a nested Node finds no DNS for the
       # registry and fails `database.server_image_pull_failed`. dockerd reads it when it starts, as the nested containers start.
       - path: /etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf
+        content: "{{ fleet_unit_environment }}"
+      # The executor's engine steps reach GitHub for a clone's branch (instance.fetch_branch) and read no /etc/environment either.
+      - path: /etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf
         content: "{{ fleet_unit_environment }}"
     # The nested containers keep their root disks small (docs/reference/development-containers.md#the-inner-machines-stay-small): apt
     # keeps no package file after an install (`apt-get` keeps each one by default; the egress proxy serves them again), and journald

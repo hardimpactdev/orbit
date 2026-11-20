@@ -31,7 +31,8 @@ const outerBypass = "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,1
 const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
 const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf",
-  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf"];
+  "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf",
+  "/etc/systemd/system/orbit-gateway-engine.service.d/50-inner-fleet-proxy.conf"];
 /** The Gateway's PHP-FPM pool `orbit-gateway` gets the egress proxy from a file of its own: php-fpm merges a repeated pool section. */
 const pool = "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf";
 const poolFile = "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\n" +
@@ -50,7 +51,9 @@ const sizeFiles = {
 const aptPath = "/etc/apt/apt.conf.d/95orbit-nested-egress";
 /** dockerd reads no /etc/environment: a Database server's image pull on a nested Node needs the proxy in its own unit drop-in. */
 const dockerDropIn = "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf";
-const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile, [dockerDropIn]: dropIn };
+/** The executor's engine steps fetch a clone's branch from GitHub, and it reads no /etc/environment either. */
+const executorDropIn = "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf";
+const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile, [dockerDropIn]: dropIn, [executorDropIn]: dropIn };
 /** Git in every nested container trusts the checkout, which `agent` owns (ADR 0268): without it Git as `orbit` stops with "dubious ownership". */
 const gitFiles = { "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n" };
 /** Every file the fleet rules own in each nested container: the egress files, the size files, then the Git file. */
@@ -1167,7 +1170,7 @@ Deno.test({
       const ruledRun = f.run("rules");
       assert(ruledRun.ok, ruledRun.output);
       const files = f.state().containers["nested-gateway"].files;
-      assertEquals([files[units[2]], files[pool]], [dropIn, poolFile]);
+      assertEquals([files[units[2]], files[units[3]], files[pool]], [dropIn, dropIn, poolFile]);
       for (const key of ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"]) assertStringIncludes(files[pool], `env[${key}] = "`);
       // The pool file names the role's own pool; it never touches the role's file.
       assertStringIncludes(files[pool], "[orbit-gateway]\n");
@@ -1191,7 +1194,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [units[3]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -1218,7 +1221,7 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], units[3], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
           ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`]), `limits.memory.swap=${memory[name]}`]
