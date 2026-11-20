@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurn;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskTurnReview;
+use App\Domain\Tasks\TaskType;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -33,6 +34,14 @@ function promptSubtask(?array $deliverables, string $groupBrief = "Add a firewal
     $subtask = new Task(['title' => 'Add the deny rule', 'brief' => "Add `firewall:deny`.\nKeep the shape of allow.", 'deliverables' => $deliverables]);
 
     return $subtask->setRelation('parent', new Task(['title' => 'Firewall rules', 'brief' => $groupBrief]));
+}
+
+/** The work row of a task with no subtask: it repeats the task's title and brief and holds the deliverables. */
+function promptWork(?array $deliverables): Task
+{
+    $work = new Task(['type' => TaskType::Work, 'title' => 'Firewall rules', 'brief' => 'Add a firewall rule set.', 'deliverables' => $deliverables]);
+
+    return $work->setRelation('parent', new Task(['title' => 'Firewall rules', 'brief' => 'Add a firewall rule set.']));
 }
 
 /** @return list<array<string, string>> */
@@ -353,6 +362,31 @@ it('leaves the handoff note and its two lines out when there is none, and the de
     expect($text)->toContain("</subtask_brief>\n\n<review_rules>\n")
         ->and($text)->not->toContain('<handoff_note>')->not->toContain('handoff note')->not->toContain('<deliverables>')
         ->and(TaskTurnPrompt::implementer(promptSubtask(null), 'bin/task-check', 'Go.', promptStart()))->toContain("</subtask_brief>\n\n<rules>\n")->not->toContain('<deliverables>');
+});
+
+it('gives a task with no subtask one brief and its own deliverables, with no subtask part', function (): void {
+    $implementer = TaskTurnPrompt::implementer(promptWork(promptDeliverables()), 'bin/task-check', 'Implement the brief.', promptStart());
+    $reviewer = TaskTurnPrompt::reviewer(promptWork(promptDeliverables()), promptReview(), 'Review the checked commit.', promptStart());
+
+    expect($implementer)->toStartWith(<<<'TEXT'
+    You implement an Orbit task in its task copy. A separate
+    reviewer judges the commit you hand off against the briefs and the deliverables
+    below.
+
+    <task_brief title="Firewall rules">
+    Add a firewall rule set.
+    </task_brief>
+
+    <deliverables>
+    - chart (file: docs/cli/firewall/deny.mmd, created): The chart exists.
+    TEXT)
+        ->and($reviewer)->toStartWith("You review an Orbit task in its task copy.\nThis is the first review of this task: check 12,")
+        ->toContain("First review. This is the one full review of this task. Cover every outcome\nthis task owns,")
+        ->toContain("</task_brief>\n\n<deliverables>\n- chart (file: docs/cli/firewall/deny.mmd, created): The chart exists. Result: passed.")
+        ->and(TaskTurnPrompt::reviewer(promptWork(null), promptReview(previous: str_repeat('a', 40), round: 2), 'Go.', promptStart()))->toContain('This is review round 2 of this task:');
+    foreach ([$implementer, $reviewer] as $text) {
+        expect($text)->not->toContain('subtask')->and(substr_count($text, 'Add a firewall rule set.'))->toBe(1);
+    }
 });
 
 it('gives no role a rule that only the other role has', function (): void {

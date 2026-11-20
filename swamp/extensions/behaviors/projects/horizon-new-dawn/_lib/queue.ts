@@ -81,11 +81,17 @@ export async function enqueue(
     }
     const key = plan.baseline ? "baseline" : `${plan.synced_tag}-${plan.tag}`;
     const marker = `Swamp Horizon sync: ${expectedRepo}:${key}`;
+    // The brief that names this schedule in receipts and on the Gateway. It stays as it was before tasks with no subtask, so
+    // queued work keeps its identity.
     const brief = `${marker}\n\n${
         plan.baseline
             ? "Record the one-time parity baseline before upstream detection."
             : `Implement every candidate from laravel/horizon ${plan.synced_tag} to ${plan.tag} in order. Only the last task advances synced_tag.`
     }\n\nPull requests wait for Nick. Never merge.`;
+    // One planned task is a task with no subtask. Its brief is that task's brief, which the plan holds within the Gateway limit
+    // and which names the candidate, so it identifies the schedule too.
+    const [only] = plan.tasks.length === 1 ? plan.tasks : [];
+    const posted = only ? only.brief : brief;
     const old = await deps.read(key);
     if (old && (old.projectId !== projectId || old.brief !== brief)) {
         throw new Error(
@@ -95,7 +101,7 @@ export async function enqueue(
     // A previously-created group's tasks can progress; do not recreate or rewrite them.
     if (old?.state === "created") return old;
     const found = (await projectGroups(projectId, deps.http)).filter((g) =>
-        g.brief === brief
+        g.brief === brief || g.brief === posted
     );
     if (found.length > 1) {
         throw new Error(
@@ -136,14 +142,16 @@ export async function enqueue(
         title: plan.baseline
             ? "Horizon New Dawn parity baseline"
             : `Horizon ${plan.tag} parity`,
-        brief,
+        brief: posted,
         status: "backlog",
         orchestration: "external",
-        subtasks: plan.tasks.map(({ title, brief, deliverables }) => ({
-            title,
-            brief,
-            deliverables,
-        })),
+        ...(only ? { deliverables: only.deliverables } : {
+            subtasks: plan.tasks.map(({ title, brief, deliverables }) => ({
+                title,
+                brief,
+                deliverables,
+            })),
+        }),
     });
     const group = result.body?.data as Record<string, unknown> | undefined;
     if (

@@ -161,6 +161,8 @@ function applyTaskEvent(client: QueryClient, type: string, data: Row): boolean {
             const task = keyId(data.task_id);
             if (group !== null && task !== null) {
                 refetch(["tasks", group, "tasks", task, "comments"]);
+                // A task with no subtask lists its own and its work's comments under one key.
+                refetch(["tasks", group, "work", "comments"]);
             }
 
             return true;

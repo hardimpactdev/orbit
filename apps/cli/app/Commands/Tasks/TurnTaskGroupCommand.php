@@ -16,7 +16,7 @@ final class TurnTaskGroupCommand extends TaskCommand
 
     #[\Override]
     protected $signature = 'task:turn
-        {task? : Numeric Task ID}
+        {task? : Numeric subtask ID, or the ID of a task with no subtask}
         {--role= : implementer or reviewer}
         {--prompt= : The orchestrator prompt}
         {--thread= : new or the role thread ID. Without it the turn continues the role thread}
@@ -54,7 +54,7 @@ final class TurnTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
         $connector = $connectors->make($profile);
-        $groupId ??= (int) $this->promptText('Subtask ID', 20);
+        $groupId ??= (int) $this->promptText('Subtask or task ID', 20);
 
         $key = $this->option('idempotency-key');
         $operation = $this->send($connector, new TurnTaskRequest($groupId, $role, $prompt, $thread, $check, is_string($key) ? $key : null), OperationResponse::class);

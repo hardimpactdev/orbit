@@ -11,7 +11,7 @@ use LogicException;
 
 /**
  * The prompt the agent receives for one turn in a task copy, one fixed text for each role (docs/reference/tasks.md#run-an-external-turn):
- * the group's and the subtask's briefs and the deliverables, the role's rules, then the prompt of the caller and the turn's end. The
+ * the group's and the subtask's briefs, or the one brief of a task with no subtask, and the deliverables, the role's rules, then the prompt of the caller and the turn's end. The
  * admission records this text as the admitted prompt. The texts name nothing of one Project but its task check command. See
  * docs/cli/task/copy-turn.mmd.
  */
@@ -71,7 +71,8 @@ final readonly class TaskTurnPrompt
             TEXT;
 
         return self::limited([
-            "You implement one subtask of an Orbit task in its task copy. A separate\nreviewer judges the commit you hand off against the briefs and the deliverables\nbelow.",
+            (self::isWork($subtask) ? 'You implement an Orbit task' : 'You implement one subtask of an Orbit task')
+                ." in its task copy. A separate\nreviewer judges the commit you hand off against the briefs and the deliverables\nbelow.",
             ...self::briefs($subtask),
             ...self::deliverables($subtask, static fn (TaskDeliverable $deliverable): string => $deliverable->line()),
             $rules,
@@ -84,14 +85,15 @@ final readonly class TaskTurnPrompt
     public static function reviewer(Task $subtask, TaskTurnReview $review, string $prompt, CarbonInterface $started): string
     {
         $first = $review->previous === null;
-        $opening = "You review one subtask of an Orbit task in its task copy.\n"
-            .($first ? "This is the first review of this subtask: check {$review->check}, commit {$review->sha}, against base {$review->base()}.\n"
-                : "This is review round {$review->round} of this subtask: check {$review->check}, commit {$review->sha}. You last reviewed commit {$review->previous}.\n")
+        $unit = self::isWork($subtask) ? 'task' : 'subtask';
+        $opening = (self::isWork($subtask) ? 'You review an Orbit task' : 'You review one subtask of an Orbit task')." in its task copy.\n"
+            .($first ? "This is the first review of this {$unit}: check {$review->check}, commit {$review->sha}, against base {$review->base()}.\n"
+                : "This is review round {$review->round} of this {$unit}: check {$review->check}, commit {$review->sha}. You last reviewed commit {$review->previous}.\n")
             ."The checkout holds the commit, detached. Leave it as it is: Orbit discards\nevery change in the checkout after this turn.";
         $note = $review->note === null ? [] : ["<handoff_note>\n{$review->note}\n</handoff_note>\nThe handoff note holds the implementer's claims. Use it to find the evidence,\nand check each claim yourself."];
-        $round = $first ? <<<'TEXT'
-            First review. This is the one full review of this subtask. Cover every outcome
-            this subtask owns, what the briefs say must hold, every deliverable, and the
+        $round = $first ? <<<TEXT
+            First review. This is the one full review of this {$unit}. Cover every outcome
+            this {$unit} owns, what the briefs say must hold, every deliverable, and the
             direct effects of the diff. Test at least one way the result could be wrong
             while the submitted checks pass. When you find a blocker, look for the other
             cases of the same failure before you report. Be thorough inside the bar above,
@@ -162,10 +164,17 @@ final readonly class TaskTurnPrompt
         ]);
     }
 
-    /** @return list<string> */
+    /**
+     * The task's brief, then the subtask's. A task with no subtask has one brief: its work row repeats it (TaskType::Work).
+     *
+     * @return list<string>
+     */
     private static function briefs(Task $subtask): array
     {
         $group = $subtask->parent ?? throw new LogicException('A turn prompt needs the group of its subtask.');
+        if (self::isWork($subtask)) {
+            return ["<task_brief title=\"{$group->title}\">\n{$group->brief}\n</task_brief>"];
+        }
 
         return ["<task_brief title=\"{$group->title}\">\n{$group->brief}\n</task_brief>", "<subtask_brief title=\"{$subtask->title}\">\n{$subtask->brief}\n</subtask_brief>"];
     }
@@ -181,6 +190,11 @@ final readonly class TaskTurnPrompt
         $deliverables = $subtask->deliverableList();
 
         return $deliverables === [] ? [] : ["<deliverables>\n".implode("\n", array_map($line, $deliverables))."\n</deliverables>"];
+    }
+
+    private static function isWork(Task $subtask): bool
+    {
+        return $subtask->type === TaskType::Work;
     }
 
     /** @param  list<string>  $steps */

@@ -52,7 +52,7 @@ Route::middleware([
         Route::delete('tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':child')->name('task:destroy');
         Route::post('tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':child')->name('task:check:cancel');
+            ->whereNumber('task')->middleware(RequireTaskLevel::class.':work')->name('task:check:cancel');
         Route::post('tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
             ->whereNumber('task')->name('task:comment:create');
         Route::get('tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
@@ -73,9 +73,9 @@ Route::middleware([
         Route::post('tasks/{task}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:publish');
         Route::post('tasks/{task}/check', [TaskGroupsController::class, 'check'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':child')->name('task:check');
+            ->whereNumber('task')->middleware(RequireTaskLevel::class.':work')->name('task:check');
         Route::post('tasks/{task}/turn', [TaskGroupsController::class, 'turn'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':child')->name('task:turn');
+            ->whereNumber('task')->middleware(RequireTaskLevel::class.':work')->name('task:turn');
         Route::post('tasks/{task}/start', [TaskGroupsController::class, 'provision'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:start');
         Route::post('tasks/{task}/cancel', [TaskGroupsController::class, 'cancel'])

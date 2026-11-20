@@ -28,11 +28,62 @@ final class TaskGroupGuard
         }
     }
 
+    /**
+     * The one rule for a task that leaves backlog (docs/reference/tasks.md#tasks-and-subtasks): its own deliverables, or at least two
+     * subtasks that each have deliverables; never one subtask. The shape is checked first, so a lone subtask is always told to fold.
+     *
+     * @param  bool|null  $own  whether the task's own deliverables are nonempty; null for a task that has none of its own
+     * @param  array<string, bool>  $subtasks  whether each subtask has deliverables, keyed by the name an error shows, in position order
+     */
+    public static function leavesBacklog(?bool $own, array $subtasks): void
+    {
+        if ($own !== null) {
+            if (! $own) {
+                throw self::ownDeliverablesMissing();
+            }
+
+            return;
+        }
+        if ($subtasks === []) {
+            throw self::noSubtasks();
+        }
+        if (count($subtasks) === 1) {
+            throw self::oneSubtask();
+        }
+        $missing = array_keys(array_filter($subtasks, static fn (bool $has): bool => ! $has));
+        if ($missing !== []) {
+            throw self::deliverablesMissing(array_map(strval(...), $missing));
+        }
+    }
+
     public static function noSubtasks(): ResourceOperationException
     {
         return new ResourceOperationException(
             errorCode: 'tasks.no_subtasks',
-            message: __('A task group needs at least one subtask before it moves to todo.'),
+            message: __('A task leaves backlog with its own deliverables, or with at least two subtasks that each have deliverables.'),
+            status: 422,
+        );
+    }
+
+    /**
+     * A task leaves backlog with no subtask or with at least two, never with one (docs/reference/tasks.md#a-task-with-no-subtask).
+     * A task with one subtask that left backlog before this rule keeps working until it ends.
+     */
+    public static function oneSubtask(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.one_subtask',
+            message: __('A task leaves backlog with no subtask or with at least two. Fold the one subtask into the task: give the task its deliverables and no subtask.'),
+            status: 422,
+        );
+    }
+
+    /** A task with no subtask leaves backlog only with deliverables of its own. */
+    private static function ownDeliverablesMissing(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.subtask_deliverables_missing',
+            message: __('A task leaves backlog with at least one deliverable of its own, or with at least two subtasks that each have deliverables.'),
             status: 422,
         );
     }

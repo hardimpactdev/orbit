@@ -13,7 +13,7 @@ final readonly class SubtaskResponse implements TaskRecordResponse
         public int $position,
         public string $title,
         public string $brief,
-        /** @var list<array<string, string|bool>> */
+        /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables,
         public string $status,
         public ?string $type,
@@ -31,6 +31,8 @@ final readonly class SubtaskResponse implements TaskRecordResponse
         public int $questions,
         public int $escalations,
         public string $requestId,
+        /** @var array<string, int|string|null|list<string>>|null The latest check: its ID, kind and status; a show also holds its output. */
+        public ?array $check = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -59,6 +61,7 @@ final readonly class SubtaskResponse implements TaskRecordResponse
             questions: TaskFields::count($data, 'questions', 'subtask', $requestId),
             escalations: TaskFields::count($data, 'escalations', 'subtask', $requestId),
             requestId: $requestId,
+            check: TaskFields::check($data, 'subtask', $requestId),
         );
     }
 
@@ -69,11 +72,12 @@ final readonly class SubtaskResponse implements TaskRecordResponse
      *     position: int,
      *     title: string,
      *     brief: string,
-     *     deliverables: list<array<string, string|bool>>,
+     *     deliverables: list<array<string, string|bool|list<string>>>,
      *     status: string,
      *     type: string|null,
      *     implementer_agent_thread_id: int|null,
      *     completion_summary: string|null,
+     *     check: array<string, int|string|null|list<string>>|null,
      *     assistance_requested: bool,
      *     assistance_kind: string|null,
      *     assistance_question: string|null,
@@ -101,6 +105,7 @@ final readonly class SubtaskResponse implements TaskRecordResponse
             'type' => $this->type,
             'implementer_agent_thread_id' => $this->implementerAgentThreadId,
             'completion_summary' => $this->completionSummary,
+            'check' => $this->check,
             'assistance_requested' => $this->assistanceRequested,
             'assistance_kind' => $this->assistanceKind,
             'assistance_question' => $this->assistanceQuestion,

@@ -19,7 +19,7 @@ final class ShowTaskGroupCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show a task group with its brief and subtasks.';
+    protected $description = 'Show a task group with its brief and subtasks, or with the deliverables of a task with no subtask.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

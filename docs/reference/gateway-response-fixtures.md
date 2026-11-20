@@ -33,7 +33,7 @@ The `nodes/node-metrics` fixture carries a retained agent snapshot with its orig
 
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 
-The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
+The web fleet includes task 14, a task with no subtask in review, with its deliverables, a passed handoff check, its two agent threads and a comment. The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
 
 The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
 

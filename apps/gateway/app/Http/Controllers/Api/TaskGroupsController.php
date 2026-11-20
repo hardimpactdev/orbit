@@ -130,6 +130,12 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function update(UpdateTaskGroupRequest $request, Task $task, UpdateTaskGroupAction $action, UpdateTaskAction $childAction): JsonResponse
     {
+        if ($request->addressesWork()) {
+            $action->work($task, fn (Task $work): Task => $childAction->execute($task, $work, $request->workPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')));
+
+            return response()->json(['data' => TaskGroupData::fromModel($task->refresh())->toArray(), 'meta' => $this->meta($request)]);
+        }
+
         return response()->json([
             'data' => ($task->parent_id === null
                 ? TaskGroupData::fromModel($action->execute($task, $request->parentPayload()))
@@ -161,6 +167,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function storeComment(StoreTaskCommentRequest $request, Task $task, StoreTaskCommentAction $action, StoreTaskGroupCommentAction $parentAction): JsonResponse
     {
+        $task = $request->target();
         $comment = $task->parent_id === null
             ? $parentAction->execute($task, StoreTaskGroupCommentData::from($request->validated()), $request->attributes->getString('orbit.request_id'))
             : $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
@@ -171,7 +178,8 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function comments(ListTaskCommentsRequest $request, Task $task): JsonResponse
     {
-        $comments = $task->comments()->latest('posted_at');
+        // A task with no subtask lists its own comments and those of its work.
+        $comments = TaskComment::query()->whereIn('task_id', [$task->id, ...$task->parent_id === null ? $task->work()->pluck('id')->all() : []])->latest('posted_at');
 
         if ($request->type() !== null) {
             $comments->where('type', $request->type());

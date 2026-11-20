@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Data;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
 
 /**
  * One row of the Conn Tasks panel ([Tasks panel](/reference/conn#tasks-panel)): a top-level task, its workspace with the Conn server a
@@ -37,5 +38,7 @@ final class ConnTaskData extends Data
         public ?string $deployedAt,
         /** When GitHub opened the task's pull request; null when Orbit has not read it. */
         public ?string $prOpenedAt = null,
+        /** The raw status of the work of a task with no subtask; a task with subtasks has no such field. */
+        public string|Optional $workStatus = new Optional,
     ) {}
 }

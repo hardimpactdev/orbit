@@ -10,7 +10,7 @@ covers:
 
 The `task` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so no task group runs on a VM today. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `task:create` is the MCP tool `task-create`. Some operations have no CLI command. Use the MCP tool `task-check-cancel` to stop a running task check. The two merge steps of a task pull request, [`task:pr-ready`](/cli/task/pr-ready) and [`task:pr-merge`](/cli/task/pr-merge), are API and MCP only. The agent thread stream, `GET /api/v1/tasks/{task}/agents/{session}/stream`, serves the web app; [`task:agent:show`](/cli/task/agent-show) reads the same recorded snapshot. The stream sends one snapshot and ends; output updates when each turn ends. Reads never contact a task VM or Pi server.
 
-A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. A command build verifies its runner plan as a deliverable; handoff runs the configured Project check once before the deliverables. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
+A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. A task stands alone with its own deliverables, or has at least two subtasks; a [task with no subtask](/reference/tasks#a-task-with-no-subtask) takes the subtask commands by its own ID. A command build verifies its runner plan as a deliverable; handoff runs the configured Project check once before the deliverables. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
 To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metrics) with its numeric Node ID. See [task VM resource observations](/reference/tasks#every-task-group-runs-on-its-own-task-vm).
 
@@ -20,9 +20,9 @@ To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metri
 | --- | --- |
 | [`task:status`](/cli/task/status) | Show whether the tasks extension is on, list tasks asking for assistance, and list open review-and-merge pull requests. |
 | [`task:list`](/cli/task/list) | List tasks, newest first, one page at a time, optionally for one Project or status. |
-| [`task:show`](/cli/task/show) | Show one task with its brief and subtasks. |
-| [`task:create`](/cli/task/create) | Create a task in Backlog or Todo; `--current-recipe` makes its VM wait for the current recipe image; `--review=automatic` is accepted, but its review rounds are removed: the gate check switches the group to manual mode. |
-| [`task:update`](/cli/task/update) | Change a task's title, brief, status, or copy turn agents. |
+| [`task:show`](/cli/task/show) | Show one task with its brief and subtasks, or with its own deliverables. |
+| [`task:create`](/cli/task/create) | Create a task in Backlog or Todo, with `--subtasks` or its own `--deliverables`; `--current-recipe` makes its VM wait for the current recipe image; `--review=automatic` is accepted, but its review rounds are removed: the gate check switches the group to manual mode. |
+| [`task:update`](/cli/task/update) | Change a task's title, brief, status, or copy turn agents. A task with no subtask also takes `--deliverables` and `--work-status`. |
 | [`task:cancel`](/cli/task/cancel) | Cancel a task and remove its Instance. |
 | [`task:complete`](/cli/task/complete) | Complete a settling task, or a running or reviewing task whose watched pull request ended, and remove its Instance. |
 | [`task:create`](/cli/task/create) | Append a subtask to a task. |
@@ -39,8 +39,8 @@ To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metri
 | [`task:egress`](/cli/task/egress) | List the outside hosts a task's VM connected to. |
 | [`task:agent:show`](/cli/task/agent-show) | Show one redacted read of an agent thread's conversation. |
 | [`task:start`](/cli/task/start) | Start a task as a copy of its Project's default Instance, and wait until the copy is active. |
-| [`task:turn`](/cli/task/turn) | Run one agent turn on an external task group. |
-| [`task:check`](/cli/task/check) | Run a baseline or handoff check in an external task workspace. |
+| [`task:turn`](/cli/task/turn) | Run one agent turn on a subtask, or on a task with no subtask. |
+| [`task:check`](/cli/task/check) | Run a baseline or handoff check of a subtask, or of a task with no subtask. |
 | [`task:publish`](/cli/task/publish) | Push a checked commit and optionally open or update its pull request. |
 | [`task:sync`](/cli/task/sync) | Bring the Project's default branch into the task copy as `refs/remotes/origin/<default branch>`, and print how far behind the branch is. |
 
@@ -72,7 +72,7 @@ The CLI checks prompted text when you submit it. A title holds 1 to 160 characte
 
 ## Select a task
 
-Every command belongs to `task:*`. Select either level with its existing Task ID. A parent owns the Project, VM and publication; its ordered children are subtasks. REST uses `/api/v1/tasks` and `/tasks/{task}`. Parent responses expose `parent_id: null` and `subtasks`; child responses expose their `parent_id`.
+Every command belongs to `task:*`. Select either level with its existing Task ID. A parent owns the Project, VM and publication; its ordered children are subtasks. REST uses `/api/v1/tasks` and `/tasks/{task}`. Parent responses expose `parent_id: null` and `subtasks`, and `work` for a task with no subtask; child responses expose their `parent_id`.
 
 | Command | Selection and behavior |
 | --- | --- |

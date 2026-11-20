@@ -6,6 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\GitHub\GitHubAccessToken;
@@ -36,6 +37,9 @@ use Illuminate\Support\Facades\DB;
 /** Supplies execution copies and records native requests through normal Gateway admission. */
 final readonly class ProjectMaintenanceProjection implements DirectOperationProjection
 {
+    /** The reason that opens the assistance request of a maintenance task refused in backlog. */
+    private const string BacklogRefusal = 'Maintenance task refused in backlog: ';
+
     public function input(Operation $operation): array
     {
         if ($operation->kind === 'project.detect') {
@@ -230,12 +234,29 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 projectId: $operation->target_id, title: ValidatedData::string($input['title']), brief: ValidatedData::string($input['brief']),
                 status: TaskGroupStatus::Backlog,
                 tasks: array_values(array_map(TaskInputData::from(...), Arr::array($input, 'tasks', []))),
+                // A maintenance task has no subtask: Swamp sends its own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+                deliverables: array_key_exists('deliverables', $input) ? array_values(Arr::array($input, 'deliverables')) : null,
             ));
             if ($group->maintenance === null && $group->status === TaskGroupStatus::Backlog && $group->taskable_id === null) {
                 $maintenance = ValidatedData::object($request['maintenance']);
                 if (! in_array($maintenance['mode'] ?? null, ['routine', 'package'], true)
                     || (ValidatedData::object($maintenance['project'] ?? [])['projectId'] ?? null) !== $project->id) {
                     throw new ResourceOperationException('operation.result_invalid', 'The maintenance intent must name its admitted Project.', 422);
+                }
+                // The task leaves backlog by the rule every task meets, whether this run created it or reuses it. A refused task stays
+                // in backlog, is not admitted, and asks for a person with the refusal's instruction (docs/reference/projects.md#maintenance).
+                try {
+                    UpdateTaskGroupAction::leavesBacklog($group->tasks()->get());
+                } catch (ResourceOperationException $exception) {
+                    // A later refusal replaces an earlier one with its current instruction; any other request stays.
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::BacklogRefusal.$exception->errorCode.'. '.$exception->getMessage(),
+                        replaceFailure: self::backlogRefused($group));
+
+                    continue;
+                }
+                // A later run admits the task once a person fixed its shape: only that refusal clears, any other request stays.
+                if (self::backlogRefused($group)) {
+                    TaskAssistance::apply($group);
                 }
                 $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
                 DB::afterCommit(fn () => $this->startProvision($group));
@@ -245,6 +266,13 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
         }
 
         return [...$result, 'admitted_group_ids' => $admitted];
+    }
+
+    /** Whether the task's request is the refusal of a maintenance task in backlog, the one request a maintenance run may replace or clear. */
+    private static function backlogRefused(Task $group): bool
+    {
+        return $group->assistance_requested && $group->assistance_kind === AssistanceKind::Failure
+            && str_starts_with((string) $group->assistance_reason, self::BacklogRefusal);
     }
 
     private function startProvision(Task $group): void

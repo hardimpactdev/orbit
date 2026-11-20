@@ -26,7 +26,8 @@ final readonly class StoreTaskGroupCommentAction
         return DB::transaction(function () use ($group, $input, $requestId): TaskComment {
             $group = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             $this->operations->requireOpenExternal($group);
-            if ($group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->exists()) {
+            // The work of a task with no subtask is no subtask: its open work leaves the task's own request open to comments.
+            if ($group->tasks()->listedSubtasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])->exists()) {
                 throw new ResourceOperationException('tasks.assistance_subtask_open', 'Group assistance comments require all subtasks to have ended.', 409);
             }
             $comment = $group->comments()->create([

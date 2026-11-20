@@ -225,4 +225,4 @@ A native family may declare `terminal_result.captures` beside its fixed terminal
 
 A family with a result-reporting step may declare `terminal_result.fallback`: one step of the same job whose status and stdout are the result when the reporting step was skipped. A native declaration takes none ([Swamp command steps](/reference/swamp-command-steps#terminal-outputs)).
 
-The `tasks` extension registers the singular [`task:*` family](/cli/task). Its `task` route binding resolves parent and child IDs from the same table. The extension slug stays `tasks`.
+The `tasks` extension registers the singular [`task:*` family](/cli/task). Its `task` route binding resolves parent and child IDs from the same table. It resolves no work row of a [task with no subtask](/reference/tasks#a-task-with-no-subtask); the task's own ID addresses its work. The extension slug stays `tasks`.

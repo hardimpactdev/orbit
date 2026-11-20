@@ -17,7 +17,7 @@ If the nested fleet cannot run, capture the demo screenshots and run available t
 
 Run the commands from the repository root. Use `bin/web-verify routes` to read the map patterns in `apps/web/feature-map.json` before choosing a selector. A mapped control is `[data-testid=VALUE]`, using the `testid` from that map.
 
-Pass a concrete path to `open`, `screenshot`, and `console-errors`. Do not pass a pattern that still contains `$`, such as `/tasks/$id` or `/$section`. Replace each parameter with one segment. The demo fleet includes task group 12, subtask 31, activity 150, node 1, and deployment 1 on instance 1, so `/tasks/12` and `/tasks/12/subtasks/31` open real records. A path that still has a `$` returns exit 1, `"error": "unresolved-parameter"`, and `"next": "Replace each $name with one segment, such as open /tasks/12 instead of open /tasks/$id."` Follow `next` on every failure.
+Pass a concrete path to `open`, `screenshot`, and `console-errors`. Do not pass a pattern that still contains `$`, such as `/tasks/$id` or `/$section`. Replace each parameter with one segment. The demo fleet includes task group 12, subtask 31, activity 150, node 1, and deployment 1 on instance 1, so `/tasks/12` and `/tasks/12/subtasks/31` open real records. Task 14 is a task with no subtask, at `/tasks/14`. A path that still has a `$` returns exit 1, `"error": "unresolved-parameter"`, and `"next": "Replace each $name with one segment, such as open /tasks/12 instead of open /tasks/$id."` Follow `next` on every failure.
 
 For each route the change affects, save two screenshots. `screenshot` requires both flags. A missing flag is `"error": "usage"` and exit 2. Its `next` is `"Devices are iphone-15, pixel-8, or desktop. Engines are webkit or chromium."`
 
