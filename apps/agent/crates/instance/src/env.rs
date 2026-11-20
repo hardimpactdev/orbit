@@ -1,4 +1,4 @@
-//! A clone's `.env`: the default's file from the seed, merged with the Gateway's render (instance_clone_guest.py).
+//! A clone's `.env`: the default's file from the seed, merged with the Gateway's render (`instance_clone_guest.py`).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -117,7 +117,7 @@ fn blocks(text: &str) -> Vec<Block> {
             if let Some(closing) = closing {
                 raw = lines[i..=end].concat();
                 i = end;
-                value = body[..closing].to_owned();
+                body[..closing].clone_into(&mut value);
                 if quote == '"' {
                     value = unescape(&value);
                 }

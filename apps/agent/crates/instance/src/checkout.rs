@@ -52,7 +52,8 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
     let mark: Value = files.pull(MARK)?.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null);
     if mark.get("instance_id").and_then(Value::as_u64) != Some(input.instance_id) {
         branch(system, &incus, &files, &input)?;
-        let written = serde_json::json!({"instance_id": input.instance_id, "commit": input.expected_commit}).to_string() + "\n";
+        let mut written = serde_json::json!({"instance_id": input.instance_id, "commit": input.expected_commit}).to_string();
+        written.push('\n');
         files.push(MARK, 0, 0, "0600", written.as_bytes(), Folders::Root)?;
     }
     let held = files.read(&input.environment_file, "instance.container_checkout_failed")?;
@@ -120,9 +121,9 @@ fn branch(system: &impl System, incus: &Incus<'_, impl System>, files: &Files<'_
 
 /// Git in the copy's workspace as its writer, with no hooks and no file system monitor.
 fn git(incus: &Incus<'_, impl System>, input: &CheckoutInput, args: &[&str]) -> Result<String, Failure> {
-    let (uid, gid) = (AGENT.to_string(), input.group.to_string());
+    let (writer, group) = (AGENT.to_string(), input.group.to_string());
     let mut argv: Vec<String> = [
-        "--project", &input.project, "exec", &input.name, "--user", &uid, "--group", &gid, "--cwd", &input.workspace, "--env", "HOME=/home/agent", "--",
+        "--project", &input.project, "exec", &input.name, "--user", &writer, "--group", &group, "--cwd", &input.workspace, "--env", "HOME=/home/agent", "--",
         GIT, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
     ]
     .iter()
@@ -143,7 +144,7 @@ fn exclude(files: &Files<'_, impl System>, input: &CheckoutInput) -> Result<(), 
     if text.lines().any(|line| line == entry) {
         return Ok(());
     }
-    let mut updated = text.clone();
+    let mut updated = text;
     if !updated.is_empty() && !updated.ends_with('\n') {
         updated.push('\n');
     }
