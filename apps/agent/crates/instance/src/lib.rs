@@ -4,18 +4,21 @@
 //!   disk and guarded NIC, then the T3 proxy device. A repeat finds the copy and only completes what is missing.
 //! - [`prepare`] (`instance.prepare`): a stopped copy's files before its first start: the seed's Orbit units that are not
 //!   the copy's go, its own machine id, then the boot, trust and T3 files the Gateway rendered.
+//! - [`fetch_branch`] (`instance.fetch_branch`): the Instance's branch in the Node's mirror, when the origin has it.
 //! - [`start`] (`instance.start`): the copy's first start (its files shifted back first on a nested Node), then its
 //!   hostname and `/etc/hosts`.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
 
+mod fetch;
 mod prepare;
 mod shift;
 mod start;
 #[cfg(test)]
 mod tests;
 
+pub use fetch::fetch_branch;
 pub use prepare::prepare;
 pub use start::start;
 
@@ -68,6 +71,24 @@ pub trait System {
     ///
     /// A message when it cannot be read.
     fn read(&self, path: &str) -> Result<Vec<u8>, String>;
+
+    /// Where a Node path is: itself on a Node, inside a scratch folder in the tests.
+    fn path(&self, value: &str) -> std::path::PathBuf {
+        std::path::PathBuf::from(value)
+    }
+}
+
+/// A blob reference in an order: `{"blob": {"sha256": "…"}}`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BlobRef {
+    pub(crate) blob: BlobDigest,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BlobDigest {
+    pub(crate) sha256: String,
 }
 
 /// The Node's own system: `timeout`-bounded commands, the executor's blob cache and the Node's files.

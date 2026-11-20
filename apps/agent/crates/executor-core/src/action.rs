@@ -42,6 +42,8 @@ pub enum Action {
     InstancePrepare,
     /// Start a prepared copy and give it its names (ADR 0271). Its target is the copy.
     InstanceStart,
+    /// Fetch an Instance's branch into the Node's mirror of its repository (ADR 0271). Its target is the Node.
+    InstanceFetchBranch,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -56,7 +58,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -68,6 +70,7 @@ impl Action {
         Self::InstanceClone,
         Self::InstancePrepare,
         Self::InstanceStart,
+        Self::InstanceFetchBranch,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -78,7 +81,7 @@ impl Action {
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
-            Self::InstanceClone | Self::InstancePrepare | Self::InstanceStart => Family::Instance,
+            Self::InstanceClone | Self::InstancePrepare | Self::InstanceStart | Self::InstanceFetchBranch => Family::Instance,
         }
     }
 
@@ -90,7 +93,8 @@ impl Action {
             | Self::TlsEnsureCsr
             | Self::RoutePublishSite
             | Self::DnsPublishRecords
-            | Self::InstanceClone => TargetKind::Node,
+            | Self::InstanceClone
+            | Self::InstanceFetchBranch => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare | Self::InstanceStart => TargetKind::Instance,
         }
     }
@@ -109,6 +113,7 @@ impl Action {
             Self::InstanceClone => "instance.clone",
             Self::InstancePrepare => "instance.prepare",
             Self::InstanceStart => "instance.start",
+            Self::InstanceFetchBranch => "instance.fetch_branch",
         }
     }
 }
@@ -134,6 +139,7 @@ impl FromStr for Action {
             "instance.clone" => Ok(Self::InstanceClone),
             "instance.prepare" => Ok(Self::InstancePrepare),
             "instance.start" => Ok(Self::InstanceStart),
+            "instance.fetch_branch" => Ok(Self::InstanceFetchBranch),
             _ => Err(UnknownActionError),
         }
     }

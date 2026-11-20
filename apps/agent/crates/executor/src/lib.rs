@@ -158,7 +158,7 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart => instance(order),
+            Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch => instance(order),
         }
     }
 }
@@ -313,6 +313,7 @@ fn instance(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
     let result = match order.action() {
         Action::InstanceClone => orbit_executor_instance::clone(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceFetchBranch => orbit_executor_instance::fetch_branch(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|changes| Outcome::Applied { changes }),
         _ => orbit_executor_instance::start(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };

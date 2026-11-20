@@ -8,6 +8,7 @@ use super::*;
 struct Fake {
     answers: Vec<(String, Result<String, String>)>,
     calls: RefCell<Vec<(String, Option<String>)>>,
+    root: tempfile::TempDir,
 }
 
 impl Fake {
@@ -21,6 +22,7 @@ impl Fake {
                 })
                 .collect(),
             calls: RefCell::default(),
+            root: tempfile::tempdir().expect("scratch"),
         }
     }
 
@@ -45,6 +47,10 @@ impl System for Fake {
 
     fn read(&self, path: &str) -> Result<Vec<u8>, String> {
         Err(format!("{path} not in the double"))
+    }
+
+    fn path(&self, value: &str) -> std::path::PathBuf {
+        self.root.path().join(value.trim_start_matches('/'))
     }
 }
 
@@ -279,6 +285,50 @@ fn prepare_refuses_a_path_outside_the_copy_and_any_other_trust_source() {
     ] {
         let fake = Fake::new(&[]);
         assert_eq!(prepare(&fake, &prepare_input(&json!([item]))).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"), "{item}");
+        assert_eq!(fake.calls(), Vec::<String>::new());
+    }
+}
+
+fn fetch_input() -> Value {
+    json!({"mirror": "/var/lib/orbit/instance-repositories/12.git", "repository": "https://github.com/acme/app.git", "branch": "feature/x",
+        "protocol": "https", "credential": {"blob": {"sha256": "cred"}}})
+}
+
+#[test]
+fn a_branch_the_origin_lacks_fetches_nothing() {
+    let fake = Fake::new(&[("ls-remote", Ok(json!("")))]);
+
+    assert_eq!(fetch_branch(&fake, &fetch_input()).expect("fetch"), r#"{"commit":null}"#);
+    assert_eq!(fake.calls().len(), 1);
+    assert!(fake.calls()[0].ends_with("ls-remote --heads -- https://github.com/acme/app.git refs/heads/feature/x"), "{}", fake.calls()[0]);
+}
+
+#[test]
+fn a_branch_the_origin_has_lands_in_a_new_bare_mirror_and_the_credential_goes() {
+    let fake = Fake::new(&[("ls-remote", Ok(json!("abc\trefs/heads/feature/x"))), ("rev-parse", Ok(json!("abc123\n")))]);
+
+    assert_eq!(fetch_branch(&fake, &fetch_input()).expect("fetch"), r#"{"commit":"abc123"}"#);
+    let calls = fake.calls();
+    assert!(calls[1].starts_with("init --quiet --bare "), "{}", calls[1]);
+    assert!(calls[2].contains("protocol.allow=never") && calls[2].ends_with("fetch --quiet --no-tags -- https://github.com/acme/app.git +refs/heads/feature/x:refs/heads/feature/x"), "{}", calls[2]);
+    let folder = fake.path("/var/lib/orbit/instance-repositories");
+    assert_eq!(std::fs::read_dir(folder).expect("folder").count(), 0, "the credential file is gone");
+}
+
+#[test]
+fn fetch_refuses_a_mirror_elsewhere_a_branch_that_reads_as_an_option_and_another_protocol() {
+    for (pointer, value) in [
+        ("/mirror", json!("/root/.ssh")),
+        ("/mirror", json!("/var/lib/orbit/instance-repositories/../x.git")),
+        ("/branch", json!("--upload-pack=x")),
+        ("/branch", json!("a..b")),
+        ("/repository", json!("ext::sh -c x")),
+        ("/protocol", json!("file")),
+    ] {
+        let mut input = fetch_input();
+        *input.pointer_mut(pointer).expect("field") = value;
+        let fake = Fake::new(&[]);
+        assert_eq!(fetch_branch(&fake, &input).map_err(|failure| failure.code), Err("instance.fetch_input_invalid"), "{pointer}");
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }
