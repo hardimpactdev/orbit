@@ -73,7 +73,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
-| `watched_pr_completion` | task | `merged` or `closed` after `task:complete` confirms the end, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
+| `watched_pr_completion` | task | `merged` or `closed` after `task:complete` confirms the end, which also sets `watched_pr_state` to it, or `merged` before automatic merge cleanup. Null until then. Resume does not call GitHub |
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
@@ -1841,7 +1841,7 @@ When cancel marks the task `cancelled`, it follows the [ending rule](#assistance
 
 Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries.
 
-`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. A running or reviewing group with a task copy also completes when its work is already on the default branch and is not empty, such as work carried there by hand; [Published work of a copy](#published-work-of-a-copy) decides. An empty copy group needs a cancel. A refused complete answers `tasks.not_settling` with a `reason`: `status`, `pull_request_not_ended`, `work_unread`, `work_not_on_default` or `work_empty`.
+`task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended; it records the ended state, `merged` or `closed`, in `watched_pr_state` and `watched_pr_completion`. A running or reviewing group with a task copy also completes when its work is already on the default branch and is not empty, such as work carried there by hand; [Published work of a copy](#published-work-of-a-copy) decides. An empty copy group needs a cancel. A refused complete answers `tasks.not_settling` with a `reason`: `status`, `pull_request_not_ended`, `work_unread`, `work_not_on_default` or `work_empty`.
 
 Completion never destroys a copy that holds uncommitted, untracked, stashed or other-branch work. It reads the copy first, as a cancel does, and refuses with `tasks.copy_unpublished_work` and the read's counts, or `tasks.copy_workspace_unknown` when the copy cannot be read. Publish or remove that work, then complete again. Repeating completion on a completed group retries its attached workspace removal without a new read. A copy group whose watched PR merged completes by itself ([A copy group settles on merge](#a-copy-group-settles-on-merge)). An explicit cancellation or completion remains available even though automatic orchestration is removed.
 

@@ -150,7 +150,7 @@ final readonly class CompleteTaskGroupAction
                     throw $this->notReady('status');
                 }
                 if ($locked->watched_pr_completion === null) {
-                    $locked->update(['watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt, 'pr_opened_at' => $locked->pr_opened_at ?? $openedAt]);
+                    $locked->update(['watched_pr_state' => $state, 'watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt, 'pr_opened_at' => $locked->pr_opened_at ?? $openedAt]);
                 }
             });
         }, wait: false);
