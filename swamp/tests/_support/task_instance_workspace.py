@@ -25,6 +25,9 @@ args = sys.argv[1:]
 with open(os.environ['T1_CALLS'], 'a') as output:
     output.write(json.dumps(args) + '\\n')
 assert args[:3] == ['--project', 'alternate-proof', 'exec'] or args[:4] == ['--project', 'alternate-proof', 'file', 'pull'], args
+# T1_PULL_FAIL fails every transfer from the Instance, after the guest's own work succeeded.
+if args[2:4] == ['file', 'pull'] and os.environ.get('T1_PULL_FAIL') == '1':
+    sys.exit(1)
 if args[2] == 'exec' and args[3:6] == ['--disable-stdin', 'proof-instance', '--']:
     # The copy check of a publication: root in the copy, no cwd, a clean environment; in the test its root, Git user and workspace
     # are the test's own folders.

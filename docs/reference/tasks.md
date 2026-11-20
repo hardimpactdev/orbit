@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens,2027_03_18_000000_rerecord_task_insights_with_handoffs}.php"
 ---
 
 # Tasks
@@ -598,7 +598,9 @@ An ended group permits no subtask status move. Completing a subtask clears its a
 
 #### Subtask status in a task copy
 
-In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
+In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads.
+
+In a gated group the move to `completed` also needs the reviewer's accepted `approve` ([The review gate](#the-review-gate)). Since a turn started the subtask, it then keeps its title, brief, position and deliverables, as the next paragraph says.
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the corrections that the next section lists.
 
@@ -1165,6 +1167,73 @@ A Project without a GitHub repository or a valid default branch brings in no bas
 
 The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check brings in no base.
 
+### Handoffs
+
+A handoff is the end of one agent run in a copy, where the agent gives control back to the loop. Its type is `delivery` (the implementer), `review` (the reviewer) or `question` (any agent). A receipt is the JSON that a handoff leaves under the copy's Git directory, so it is never committed.
+
+The Gateway checks each handoff at its gate and writes one row to `task_handoffs` once the gate has finished: the subtask, the copy turn Operation, `type`, `receipt`, `rejected`, `rejection_reason` (empty unless rejected), `task_check_id` for a delivery, and `created_at`. A row that is not rejected was checked and accepted. A rejected receipt never fails an Operation: the caller sends the turn again.
+
+The gates hold only for a group that leaves backlog after they shipped; the group records it in `handoffs_gated`. A group that was already running finishes without them.
+
+#### The delivery receipt
+
+`bin/task-check` writes the delivery receipt at the end of every run to `$(git rev-parse --git-path orbit-handoff/delivery.json)`. It names the commit it checked and the tree of the working tree it checked, uncommitted and untracked files included. It lists each part with its name, its result and its seconds.
+
+```json
+{"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
+```
+
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it.
+
+The phase resolves the Git directory first and inspects the literal `orbit-handoff` entry in it. A link, as that folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
+
+The turn result returns it as `receipts.delivery`, or null. It keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative.
+
+#### The delivery gate
+
+The handoff check is the delivery gate. It removes any receipt before its commands run and after them. It keeps only the validated part table of the receipt its Project check wrote, as the check's `parts`, also when the phase, or a transfer or cleanup after it, fails. Part names are redacted before any result is stored, and a name that redaction empties leaves no table.
+
+When the check ends, other than cancelled, or when Swamp refuses to start it, the Gateway writes one delivery row. A refused start also ends the check `failed`. The row belongs to the subtask's latest implementer turn before the check, only when that turn ended done and has no delivery row yet. A check before the first turn, after a newer question or failed turn, or a second check of the same turn writes none.
+
+The gate compares the receipt's commit and tree with the work handed off: HEAD and the working tree before the check [merged main](#the-handoff-check-merges-main-first) or ran any command, uncommitted work included. The result names them `handed_off_head` and `handed_off_tree`. The implementer commits, then runs the check, so its receipt names its last commit. A check that observed neither rejects the delivery as `check_failed`. At this gate a setup or Project command that moves the handed-off work ends the check `changed`; only the base-merge may change it. A baseline or the check of an ungated group keeps the post-Project snapshot.
+
+| Result | When |
+| --- | --- |
+| Accepted | The turn left a receipt for the handed-off tree with no failed part, and the check passed |
+| `no_receipt` | The turn left no receipt, or an invalid one |
+| `other_commit` | The receipt names another commit or tree than the check observed |
+| `failed_part` | The receipt shows a failed part |
+| `claim_disproved` | A part the receipt shows passed failed in the check |
+| `check_failed` | The check failed, `tasks.check_conflict` and a refused start included, or it observed no handed-off work |
+
+A merge-main implementer turn after `tasks.check_conflict` stays allowed: that check wrote a rejected delivery row.
+
+A reviewer turn of a gated group requires the subtask's latest delivery row to be accepted for the commit under review: the commit of the check its gate ran. The gate answers before candidate eligibility. Otherwise the turn is refused with `tasks.handoff_required` (409): the implementer hands off again and the handoff check runs.
+
+#### The review receipt
+
+A reviewer turn of a gated group posts its review receipt to the Gateway, the way it sends [its pull request text](#the-reviewers-pull-request-text): `POST $ORBIT_COPY_API/handoff` with its copy key. Its prompt shows the exact `curl` call. The body holds no free text, so it needs no redaction:
+
+```json
+{"verdict": "changes", "findings": 2}
+```
+
+`verdict` is `approve` or `changes`. `findings` is the number of blocking findings, an integer from 0 to 100: 0 for `approve`, at least 1 for `changes`. `findings` must be a JSON integer: `true`, `"2"` and `2.0` are refused, not coerced. Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts.
+
+#### The review gate
+
+When a reviewer turn of a gated group ends `done`, the Gateway writes one review row. It is accepted with the posted verdict and number of findings as its receipt, or rejected as `no_receipt` when the turn posted none. A turn that fails writes none. A rejected review counts for no review round: the retry repeats the same round.
+
+A rejected review is sent again: the caller sends the reviewer turn again. The admissions of a gated group read the rows and refuse a skipped gate with `tasks.handoff_required` (409).
+
+An implementer turn after an accepted delivery waits until an accepted review row comes after it. An accepted `changes` lets the implementer fix the findings. Its next accepted delivery waits for a review again. A newer handoff check of the subtask that ended with `tasks.check_conflict` also lets the turn run, so the merge turn stays allowed. No other check outcome does.
+
+Completing a subtask of a gated group needs an accepted `approve` as the subtask's latest review row, after its latest delivery row. A gated group without its copy yet has no such row, so its subtask does not complete. Publishing a check of the subtask needs the same, and the approving reviewer turn must have reviewed the commit of that check. Another check of the same commit counts.
+
+#### Question handoffs
+
+A copy turn of a gated group that ends asking, in either role, writes an accepted `question` row. Its receipt holds the questions as the turn read them: `{"questions": [...]}`. A turn that asked but whose question Orbit could not read failed, and writes none.
+
 ### Workspace ownership
 
 When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.
@@ -1272,7 +1341,7 @@ Swamp selects a subtask, role, brief and operation key for each turn. The Gatewa
 
 ### Fetch before a turn
 
-This section and [Turn receipt](#turn-receipt) describe the Pi turn on a task VM, which is removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop). A copy turn fetches nothing and writes no receipt ([chart](/cli/task/turn#in-a-task-copy)).
+This section and [Turn receipt](#turn-receipt) describe the Pi turn on a task VM, which is removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop). A copy turn fetches nothing and writes no turn receipt of this kind ([chart](/cli/task/turn#in-a-task-copy)). In a gated group its agent leaves a [handoff receipt](#handoffs) instead.
 
 ### Turn receipt
 
@@ -1375,6 +1444,8 @@ Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#
 - For each failed part, `Last lines of <part>:` and the newest lines of its output. The failed parts share the bytes that the other summary lines leave.
 - The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
 
+Next to the output, a check stores its part table as `parts`: each part's name, result and seconds, from the delivery receipt of its run ([The delivery gate](#the-delivery-gate)). It is null when the Project check wrote no receipt.
+
 Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
 
 After the Project check's output, Orbit appends the deliverables and the check's outcome, so the output never ends with a result that the check's outcome contradicts:
@@ -1470,7 +1541,9 @@ Orbit decides from its own records that a group's work is done. All of these mus
 
 The commit counts, not the check. A re-check of a clean recorded HEAD makes a new check with the same commit, so a reviewer turn on the earlier check of that commit still counts.
 
-A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
+In a group without the [handoff gates](#handoffs), a copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval.
+
+In a gated group the reviewer's verdict is its review row: the move to `completed` and a publish need an accepted `approve` ([The review gate](#the-review-gate)). No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
 
 A [reopen](#reopen-the-last-subtask) of the last subtask is refused while a copy turn runs too, and a reopened subtask has not ended, so the group is not done until it is completed again.
 
@@ -1786,6 +1859,23 @@ A replaced implementer thread is one whose subtask has a newer implementer threa
 
 The work of a [task with no subtask](#a-task-with-no-subtask) counts as one subtask in each subtask number.
 
+### Handoff numbers
+
+Each summary holds `handoffs`, read from the [handoff](#handoffs) rows of the tasks in it that have `handoffs_gated`. Its numbers count only those tasks; a task without the gates has no rows.
+
+| Field | Meaning |
+| --- | --- |
+| `tasks` | Ended tasks with the gates |
+| `handoffs_per_subtask` | Handoff rows, rejected ones included, divided by the subtasks of those tasks, those without a row included. A task with no subtask counts as one |
+| `first_review_approval` | Subtasks whose first accepted review row has the verdict `approve`, divided by subtasks with an accepted review row. A rejected review row has no verdict |
+| `findings_per_first_review` | The blocking findings of those first reviews, divided by their number |
+| `questions_per_task` | The questions of the `question` rows' receipts divided by `tasks`: one turn that asks two questions counts two |
+| `rejected_deliveries` | Rejected delivery rows for each [rejection reason](#the-delivery-gate), zeros included |
+| `check_parts` | Each part of every recorded check of those tasks, by name: `runs`, `failures` (`FAILED` runs) and the mean `seconds` of a run, null without one |
+| `unresolved_tasks` | Ended tasks with a rejected row that no later accepted row of the same subtask and type follows. It must be 0 |
+
+`check_parts` counts each check once, of any kind, whether or not a delivery row names it. A run is a part that `passed`, `FAILED`, or was `skipped` after it took time. A part `not selected`, or `skipped` at 0 seconds before it started, is no run.
+
 ### Deploy times
 
 A production deploy is a succeeded `deploy` of an app-prod Instance of the Project, or a `verified` [Gateway release](/reference/gateway-recovery) when the Project's repository is the release repository. Orbit's own tasks get their stamp from Gateway releases. The release repository must match the `github.com` owner and name of exactly one Project, ignoring case; otherwise the release stamps nothing and logs a warning. A Gateway release uses its commit and the time it was recorded `verified`.
@@ -1821,9 +1911,9 @@ Each is the summary field of the same name over the tasks that ended in that buc
 
 ### Freshness
 
-The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
+The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a handoff row, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
 
-Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a handoff row of either, a thread, a verdict, a question, and a verified release that began before the group started. A handoff row counts from its `created_at`, since it never changes. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
 
 A stored report whose `daily` or `hourly` buckets lack a field they hold now, stored before that field existed, is computed again from the records on its next read and stored.
 
@@ -1833,7 +1923,7 @@ A record keeps the Project's id, and the report labels it with the Project's cur
 
 Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
 
-Records and reports stored before unknown tokens stayed null held 0 for them; a migration deletes them all, so the endpoint answers from the task tables until the next refresh records the groups of the trend again.
+Records and reports stored before unknown tokens stayed null held 0 for them; a migration deletes them all, so the endpoint answers from the task tables until the next refresh records the groups of the trend again. Records stored before the [handoff numbers](#handoff-numbers) lack their facts, and a second migration deletes records and reports the same way.
 
 ### Prometheus exporter
 

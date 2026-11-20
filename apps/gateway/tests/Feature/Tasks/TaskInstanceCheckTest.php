@@ -315,3 +315,14 @@ it('records no mode on a check that did not pass, and none when the Gateway sett
     'failed' => ['failed', 'pr_when_done'],
     'invalid setting' => ['passed', 'merge_when_green'],
 ]);
+
+it('asks only a gated group\'s handoff check to keep the handed-off work as it was (docs/reference/tasks.md#the-delivery-gate)', function (): void {
+    [$group, $subtask] = instanceCheckWorld();
+    $ungated = app(TaskCheckIntent::class)->start($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', 'ungated');
+    $ungated->update(['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'lock_key' => null]);
+    $group->update(['handoffs_gated' => true]);
+    $gated = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', 'gated');
+
+    expect($ungated->input['handoff_gate'])->toBeFalse()
+        ->and($gated->input['handoff_gate'])->toBeTrue();
+});

@@ -29,14 +29,20 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         self.git('push', '--quiet', 'origin', 'HEAD:main', cwd=work)
         self.git('update-server-info', cwd=self.origin)
 
+    def worktree(self):
+        """The tree of the working tree, uncommitted and untracked work included, as the receipt's `bin/task-check` reads it."""
+        return runpy.run_path(str(HARNESS['ROOT'].parent / 'bin/review-check'))['working_tree'](self.checkout)
+
     def test_a_clean_merge_commits_the_uncommitted_work_first_then_merges_the_head(self):
         self.bring_in()
         result = self.merge()
         self.assertEqual(self.evidence('base-merge'), result)
         commit = self.git('rev-parse', 'HEAD')
-        self.assertEqual(result, {'default_commit': self.head, 'merged_default': self.head, 'commit': commit, 'changed': True})
-        self.assertEqual(self.git('symbolic-ref', 'HEAD'), 'refs/heads/task-42')
+        # The tree of the work as the implementer handed it off, uncommitted work included: the tree its delivery receipt names.
         first, second = self.git('rev-parse', 'HEAD^1'), self.git('rev-parse', 'HEAD^2')
+        self.assertEqual(result, {'handed_head': self.work, 'handed_tree': self.git('rev-parse', first + '^{tree}'), 'default_commit': self.head, 'merged_default': self.head,
+                                  'commit': commit, 'changed': True})
+        self.assertEqual(self.git('symbolic-ref', 'HEAD'), 'refs/heads/task-42')
         self.assertEqual(second, self.head)
         # The uncommitted and the staged work are a commit on the agent's own, with the check's message: nothing is lost.
         self.assertEqual(self.git('rev-parse', first + '^'), self.work)
@@ -51,10 +57,10 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
 
     def test_a_branch_that_holds_the_head_merges_nothing(self):
         self.bring_in()
-        self.merge()
+        merged = self.merge()['commit']
         before = self.state()
         again = self.merge()
-        self.assertEqual(again, {'default_commit': self.head, 'merged_default': None, 'changed': False})
+        self.assertEqual(again, {'handed_head': merged, 'handed_tree': self.git('rev-parse', merged + '^{tree}'), 'default_commit': self.head, 'merged_default': None, 'changed': False})
         self.assertEqual(self.evidence('base-merge'), again)
         self.assertEqual(self.state(), before)
 
@@ -63,8 +69,9 @@ class TaskInstanceWorkspaceMergeTest(HARNESS['BaseHarness']):
         self.bring_in()
         before = self.state()
         objects_before = self.git('for-each-ref')
+        work = self.worktree()
         result = self.merge()
-        self.assertEqual(result, {'error_code': 'tasks.check_conflict', 'default_commit': self.head, 'conflicting_paths': ['work.txt'],
+        self.assertEqual(result, {'error_code': 'tasks.check_conflict', 'handed_head': self.work, 'handed_tree': work, 'default_commit': self.head, 'conflicting_paths': ['work.txt'],
                                   'conflicting_more': 0, 'changed': False})
         # The typed reader keeps the paths: the plain refusal shape would drop them.
         self.assertEqual(self.evidence('base-merge'), result)

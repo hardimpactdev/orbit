@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property list<string>|null $changed_paths
  * @property string|null $output
  * @property array<string, mixed>|null $deliverable_evidence
+ * @property list<array{name: string, result: string, seconds: float}>|null $parts each part of `bin/task-check` with its result and seconds ([Handoffs](/reference/tasks#handoffs))
  * @property string|null $commit_sha the handoff commit that CI tests, once Orbit committed it ([Handoff CI](/reference/tasks#handoff-ci))
  * @property Carbon|null $pushed_at when Orbit saw that commit pushed for CI
  * @property Carbon $started_at
@@ -41,6 +42,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $pr_title the reviewer's pull request title on this check ([The reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text))
  * @property string|null $pr_body the reviewer's pull request body on this check
  * @property int|null $pr_text_operation_id the reviewer turn that sent the title and the body
+ * @property array{verdict: string, findings: int}|null $review_receipt the review receipt that a reviewer turn posted on this check ([The review receipt](/reference/tasks#the-review-receipt))
+ * @property int|null $review_receipt_operation_id the reviewer turn that posted it
  */
 #[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class TaskCheck extends Model
@@ -48,8 +51,8 @@ final class TaskCheck extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
-        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
-        'pr_title', 'pr_body', 'pr_text_operation_id',
+        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'parts', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
+        'pr_title', 'pr_body', 'pr_text_operation_id', 'review_receipt', 'review_receipt_operation_id',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -67,9 +70,12 @@ final class TaskCheck extends Model
             'pr_mode' => TaskPrMode::class,
             'pid' => 'integer',
             'pr_text_operation_id' => 'integer',
+            'review_receipt' => 'array',
+            'review_receipt_operation_id' => 'integer',
             'exit_code' => 'integer',
             'changed_paths' => 'array',
             'deliverable_evidence' => 'array',
+            'parts' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'pushed_at' => 'datetime',

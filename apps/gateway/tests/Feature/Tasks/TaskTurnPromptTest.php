@@ -133,8 +133,9 @@ it('gives the implementer its fixed text: the briefs, the deliverables, its rule
     Before you hand off:
     1. Check each deliverable: the file change is there, each command passes, and
        each receipt shows what its deliverable asks.
-    2. Run the Project's check: `bin/task-check`. If it fails, fix the cause
-       and run it again. Leave the Project's other long gates to CI.
+    2. Commit your work, then run the Project's check: `bin/task-check`. If it fails,
+       fix the cause, commit and run it again: its receipt must name your last commit.
+       Leave the Project's other long gates to CI.
     3. Give the proof that the briefs and the deliverables ask for. Use no
        stand-in where they ask for the real thing. Fix what you can fix in this
        copy. If a proof still cannot run, or a deliverable is still not met,

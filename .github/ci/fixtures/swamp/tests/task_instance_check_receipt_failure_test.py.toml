@@ -1,0 +1,28 @@
+file = "swamp/tests/task_instance_check_receipt_failure_test.py"
+slices = false
+cost = 41
+cases = [
+  "test_a_project_command_that_moves_the_handed_off_work_ends_changed_only_at_the_delivery_gate",
+  "test_a_guest_failure_after_the_table_keeps_the_table",
+  "test_a_transfer_failure_after_the_guest_succeeded_keeps_the_table",
+  "test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/check.ts",
+  "swamp/workflows/workflow-task-instance-check.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_project_command_that_moves_the_handed_off_work_ends_changed_only_at_the_delivery_gate" = 25
+"test_a_guest_failure_after_the_table_keeps_the_table" = 5
+"test_a_transfer_failure_after_the_guest_succeeded_keeps_the_table" = 9
+"test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table" = 2
