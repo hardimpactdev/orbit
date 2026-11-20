@@ -182,7 +182,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
-2. reports its primitives, its version and whether its clock is synchronized to key `n<id>` of the `NODES` bucket, every minute; the Gateway routes a kind by this report, and Doctor reads the clock from it;
+2. reports to key `n<id>` of the `NODES` bucket every minute: its primitives, its version and its clock state. The Gateway routes a kind by the primitives. Doctor reads the clock state;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 
 It runs orders in slots: two per CPU, between 2 and 8. It pulls one order at a time and only when a slot is free, so a pulled order never waits past its acknowledgement wait. In an Incus container the CPU count comes from the smaller of the affinity mask and `/proc/cpuinfo`, which lxcfs limits to the container's quota.
