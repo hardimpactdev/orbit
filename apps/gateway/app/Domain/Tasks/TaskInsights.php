@@ -222,17 +222,20 @@ final class TaskInsights
                     $newest[$thread['task']] = max($newest[$thread['task']] ?? 0, $thread['id']);
                 }
             }
-            // Each sum counts the threads that reported it, and stays null when none did.
-            $tokens = self::sum(array_column($groupThreads, 'tokens'));
-            $input = self::sum(array_column($groupThreads, 'input'));
-            $cached = self::sum(array_column($groupThreads, 'cached'));
+            // Only the threads that report tokens count, and the group's tokens stay null when none does. The input and cached
+            // input come from those of them that report both, so the cache hit compares matching observations.
+            $known = array_values(array_filter($groupThreads, static fn (array $thread): bool => $thread['tokens'] !== null));
+            $split = array_values(array_filter($known, static fn (array $thread): bool => $thread['input'] !== null && $thread['cached'] !== null));
+            $tokens = $known === [] ? null : array_sum(array_column($known, 'tokens'));
+            $input = $split === [] ? null : array_sum(array_column($split, 'input'));
+            $cached = $split === [] ? null : array_sum(array_column($split, 'cached'));
             $replaced = 0;
             $cost = $tokens === null ? null : 0.0;
-            foreach ($groupThreads as $thread) {
+            foreach ($known as $thread) {
                 if ($thread['role'] === 'implementer' && $newest[$thread['task']] !== $thread['id']) {
-                    $replaced += $thread['tokens'] ?? 0;
+                    $replaced += $thread['tokens'];
                 }
-                $cost = $cost === null || ($thread['cost'] === null && ($thread['tokens'] ?? 0) > 0) ? null : $cost + ($thread['cost'] ?? 0.0);
+                $cost = $cost === null || ($thread['cost'] === null && $thread['tokens'] > 0) ? null : $cost + ($thread['cost'] ?? 0.0);
             }
             // A task's pull request merged, by Orbit or by a person, when it has a merge time.
             $mergedAt = $group['merged_at'];

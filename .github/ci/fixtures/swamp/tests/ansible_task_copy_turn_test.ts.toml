@@ -36,7 +36,7 @@ cases = [
   "a failed or unreadable answered resolution launches nothing and names the resolution failure",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 1175
+cost = 1195
 # Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
 # Reviewer-detach has only censored hosted receipts: its 138s body cost (120s before task 5402 added one phase run) is an ESTIMATE until a complete hosted run.
 # The Conn Server case (ADR 0258) has no hosted receipt: its 17s is an ESTIMATE over a 7.4s local run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
@@ -45,7 +45,7 @@ cost = 1175
 # The Codex create case (task 5645) has no hosted receipt: its 40s is an ESTIMATE over a 19s local run of its three phases, until a hosted run.
 # Task 5873: the ID readback case's 30s is local 20s plus headroom, and the settle-over case's 80s is an ESTIMATE over a local 57s run now that it
 # reads each recorded run through the helper (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
-# Task 6113: the usage read-back case's 20s is its local 10s run of two phases (tools/tests/ci-task-copy-turn-costs.json) plus headroom, until a hosted run.
+# Task 6113: the usage read-back case's 40s is its local 23s run of four phases (tools/tests/ci-task-copy-turn-costs.json) plus headroom, until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
 slices = 34
 inputs = [
@@ -66,7 +66,7 @@ inputs = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 2
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time" = 2
   "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 20
-  "the read-back reads the thread's token use through the helper; a failed read leaves it unknown and fails nothing" = 20
+  "the read-back reads the thread's token use through the helper; a failed read leaves it unknown and fails nothing" = 40
   "a continued turn finds its thread by title and sends the prompt to it, with no model and no title" = 17
   "a continued turn whose thread T3 does not hold launches nothing and says so" = 10
   "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread" = 10

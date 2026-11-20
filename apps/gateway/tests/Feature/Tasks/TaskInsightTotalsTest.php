@@ -451,17 +451,26 @@ it('keeps unknown tokens null in rows, records, summaries, weeks and breakdowns,
         ->and($stored['breakdowns']['model'][0]['tokens_per_merged_pr'])->toBeNull()
         ->and($stored)->toBe($report());
 
+    // Threads without tokens that still report an input split and a cost count for nothing: the group's numbers stay null.
+    AgentThread::query()->where('task_group_id', $unknown->id)->update(['input_tokens' => 100, 'cached_input_tokens' => 200, 'cost_usd' => 0.75]);
+    $row = static fn (): array => Arr::only(app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey($unknown->id))[0], ['tokens', 'cost', 'input', 'cached', 'wasted']);
+    expect($row())->toBe(['tokens' => null, 'cost' => null, 'input' => null, 'cached' => null, 'wasted' => null]);
+
     // A known group next to the unknown one: every token number counts the known group alone.
     insightGroup($app, 1.5);
-    // One thread that reports tokens among threads that do not: the group sums the known one.
-    AgentThread::query()->where('task_group_id', $unknown->id)->where('model', 'claude-haiku-5-5')
-        ->update(['tokens' => 40, 'input_tokens' => 30, 'cached_input_tokens' => 10, 'cost_usd' => 0.1]);
-    $mixed = app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey($unknown->id))[0];
-    expect(Arr::only($mixed, ['tokens', 'input', 'cached', 'wasted']))->toBe(['tokens' => 40, 'input' => 30, 'cached' => 10, 'wasted' => 0]);
-    AgentThread::query()->where('task_group_id', $unknown->id)->update(['tokens' => null, 'input_tokens' => null, 'cached_input_tokens' => null, 'cost_usd' => null]);
-    $current = $report()['current'];
-    expect(Arr::only($current, array_keys($nulls)))->toBe(['tokens' => 2601, 'cost_usd' => 0.85, 'tokens_per_merged_pr' => 2601, 'cost_per_merged_pr' => 0.85,
+    expect(Arr::only($report()['current'], array_keys($nulls)))->toBe(['tokens' => 2601, 'cost_usd' => 0.85, 'tokens_per_merged_pr' => 2601, 'cost_per_merged_pr' => 0.85,
         'wasted_share' => 900 / 2601, 'cache_hit' => 210 / 2511, 'tokens_per_hundred_lines' => intdiv(2601 * 100, 133)]);
+
+    // One thread that reports tokens among threads that do not: the group counts that thread alone, its split and its cost.
+    $haiku = AgentThread::query()->where('task_group_id', $unknown->id)->where('model', 'claude-haiku-5-5');
+    $haiku->update(['tokens' => 40, 'input_tokens' => 30, 'cached_input_tokens' => 10, 'cost_usd' => 0.1]);
+    expect($row())->toBe(['tokens' => 40, 'cost' => 0.1, 'input' => 30, 'cached' => 10, 'wasted' => 0]);
+    // A token-reporting thread without a cached count adds no split: input and cached match the threads that report both.
+    $haiku->update(['cached_input_tokens' => null]);
+    expect($row())->toBe(['tokens' => 40, 'cost' => 0.1, 'input' => null, 'cached' => null, 'wasted' => 0]);
+    // A token-reporting thread without a cost leaves the group's cost unknown.
+    $haiku->update(['cost_usd' => null]);
+    expect($row())->toBe(['tokens' => 40, 'cost' => null, 'input' => null, 'cached' => null, 'wasted' => 0]);
 });
 
 it('drops the records and totals stored with 0 for unknown tokens, so reports come from the source tables until the refresh records them again', function (): void {

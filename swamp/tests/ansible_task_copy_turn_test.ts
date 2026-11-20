@@ -242,6 +242,28 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
+// The local connection, except that it loses the connection to the copy Node for every command of the task named by
+// `T3_UNREACHABLE`, as a dropped SSH connection would: Ansible then reports that task's host unreachable.
+const UNREACHABLE = `import importlib.util, inspect, os
+import ansible.plugins.connection
+from ansible.errors import AnsibleConnectionFailure
+
+# This file takes the built-in plugin's module name, so the built-in is loaded from its own file.
+_spec = importlib.util.spec_from_file_location('orbit_builtin_local', os.path.join(os.path.dirname(ansible.plugins.connection.__file__), 'local.py'))
+_builtin = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_builtin)
+DOCUMENTATION = _builtin.DOCUMENTATION
+Local = _builtin.Connection
+
+class Connection(Local):
+    def exec_command(self, cmd, in_data=None, sudoable=True):
+        for frame in inspect.stack():
+            task = getattr(frame.frame.f_locals.get('self'), '_task', None)
+            if getattr(task, 'name', None) == os.environ['T3_UNREACHABLE']:
+                raise AnsibleConnectionFailure('The copy Node dropped the connection.')
+        return super().exec_command(cmd, in_data, sudoable)
+`;
+
 type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; model: Record<string, unknown> | null; detached: boolean; launched: boolean;
     start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null;
     stop: Record<string, unknown> | null; read: Record<string, unknown> | null; usage: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[];
@@ -256,6 +278,8 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         Deno.mkdirSync(run);
         Deno.writeTextFileSync(`${folder}/calls`, "");
         Deno.writeTextFileSync(`${folder}/bin/incus`, SHIM);
+        Deno.mkdirSync(`${folder}/connection`);
+        if (copy.T3_UNREACHABLE) Deno.writeTextFileSync(`${folder}/connection/local.py`, UNREACHABLE);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         Deno.writeTextFileSync(`${run}/intent.json`, JSON.stringify({ runtime: intent.runtime, ssh_execution: ssh, turn: { ...turn, ...change } }));
         const done = await new Deno.Command("ansible-playbook", {
@@ -264,7 +288,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             env: { ORBIT_RUN: run, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 T3_MODEL_HELPER: `${shipped}/task_copy_codex_model.py`,
-                ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+                ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_CONNECTION_PLUGINS: `${folder}/connection`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
         const json = (name: string) => { const text = read(`${run}/${name}`); return text === null ? null : JSON.parse(text); };
@@ -318,6 +342,19 @@ Deno.test({ name: "the read-back reads the thread's token use through the helper
     const failed = await phase("completed", {}, "clean", "questions", "", { T3_USAGE: "fail" });
     assert(failed.ok, failed.output);
     assertEquals([failed.usage!.usage_exit, failed.result.state, failed.result.ended, failed.result.usage], [1, "done", true, null]);
+    // A connection lost at the usage read alone changes only the usage: the turn keeps its transcript, and a reviewer's checkout is
+    // still restored.
+    const lost = { T3_UNREACHABLE: "Read the token use of the thread's provider turns" };
+    const dropped = await phase("completed", {}, "clean", "questions", "", lost);
+    assert(dropped.ok, dropped.output);
+    assert(dropped.output.includes("The copy Node dropped the connection."), dropped.output);
+    const { usage: _, ...kept } = done.result;
+    assertEquals([dropped.usage, dropped.result.usage, { ...dropped.result, usage: undefined }], [null, null, { ...kept, usage: undefined }]);
+    assertEquals(dropped.result.transcript.length > 0, true);
+    const reviewer = await phase("completed", { candidate }, "clean", "questions", "", lost);
+    assert(reviewer.ok, reviewer.output);
+    assertEquals([reviewer.usage, reviewer.restore, reviewer.result.state, reviewer.result.error_code, reviewer.result.ended, reviewer.result.usage],
+        [null, { restored: true }, "done", undefined, true, null]);
 } });
 
 Deno.test({ name: "a continued turn finds its thread by title and sends the prompt to it, with no model and no title", ignore: !available, async fn() {
