@@ -55,6 +55,9 @@ enum Item {
     /// The Orbit root from `source`, linked by its name and its OpenSSL hash in `hash_directory`, and appended to that
     /// folder's bundle once. A link to an older root under another hash goes.
     Trust { source: String, path: String, hash_directory: String, uid: u32, gid: u32, mode: String },
+    /// A folder made again with exactly these files, owned by root (files 0644, folders 0755), and an empty `.skills`
+    /// folder: the agent instructions a Project gives its clones. A file the Project removed is gone.
+    Folder { path: String, files: Vec<FolderFile> },
     /// An entry in a user's NSS store, when the user's home exists in the copy and the trust module's library is the
     /// version the entry needs.
     Nss {
@@ -69,6 +72,14 @@ enum Item {
         library: String,
         version: String,
     },
+}
+
+/// One file of a [`Item::Folder`], by its path inside the folder.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FolderFile {
+    path: String,
+    content: String,
 }
 
 /// The user and group that own a link's missing folders.
@@ -86,6 +97,7 @@ struct Owner {
 ///
 /// `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`,
 /// `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`,
+/// `instance.agent_folder_refused`,
 /// `schedule.container_clone_cleanup_failed` or `instance.prepare_failed`.
 pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
     let input: PrepareInput =
@@ -137,6 +149,15 @@ fn check(input: &PrepareInput) -> Result<(), String> {
                     return Err(format!("{source} is not a trust source"));
                 }
                 (vec![path, hash_directory], vec![mode])
+            }
+            Item::Folder { path, files } => {
+                for file in files {
+                    let inside = &file.path;
+                    if inside.is_empty() || inside.starts_with('/') || inside.split('/').any(|part| part.is_empty() || part == "." || part == "..") || inside.bytes().any(|b| b.is_ascii_control()) {
+                        return Err(format!("{inside} is not a path inside {path}"));
+                    }
+                }
+                (vec![path], vec![])
             }
             Item::Nss { home, directories, path, mode, directory_mode, .. } => {
                 let mut paths = vec![home.as_str(), path.as_str()];
@@ -242,6 +263,17 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             };
             files.incus.change(&["--project", files.project, "file", "create", "--type=symlink", "--force", &format!("{}{path}", files.name), target])?;
             Ok(made + 1)
+        }
+        Item::Folder { path, files: entries } => {
+            if files.kind(path, "instance.agent_folder_refused")?.is_some_and(|kind| kind != "directory") {
+                return Err(Failure::new("instance.agent_folder_refused", path.clone()));
+            }
+            let _ = files.incus.change(&["--project", files.project, "file", "delete", "--force", &format!("{}{path}", files.name)]);
+            for entry in entries {
+                files.push(&format!("{path}/{}", entry.path), 0, 0, "0644", entry.content.as_bytes(), Folders::Root)?;
+            }
+            files.incus.change(&["--project", files.project, "file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755", &format!("{}{path}/.skills", files.name)])?;
+            Ok(u32::try_from(entries.len()).unwrap_or(u32::MAX) + 1)
         }
         Item::Trust { source, path, hash_directory, uid, gid, mode } => trust(system, files, source, path, hash_directory, (*uid, *gid, mode)),
         Item::Nss { home, directories, path, entry, uid, gid, mode, directory_mode, library, version } => {

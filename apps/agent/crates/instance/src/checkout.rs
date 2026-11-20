@@ -49,6 +49,7 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
     let rendered = system.blob(&input.environment.blob.sha256).map_err(|detail| Failure::new("instance.checkout_content_missing", detail))?;
     let incus = Incus { system, code: "instance.container_checkout_failed" };
     let files = Files { incus: &incus, project: &input.project, name: &input.name };
+    identity(&incus, &input)?;
     let mark: Value = files.pull(MARK)?.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null);
     if mark.get("instance_id").and_then(Value::as_u64) != Some(input.instance_id) {
         branch(system, &incus, &files, &input)?;
@@ -115,6 +116,20 @@ fn branch(system: &impl System, incus: &Incus<'_, impl System>, files: &Files<'_
     let commit = git(incus, input, &["rev-parse", "HEAD"])?;
     if now.trim() != input.branch || commit.trim() != input.expected_commit {
         return Err(Failure::new("instance.container_checkout_failed", format!("the workspace holds {} at {}", now.trim(), commit.trim())));
+    }
+    Ok(())
+}
+
+/// The writer's Git identity: the workspace is its one safe directory, and a name and an e-mail when it has none.
+fn identity(incus: &Incus<'_, impl System>, input: &CheckoutInput) -> Result<(), Failure> {
+    let safe = git(incus, input, &["config", "--global", "--get-all", "safe.directory"]).unwrap_or_default();
+    if safe.lines().collect::<Vec<_>>() != [input.workspace.as_str()] {
+        git(incus, input, &["config", "--global", "--replace-all", "safe.directory", &input.workspace])?;
+    }
+    for (key, value) in [("user.name", "Orbit Agent"), ("user.email", "agent@orbit.local")] {
+        if git(incus, input, &["config", "--global", "--get", key]).is_err() {
+            git(incus, input, &["config", "--global", key, value])?;
+        }
     }
     Ok(())
 }
