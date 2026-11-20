@@ -32,7 +32,9 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'instance', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'instance', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns'],
+        // The Gateway's own Node runs the executor too: it joins the bus and reports its clock (ADR 0271 N7).
+        RoleName::Gateway->value => ['proof']];
 
     /**
      * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,

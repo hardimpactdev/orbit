@@ -73,7 +73,9 @@ afterEach(function (): void {
 
 it('passes when every app-dev Node runs the pinned executor build, and reads no other Node', function (): void {
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity', ['--json' => true])
         ->expectsOutputToContain('"ok":true')
@@ -104,7 +106,9 @@ it('refuses while the converge would skip the install', function (): void {
 
 it('refuses a Node whose service still runs another build than the installed pinned binary', function (): void {
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n".str_repeat('d', 64)."\nactive\nfrozen:\ncaddy:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.running_build_differs")
@@ -134,7 +138,9 @@ it('refuses a frozen container whose Instance the Gateway does not record asleep
         'node_id' => $this->first->id, 'status' => OperationStatus::Failed, 'error_code' => 'instance.power_helper_failed', 'input' => []]);
     $frozen = "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n{$runtime->container_name}\ncaddy:\n";
     $this->reports = ['10.45.0.2' => new CommandResult(0, $frozen, '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): instance.frozen_unrecorded (Instance {$instance->id}). Keep ORBIT_EXECUTOR_WAKE_ENABLED"
@@ -149,7 +155,9 @@ it('refuses a frozen container whose Instance the Gateway does not record asleep
 
 it('refuses a Node whose Incus list failed, rather than passing it unread', function (): void {
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.node_unreachable")->assertFailed();
 });
@@ -170,7 +178,8 @@ function parityProxy(array $change = [], ?string $without = null): string
 it('passes an activation proxy that reaches this Gateway as the route renderer draws it, and names each wrong one', function (): void {
     parityNode('gateway', '10.45.0.1', RoleName::Gateway);
     $report = fn (string ...$proxies): CommandResult => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n".implode("\n", $proxies)."\n", '', 1, false);
-    $this->reports = ['10.45.0.2' => $report(parityProxy()), '10.45.0.4' => $report()];
+    // The Gateway's own Node runs the executor too.
+    $this->reports = ['10.45.0.2' => $report(parityProxy()), '10.45.0.4' => $report(), '10.45.0.1' => $report()];
     $this->artisan('orbit:executor-parity', ['--json' => true])->expectsOutputToContain('"ok":true')->assertSuccessful();
 
     $this->reports['10.45.0.2'] = $report(parityProxy(['rewrite' => ['method' => 'POST']]));
@@ -202,7 +211,9 @@ it('passes an activation proxy that reaches this Gateway as the route renderer d
 
 it('refuses a Node whose loaded Caddy config it could not read', function (): void {
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.config_unreadable")->assertFailed();
 });
@@ -330,14 +341,18 @@ it('finds the activation proxy inside production\'s nested Caddy routes and pass
 
     parityNode('gateway', '10.45.0.1', RoleName::Gateway);
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n".parityProductionProxies(parityProductionConfig())."\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
     $this->artisan('orbit:executor-parity', ['--json' => true])->expectsOutputToContain('"ok":true')->assertSuccessful();
 });
 
 it('refuses a wrong or missing activation proxy inside production\'s nested Caddy routes, naming the Instance and site', function (Closure $change, string $named): void {
     parityNode('gateway', '10.45.0.1', RoleName::Gateway);
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n".parityProductionProxies(parityProductionConfig($change))."\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.activation_proxy_wrong (")
         ->expectsOutputToContain($named)->assertFailed();
@@ -357,6 +372,8 @@ it('keeps each part of the read on its own line when no executor is installed, s
     $read = parityFrozenRead('[ "$1" = -n ] && shift; exec "$@"', 'true', 'Read', '[ "$1" = is-active ] && echo inactive; true');
     expect($read)->toBe("\n\ninactive\nfrozen:\n");
 
-    $this->reports = ['10.45.0.2' => new CommandResult(0, $read, '', 1, false), '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, $read, '', 1, false), '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        // The Gateway's own Node runs the executor too.
+        '10.45.0.1' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.missing")->assertFailed();
 });
