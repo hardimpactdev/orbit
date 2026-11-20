@@ -837,6 +837,8 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
         $dev->refresh()->forceFill(['release_inputs' => null])->saveQuietly();
     } elseif ($change === 'agent drift') {
         app(AgentReportedVersions::class)->record($dev->id, '1.2.3+0000000000000000');
+        // The report lives in the agent view's file store, outside the test database: a later test must not see it.
+        $this->beforeApplicationDestroyed(static fn () => app(AgentReportedVersions::class)->forget($dev->id));
     }
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);
