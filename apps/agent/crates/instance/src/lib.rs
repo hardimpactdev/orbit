@@ -9,6 +9,8 @@
 //!   merged from the default's and the Gateway's render.
 //! - [`start`] (`instance.start`): the copy's first start (its files shifted back first on a nested Node), then its
 //!   hostname and `/etc/hosts`.
+//! - [`t3`] (`instance.t3`): the copy's T3 running, its two sessions issued, checked and sealed to the Gateway, and its
+//!   workspace a T3 project.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
@@ -19,6 +21,7 @@ mod fetch;
 mod prepare;
 mod shift;
 mod start;
+mod t3;
 #[cfg(test)]
 mod tests;
 
@@ -26,6 +29,7 @@ pub use checkout::checkout;
 pub use fetch::fetch_branch;
 pub use prepare::prepare;
 pub use start::start;
+pub use t3::t3;
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
