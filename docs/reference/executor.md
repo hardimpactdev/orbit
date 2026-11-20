@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.copy_volume` and `instance.spare_volume`. Such a target may also name one part of the Node, `<node>:<part>` with a part of lowercase letters, digits and `-`: orders for one target run one at a time, so the parts of one create, and other creates, run side by side. Sleep, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.stop`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.copy_volume` and `instance.spare_volume`. Such a target may also name one part of the Node: `<node>:<part>`, with a part of lowercase letters, digits and `-`. Orders for one target run one at a time. So the parts of one create, and other creates, run side by side. Sleep, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.stop`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -249,7 +249,15 @@ It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clo
 
 #### instance.copy_volume
 
-`instance.copy_volume` targets the Node. It makes a nested-fleet copy's own inner volume ([The inner volume](/reference/development-containers#the-inner-volume)) from the seed that `instance.clone` copies, read the same way. A spare of that seed is taken by a rename ([Spare volumes](/reference/development-containers#spare-volumes)); a rename that another create won falls back to a copy. The default's volume must hold a snapshot with the seed's name, or it refuses with `instance.default_seed_incomplete`. A volume of the copy's name that its disk does not name yet is left from a failed run and is made again. Spares of an older seed go. The volume records its size; `instance.start` names it in the copy's disk.
+`instance.copy_volume` targets the Node. It makes the inner volume of a nested-fleet copy ([The inner volume](/reference/development-containers#the-inner-volume)). It reads the seed as `instance.clone` does.
+
+- A spare of that seed is taken by a rename ([Spare volumes](/reference/development-containers#spare-volumes)).
+- When another create took the spare first, the volume is copied.
+- The default's volume must hold a snapshot with the seed's name, or it refuses with `instance.default_seed_incomplete`.
+- A volume of the copy's name that its disk does not name yet is left from a failed run. It is made again.
+- Spares of an older seed go.
+
+The volume records its size. `instance.start` names it in the copy's disk.
 
 It answers `{"snapshot", "spare"}`. Codes: `instance.copy_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.copy_volume_failed`.
 
@@ -264,7 +272,7 @@ It answers `{"snapshot", "spare"}`. Codes: `instance.copy_volume_input_invalid`,
 First the seed's Orbit Process, Schedule and Node service units that are not the copy's go. The copy gets its own machine id. Then each item goes in, in order:
 
 - a file, inline or from a blob for a secret;
-- JSON merged over the copy's own file, object by object. Each string equal to `key_value` gets the placeholder model `key`. A provider instance of the agent's own stays. A file that already holds Orbit's settings, or the Conn Server's mark of a key it moved into its store, stays as it is. Settings that need the key refuse without it (`instance.clone_t3_files_refused`);
+- JSON merged over the copy's own file, object by object, as [JSON settings](#json-settings) describes;
 - a link;
 - the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
 - an NSS store entry;
@@ -273,6 +281,16 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 The seed's manifest, `/etc/orbit/seed-manifest.json` ([The seed manifest](/reference/development-containers#the-seed-manifest)), is read once first. An item the seed holds as rendered is not placed, and the manifest's unit list replaces the folder listings.
 
 The list may come as one blob, `files_blob`, with each file's content inline. It answers `{"changes", "manifest", "app_account_current", "workspace_clean"}`: whether the manifest was there, whether the seed's swap ran with this create's swap file (`app_account`), and whether its tree was clean. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+
+#### JSON settings
+
+Prepare merges a JSON settings file into the copy's own file, object by object:
+
+- each string equal to `key_value` gets the placeholder model `key`;
+- a provider instance of the agent's own stays;
+- a file that already holds Orbit's settings stays as it is;
+- a file with the Conn Server's mark of a key that it moved into its store stays as it is too;
+- settings that need the key refuse without it, with `instance.clone_t3_files_refused`.
 
 #### instance.start
 
@@ -284,7 +302,7 @@ On a Node without idmapped mounts, the seed's files are shifted. There a stopped
 
 Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block. Last, root runs the app-account swap file that prepare wrote (`app_account`, `/usr/local/libexec/orbit-app-user`). A copy of an older default moves from `orbit` and `work` to `www-data` there, before checkout runs Git as `agent`. On a copy that already uses `www-data`, the swap only reads. Without `app_account`, when the seed's own swap ran with the same file, the step runs none.
 
-A nested-fleet copy's disk first names its own inner volume (`volume`), which `instance.copy_volume` made, before the guard reads the devices.
+Before the guard reads the devices, the copy's disk names the volume that `instance.copy_volume` made (`volume`).
 
 It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
 
@@ -317,11 +335,13 @@ Git never takes the `.env`: one line in the checkout's `info/exclude` names it. 
 
 `instance.club_key` targets a running nested-fleet copy. It writes the nested Gateway's Club key into the copy's `/run`, a tmpfs that no snapshot holds ([The Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). Each step is one fixed command in the copy, as `instance_nested_club_key.sh` runs them:
 
-- `/run` and the key's folder must be tmpfs, or it refuses with `instance.nested_club_key_not_tmpfs`;
-- the folder is root's with the nested Gateway's group, mode 0750, and a tmpfiles rule makes it at each boot;
+- `/run` and the key's folder must be tmpfs. Else it refuses with `instance.nested_club_key_not_tmpfs`;
+- root owns the folder, with the nested Gateway's group and mode 0750;
+- a tmpfiles rule makes the folder at each boot;
 - a key equal to the one there changes nothing;
 - a new key goes into a `.next` file with the key's owner and mode 0600, then replaces the key;
-- when the inner Incus answers and the nested Gateway runs, its Swamp serve restarts. Otherwise serve reads the key when it next starts.
+- the nested Gateway's Swamp serve restarts, once the inner Incus answers and the nested Gateway runs;
+- otherwise serve reads the key at its next start.
 
 The key comes as a blob; without one, nothing is written. It answers `{"club_key"}`: `changed`, `changed_serve_pending`, `unchanged` or null. Codes: `instance.club_key_input_invalid`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed`.
 

@@ -53,15 +53,24 @@ A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a producti
 
 The engine runs a container clone's create from its admitted intent (`direct_provisioning.container`). Its steps are the executor's `instance` family ([Executor: The instance family](/reference/executor#the-instance-family)):
 
-1. `clone`, `fetch` and, for a nested-fleet copy, `copy_volume`, at once on the Node: the copy of the default's seed with its ACL, NIC, T3 proxy and route rule; the branch into the Node's mirror, with a read credential the Gateway mints and sends as a blob; the copy's own inner volume, taken from a [spare](/reference/development-containers#spare-volumes) when one of the same seed exists. Each locks only its own part of the Node.
-2. `prepare`, on the copy, after `clone`: the files that the [seed manifest](/reference/development-containers#the-seed-manifest) does not show in the seed, as one blob, because an order holds at most 4 KB. Settings merge into the seed's own.
-3. `start`, after `prepare` and `copy_volume`: the copy's own volume in its disk, the network guard (for a nested-fleet copy its exact config, devices and volumes), the start, the copy's names, and the app-account swap when the seed's did not run with the same file.
-4. After `start`, side by side: `club_key` on a nested-fleet copy (the nested Gateway's Club key in its `/run`; without a value on the Gateway, nothing), `checkout` after `fetch` too (the branch, a task copy's clean unless the seed's tree was clean at its commit, the merged `.env`), and `spare` on a nested-fleet copy, the default's next spare volume.
-5. `t3`, after `checkout`: T3 or the Conn Server running, its project, and its two sessions sealed to the Gateway's key.
+| Step | After | Where | What it does |
+| --- | --- | --- | --- |
+| `clone` | | Node | Copies the default's seed with its ACL, NIC, T3 proxy and route rule |
+| `fetch` | | Node | Fetches the branch into the Node's mirror; the Gateway sends the read credential as a blob |
+| `copy_volume` | | Node | Makes a nested-fleet copy's inner volume, from a [spare](/reference/development-containers#spare-volumes) when it can |
+| `prepare` | `clone` | copy | Writes the files that the [seed manifest](/reference/development-containers#the-seed-manifest) does not show in the seed |
+| `start` | `prepare`, `copy_volume` | copy | Names the volume, guards the network, starts the copy and gives it its names |
+| `club_key` | `start` | copy | Writes a nested-fleet copy's Club key into its `/run` |
+| `checkout` | `start`, `fetch` | copy | Checks out the branch, cleans a task copy and merges `.env` |
+| `spare` | `start` | Node | Makes the default's next spare volume |
+| `t3` | `checkout` | copy | Starts T3 or the Conn Server and seals its two sessions to the Gateway |
+| `stop` | `clone` | copy | Runs only after a failed step |
 
-`spare` is optional: the create neither waits for it nor fails by it. `stop` runs only after a failed step, once `clone` is done: the copy stops and stays for a retry or a destroy. The [engine chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-engine.mmd) has the graph.
+Each Node step locks only its own part of the Node. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
 
-The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. It also names a task copy's `workspace_cleaned` and a nested-fleet copy's Club key outcome, as the Swamp result does. A failed `club_key` or `checkout` step fails the create at `workspace` with its own code, such as `instance.nested_club_key_not_tmpfs`. A failed create's result says `route_publication: deferred` too. The completion runs on Swamp, as before.
+`spare` is optional: the create neither waits for it nor fails by it. `stop` keeps the copy stopped for a retry or a destroy. The [engine chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-engine.mmd) has the graph.
+
+The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. It also names what a task copy's clean removed (`workspace_cleaned`). For a nested-fleet copy it names what the Club key step did, as the Swamp result does. A failed `club_key` or `checkout` step fails the create at `workspace` with its own code, such as `instance.nested_club_key_not_tmpfs`. A failed create's result says `route_publication: deferred` too. The completion runs on Swamp, as before.
 
 Some clones start on Swamp:
 
@@ -89,9 +98,11 @@ The `files_blob` holds the model environment inline. Each JSON settings file goe
 - a pending step whose `after` steps are done is sent;
 - a sent step past its deadline is sent again with a new order;
 - a sent step past its budget fails with `engine.step_budget_exceeded`;
-- after a step failed, no more of the Operation's own steps are sent; its failure steps (`on_failure`) whose `after` steps are done are sent, the others skipped, and the Operation fails once they ended;
-- the Operation succeeds once all its steps are done, its optional steps (`optional`) aside: it neither waits for them nor fails by them, and a failure step is never sent;
+- after a step failed, the Operation sends only its failure steps, and fails once they ended;
+- the Operation succeeds once all its steps are done, its optional steps aside;
 - the Operation ends as cancelled at the first transition after a cancel request.
+
+A failure step (`on_failure`) runs only after another step failed. It is sent when its `after` steps are done, and skipped when they are not. An optional step (`optional`) runs as any step, but the Operation neither waits for it nor fails by it.
 
 The steps' real result beats a cancel: when every step already ended, their result counts.
 
