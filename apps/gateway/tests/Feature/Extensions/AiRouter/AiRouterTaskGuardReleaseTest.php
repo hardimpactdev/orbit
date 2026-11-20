@@ -82,14 +82,21 @@ beforeEach(function (): void {
     // The router on `services`, with the ai-router set up and switched on.
     $this->services = guardReleaseNode('services', '10.44.0.3');
     guardReleaseNode('swamp', '10.44.0.15')->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
-    app()->instance(SwampCommandStep::class, new class
+    // A stand-in for the vault write. Its hook runs once, at the release's vault copy: after the phase's first look, before the admission.
+    $this->vault = new class
     {
+        public ?Closure $hook = null;
+
         /** @return array{vault: string, key: string} */
         public function executionCopy(string $vault, string $key, string $value): array
         {
+            [$hook, $this->hook] = [$this->hook, null];
+            $hook?->__invoke();
+
             return ['vault' => $vault, 'key' => $key];
         }
-    });
+    };
+    app()->instance(SwampCommandStep::class, $this->vault);
     app()->instance(SwampDispatch::class, new class
     {
         public function start(Operation $operation): void {}
@@ -270,4 +277,76 @@ it('applies the guard after a fleet pass that failed at a Node', function (): vo
         ->and(GatewayRelease::query()->sole()->phases)->not->toHaveKey('default_refresh')
         ->and(GatewayRelease::query()->sole()->phases[AiRouterTaskGuardRelease::Phase]['status'])->toBe('pending')
         ->and(app(ContinueReleaseFleetAction::class)->pending(GuardReleaseCommit)?->id)->toBe($release->id);
+});
+
+/** Ends a holder of the guard's lock as its projection does: succeeded, the lock free. */
+function guardReleaseEnd(Operation $holder): void
+{
+    $holder->forceFill(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()])->save();
+}
+
+/** Forgets the digest a run recorded, as a run from before digests were recorded. */
+function guardReleaseUndigested(Operation $run): Operation
+{
+    $run->forceFill(['input' => [...$run->input, 'guard_digest' => null]])->save();
+
+    return $run;
+}
+
+/** An agent Node and an active Gateway, so a forwarder run can be admitted for the Node. */
+function guardReleaseForwarderNode(): Node
+{
+    $gateway = guardReleaseNode('gateway', '10.44.0.2');
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+
+    return guardReleaseNode('shark', '10.44.0.7');
+}
+
+it('sees a forwarder addition that ends between its first look and its admission, and admits no guard without the Node', function (): void {
+    $agent = guardReleaseForwarderNode();
+    guardReleaseRun(OperationStatus::Succeeded, null);
+    $holder = app(AdmitAiRouterModelForwarderAction::class)->execute($agent, 'incusbr0', '10.10.0.1', triggeredBy: 'ai-router:model-forwarder');
+    $this->vault->hook = static fn () => guardReleaseEnd($holder);
+
+    expect(guardReleasePass())->toBeNull()
+        ->and(GatewayRelease::query()->sole()->phases[AiRouterTaskGuardRelease::Phase])->toBe(['status' => 'current', 'digest' => $holder->input['guard_digest']])
+        ->and(Operation::query()->where('triggered_by', 'like', 'release:%')->count())->toBe(0)
+        ->and(app(AiRouterTaskGuard::class)->forwarders($this->services))->toHaveCount(1);
+});
+
+it('sees a forwarder removal that ends between its first look and its admission, and brings back no allow of the Node', function (): void {
+    $agent = guardReleaseForwarderNode();
+    guardReleaseRun(OperationStatus::Succeeded, null);
+    guardReleaseEnd(guardReleaseUndigested(app(AdmitAiRouterModelForwarderAction::class)->execute($agent, 'incusbr0', '10.10.0.1', triggeredBy: 'ai-router:model-forwarder')));
+    $holder = app(AdmitAiRouterModelForwarderAction::class)->execute($agent, null, null, remove: true, triggeredBy: 'ai-router:model-forwarder');
+    $this->vault->hook = static fn () => guardReleaseEnd($holder);
+
+    expect(guardReleasePass())->toBeNull()
+        ->and(GatewayRelease::query()->sole()->phases[AiRouterTaskGuardRelease::Phase]['status'])->toBe('current')
+        ->and(Operation::query()->where('triggered_by', 'like', 'release:%')->count())->toBe(0)
+        ->and(app(AiRouterTaskGuard::class)->forwarders($this->services))->toBe([]);
+});
+
+it('sees a guard removal that ends between its first look and its admission, and never applies the guard again', function (): void {
+    guardReleaseRun(OperationStatus::Succeeded, null);
+    $holder = app(AdmitAiRouterTaskGuardAction::class)->execute(remove: true, triggeredBy: 'ai-router:task-guard');
+    $this->vault->hook = static fn () => guardReleaseEnd($holder);
+
+    expect(guardReleasePass())->toBeNull()
+        ->and(GatewayRelease::query()->sole()->phases[AiRouterTaskGuardRelease::Phase])->toBe(['status' => 'absent'])
+        ->and(Operation::query()->where('triggered_by', 'like', 'release:%')->count())->toBe(0);
+});
+
+it('renders the guard it admits under the lock, with a forwarder Node whose run ended after the first look', function (): void {
+    $agent = guardReleaseForwarderNode();
+    guardReleaseRun(OperationStatus::Succeeded, null);
+    // The forwarder run recorded no digest, so the release still applies the guard: with the Node among its sources.
+    $holder = guardReleaseUndigested(app(AdmitAiRouterModelForwarderAction::class)->execute($agent, 'incusbr0', '10.10.0.1', triggeredBy: 'ai-router:model-forwarder'));
+    $this->vault->hook = static fn () => guardReleaseEnd($holder);
+
+    guardReleasePass();
+
+    $admitted = Operation::query()->where('triggered_by', 'like', 'release:%')->sole();
+    expect($admitted->input['intent']['caddyfile'])->toContain('remote_ip 10.44.0.128/25 10.44.0.7')
+        ->and($admitted->input['guard_digest'])->toBe(guardReleaseDigest());
 });

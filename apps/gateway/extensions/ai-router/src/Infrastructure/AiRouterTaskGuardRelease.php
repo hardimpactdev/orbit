@@ -49,17 +49,9 @@ final readonly class AiRouterTaskGuardRelease implements GatewayReleaseFollowUp
         if (! $this->extensions->enabled('ai-router') || ! $this->state->enabled() || $router === null) {
             return ['status' => 'disabled'];
         }
-        if (! $this->guard->applied($router)) {
-            return ['status' => 'absent'];
-        }
         try {
-            $digest = $this->guard->digest($this->guard->intent($router, $this->guard->forwarders($router), false));
-            if ($this->guard->appliedDigest($router) === $digest) {
-                return ['status' => 'current', 'digest' => $digest];
-            }
-            $operation = $this->admit->execute(triggeredBy: 'release:'.GatewayReleaseCommit::id((string) $release->sha));
-
-            return ['status' => 'pending', 'digest' => $digest, 'operation_id' => $operation->id];
+            // The applied state, the forwarder snapshot, the digest and the admission are one writer transaction under the guard's lock.
+            return $this->admit->ifChanged($router, 'release:'.GatewayReleaseCommit::id((string) $release->sha));
         } catch (ResourceOperationException $refused) {
             if ($refused->errorCode !== 'operation.target_busy') {
                 return ['status' => 'failed', 'error_code' => $refused->errorCode];

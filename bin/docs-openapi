@@ -718,8 +718,8 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleUpdate': 'Replace a Schedule definition',
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
-# Routes whose POST removes a resource: MCP marks them destructive, as it marks every DELETE.
-DESTRUCTIVE_POSTS = {'instance:unregister'}
+# Routes whose POST removes a resource, or may with a flag such as ai-router:task-guard's remove: MCP marks them destructive, as it marks every DELETE.
+DESTRUCTIVE_POSTS = {'instance:unregister', 'ai-router:task-guard'}
 
 SUMMARIES = {
     'instance:node-service:list': 'List an Instance\'s Node service attachments',

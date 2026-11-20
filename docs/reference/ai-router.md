@@ -301,6 +301,8 @@ Each serving release has an `ai_router_guard` phase. It is a [follow-up phase](/
 | `disabled` | The ai-router is not set up, or its extension switch is off |
 | `failed` | The run failed, or the phase could not start one. The phase records the `error_code` |
 
+The check and the admission are one SQLite writer transaction that takes the guard's lock. A guard or forwarder run that ends first is in the check and in the rendered guard, so the phase never applies an older set of sources, and never a guard that `--remove` took off. Every guard run renders inside that transaction too.
+
 While another guard or forwarder run holds the lock, the phase stays `pending` with `error_code` `operation.target_busy` and asks again on the next pass. After 30 minutes it fails. A failed phase raises the [`release_follow_up_failed`](/reference/gateway-recovery#release-alerts) alert once and never undoes or blocks the release. The next release tries again.
 
 So a release that changes the guard's routes, such as the Gemini routes, applies them on the router's Node. A forwarder run that adds a Node applies the guard itself, so its digest moves with it.
