@@ -390,3 +390,41 @@ it('stores the 24h report on each refresh with the hour window of the refresh ti
     expect([$next['from'], $next['to'], $next['current']['tasks']])->toBe(['2026-11-18T14:00:00+00:00', '2026-11-19T14:00:00+00:00', 1])
         ->and($next['hourly'][22])->toBe(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0]);
 });
+
+it('serves a 7d or 30d report stored before hourly buckets with an empty hourly list and its stored numbers', function (?string $scope): void {
+    [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $key = $scope === null ? 'all' : 'project:'.$app->id;
+    $query = static fn (?string $period): string => '/api/v1/task-insights?'.http_build_query(array_filter(['period' => $period, 'project_id' => $scope === null ? null : $app->id]));
+    $refreshes = DB::table('task_insight_totals')->max('computed_at');
+
+    foreach (['7d', '30d'] as $period) {
+        // The report as #4116 stored it: no hourly key, and numbers the source tables no longer give.
+        $old = json_decode((string) DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->value('payload'), true);
+        unset($old['hourly']);
+        $old['current']['tasks'] = 999;
+        DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->update(['payload' => json_encode($old)]);
+
+        $expected = [...$old, 'hourly' => []];
+        foreach ($period === '30d' ? [$period, null] : [$period] as $requested) {
+            $data = $this->getJson($query($requested))->assertOk()->json('data');
+            expect(array_keys($data))->toBe(['period', 'from', 'to', 'current', 'previous', 'weekly', 'daily', 'hourly', 'breakdowns'])
+                ->and($data)->toEqual($expected);
+        }
+    }
+    expect(DB::table('task_insight_totals')->max('computed_at'))->toBe($refreshes);
+})->with(['all Projects' => null, 'one Project' => 'app']);
+
+it('computes a stored 24h report again when it lacks its 24 hourly buckets', function (): void {
+    insightWorld();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $old = json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true);
+    $fresh = json_decode((string) json_encode(app(TaskInsights::class)->report('24h', null, CarbonImmutable::now())->toArray()), true);
+    unset($old['hourly']);
+    DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->update(['payload' => json_encode($old)]);
+
+    expect($this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data'))->toBe($fresh)
+        ->and(json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true)['hourly'])->toHaveCount(24);
+});
