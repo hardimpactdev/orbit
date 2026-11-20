@@ -55,7 +55,8 @@ final class ProcessArtifactFolder
     /**
      * A release folder is pruned and `current` moves: the Process itself may name neither in its working directory, in an argument
      * or in a NAME=VALUE value, beside its executable, or an upgrade would remove or swap a file it reads. Each value is read as a path,
-     * a relative one against the working directory, and compared by path components.
+     * a relative one against the working directory, and compared by path components. A path that passes through a protected
+     * folder counts as inside it, even when a later `..` leads back out in the text.
      */
     private static function assertOwnPaths(Process $process, string $folder, string $executable): void
     {
@@ -68,9 +69,25 @@ final class ProcessArtifactFolder
                 }
                 $path = $directory.'/'.$path;
             }
-            $parts = self::components($path);
+            // `current` is a link: Linux follows it before a later `..`, so a path that passes through a protected folder at any
+            // point counts as inside it, also when `..` leads back out in the text.
+            $parts = [];
+            foreach (explode('/', $path) as $part) {
+                if ($part === '' || $part === '.') {
+                    continue;
+                }
+                if ($part === '..') {
+                    array_pop($parts);
 
-            return array_any($roots, static fn (array $root): bool => array_slice($parts, 0, count($root)) === $root);
+                    continue;
+                }
+                $parts[] = $part;
+                if (array_any($roots, static fn (array $root): bool => array_slice($parts, 0, count($root)) === $root)) {
+                    return true;
+                }
+            }
+
+            return false;
         };
         $command = $process->runtime_config['command'] ?? null;
         $skipped = false;
