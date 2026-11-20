@@ -362,7 +362,7 @@ For the agent folder, Orbit then restarts T3 in each running container, one afte
 
 A running process runs only what existed when it started. So a new version that only adds files restarts nothing, such as the [browser libraries and fonts](#browser-libraries-and-fonts) or a new program. The converge compares the version in use with the new one and does not follow links. It restarts only when a file, link or mode of the version in use changed or went.
 
-The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, `check_for_update_on_startup = false` in the image's Codex configuration, and `AGY_CLI_DISABLE_AUTO_UPDATE=true` in the Conn Server's drop-in, which the Conn Server hands to `agy`. `agy` 1.5.4 reads only `true` there: `1` still starts its updater. The Node converge rewrites the drop-in, so existing Conn containers get it too. The T3 server has no self-updater; it runs from the read-only folder.
+The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, `check_for_update_on_startup = false` in the image's Codex configuration, and `AGY_CLI_DISABLE_AUTO_UPDATE=true` in the Conn Server's drop-in, which the Conn Server hands to `agy`. `agy` 1.5.13 reads only `true` there: `1` still starts its updater. The Node converge rewrites the drop-in, so existing Conn containers get it too. The T3 server has no self-updater; it runs from the read-only folder.
 
 The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
 
