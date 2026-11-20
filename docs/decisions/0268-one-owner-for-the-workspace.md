@@ -70,7 +70,7 @@ The owner decided on 2026-11-16 to rename the container app user, and on 2026-11
 
 The owner decided on 2026-11-20, after Instance 3847 answered 500 on every page: its compiled views were `agent`'s after a deployment's pass, and Blade's `touch()` with explicit times failed for `www-data`.
 
-- **The rule.** In each folder of the workspace that holds an `artisan` file, root's pass gives `storage/`, `bootstrap/cache/` and every entry under them to the app user, the uid it gives away elsewhere (`workspace_ids.writer`), an entry `agent` made there too. Everything else keeps the [one owner](#decision) rule. The group still gets back what the owner has.
+- **The rule.** In each folder of the workspace that holds an `artisan` file, root's pass gives `storage/`, `bootstrap/cache/` and every entry under them to the app user, the uid it gives away elsewhere (`workspace_ids.writer`), whoever owns the entry. Only a real folder at those names starts a runtime tree; a file or a link there follows the workspace's rule. Everything else keeps the [one owner](#decision) rule. The group still gets back what the owner has.
 - **Kept.** The pass follows no link, a hard link keeps its owner and an entry that is gone needs nothing. Only a file given to `agent` loses its setuid and setgid bits.
 - **Trade-off.** An agent's own `artisan` command that compiles an existing view again may hit the same `utime` limit as the app did, until the next pass. That is accepted.
 

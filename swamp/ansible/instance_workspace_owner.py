@@ -5,9 +5,9 @@ in `node_modules`, caps their ACL mask, so the other user cannot write there; an
 `chmod` or `utime` with times, fails on a file of the other user. So root gives the group back what the owner has, as `chmod g+rwX`
 would (rwx for a folder, rw for a file and x for a file that someone may run), and gives each entry that the app user owns to `agent`.
 
-Laravel's runtime trees are the app's: in each folder that holds an `artisan` file, its `storage` and `bootstrap/cache` and every entry
-under them go to the app user, an entry `agent` made there too. Blade rewrites a compiled view and then sets its times, which only its
-owner may do.
+Laravel's runtime trees are the app's: in each folder that holds an `artisan` file, a real folder (not a link) at `storage` or
+`bootstrap/cache` starts one, and it and every entry under it go to the app user, whoever owns them, `agent` or root. Blade rewrites a
+compiled view and then sets its times, which only its owner may do. Anything else at those names keeps the workspace's rule.
 
 The workspace is live while the pass runs: Git, an app or an agent may remove an entry between its listing and its change. An entry
 that is gone needs nothing; any other error fails the pass and names its path. Each entry is opened without following a link, and
@@ -43,8 +43,8 @@ def main(workspace, app_uid, agent_uid):
 
     def takes(status, runtime):
         # A hard-linked entry may also have a name outside the workspace: it is never given away.
-        giver = agent_uid if runtime else app_uid
-        return status.st_uid == giver and (stat.S_ISDIR(status.st_mode) or status.st_nlink == 1)
+        owned = status.st_uid != app_uid if runtime else status.st_uid == app_uid
+        return owned and (stat.S_ISDIR(status.st_mode) or status.st_nlink == 1)
 
     def due(status, runtime):
         return takes(status, runtime) or lacks(status.st_mode)
@@ -79,10 +79,11 @@ def main(workspace, app_uid, agent_uid):
         for entry in entries:
             child = os.path.join(path, entry.name)
             rest = tuple(parts[1:] for parts in below if parts[0] == entry.name)
-            child_runtime = runtime or () in rest
             try:
                 folder = entry.is_dir(follow_symlinks=False)
                 status = entry.stat(follow_symlinks=False)
+                # Only a real folder starts a runtime tree; a file or a link at its name is the workspace's.
+                child_runtime = runtime or (folder and () in rest)
                 if not folder and not stat.S_ISREG(status.st_mode):
                     if takes(status, child_runtime):
                         os.chown(entry.name, app_uid if child_runtime else agent_uid, -1, dir_fd=fd, follow_symlinks=False)

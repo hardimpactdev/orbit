@@ -109,9 +109,14 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
-     * How each admitted development deploy step ended, in the admitted order (docs/reference/deployments.md#history): `succeeded`,
-     * `failed`, `skipped_unchanged` when the checkout found its inputs unchanged ("Read the steps to skip" names it), or `not_run` when
-     * the run skipped it after a failure or never reached it.
+     * How each admitted development deploy step ended, in the admitted order (docs/reference/deployments.md#history). The steps run one
+     * after another, and the first that fails stops the rest:
+     *
+     * - `succeeded`, or `failed` when its command failed. A best-effort step never fails the deployment, so its command's exit code
+     *   decides: 0 is `succeeded`, 124 `timed_out` and any other code `failed`.
+     * - `skipped_unchanged`: the run skipped it because the checkout found its inputs unchanged ("Read the steps to skip" names it).
+     * - `interrupted`: it started, and the run ended before it did.
+     * - `not_run`: an earlier step stopped the sequence, or the run never reached it.
      *
      * @param  array<string, mixed>  $data
      * @param  array<mixed>  $admitted
@@ -122,28 +127,62 @@ final readonly class ContainerDeployOutcome
         $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
         $skip = ValidatedData::object($steps[self::SkipStep] ?? []);
         $unchanged = ($skip['status'] ?? null) === 'succeeded' && is_string($skip['stdout'] ?? null) ? $skip['stdout'] : '';
-        $ended = [];
-        foreach ($steps as $name => $step) {
-            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', (string) $name, $match) === 1 && is_array($step)) {
-                $ended[(int) $match[1]] = $step['status'] ?? null;
-            }
-        }
+        $items = self::items($steps);
         $events = [];
+        $stopped = false;
         foreach (array_values($admitted) as $index => $intent) {
             if (! is_array($intent) || ! is_string($intent['name'] ?? null)) {
                 continue;
             }
-            $status = $ended[$index] ?? null;
+            $item = $items[$index] ?? [];
+            $status = match (true) {
+                $stopped => 'not_run',
+                ($item['status'] ?? null) === 'succeeded' => ($intent['required'] ?? null) !== false ? 'succeeded'
+                    : match (self::exitCode($item['stdout'] ?? null)) {
+                        0 => 'succeeded',
+                        124 => 'timed_out',
+                        default => 'failed',
+                    },
+                ($item['status'] ?? null) === 'failed' => 'failed',
+                ($item['status'] ?? null) === 'skipped' && str_contains($unchanged, ','.$intent['name'].',') => 'skipped_unchanged',
+                in_array($item['status'] ?? null, ['running', 'interrupted', 'cancelled'], true) => 'interrupted',
+                default => 'not_run',
+            };
+            // A step that did not pass stops the ones after it; a best-effort step's own failure does not.
+            $stopped = $stopped || in_array($item['status'] ?? null, ['failed', 'running', 'interrupted', 'cancelled'], true);
             $events[] = ['name' => $intent['name'],
                 'phase' => DeploymentProgressPhase::tryFrom(is_string($intent['phase'] ?? null) ? $intent['phase'] : '') ?? DeploymentProgressPhase::BeforeActivation,
-                'status' => match (true) {
-                    $status === 'succeeded', $status === 'failed' => $status,
-                    str_contains($unchanged, ','.$intent['name'].',') => 'skipped_unchanged',
-                    default => 'not_run',
-                }];
+                'status' => $status];
         }
 
         return $events;
+    }
+
+    /**
+     * Each development deploy step's run data by its admitted index. Swamp names each forEach item `<step>-<index>-<index>`.
+     *
+     * @param  array<string, mixed>  $steps
+     * @return array<int, array<mixed>>
+     */
+    private static function items(array $steps): array
+    {
+        $items = [];
+        foreach ($steps as $name => $step) {
+            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', (string) $name, $match) === 1) {
+                $items[(int) $match[1]] = is_array($step) ? $step : [];
+            }
+        }
+        ksort($items);
+
+        return $items;
+    }
+
+    /** A best-effort step's one output line, its command's exit code: an integer from 0 to 255, or null for anything else. */
+    private static function exitCode(mixed $stdout): ?int
+    {
+        $line = is_string($stdout) ? trim($stdout) : '';
+
+        return preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/D', $line) === 1 && (int) $line <= 255 ? (int) $line : null;
     }
 
     /**
@@ -159,24 +198,16 @@ final readonly class ContainerDeployOutcome
     private static function bestEffortSteps(array $steps, array $admitted): array
     {
         $rows = [];
-        foreach ($steps as $name => $step) {
-            // Swamp names each forEach item `<step>-<index>-<index>`.
-            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', $name, $match) !== 1) {
-                continue;
-            }
-            $intent = $admitted[(int) $match[1]] ?? null;
-            $step = is_array($step) ? $step : [];
+        foreach (self::items($steps) as $index => $step) {
+            $intent = $admitted[$index] ?? null;
             if (! is_array($intent) || ($intent['required'] ?? null) !== false || ! is_string($intent['name'] ?? null)
                 || ($step['status'] ?? null) === 'skipped') {
                 continue;
             }
-            $line = is_string($step['stdout'] ?? null) ? trim($step['stdout']) : '';
-            $rows[(int) $match[1]] = ['name' => $intent['name'],
-                'exit_code' => preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/D', $line) === 1 && (int) $line <= 255 ? (int) $line : null];
+            $rows[] = ['name' => $intent['name'], 'exit_code' => self::exitCode($step['stdout'] ?? null)];
         }
-        ksort($rows);
 
-        return array_values($rows);
+        return $rows;
     }
 
     /**

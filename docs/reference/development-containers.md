@@ -209,7 +209,7 @@ Both users read and write the workspace: a file each one writes is `rw-rw----`, 
 
 A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root's pass gives the group back what the owner has, and gives `agent` each entry that `www-data` owns. It runs before a deployment's steps and after them, before a proof run's steps, and in the `services` part of a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next pass.
 
-Laravel's runtime trees are the app's. In each folder of the workspace that holds an `artisan` file, the root's and each monorepo app's, the pass gives `storage/`, `bootstrap/cache/` and every entry under them to the app user: `www-data`, or `orbit` (uid 1000) in a nested-fleet container. That includes an entry `agent` made there, such as from a deploy step.
+Laravel's runtime trees are the app's. In each folder of the workspace that holds an `artisan` file, the root's and each monorepo app's, the pass gives `storage/`, `bootstrap/cache/` and every entry under them to the app user: `www-data`, or `orbit` (uid 1000) in a nested-fleet container. It does so whoever owns the entry, `agent` after a deploy step or root. Only a real folder at those names starts a runtime tree: a file or a link there follows the workspace's rule.
 
 Blade writes a compiled view again and then sets its times, which only its owner may do; a compiled view owned by `agent` made every page answer 500 (`touch(): Utime failed: Operation not permitted`). So an `artisan` command that an agent runs itself and that compiles an existing view again may now fail in the same way, until the next pass. That is accepted.
 

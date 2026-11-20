@@ -538,7 +538,16 @@ The Gateway records one row for each deployment and each rollback. It writes a d
 
 Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, and `events`. `events` holds the phase events of the run. The run history keeps no command output; a failed step is named in `failed_step`. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null. A failed deployment of a container default records the commit it was admitted for, so the automatic policy counts its failures per commit.
 
-A container default's deployment writes its row when its run ends. The row takes the Operation's own `started_at` and `finished_at`, and `duration_seconds` is the time between them. Its `events` hold one `phase` event for each admitted [development deploy step](#development-deploy-steps), in order, with the step's name in `step_name`. Its `status` says how the step ended: `succeeded`, `failed`, `skipped_unchanged` when its [inputs](#step-inputs) did not change, or `not_run` when an earlier failure stopped the steps or the run never reached them.
+A container default's deployment writes its row when its run ends. The row takes the Operation's own `started_at` and `finished_at`, and `duration_seconds` is the time between them. Its `events` hold one `phase` event for each admitted [development deploy step](#development-deploy-steps), in order, with the step's name in `step_name`. Its `status` says how the step ended:
+
+| `status` | Meaning |
+| --- | --- |
+| `succeeded` | The step's command passed. |
+| `failed` | The step's command failed. A required step's failure stops the steps after it; a [best-effort](#development-deploy-steps) step's does not, and the deployment still passes. |
+| `timed_out` | A best-effort step's command ran out of time (exit code 124). |
+| `skipped_unchanged` | The run skipped the step because its [inputs](#step-inputs) did not change. |
+| `interrupted` | The step started, and the run ended before it did. |
+| `not_run` | An earlier step stopped the steps, or the run ended before it reached this one. |
 
 When a production `deploy` row ends `succeeded`, the Gateway queues the job that stamps [`deployed_at`](/reference/tasks#deploy-times) on the Project's tasks that the deployed commit carries. It queues the job after the row commits; neither a failed dispatch nor a failed job changes the deployment.
 

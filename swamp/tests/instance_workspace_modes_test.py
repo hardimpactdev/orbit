@@ -180,6 +180,35 @@ class WorkspaceModesTest(unittest.TestCase):
         self.assertFalse({str((self.workspace / path).resolve()) for path in runtime} & given)
         self.assertEqual({line.rsplit(' ', 1)[1] for line in log.read_text().splitlines()}, {NOBODY})
 
+    def test_a_runtime_entry_of_any_owner_goes_to_the_app_user_and_only_a_real_folder_starts_a_runtime_tree(self):
+        # The test user stands for root, a third owner: neither the app user (NOBODY) nor `agent` (OTHER).
+        (self.workspace / 'artisan').write_text('x')
+        (self.workspace / 'storage/framework/views').mkdir(parents=True)
+        (self.workspace / 'storage/framework/views/a.php').write_text('x')
+        (self.workspace / 'bootstrap/cache').mkdir(parents=True)
+        (self.workspace / 'bootstrap/cache/config.php').write_text('x')
+        # In a monorepo app, a file named `storage` and a link at `bootstrap/cache` start no runtime tree.
+        (self.workspace / 'apps/site/bootstrap').mkdir(parents=True)
+        (self.workspace / 'apps/site/artisan').write_text('x')
+        (self.workspace / 'apps/site/storage').write_text('x')
+        (self.workspace / 'apps/site/cache').mkdir()
+        (self.workspace / 'apps/site/bootstrap/cache').symlink_to(self.workspace / 'apps/site/cache')
+        other, log = '4242425', self.folder / 'chown.log'
+        done = self.run_pass(NOBODY, other, CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(sorted(log.read_text().splitlines()),
+                         sorted(f'fd {(self.workspace / path).resolve()} {NOBODY}' for path in
+                                ['storage', 'storage/framework', 'storage/framework/views', 'storage/framework/views/a.php', 'bootstrap/cache',
+                                 'bootstrap/cache/config.php']))
+        # The test user as the app user: the file and the link at the runtime names follow the workspace's rule and go to `agent`.
+        log.unlink()
+        done = self.run_pass(os.getuid(), other, CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        changes = log.read_text().splitlines()
+        self.assertIn(f'fd {(self.workspace / "apps/site/storage").resolve()} {other}', changes)
+        self.assertIn(f'entry {self.workspace / "apps/site/bootstrap/cache"} {other}', changes)
+        self.assertFalse(any(line.endswith(f' {os.getuid()}') for line in changes), changes)
+
     def test_an_orbit_file_hard_linked_from_outside_keeps_its_owner(self):
         # A hard link in the workspace to a file outside it: giving the inode away would give away the outside name too.
         outside = self.folder / 'outside'
