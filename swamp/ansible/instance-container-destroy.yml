@@ -278,7 +278,7 @@
             content: >-
               {{ ({'container_present': present | length > 0, 'removed': phase == 'remove'}
                   | combine({'bridge_withdrawal': 'withdrawn' if destroy_bridge.rc == 0
-                             else (((destroy_bridge.stdout | default('') | trim) if destroy_bridge.stdout | default('') is match('^\\s*[{]') else '{}') | from_json).error_code
+                             else (destroy_bridge.stdout | default('{}', true) | from_json).error_code
                                   | default('instance.container_bridge_write_failed')}
                             if destroy_bridge.rc is defined else {})) | to_json }}
             dest: "{{ run }}/{{ phase }}.json"

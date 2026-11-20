@@ -58,7 +58,7 @@ final readonly class ContainerInstanceDestroy
         return in_array($instance->status, [InstanceState::Reserved, InstanceState::SourceResolved], true)
             && ! Operation::query()->where('kind', 'instance.create')->whereNotIn('status', OperationStatus::terminalValues())
                 ->where('lock_key', OperationStore::lockKey('instance', $instance->id))
-                ->when($ending !== null, static fn ($query) => $query->whereKeyNot($ending->id))->exists();
+                ->when($ending?->id, static fn ($query, int $id) => $query->whereKeyNot($id))->exists();
     }
 
     /**
