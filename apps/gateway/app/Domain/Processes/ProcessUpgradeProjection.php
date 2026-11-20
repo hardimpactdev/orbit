@@ -8,10 +8,12 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\ProcessArtifact;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -25,8 +27,13 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
 {
     public const string RolledBack = 'process.upgrade_rolled_back';
 
-    /** A failure before `Switch current`: the Node still runs the old release. */
+    public const string RollbackFailed = 'process.rollback_failed';
+
+    /** A failure before `Switch current`, or a verified switch back: the Node runs the release it ran before. */
     private const array Untouched = ['process.artifact_layout_invalid', 'process.artifact_invalid', 'process.upgrade_failed', self::RolledBack];
+
+    /** An end without a known result counts as untouched only when this step never ran. */
+    private const string SwitchStep = 'Switch current';
 
     public function __construct(private DirectOperation $direct, private ProcessOperationCompletion $completion) {}
 
@@ -57,9 +64,9 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
                 : ['error_code' => $code],
             default => [],
         };
-        $untouched = in_array($code, self::Untouched, true);
+        $untouched = in_array($code, self::Untouched, true) || ($code !== self::RollbackFailed && ! self::switched($data));
 
-        return DB::transaction(function () use ($operation, $data, $status, $code, $result, $untouched): Operation {
+        return DB::transaction(function () use ($operation, $data, $status, $result, $untouched): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
             $projected = $this->direct->project($operation, $data, $result);
@@ -68,20 +75,39 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
             }
             if ($status === OperationStatus::Succeeded) {
                 self::record($operation, $result);
+                // A verified pass ends the failure an earlier upgrade left; other pending work, such as a runtime cleanup, stays.
+                Process::query()->whereKey($operation->target_id)->whereIn('error_code', [self::RollbackFailed, self::RolledBack])
+                    ->update(['status' => LifecycleStatus::Active, 'error_code' => null, 'failed_step' => null]);
 
                 return $projected;
             }
-            // A failure before `Switch current`, or a verified switch back, leaves the Process as it was: its state, error and pending
-            // runtime cleanup stay. Any other end may have left the new release, or none, running.
-            if ($status === OperationStatus::Cancelled || $untouched) {
+            // A failure or cancellation before `Switch current`, or after a verified switch back, leaves the Process as it was: its
+            // state, error and pending runtime cleanup stay. Any other end may have left the new release, or none, running.
+            if ($untouched) {
                 return $projected;
             }
-            $this->completion->complete($projected, $status === OperationStatus::Failed
-                ? OperationOutcome::failed($code ?? 'process.rollback_failed', $result)
-                : OperationOutcome::interrupted($code, $result));
+            $this->completion->complete($projected, OperationOutcome::failed(self::RollbackFailed, $result));
 
             return $projected;
         });
+    }
+
+    /** Whether `Switch current` ran, from the native run, when the result does not say.
+     * @param  array<string,mixed>  $data
+     */
+    private static function switched(array $data): bool
+    {
+        $run = is_array($data['native_run'] ?? null) ? $data['native_run'] : [];
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            $steps = is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [];
+            foreach ($steps as $step) {
+                if (is_array($step) && ($step['name'] ?? null) === self::SwitchStep) {
+                    return in_array($step['status'] ?? null, ['running', 'succeeded', 'failed', 'cancelled'], true);
+                }
+            }
+        }
+
+        return false;
     }
 
     /** Records the installed release on the artifact the upgrade was admitted for; a replaced or removed artifact keeps its own record.

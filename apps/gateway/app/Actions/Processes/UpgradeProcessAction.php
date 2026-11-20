@@ -55,20 +55,25 @@ final readonly class UpgradeProcessAction
         }
         $this->runtime->assertCanStart($process);
         $release = $this->releases->resolve($artifact, $version);
-        $input = [...$this->placement($process, $caller), 'artifact_id' => $artifact->id, 'repository' => $artifact->repository, 'asset_pattern' => $artifact->asset, 'recorded_version' => $artifact->version,
-            'folder' => $folder, 'binary' => $artifact->binary, 'version' => $release->version,
-            'asset' => $release->asset, 'url' => $release->url, 'sha256' => $release->sha256, 'version_args' => $artifact->version_args ?? []];
+        $command = $process->runtime_config['command'] ?? null;
 
-        return $this->locked($process, function () use ($process, $artifact, $input, $requestId): Operation {
-            // The GitHub read ran outside the lock: the intent and the artifact it resolved must still hold.
+        return $this->locked($process, function () use ($process, $artifact, $command, $folder, $release, $caller, $requestId): Operation {
+            // The GitHub read ran outside the lock: the input is built from the Process and artifact as they are now, and only
+            // when the command, folder and artifact the release was resolved for still hold.
             $current = Process::query()->with('artifact')->findOrFail($process->id);
             if ($current->desired_state !== DesiredProcessState::Running) {
                 throw new ResourceOperationException('process.not_running', "Process [{$current->name}] is not running. Start it before you upgrade it.", 409);
             }
-            if (! self::sameArtifact($current->artifact, $artifact)) {
-                throw new ResourceOperationException('process.artifact_missing', "The release artifact of Process [{$current->name}] changed while the upgrade was admitted.", 409);
+            $currentArtifact = $current->artifact;
+            if (! $currentArtifact instanceof ProcessArtifact || ! self::sameArtifact($currentArtifact, $artifact)
+                || ($current->runtime_config['command'] ?? null) !== $command || ProcessArtifactFolder::fromProcess($current, $currentArtifact->binary) !== $folder) {
+                throw new ResourceOperationException('operation.target_busy', "Process [{$current->name}] or its release artifact changed while the upgrade was admitted. Try again.", 409);
             }
             $this->assertIdle($current);
+            $input = [...$this->placement($current, $caller), 'artifact_id' => $currentArtifact->id, 'repository' => $currentArtifact->repository,
+                'asset_pattern' => $currentArtifact->asset, 'recorded_version' => $currentArtifact->version,
+                'folder' => $folder, 'binary' => $currentArtifact->binary, 'version' => $release->version,
+                'asset' => $release->asset, 'url' => $release->url, 'sha256' => $release->sha256, 'version_args' => $currentArtifact->version_args ?? []];
 
             // The Process keeps its lifecycle state: a failure before `Switch current` leaves it as it was.
             return $this->operations->execute(self::Kind, 'process', $current->id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId,
@@ -76,11 +81,12 @@ final readonly class UpgradeProcessAction
         });
     }
 
-    /** The artifact an upgrade was admitted for: the same record, source and installed version. */
-    public static function sameArtifact(?ProcessArtifact $current, ProcessArtifact $admitted): bool
+    /** The artifact a release was resolved for: the same record, source, checks and installed version. */
+    public static function sameArtifact(ProcessArtifact $current, ProcessArtifact $admitted): bool
     {
-        return $current !== null && $current->id === $admitted->id && $current->repository === $admitted->repository
-            && $current->asset === $admitted->asset && $current->binary === $admitted->binary && $current->version === $admitted->version;
+        return $current->id === $admitted->id && $current->repository === $admitted->repository && $current->asset === $admitted->asset
+            && $current->binary === $admitted->binary && $current->checksums === $admitted->checksums
+            && $current->version_args === $admitted->version_args && $current->version === $admitted->version;
     }
 
     private function unchanged(Process $process, ProcessArtifact $artifact, string $folder, ?Node $caller, ?string $requestId): Operation

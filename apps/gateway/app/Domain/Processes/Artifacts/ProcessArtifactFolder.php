@@ -51,7 +51,7 @@ final class ProcessArtifactFolder
         return is_string($executable) && str_starts_with($executable, '/') ? $executable : null;
     }
 
-    /** Pruning assumes the folder's releases belong to one Process: refuse a folder that another Process on the Node names in its command. */
+    /** Pruning assumes the folder's releases belong to one Process: refuse a folder that another Process on the Node names in its command or works in. */
     private static function assertExclusive(Process $process, string $folder): void
     {
         $nodeId = self::nodeId($process);
@@ -61,7 +61,8 @@ final class ProcessArtifactFolder
             $command = $other->runtime_config['command'] ?? null;
             $names = array_any(is_array($command) ? $command : [], static fn (mixed $argument): bool => is_string($argument)
                 && ($argument === $folder || str_contains($argument, $folder.'/')));
-            if ($names) {
+            $directory = $other->working_directory;
+            if ($names || (is_string($directory) && ($directory === $folder || str_starts_with($directory, $folder.'/')))) {
                 throw new ResourceOperationException('process.artifact_invalid', "Process [{$other->name}] on the same Node also uses {$folder}.", 422);
             }
         }
