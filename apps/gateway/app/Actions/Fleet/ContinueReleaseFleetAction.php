@@ -11,11 +11,14 @@ use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Fleet\FleetReleaseLag;
+use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseFollowUp;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
@@ -23,6 +26,11 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofSeeds;
+use App\Domain\Releases\ReleaseAlert;
+use App\Domain\Releases\ReleaseAlertKind;
+use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertSubject;
+use App\Domain\Releases\ReleaseIncident;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -32,6 +40,7 @@ use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -49,6 +58,12 @@ use Throwable;
  */
 final readonly class ContinueReleaseFleetAction
 {
+    /** The fleet phase's outcomes after which the follow-up phases run. */
+    private const array Settled = ['current', 'disabled', 'failed'];
+
+    /** @param iterable<int, GatewayReleaseFollowUp> $followUps */
+    public function __construct(#[Tag(GatewayReleaseFollowUp::class)] private iterable $followUps) {}
+
     public function current(): ?GatewayRelease
     {
         $serving = app(FleetServingRelease::class);
@@ -75,7 +90,8 @@ final readonly class ContinueReleaseFleetAction
         // A release served before the fleet window was removed may still hold `deferred`; continue it. Drop after one release.
         if (in_array($fleet, ['pending', 'deferred'], true)
             || (in_array($fleet, ['current', 'disabled'], true) && (in_array($refresh, [null, 'pending'], true)
-                || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
+                || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))
+            || (in_array($fleet, self::Settled, true) && $this->followUpPending($release))) {
             return $release;
         }
 
@@ -121,34 +137,116 @@ final readonly class ContinueReleaseFleetAction
             return $delay;
         }
         $current = $this->current();
-        if ($current?->id !== $release->id || ! in_array(data_get($current->phases, 'fleet.status'), ['current', 'disabled'], true)) {
+        $fleet = data_get($current?->phases, 'fleet.status');
+        if ($current?->id !== $release->id || ! in_array($fleet, self::Settled, true)) {
             return null;
         }
-        $previous = ValidatedData::object($current->phases['default_refresh'] ?? []);
-        $defaults = (array) ($previous['defaults'] ?? []);
-        $refresh = app(NestedFleetRefresh::class)->advance((string) $current->sha, $previous,
-            static function (int $id, array $result) use ($current, &$defaults): void {
-                if (($defaults[$id] ?? null) === $result) {
-                    return;
-                }
-                $defaults[$id] = $result;
-                $current->forceFill(['phases' => [...$current->phases, 'default_refresh' => ['status' => 'pending', 'defaults' => $defaults]]])->save();
+        $before = $current->phases;
+        $followUps = $this->advanceFollowUps($current);
+        if ($fleet === 'failed') {
+            // A failed Node holds back the default refresh, never the follow-up phases.
+            $delay = DB::transaction(static function () use ($current, $followUps): ?int {
+                $current->forceFill(['phases' => [...$current->phases, ...$followUps]])->save();
+
+                return self::waiting($followUps) ? 60 : null;
             });
+        } else {
+            $previous = ValidatedData::object($current->phases['default_refresh'] ?? []);
+            $defaults = (array) ($previous['defaults'] ?? []);
+            $refresh = app(NestedFleetRefresh::class)->advance((string) $current->sha, $previous,
+                static function (int $id, array $result) use ($current, &$defaults): void {
+                    if (($defaults[$id] ?? null) === $result) {
+                        return;
+                    }
+                    $defaults[$id] = $result;
+                    $current->forceFill(['phases' => [...$current->phases, 'default_refresh' => ['status' => 'pending', 'defaults' => $defaults]]])->save();
+                });
 
-        return DB::transaction(function () use ($current, $refresh): ?int {
-            // The database writer orders publication and its receipt with the default's seed projection.
-            $phases = [...$current->phases, 'default_refresh' => $refresh];
-            if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
-                $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
-            }
-            if ($refresh['status'] === 'disabled' && data_get($phases, 'seed_publication.status') === 'pending') {
-                $publication = ValidatedData::object($phases['seed_publication']);
-                $phases['seed_publication'] = [...$publication, 'status' => 'disabled'];
-            }
-            $current->forceFill(['phases' => $phases])->save();
+            $delay = DB::transaction(function () use ($current, $refresh, $followUps): ?int {
+                // The database writer orders publication and its receipt with the default's seed projection.
+                $phases = [...$current->phases, 'default_refresh' => $refresh, ...$followUps];
+                if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
+                    $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
+                }
+                if ($refresh['status'] === 'disabled' && data_get($phases, 'seed_publication.status') === 'pending') {
+                    $publication = ValidatedData::object($phases['seed_publication']);
+                    $phases['seed_publication'] = [...$publication, 'status' => 'disabled'];
+                }
+                $current->forceFill(['phases' => $phases])->save();
 
-            return $refresh['status'] === 'pending' || data_get($phases, 'seed_publication.status') === 'pending' ? 60 : null;
-        });
+                return $refresh['status'] === 'pending' || data_get($phases, 'seed_publication.status') === 'pending' || self::waiting($followUps) ? 60 : null;
+            });
+        }
+        foreach ($followUps as $phase => $record) {
+            // Once per phase, commit and error code: a pass that finds the same failure again raises nothing.
+            if ($record['status'] === 'failed' && (data_get($before, $phase.'.status') !== 'failed'
+                || data_get($before, $phase.'.error_code') !== ($record['error_code'] ?? null))) {
+                $this->alertFollowUp($current, $phase, $record);
+            }
+        }
+
+        return $delay;
+    }
+
+    /** @param array<string, array<string, mixed>> $followUps */
+    private static function waiting(array $followUps): bool
+    {
+        return in_array('pending', array_column($followUps, 'status'), true);
+    }
+
+    /**
+     * Advances each follow-up phase by one step, outside the SQLite writer. A follow-up that throws fails its own phase only.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function advanceFollowUps(GatewayRelease $release): array
+    {
+        $records = [];
+        foreach ($this->followUps as $followUp) {
+            $phase = $followUp->phase();
+            try {
+                $record = $followUp->advance($release, ValidatedData::object($release->phases[$phase] ?? []));
+                $records[$phase] = [...$record, 'status' => ValidatedData::string($record['status'])];
+            } catch (Throwable $failure) {
+                report($failure);
+                $records[$phase] = ['status' => 'failed', 'error_code' => 'release.follow_up_unavailable'];
+            }
+        }
+
+        return $records;
+    }
+
+    /** Whether a follow-up phase waits for its work. The pass that settles the fleet phase records each follow-up phase. */
+    private function followUpPending(GatewayRelease $release): bool
+    {
+        foreach ($this->followUps as $followUp) {
+            if (data_get($release->phases, $followUp->phase().'.status') === 'pending') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Raises `release_follow_up_failed` once per phase, commit and error code. It runs after the record commits; it never fails the pass.
+     *
+     * @param  array<string, mixed>  $record
+     */
+    private function alertFollowUp(GatewayRelease $release, string $phase, array $record): void
+    {
+        $code = ValidatedData::nullableString($record['error_code'] ?? null) ?? 'release.follow_up_failed';
+        $operation = isset($record['operation_id']) ? ' Operation '.ValidatedData::integer($record['operation_id']).'.' : '';
+        try {
+            app(ReleaseAlertNotifier::class)->alert(new ReleaseAlert(
+                ReleaseAlertKind::ReleaseFollowUpFailed,
+                new ReleaseAlertSubject('gateway', FleetRolloutAlerts::repository(), (string) $release->sha, 'release-'.$release->id),
+                "The {$phase} phase of release ".GatewayReleaseCommit::id((string) $release->sha)." failed: {$code}.{$operation}",
+                new ReleaseIncident('release-phase:'.$phase, (string) $release->sha, $code),
+            ));
+        } catch (Throwable $failure) {
+            report($failure);
+        }
     }
 
     /**
@@ -218,8 +316,10 @@ final readonly class ContinueReleaseFleetAction
         if (GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
             return 30;
         }
-        if (($phase['status'] ?? null) === 'current' && (data_get($release->phases, 'default_refresh.status') === 'pending'
-            || data_get($release->phases, 'seed_publication.status') === 'pending')) {
+        // Pending downstream work continues before the next pass starts the fleet afresh.
+        if ((($phase['status'] ?? null) === 'current' && (data_get($release->phases, 'default_refresh.status') === 'pending'
+            || data_get($release->phases, 'seed_publication.status') === 'pending'))
+            || (in_array($phase['status'] ?? null, ['current', 'failed'], true) && $this->followUpPending($release))) {
             return null;
         }
         $members = $this->members();

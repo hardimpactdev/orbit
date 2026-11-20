@@ -792,7 +792,7 @@ SUMMARIES = {
     'conn:operation:show': 'Show a Conn operation', 'conn:operation:cancel': 'Cancel a Conn operation', 'conn:pairing:show': 'Read a one-time pairing URL',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
     'conn:thread:list': 'List the thread index of container T3 servers', 'conn:thread:record': 'Record a thread Conn started',
-    'ai-router:setup': 'Set up ai-router', 'ai-router:destroy': 'Destroy ai-router', 'ai-router:status': 'Show ai-router status', 'ai-router:provider:list': 'List ai-router providers', 'ai-router:provider:show': 'Show an AI router provider', 'ai-router:account:enable': 'Enable an AI router account', 'ai-router:account:disable': 'Disable an AI router account', 'ai-router:model:list': 'List ai-router models',
+    'ai-router:setup': 'Set up ai-router', 'ai-router:destroy': 'Destroy ai-router', 'ai-router:status': 'Show ai-router status', 'ai-router:provider:list': 'List ai-router providers', 'ai-router:provider:show': 'Show an AI router provider', 'ai-router:account:enable': 'Enable an AI router account', 'ai-router:account:disable': 'Disable an AI router account', 'ai-router:model:list': 'List ai-router models', 'ai-router:task-guard': 'Apply or remove the task VM guard',
     'vault:status': 'Show the Vaultwarden status', 'vault:setup': 'Set up Vaultwarden', 'vault:sync': 'Sync database credentials to Vaultwarden', 'vault:destroy': 'Destroy the Orbit Vault account and its published items',
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
@@ -968,6 +968,7 @@ DESCRIPTIONS = {
     'ai-router:provider:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
     'ai-router:account:enable': 'Enables one CLIProxyAPI account and recompiles cached pools without fetching quota.',
     'ai-router:account:disable': 'Disables one CLIProxyAPI account and recompiles cached pools without fetching quota.',
+    'ai-router:task-guard': 'Starts `ai_router.task_guard`, which applies the task VM guard on the router\'s Node: its Caddy, its keys and its UFW rules. With `remove: true` the run takes them off the Node instead. The run holds the lock `ai_router_guard:<router Node>`, which forwarder runs share; while another guard or forwarder run holds it, the call refuses with `operation.target_busy` (409). Refuses with `ai_router.disabled` (409) while the ai-router is not set up. Each release applies the guard again by itself when its config changed (docs/reference/ai-router.md#the-guard-follows-its-config).',
     'ai-router:model:list': 'Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `ai_router.disabled` while the collector is not set up.',
     'vault:status': 'Returns the Vaultwarden setup and the state of the published Database items from the Gateway records. It never contacts Vaultwarden and never returns a secret.',
     'vault:setup': 'Records vault.setup and returns HTTP 202 with an Operation. Swamp logs in, unlocks and proves a writable collection before the Gateway projects encrypted setup. Follow operation:show until succeeded, failed or cancelled. The HTTPS origin must be on a .orbit host and trust only the Orbit root CA. Safe Vault errors appear on the Operation. client_secret and master_password are arguments in the caller transcript; they never enter Operation input, receipts or Swamp data. Requires the placed integration worker.',
@@ -2519,6 +2520,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['409'] = error_response(extension_error)
     if route['name'] == 'ai-router:model:list':
         responses['409'] = error_response('The collector is not set up (`ai_router.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).')
+    if route['name'] == 'ai-router:task-guard':
+        responses['409'] = error_response('The ai-router is not set up (`ai_router.disabled`), or another guard or forwarder run holds the guard (`operation.target_busy`). A disabled extension returns HTTP 409 (`extension.disabled`).')
     if route['name'] in ('extension:enable', 'extension:disable'):
         responses['422'] = error_response('The extension slug is unknown (`validation.failed`).')
     if route['name'] == 'extension:enable':

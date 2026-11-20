@@ -7,6 +7,7 @@ namespace Orbit\Extensions\AiRouter;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\GatewayReleases\GatewayReleaseFollowUp;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRemovalGuard;
@@ -32,6 +33,7 @@ use Orbit\Extensions\AiRouter\Infrastructure\AiRouterContainerModelRoute;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardFirewall;
+use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardRelease;
 use Orbit\Extensions\AiRouter\Infrastructure\ArrayAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\ConfiguredAiRouterCache;
 use Orbit\Extensions\AiRouter\Infrastructure\HttpAiRouterAccountControlClient;
@@ -89,6 +91,7 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
         $this->contribute(ContributedPrivateHostnames::class, AiRouterPrivateHostnames::class);
         $this->contribute(DirectOperationContribution::class, AiRouterDirectOperations::class);
         $this->contribute(ContributedNodeFirewallRules::class, AiRouterTaskGuardFirewall::class);
+        $this->contribute(GatewayReleaseFollowUp::class, AiRouterTaskGuardRelease::class);
     }
 
     public function boot(): void

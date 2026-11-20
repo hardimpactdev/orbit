@@ -636,6 +636,7 @@ The alert leaves an Activity entry and a problem for the [outer loop](/reference
 | `reboot_unconfirmed` | Node 209 scheduled its own reboot and its agent reported no new boot within 30 minutes of the pass's end. Once per pass |
 | `reboot_overdue` | A Node has needed a reboot for more than 3 days when a pass ends. Once per Node and due time |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, including a wait for agent delivery, or the branch head stayed unreleased for 6 hours |
+| `release_follow_up_failed` | A [follow-up phase](#follow-up-phases) of a serving release failed, such as `ai_router_guard`. Once per phase, commit and error code. It closes when a later pass or release settles the phase `current` |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the release switch |
 | `instance_deploy_failed` | An [automatic deployment](/reference/deployments#automatic-deployments) of a production Instance failed. Once per commit |
 | `instance_deploy_stalled` | A commit that the automatic deployment tick would deploy to a production Instance, or a head whose check has not finished, waited 30 minutes. Once per commit |
@@ -771,6 +772,14 @@ An approval recorded before the network task dependencies were included cannot p
 `ORBIT_FLEET_ROLLOUT` defaults to `true`. Set it to `false` to pause fleet rollouts. The Gateway reports `disabled` and leaves the release without fleet-current status. `ORBIT_FLEET_ROLLOUT_ORDER` takes a comma-separated list of workload Node names to visit first. The order never adds or removes a Node.
 
 An operator can also request an agent and CLI delivery pass with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`). Each pass is one `fleet.rollout` Operation. Use [`operation:list --kind=fleet.rollout`](/cli/operation/list) and [`operation:show`](/cli/operation/show) for delivery results. The manual pass follows the rest of this section.
+
+### Follow-up phases
+
+An extension can owe each serving release work of its own, as a phase of the release record next to `fleet`. The phase starts once the fleet phase settles: `current`, `disabled`, or `failed`. A failed Node holds back the default refresh, never a follow-up phase. While a follow-up phase is `pending`, the release keeps its admission job, which asks again every minute, and a newer automatic release waits. Any other status settles it, and later passes keep it.
+
+A failed follow-up phase records its `error_code`, raises [`release_follow_up_failed`](#release-alerts), and leaves the release verified and serving. The next release runs the phase again.
+
+The [AI router](/reference/ai-router#the-guard-follows-its-config) contributes `ai_router_guard`, which applies its task VM guard again when the guard's config changed.
 
 ### Rollout set and order
 

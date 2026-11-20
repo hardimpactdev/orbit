@@ -26,9 +26,13 @@ final readonly class AdmitAiRouterTaskGuardAction
         }
         $node = $this->guard->node() ?? throw new ResourceOperationException('ai_router.disabled', 'The ai-router has no Node.', 409);
 
+        $intent = $this->guard->intent($node, $this->guard->forwarders($node), $remove);
+
         return $this->start->execute('ai_router.task_guard', 'node', $node->id, $node->id, [
-            'intent' => $this->guard->intent($node, $this->guard->forwarders($node), $remove),
+            'intent' => $intent,
             'execution_secrets' => $this->guard->executionSecrets($node),
+            // The Gateway keeps it; Swamp gets the intent and the secrets only.
+            'guard_digest' => $this->guard->digest($intent),
         ], $triggeredBy, $requestId, lockKey: $this->guard->lock($node));
     }
 }
