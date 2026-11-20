@@ -24,6 +24,12 @@ Each release applies the guard again by itself when its config changed. See [The
 
 A removal cuts every task VM and container off from the models until the guard is applied again. In a terminal the command asks first. Without `--yes`, a noninteractive or JSON removal fails with `input.confirmation_required` and sends nothing.
 
+## How it works
+
+The Gateway renders the guard from its sources and records the intent with vault copies of both keys. Swamp applies it on the router's Node and proves that the guard refuses a source outside its range.
+
+<div className="flow-at" data-chart="ai-router/task-guard"></div>
+
 ## Errors
 
 | Code | Meaning |

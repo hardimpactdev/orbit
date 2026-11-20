@@ -9,6 +9,8 @@ covers:
 
 `instance:migrate` is POST `/api/v1/instances/{instance}/migrate`. It returns an Operation receipt; the [command page](/cli/instance/migrate) defines its prerequisites and failure behavior.
 
+`ai-router:task-guard` is POST `/api/v1/ai-router/task-guard`, MCP tool `ai-router-task-guard`. Its body takes an optional boolean `remove`. It returns an Operation receipt; the [command page](/cli/ai-router/task-guard) defines its refusals.
+
 `instance:unregister` is POST `/api/v1/instances/{instance}/unregister`, MCP tool `instance-unregister`. It returns an Operation receipt; the [command page](/cli/instance/unregister) defines its refusals and failure behavior.
 
 `POST /api/v1/nodes/{node}/executor/proof` and MCP tool `node-executor-proof` return a terminal `Operation`. See the [operator diagnostic](/reference/executor#the-proof-operation) for authorization and verdicts.
