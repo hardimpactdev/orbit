@@ -110,12 +110,25 @@ it('accepts a review receipt whose verdict matches its findings, and keeps the v
         ->and($row->task_id)->toBe($world->subtask->id)
         ->and($row->task_check_id)->toBeNull()
         ->and($row->receipt['verdict'])->toBe($verdict)
-        ->and(count($row->receipt['findings']))->toBe($findings);
+        ->and(count($row->receipt['findings']))->toBe($findings)
+        // The turn's stored result keeps the receipt reduced to its schema fields, never the raw text.
+        ->and(Operation::query()->findOrFail($row->operation_id)->result['receipts']['review'])->toBe(json_encode($row->receipt, JSON_THROW_ON_ERROR));
 })->with([
     'approve with no finding' => [reviewReceipt('approve'), 'approve', 0],
     'changes with two findings' => [reviewReceipt('changes', ['The export drops the header row.', 'No test covers an empty board.']), 'changes', 2],
     'fields in another order' => ['{"findings":[],"verdict":"approve"}', 'approve', 0],
+    'an ordinary finding beside a summary that holds a secret' => [reviewReceipt('changes', ['The export drops the header row.', 'The proxy drops the Authorization: Bearer ghp_'.str_repeat('a1B2', 9).' header.']), 'changes', 2],
 ]);
+
+it('redacts each summary that a valid receipt keeps', function (): void {
+    $secret = 'ghp_'.str_repeat('a1B2', 9);
+
+    $row = reviewed(reviewWorld(), reviewReceipt('changes', ["The proxy drops the Authorization: Bearer {$secret} header."]));
+
+    expect($row->rejected)->toBeFalse()
+        ->and(json_encode($row->receipt))->not->toContain($secret)
+        ->and(json_encode(Operation::query()->findOrFail($row->operation_id)->result))->not->toContain($secret);
+});
 
 it('rejects a review receipt with one reason', function (?string $receipt, string $reason): void {
     $world = reviewWorld();
@@ -141,9 +154,15 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     'a field outside the schema' => ['{"verdict":"approve","findings":[],"note":"x"}', TaskHandoffs::InvalidReceipt],
     'an empty object for findings' => ['{"verdict":"approve","findings":{}}', TaskHandoffs::InvalidReceipt],
     'an object with list keys for findings' => ['{"verdict":"changes","findings":{"0":{"summary":"Missing column"}}}', TaskHandoffs::InvalidReceipt],
-    'a receipt Swamp found invalid' => ['invalid', TaskHandoffs::InvalidReceipt],
-    'a receipt Swamp found to change with no finding' => ['changes_without_finding', TaskHandoffs::ChangesWithoutFinding],
-    'a receipt Swamp found to approve with a finding' => ['approve_with_finding', TaskHandoffs::ApproveWithFinding],
+    'text that names a reason' => ['approve_with_finding', TaskHandoffs::InvalidReceipt],
+    'a file Swamp found too large' => ['too large', TaskHandoffs::InvalidReceipt],
+    'terminal formatting around JSON' => ["\u{1b}[31m".reviewReceipt('approve'), TaskHandoffs::InvalidReceipt],
+    'a secret under a field named key' => ['{"verdict":"approve","findings":[],"key":"hunter2"}', TaskHandoffs::InvalidReceipt],
+    'a secret under a nested field named keys' => ['{"verdict":"approve","findings":[{"summary":"x","keys":["hunter2"]}]}', TaskHandoffs::InvalidReceipt],
+    'nesting deeper than the decoder allows' => ['{"verdict":"approve","findings":[],"x":'.str_repeat('[', 3000).str_repeat(']', 3000).'}', TaskHandoffs::InvalidReceipt],
+    'a blank summary beside an ordinary one' => [reviewReceipt('changes', ['The export drops the header row.', " \t"]), TaskHandoffs::InvalidReceipt],
+    'a NUL-only summary beside an ordinary one' => [reviewReceipt('changes', ['The export drops the header row.', "\0"]), TaskHandoffs::InvalidReceipt],
+    'a summary that ends in half a surrogate pair' => ['{"verdict":"changes","findings":[{"summary":"The export drops the header row."},{"summary":"Missing \\ud83d"}]}', TaskHandoffs::InvalidReceipt],
     'a verdict in terminal formatting' => [json_encode(['verdict' => "\u{1b}[31mapprove\u{1b}[0m", 'findings' => []], JSON_THROW_ON_ERROR), TaskHandoffs::InvalidReceipt],
     'a secret under a field of another name' => ["{\"verdict\":\"approve\",\"findings\":[],\"password\":\n\"hunter2\"}", TaskHandoffs::InvalidReceipt],
     'a number that does not encode again' => ['{"verdict":"approve","findings":[],"size":1e400}', TaskHandoffs::InvalidReceipt],

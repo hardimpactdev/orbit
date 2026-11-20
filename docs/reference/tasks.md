@@ -1183,9 +1183,9 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 {"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
 ```
 
-Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes both receipt paths; a copy where they cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json` once and removes them. A link, a folder or a file over 64 KiB is removed unread.
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes both receipt paths; a copy where they cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json` once and removes them. A link or a folder is removed unread. A file over 64 KiB is removed and passes on as the text `too large`.
 
-The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt is validated raw first: a valid one keeps only its verdict and its summaries, each summary redacted on its own; any other is only its rejection reason ([The review gate](#the-review-gate)).
+The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt is its raw text: Swamp neither validates nor redacts it, and writes no resource with it. The Gateway alone validates it ([The review gate](#the-review-gate)).).
 
 #### The delivery gate
 
@@ -1220,7 +1220,9 @@ A reviewer turn of a gated group writes the review receipt to `$(git rev-parse -
 
 When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. An accepted row keeps the receipt's verdict and findings, so both read from it. A rejected row keeps no receipt content, only its reason. A turn that fails writes none.
 
-In the turn, Swamp parses and validates the raw receipt before any redaction, with the verdict compared on its raw value. A valid receipt keeps only `verdict` and each finding's `summary`, each summary redacted on its own as one string. A summary that is blank once redacted makes the receipt invalid. A receipt the gate rejects passes on as its reason alone: `invalid`, `changes_without_finding` or `approve_with_finding`. The Gateway keeps only that reason in the turn's result too. A rejected review counts for no review round: the retry repeats the same round.
+The Gateway is the one validator. It validates the raw text in the turn's projection before it stores anything, with the verdict compared on its raw value. Each summary is redacted on its own and must not be blank once redacted. Text that is not valid UTF-8 JSON, such as half a surrogate pair or `too large`, is invalid.
+
+Only a valid receipt, reduced to `verdict` and each finding's `summary`, is stored, in the review row and in the turn's result. A rejected receipt stores only its reason there. The Gateway never stores the raw text; Swamp's run record keeps it for its retention time, as it keeps the transcript. A rejected review counts for no review round: the retry repeats the same round.
 
 | Result | When |
 | --- | --- |

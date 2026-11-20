@@ -803,14 +803,14 @@
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
         # The receipts the turn left under the Git directory (docs/reference/tasks.md#handoffs): each is read once and removed, so a
-        # receipt never counts for two turns. A link, a folder or a file over 64 KiB is removed unread; the result step validates a
-        # delivery receipt field by field, and the Gateway each receipt.
+        # receipt never counts for two turns. A link or a folder is removed unread, and a file over 64 KiB passes on as `too large`; the
+        # result step validates a delivery receipt field by field, and the Gateway alone a review receipt.
         - name: Read and remove the handoff receipts
           ansible.builtin.command:
             argv: >-
               {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
                  'f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$1.json") || exit 0;
-                  if [ -f "$f" ] && [ ! -L "$f" ] && [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; fi; rm -rf -- "$f"',
+                  if [ -f "$f" ] && [ ! -L "$f" ]; then if [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; else printf "too large"; fi; fi; rm -rf -- "$f"',
                  'sh', item] }}
           loop: [delivery, review]
           register: handoff_receipts

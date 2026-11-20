@@ -153,7 +153,7 @@ export const Turn = z.object({
     spent: z.array(z.string()),
     transcript: z.array(Entry),
     // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
-    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a valid review receipt keeps only its verdict and summaries, each summary redacted; any other is only its rejection reason. Null
+    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its raw text, at most 64 KiB or `too large`, which the Gateway alone validates and only the method's output carries. Null
     // for a receipt the turn did not leave.
     receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
@@ -419,39 +419,12 @@ function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
     return redacted.success ? redacted.data : "invalid";
 }
 
-/**
- * The review receipt as the Gateway gets it. The raw receipt is parsed and validated before any redaction: exactly `verdict`, the raw
- * value `approve` or `changes`, and `findings`, a list of objects of exactly a string `summary`. The shape is read without recursion.
- * Each summary is then redacted on its own and must not be blank. `changes` needs a finding and `approve` none. A valid receipt keeps
- * only those fields; a receipt the Gateway rejects passes on only its reason, `invalid`, `changes_without_finding` or
- * `approve_with_finding`, and no content.
- */
-function reviewed(text: string): string {
-    let receipt: unknown;
-    try {
-        receipt = JSON.parse(text);
-    } catch {
-        return "invalid";
-    }
-    const exactly = (value: unknown, keys: string[]): value is Record<string, unknown> =>
-        value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join() === keys.join();
-    if (!exactly(receipt, ["findings", "verdict"]) || (receipt.verdict !== "approve" && receipt.verdict !== "changes") || !Array.isArray(receipt.findings)
-        || !receipt.findings.every((finding) => exactly(finding, ["summary"]) && typeof finding.summary === "string")) {
-        return "invalid";
-    }
-    const findings = (receipt.findings as { summary: string }[]).map((finding) => ({ summary: redactText(finding.summary) }));
-    if (findings.some((finding) => finding.summary.trim() === "")) return "invalid";
-    if (receipt.verdict === "changes" && findings.length === 0) return "changes_without_finding";
-    if (receipt.verdict === "approve" && findings.length > 0) return "approve_with_finding";
-    return JSON.stringify({ verdict: receipt.verdict, findings });
-}
-
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.6",
+    version: "2026.11.20.7",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -478,11 +451,13 @@ export const behavior = {
                 const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
                 turn.receipts = {
                     delivery: left?.delivery === undefined ? null : delivered(left.delivery),
-                    review: left?.review === undefined ? null : reviewed(left.review),
+                    review: left?.review ?? null,
                 };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
-                await ctx.writeResource("result", "result", result);
+                // The Gateway reads the turn from this method's output, raw review receipt included, and validates it; the stored
+                // resource keeps no review receipt.
+                await ctx.writeResource("result", "result", { ...result, turn: { ...turn, receipts: { delivery: turn.receipts.delivery, review: null } } });
                 return result;
             },
         },

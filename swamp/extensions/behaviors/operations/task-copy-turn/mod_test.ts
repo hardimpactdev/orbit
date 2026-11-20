@@ -272,39 +272,14 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
             review: `{"verdict": "${secret}"}`,
         }));
         const redacted = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(JSON.stringify(redacted.turn.receipts).includes(secret), false);
-        // A review receipt stays JSON when a finding quotes a header that redaction cuts to the end of its line.
-        const review = { verdict: "changes", findings: [{ summary: `The proxy drops the Authorization: Bearer ${secret} header.` }] };
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: JSON.stringify(review) }));
-        const kept = JSON.parse((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review ?? "");
-        assertEquals(Object.keys(kept), ["verdict", "findings"]);
-        assertEquals(kept.findings.length, 1);
-        assertEquals(JSON.stringify(kept).includes(secret), false);
-        // Any other receipt is invalid before any redaction and passes on no content: a secret under any field name, a field that a
-        // line break parts from its value, a verdict that only redaction would make valid, terminal formatting around JSON, deep nesting.
-        const plain = "hunter2-plain-value";
-        const esc = "\u001b[31m";
-        for (const other of [`VERDICT: APPROVE ${secret}`, JSON.stringify({ verdict: "approve", findings: [], key: plain }),
-            JSON.stringify({ verdict: "approve", findings: [{ summary: "x", keys: [plain] }] }), `{"verdict":"approve","findings":[],"password":\n"${plain}"}`,
-            JSON.stringify({ verdict: `${esc}approve\u001b[0m`, findings: [] }), `${esc}{"verdict":"approve","findings":[]}`,
-            '{"verdict":"approve","findings":[],"x":' + "[".repeat(30000) + "]".repeat(30000) + "}"]) {
-            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: other }));
-            assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review, "invalid");
-        }
-        // A receipt of the right shape that the Gateway rejects passes on only its reason, also to the stored result: a blank summary,
-        // also one that redaction empties, a verdict that disagrees with its findings.
+        assertEquals(JSON.stringify(redacted.turn.receipts?.delivery).includes(secret), false);
+        // A review receipt passes on raw in the method's output for the Gateway to validate; the stored resource keeps none of it.
         const written: unknown[] = [];
         const recording = { writeResource: (_spec: string, _name: string, value: unknown) => Promise.resolve(written.push(value)) };
-        for (const [rejected, reason] of [
-            [{ verdict: "changes", findings: [{ summary: "The export drops the header row." }, { summary: " " }] }, "invalid"],
-            [{ verdict: "changes", findings: [{ summary: "\u001b[31m\u001b[0m" }] }, "invalid"],
-            [{ verdict: "approve", findings: [{ summary: "The export drops the header row." }] }, "approve_with_finding"],
-            [{ verdict: "changes", findings: [] }, "changes_without_finding"],
-        ] as const) {
-            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: JSON.stringify(rejected) }));
-            assertEquals((await behavior.methods.result.execute({ folder }, recording)).turn.receipts?.review, reason);
-            assertEquals(JSON.stringify(written.at(-1)).includes("header row"), false);
-        }
+        const raw = '{"verdict":"approve","findings":[],"password":\n"hunter2"}';
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: raw }));
+        assertEquals((await behavior.methods.result.execute({ folder }, recording)).turn.receipts?.review, raw);
+        assertEquals(JSON.stringify(written.at(-1)).includes("hunter2"), false);
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),

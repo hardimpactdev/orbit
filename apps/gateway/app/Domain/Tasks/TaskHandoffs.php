@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -109,7 +110,10 @@ final readonly class TaskHandoffs
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Question, 'receipt' => ['questions' => $questions]]);
         } elseif ($result['state'] === AgentThreadState::Done->value && ($turn->input['role'] ?? null) === TaskThreadRole::Reviewer->value) {
             $receipts = $result['receipts'] ?? null;
-            [$receipt, $reason] = self::review(is_array($receipts) ? $receipts['review'] ?? null : null);
+            // The turn's projection already validated the raw receipt and kept the reduced receipt or the reason alone (stored()).
+            $stored = is_array($receipts) ? $receipts['review'] ?? null : null;
+            [$receipt, $reason] = in_array($stored, [self::InvalidReceipt, self::ChangesWithoutFinding, self::ApproveWithFinding], true)
+                ? [null, $stored] : self::review($stored);
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Review, 'receipt' => $receipt,
                 'rejected' => $reason !== '', 'rejection_reason' => $reason]);
         }
@@ -209,22 +213,29 @@ final readonly class TaskHandoffs
     }
 
     /**
-     * The review receipt as the turn returned it, which Swamp validated before it redacted the summaries, and the gate's reason: empty
-     * when it is a JSON object of exactly `verdict` (`approve` or `changes`) and `findings`, a JSON list of objects of exactly a non-empty
-     * `summary`, with a finding only for `changes`. JSON objects decode as objects, so an object never passes for a list. An accepted row
-     * keeps the receipt's verdict and summaries; a rejected row keeps no receipt content. Swamp's reason codes map to their reasons.
-     *
-     * @return array{0: array<string, mixed>|null, 1: string}
+     * What a turn's result keeps of its review receipt: the valid receipt reduced to its schema fields, as JSON, or the reason alone
+     * that its gate rejects it for. The raw text is never kept.
      */
-    public static function review(mixed $text): array
+    public static function stored(string $text): string
+    {
+        [$receipt, $reason] = self::review($text);
+
+        return $reason === '' ? json_encode($receipt, JSON_THROW_ON_ERROR) : $reason;
+    }
+
+    /**
+     * The one validator of a review receipt: its raw text as the turn returned it, and the gate's reason. It is valid when it is a JSON
+     * object of exactly `verdict` (the raw value `approve` or `changes`) and `findings`, a JSON list of objects of exactly a `summary`
+     * string that is not blank once redacted, with a finding only for `changes`. JSON objects decode as objects, so an object never
+     * passes for a list; text that is not valid UTF-8 JSON, such as half a surrogate pair or Swamp's `too large`, is invalid. A valid
+     * receipt keeps only its verdict and its summaries, each redacted on its own; a rejected one keeps nothing.
+     *
+     * @return array{0: array{verdict: string, findings: list<array{summary: string}>}|null, 1: string}
+     */
+    private static function review(mixed $text): array
     {
         if (! is_string($text)) {
             return [null, self::NoReceipt];
-        }
-        // Swamp passes on a receipt it found rejected as its reason alone (docs/reference/tasks.md#the-review-gate).
-        $code = ['invalid' => self::InvalidReceipt, self::InvalidReceipt => self::InvalidReceipt, self::ChangesWithoutFinding => self::ChangesWithoutFinding, self::ApproveWithFinding => self::ApproveWithFinding][$text] ?? null;
-        if ($code !== null) {
-            return [null, $code];
         }
         try {
             $receipt = json_decode($text, false, 16, JSON_THROW_ON_ERROR);
@@ -236,23 +247,23 @@ final readonly class TaskHandoffs
         sort($keys);
         $summaries = [];
         foreach (is_array($findings) ? $findings : [] as $finding) {
-            if ($finding instanceof \stdClass && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary) && trim($finding->summary) !== '') {
-                $summaries[] = ['summary' => $finding->summary];
+            $summary = $finding instanceof \stdClass && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary)
+                ? app(LogRedactor::class)->redact($finding->summary, []) : '';
+            if (trim($summary) !== '') {
+                $summaries[] = ['summary' => $summary];
             }
         }
         if (! $receipt instanceof \stdClass || $keys !== ['findings', 'verdict'] || ! in_array($receipt->verdict, ['approve', 'changes'], true)
             || ! is_array($findings) || count($summaries) !== count($findings)) {
             return [null, self::InvalidReceipt];
         }
-        $kept = ['verdict' => $receipt->verdict, 'findings' => $summaries];
-
         $reason = match (true) {
-            $kept['verdict'] === 'changes' && $findings === [] => self::ChangesWithoutFinding,
-            $kept['verdict'] === 'approve' && $findings !== [] => self::ApproveWithFinding,
+            $receipt->verdict === 'changes' && $findings === [] => self::ChangesWithoutFinding,
+            $receipt->verdict === 'approve' && $findings !== [] => self::ApproveWithFinding,
             default => '',
         };
 
-        return [$reason === '' ? $kept : null, $reason];
+        return [$reason === '' ? ['verdict' => $receipt->verdict, 'findings' => $summaries] : null, $reason];
     }
 
     /**
