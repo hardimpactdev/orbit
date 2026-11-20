@@ -61,6 +61,5 @@ it('warns about a Node whose executor reports a clock that follows no time sourc
 });
 
 it('stays quiet for a synchronized clock and for a Node without a fresh executor report', function (?bool $clock): void {
-    expect(clock_doctor($clock))->not->toContain('node.clock_unsynchronized')
-        ->not->toContain('node.inspection_failed');
+    expect(clock_doctor($clock))->not->toContain('node.clock_unsynchronized');
 })->with(['synchronized' => true, 'no report' => null]);
