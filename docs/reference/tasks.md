@@ -1296,30 +1296,13 @@ When a copy turn asks a question, Orbit stores it, with the run that owns its re
 
 The next turn of that thread answers it: Orbit first resolves exactly the stored question requests in T3, then sends the answer with the questions quoted for context. Stopping the run alone can leave a question pending. Already resolved requests need no action. If resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for another attempt. See [turn questions](/cli/task/turn#a-task-that-runs-in-a-copy).
 
-Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. The provider is `claude`, `codex` or `antigravity`. A new copy thread resolves the provider first:
+Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. The provider is `claude`, `codex` or `antigravity`. A new copy thread resolves each of the three values on its own:
 
 1. the task's value, set with [`task:create`](/cli/task/create) or [`task:update`](/cli/task/update);
 2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
 3. else the Gateway's setting.
 
-The model and the effort follow the same order, but a level gives them only for the resolved provider:
-
-- A task or Project that names the provider gives its model and effort as set. A request that changes its provider alone clears its model and effort.
-- A level that names another provider gives none.
-- A level that names no provider gives a model that belongs to no other provider.
-- A model belongs to a provider by its prefix or alias. `claude-`, `opus`, `sonnet` and `haiku` are Claude's. `gpt-` and `codex-` are Codex's. `gemini-` is Antigravity's.
-- A level that names no provider gives an effort it set under the provider. It also gives an effort that the provider offers or that no provider offers.
-- The Gateway's shipped model and effort are Claude's. A Gateway value that belongs to another provider does not count.
-
-When no level gives a value, the provider's own default applies:
-
-| Provider | Own model | Own effort |
-| --- | --- | --- |
-| `claude` | `claude-opus-5-5` | `medium` |
-| `codex` | `gpt-6.1-sol` | `medium` |
-| `antigravity` | `gemini-3.8-flash` | `high` |
-
-So a task, a Project or the Gateway that switches only its provider to `antigravity` runs `gemini-3.8-flash` at `high`, never a Claude model left from before. Claude and Codex values resolve as before when no provider changes.
+One rule follows for Antigravity alone, because `agy` runs Gemini models only. A resolved model that does not start with `gemini-` becomes `gemini-3.8-flash`. A resolved effort other than `high` becomes `high`. Both then show the source `provider`. So a task that sets only `--implementer-provider=antigravity` runs `gemini-3.8-flash` at `high`, never the Project's Claude model. Claude and Codex values resolve as the chain says.
 
 A copy offers Claude and Codex, and Antigravity only when the settings Orbit wrote at its create hold the `antigravity` instance. The copy's `instance.create` input keeps them. A copy made before Antigravity, or one on stock T3, refuses an Antigravity thread with `tasks.copy_turn_unoffered`, and nothing is recorded. Start the task on a new copy to run Antigravity.
 

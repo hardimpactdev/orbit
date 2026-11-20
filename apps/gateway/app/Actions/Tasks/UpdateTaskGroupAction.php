@@ -12,7 +12,6 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskStatusMoves;
-use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use Closure;
@@ -63,10 +62,8 @@ final readonly class UpdateTaskGroupAction
                 $locked->pr_mode = $data->prMode;
             }
             if ($data->agents !== []) {
-                $agents = TaskAgent::withSwitches($data->agents, static fn (string $field): mixed => $locked->getAttribute(TaskAgent::groupColumn(
-                    TaskThreadRole::from(strstr($field, '_', true) ?: $field), substr((string) strrchr($field, '_'), 1))));
-                TaskAgent::assertChangeable($locked, $agents);
-                $locked->fill(TaskAgent::groupColumns($agents));
+                TaskAgent::assertChangeable($locked, $data->agents);
+                $locked->fill(TaskAgent::groupColumns($data->agents));
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;

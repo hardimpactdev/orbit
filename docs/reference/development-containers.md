@@ -2406,7 +2406,7 @@ In T3 0.1.7, interrupting a Claude question with a `live` response capability ca
 
 ### Turn model and effort
 
-A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`, or `antigravity`, which runs `gemini-3.8-flash` unless a model is set for it. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`, or `antigravity`, which runs `gemini-3.8-flash` unless a Gemini model is set for it. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
 
 Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one instance per provider and effort:
 

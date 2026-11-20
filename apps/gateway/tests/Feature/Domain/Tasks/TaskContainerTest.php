@@ -2067,7 +2067,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(copyTurn($group)->input['turn'])->toMatchArray(['provider' => 'claudeMedium']);
     });
 
-    it('resolves Claude\'s model aliases to Claude only, and passes an explicit group pair as given', function (string $role): void {
+    it('keeps Claude\'s aliases for Claude and never sends one to Antigravity', function (string $role): void {
         $group = copyGroup(copySource()->project);
         $roleCase = TaskThreadRole::from($role);
         // A Project that names no provider, with Claude's alias: it stays with Claude and never reaches Antigravity.
@@ -2087,20 +2087,56 @@ describe('a turn of a group that owns a copy', function (): void {
             'effort' => ['value' => 'high', 'source' => 'provider'],
         ]);
 
-        // A group that names a provider and a model together gets them as named; the copy's model check decides.
+        // Even a group that names Antigravity and a Claude alias together runs Gemini: agy runs Gemini models only.
         $group->update([$role.'_agent_provider' => 'antigravity', $role.'_agent_model' => 'opus']);
-        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'opus', 'source' => 'group']);
+        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'gemini-3.8-flash', 'source' => 'provider']);
     })->with(['implementer', 'reviewer']);
 
-    it('passes over a model or effort of another provider at every level, else takes the provider\'s own', function (): void {
+    it('resolves Claude and Codex exactly by the group, Project and Gateway chain, whatever provider each level names', function (): void {
+        $group = copyGroup(copySource()->project);
+        $values = ['provider' => [null, 'claude', 'codex'], 'model' => [null, 'claude-sonnet-5-5', 'gpt-6.2-astra'], 'effort' => [null, 'low', 'xhigh', 'ultra']];
+        $gateways = [['provider' => 'claude', 'model' => 'claude-opus-5-5', 'effort' => 'medium'], ['provider' => 'codex', 'model' => 'gpt-6.1-sol', 'effort' => 'high']];
+        $cases = 0;
+        foreach ($gateways as $gateway) {
+            config(['orbit.tasks.copy_agents.implementer' => $gateway]);
+            foreach ($values['provider'] as $groupProvider) {
+                foreach ($values['provider'] as $projectProvider) {
+                    foreach ($values['model'] as $groupModel) {
+                        foreach ($values['model'] as $projectModel) {
+                            foreach ([[null, 'low'], ['ultra', 'xhigh'], [null, null]] as [$groupEffort, $projectEffort]) {
+                                $group->project->forceFill(['task_implementer_provider' => $projectProvider, 'task_implementer_model' => $projectModel,
+                                    'task_implementer_effort' => $projectEffort])->save();
+                                $group->forceFill(['implementer_agent_provider' => $groupProvider, 'implementer_agent_model' => $groupModel,
+                                    'implementer_agent_effort' => $groupEffort])->save();
+                                // origin/main's rule: each value on its own, the group's, else the Project's, else the Gateway's.
+                                $main = static fn (?string $grouped, ?string $projected, string $gatewayValue): array => match (true) {
+                                    $grouped !== null => ['value' => $grouped, 'source' => 'group'],
+                                    $projected !== null => ['value' => $projected, 'source' => 'project'],
+                                    default => ['value' => $gatewayValue, 'source' => 'gateway'],
+                                };
+                                expect(TaskAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
+                                    'provider' => $main($groupProvider, $projectProvider, $gateway['provider']),
+                                    'model' => $main($groupModel, $projectModel, $gateway['model']),
+                                    'effort' => $main($groupEffort, $projectEffort, $gateway['effort']),
+                                ]);
+                                $cases++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        expect($cases)->toBe(2 * 3 * 3 * 3 * 3 * 3);
+    });
+
+    it('replaces only a model that is no Gemini model and an effort Antigravity does not offer, wherever Antigravity comes from', function (): void {
         $group = copyGroup(copySource()->project);
         $group->project->update(['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.2-sol', 'task_implementer_provider' => 'antigravity']);
 
-        // The Gateway names Claude, so none of its values reach Codex or Antigravity: each provider's own default applies.
         expect(TaskAgent::resolve($group, TaskThreadRole::Reviewer))->toBe([
             'provider' => ['value' => 'codex', 'source' => 'project'],
             'model' => ['value' => 'gpt-6.2-sol', 'source' => 'project'],
-            'effort' => ['value' => 'medium', 'source' => 'provider'],
+            'effort' => ['value' => 'high', 'source' => 'gateway'],
         ])
             ->and(TaskAgent::resolve($group, TaskThreadRole::Implementer))->toBe([
                 'provider' => ['value' => 'antigravity', 'source' => 'project'],
@@ -2108,41 +2144,17 @@ describe('a turn of a group that owns a copy', function (): void {
                 'effort' => ['value' => 'high', 'source' => 'provider'],
             ]);
 
-        // A group's model of the provider counts; a Gateway that names Antigravity gives its own values.
-        $group->update(['implementer_agent_model' => 'gemini-3.7-flash', 'reviewer_agent_provider' => 'antigravity']);
+        // A Gemini model and the high effort stand, from any level.
+        $group->update(['implementer_agent_model' => 'gemini-3.7-flash', 'reviewer_agent_provider' => 'antigravity', 'reviewer_agent_effort' => 'high']);
         config(['orbit.tasks.copy_agents.reviewer' => ['provider' => 'antigravity', 'model' => 'gemini-4-argon', 'effort' => 'high']]);
         expect(TaskAgent::resolve($group, TaskThreadRole::Implementer)['model'])->toBe(['value' => 'gemini-3.7-flash', 'source' => 'group'])
             ->and(TaskAgent::resolve($group, TaskThreadRole::Reviewer))->toBe([
                 'provider' => ['value' => 'antigravity', 'source' => 'group'],
-                'model' => ['value' => 'gemini-4-argon', 'source' => 'gateway'],
-                'effort' => ['value' => 'high', 'source' => 'gateway'],
+                // The Project's Codex model comes first in the chain and is no Gemini model: Antigravity's own replaces it.
+                'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'],
+                'effort' => ['value' => 'high', 'source' => 'group'],
             ]);
     });
-
-    it('keeps a Project model and effort for the provider a group names, whatever the Gateway\'s provider, as before Antigravity', function (string $role): void {
-        $group = copyGroup(copySource()->project);
-        // The Gateway names Codex; the Project names no provider but a Claude model; the group picks Claude.
-        config(['orbit.tasks.copy_agents.'.$role => ['provider' => 'codex', 'model' => 'gpt-6.1-sol', 'effort' => 'ultra']]);
-        $group->project->update(['task_'.$role.'_model' => 'claude-sonnet-5-5', 'task_'.$role.'_effort' => 'low']);
-        $group->update([$role.'_agent_provider' => 'claude']);
-        $roleCase = TaskThreadRole::from($role);
-
-        expect(TaskAgent::resolve($group, $roleCase))->toBe([
-            'provider' => ['value' => 'claude', 'source' => 'group'],
-            'model' => ['value' => 'claude-sonnet-5-5', 'source' => 'project'],
-            'effort' => ['value' => 'low', 'source' => 'project'],
-        ]);
-
-        // The reverse: a Claude Gateway, a Project Codex model, a group that picks Codex. The Gateway's Claude model never reaches Codex.
-        config(['orbit.tasks.copy_agents.'.$role => ['provider' => 'claude', 'model' => 'claude-opus-5-5', 'effort' => 'max']]);
-        $group->project->update(['task_'.$role.'_model' => 'gpt-6.2-sol', 'task_'.$role.'_effort' => null]);
-        $group->update([$role.'_agent_provider' => 'codex']);
-        expect(TaskAgent::resolve($group->refresh(), $roleCase))->toBe([
-            'provider' => ['value' => 'codex', 'source' => 'group'],
-            'model' => ['value' => 'gpt-6.2-sol', 'source' => 'project'],
-            'effort' => ['value' => 'medium', 'source' => 'provider'],
-        ]);
-    })->with(['implementer', 'reviewer']);
 
     it('starts Gemini at high after a provider-only switch to Antigravity at the Project, the group or the Gateway', function (string $role): void {
         $group = copyGroup(copySource()->project);
