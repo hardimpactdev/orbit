@@ -21,14 +21,16 @@ use App\Models\TaskQuestion;
 use App\Support\Percentile;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
  * Computes [task insights](/reference/tasks#task-insights) from the ended tasks, their threads, verdicts,
- * handoff checks, and questions. Every number is defined here and nowhere else.
+ * handoff checks, and questions. Every number is defined here and nowhere else: `rowsOf` builds the row of each
+ * task group, which `TaskInsightRecorder` stores, and `aggregate` reduces rows to a report, which `TaskInsightTotals` stores.
  *
  * @phpstan-type Row array{
- *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
+ *     id: int, project_id: int, model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
  *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
@@ -45,22 +47,62 @@ final class TaskInsights
      */
     private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'pr_opened_at', 'lines_added', 'lines_deleted'];
 
-    /** @param  '24h'|'7d'|'30d'  $period */
+    /**
+     * The periods a report covers, by their name in the API and their length in days; the only list of them.
+     * `24h` counts whole UTC hours up to the end of the current hour; the others count whole UTC days up to the end of today.
+     */
+    public const array Periods = ['24h' => 1, '7d' => 7, '30d' => 30];
+
+    /** The periods as one comma-separated rule list, which the OpenAPI generator also reads. */
+    public static function periodList(): string
+    {
+        return implode(',', array_keys(self::Periods));
+    }
+
+    /**
+     * The current code of a row's Project. A record keeps the Project's id, so a renamed Project aggregates under its new code.
+     *
+     * @param  array<int|string, mixed>  $codes  Project codes by id
+     */
+    public static function projectCode(array $codes, int $projectId): string
+    {
+        return ValidatedData::nullableString($codes[$projectId] ?? null) ?? '';
+    }
+
+    /**
+     * The report computed from the source tables. The endpoint reads it from `TaskInsightTotals` instead,
+     * which aggregates the same rows from their [records](/reference/tasks#task-insights).
+     *
+     * @param  key-of<self::Periods>  $period
+     */
     public function report(string $period, ?int $projectId, CarbonImmutable $now): TaskInsightsData
     {
-        $tomorrow = $now->utc()->startOfDay()->addDay();
-        // 24h counts whole UTC hours up to the end of the current one; 7d and 30d count whole UTC days.
-        $back = static fn (CarbonImmutable $end): CarbonImmutable => match ($period) {
-            '24h' => $end->subDay(),
-            '7d' => $end->subDays(7),
-            '30d' => $end->subDays(30),
-        };
-        $to = $period === '24h' ? $now->utc()->startOfHour()->addHour() : $tomorrow;
-        $from = $back($to);
-        $trendFrom = $tomorrow->subWeeks(self::Weeks);
-        $releases = GatewayRelease::query()->where('outcome', 'verified')->whereNotNull('sha')
-            ->orderBy('created_at')->get(['sha', 'created_at']);
-        $rows = $this->rows($trendFrom, $projectId, $releases);
+        $groups = Task::topLevel()->where('ended_at', '>=', self::trendStart($now))
+            ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId));
+
+        return $this->aggregate($period, $this->rowsOf($groups), $now);
+    }
+
+    /** The start of the oldest trend week: no older row counts in a report. */
+    public static function trendStart(CarbonImmutable $now): CarbonImmutable
+    {
+        return $now->utc()->startOfDay()->addDay()->subWeeks(self::Weeks);
+    }
+
+    /**
+     * The report over rows of one Project, or of all of them; rows that ended before the trend start do not count.
+     *
+     * @param  key-of<self::Periods>  $period
+     * @param  list<Row>  $rows
+     */
+    public function aggregate(string $period, array $rows, CarbonImmutable $now): TaskInsightsData
+    {
+        $days = self::Periods[$period];
+        $hourly = $period === '24h';
+        $to = $hourly ? $now->utc()->startOfHour()->addHour() : $now->utc()->startOfDay()->addDay();
+        $from = $to->subDays($days);
+        $trendFrom = self::trendStart($now);
+        usort($rows, static fn (array $a, array $b): int => $a['id'] <=> $b['id']);
         $in = static fn (CarbonImmutable $start, CarbonImmutable $end): array => array_values(array_filter(
             $rows,
             static fn (array $row): bool => $row['ended_at'] >= $start && $row['ended_at'] < $end,
@@ -72,20 +114,20 @@ final class TaskInsights
             from: $from->toIso8601String(),
             to: $to->toIso8601String(),
             current: $this->summary($current),
-            previous: $this->summary($in($back($from), $from)),
+            previous: $this->summary($in($from->subDays($days), $from)),
             weekly: array_map(function (int $week) use ($trendFrom, $in): TaskInsightsWeekData {
                 $start = $trendFrom->addWeeks($week);
                 $week = $in($start, $start->addWeek());
 
                 return new TaskInsightsWeekData($start->toDateString(), count($week), $this->mergedCount($week), $this->tokensPerMergedPr($week));
             }, range(0, self::Weeks - 1)),
-            daily: $period === '24h' ? [] : array_map(function (int $day) use ($from, $in): TaskInsightsDayData {
+            daily: $hourly ? [] : array_map(function (int $day) use ($from, $in): TaskInsightsDayData {
                 $start = $from->addDays($day);
                 $ended = $in($start, $start->addDay());
 
                 return new TaskInsightsDayData($start->toDateString(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
-            }, range(0, (int) $from->diffInDays($to) - 1)),
-            hourly: $period === '24h' ? array_map(function (int $hour) use ($from, $in): TaskInsightsHourData {
+            }, range(0, $days - 1)),
+            hourly: $hourly ? array_map(function (int $hour) use ($from, $in): TaskInsightsHourData {
                 $start = $from->addHours($hour);
                 $ended = $in($start, $start->addHour());
 
@@ -100,21 +142,23 @@ final class TaskInsights
     }
 
     /**
-     * One row per task that ended since the start of the trend.
+     * One row per ended task group that the query selects, ordered by id.
      *
-     * @param  Collection<int, GatewayRelease>  $releases
+     * @param  Builder<Task>  $query  top-level tasks
      * @return list<Row>
      */
-    private function rows(CarbonImmutable $since, ?int $projectId, Collection $releases): array
+    public function rowsOf(Builder $query): array
     {
+        $releases = GatewayRelease::query()->where('outcome', 'verified')->whereNotNull('sha')
+            ->orderBy('created_at')->get(['sha', 'created_at']);
         $codes = Project::query()->pluck('code', 'id')->all();
-        $groups = Task::topLevel()
+        $groups = $query
             ->whereIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
-            ->where('ended_at', '>=', $since)
-            ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
+            ->whereNotNull('ended_at')
             ->orderBy('id')->toBase()->get(self::GroupColumns)
             ->map(static fn (object $group): array => [
-                'id' => self::number($group->id), 'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
+                'id' => self::number($group->id), 'project_id' => self::number($group->project_id),
+                'project' => self::projectCode($codes, self::number($group->project_id)),
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
                     'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at, 'pr_opened_at' => $group->pr_opened_at]),
@@ -196,6 +240,8 @@ final class TaskInsights
             $merged = $mergedAt !== null;
 
             $rows[] = [
+                'id' => $group['id'],
+                'project_id' => $group['project_id'],
                 // The model the group's first implementer thread ran; a group with no implementer thread counts as Unknown.
                 'model' => array_values(array_filter($groupThreads, static fn (array $thread): bool => $thread['role'] === 'implementer'))[0]['model'] ?? null,
                 'project' => $group['project'],

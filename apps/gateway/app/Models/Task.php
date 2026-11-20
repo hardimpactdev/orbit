@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
+use App\Domain\Tasks\TaskInsightObserver;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -152,7 +153,7 @@ use LogicException;
  * @property-read Instance|Model|null $taskable
  * @property-read AgentThread|null $reviewerThread
  */
-#[ObservedBy([TaskBroadcastObserver::class])]
+#[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class Task extends Model
 {
     /** @var list<string> */

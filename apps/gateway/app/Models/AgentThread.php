@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskBroadcastObserver;
+use App\Domain\Tasks\TaskInsightObserver;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
@@ -65,7 +66,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $t3_metrics_observed_activity_version
  * @property-read Node|null $node
  */
-#[ObservedBy([TaskBroadcastObserver::class])]
+#[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class AgentThread extends Model
 {
     public const string PendingPrefix = 'pending:';
