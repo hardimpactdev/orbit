@@ -598,7 +598,9 @@ An ended group permits no subtask status move. Completing a subtask clears its a
 
 #### Subtask status in a task copy
 
-In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. In a gated group the move also needs the reviewer's accepted `approve` ([The review gate](#the-review-gate)). Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
+In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads.
+
+In a gated group the move to `completed` also needs the reviewer's accepted `approve` ([The review gate](#the-review-gate)). Since a turn started the subtask, it then keeps its title, brief, position and deliverables, as the next paragraph says.
 
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the corrections that the next section lists.
 
@@ -1216,7 +1218,9 @@ A reviewer turn of a gated group writes the review receipt to `$(git rev-parse -
 
 #### The review gate
 
-When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. The row keeps a valid receipt as its verdict and findings, so both read from it. It keeps an invalid receipt only as its text, `{"text": ...}`, so storing it never fails the turn. A turn that fails writes none. In the turn, Swamp redacts each string of a receipt that parses as JSON on its own and serializes it again, so redaction never breaks a valid receipt. A rejected review counts for no review round: the retry is a first review again.
+When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. The row keeps a valid receipt as its verdict and findings, so both read from it. It keeps an invalid receipt only as its text, `{"text": ...}`, so storing it never fails the turn. A turn that fails writes none.
+
+In the turn, Swamp redacts each string of a receipt that parses as JSON on its own and serializes it again, so redaction never breaks a valid receipt. A rejected review counts for no review round: the retry is a first review again.
 
 | Result | When |
 | --- | --- |
@@ -1543,7 +1547,9 @@ Orbit decides from its own records that a group's work is done. All of these mus
 
 The commit counts, not the check. A re-check of a clean recorded HEAD makes a new check with the same commit, so a reviewer turn on the earlier check of that commit still counts.
 
-In a group without the [handoff gates](#handoffs), a copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. In a gated group the reviewer's verdict is its review row: the move to `completed` and a publish need an accepted `approve` ([The review gate](#the-review-gate)). No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
+In a group without the [handoff gates](#handoffs), a copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval.
+
+In a gated group the reviewer's verdict is its review row: the move to `completed` and a publish need an accepted `approve` ([The review gate](#the-review-gate)). No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
 
 A [reopen](#reopen-the-last-subtask) of the last subtask is refused while a copy turn runs too, and a reopened subtask has not ended, so the group is not done until it is completed again.
 
