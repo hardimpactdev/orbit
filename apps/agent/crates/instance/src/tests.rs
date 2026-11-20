@@ -15,7 +15,10 @@ impl Fake {
         Self {
             answers: answers
                 .iter()
-                .map(|(call, answer)| ((*call).to_owned(), answer.as_ref().map(Value::to_string).map_err(|error| (*error).to_owned())))
+                .map(|(call, answer)| {
+                    let text = |value: &Value| value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+                    ((*call).to_owned(), answer.as_ref().map(text).map_err(|error| (*error).to_owned()))
+                })
                 .collect(),
             calls: RefCell::default(),
         }
@@ -189,11 +192,11 @@ fn values_that_could_carry_another_option_are_refused() {
     }
 }
 
-fn stopped() -> Result<Value, &'static str> {
-    Ok(json!({"status": "Stopped", "config": {"volatile.uuid": "01234567-89ab-cdef-0123-456789abcdef"}}))
+fn stopped() -> Value {
+    json!({"status": "Stopped", "config": {"volatile.uuid": "01234567-89ab-cdef-0123-456789abcdef"}})
 }
 
-fn prepare_input(files: Value) -> Value {
+fn prepare_input(files: &Value) -> Value {
     json!({"project": "orbit-instances", "name": "instance-12", "units": ["orbit-process-7.service"], "process_ids": ["7"], "files": files})
 }
 
@@ -201,15 +204,17 @@ fn prepare_input(files: Value) -> Value {
 fn a_running_copy_is_left_alone() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
 
-    assert_eq!(prepare(&fake, &prepare_input(json!([]))), Ok(0));
+    assert_eq!(prepare(&fake, &prepare_input(&json!([]))), Ok(0));
     assert_eq!(fake.calls().len(), 1);
 }
 
 #[test]
 fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
     let fake = Fake::new(&[
-        ("query /1.0/instances/instance-12?", stopped()),
+        ("query /1.0/instances/instance-12?", Ok(stopped())),
         ("path=/etc/systemd/system/multi-user.target.wants", Ok(json!(["orbit-process-3.service", "ssh.service"]))),
+        ("path=/etc/systemd/system/sockets.target.wants", MISSING),
+        ("path=/etc/systemd/system/timers.target.wants", MISSING),
         ("path=/etc/systemd/system", Ok(json!(["orbit-process-3.service", "orbit-process-7.service", "orbit-schedule-1.timer", "t3.service"]))),
         ("path=/etc/orbit/processes", Ok(json!(["3", "7"]))),
         ("query /1.0/instances/instance-12/files", MISSING),
@@ -220,7 +225,7 @@ fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
         {"link": {"path": "/home/agent/.claude/CLAUDE.md", "target": "/home/agent/.config/orbit/agent/AGENTS.md"}},
     ]);
 
-    let changes = prepare(&fake, &prepare_input(files)).expect("prepare");
+    let changes = prepare(&fake, &prepare_input(&files)).expect("prepare");
 
     let calls = fake.calls.borrow().clone();
     let named = |part: &str| calls.iter().find(|(call, _)| call.contains(part)).cloned().unwrap_or_else(|| panic!("no call {part}"));
@@ -244,7 +249,7 @@ fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
 fn a_json_file_merges_over_the_copys_own_and_an_equal_one_stays() {
     let held = |content: Value| {
         Fake::new(&[
-            ("query /1.0/instances/instance-12?", stopped()),
+            ("query /1.0/instances/instance-12?", Ok(stopped())),
             ("query /1.0/instances/instance-12/files", MISSING),
             ("%{http_code} %header{x-incus-type} http://incus/1.0/instances/instance-12/files?project=orbit-instances&path=/home/agent/.t3/settings.json", Ok(json!("200 file"))),
             ("x-incus-uid", Ok(json!("2750 2750 600"))),
@@ -254,12 +259,12 @@ fn a_json_file_merges_over_the_copys_own_and_an_equal_one_stays() {
     let files = json!([{"json": {"path": "/home/agent/.t3/settings.json", "uid": 2750, "gid": 2750, "mode": "0600", "json": {"linked": true}}}]);
 
     let merged = held(json!({"theme": "dark"}));
-    prepare(&merged, &prepare_input(files.clone())).expect("prepare");
+    prepare(&merged, &prepare_input(&files)).expect("prepare");
     let pushed = merged.calls.borrow().iter().find(|(call, _)| call.ends_with("settings.json") && call.contains("push")).and_then(|(_, stdin)| stdin.clone());
     assert_eq!(pushed.as_deref(), Some("{\"linked\":true,\"theme\":\"dark\"}\n"));
 
     let same = held(json!({"linked": true, "theme": "dark"}));
-    prepare(&same, &prepare_input(files)).expect("prepare");
+    prepare(&same, &prepare_input(&files)).expect("prepare");
     assert!(!same.calls().iter().any(|call| call.contains("push") && call.ends_with("settings.json")));
 }
 
@@ -272,7 +277,7 @@ fn prepare_refuses_a_path_outside_the_copy_and_any_other_trust_source() {
         json!({"trust": {"source": "/etc/shadow", "path": "/usr/local/share/ca-certificates/x.crt", "hash_directory": "/etc/ssl/certs", "uid": 0, "gid": 0, "mode": "0644"}}),
     ] {
         let fake = Fake::new(&[]);
-        assert_eq!(prepare(&fake, &prepare_input(json!([item]))).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"), "{item}");
+        assert_eq!(prepare(&fake, &prepare_input(&json!([item]))).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"), "{item}");
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }

@@ -91,7 +91,7 @@ pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
     if uuid.len() != 32 {
         return Err(Failure::new("instance.prepare_failed", "the copy has no volatile.uuid"));
     }
-    files.push("/etc/machine-id", 0, 0, "0444", format!("{uuid}\n").as_bytes(), false)?;
+    files.push("/etc/machine-id", 0, 0, "0444", format!("{uuid}\n").as_bytes(), Folders::Present)?;
     changes += 1;
     for item in &input.files {
         changes += place(system, &files, item)?;
@@ -142,6 +142,7 @@ fn check(input: &PrepareInput) -> Result<(), String> {
 }
 
 /// The seed's Orbit units, links and Schedule files that are not the copy's own.
+#[expect(clippy::case_sensitive_file_extension_comparisons, reason = "systemd unit and Schedule file names are lowercase")]
 fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Failure> {
     let units: BTreeSet<&str> = input.units.iter().map(String::as_str).collect();
     let ids: BTreeSet<&str> = input.process_ids.iter().map(String::as_str).collect();
@@ -158,9 +159,8 @@ fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Fa
     for (index, (folder, required)) in folders.iter().enumerate() {
         let listed = match files.list(folder) {
             Ok(Some(listed)) => listed,
-            Ok(None) => continue,
             Err(failure) if *required => return Err(Failure::new("schedule.container_clone_cleanup_failed", failure.detail)),
-            Err(_) => continue,
+            Ok(None) | Err(_) => continue,
         };
         for item in listed {
             let service = item.ends_with(".service");
@@ -204,7 +204,7 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
                 (None, None) => Vec::new(),
             };
             let made = if *parents { files.parents(path, *uid, *gid)? } else { 0 };
-            files.push(path, *uid, *gid, mode, &bytes, !*parents)?;
+            files.push(path, *uid, *gid, mode, &bytes, if *parents { Folders::Present } else { Folders::Root })?;
             Ok(made + 1)
         }
         Item::Json { path, uid, gid, mode, json } => {
@@ -219,7 +219,7 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
                 return Ok(0);
             }
             let made = files.parents(path, *uid, *gid)?;
-            files.push(path, *uid, *gid, mode, format!("{merged}\n").as_bytes(), false)?;
+            files.push(path, *uid, *gid, mode, format!("{merged}\n").as_bytes(), Folders::Present)?;
             Ok(made + 1)
         }
         Item::Link { path, target } => {
@@ -266,7 +266,7 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
                 Some(held) if held.ends_with('\n') => format!("{held}\n{entry}"),
                 Some(held) => format!("{held}\n\n{entry}"),
             };
-            files.push(path, *uid, *gid, mode, content.as_bytes(), false)?;
+            files.push(path, *uid, *gid, mode, content.as_bytes(), Folders::Present)?;
             Ok(changes + 1)
         }
     }
@@ -287,7 +287,7 @@ fn trust(system: &impl System, files: &Files<'_, impl System>, source: &str, pat
             }
         }
     }
-    files.push(path, uid, gid, mode, &content, true)?;
+    files.push(path, uid, gid, mode, &content, Folders::Root)?;
     let stem = path.rsplit('/').next().unwrap_or_default().trim_end_matches(".crt");
     let named = format!("{folder}/{stem}.pem");
     for (link, target) in [(named.clone(), path.to_owned()), (format!("{folder}/{hash}.0"), named)] {
@@ -307,7 +307,7 @@ fn trust(system: &impl System, files: &Files<'_, impl System>, source: &str, pat
         if !root.ends_with('\n') {
             joined.push('\n');
         }
-        files.push(&bundle, held.uid, held.gid, &held.mode, joined.as_bytes(), false)?;
+        files.push(&bundle, held.uid, held.gid, &held.mode, joined.as_bytes(), Folders::Present)?;
         changes += 1;
     }
     Ok(changes)
@@ -335,6 +335,15 @@ fn installed(status: &str, package: &str) -> Option<String> {
             .then(|| field("Version").map(str::to_owned))
             .flatten()
     })
+}
+
+/// Who owns the missing folders above a pushed file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Folders {
+    /// Incus makes them, owned by root.
+    Root,
+    /// They exist already.
+    Present,
 }
 
 /// A mode as four octal digits.
@@ -407,11 +416,11 @@ impl<S: System> Files<'_, S> {
         Ok(listed.map(|value| value.as_array().map(|rows| rows.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()))
     }
 
-    fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], create_dirs: bool) -> Result<(), Failure> {
+    fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], folders: Folders) -> Result<(), Failure> {
         let target = format!("{}{path}", self.name);
         let (uid, gid) = (uid.to_string(), gid.to_string());
         let mut argv = vec!["--project", self.project, "file", "push"];
-        if create_dirs {
+        if folders == Folders::Root {
             argv.push("--create-dirs");
         }
         argv.extend(["--uid", &uid, "--gid", &gid, "--mode", mode, "-", &target]);
