@@ -39,7 +39,6 @@ use LogicException;
  * @property Carbon|null $idle_watch_started_at
  * @property string|null $inner_volume
  * @property int|null $idmap_size
- * @property list<string>|null $copy_providers the providers whose instances a task copy's T3 settings got at its create; null for every other container
  * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskKey); null for every other container
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -70,7 +69,6 @@ final class InstanceRuntime extends Model
         'idle_watch_started_at',
         'inner_volume',
         'idmap_size',
-        'copy_providers',
     ];
 
     /** @var list<string> */
@@ -123,7 +121,6 @@ final class InstanceRuntime extends Model
             'idmap_size' => 'integer',
             'power_state' => InstanceRuntimePowerState::class,
             'workspace_baseline' => 'array',
-            'copy_providers' => 'array',
             'workspace_baseline_at' => 'datetime',
             'idle_watch_started_at' => 'datetime',
             'seed_taken_at' => 'datetime',

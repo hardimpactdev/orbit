@@ -259,13 +259,7 @@ final readonly class ConnTaskPanel
             }
         }
 
-        foreach (TaskAgent::ModelPrefixes as $provider => $prefix) {
-            if (str_starts_with((string) $thread->model, $prefix)) {
-                return $provider;
-            }
-        }
-
-        return null;
+        return TaskAgent::modelProvider((string) $thread->model);
     }
 
     /**

@@ -31,6 +31,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\Tasks\TaskAgent;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
@@ -240,7 +241,7 @@ final readonly class UpdateProjectAction
         if ($data->containerServer !== null) {
             $changes['container_server'] = $data->containerServer;
         }
-        $changes = [...$changes, ...$data->taskAgents];
+        $changes = [...$changes, ...TaskAgent::withSwitches($data->taskAgents, static fn (string $field): mixed => $project->getAttribute($field), 'task_')];
         if ($changes === []) {
             return $project;
         }

@@ -32,6 +32,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceLifecycleContribution;
@@ -1992,6 +1993,8 @@ describe('a turn of a group that owns a copy', function (): void {
     })->with([
         'a Gateway effort Claude Code has no instance for' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal'])],
         'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'pi'])],
+        'a Codex effort Claude Code has no instance for' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'ultra'])],
+        'a Codex effort the group names with Claude' => [static fn (Task $group) => $group->update(['implementer_agent_provider' => 'claude', 'implementer_agent_effort' => 'ultra'])],
         'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
         'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi'])],
     ]);
@@ -2015,11 +2018,12 @@ describe('a turn of a group that owns a copy', function (): void {
             ->toBe(['model' => 'gemini-3.8-flash', 'effort' => 'high', 'provider_instance' => 'antigravity']);
     });
 
-    it('records the providers a new copy\'s settings get, and refuses Antigravity in a copy made before it, which can still change back to Claude', function (string $role): void {
+    it('offers Antigravity only in a copy whose create settings hold its instance; an older copy refuses it and can change back to Claude', function (string $role): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $runtime = $copy->runtime()->firstOrFail();
-        expect($runtime->copy_providers)->toBe(['claude', 'codex', 'antigravity']);
+        $clone = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+        expect(array_keys(InstanceContainer::offered($runtime)))->toBe(['claude', 'codex', 'antigravity']);
         copyApiCaller($this);
         $review = [];
         if ($role === 'reviewer') {
@@ -2027,8 +2031,14 @@ describe('a turn of a group that owns a copy', function (): void {
             $review = ['role' => 'reviewer', 'check' => copyCandidate($group)->id];
         }
         $turn = fn () => copyTurn($group, $review);
-        // A copy made before Antigravity: its settings hold Claude and Codex only (the migration's record).
-        $runtime->update(['copy_providers' => ['claude', 'codex']]);
+        // A copy made before Antigravity: the settings its create wrote hold Claude and Codex only.
+        $input = $clone->input;
+        foreach ($input['direct_provisioning']['container']['clone']['files'] as $index => $file) {
+            if ($file['path'] === InstanceContainer::T3Settings) {
+                unset($input['direct_provisioning']['container']['clone']['files'][$index]['json']['providerInstances']['antigravity']);
+            }
+        }
+        $clone->forceFill(['input' => $input])->save();
         $group->update([$role.'_agent_provider' => 'antigravity']);
         $threads = AgentThread::query()->count();
         $before = Operation::query()->count();
@@ -2047,26 +2057,50 @@ describe('a turn of a group that owns a copy', function (): void {
         expect($turn()->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => $role === 'reviewer' ? 'claudeHigh' : 'claudeMedium']);
     })->with(['implementer', 'reviewer']);
 
-    it('backfills each existing task copy with Claude and Codex only, and no other runtime', function (): void {
-        $migration = require database_path('migrations/2027_03_19_000000_add_instance_runtime_copy_providers.php');
+    it('offers Claude and Codex in a copy whose create input holds no settings, as every copy did before Antigravity', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
-        $migration->down();
-        $migration->up();
+        Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole()->forceFill(['input' => []])->save();
 
-        expect(DB::table('instance_runtimes')->where('instance_id', $copy->id)->value('copy_providers'))->toBe('["claude","codex"]')
-            ->and(DB::table('instance_runtimes')->where('instance_id', '!=', $copy->id)->whereNotNull('copy_providers')->count())->toBe(0);
+        expect(InstanceContainer::offered($copy->runtime()->firstOrFail()))
+            ->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']])
+            ->and(copyTurn($group)->input['turn'])->toMatchArray(['provider' => 'claudeMedium']);
     });
+
+    it('resolves Claude\'s model aliases to Claude only, and passes an explicit group pair as given', function (string $role): void {
+        $group = copyGroup(copySource()->project);
+        $roleCase = TaskThreadRole::from($role);
+        // A Project that names no provider, with Claude's alias: it stays with Claude and never reaches Antigravity.
+        $group->project->update(['task_'.$role.'_model' => 'opus']);
+        $group->update([$role.'_agent_provider' => 'antigravity']);
+        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'gemini-3.8-flash', 'source' => 'provider']);
+        $group->update([$role.'_agent_provider' => 'claude']);
+        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'opus', 'source' => 'project']);
+
+        // The Gateway names Antigravity with a Claude alias left in its model: Gemini runs.
+        $group->update([$role.'_agent_provider' => null]);
+        $group->project->update(['task_'.$role.'_model' => null]);
+        config(['orbit.tasks.copy_agents.'.$role => ['provider' => 'antigravity', 'model' => 'sonnet', 'effort' => 'medium']]);
+        expect(TaskAgent::resolve($group, $roleCase))->toBe([
+            'provider' => ['value' => 'antigravity', 'source' => 'gateway'],
+            'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'],
+            'effort' => ['value' => 'high', 'source' => 'provider'],
+        ]);
+
+        // A group that names a provider and a model together gets them as named; the copy's model check decides.
+        $group->update([$role.'_agent_provider' => 'antigravity', $role.'_agent_model' => 'opus']);
+        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'opus', 'source' => 'group']);
+    })->with(['implementer', 'reviewer']);
 
     it('passes over a model or effort of another provider at every level, else takes the provider\'s own', function (): void {
         $group = copyGroup(copySource()->project);
         $group->project->update(['task_reviewer_provider' => 'codex', 'task_reviewer_model' => 'gpt-6.2-sol', 'task_implementer_provider' => 'antigravity']);
 
-        // The Gateway's reviewer effort high fits Codex too, so it stays; Claude models and Claude-only efforts never reach Antigravity.
+        // The Gateway names Claude, so none of its values reach Codex or Antigravity: each provider's own default applies.
         expect(TaskAgent::resolve($group, TaskThreadRole::Reviewer))->toBe([
             'provider' => ['value' => 'codex', 'source' => 'project'],
             'model' => ['value' => 'gpt-6.2-sol', 'source' => 'project'],
-            'effort' => ['value' => 'high', 'source' => 'gateway'],
+            'effort' => ['value' => 'medium', 'source' => 'provider'],
         ])
             ->and(TaskAgent::resolve($group, TaskThreadRole::Implementer))->toBe([
                 'provider' => ['value' => 'antigravity', 'source' => 'project'],
@@ -2106,7 +2140,7 @@ describe('a turn of a group that owns a copy', function (): void {
         expect(TaskAgent::resolve($group->refresh(), $roleCase))->toBe([
             'provider' => ['value' => 'codex', 'source' => 'group'],
             'model' => ['value' => 'gpt-6.2-sol', 'source' => 'project'],
-            'effort' => ['value' => 'max', 'source' => 'gateway'],
+            'effort' => ['value' => 'medium', 'source' => 'provider'],
         ]);
     })->with(['implementer', 'reviewer']);
 

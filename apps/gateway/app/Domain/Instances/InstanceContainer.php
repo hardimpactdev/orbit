@@ -23,10 +23,12 @@ use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use RuntimeException;
 
 /**
@@ -64,6 +66,9 @@ final readonly class InstanceContainer
 
     /** The Node's WireGuard interface, where T3's clients come in. */
     public const string WireGuardInterface = 'orbit';
+
+    /** T3's settings in a container, with the provider instances Orbit writes (self::clone). */
+    public const string T3Settings = '/home/agent/.t3/userdata/settings.json';
 
     /** The file whose presence starts T3: the Instance, its Project and its URL. */
     public const string InstanceFile = '/etc/orbit/instance';
@@ -244,8 +249,6 @@ final readonly class InstanceContainer
         return InstanceRuntime::query()->create([
             'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port, 'container_server' => $server,
-            // A task copy runs the Conn Server, so its create writes the instances of every copy provider (self::clone).
-            'copy_providers' => $instance->task_workspace_owner_id === null ? null : array_keys(self::CopyProviders),
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
             // A new nested-fleet default gets an inner volume, and a copy of a default with one gets its own copy of it; every other
@@ -564,7 +567,7 @@ final readonly class InstanceContainer
                 ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none. Only the Conn Server has
                 // the Antigravity driver.
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                ['path' => self::T3Settings, 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($providers === [] ? [] : ['providerInstances' => $providers])]],
                 // No default dependencies, and the runtime's recorded server; the Node converge keeps both current (t3DropIns).
                 ...array_map(static fn (array $file): array => ['path' => $file['path'], 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'],
@@ -596,14 +599,21 @@ final readonly class InstanceContainer
     }
 
     /**
-     * What the task copy's T3 offers: self::CopyProviders of the providers whose instances its settings got at its create, as its
-     * runtime records them. A copy made before Antigravity offers only Claude and Codex.
+     * What the task copy's T3 offers: Claude and Codex, which every copy turn has always had, and Antigravity only when the settings
+     * Orbit wrote at the copy's create, kept in its `instance.create` input, hold self::AntigravityInstance. The Node converge rewrites
+     * no settings, so a copy made before Antigravity, or one on stock T3, never offers it.
      *
      * @return array<string, list<string>>
      */
     public static function offered(InstanceRuntime $runtime): array
     {
-        return array_intersect_key(self::CopyProviders, array_flip($runtime->copy_providers ?? []));
+        $input = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $runtime->instance_id)
+            ->orderBy('id')->value('input');
+        $files = is_array($input) ? Arr::get($input, 'direct_provisioning.container.clone.files') : null;
+        $settings = collect(is_array($files) ? $files : [])->first(static fn (mixed $file): bool => is_array($file) && ($file['path'] ?? null) === self::T3Settings);
+        $antigravity = is_array($settings) && is_array(Arr::get($settings, 'json.providerInstances.'.self::AntigravityInstance));
+
+        return array_diff_key(self::CopyProviders, $antigravity ? [] : ['antigravity' => true]);
     }
 
     /**

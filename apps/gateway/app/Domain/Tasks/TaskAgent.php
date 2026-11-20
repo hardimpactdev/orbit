@@ -10,15 +10,17 @@ use App\Models\AgentThread;
 use App\Models\InstanceRuntime;
 use App\Models\Task;
 use App\Rules\NotBlank;
+use Closure;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\In;
 
 /**
  * The agent of each role of a task copy turn: its provider, model and effort (docs/reference/tasks.md#copy-turn-agents). The provider
  * comes from the group's `<role>_agent_provider` column, else from the Project's `task_<role>_provider` default, else from the
- * Gateway's `orbit.tasks.copy_agents`. The model and the effort come in the same order, from the first level whose value does not
- * belong to another provider (self::foreign), else from the provider's own `orbit.tasks.copy_provider_defaults`. The group's task VM
- * columns `implementer_model` and `reviewer_model` are never read here.
+ * Gateway's `orbit.tasks.copy_agents`. The model and the effort come in the same order, from the first level whose value is for the
+ * resolved provider (self::forProvider), else from the provider's own `orbit.tasks.copy_provider_defaults`. A request that changes a
+ * level's provider alone clears that level's model and effort (self::withSwitches). The group's task VM columns `implementer_model` and
+ * `reviewer_model` are never read here.
  * The provider and the effort pick the copy's T3 provider instance, which Orbit writes into the copy's T3 settings
  * (InstanceContainer::offered).
  * T3 offers its models in a catalog it fetches itself, so the turn's first step checks the model in the copy.
@@ -27,8 +29,8 @@ final readonly class TaskAgent
 {
     public const array Values = ['provider', 'model', 'effort'];
 
-    /** The start of the names of each provider's models: a model with another provider's start belongs to that provider. */
-    public const array ModelPrefixes = ['claude' => 'claude-', 'codex' => 'gpt-', 'antigravity' => 'gemini-'];
+    /** The starts of the names and aliases of each provider's models: a model with one of them belongs to that provider. */
+    public const array ModelPrefixes = ['claude' => ['claude-', 'opus', 'sonnet', 'haiku'], 'codex' => ['gpt-', 'codex-'], 'antigravity' => ['gemini-']];
 
     /** A model slug as T3's `--model` takes it. */
     public const string ModelPattern = '/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/D';
@@ -110,24 +112,56 @@ final readonly class TaskAgent
     }
 
     /**
-     * Each value of the role and where it comes from: `group`, `project`, `gateway` or `provider`. A model or effort that belongs to
-     * another provider than the resolved one is passed over at every level, so a provider-only change never keeps the values of the
-     * provider before it. Without one that fits, the provider's own default applies.
+     * A request's values keyed by field, with the model and the effort of each role whose provider it changes alone cleared: they
+     * were set for the provider before. `$current` reads a field's stored value.
+     *
+     * @param  array<string, string|null>  $provided
+     * @param  Closure(string): mixed  $current
+     * @return array<string, string|null>
+     */
+    public static function withSwitches(array $provided, Closure $current, string $prefix = ''): array
+    {
+        foreach (TaskThreadRole::cases() as $role) {
+            $key = $prefix.$role->value.'_';
+            if (array_key_exists($key.'provider', $provided) && $provided[$key.'provider'] !== $current($key.'provider')) {
+                $provided += [$key.'model' => null, $key.'effort' => null];
+            }
+        }
+
+        return $provided;
+    }
+
+    /**
+     * Each value of the role and where it comes from: `group`, `project`, `gateway` or `provider`.
      *
      * @return array{provider: array{value: string, source: string}, model: array{value: string, source: string}, effort: array{value: string, source: string}}
      */
     public static function resolve(Task $group, TaskThreadRole $role): array
     {
-        $resolved = [];
+        $levels = [];
+        $set = static fn (mixed $stored): ?string => is_string($stored) ? $stored : null;
         foreach (self::Values as $value) {
-            $levels = ['group' => $group->getAttribute(self::groupColumn($role, $value)),
-                'project' => $group->project->getAttribute('task_'.$role->value.'_'.$value),
-                'gateway' => config()->string('orbit.tasks.copy_agents.'.$role->value.'.'.$value)];
-            $provider = $resolved['provider']['value'] ?? null;
-            $fits = array_filter($levels, static fn (mixed $set): bool => is_string($set) && ($provider === null || ! self::foreign($provider, $value, $set)));
-            $resolved[$value] = $fits === []
-                ? ['value' => config()->string('orbit.tasks.copy_provider_defaults.'.$provider.'.'.$value), 'source' => 'provider']
-                : ['value' => (string) reset($fits), 'source' => (string) array_key_first($fits)];
+            $levels['group'][$value] = $set($group->getAttribute(self::groupColumn($role, $value)));
+            $levels['project'][$value] = $set($group->project->getAttribute('task_'.$role->value.'_'.$value));
+            $levels['gateway'][$value] = config()->string('orbit.tasks.copy_agents.'.$role->value.'.'.$value);
+        }
+        // Each level's own provider, else the one of the next level down that names one: the provider its values were set under.
+        $levels['project']['under'] = $levels['project']['provider'] ?? $levels['gateway']['provider'];
+        $levels['group']['under'] = $levels['group']['provider'] ?? $levels['project']['under'];
+        $levels['gateway']['under'] = $levels['gateway']['provider'];
+        $named = array_filter($levels, static fn (array $level): bool => is_string($level['provider']));
+        $provider = ['value' => (string) reset($named)['provider'], 'source' => (string) array_key_first($named)];
+        $resolved = ['provider' => $provider];
+        foreach (['model', 'effort'] as $value) {
+            $fits = array_filter($levels, static fn (array $level, string $source): bool => is_string($level[$value])
+                && self::forProvider($provider['value'], $source, $level, $value), ARRAY_FILTER_USE_BOTH);
+            $own = config('orbit.tasks.copy_provider_defaults.'.$provider['value'].'.'.$value);
+            $resolved[$value] = match (true) {
+                $fits !== [] => ['value' => (string) reset($fits)[$value], 'source' => (string) array_key_first($fits)],
+                is_string($own) => ['value' => $own, 'source' => 'provider'],
+                // A provider no copy offers has no default: the Gateway's value stands, and the turn's admission refuses the provider.
+                default => ['value' => (string) $levels['gateway'][$value], 'source' => 'gateway'],
+            };
         }
 
         /** @var array{provider: array{value: string, source: string}, model: array{value: string, source: string}, effort: array{value: string, source: string}} $resolved */
@@ -135,21 +169,43 @@ final readonly class TaskAgent
     }
 
     /**
-     * A model or effort that belongs to another copy provider than `$provider`: a model named with another provider's prefix, or an
-     * effort that only other providers offer. Any other value fits, so an unknown model or effort still reaches the copy's checks.
+     * Whether a level's model or effort is for `$provider`. A level that names another provider gives none. The group or the Project
+     * that names the provider gives its values as set. Otherwise a model counts when it belongs to no other provider by its name
+     * (self::modelProvider). An effort counts when the level's values were set under the provider, or the provider offers it, or no
+     * provider does. The Gateway always names its provider, but its shipped model and effort are Claude's, so it is checked the same way.
+     *
+     * @param  array<string, string|null>  $level
      */
-    private static function foreign(string $provider, string $value, string $set): bool
+    private static function forProvider(string $provider, string $source, array $level, string $value): bool
     {
-        if (! array_key_exists($provider, InstanceContainer::CopyProviders)) {
+        if (is_string($level['provider']) && $level['provider'] !== $provider) {
             return false;
         }
+        if ($source !== 'gateway' && is_string($level['provider'])) {
+            return true;
+        }
+        $set = (string) $level[$value];
         if ($value === 'model') {
-            return ! str_starts_with($set, self::ModelPrefixes[$provider])
-                && array_filter(self::ModelPrefixes, static fn (string $prefix): bool => str_starts_with($set, $prefix)) !== [];
+            return in_array(self::modelProvider($set), [null, $provider], true);
         }
 
-        return $value === 'effort' && ! in_array($set, InstanceContainer::CopyProviders[$provider], true)
-            && in_array($set, array_merge(...array_values(InstanceContainer::CopyProviders)), true);
+        return ($source !== 'gateway' && $level['under'] === $provider) || ! array_key_exists($provider, InstanceContainer::CopyProviders)
+            || in_array($set, InstanceContainer::CopyProviders[$provider], true)
+            || ! in_array($set, array_merge(...array_values(InstanceContainer::CopyProviders)), true);
+    }
+
+    /** The provider a model belongs to by its name, or null for a name no prefix claims. */
+    public static function modelProvider(string $model): ?string
+    {
+        foreach (self::ModelPrefixes as $provider => $prefixes) {
+            foreach ($prefixes as $prefix) {
+                if (str_starts_with($model, $prefix)) {
+                    return $provider;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
