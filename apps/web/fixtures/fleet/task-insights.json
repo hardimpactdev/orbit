@@ -291,6 +291,7 @@
                     "not_merged": 1
                 }
             ],
+            "hourly": [],
             "breakdowns": {
                 "model": [
                     {
