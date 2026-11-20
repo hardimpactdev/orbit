@@ -125,8 +125,9 @@ final readonly class TaskTurn
         }
         $provider = null;
         $options = [];
+        $copyRuntime = $instance->runtime()->firstOrFail();
         if ($thread === null) {
-            $agent = TaskAgent::forNewThread($group, $role);
+            $agent = TaskAgent::forNewThread($group, $role, $copyRuntime);
             $provider = $agent['instance'];
             $options = $agent['options'];
             $thread = AgentThread::query()->create([
@@ -154,7 +155,7 @@ final readonly class TaskTurn
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
+            'turn' => ['t3' => $copyRuntime->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
                 'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
                 // The thread as T3 is to know it, and the turn's own message ID, fixed before any send (docs/reference/development-containers.md#stable-ids).
