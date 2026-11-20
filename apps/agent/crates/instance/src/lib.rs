@@ -114,10 +114,13 @@ impl System for NodeSystem {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| error.to_string())?;
-        if let (Some(bytes), Some(mut pipe)) = (stdin, child.stdin.take()) {
-            pipe.write_all(bytes).map_err(|error| error.to_string())?;
-        }
+        // A failed write still waits for the child, so no process is left behind; its exit then reports the failure.
+        let written = match (stdin, child.stdin.take()) {
+            (Some(bytes), Some(mut pipe)) => pipe.write_all(bytes).map_err(|error| error.to_string()),
+            _ => Ok(()),
+        };
         let output = child.wait_with_output().map_err(|error| error.to_string())?;
+        written?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).into_owned())
         } else {
@@ -126,7 +129,16 @@ impl System for NodeSystem {
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
-        std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
+        use sha2::Digest as _;
+        if sha256.len() != 64 || !sha256.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) {
+            return Err("the blob reference is not a SHA-256".to_owned());
+        }
+        let bytes = std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())?;
+        let held: String = sha2::Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect();
+        if held != sha256 {
+            return Err("the blob does not match its SHA-256".to_owned());
+        }
+        Ok(bytes)
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, String> {
@@ -277,8 +289,8 @@ fn check(input: &CloneInput) -> Result<(), String> {
             return Err(format!("{k} is not a config key and value"));
         }
     }
-    if input.filters.keys().any(|k| !k.starts_with("security.")) {
-        return Err("a filter is not a security key".to_owned());
+    if input.filters.keys().any(|k| k != "security.ipv4_filtering" && k != "security.mac_filtering") {
+        return Err("a filter is not an address filter".to_owned());
     }
     let endpoint = |value: &str| {
         let Some(rest) = value.strip_prefix("tcp:") else { return false };
@@ -386,7 +398,7 @@ impl<S: System> Incus<'_, S> {
     /// `incus query`: the answer, or None when Incus answers that the object does not exist.
     pub(crate) fn query(&self, url: &str) -> Result<Option<Value>, Failure> {
         match self.system.run(60, &[INCUS.to_owned(), "query".to_owned(), url.to_owned()], None) {
-            Ok(text) => serde_json::from_str(&text).map(Some).map_err(|error| Failure::new("instance.clone_failed", format!("{url}: {error}"))),
+            Ok(text) => serde_json::from_str(&text).map(Some).map_err(|error| Failure::new(self.code, format!("{url}: {error}"))),
             Err(detail) if detail.to_ascii_lowercase().contains("not found") => Ok(None),
             Err(detail) => Err(Failure::new(self.code, format!("query {url}: {detail}"))),
         }

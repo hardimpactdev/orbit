@@ -42,16 +42,22 @@ pub fn fetch_branch(system: &impl System, input: &Value) -> Result<String, Failu
     let mirror = system.path(&input.mirror);
     let folder = mirror.parent().map_or_else(|| PathBuf::from(MIRRORS), Path::to_path_buf);
     std::fs::create_dir_all(&folder).and_then(|()| std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700))).map_err(failed)?;
+    // A credential a stopped run left behind goes first: only one fetch per Node runs at a time.
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(".credential-") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
     let credential = folder.join(format!(".credential-{}", std::process::id()));
-    let _ = std::fs::remove_file(&credential);
-    std::fs::File::options()
+    let written = std::fs::File::options()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(&credential)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, &line))
-        .map_err(failed)?;
-    let result = fetch(system, &input, &mirror, &credential);
+        .and_then(|mut file| std::io::Write::write_all(&mut file, &line));
+    let result = written.map_err(failed).and_then(|()| fetch(system, &input, &mirror, &credential));
     let _ = std::fs::remove_file(&credential);
     result.map(|commit| serde_json::json!({"commit": commit}).to_string())
 }

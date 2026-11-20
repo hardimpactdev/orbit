@@ -38,7 +38,7 @@ enum Item {
         #[serde(default)]
         content: Option<String>,
         #[serde(default)]
-        blob: Option<String>,
+        blob: Option<crate::BlobRef>,
         /// Missing folders above the file are made for its owner: 0755 for root, 0700 for anyone else.
         #[serde(default)]
         parents: bool,
@@ -213,7 +213,7 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
         Item::File { path, uid, gid, mode, content, blob, parents } => {
             let bytes = match (content, blob) {
                 (Some(text), _) => text.clone().into_bytes(),
-                (None, Some(sha256)) => system.blob(sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?,
+                (None, Some(blob)) => system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?,
                 (None, None) => Vec::new(),
             };
             let made = if *parents { files.parents(path, *uid, *gid)? } else { 0 };

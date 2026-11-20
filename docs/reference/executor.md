@@ -273,7 +273,7 @@ It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container
 
 `instance.fetch_branch` targets the Node. It asks the origin for the Instance's branch. When the origin has it, the branch is fetched into the Node's bare mirror under `/var/lib/orbit/instance-repositories`.
 
-Git may use only https, with no hooks, no redirects and no system or global config. The credential comes as a blob. It is written root-only for the two Git calls and removed after them.
+Git may use only https, with no hooks, no redirects and no system or global config. The credential comes as a blob. It is written root-only for the two Git calls and removed after them, and a file a stopped run left behind goes at the next fetch. The blob itself stays in the executor's root-only content cache.
 
 It answers `{"commit"}`, or null when the branch starts at the seed. Codes: `instance.fetch_input_invalid`, `instance.fetch_credential_missing`, `instance.branch_fetch_failed`.
 

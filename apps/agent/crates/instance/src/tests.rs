@@ -186,7 +186,7 @@ fn values_that_could_carry_another_option_are_refused() {
         ("/snapshot", json!("next-abc")),
         ("/address", json!("10.253.0.1,eth1")),
         ("/config", json!({"limits.cpu": "4,root,pool=x"})),
-        ("/filters", json!({"raw.lxc": "x"})),
+        ("/filters", json!({"security.acls": "none"})),
         ("/proxy/listen", json!("tcp:0.0.0.0:22 --x")),
     ];
     for (pointer, value) in cases {
@@ -227,7 +227,7 @@ fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
     ]);
     let files = json!([
         {"file": {"path": "/etc/orbit/instance", "uid": 0, "gid": 0, "mode": "0644", "content": "ID=12\n"}},
-        {"file": {"path": "/home/agent/.config/orbit/model.env", "uid": 2750, "gid": 2750, "mode": "0600", "blob": "ab12"}},
+        {"file": {"path": "/home/agent/.config/orbit/model.env", "uid": 2750, "gid": 2750, "mode": "0600", "blob": {"blob": {"sha256": "ab12"}}}},
         {"link": {"path": "/home/agent/.claude/CLAUDE.md", "target": "/home/agent/.config/orbit/agent/AGENTS.md"}},
     ]);
 
@@ -268,7 +268,8 @@ fn a_json_file_merges_over_the_copys_own_and_an_equal_one_stays() {
     let merged = held(json!({"theme": "dark"}));
     prepare(&merged, &prepare_input(&files)).expect("prepare");
     let pushed = merged.calls.borrow().iter().find(|(call, _)| call.ends_with("settings.json") && call.contains("push")).and_then(|(_, stdin)| stdin.clone());
-    assert_eq!(pushed.as_deref(), Some("{\"linked\":true,\"theme\":\"dark\"}\n"));
+    let pushed: Value = serde_json::from_str(pushed.as_deref().expect("pushed")).expect("json");
+    assert_eq!(pushed, json!({"linked": true, "theme": "dark"}));
 
     let same = held(json!({"linked": true, "theme": "dark"}));
     prepare(&same, &prepare_input(&files)).expect("prepare");
