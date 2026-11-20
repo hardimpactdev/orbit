@@ -245,6 +245,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         if ($retained === null) {
             return null;
         }
+
         // A failed default goes with the same removal as a clone: its container, ACL, bridge endpoint records and Route, and its databases
         // by the removal's own rules (docs/reference/development-containers.md#destroy).
         return [
