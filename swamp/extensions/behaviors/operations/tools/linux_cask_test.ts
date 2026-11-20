@@ -5,53 +5,14 @@ import { commands, inventory } from "./native.ts";
 import { removalDecision, RemoveInput } from "./remove.ts";
 import { behavior, decide, WriteInput } from "./write.ts";
 
-// The `antigravity-cli` cask as Linux `brew info --json=v2 --cask` prints it: the base fields are the resolved
-// x86_64 Linux build, and the macOS builds are variations.
+// The `antigravity-cli` record that `brew info --json=v2 --cask` printed on Beast (Linux x86_64, Homebrew 7.0.13),
+// installed fields trimmed. Linux Homebrew reads an API file already resolved for x86_64_linux: no `variations` and
+// no `supported_platforms`.
+const real =
+    '{"token":"antigravity-cli","full_token":"antigravity-cli","old_tokens":[],"tap":"homebrew/cask","name":["Google Antigravity CLI"],"desc":"Terminal interface for Antigravity agents","homepage":"https://antigravity.google/product/antigravity-cli","url":"https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.13-5999302598852608/linux-x64/cli_linux_x64.tar.gz","url_specs":{},"version":"1.5.13,5999302598852608","autobump":true,"no_autobump_message":null,"skip_livecheck":false,"bundle_version":null,"bundle_short_version":null,"pinned":false,"pinned_version":null,"outdated":true,"sha256":"7fa9cc6df0d09562693d637c406a86c1b0f52ab3364714b1fd2d79cc6060d4b2","artifacts":[{"command_wrapper":["agy",{"executable":"/home/linuxbrew/.linuxbrew/Caskroom/antigravity-cli/1.5.13,5999302598852608/antigravity","env":{"AGY_CLI_DISABLE_AUTO_UPDATE":"true"}}],"target":"/home/linuxbrew/.linuxbrew/bin/agy"},{"zap":[{"trash":"~/.gemini/antigravity-cli"}]}],"caveats":"`agy`\'s automatic updates are disabled so that Homebrew manages them.\\nUse `brew upgrade --cask antigravity-cli` instead of `agy update`.\\n","caveats_rosetta":null,"depends_on":{},"conflicts_with":null,"container":null,"rename":[],"auto_updates":null,"deprecated":false,"deprecation_date":null,"deprecation_reason":null,"deprecation_replacement_formula":null,"deprecation_replacement_cask":null,"deprecate_args":null,"disabled":false,"disable_date":null,"disable_reason":null,"disable_replacement_formula":null,"disable_replacement_cask":null,"disable_args":null,"languages":[],"ruby_source_path":"Casks/a/antigravity-cli.rb"}';
 const prefix = "/home/linuxbrew/.linuxbrew";
 const version = "1.5.13,5999302598852608";
-const download =
-    "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.13-5999302598852608";
-const mac = {
-    url: `${download}/darwin-x64/cli_mac_x64.tar.gz`,
-    sha256: "0".repeat(64),
-    depends_on: { macos: { ">=": ["12"] } },
-};
-const cask = {
-    token: "antigravity-cli",
-    full_token: "antigravity-cli",
-    tap: "homebrew/cask",
-    url: `${download}/linux-x64/cli_linux_x64.tar.gz`,
-    version,
-    installed: version,
-    sha256: "7".repeat(64),
-    disabled: false,
-    depends_on: {},
-    supported_platforms: [
-        "golden_gate",
-        "arm64_golden_gate",
-        "tahoe",
-        "arm64_tahoe",
-        "sequoia",
-        "arm64_sequoia",
-        "sonoma",
-        "arm64_sonoma",
-        "ventura",
-        "arm64_ventura",
-        "monterey",
-        "arm64_monterey",
-        "x86_64_linux",
-        "arm64_linux",
-    ],
-    artifacts: [{
-        command_wrapper: ["agy", {
-            executable:
-                `${prefix}/Caskroom/antigravity-cli/${version}/antigravity`,
-            env: { AGY_CLI_DISABLE_AUTO_UPDATE: "true" },
-        }],
-        target: `${prefix}/bin/agy`,
-    }, { zap: [{ trash: "~/.gemini/antigravity-cli" }] }],
-    variations: { sequoia: mac, arm64_sequoia: mac },
-};
+const cask = JSON.parse(real);
 const base = {
     node_id: 9,
     manager: "brew-cask",
@@ -76,7 +37,7 @@ const candidate = (changes: Record<string, unknown> = {}) => ({
     homebrew: { ...cask, ...changes },
 });
 
-Deno.test("Linux casks install the command_wrapper cask from its Linux variation under a comma-build constraint", () => {
+Deno.test("Linux casks install the command_wrapper cask under a comma-build constraint", () => {
     const install = decide(write({ version_constraint: "^1.5" }), {
         facts: facts([]),
         candidate: candidate(),
@@ -110,34 +71,41 @@ Deno.test("Linux casks install the command_wrapper cask from its Linux variation
     );
 });
 
-Deno.test("Linux casks need a build for x86_64 Linux in the brew info record", () => {
-    // The API record Homebrew serves: a macOS base, with the Linux build as a variation.
-    const api = candidate({
-        ...mac,
-        variations: {
-            x86_64_linux: {
-                url: cask.url,
-                sha256: cask.sha256,
-                depends_on: {},
-            },
-        },
-    });
-    assertEquals(homebrewBlock(write(), api, true), null);
-    const macOnly = cask.supported_platforms.filter((p) =>
-        !p.endsWith("linux")
+Deno.test("the real Linux antigravity-cli record passes the full install and update policy", () => {
+    assertEquals(
+        homebrewBlock(write(), { ...brew, homebrew: cask }, true),
+        null,
     );
+    const install = decide(write({ version_constraint: "^1.5" }), {
+        facts: facts([]),
+        candidate: { ...brew, homebrew: JSON.parse(real) },
+    });
+    assertEquals([install.ready, install.mutate, install.outcome], [
+        true,
+        true,
+        "applied",
+    ]);
+    const update = decide(
+        write({ kind: "tool.update", tool_id: 1, version_constraint: "^1.5" }),
+        {
+            facts: facts(["1.5.12,5000000000000000"]),
+            candidate: { ...brew, homebrew: JSON.parse(real) },
+        },
+    );
+    assertEquals([update.ready, update.mutate, update.outcome], [
+        true,
+        true,
+        "applied",
+    ]);
+});
+
+Deno.test("Linux casks need a build for x86_64 Linux in the resolved record", () => {
     for (
         const changes of [
-            {
-                ...mac,
-                depends_on: {},
-                supported_platforms: macOnly,
-                variations: {},
-            },
-            { supported_platforms: undefined },
+            { depends_on: { macos: { ">=": ["13"] } } },
             { depends_on: { maximum_macos: "sonoma" } },
-            { depends_on: { macos: { "<=": ["14"] } } },
             { depends_on: { arch: [{ type: "arm", bits: 64 }] } },
+            { supported_platforms: ["sequoia", "arm64_sequoia"] },
         ]
     ) {
         assertEquals(
@@ -145,14 +113,14 @@ Deno.test("Linux casks need a build for x86_64 Linux in the brew info record", (
             "unsupported_artifact",
         );
     }
-    assertEquals(
-        homebrewBlock(
-            write(),
-            candidate({ depends_on: { arch: [{ type: "intel", bits: 64 }] } }),
-            true,
-        ),
-        null,
-    );
+    for (
+        const changes of [
+            { depends_on: { arch: [{ type: "intel", bits: 64 }] } },
+            { supported_platforms: ["sequoia", "x86_64_linux"] },
+        ]
+    ) {
+        assertEquals(homebrewBlock(write(), candidate(changes), true), null);
+    }
 });
 
 Deno.test("Linux cask wrappers stay under the Homebrew prefix for install and removal", () => {
@@ -209,6 +177,14 @@ Deno.test("Linux cask wrappers stay under the Homebrew prefix for install and re
 Deno.test("Linux cask commands refresh the cask API, and Linux formulae do not", () => {
     const flag = "HOMEBREW_FORCE_API_AUTO_UPDATE=1";
     const c = commands({ ...write(), kind: "tool.install" });
+    // `info` reads the cached API; the auto-update command `outdated` refreshes it before the candidate read.
+    assertEquals(c.refresh.slice(-4), [
+        "/home/linuxbrew/.linuxbrew/bin/brew",
+        "outdated",
+        "--cask",
+        "--quiet",
+    ]);
+    assertEquals(c.refresh.includes(flag), true);
     for (const argv of [c.write, c.candidate]) {
         assertEquals(argv.includes(flag), true);
         assertEquals(argv.includes("update"), false);
@@ -226,6 +202,7 @@ Deno.test("Linux cask commands refresh the cask API, and Linux formulae do not",
         formula.write.includes(flag) || formula.candidate.includes(flag),
         false,
     );
+    assertEquals(formula.refresh.includes("outdated"), false);
 });
 
 Deno.test("Linux casks update to a newer build and stay unchanged on the same one", () => {
@@ -302,7 +279,10 @@ Deno.test("Linux casks remove the command_wrapper cask and read it from the Linu
         {
             status: "succeeded",
             outputs: {
-                stdout: JSON.stringify({ formulae: [], casks: [cask] }),
+                stdout: JSON.stringify({
+                    formulae: [],
+                    casks: [{ ...cask, installed: version }],
+                }),
                 exitCode: 0,
             },
         },
@@ -319,7 +299,10 @@ Deno.test("the Linux cask version read after a write reports the SemVer without 
         input: write({ version_constraint: "^1.5" }),
         after: {
             exitCode: 0,
-            stdout: JSON.stringify({ formulae: [], casks: [cask] }),
+            stdout: JSON.stringify({
+                formulae: [],
+                casks: [{ ...cask, installed: version }],
+            }),
         },
     }, {
         extensionFile: (p: string) => new URL(p, import.meta.url).pathname,

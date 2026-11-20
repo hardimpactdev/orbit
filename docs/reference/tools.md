@@ -35,7 +35,7 @@ A signed apt source stages its key, reads it with one `gpg --with-colons --show-
 
 | Workflow | Steps |
 | --- | --- |
-| Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
+| Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Refresh the cask metadata` for a Linux cask, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
 | Remove | `Prepare package commands`, parallel manager and package reads, `Plan the removal`, `Choose package action`, `Remove the package`, apt check or manager query, optional source and preference removal, `Decode package state`, `Assert package state` |
 
 ### Install and update steps
@@ -45,6 +45,7 @@ Steps carry the exact labels of the reviewed flow charts ([ADR 0246](/decisions/
 - `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
 - `Write the apt source` runs only with `--repository`, after worker-side download, fingerprint inspection and a native assertion. Binary key publication, text files and scoped apt refresh remain separate steps.
 - `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
+- `Refresh the cask metadata` runs only for a Linux cask. It runs `brew outdated --cask --quiet`, an auto-update command that refreshes Homebrew's cask API with `HOMEBREW_FORCE_API_AUTO_UPDATE` and no `brew update`, so `Check the candidate` sees a new build. Linux `brew info` alone reads the cached API.
 - `Choose package action` applies the refusals and the constraint before the package write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
 - `Apply the package` writes the candidate for every manager. `Check apt package` uses the official apt check; `Check the package` queries other managers. `Decode package state` shapes the observation, and `Assert package state` enforces it.
@@ -409,7 +410,7 @@ Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_N
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on Linux and macOS. On Linux it uses the Node's existing `/home/linuxbrew/.linuxbrew` prefix, and a cask must ship a Linux build: its `x86_64_linux` variation must clear the cask's macOS `depends_on`. A macOS-only cask is `unsupported_artifact`. Linux arm64 has no cask tag, so a cask there fails with `tool.version_probe_failed`.
+`brew-cask` supports official Homebrew casks on Linux and macOS. On Linux it uses the Node's existing `/home/linuxbrew/.linuxbrew` prefix, and a cask must ship a Linux build. Linux `brew info --json=v2 --cask` prints the record already resolved for x86_64 Linux, with no `variations`. That record's `depends_on` may name no macOS requirement and no CPU other than 64-bit Intel, and a `supported_platforms` list, when present, must include `x86_64_linux`. A macOS-only cask is `unsupported_artifact`. Linux arm64 has no cask tag, so a cask there fails with `tool.version_probe_failed`.
 
 The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
 

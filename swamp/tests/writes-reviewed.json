@@ -588,7 +588,8 @@
    "Read installed package": "unreviewed",
    "Read macOS version": "unreviewed",
    "Read manager version": "unreviewed",
-   "Read the key fingerprint": "read-only"
+   "Read the key fingerprint": "read-only",
+   "Refresh the cask metadata": "unreviewed"
   },
   "operation-vault-sync": {
    "Read private inventory": "unreviewed",

@@ -128,12 +128,19 @@ function caskArtifactBlock(
     if (authorization) return "authorization_required";
     return null;
 }
-/** A cask ships a build for this Linux tag: Homebrew lists the tag, and the resolved record needs no macOS or other CPU. */
+/**
+ * Linux `brew info --json=v2 --cask` prints the record already resolved for x86_64 Linux, with no `variations` and
+ * usually no `supported_platforms`. It ships a Linux build unless it needs macOS or another CPU, or lists platforms
+ * without this tag.
+ */
 function linuxBuild(value: Record<string, unknown>, tag: string): boolean {
-    const platforms = z.array(z.string()).safeParse(value.supported_platforms);
     const needs = Row.safeParse(value.depends_on ?? {});
-    if (!platforms.success || !platforms.data.includes(tag) || !needs.success) {
-        return false;
+    if (!needs.success) return false;
+    if (value.supported_platforms !== undefined) {
+        const platforms = z.array(z.string()).safeParse(
+            value.supported_platforms,
+        );
+        if (!platforms.success || !platforms.data.includes(tag)) return false;
     }
     if (Object.keys(needs.data).some((k) => k.includes("macos"))) return false;
     if (needs.data.arch === undefined) return true;

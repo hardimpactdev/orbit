@@ -115,7 +115,9 @@ export function commands(input: Input) {
                 },
             },
         version: run("--version"),
-        refresh: [
+        // Linux `brew info` reads the cached cask API; `outdated` is an auto-update command, so it refreshes that
+        // API first (HOMEBREW_FORCE_API_AUTO_UPDATE) without `brew update`.
+        refresh: cask ? run("outdated", "--cask", "--quiet") : [
             ...env,
             "/usr/bin/apt-get",
             ...aptOptions,
