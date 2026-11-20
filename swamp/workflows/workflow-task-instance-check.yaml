@@ -323,10 +323,11 @@ jobs:
           methodName: finish
           inputs:
             intent: '${{ inputs.intent }}'
-            # The receipt: the candidate result, unless a missing step or an unpinned commit leaves the run unknown.
+            # The receipt: the candidate result, unless a missing step or an unpinned commit leaves the run unknown; an unknown run keeps
+            # the part table the check collected.
             # A copy's handoff check states its base: the head it judged against and merged, or why it had none.
             base: '${{ {"requested": "copy_base" in inputs.intent, "status": "Bring in the base" in steps ? steps["Bring in the base"].status : "", "evidence": "Bring in the base" in steps && "outputs" in steps["Bring in the base"] && "evidence" in steps["Bring in the base"].outputs ? steps["Bring in the base"].outputs.evidence : {}, "merge": "merged" in steps && "outputs" in steps.merged ? steps.merged.outputs.evidence : {} } }}'
-            local: '${{ "candidate" in steps && "outputs" in steps.candidate && (!("commit" in steps.candidate.outputs.result) || steps.candidate.outputs.result.commit == null || "error_code" in steps.candidate.outputs.result || ("pinned" in steps && "outputs" in steps.pinned && "ref" in steps.pinned.outputs.evidence)) ? steps.candidate.outputs.result : ("local" in steps && "outputs" in steps.local && !("candidate" in steps && "outputs" in steps.candidate) && "error_code" in steps.local.outputs.result ? steps.local.outputs.result : {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id}) }}'
+            local: '${{ "candidate" in steps && "outputs" in steps.candidate && (!("commit" in steps.candidate.outputs.result) || steps.candidate.outputs.result.commit == null || "error_code" in steps.candidate.outputs.result || ("pinned" in steps && "outputs" in steps.pinned && "ref" in steps.pinned.outputs.evidence)) ? steps.candidate.outputs.result : ("local" in steps && "outputs" in steps.local && !("candidate" in steps && "outputs" in steps.candidate) && "error_code" in steps.local.outputs.result ? steps.local.outputs.result : {"error_code": "tasks.repository_execution_unknown", "check_id": inputs.intent.check_id, "parts": "local" in steps && "outputs" in steps.local && "parts" in steps.local.outputs.result ? steps.local.outputs.result.parts : null}) }}'
             steps: {}
       - name: cleanup
         labels: {role: swamp}

@@ -18,7 +18,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 uses(LazilyRefreshDatabase::class);
 
 /** A check of a fresh subtask that ends with RESULT, as the check workflows write its receipt. */
-function partsChecked(array $result): TaskCheck
+function partsChecked(array $result, ?Closure $json = null): TaskCheck
 {
     $project = Project::query()->create(['name' => 'Trial', 'slug' => 'trial', 'repository_url' => 'https://github.com/example/trial.git', 'default_branch' => 'main', 'root' => 'public']);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
@@ -32,7 +32,8 @@ function partsChecked(array $result): TaskCheck
         'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['instance_receipt' => ['result_json' => json_encode(['check_id' => $check->id, 'outcome' => 'failed', 'exit_code' => 1, 'output' => 'Task check FAILED',
             'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
-            'changed_paths' => [], 'failed_step' => null, 'evidence' => null, 'phase' => 'handoff', 'deliverables' => [], 'ci' => null, ...$result], JSON_THROW_ON_ERROR)]]]);
+            'changed_paths' => [], 'failed_step' => null, 'evidence' => null, 'phase' => 'handoff', 'deliverables' => [], 'ci' => null, ...$result], JSON_THROW_ON_ERROR)
+        |> ($json ?? static fn (string $text): string => $text)]]]);
 
     return $check->refresh();
 }
@@ -50,3 +51,14 @@ it('stores the part table of a check next to its output', function (): void {
 it('stores no part table for a check whose command wrote no receipt', function (): void {
     expect(partsChecked([])->parts)->toBeNull();
 });
+
+it('stores no part table that is not one, and settles the check all the same', function (mixed $parts, ?Closure $json): void {
+    $check = partsChecked(['parts' => $parts], $json);
+
+    expect($check->parts)->toBeNull()
+        ->and($check->status)->toBe(TaskCheckStatus::Failed);
+})->with([
+    'an empty object' => [new stdClass, null],
+    'an unknown result' => [[['name' => 'pest', 'result' => 'failed', 'seconds' => 1]], null],
+    'seconds beyond any float' => [[['name' => 'pest', 'result' => 'passed', 'seconds' => 1]], static fn (string $text): string => str_replace('"seconds":1', '"seconds":1e400', $text)],
+]);

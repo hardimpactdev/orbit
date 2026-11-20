@@ -53,9 +53,9 @@ const Evidence = z.object({
 });
 /** One part of `bin/task-check` as its delivery receipt names it (docs/reference/tasks.md#handoffs). */
 export const CheckPart = z.object({
-    name: z.string(),
-    result: z.string(),
-    seconds: z.number(),
+    name: z.string().min(1).max(200),
+    result: z.enum(["passed", "FAILED", "skipped", "not selected"]),
+    seconds: z.number().nonnegative(),
 }).strict();
 export const Local = z.object({
     outcome: z.enum(["passed", "failed", "changed"]),
@@ -71,6 +71,8 @@ export const Local = z.object({
     subtask_start_commit: Sha,
     // The part table of the Project check's delivery receipt; null when its command wrote none.
     parts: z.array(CheckPart).nullable().optional(),
+    // The tree of the work as the implementer handed it off, before any command ran.
+    handed_off_tree: Sha.optional(),
 });
 export type CheckIntent = z.infer<typeof CheckInput>;
 export type LocalCheck = z.infer<typeof Local>;

@@ -71,8 +71,8 @@ The child runs up to four Ansible phases through this playbook. Each runs as `ag
 
 | Phase | What it does |
 | --- | --- |
-| `base-merge` | Merges `refs/remotes/origin/<default>` when clean, after it commits uncommitted work. A conflict names its paths and changes nothing. `head` names HEAD before the merge |
-| `check` | Runs the Project check, keeps its own delivery receipt as the `parts` step, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
+| `base-merge` | Merges `refs/remotes/origin/<default>` when clean, after it commits uncommitted work. A conflict names its paths and changes nothing. `handed_tree` names the tree of the work before the merge |
+| `check` | Records the handed-off tree, runs the Project check, keeps its receipt's validated parts, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
 | `commit` | Stages everything and commits as Orbit with hooks off, unless `HEAD` is a clean recorded candidate. Reads back `HEAD`, its tree and a new commit's parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 

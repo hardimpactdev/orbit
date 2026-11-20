@@ -46,8 +46,8 @@ const Evidence = z.union([
     // refusal, which would drop them.
     z.object({
         error_code: z.literal("tasks.check_conflict"),
-        // HEAD as the implementer handed it off (docs/reference/tasks.md#handoffs).
-        head: Hash,
+        // The tree of the work as the implementer handed it off (docs/reference/tasks.md#handoffs).
+        handed_tree: Hash,
         default_commit: Hash,
         conflicting_paths: z.array(z.string().min(1)).max(100).refine(
             (paths) => new TextEncoder().encode(JSON.stringify(paths)).length <= 3000,
@@ -57,13 +57,13 @@ const Evidence = z.union([
     }).strict(),
     // Its merge: nothing when HEAD holds the head, else the merge commit.
     z.object({
-        head: Hash,
+        handed_tree: Hash,
         default_commit: Hash,
         merged_default: z.null(),
         changed: z.literal(false),
     }).strict(),
     z.object({
-        head: Hash,
+        handed_tree: Hash,
         default_commit: Hash,
         merged_default: Hash,
         commit: Hash,

@@ -111,6 +111,18 @@ const AskedQuestion = z.object({
     initial_answer: z.string().nullable(),
     required: z.boolean().nullable(),
 });
+// A Git object ID, SHA-1 or SHA-256: kept as it is, since a credential pattern would redact a 64-hex ID.
+const GitId = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
+// The delivery receipt that `bin/task-check` writes: the commit and the tree it checked, and each part.
+const DeliveryReceipt = z.object({
+    commit: GitId,
+    tree: GitId,
+    parts: z.array(z.object({
+        name: z.string().min(1).max(200),
+        result: z.enum(["passed", "FAILED", "skipped", "not selected"]),
+        seconds: z.number().nonnegative(),
+    })).min(1),
+});
 export const Turn = z.object({
     state: z.enum(["done", "asking_for_input", "failed"]),
     error: z.string().nullable(),
@@ -134,9 +146,10 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
-    // The handoff receipts the turn left under the Git directory, as text, redacted; the phase removed them, and the Gateway validates
-    // them (docs/reference/tasks.md#handoffs). Null for a receipt the turn did not leave.
-    receipts: z.object({ delivery: z.string().nullable(), review: z.string().nullable() }).strict().optional(),
+    // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
+    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its redacted text. Null
+    // for a receipt the turn did not leave.
+    receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
 });
 export type Turn = z.infer<typeof Turn>;
 const Receipts = z.object({ delivery: z.string().optional(), review: z.string().optional() }).strict();
@@ -362,6 +375,16 @@ async function evidence<T>(path: string, limit: number, schema: z.ZodType<T>): P
     }
 }
 
+/** The delivery receipt's validated fields, each part's name redacted; `invalid` for any other text. Other fields never leave. */
+function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
+    const receipt = parse(DeliveryReceipt, text);
+    return receipt === null ? "invalid" : {
+        commit: receipt.commit,
+        tree: receipt.tree,
+        parts: receipt.parts.map((part) => ({ name: redactText(part.name), result: part.result, seconds: part.seconds })),
+    };
+}
+
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
@@ -392,7 +415,7 @@ export const behavior = {
                 }));
                 const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
                 turn.receipts = {
-                    delivery: left?.delivery === undefined ? null : redactText(left.delivery),
+                    delivery: left?.delivery === undefined ? null : delivered(left.delivery),
                     review: left?.review === undefined ? null : redactText(left.review),
                 };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.

@@ -13,7 +13,7 @@ import {
     type Run,
     run,
 } from "../tasks/publish.ts";
-import { readPublicTail } from "../../_lib/public_output.ts";
+import { readPublicTail, redactText } from "../../_lib/public_output.ts";
 
 /*
  * Typed data for tasks.check and its scheduled CI observations. Instance
@@ -244,13 +244,15 @@ function stepRefusal(input: Input, steps: Steps): string | null {
 }
 
 /**
- * The part table of the delivery receipt that the Project check wrote and the guest read and removed: each part's name, result and
- * seconds; null without a receipt or with one of another shape.
+ * The part table of the delivery receipt that the Project check wrote, as the guest validated it field by field and removed the file:
+ * each part's redacted name, its result and its seconds; null without a usable table.
  */
 export function receiptParts(text: string | undefined) {
     try {
-        const receipt = z.object({ parts: z.array(CheckPart) }).safeParse(JSON.parse(text ?? ""));
-        return receipt.success ? receipt.data.parts : null;
+        const parts = z.array(CheckPart).min(1).safeParse(JSON.parse(text ?? ""));
+        return parts.success
+            ? parts.data.map((part) => ({ ...part, name: redactText(part.name) }))
+            : null;
     } catch {
         return null;
     }
@@ -266,14 +268,17 @@ export async function localResult(
     steps: Steps,
     outputs: string,
 ) {
+    // A part table the Project check left is kept whatever fails after it.
+    const parts = receiptParts(run(steps, "parts").stdout);
     if (prepared.error_code) {
         return {
             error_code: String(prepared.error_code),
             check_id: input.check_id,
+            parts,
         };
     }
     const refusal = stepRefusal(input, steps);
-    if (refusal) return { error_code: refusal, check_id: input.check_id };
+    if (refusal) return { error_code: refusal, check_id: input.check_id, parts };
     const before = snapshot(steps, "before"),
         after = snapshot(steps, "after"),
         setup = setupResult(input, steps);
@@ -302,6 +307,7 @@ export async function localResult(
         return {
             error_code: "tasks.repository_execution_unknown",
             check_id: input.check_id,
+            parts,
         };
     }
     const commands = Object.fromEntries(
@@ -345,7 +351,8 @@ export async function localResult(
             : null,
         subtask_start_commit: input.base ||
             (run(steps, "original").stdout ?? "").trim(),
-        parts: receiptParts(run(steps, "parts").stdout),
+        parts,
+        handed_off_tree: (run(steps, "handed-tree").stdout ?? "").trim() || undefined,
     });
     const deliverables = deliverableResults(input, local);
     const failed = local.outcome === "passed"
@@ -594,8 +601,8 @@ export function baseFields(
     }
     const merge = ObjectValue.parse(base.merge ?? {});
     const fields = {
-        // The commit the implementer handed off: HEAD before the base-merge (docs/reference/tasks.md#handoffs).
-        ...(typeof merge.head === "string" ? { handed_off: merge.head } : {}),
+        // The tree of the work the implementer handed off, before the base-merge (docs/reference/tasks.md#handoffs).
+        ...(typeof merge.handed_tree === "string" ? { handed_off_tree: merge.handed_tree } : {}),
         base: "current",
         default_commit: typeof merge.default_commit === "string"
             ? merge.default_commit

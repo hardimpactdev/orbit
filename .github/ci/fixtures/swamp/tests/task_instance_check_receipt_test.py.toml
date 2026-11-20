@@ -1,8 +1,9 @@
 file = "swamp/tests/task_instance_check_receipt_test.py"
 slices = false
-cost = 17
+cost = 46
 cases = [
-  "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt"
+  "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt",
+  "test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table"
 ]
 inputs = [
   "tools/tests/ci-workspace-cost-evidence.json",
@@ -19,4 +20,5 @@ inputs = [
 
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
-"test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt" = 17
+"test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt" = 44
+"test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table" = 2

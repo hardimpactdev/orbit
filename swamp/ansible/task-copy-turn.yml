@@ -486,6 +486,15 @@
           ansible.builtin.assert:
             that: review_error is not defined
             fail_msg: "{{ review_error | default('') }}"
+    # Only a receipt that this turn's run writes counts (docs/reference/tasks.md#handoffs): what an earlier run left, also one written
+    # after its turn read its receipts, goes before the launch. A copy where they cannot go launches nothing.
+    - name: Clear earlier handoff receipts
+      ansible.builtin.command:
+        argv: >-
+          {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
+             'for t in delivery review; do f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$t.json")
+              && rm -rf -- "$f" || exit 1; done', 'sh'] }}
+      changed_when: true
     # The run and its read; the reviewer's restore follows whatever happened in them.
     - name: Run the turn and read it back
       block:
@@ -764,13 +773,14 @@
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
         # The receipts the turn left under the Git directory (docs/reference/tasks.md#handoffs): each is read once and removed, so a
-        # receipt never counts for two turns. A link or a file over 64 KiB is removed unread; the Gateway validates what was read.
+        # receipt never counts for two turns. A link, a folder or a file over 64 KiB is removed unread; the result step validates a
+        # delivery receipt field by field, and the Gateway each receipt.
         - name: Read and remove the handoff receipts
           ansible.builtin.command:
             argv: >-
               {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
                  'f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$1.json") || exit 0;
-                  if [ -f "$f" ] && [ ! -L "$f" ] && [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; fi; rm -f -- "$f"',
+                  if [ -f "$f" ] && [ ! -L "$f" ] && [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; fi; rm -rf -- "$f"',
                  'sh', item] }}
           loop: [delivery, review]
           register: handoff_receipts

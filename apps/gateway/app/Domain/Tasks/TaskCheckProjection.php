@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,7 +17,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects the native check metadata onto the existing board. No execution or evidence judgment. */
-final readonly class TaskCheckProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskCheckProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationWorkflowInput
 {
     public function input(Operation $operation): array
     {
@@ -60,7 +61,12 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
             if ($operation->status->terminal()) {
                 return $operation;
             }
-            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
+            $result = self::receipt(ValidatedData::object($data['result'] ?? []));
+            // Only a valid part table is kept: anything else, such as seconds beyond any float, reads as none and never stops settlement.
+            if (array_key_exists('parts', $result)) {
+                $result['parts'] = TaskHandoffs::parts($result['parts']);
+            }
+            $data['result'] = $result;
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
                 $data['error_code'] = $result['error_code'];
             }
@@ -111,6 +117,12 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
 
             return $projected;
         });
+    }
+
+    /** Swamp refused to start the check: a definitively failed delivery gate rejects the delivery it would have judged. */
+    public function refused(Operation $operation): void
+    {
+        TaskHandoffs::delivery($operation, [], false);
     }
 
     /**

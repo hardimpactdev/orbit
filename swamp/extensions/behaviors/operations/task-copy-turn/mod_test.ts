@@ -260,15 +260,26 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
         const context = { writeResource: () => Promise.resolve(undefined) };
         const none = await behavior.methods.result.execute({ folder }, context);
         assertEquals(none.turn.receipts, { delivery: null, review: null });
-        const delivery = JSON.stringify({ commit: "a".repeat(40), parts: [{ name: "pest", result: "passed", seconds: 1.5 }] });
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery }));
+        // A SHA-256 object ID stays whole, though a credential pattern would match it; only the receipt's own fields are kept.
+        const receipt = { commit: "a".repeat(64), tree: "b".repeat(64), parts: [{ name: "pest", result: "passed" as const, seconds: 1.5 }] };
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery: JSON.stringify({ ...receipt, marker: "unrelated" }) }));
         const left = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(left.turn.receipts, { delivery, review: null });
-        // A receipt is agent text: it is redacted like the reply.
+        assertEquals(left.turn.receipts, { delivery: receipt, review: null });
+        // A receipt is agent text: a part name and a review receipt are redacted.
         const secret = "ghp_" + "a1B2".repeat(9);
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: `{"verdict": "${secret}"}` }));
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({
+            delivery: JSON.stringify({ ...receipt, parts: [{ name: secret, result: "passed", seconds: 1 }] }),
+            review: `{"verdict": "${secret}"}`,
+        }));
         const redacted = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(redacted.turn.receipts?.review?.includes(secret), false);
+        assertEquals(JSON.stringify(redacted.turn.receipts).includes(secret), false);
+        // Anything else is invalid, never passed on.
+        for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
+            JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),
+            JSON.stringify(receipt).replace('"seconds":1.5', '"seconds":1e400')]) {
+            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery: invalid }));
+            assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.delivery, "invalid");
+        }
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

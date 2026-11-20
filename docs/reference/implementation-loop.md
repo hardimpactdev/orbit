@@ -806,7 +806,7 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
-Every run, also one that fails before the parts, ends by writing the delivery receipt to `$(git rev-parse --git-path orbit-handoff/delivery.json)`: the commit it checked, the commit of the working tree when work is uncommitted, and each part with its name, result and seconds. It sits under the Git directory, so it is never committed. The copy turn hands it to the Gateway's delivery gate ([Handoffs](/reference/tasks#handoffs)).
+Every run, also one that fails before the parts, ends by writing the delivery receipt to `$(git rev-parse --git-path orbit-handoff/delivery.json)`: the commit it checked, the tree of the working tree it checked, and each part with its name, result and seconds. It sits under the Git directory, so it is never committed. The copy turn hands it to the Gateway's delivery gate ([Handoffs](/reference/tasks#handoffs)).
 
 The `docs-impact` part builds the API outputs first, as CI's Docs job does. The gate checks the ignored OpenAPI document and MCP manifest against the sources, so an earlier build's outputs never read as stale.
 

@@ -99,12 +99,14 @@ final readonly class TaskTurn
         $review = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
+            // The delivery gate comes first (docs/reference/tasks.md#handoffs): only an accepted delivery for this commit is reviewed.
+            if ($check instanceof TaskCheck) {
+                TaskHandoffs::requireDelivery($group, $task, $check);
+            }
             $owner = $check instanceof TaskCheck ? $this->candidates->owner($group, $check) : null;
             if (! $check instanceof TaskCheck || ! $owner instanceof Operation || ! $this->candidates->eligible($group, $check)) {
                 throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
             }
-            // The delivery gate (docs/reference/tasks.md#handoffs): only an accepted delivery for this check is reviewed.
-            TaskHandoffs::requireDelivery($group, $task, $check);
             $candidate = (string) $check->commit_sha;
             $review = TaskTurnReview::of($group, $task, $check, $owner);
         }

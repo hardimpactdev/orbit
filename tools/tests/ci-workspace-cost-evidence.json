@@ -127,7 +127,8 @@
     },
     "swamp/tests/task_instance_check_receipt_test.py": {
       "case_seconds": {
-        "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt": 7.284
+        "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt": 20.331,
+        "test_a_check_whose_candidate_was_not_pinned_keeps_its_part_table": 0.043
       }
     }
   }

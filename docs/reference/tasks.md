@@ -1175,30 +1175,36 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 
 #### The delivery receipt
 
-`bin/task-check` writes the delivery receipt at the end of every run to `$(git rev-parse --git-path orbit-handoff/delivery.json)`: the commit it checked, and each part with its name, its result and its seconds.
+`bin/task-check` writes the delivery receipt at the end of every run to `$(git rev-parse --git-path orbit-handoff/delivery.json)`. It names the commit it checked and the tree of the working tree it checked, uncommitted and untracked files included. It lists each part with its name, its result and its seconds.
 
 ```json
-{"commit": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
+{"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
 ```
 
-At the end of every copy turn, the turn phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json`, removes them, and returns their redacted text in the turn result as `receipts.delivery` and `receipts.review`, or null. A receipt never counts for two turns. A link, or a file over 64 KiB, is removed unread.
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes both receipt paths; a copy where they cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json` once and removes them. A link, a folder or a file over 64 KiB is removed unread.
+
+The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt is its redacted text.
 
 #### The delivery gate
 
-The handoff check is the delivery gate. It removes any receipt before the Project check runs, then stores the part table of the receipt that its own run wrote as the check's `parts`, and removes that receipt too. When the check ends, other than cancelled, the Gateway writes a delivery row for the subtask's last finished implementer turn before it. It compares the receipt with the commit that the implementer handed off: HEAD before the check [merged main](#the-handoff-check-merges-main-first), which the result names as `handed_off`, else HEAD when the check started.
+The handoff check is the delivery gate. It removes any receipt before its commands run and after them. It keeps only the validated part table of the receipt its Project check wrote, as the check's `parts`, also when a later step fails.
+
+When the check ends, other than cancelled, or when Swamp refuses to start it, the Gateway writes one delivery row. The row belongs to the subtask's latest implementer turn before the check, only when that turn ended done and has no delivery row yet. A check before the first turn, after a newer question or failed turn, or a second check of the same turn writes none.
+
+The gate compares the receipt's tree with the tree of the work handed off: the working tree before the check [merged main](#the-handoff-check-merges-main-first) or ran any command, uncommitted work included. The result names it `handed_off_tree`. So a check run before the commit still matches the committed work, and an edit after the check does not.
 
 | Result | When |
 | --- | --- |
-| Accepted | The turn left a receipt for the handed-off commit with no failed part, and the check passed |
-| `no_receipt` | The turn left no receipt, or one that is not a commit and a list of parts |
-| `other_commit` | The receipt names another commit, such as one of uncommitted work |
+| Accepted | The turn left a receipt for the handed-off tree with no failed part, and the check passed |
+| `no_receipt` | The turn left no receipt, or an invalid one |
+| `other_commit` | The receipt names another tree than the one the check observed |
 | `failed_part` | The receipt shows a failed part |
 | `claim_disproved` | A part the receipt shows passed failed in the check |
-| `check_failed` | The check failed, `tasks.check_conflict` included |
+| `check_failed` | The check failed, `tasks.check_conflict` and a refused start included |
 
 A merge-main implementer turn after `tasks.check_conflict` stays allowed: that check wrote a rejected delivery row.
 
-A reviewer turn requires the subtask's latest delivery row to be accepted for the check under review. Otherwise the turn is refused with `tasks.handoff_required` (409): the implementer hands off again and the handoff check runs.
+A reviewer turn of a gated group requires the subtask's latest delivery row to be accepted for the commit under review: the commit of the check its gate ran. The gate answers before candidate eligibility. Otherwise the turn is refused with `tasks.handoff_required` (409): the implementer hands off again and the handoff check runs.
 
 ### Workspace ownership
 

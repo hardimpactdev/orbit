@@ -15,7 +15,7 @@ use App\Support\ValidatedData;
 
 /**
  * The handoff gates of a group that left backlog after they shipped (docs/reference/tasks.md#handoffs). The handoff check is the
- * delivery gate: when it ends it writes one delivery row for the implementer turn before it, accepted or rejected with one reason.
+ * delivery gate: when it ends it writes one delivery row for the implementer turn that handed off, accepted or rejected with one reason.
  */
 final readonly class TaskHandoffs
 {
@@ -30,9 +30,14 @@ final readonly class TaskHandoffs
 
     public const string CheckFailed = 'check_failed';
 
+    /** The results `bin/task-check` gives a part. */
+    public const array PartResults = ['passed', 'FAILED', 'skipped', 'not selected'];
+
     /**
      * Writes the delivery row of a handoff check that ended. `$result` is the check's result; `$passed` whether the check's Operation
-     * succeeded with the outcome `passed`. A group without the gates, or a check that is not a handoff check, writes none.
+     * succeeded with the outcome `passed`. A row belongs to one delivery: the subtask's latest implementer turn before the check, when it
+     * ended done and has no delivery row yet. A group without the gates, a check that is not a handoff check, a check with no such turn,
+     * such as a check before the first turn, a retry after a newer question or failed turn, or a second check of the same turn, writes none.
      *
      * @param  array<string, mixed>  $result
      */
@@ -44,18 +49,22 @@ final readonly class TaskHandoffs
         }
         $subtask = ValidatedData::integer($check->input['subtask']);
         $turn = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $check->target_id)
-            ->where('kind', OperationKinds::TasksCopyTurn)->where('status', OperationStatus::Succeeded->value)
-            ->where('input->subtask', $subtask)->where('input->role', TaskThreadRole::Implementer->value)
-            ->where('result->state', AgentThreadState::Done->value)->where('id', '<', $check->id)->orderByDesc('id')->first();
-        $receipts = $turn?->result['receipts'] ?? null;
+            ->where('kind', OperationKinds::TasksCopyTurn)->where('input->subtask', $subtask)
+            ->where('input->role', TaskThreadRole::Implementer->value)->where('id', '<', $check->id)->orderByDesc('id')->first();
+        if (! $turn instanceof Operation || $turn->status !== OperationStatus::Succeeded || ($turn->result['state'] ?? null) !== AgentThreadState::Done->value
+            || TaskHandoff::query()->where('operation_id', $turn->id)->where('type', TaskHandoffType::Delivery->value)->exists()) {
+            return;
+        }
+        $receipts = $turn->result['receipts'] ?? null;
         $receipt = self::receipt(is_array($receipts) ? $receipts['delivery'] ?? null : null);
-        TaskHandoff::query()->create(['task_id' => $subtask, 'operation_id' => $turn?->id, 'type' => TaskHandoffType::Delivery,
+        TaskHandoff::query()->create(['task_id' => $subtask, 'operation_id' => $turn->id, 'type' => TaskHandoffType::Delivery,
             'receipt' => $receipt, 'task_check_id' => ValidatedData::integer($check->input['check_id']),
             ...self::verdict($receipt, $result, $passed)]);
     }
 
     /**
-     * Refuses a reviewer turn on CHECK unless the subtask's latest delivery row is accepted for that check.
+     * Refuses a reviewer turn on CHECK of a gated group unless the subtask's latest delivery row is accepted for the commit under review:
+     * the commit of the check that row's gate ran.
      */
     public static function requireDelivery(Task $group, Task $subtask, TaskCheck $check): void
     {
@@ -63,51 +72,77 @@ final readonly class TaskHandoffs
             return;
         }
         $latest = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)->orderByDesc('id')->first();
-        if (! $latest instanceof TaskHandoff || $latest->rejected || $latest->task_check_id !== $check->id) {
+        $gated = $latest?->task_check_id === null ? null : TaskCheck::query()->whereKey($latest->task_check_id)->value('commit_sha');
+        if (! $latest instanceof TaskHandoff || $latest->rejected || $check->commit_sha === null || $gated !== $check->commit_sha) {
             throw new ResourceOperationException('tasks.handoff_required',
                 'Review requires an accepted delivery for the commit under review: the implementer hands off again and the handoff check runs.', 409);
         }
     }
 
     /**
-     * The receipt as `bin/task-check` writes it: a commit and a list of parts with a name, a result and seconds. Anything else is none.
+     * The part table of a receipt or a check: a non-empty list of parts, each with a name, one of PartResults and finite, non-negative
+     * seconds. Anything else is none.
      *
-     * @return array{commit: string, parts: list<array{name: string, result: string, seconds: int|float}>}|null
+     * @return list<array{name: string, result: string, seconds: int|float}>|null
      */
-    private static function receipt(mixed $raw): ?array
+    public static function parts(mixed $parts): ?array
     {
-        $receipt = is_string($raw) ? json_decode($raw, true) : null;
-        if (! is_array($receipt) || ! is_string($receipt['commit'] ?? null) || ! is_array($receipt['parts'] ?? null) || ! array_is_list($receipt['parts'])) {
+        if (! is_array($parts) || $parts === [] || ! array_is_list($parts)) {
             return null;
         }
-        foreach ($receipt['parts'] as $part) {
-            if (! is_array($part) || ! is_string($part['name'] ?? null) || ! is_string($part['result'] ?? null)
-                || ! (is_int($part['seconds'] ?? null) || is_float($part['seconds'] ?? null))) {
+        $table = [];
+        foreach ($parts as $part) {
+            $seconds = is_array($part) ? $part['seconds'] ?? null : null;
+            if (! is_array($part) || ! is_string($part['name'] ?? null) || $part['name'] === '' || mb_strlen($part['name']) > 200
+                || ! in_array($part['result'] ?? null, self::PartResults, true)
+                || ! (is_int($seconds) || (is_float($seconds) && is_finite($seconds))) || $seconds < 0) {
                 return null;
             }
+            $table[] = ['name' => $part['name'], 'result' => (string) $part['result'], 'seconds' => $seconds];
         }
 
-        /** @var array{commit: string, parts: list<array{name: string, result: string, seconds: int|float}>} */
-        return ['commit' => $receipt['commit'], 'parts' => $receipt['parts']];
+        return $table;
     }
 
     /**
-     * @param  array{commit: string, parts: list<array{name: string, result: string, seconds: int|float}>}|null  $receipt
+     * The delivery receipt as the turn returned it: the commit and the tree `bin/task-check` checked, and its part table. Anything
+     * else is none.
+     *
+     * @return array{commit: string, tree: string, parts: list<array{name: string, result: string, seconds: int|float}>}|null
+     */
+    private static function receipt(mixed $receipt): ?array
+    {
+        if (! is_array($receipt)) {
+            return null;
+        }
+        $parts = self::parts($receipt['parts'] ?? null);
+        $commit = $receipt['commit'] ?? null;
+        $tree = $receipt['tree'] ?? null;
+        $sha = '/^[0-9a-f]{40}([0-9a-f]{24})?$/';
+        if ($parts === null || ! is_string($commit) || preg_match($sha, $commit) !== 1 || ! is_string($tree) || preg_match($sha, $tree) !== 1) {
+            return null;
+        }
+
+        return ['commit' => $commit, 'tree' => $tree, 'parts' => $parts];
+    }
+
+    /**
+     * @param  array{commit: string, tree: string, parts: list<array{name: string, result: string, seconds: int|float}>}|null  $receipt
      * @param  array<string, mixed>  $result
      * @return array{rejected: bool, rejection_reason: string}
      */
     private static function verdict(?array $receipt, array $result, bool $passed): array
     {
-        // The commit the implementer handed off: HEAD before the check merged the default head in, else HEAD when the check started.
-        $handed = $result['handed_off'] ?? $result['head_before'] ?? null;
-        $failed = static fn (array $parts): array => array_values(array_map(static fn (array $part): string => (string) $part['name'],
-            array_filter($parts, static fn (mixed $part): bool => is_array($part) && ($part['result'] ?? null) === 'FAILED')));
+        // The work the implementer handed off: the tree of its working tree, uncommitted work included, before the check merged the
+        // default head in. A check that observed none compares no tree.
+        $handed = is_string($result['handed_off_tree'] ?? null) ? $result['handed_off_tree'] : null;
+        $failed = static fn (array $parts): array => array_column(array_filter($parts, static fn (array $part): bool => $part['result'] === 'FAILED'), 'name');
+        $passedParts = $receipt === null ? [] : array_column(array_filter($receipt['parts'], static fn (array $part): bool => $part['result'] === 'passed'), 'name');
         $reason = match (true) {
             $receipt === null => self::NoReceipt,
-            $receipt['commit'] !== $handed => self::OtherCommit,
+            $handed !== null && $receipt['tree'] !== $handed => self::OtherCommit,
             $failed($receipt['parts']) !== [] => self::FailedPart,
-            array_intersect(array_column(array_filter($receipt['parts'], static fn (array $part): bool => $part['result'] === 'passed'), 'name'),
-                $failed(is_array($result['parts'] ?? null) ? $result['parts'] : [])) !== [] => self::ClaimDisproved,
+            array_intersect($passedParts, $failed(self::parts($result['parts'] ?? null) ?? [])) !== [] => self::ClaimDisproved,
             ! $passed => self::CheckFailed,
             default => '',
         };
