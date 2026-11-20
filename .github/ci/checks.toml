@@ -376,6 +376,8 @@ inputs = [
 # An estimate until a hosted run replaces it.
 cost = 119
 ceiling = 120
+# Lint shares shape selection but pays for cold Galaxy setup (55–90 s) before lint.
+job_ceilings = { "swamp/lint" = 240 }
 
 [check.swamp-validate]
 inputs = [

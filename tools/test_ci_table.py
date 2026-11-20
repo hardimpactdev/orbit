@@ -138,7 +138,7 @@ def budget_errors(workflows, checks, fixture_budget):
                 reject(label, 'no entry in .github/ci/checks.toml')
                 expected = None
             else:
-                expected = math.ceil(checks[key]['ceiling'] / 60)
+                expected = math.ceil(checks[key].get('job_ceilings', {}).get(label, checks[key]['ceiling']) / 60)
             needs = [*inherited, *dependencies(job)]
             if not (caller is None and name in OTHER_DEPENDENCIES):
                 wanted = [] if label in ('changes', 'ci-policy') else ['changes']
@@ -224,6 +224,16 @@ class CiBudgetTest(unittest.TestCase):
         changed = copy.deepcopy(self.workflows)
         changed['ci.yml']['jobs']['docs']['timeout-minutes'] = 3
         self.assertEqual([], budget_errors(changed, checks, self.fixture_budget))
+
+    def test_shared_shape_selection_keeps_separate_control_and_cold_lint_budgets(self):
+        self.assertEqual(120, self.checks['swamp-shape']['ceiling'])
+        self.assertEqual({'swamp/lint': 240}, self.checks['swamp-shape']['job_ceilings'])
+        changed = copy.deepcopy(self.workflows)
+        changed['swamp-shape.yml']['jobs']['lint']['timeout-minutes'] = 2
+        self.assert_rejected(changed, 'swamp/lint', 'must equal ceiling')
+        changed = copy.deepcopy(self.workflows)
+        changed['swamp-shape.yml']['jobs']['shape']['timeout-minutes'] = 4
+        self.assert_rejected(changed, 'swamp/shape', 'must equal ceiling')
 
     def test_fixture_ceiling_is_required_and_its_dependency_cannot_form_a_chain(self):
         self.assertEqual(240, self.fixture_budget['shard_ceiling_seconds'])
