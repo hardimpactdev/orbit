@@ -3139,8 +3139,8 @@ non_command_output:
   reason: Strips `releases/` and a trailing slash from the `current` link target that the stat module read; it parses no command output.
 - file: operation-process-upgrade.yml
   task: Keep the previous release
-  field: vars.upgrade_pruned
-  reason: Keeps the release folder names that the find module listed and that are versions; it parses no command output.
+  field: vars.upgrade_versions
+  reason: Keeps the release folder paths that the find module listed and whose names are versions; it parses no command output.
 - file: tasks/instance-container-phase.yml
   task: Merge Orbit's changed JSON settings
   field: vars.model_key

@@ -85,13 +85,15 @@ Swamp runs `operation-process-upgrade` on control Node 209, over SSH to the Proc
 | Step | What it does |
 | --- | --- |
 | `Read the installed release` | `current` must be a relative link to `releases/<version>`, and neither `releases` nor `current` may be a symbolic link that leaves `<folder>`. Anything else fails with `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
-| `Download the release` | Downloads the asset into a staging folder under `<folder>/releases/` and checks its SHA-256 |
-| `Unpack the release` | Unpacks it and renames the staging folder to `releases/<VERSION>`. A folder that already holds a checked copy of this release is reused, so a resume repeats nothing |
-| `Check the binary` | With `version_args`, runs the new binary and requires `VERSION` in its output |
+| `Download the release` | Downloads the asset into its own staging folder under `releases/` and checks its SHA-256. Skipped when `releases/<VERSION>` exists |
+| `Unpack the release` | Unpacks it inside the staging folder. An existing `releases/<VERSION>` is never moved, replaced or removed, since `current` or the switch back may name it |
+| `Check the binary` | Checks the binary that will run: an existing `releases/<VERSION>` in place, else the staged copy. With `version_args` it must print `VERSION` |
 | `Switch current` | Writes a new relative link and renames it over `current` in one step |
 | `Restart the Process` | Restarts the systemd unit, as `process:restart` does |
 | `Verify it runs` | The unit is active and still active, with the same restart count, after 10 seconds |
 | `Keep the previous release` | After a pass, keeps `current` and the `before` release, and removes the other folders under `releases/` whose names are versions. A prune failure leaves the pass standing; `pruned` names only the folders actually removed |
+
+Only a checked staged copy takes the free name `releases/<VERSION>`, and the staging folder is removed on every path. When `before` is `VERSION`, the newest other version is kept as the rollback copy.
 
 A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After a failure in `Switch current`, `Restart the Process` or `Verify it runs`, the run switches `current` back to `before`, restarts the Process and verifies it again. The Operation then fails with `process.upgrade_rolled_back`; nothing is pruned. When the rollback fails too, or the Node cannot be reached during it, it fails with `process.rollback_failed`, and the Process shows as failed. Only a verified switch back reports `process.upgrade_rolled_back`.
 

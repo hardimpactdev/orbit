@@ -8,11 +8,14 @@ cases = [
   "a switch back whose release does not run either fails with process.rollback_failed",
   "a switch back that cannot reach the Node fails with process.rollback_failed",
   "a current that already names the requested release is checked, restarted and verified, never taken as installed",
+  "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched",
+  "an upgrade to the release current names keeps the newest other version as its rollback copy",
+  "an existing folder of the version is checked in place and kept, never replaced by the staged copy",
 ]
 file = "swamp/tests/workflow_process_upgrade_test.ts"
-cost = 141
-# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up; no hosted receipt yet.
-slices = 3
+cost = 176
+# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11 s for the three release-folder cases; no hosted receipt yet.
+slices = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -35,3 +38,6 @@ inputs = [
   "a switch back whose release does not run either fails with process.rollback_failed" = 18
   "a switch back that cannot reach the Node fails with process.rollback_failed" = 14
   "a current that already names the requested release is checked, restarted and verified, never taken as installed" = 18
+  "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched" = 7
+  "an upgrade to the release current names keeps the newest other version as its rollback copy" = 14
+  "an existing folder of the version is checked in place and kept, never replaced by the staged copy" = 14

@@ -33,10 +33,11 @@ Deno.test("the upgrade runs one tagged phase per step, switches back only after 
     assertEquals(Object.values(tags), ["read", "download", "unpack", "check", "switch", "restart", "verify", "keep", "rollback"]);
     assertEquals(step("result").dependsOn, [{ step: "Switch back", condition: { type: "always" } }]);
     assert(!JSON.stringify(workflow).includes("vault.get"));
-    // A phase after a failed one is skipped; the binary check is skipped without version arguments.
+    // A phase after a failed one is skipped. The binary check always runs: it names the checked copy, with or without version arguments.
     assert(skips("Download the release", { "Read the installed release": "failed" }));
     assert(!skips("Download the release", { "Read the installed release": "succeeded" }));
-    assert(skips("Check the binary", { "Unpack the release": "succeeded" }, []));
+    assert(!skips("Check the binary", { "Unpack the release": "succeeded" }, []));
+    assertEquals(step("Check the binary").writes, true);
     assert(skips("Switch current", { "Unpack the release": "failed", "Check the binary": "skipped" }));
     // The switch back runs after a failure of the switch, the restart or the check, never after one before the switch, and never after a
     // failed prune: the upgrade passed by then, and that step's failure is tolerated.
@@ -54,7 +55,7 @@ Deno.test("the upgrade runs one tagged phase per step, switches back only after 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 type Fixture = {
-    releases?: Record<string, "good" | "bad" | "locked">; current?: string; bad?: boolean; sha?: string; versionText?: string; rollbackBreaks?: boolean;
+    releases?: Record<string, "good" | "bad" | "locked" | "mislabeled">; current?: string; bad?: boolean; sha?: string; versionText?: string; rollbackBreaks?: boolean;
     /** `store`: `releases` is a link to a store outside the folder; `folder`: the admitted folder is a link to the real one. */
     via?: "store" | "folder";
     /** Folders under `releases` that are not versions. */
@@ -71,7 +72,8 @@ async function upgrade(fixture: Fixture): Promise<{ ran: string[]; result: Recor
     const store = fixture.via === "store" ? `${root}/store` : `${real}/releases`;
     for (const [version, kind] of Object.entries(fixture.releases ?? { "8.0.17": "good", "8.0.63": "good" })) {
         Deno.mkdirSync(`${store}/${version}`, { recursive: true });
-        Deno.writeTextFileSync(`${store}/${version}/cli-proxy-api`, `#!/bin/sh\necho "CLIProxyAPI Version: ${version}"\n`);
+        // A `mislabeled` release prints another version.
+        Deno.writeTextFileSync(`${store}/${version}/cli-proxy-api`, `#!/bin/sh\necho "CLIProxyAPI Version: ${kind === "mislabeled" ? "0.0.1" : version}"\n`);
         Deno.chmodSync(`${store}/${version}/cli-proxy-api`, 0o755);
         if (kind === "bad") Deno.writeTextFileSync(`${store}/${version}/bad`, "");
         // A folder this user cannot remove: its prune fails.
@@ -240,6 +242,45 @@ Deno.test({ name: "a current that already names the requested release is checked
         assertEquals(run.result.error_code, "process.rollback_failed", run.output);
         assert(run.restarts >= 1);
         assertEquals(run.ran.slice(-2), ["Verify it runs", "Switch back"]);
+    } finally {
+        cleanup(run.folder);
+    }
+} });
+
+/** The bytes of the binary `current` runs, read through the link. */
+const running = (run: { folder: string }) => Deno.readTextFileSync(`${run.folder}/app/current/cli-proxy-api`);
+
+Deno.test({ name: "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched", ignore: !available, async fn() {
+    const run = await upgrade({ current: "releases/8.0.80", releases: { "8.0.63": "good", "8.0.80": "mislabeled" } });
+    try {
+        assertEquals(run.result.error_code, "process.upgrade_failed", run.output);
+        assertEquals(run.current, "releases/8.0.80");
+        assertEquals(running(run), `#!/bin/sh\necho "CLIProxyAPI Version: 0.0.1"\n`);
+        assertEquals(run.releases, ["8.0.63", "8.0.80"]);
+        assertEquals(run.restarts, 0);
+    } finally {
+        cleanup(run.folder);
+    }
+} });
+
+Deno.test({ name: "an upgrade to the release current names keeps the newest other version as its rollback copy", ignore: !available, async fn() {
+    const run = await upgrade({ current: "releases/8.0.80", releases: { "8.0.63": "good", "8.0.80": "good" } });
+    try {
+        assertEquals(run.result, { before: "8.0.80", after: "8.0.80", outcome: "upgraded", pruned: [] }, run.output);
+        assertEquals(run.releases, ["8.0.63", "8.0.80"]);
+        assertEquals(run.restarts, 1);
+    } finally {
+        cleanup(run.folder);
+    }
+} });
+
+Deno.test({ name: "an existing folder of the version is checked in place and kept, never replaced by the staged copy", ignore: !available, async fn() {
+    const run = await upgrade({ releases: { "8.0.63": "good", "8.0.80": "good" }, versionText: "8.0.79" });
+    try {
+        assertEquals(run.result, { before: "8.0.63", after: "8.0.80", outcome: "upgraded", pruned: [] }, run.output);
+        assertEquals(run.current, "releases/8.0.80");
+        assertEquals(running(run), `#!/bin/sh\necho "CLIProxyAPI Version: 8.0.80"\n`);
+        assertEquals(run.releases, ["8.0.63", "8.0.80"]);
     } finally {
         cleanup(run.folder);
     }

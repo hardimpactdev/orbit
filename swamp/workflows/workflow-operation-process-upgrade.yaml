@@ -114,7 +114,8 @@ jobs:
     labels: {role: swamp}
     dependsOn:
     - {step: Unpack the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || size(inputs.intent.upgrade.version_args) == 0 }}'
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
     task:
       type: behavior
       behaviorType: command/shell
