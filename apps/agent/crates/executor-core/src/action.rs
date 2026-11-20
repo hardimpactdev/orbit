@@ -44,6 +44,8 @@ pub enum Action {
     InstanceStart,
     /// Fetch an Instance's branch into the Node's mirror of its repository (ADR 0271). Its target is the Node.
     InstanceFetchBranch,
+    /// Check the copy's workspace out on its branch and merge its `.env` (ADR 0271). Its target is the copy.
+    InstanceCheckout,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -58,7 +60,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -71,6 +73,7 @@ impl Action {
         Self::InstancePrepare,
         Self::InstanceStart,
         Self::InstanceFetchBranch,
+        Self::InstanceCheckout,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -81,7 +84,9 @@ impl Action {
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
-            Self::InstanceClone | Self::InstancePrepare | Self::InstanceStart | Self::InstanceFetchBranch => Family::Instance,
+            Self::InstanceClone | Self::InstancePrepare | Self::InstanceStart | Self::InstanceFetchBranch | Self::InstanceCheckout => {
+                Family::Instance
+            }
         }
     }
 
@@ -95,7 +100,9 @@ impl Action {
             | Self::DnsPublishRecords
             | Self::InstanceClone
             | Self::InstanceFetchBranch => TargetKind::Node,
-            Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare | Self::InstanceStart => TargetKind::Instance,
+            Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare | Self::InstanceStart | Self::InstanceCheckout => {
+                TargetKind::Instance
+            }
         }
     }
 
@@ -114,6 +121,7 @@ impl Action {
             Self::InstancePrepare => "instance.prepare",
             Self::InstanceStart => "instance.start",
             Self::InstanceFetchBranch => "instance.fetch_branch",
+            Self::InstanceCheckout => "instance.checkout",
         }
     }
 }
@@ -140,6 +148,7 @@ impl FromStr for Action {
             "instance.prepare" => Ok(Self::InstancePrepare),
             "instance.start" => Ok(Self::InstanceStart),
             "instance.fetch_branch" => Ok(Self::InstanceFetchBranch),
+            "instance.checkout" => Ok(Self::InstanceCheckout),
             _ => Err(UnknownActionError),
         }
     }

@@ -273,7 +273,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::InstanceClone
             | orbit_executor_core::action::Action::InstancePrepare
             | orbit_executor_core::action::Action::InstanceStart
-            | orbit_executor_core::action::Action::InstanceFetchBranch => {
+            | orbit_executor_core::action::Action::InstanceFetchBranch
+            | orbit_executor_core::action::Action::InstanceCheckout => {
                 panic!("power actions only")
             }
         }

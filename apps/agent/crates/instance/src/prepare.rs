@@ -356,7 +356,7 @@ fn installed(status: &str, package: &str) -> Option<String> {
 
 /// Who owns the missing folders above a pushed file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Folders {
+pub(crate) enum Folders {
     /// Incus makes them, owned by root.
     Root,
     /// They exist already.
@@ -370,18 +370,18 @@ fn four(mode: &str) -> String {
 }
 
 /// A regular file of the copy with its owner and mode.
-struct Held {
-    content: Vec<u8>,
-    uid: u32,
-    gid: u32,
-    mode: String,
+pub(crate) struct Held {
+    pub(crate) content: Vec<u8>,
+    pub(crate) uid: u32,
+    pub(crate) gid: u32,
+    pub(crate) mode: String,
 }
 
 /// The copy's files through the Incus files API.
-struct Files<'a, S: System> {
-    incus: &'a Incus<'a, S>,
-    project: &'a str,
-    name: &'a str,
+pub(crate) struct Files<'a, S: System> {
+    pub(crate) incus: &'a Incus<'a, S>,
+    pub(crate) project: &'a str,
+    pub(crate) name: &'a str,
 }
 
 impl<S: System> Files<'_, S> {
@@ -390,7 +390,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// What `path` is in the copy, or None when it is missing.
-    fn kind(&self, path: &str, refused: &'static str) -> Result<Option<String>, Failure> {
+    pub(crate) fn kind(&self, path: &str, refused: &'static str) -> Result<Option<String>, Failure> {
         let head = self
             .incus
             .curl(&["--output", "/dev/null", "--write-out", "%{http_code} %header{x-incus-type}", &self.url(path)])
@@ -404,7 +404,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// A regular file of the copy, or None when it is missing. A link or any other type refuses.
-    fn read(&self, path: &str, refused: &'static str) -> Result<Option<Held>, Failure> {
+    pub(crate) fn read(&self, path: &str, refused: &'static str) -> Result<Option<Held>, Failure> {
         let Some(kind) = self.kind(path, refused)? else { return Ok(None) };
         if kind != "file" {
             return Err(Failure::new(refused, format!("{path} is a {kind}")));
@@ -420,7 +420,7 @@ impl<S: System> Files<'_, S> {
         Ok(Some(Held { content, uid, gid, mode: four(mode) }))
     }
 
-    fn pull(&self, path: &str) -> Result<Option<Vec<u8>>, Failure> {
+    pub(crate) fn pull(&self, path: &str) -> Result<Option<Vec<u8>>, Failure> {
         match self.incus.system.run(60, &[crate::INCUS.to_owned(), "--project".to_owned(), self.project.to_owned(), "file".to_owned(), "pull".to_owned(), format!("{}{path}", self.name), "-".to_owned()], None) {
             Ok(text) => Ok(Some(text.into_bytes())),
             Err(detail) if detail.contains("does not exist") || detail.to_ascii_lowercase().contains("not found") => Ok(None),
@@ -433,7 +433,7 @@ impl<S: System> Files<'_, S> {
         Ok(listed.map(|value| value.as_array().map(|rows| rows.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()))
     }
 
-    fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], folders: Folders) -> Result<(), Failure> {
+    pub(crate) fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], folders: Folders) -> Result<(), Failure> {
         let target = format!("{}{path}", self.name);
         let (uid, gid) = (uid.to_string(), gid.to_string());
         let mut argv = vec!["--project", self.project, "file", "push"];
@@ -445,7 +445,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// The missing folders above `path`, below `/`, `/home` and `/etc`, made for the file's owner.
-    fn parents(&self, path: &str, uid: u32, gid: u32) -> Result<u32, Failure> {
+    pub(crate) fn parents(&self, path: &str, uid: u32, gid: u32) -> Result<u32, Failure> {
         let mut missing = Vec::new();
         let mut parent = path;
         while let Some((above, _)) = parent.rsplit_once('/') {

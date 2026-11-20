@@ -5,12 +5,16 @@
 //! - [`prepare`] (`instance.prepare`): a stopped copy's files before its first start: the seed's Orbit units that are not
 //!   the copy's go, its own machine id, then the boot, trust and T3 files the Gateway rendered.
 //! - [`fetch_branch`] (`instance.fetch_branch`): the Instance's branch in the Node's mirror, when the origin has it.
+//! - [`checkout`] (`instance.checkout`): the copy's workspace on the Instance's branch, once per Instance, and its `.env`
+//!   merged from the default's and the Gateway's render.
 //! - [`start`] (`instance.start`): the copy's first start (its files shifted back first on a nested Node), then its
 //!   hostname and `/etc/hosts`.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
 
+mod checkout;
+mod env;
 mod fetch;
 mod prepare;
 mod shift;
@@ -18,6 +22,7 @@ mod start;
 #[cfg(test)]
 mod tests;
 
+pub use checkout::checkout;
 pub use fetch::fetch_branch;
 pub use prepare::prepare;
 pub use start::start;
