@@ -152,15 +152,15 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
-    // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
-    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its raw text, at most 64 KiB or `too large`, which the Gateway alone validates. Null
-    // for a receipt the turn did not leave.
-    receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
+    // The delivery receipt the turn left under the Git directory; the phase removed it (docs/reference/tasks.md#handoffs). It keeps only
+    // its validated fields, its part names redacted, or is `invalid`; null when the turn left none. The reviewer posts its review
+    // receipt to the Gateway instead.
+    receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
     usage: z.object({ tokens: Count, input_tokens: Count, cached_input_tokens: Count, output_tokens: Count, model_calls: Count }).strict().nullable(),
 });
 export type Turn = z.infer<typeof Turn>;
-const Receipts = z.object({ delivery: z.string().optional(), review: z.string().optional() }).strict();
+const Receipts = z.object({ delivery: z.string().optional() }).strict();
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -424,7 +424,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.8",
+    version: "2026.11.20.9",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -451,12 +451,9 @@ export const behavior = {
                 const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
                 turn.receipts = {
                     delivery: left?.delivery === undefined ? null : delivered(left.delivery),
-                    review: left?.review ?? null,
                 };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
-                // The resource carries the raw review receipt like the transcript: the Gateway reads it there when the run history
-                // does not inline this output, and validates it.
                 await ctx.writeResource("result", "result", result);
                 return result;
             },

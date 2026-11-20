@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Tasks\RecordTaskPullRequestTextAction;
+use App\Actions\Tasks\RecordTaskReviewReceiptAction;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireTaskKey;
+use App\Http\Requests\Tasks\StoreTaskHandoffRequest;
 use App\Http\Requests\Tasks\StoreTaskPullRequestTextRequest;
 use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * The two calls a task copy makes to Orbit, through its Node's forwarder and with its own key (docs/reference/ai-router.md#orbit-routes-for-task-copies).
- * The key names the copy; neither call names a group, a check or a commit.
+ * The calls a task copy makes to Orbit, through its Node's forwarder and with its own key (docs/reference/ai-router.md#orbit-routes-for-task-copies).
+ * The key names the copy; no call names a group, a check or a commit.
  */
 final class TaskController extends Controller
 {
@@ -30,6 +32,13 @@ final class TaskController extends Controller
         ['check' => $check, 'opens' => $opens] = $action->execute(self::copy($request), $request->string('title')->toString(), $request->string('body')->toString());
 
         return $this->respond($request, ['state' => 'recorded', 'check_id' => $check->id, 'operation_id' => $check->pr_text_operation_id, 'opens' => $opens], 202);
+    }
+
+    public function handoff(StoreTaskHandoffRequest $request, RecordTaskReviewReceiptAction $action): JsonResponse
+    {
+        $check = $action->execute(self::copy($request), $request->string('verdict')->toString(), $request->integer('findings'));
+
+        return $this->respond($request, ['state' => 'recorded', 'check_id' => $check->id, 'operation_id' => $check->review_receipt_operation_id], 202);
     }
 
     /** @param array<string, mixed> $data */

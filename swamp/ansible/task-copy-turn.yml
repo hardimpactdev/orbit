@@ -487,13 +487,14 @@
             that: review_error is not defined
             fail_msg: "{{ review_error | default('') }}"
     # Only a receipt that this turn's run writes counts (docs/reference/tasks.md#handoffs): what an earlier run left, also one written
-    # after its turn read its receipts, goes before the launch. A copy where they cannot go launches nothing.
+    # after its turn read its receipts, goes before the launch. A copy where it cannot go launches nothing. A link, as the receipt
+    # folder or as the receipt, is removed itself: nothing follows it to its target.
     - name: Clear earlier handoff receipts
       ansible.builtin.command:
         argv: >-
           {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
-             'for t in delivery review; do f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$t.json")
-              && rm -rf -- "$f" || exit 1; done', 'sh'] }}
+             'd=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path orbit-handoff) || exit 1;
+              if [ -L "$d" ]; then rm -f -- "$d" || exit 1; exit 0; fi; f="$d/delivery.json"; rm -rf -- "$f"', 'sh'] }}
       changed_when: true
     # The run and its read; the reviewer's restore follows whatever happened in them.
     - name: Run the turn and read it back
@@ -803,19 +804,21 @@
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
         # The receipts the turn left under the Git directory (docs/reference/tasks.md#handoffs): each is read once and removed, so a
-        # receipt never counts for two turns. A link or a folder is removed unread and, like an absent file, leaves no receipt: its
-        # read exits 3. A file that is there, also an empty one, is a receipt; one over 64 KiB passes on as `too large`, one that is not
-        # UTF-8 as `not utf-8`. The result step validates a delivery receipt field by field, and the Gateway alone a review receipt.
+        # receipt never counts for two turns. A link, as the receipt folder or as the receipt, or a folder is removed itself, unread and
+        # unfollowed, and like an absent file leaves no receipt: the read exits 3. A file that is there, also an empty one, is a receipt;
+        # one over 64 KiB passes on as `too large`, one that is not UTF-8 as `not utf-8`. The result step validates it field by field.
+        # The reviewer posts its review receipt to the Gateway instead (docs/reference/tasks.md#the-review-receipt).
         - name: Read and remove the handoff receipts
           ansible.builtin.command:
             argv: >-
               {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
-                 'f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$1.json") || exit 3;
-                  if [ ! -f "$f" ] || [ -L "$f" ]; then rm -rf -- "$f"; exit 3; fi;
+                 'd=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path orbit-handoff) || exit 3;
+                  if [ -L "$d" ]; then rm -f -- "$d"; exit 3; fi; f="$d/$1.json";
+                  if [ -L "$f" ] || [ ! -f "$f" ]; then rm -rf -- "$f"; exit 3; fi;
                   if [ "$(wc -c < "$f")" -gt 65536 ]; then printf "too large";
                   elif iconv -f UTF-8 -t UTF-8 -- "$f" >/dev/null 2>&1; then cat -- "$f"; else printf "not utf-8"; fi; rm -f -- "$f"',
                  'sh', item] }}
-          loop: [delivery, review]
+          loop: [delivery]
           register: handoff_receipts
           changed_when: true
           failed_when: false

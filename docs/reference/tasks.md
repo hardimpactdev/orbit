@@ -1183,9 +1183,9 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 {"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
 ```
 
-Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes both receipt paths; a copy where they cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json` once and removes them. A link or a folder is removed unread. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it. A link, as the `orbit-handoff` folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
 
-The turn result returns them as `receipts.delivery` and `receipts.review`, or null. A delivery receipt keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative. A review receipt is its raw text: Swamp neither validates nor redacts it; the turn's `result` resource carries it like the transcript, so the Gateway reads it whether or not the run history inlines the output. The Gateway alone validates it ([The review gate](#the-review-gate)).).
+The turn result returns it as `receipts.delivery`, or null. It keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative.
 
 #### The delivery gate
 
@@ -1210,29 +1210,19 @@ A reviewer turn of a gated group requires the subtask's latest delivery row to b
 
 #### The review receipt
 
-A reviewer turn of a gated group writes the review receipt to `$(git rev-parse --git-path orbit-handoff/review.json)`. Its prompt names the path and the schema. `verdict` is `approve` or `changes`. `findings` lists the blocking findings, each with a `summary` of one line, and nothing else:
+A reviewer turn of a gated group posts its review receipt to the Gateway, the way it sends [its pull request text](#the-reviewers-pull-request-text): `POST $ORBIT_COPY_API/handoff` with its copy key. Its prompt shows the exact `curl` call. The body holds no free text, so it needs no redaction:
 
 ```json
-{"verdict": "changes", "findings": [{"summary": "The export drops the header row."}]}
+{"verdict": "changes", "findings": 2}
 ```
+
+`verdict` is `approve` or `changes`. `findings` is the number of blocking findings, an integer from 0 to 100: 0 for `approve`, at least 1 for `changes`. Any other body answers `validation.failed` (422), and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts.
 
 #### The review gate
 
-When a reviewer turn of a gated group ends `done`, the Gateway validates the receipt the turn returned and writes one review row. An accepted row keeps the receipt's verdict and its number of findings, so both read from it. A rejected row keeps no receipt content, only its reason. A turn that fails writes none.
+When a reviewer turn of a gated group ends `done`, the Gateway writes one review row. It is accepted with the posted verdict and number of findings as its receipt, or rejected as `no_receipt` when the turn posted none. A turn that fails writes none. A rejected review counts for no review round: the retry repeats the same round.
 
-The Gateway is the one validator. It validates the raw text in the turn's projection before it stores anything, with the verdict compared on its raw value. Each summary must hold a visible character once control characters and terminal formatting are removed. Text that is not valid UTF-8 JSON, such as half a surrogate pair or `too large`, is invalid.
-
-Only a valid receipt, reduced to its `verdict` and its number of findings, is stored, in the review row and in the turn's result. A rejected receipt stores only its reason there. The Gateway never stores the raw text; Swamp's run record keeps it for its retention time, as it keeps the transcript. A rejected review counts for no review round: the retry repeats the same round.
-
-| Result | When |
-| --- | --- |
-| Accepted | The receipt matches the schema, with at least one finding for `changes` and none for `approve` |
-| `no_receipt` | The turn left no receipt |
-| `invalid_receipt` | The receipt is not JSON, or does not match the schema: another verdict, a missing or extra field, `findings` that is not a JSON list, or a finding without a non-empty `summary` |
-| `changes_without_finding` | The verdict is `changes` and `findings` is empty |
-| `approve_with_finding` | The verdict is `approve` and `findings` is not empty |
-
-A rejected review is sent again. The admissions of a gated group read the rows and refuse a skipped gate with `tasks.handoff_required` (409).
+A rejected review is sent again: the caller sends the reviewer turn again. The admissions of a gated group read the rows and refuse a skipped gate with `tasks.handoff_required` (409).
 
 An implementer turn after an accepted delivery waits until an accepted review row comes after it. An accepted `changes` lets the implementer fix the findings. Its next accepted delivery waits for a review again. A newer handoff check of the subtask that ended with `tasks.check_conflict` also lets the turn run, so the merge turn stays allowed. No other check outcome does.
 

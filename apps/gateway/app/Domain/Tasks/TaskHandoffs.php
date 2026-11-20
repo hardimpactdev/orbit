@@ -12,7 +12,6 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskHandoff;
 use App\Support\ValidatedData;
-use JsonException;
 
 /**
  * The handoff gates of a group that left backlog after they shipped (docs/reference/tasks.md#handoffs). The handoff check is the
@@ -31,16 +30,6 @@ final readonly class TaskHandoffs
     public const string ClaimDisproved = 'claim_disproved';
 
     public const string CheckFailed = 'check_failed';
-
-    /** The rejection reasons of a review, in the order the gate tries them; a review without a receipt is NoReceipt. */
-    public const string InvalidReceipt = 'invalid_receipt';
-
-    public const string ChangesWithoutFinding = 'changes_without_finding';
-
-    public const string ApproveWithFinding = 'approve_with_finding';
-
-    /** Where the reviewer writes its review receipt, under the copy's Git directory: `git rev-parse --git-path` names it. */
-    public const string ReviewPath = 'orbit-handoff/review.json';
 
     /** The results `bin/task-check` gives a part. */
     public const array PartResults = ['passed', 'FAILED', 'skipped', 'not selected'];
@@ -93,7 +82,8 @@ final readonly class TaskHandoffs
 
     /**
      * Writes the handoff row of a copy turn of a gated group that ended: a turn that asked leaves an accepted question row whose
-     * receipt holds its questions; a reviewer turn that ended done leaves a review row, accepted or rejected with one reason. A failed
+     * receipt holds its questions; a reviewer turn that ended done leaves a review row, accepted with the receipt it posted, or
+     * rejected as `no_receipt` when it posted none. A failed
      * turn hands nothing off and writes none; an implementer turn that ended done waits for the delivery gate.
      *
      * @param  array<string, mixed>  $result  the turn's result, its state already one of done, asking_for_input or failed
@@ -108,16 +98,10 @@ final readonly class TaskHandoffs
         if ($result['state'] === AgentThreadState::AskingForInput->value && $questions !== []) {
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Question, 'receipt' => ['questions' => $questions]]);
         } elseif ($result['state'] === AgentThreadState::Done->value && ($turn->input['role'] ?? null) === TaskThreadRole::Reviewer->value) {
-            $receipts = $result['receipts'] ?? null;
-            // The turn's projection already validated the raw receipt and kept the verdict and the number of findings as JSON, or the
-            // reason alone (stored()): the row takes its decision.
-            $stored = is_array($receipts) ? $receipts['review'] ?? null : null;
-            $kept = is_string($stored) ? json_decode($stored, true) : null;
-            [$receipt, $reason] = match (true) {
-                ! is_string($stored) => [null, self::NoReceipt],
-                is_array($kept) => [$kept, ''],
-                default => [null, $stored],
-            };
+            // The receipt the turn posted to its check, already validated at the post; the last post counts (RecordTaskReviewReceiptAction).
+            $receipt = TaskCheck::query()->where('review_receipt_operation_id', $turn->id)->value('review_receipt');
+            $receipt = is_string($receipt) ? json_decode($receipt, true) : $receipt;
+            $reason = is_array($receipt) ? '' : self::NoReceipt;
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Review, 'receipt' => $receipt,
                 'rejected' => $reason !== '', 'rejection_reason' => $reason]);
         }
@@ -214,56 +198,6 @@ final readonly class TaskHandoffs
         }
 
         return ['commit' => $commit, 'tree' => $tree, 'parts' => $parts];
-    }
-
-    /**
-     * What a turn's result keeps of its review receipt: the valid receipt as its verdict and its number of
-     * findings, as JSON, or the reason alone that its gate rejects it for. The raw text is never kept.
-     */
-    public static function stored(string $text): string
-    {
-        [$receipt, $reason] = self::review($text);
-
-        return $reason === '' ? json_encode($receipt, JSON_THROW_ON_ERROR) : $reason;
-    }
-
-    /**
-     * The one validator of a review receipt: its raw text as the turn returned it, and the gate's reason. It is valid when it is a JSON
-     * object of exactly `verdict` (the raw value `approve` or `changes`) and `findings`, a JSON list of objects of exactly a `summary`
-     * string that holds a visible character once control characters and terminal formatting are removed, with a finding only for
-     * `changes`. JSON objects decode as objects, so an object never passes for a list; text that is not valid UTF-8 JSON, such as half
-     * a surrogate pair or Swamp's `too large` and `not utf-8`, is invalid. A valid receipt keeps only its verdict and its number of
-     * findings, never a summary; a rejected one keeps nothing.
-     *
-     * @return array{0: array{verdict: string, findings: int}|null, 1: string}
-     */
-    private static function review(mixed $text): array
-    {
-        if (! is_string($text)) {
-            return [null, self::NoReceipt];
-        }
-        try {
-            $receipt = json_decode($text, false, 16, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $receipt = null;
-        }
-        $findings = $receipt instanceof \stdClass ? $receipt->findings ?? null : null;
-        $keys = $receipt instanceof \stdClass ? array_keys(get_object_vars($receipt)) : [];
-        sort($keys);
-        $visible = array_filter(is_array($findings) ? $findings : [], static fn (mixed $finding): bool => $finding instanceof \stdClass
-            && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary)
-            && preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', (string) preg_replace('/\e\[[0-?]*[ -\/]*[@-~]/', '', $finding->summary)) === 1);
-        if (! $receipt instanceof \stdClass || $keys !== ['findings', 'verdict'] || ! in_array($receipt->verdict, ['approve', 'changes'], true)
-            || ! is_array($findings) || count($visible) !== count($findings)) {
-            return [null, self::InvalidReceipt];
-        }
-        $reason = match (true) {
-            $receipt->verdict === 'changes' && $findings === [] => self::ChangesWithoutFinding,
-            $receipt->verdict === 'approve' && $findings !== [] => self::ApproveWithFinding,
-            default => '',
-        };
-
-        return [$reason === '' ? ['verdict' => $receipt->verdict, 'findings' => count($findings)] : null, $reason];
     }
 
     /**

@@ -41,7 +41,7 @@ final readonly class AiRouterModelForwarder
     public const string TableUnit = 'orbit-ai-router-forwarder-table.service';
 
     /** The Orbit routes of a task copy, under {@see TaskKey::Path}: each one exact path, sent to `/api/v1/copy/<route>`. */
-    public const array OrbitRoutes = ['whoami', 'pull-request'];
+    public const array OrbitRoutes = ['whoami', 'pull-request', 'handoff'];
 
     /** The origin containers on the Node call. */
     public function origin(string $address): string

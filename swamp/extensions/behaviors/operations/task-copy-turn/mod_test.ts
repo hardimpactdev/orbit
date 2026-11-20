@@ -259,27 +259,19 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
     try {
         const context = { writeResource: () => Promise.resolve(undefined) };
         const none = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(none.turn.receipts, { delivery: null, review: null });
+        assertEquals(none.turn.receipts, { delivery: null });
         // A SHA-256 object ID stays whole, though a credential pattern would match it; only the receipt's own fields are kept.
         const receipt = { commit: "a".repeat(64), tree: "b".repeat(64), parts: [{ name: "pest", result: "passed" as const, seconds: 1.5 }] };
         Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery: JSON.stringify({ ...receipt, marker: "unrelated" }) }));
         const left = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(left.turn.receipts, { delivery: receipt, review: null });
-        // A receipt is agent text: a part name and a review receipt are redacted.
+        assertEquals(left.turn.receipts, { delivery: receipt });
+        // A receipt is agent text: a part name is redacted.
         const secret = "ghp_" + "a1B2".repeat(9);
         Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({
             delivery: JSON.stringify({ ...receipt, parts: [{ name: secret, result: "passed", seconds: 1 }] }),
-            review: `{"verdict": "${secret}"}`,
         }));
         const redacted = await behavior.methods.result.execute({ folder }, context);
         assertEquals(JSON.stringify(redacted.turn.receipts?.delivery).includes(secret), false);
-        // A review receipt passes on raw, in the method's output and in its resource, for the Gateway to validate.
-        const written: unknown[] = [];
-        const recording = { writeResource: (_spec: string, _name: string, value: unknown) => Promise.resolve(written.push(value)) };
-        const raw = '{"verdict":"approve","findings":[],"password":\n"hunter2"}';
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: raw }));
-        assertEquals((await behavior.methods.result.execute({ folder }, recording)).turn.receipts?.review, raw);
-        assertEquals((written.at(-1) as { turn: { receipts: { review: string } } }).turn.receipts.review, raw);
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),

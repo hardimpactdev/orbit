@@ -152,9 +152,7 @@ final readonly class TaskTurnPrompt
             TEXT;
 
         // A gated group's review counts only with its receipt (docs/reference/tasks.md#the-review-gate).
-        $receipt = ($subtask->parent->handoffs_gated ?? false) ? ["Before this turn ends, write your review receipt to\n`$(git rev-parse --git-path ".TaskHandoffs::ReviewPath.")`, as JSON:\n"
-            .'{"verdict": "approve" or "changes", "findings": [{"summary": "<one line>"}]}'
-            ."\nList each blocking finding, and only those, with a summary of one line. With no\nblocking finding, approve with an empty list. Without a valid receipt the review\ndoes not count."] : [];
+        $receipt = ($subtask->parent->handoffs_gated ?? false) ? [TaskTurn::ReviewReceiptRule] : [];
 
         return self::limited([
             $opening,

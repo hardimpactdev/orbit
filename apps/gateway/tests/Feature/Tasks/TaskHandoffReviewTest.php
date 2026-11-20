@@ -9,6 +9,7 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Instances\ContainerServer;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -16,15 +17,19 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskHandoffs;
 use App\Domain\Tasks\TaskHandoffType;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurn;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Jobs\Operations\StartAdmittedSwampRun;
+use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\TaskCheck;
 use App\Models\TaskHandoff;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\TaskDoneFixture;
 
@@ -70,21 +75,39 @@ function reviewStart(TaskDoneFixture $world, string $role): Operation|string
 }
 
 /**
- * The turn's run ended in STATE with the review receipt REVIEW as the copy turn returns it, and asked QUESTIONS.
+ * The reviewer posts BODY from copy INSTANCE, as its prompt shows: with the copy key its model environment carries, from its own Node.
  *
+ * @param  array<string, mixed>  $body
+ */
+function reviewPosts(int|TaskDoneFixture $instance, array $body): TestResponse
+{
+    $instance = Instance::query()->with('node')->findOrFail($instance instanceof TaskDoneFixture ? $instance->instance->id : $instance);
+    $environment = app(InstanceContainer::class)->modelEnvironment(InstanceRuntime::query()->where('instance_id', $instance->id)->sole(), 'placeholder');
+    preg_match('/^ORBIT_COPY_KEY=([0-9a-f]{64})$/m', $environment, $match);
+
+    return test()->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->withToken($match[1] ?? '')->postJson('/api/v1/copy/handoff', $body);
+}
+
+/**
+ * The turn posts the review receipt REVIEW while it runs, then its run ends in STATE and asked QUESTIONS.
+ *
+ * @param  array{verdict: string, findings: int}|null  $review
  * @param  list<array<string, mixed>>  $questions
  */
-function reviewEnded(Operation $turn, string $state, ?string $review = null, array $questions = [], string $status = 'succeeded'): Operation
+function reviewEnded(Operation $turn, string $state, ?array $review = null, array $questions = [], string $status = 'succeeded'): Operation
 {
     $turn->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-turn']])->save();
+    if ($review !== null) {
+        reviewPosts(ValidatedData::integer($turn->input['instance_id']), $review)->assertStatus(202);
+    }
 
     return app(TaskTurnProjection::class)->apply($turn->refresh(), ['status' => $status, 'run_id' => 'run-turn', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['turn' => ['state' => $state, 'error' => null, 'ended' => true, 'run_id' => 'run:1', 'launched' => true,
-            'questions' => $questions, 'transcript' => [], 'receipts' => ['delivery' => null, 'review' => $review]]]]);
+            'questions' => $questions, 'transcript' => [], 'receipts' => ['delivery' => null]]]]);
 }
 
-/** A reviewer turn ends done and leaves the review receipt RECEIPT; returns its row. */
-function reviewed(TaskDoneFixture $world, ?string $receipt): TaskHandoff
+/** A reviewer turn posts RECEIPT, or nothing, and ends done; returns its row. */
+function reviewed(TaskDoneFixture $world, ?array $receipt): TaskHandoff
 {
     $turn = reviewStart($world, 'reviewer');
     expect($turn)->toBeInstanceOf(Operation::class);
@@ -93,90 +116,74 @@ function reviewed(TaskDoneFixture $world, ?string $receipt): TaskHandoff
     return TaskHandoff::query()->where('operation_id', $turn->id)->sole();
 }
 
-/** @param list<string> $findings */
-function reviewReceipt(string $verdict, array $findings = []): string
+/**
+ * The receipt a reviewer posts for VERDICT and FINDINGS, or null where the endpoint would refuse it: the turn then posts nothing.
+ *
+ * @param  list<string>  $findings
+ * @return array{verdict: string, findings: int}|null
+ */
+function reviewReceipt(string $verdict, array $findings = []): ?array
 {
-    return json_encode(['verdict' => $verdict, 'findings' => array_map(static fn (string $summary): array => ['summary' => $summary], $findings)], JSON_THROW_ON_ERROR);
+    return ($verdict === 'approve') === ($findings === []) ? ['verdict' => $verdict, 'findings' => count($findings)] : null;
 }
 
-it('accepts a review receipt whose verdict matches its findings, and keeps the verdict and the findings readable', function (string $receipt, string $verdict, int $findings): void {
+it('accepts the review receipt the reviewer posted, with its verdict and number of findings', function (string $verdict, int $findings): void {
     $world = reviewWorld();
 
-    $row = reviewed($world, $receipt);
+    $row = reviewed($world, ['verdict' => $verdict, 'findings' => $findings]);
 
     expect($row->type)->toBe(TaskHandoffType::Review)
         ->and($row->rejected)->toBeFalse()
         ->and($row->rejection_reason)->toBe('')
         ->and($row->task_id)->toBe($world->subtask->id)
         ->and($row->task_check_id)->toBeNull()
-        ->and($row->receipt['verdict'])->toBe($verdict)
-        // Only the verdict and the number of findings are stored, in the row and in the turn's result: never a summary or the raw text.
         ->and($row->receipt)->toBe(['verdict' => $verdict, 'findings' => $findings])
-        ->and(Operation::query()->findOrFail($row->operation_id)->result['receipts']['review'])->toBe(json_encode($row->receipt, JSON_THROW_ON_ERROR));
+        ->and($world->check->refresh()->review_receipt_operation_id)->toBe($row->operation_id);
 })->with([
-    'approve with no finding' => [reviewReceipt('approve'), 'approve', 0],
-    'changes with two findings' => [reviewReceipt('changes', ['The export drops the header row.', 'No test covers an empty board.']), 'changes', 2],
-    'fields in another order' => ['{"findings":[],"verdict":"approve"}', 'approve', 0],
-    'an ordinary finding beside a summary that holds a secret' => [reviewReceipt('changes', ['The export drops the header row.', 'The proxy drops the Authorization: Bearer ghp_'.str_repeat('a1B2', 9).' header.']), 'changes', 2],
+    'approve with no finding' => ['approve', 0],
+    'changes with two findings' => ['changes', 2],
+    'changes with the most findings' => ['changes', 100],
 ]);
 
-it('stores no summary of an accepted receipt, so no secret in one reaches a record', function (string $secret): void {
-    $row = reviewed(reviewWorld(), reviewReceipt('changes', ["The proxy drops the header {$secret}."]));
+it('rejects a review whose turn posted no receipt, and the turn still succeeds', function (): void {
+    $row = reviewed(reviewWorld(), null);
 
-    expect($row->rejected)->toBeFalse()
-        ->and($row->receipt)->toBe(['verdict' => 'changes', 'findings' => 1])
-        ->and(json_encode(Operation::query()->findOrFail($row->operation_id)->result))->not->toContain($secret)->not->toContain('drops the header');
-})->with([
-    'a standalone 64-hex credential' => [str_repeat('a1', 32)],
-    'a JWT' => ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl'],
-    'a cookie header value' => ['Cookie: session=0123456789abcdef'],
-    'a punctuated installation token' => ['ghs_abcdEFGH1234.wxyz-5678IJKL'],
-]);
+    expect($row->only(['type', 'rejected', 'rejection_reason', 'receipt']))
+        ->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => TaskHandoffs::NoReceipt, 'receipt' => null])
+        ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded);
+});
 
-it('rejects a review receipt with one reason', function (?string $receipt, string $reason): void {
+it('refuses a receipt that does not fit the schema with validation.failed, and the reviewer can post again', function (array $body, string $field): void {
     $world = reviewWorld();
+    $turn = reviewStart($world, 'reviewer');
 
-    $row = reviewed($world, $receipt);
+    reviewPosts($world, $body)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors([$field], 'error.details');
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(202);
+    reviewEnded($turn, 'done');
 
-    expect($row->only(['type', 'rejected', 'rejection_reason']))->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => $reason])
-        // A rejected receipt never fails the turn: its Operation ends.
-        ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded)
-        // A rejected row keeps no receipt content, nor does the turn's stored result: it keeps the reason alone.
-        ->and($row->receipt)->toBeNull()
-        ->and(Operation::query()->findOrFail($row->operation_id)->result['receipts']['review'] ?? null)
-        ->toBe($receipt === null ? null : ($reason === TaskHandoffs::InvalidReceipt ? 'invalid_receipt' : $reason));
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => 0]);
 })->with([
-    'no receipt' => [null, TaskHandoffs::NoReceipt],
-    'text that is not JSON' => ['VERDICT: APPROVE', TaskHandoffs::InvalidReceipt],
-    'a JSON list' => ['[]', TaskHandoffs::InvalidReceipt],
-    'an unknown verdict' => ['{"verdict":"maybe","findings":[]}', TaskHandoffs::InvalidReceipt],
-    'no findings field' => ['{"verdict":"approve"}', TaskHandoffs::InvalidReceipt],
-    'findings that are no list' => ['{"verdict":"changes","findings":{"a":{"summary":"x"}}}', TaskHandoffs::InvalidReceipt],
-    'a finding without a summary' => ['{"verdict":"changes","findings":[{"file":"a.php"}]}', TaskHandoffs::InvalidReceipt],
-    'a finding with an empty summary' => ['{"verdict":"changes","findings":[{"summary":" "}]}', TaskHandoffs::InvalidReceipt],
-    'a field outside the schema' => ['{"verdict":"approve","findings":[],"note":"x"}', TaskHandoffs::InvalidReceipt],
-    'an empty object for findings' => ['{"verdict":"approve","findings":{}}', TaskHandoffs::InvalidReceipt],
-    'an object with list keys for findings' => ['{"verdict":"changes","findings":{"0":{"summary":"Missing column"}}}', TaskHandoffs::InvalidReceipt],
-    'text that names a reason' => ['approve_with_finding', TaskHandoffs::InvalidReceipt],
-    'a file Swamp found too large' => ['too large', TaskHandoffs::InvalidReceipt],
-    'an empty file' => ['', TaskHandoffs::InvalidReceipt],
-    'a newline-only file' => ["\n", TaskHandoffs::InvalidReceipt],
-    'a file Swamp found not UTF-8' => ['not utf-8', TaskHandoffs::InvalidReceipt],
-    'a summary of terminal formatting only' => [reviewReceipt('changes', ["\u{1b}[31m\u{1b}[0m"]), TaskHandoffs::InvalidReceipt],
-    'a summary of control characters only' => [reviewReceipt('changes', ["\u{7}\u{1b}\u{7f}"]), TaskHandoffs::InvalidReceipt],
-    'terminal formatting around JSON' => ["\u{1b}[31m".reviewReceipt('approve'), TaskHandoffs::InvalidReceipt],
-    'a secret under a field named key' => ['{"verdict":"approve","findings":[],"key":"hunter2"}', TaskHandoffs::InvalidReceipt],
-    'a secret under a nested field named keys' => ['{"verdict":"approve","findings":[{"summary":"x","keys":["hunter2"]}]}', TaskHandoffs::InvalidReceipt],
-    'nesting deeper than the decoder allows' => ['{"verdict":"approve","findings":[],"x":'.str_repeat('[', 3000).str_repeat(']', 3000).'}', TaskHandoffs::InvalidReceipt],
-    'a blank summary beside an ordinary one' => [reviewReceipt('changes', ['The export drops the header row.', " \t"]), TaskHandoffs::InvalidReceipt],
-    'a NUL-only summary beside an ordinary one' => [reviewReceipt('changes', ['The export drops the header row.', "\0"]), TaskHandoffs::InvalidReceipt],
-    'a summary that ends in half a surrogate pair' => ['{"verdict":"changes","findings":[{"summary":"The export drops the header row."},{"summary":"Missing \\ud83d"}]}', TaskHandoffs::InvalidReceipt],
-    'a verdict in terminal formatting' => [json_encode(['verdict' => "\u{1b}[31mapprove\u{1b}[0m", 'findings' => []], JSON_THROW_ON_ERROR), TaskHandoffs::InvalidReceipt],
-    'a secret under a field of another name' => ["{\"verdict\":\"approve\",\"findings\":[],\"password\":\n\"hunter2\"}", TaskHandoffs::InvalidReceipt],
-    'a number that does not encode again' => ['{"verdict":"approve","findings":[],"size":1e400}', TaskHandoffs::InvalidReceipt],
-    'changes with no finding' => [reviewReceipt('changes'), TaskHandoffs::ChangesWithoutFinding],
-    'approve with a finding' => [reviewReceipt('approve', ['The export drops the header row.']), TaskHandoffs::ApproveWithFinding],
+    'no verdict' => [['findings' => 0], 'verdict'],
+    'another verdict' => [['verdict' => 'maybe', 'findings' => 0], 'verdict'],
+    'no findings' => [['verdict' => 'approve'], 'findings'],
+    'findings that are no integer' => [['verdict' => 'changes', 'findings' => 'two'], 'findings'],
+    'a negative count' => [['verdict' => 'changes', 'findings' => -1], 'findings'],
+    'more than 100 findings' => [['verdict' => 'changes', 'findings' => 101], 'findings'],
+    'approve with a finding' => [['verdict' => 'approve', 'findings' => 1], 'findings'],
+    'changes with no finding' => [['verdict' => 'changes', 'findings' => 0], 'findings'],
 ]);
+
+it('counts the last post of a turn, and admits a post only during a running reviewer turn', function (): void {
+    $world = reviewWorld();
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
+
+    $turn = reviewStart($world, 'reviewer');
+    reviewPosts($world, ['verdict' => 'changes', 'findings' => 2])->assertStatus(202)->assertJsonPath('data.operation_id', $turn->id);
+    reviewEnded($turn, 'done', ['verdict' => 'approve', 'findings' => 0]);
+
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => 0]);
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
+});
 
 it('writes an accepted question row that holds the question, for any role, and no row for a failed turn or an ungated group', function (): void {
     $question = ['request_id' => 'req-1', 'run_id' => 'run:1', 'header' => 'Scope', 'question' => 'Does the export include archived cards?',
@@ -324,13 +331,13 @@ it('counts only an accepted review for the round of the next review in a gated g
     expect(reviewStart($world, 'reviewer')->input['turn']['prompt'])->toContain('This is review round 2 of this subtask');
 });
 
-it('names the review receipt path and its schema in the prompt of a gated group only', function (bool $gated): void {
+it('shows the exact call that posts the review receipt in the prompt of a gated group only', function (bool $gated): void {
     $world = reviewWorld($gated);
 
     $turn = reviewStart($world, 'reviewer');
 
     $prompt = $turn->input['turn']['prompt'];
-    expect(str_contains($prompt, '`$(git rev-parse --git-path orbit-handoff/review.json)`'))->toBe($gated)
-        ->and(str_contains($prompt, '{"verdict": "approve" or "changes", "findings": [{"summary": "<one line>"}]}'))->toBe($gated)
+    expect(str_contains($prompt, TaskTurn::ReviewReceiptRule))->toBe($gated)
+        ->and(TaskTurn::ReviewReceiptRule)->toContain('"$ORBIT_COPY_API/handoff"')->toContain('{"verdict": "changes", "findings": 2}')
         ->and(strlen($prompt) < TaskTurnPrompt::Limit)->toBeTrue();
 })->with(['gated' => [true], 'ungated' => [false]]);

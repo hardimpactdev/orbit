@@ -82,10 +82,6 @@ final readonly class TaskTurnProjection implements DirectOperationProjection, Di
                     $data['status'] = ($data['status'] ?? null) === 'succeeded' ? 'failed' : ($data['status'] ?? null);
                 }
                 $result = [...array_diff_key($result, ['diagnostic' => true]), ...self::error($result)];
-                // The raw review receipt is validated before anything is stored: only a valid receipt's verdict and number of findings, or the reason, stays.
-                if (is_array($result['receipts'] ?? null) && is_string($result['receipts']['review'] ?? null)) {
-                    $result['receipts']['review'] = TaskHandoffs::stored($result['receipts']['review']);
-                }
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];

@@ -13,7 +13,7 @@ use App\Models\InstanceRuntime;
  */
 final readonly class TaskKey
 {
-    /** The path in the container under the forwarder's origin; the forwarder sends each of its two routes to `/api/v1/copy/...`. */
+    /** The path in the container under the forwarder's origin; the forwarder sends each of its routes to `/api/v1/copy/...`. */
     public const string Path = '/orbit/v1/copy';
 
     /** A new key for the runtime's copy. The value goes only into the copy's model environment, through the vault. */

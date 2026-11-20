@@ -44,6 +44,15 @@ final readonly class TaskTurn
         .'Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.';
 
     /**
+     * How a reviewer in a gated group's copy posts its review receipt (docs/reference/tasks.md#the-review-receipt): its verdict and its
+     * number of blocking findings, through its copy key. The reviewer's prompt holds it after its review rules (TaskTurnPrompt::reviewer).
+     */
+    public const string ReviewReceiptRule = 'Before this turn ends, post your review receipt: your verdict and the number of blocking findings you '
+        .'reported, 0 for approve and at least 1 for changes. . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" '
+        .'-H "Content-Type: application/json" -d \'{"verdict": "changes", "findings": 2}\' "$ORBIT_COPY_API/handoff" (set the verdict, '
+        .'approve or changes, and the count first). A second post replaces the first. Without a receipt the review does not count.';
+
+    /**
      * How a copy thread's external_id came to be (docs/reference/development-containers.md#admission). Capture sets a UUID and marks it
      * `admitted`: T3 may not hold it yet. A turn that reports that same ID back makes it `confirmed`. A reported ID that replaced the row's
      * ID, or any report on a row made before the mark, makes it `overwritten`.
