@@ -55,6 +55,9 @@ enum Item {
     /// The Orbit root from `source`, linked by its name and its OpenSSL hash in `hash_directory`, and appended to that
     /// folder's bundle once. A link to an older root under another hash goes.
     Trust { source: String, path: String, hash_directory: String, uid: u32, gid: u32, mode: String },
+    /// A folder made again with exactly these files, owned by root (files 0644, folders 0755), and an empty `.skills`
+    /// folder: the agent instructions a Project gives its clones. A file the Project removed is gone.
+    Folder { path: String, files: Vec<FolderFile> },
     /// An entry in a user's NSS store, when the user's home exists in the copy and the trust module's library is the
     /// version the entry needs.
     Nss {
@@ -69,6 +72,15 @@ enum Item {
         library: String,
         version: String,
     },
+}
+
+/// One file of a [`Item::Folder`], by its path inside the folder.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FolderFile {
+    path: String,
+    /// The file's content: a blob, because instructions are kilobytes and an order holds at most 4 KB.
+    blob: crate::BlobRef,
 }
 
 /// The user and group that own a link's missing folders.
@@ -86,6 +98,7 @@ struct Owner {
 ///
 /// `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`,
 /// `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`,
+/// `instance.agent_folder_refused`,
 /// `schedule.container_clone_cleanup_failed` or `instance.prepare_failed`.
 pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
     let input: PrepareInput =
@@ -137,6 +150,15 @@ fn check(input: &PrepareInput) -> Result<(), String> {
                     return Err(format!("{source} is not a trust source"));
                 }
                 (vec![path, hash_directory], vec![mode])
+            }
+            Item::Folder { path, files } => {
+                for file in files {
+                    let inside = &file.path;
+                    if inside.is_empty() || inside.starts_with('/') || inside.split('/').any(|part| part.is_empty() || part == "." || part == "..") || inside.bytes().any(|b| b.is_ascii_control()) {
+                        return Err(format!("{inside} is not a path inside {path}"));
+                    }
+                }
+                (vec![path], vec![])
             }
             Item::Nss { home, directories, path, mode, directory_mode, .. } => {
                 let mut paths = vec![home.as_str(), path.as_str()];
@@ -242,6 +264,18 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             };
             files.incus.change(&["--project", files.project, "file", "create", "--type=symlink", "--force", &format!("{}{path}", files.name), target])?;
             Ok(made + 1)
+        }
+        Item::Folder { path, files: entries } => {
+            if files.kind(path, "instance.agent_folder_refused")?.is_some_and(|kind| kind != "directory") {
+                return Err(Failure::new("instance.agent_folder_refused", path.clone()));
+            }
+            let _ = files.incus.change(&["--project", files.project, "file", "delete", "--force", &format!("{}{path}", files.name)]);
+            for entry in entries {
+                let content = system.blob(&entry.blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?;
+                files.push(&format!("{path}/{}", entry.path), 0, 0, "0644", &content, Folders::Root)?;
+            }
+            files.incus.change(&["--project", files.project, "file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755", &format!("{}{path}/.skills", files.name)])?;
+            Ok(u32::try_from(entries.len()).unwrap_or(u32::MAX) + 1)
         }
         Item::Trust { source, path, hash_directory, uid, gid, mode } => trust(system, files, source, path, hash_directory, (*uid, *gid, mode)),
         Item::Nss { home, directories, path, entry, uid, gid, mode, directory_mode, library, version } => {
@@ -356,7 +390,7 @@ fn installed(status: &str, package: &str) -> Option<String> {
 
 /// Who owns the missing folders above a pushed file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Folders {
+pub(crate) enum Folders {
     /// Incus makes them, owned by root.
     Root,
     /// They exist already.
@@ -370,18 +404,18 @@ fn four(mode: &str) -> String {
 }
 
 /// A regular file of the copy with its owner and mode.
-struct Held {
-    content: Vec<u8>,
-    uid: u32,
-    gid: u32,
-    mode: String,
+pub(crate) struct Held {
+    pub(crate) content: Vec<u8>,
+    pub(crate) uid: u32,
+    pub(crate) gid: u32,
+    pub(crate) mode: String,
 }
 
 /// The copy's files through the Incus files API.
-struct Files<'a, S: System> {
-    incus: &'a Incus<'a, S>,
-    project: &'a str,
-    name: &'a str,
+pub(crate) struct Files<'a, S: System> {
+    pub(crate) incus: &'a Incus<'a, S>,
+    pub(crate) project: &'a str,
+    pub(crate) name: &'a str,
 }
 
 impl<S: System> Files<'_, S> {
@@ -390,7 +424,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// What `path` is in the copy, or None when it is missing.
-    fn kind(&self, path: &str, refused: &'static str) -> Result<Option<String>, Failure> {
+    pub(crate) fn kind(&self, path: &str, refused: &'static str) -> Result<Option<String>, Failure> {
         let head = self
             .incus
             .curl(&["--output", "/dev/null", "--write-out", "%{http_code} %header{x-incus-type}", &self.url(path)])
@@ -404,7 +438,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// A regular file of the copy, or None when it is missing. A link or any other type refuses.
-    fn read(&self, path: &str, refused: &'static str) -> Result<Option<Held>, Failure> {
+    pub(crate) fn read(&self, path: &str, refused: &'static str) -> Result<Option<Held>, Failure> {
         let Some(kind) = self.kind(path, refused)? else { return Ok(None) };
         if kind != "file" {
             return Err(Failure::new(refused, format!("{path} is a {kind}")));
@@ -420,7 +454,7 @@ impl<S: System> Files<'_, S> {
         Ok(Some(Held { content, uid, gid, mode: four(mode) }))
     }
 
-    fn pull(&self, path: &str) -> Result<Option<Vec<u8>>, Failure> {
+    pub(crate) fn pull(&self, path: &str) -> Result<Option<Vec<u8>>, Failure> {
         match self.incus.system.run(60, &[crate::INCUS.to_owned(), "--project".to_owned(), self.project.to_owned(), "file".to_owned(), "pull".to_owned(), format!("{}{path}", self.name), "-".to_owned()], None) {
             Ok(text) => Ok(Some(text.into_bytes())),
             Err(detail) if detail.contains("does not exist") || detail.to_ascii_lowercase().contains("not found") => Ok(None),
@@ -433,7 +467,7 @@ impl<S: System> Files<'_, S> {
         Ok(listed.map(|value| value.as_array().map(|rows| rows.iter().filter_map(Value::as_str).map(str::to_owned).collect()).unwrap_or_default()))
     }
 
-    fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], folders: Folders) -> Result<(), Failure> {
+    pub(crate) fn push(&self, path: &str, uid: u32, gid: u32, mode: &str, content: &[u8], folders: Folders) -> Result<(), Failure> {
         let target = format!("{}{path}", self.name);
         let (uid, gid) = (uid.to_string(), gid.to_string());
         let mut argv = vec!["--project", self.project, "file", "push"];
@@ -445,7 +479,7 @@ impl<S: System> Files<'_, S> {
     }
 
     /// The missing folders above `path`, below `/`, `/home` and `/etc`, made for the file's owner.
-    fn parents(&self, path: &str, uid: u32, gid: u32) -> Result<u32, Failure> {
+    pub(crate) fn parents(&self, path: &str, uid: u32, gid: u32) -> Result<u32, Failure> {
         let mut missing = Vec::new();
         let mut parent = path;
         while let Some((above, _)) = parent.rsplit_once('/') {
