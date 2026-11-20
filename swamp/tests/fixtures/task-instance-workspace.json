@@ -113,6 +113,7 @@
       "repository": "example/proof",
       "check_name": null,
       "branch": "task-42-handoff",
+      "handoff_gate": false,
       "ssh_execution": {
         "identity_file": "/var/lib/orbit-swamp/ssh/id_ed25519",
         "target": {

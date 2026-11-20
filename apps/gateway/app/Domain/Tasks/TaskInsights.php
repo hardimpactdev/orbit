@@ -6,8 +6,10 @@ namespace App\Domain\Tasks;
 
 use App\Data\Tasks\TaskInsightsBreakdownRowData;
 use App\Data\Tasks\TaskInsightsBreakdownsData;
+use App\Data\Tasks\TaskInsightsCheckPartData;
 use App\Data\Tasks\TaskInsightsData;
 use App\Data\Tasks\TaskInsightsDayData;
+use App\Data\Tasks\TaskInsightsHandoffsData;
 use App\Data\Tasks\TaskInsightsHourData;
 use App\Data\Tasks\TaskInsightsSummaryData;
 use App\Data\Tasks\TaskInsightsWeekData;
@@ -17,6 +19,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskHandoff;
 use App\Models\TaskQuestion;
 use App\Support\Percentile;
 use App\Support\ValidatedData;
@@ -26,7 +29,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Computes [task insights](/reference/tasks#task-insights) from the ended tasks, their threads, verdicts,
- * handoff checks, and questions. Every number is defined here and nowhere else: `rowsOf` builds the row of each
+ * handoff checks, handoffs, and questions. Every number is defined here and nowhere else: `rowsOf` builds the row of each
  * task group, which `TaskInsightRecorder` stores, and `aggregate` reduces rows to a report, which `TaskInsightTotals` stores.
  * A token count no thread reported is unknown: null, never 0, and every token number counts only the rows whose tokens are known.
  *
@@ -35,7 +38,10 @@ use Illuminate\Support\Collection;
  *     tokens: ?int, cost: ?float, input: ?int, cached: ?int, wasted: ?int, lines: int,
  *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
- *     questions: int, causes: array<string, int>
+ *     questions: int, causes: array<string, int>,
+ *     gated: bool, handoffs: int, subtasks: int, reviewed_subtasks: int, first_review_approved: int, first_review_findings: int,
+ *     handoff_questions: int, rejected_deliveries: array<string, int>, check_parts: list<array{name: string, runs: int, failures: int, seconds: float}>,
+ *     unresolved: bool
  * }
  */
 final class TaskInsights
@@ -46,7 +52,7 @@ final class TaskInsights
      * The only task columns a report reads. A whole row carries briefs and summaries, and twelve weeks of whole rows
      * outgrew the Gateway web runtime's 128M memory limit, which failed the request as `gateway.unhandled`.
      */
-    private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'pr_opened_at', 'lines_added', 'lines_deleted'];
+    private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'pr_opened_at', 'lines_added', 'lines_deleted', 'handoffs_gated'];
 
     /**
      * The periods a report covers, by their name in the API and their length in days; the only list of them.
@@ -159,6 +165,7 @@ final class TaskInsights
                 'id' => self::number($group->id), 'project_id' => self::number($group->project_id),
                 'project' => self::projectCode($codes, self::number($group->project_id)),
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
+                'gated' => (bool) $group->handoffs_gated,
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
                     'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at, 'pr_opened_at' => $group->pr_opened_at]),
             ])->all();
@@ -197,6 +204,7 @@ final class TaskInsights
         foreach ($checkRows as $check) {
             $handoffs[$check->task_id] ??= $check->status === TaskCheckStatus::Passed;
         }
+        $handoffRows = $this->handoffsOf($ids, $children);
         $causes = [];
         foreach (TaskQuestion::query()->whereIn('task_id', $ids)->get(['task_id', 'cause']) as $question) {
             $cause = $question->cause->value ?? 'unknown';
@@ -269,10 +277,153 @@ final class TaskInsights
                 'handoff_passed' => count(array_filter($firstHandoffs)),
                 'questions' => array_sum($groupCauses),
                 'causes' => $groupCauses,
+                'gated' => $group['gated'],
+                ...$handoffRows[$group['id']],
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * The handoff facts of each group, by group id. A group's own id holds the handoffs and checks of a task with no subtask.
+     *
+     * @param  list<int>  $ids
+     * @param  array<int, list<array{id: int, fixup: bool}>>  $children
+     * @return array<int, array{handoffs: int, subtasks: int, reviewed_subtasks: int, first_review_approved: int, first_review_findings: int,
+     *     handoff_questions: int, rejected_deliveries: array<string, int>, check_parts: list<array{name: string, runs: int, failures: int, seconds: float}>, unresolved: bool}>
+     */
+    private function handoffsOf(array $ids, array $children): array
+    {
+        $groupOf = array_combine($ids, $ids);
+        foreach ($children as $groupId => $list) {
+            foreach ($list as $child) {
+                $groupOf[$child['id']] = $groupId;
+            }
+        }
+        $rows = [];
+        foreach (TaskHandoff::query()->whereIn('task_id', array_keys($groupOf))->orderBy('id')
+            ->get(['id', 'task_id', 'type', 'receipt', 'rejected', 'rejection_reason']) as $handoff) {
+            $rows[$groupOf[$handoff->task_id]][] = $handoff;
+        }
+        // Every recorded check counts once, of any kind, whether or not a delivery row names it.
+        $tables = [];
+        foreach (TaskCheck::query()->whereIn('task_id', array_keys($groupOf))->whereNotNull('parts')->orderBy('id')->toBase()->get(['task_id', 'parts']) as $check) {
+            $tables[$groupOf[self::number($check->task_id)]][] = TaskHandoffs::parts(is_string($check->parts) ? json_decode($check->parts, true) : null) ?? [];
+        }
+        $facts = [];
+        foreach ($ids as $groupId) {
+            // A task with no subtask is one unit of work.
+            $facts[$groupId] = self::handoffFacts($rows[$groupId] ?? [], $tables[$groupId] ?? [], max(1, count($children[$groupId] ?? [])));
+        }
+
+        return $facts;
+    }
+
+    /**
+     * The handoff facts of one group from its handoff rows, oldest first, and the part tables of its checks. A subtask's first review
+     * is its first accepted review row, whose receipt holds the verdict and the number of blocking findings. A question row counts each
+     * question of its receipt. A rejected row is resolved when an accepted row of the same subtask and type follows it. A part ran when
+     * it passed or failed, or was skipped after it took time: one skipped before it started, or not selected, records 0 seconds and is no run.
+     *
+     * @param  list<TaskHandoff>  $handoffs
+     * @param  list<list<array{name: string, result: string, seconds: int|float}>>  $tables  the part table of each check
+     * @param  int  $units  the group's subtasks, or 1 for a task with no subtask
+     * @return array{handoffs: int, subtasks: int, reviewed_subtasks: int, first_review_approved: int, first_review_findings: int,
+     *     handoff_questions: int, rejected_deliveries: array<string, int>, check_parts: list<array{name: string, runs: int, failures: int, seconds: float}>, unresolved: bool}
+     */
+    private static function handoffFacts(array $handoffs, array $tables, int $units): array
+    {
+        $firstReviews = [];
+        $rejected = [];
+        $questions = 0;
+        $open = [];
+        foreach ($handoffs as $handoff) {
+            $open[$handoff->task_id.'/'.$handoff->type->value] = $handoff->rejected;
+            if ($handoff->type === TaskHandoffType::Review && ! $handoff->rejected && ! isset($firstReviews[$handoff->task_id])) {
+                $findings = $handoff->receipt['findings'] ?? 0;
+                $firstReviews[$handoff->task_id] = ['approved' => ($handoff->receipt['verdict'] ?? null) === 'approve', 'findings' => is_int($findings) ? $findings : 0];
+            }
+            if ($handoff->type === TaskHandoffType::Delivery && $handoff->rejected) {
+                $rejected[$handoff->rejection_reason] = ($rejected[$handoff->rejection_reason] ?? 0) + 1;
+            }
+            if ($handoff->type === TaskHandoffType::Question) {
+                $questions += is_array($handoff->receipt['questions'] ?? null) ? count($handoff->receipt['questions']) : 0;
+            }
+        }
+        ksort($rejected);
+
+        return [
+            'handoffs' => count($handoffs),
+            'subtasks' => $units,
+            'reviewed_subtasks' => count($firstReviews),
+            'first_review_approved' => count(array_filter($firstReviews, static fn (array $review): bool => $review['approved'])),
+            'first_review_findings' => array_sum(array_column($firstReviews, 'findings')),
+            'handoff_questions' => $questions,
+            'rejected_deliveries' => $rejected,
+            'check_parts' => self::mergeParts(array_merge([], ...array_map(static fn (array $table): array => array_map(static fn (array $part): array => [
+                'name' => $part['name'], 'runs' => self::ran($part) ? 1 : 0, 'failures' => $part['result'] === 'FAILED' ? 1 : 0,
+                'seconds' => self::ran($part) ? (float) $part['seconds'] : 0.0,
+            ], $table), $tables))),
+            'unresolved' => in_array(true, $open, true),
+        ];
+    }
+
+    /** @param  array{name: string, result: string, seconds: int|float}  $part */
+    private static function ran(array $part): bool
+    {
+        return in_array($part['result'], ['passed', 'FAILED'], true) || ($part['result'] === 'skipped' && $part['seconds'] > 0);
+    }
+
+    /**
+     * Sums part statistics by name, sorted by name. A name stays a string, also one that looks like a number.
+     *
+     * @param  list<array{name: string, runs: int, failures: int, seconds: float}>  $parts
+     * @return list<array{name: string, runs: int, failures: int, seconds: float}>
+     */
+    private static function mergeParts(array $parts): array
+    {
+        $byName = [];
+        foreach ($parts as $part) {
+            $byName['#'.$part['name']] ??= ['name' => $part['name'], 'runs' => 0, 'failures' => 0, 'seconds' => 0.0];
+            $byName['#'.$part['name']]['runs'] += $part['runs'];
+            $byName['#'.$part['name']]['failures'] += $part['failures'];
+            $byName['#'.$part['name']]['seconds'] += $part['seconds'];
+        }
+        ksort($byName, SORT_STRING);
+
+        return array_values($byName);
+    }
+
+    /**
+     * The handoff numbers of the gated rows.
+     *
+     * @param  list<Row>  $rows
+     */
+    private function handoffSummary(array $rows): TaskInsightsHandoffsData
+    {
+        $gated = array_values(array_filter($rows, static fn (array $row): bool => $row['gated']));
+        $rejected = array_fill_keys([TaskHandoffs::NoReceipt, TaskHandoffs::OtherCommit, TaskHandoffs::FailedPart, TaskHandoffs::ClaimDisproved, TaskHandoffs::CheckFailed], 0);
+        foreach ($gated as $row) {
+            foreach ($row['rejected_deliveries'] as $reason => $count) {
+                $rejected[$reason] = ($rejected[$reason] ?? 0) + $count;
+            }
+        }
+        ksort($rejected);
+        $reviewed = array_sum(array_column($gated, 'reviewed_subtasks'));
+
+        return new TaskInsightsHandoffsData(
+            tasks: count($gated),
+            handoffsPerSubtask: self::share(array_sum(array_column($gated, 'handoffs')), array_sum(array_column($gated, 'subtasks'))),
+            firstReviewApproval: self::share(array_sum(array_column($gated, 'first_review_approved')), $reviewed),
+            findingsPerFirstReview: self::share(array_sum(array_column($gated, 'first_review_findings')), $reviewed),
+            questionsPerTask: self::share(array_sum(array_column($gated, 'handoff_questions')), count($gated)),
+            rejectedDeliveries: $rejected,
+            checkParts: array_map(static fn (array $part): TaskInsightsCheckPartData => new TaskInsightsCheckPartData(
+                $part['name'], $part['runs'], $part['failures'], $part['runs'] > 0 ? $part['seconds'] / $part['runs'] : null,
+            ), self::mergeParts(array_merge([], ...array_column($gated, 'check_parts')))),
+            unresolvedTasks: count(array_filter($gated, static fn (array $row): bool => $row['unresolved'])),
+        );
     }
 
     /** @param  list<Row>  $rows */
@@ -322,6 +473,7 @@ final class TaskInsights
             questionsByCause: $causes,
             cacheHit: self::share(array_sum(array_column($cacheRows, 'cached')), $input),
             tokensPerHundredLines: $lines > 0 ? intdiv(array_sum(array_column($knownMerged, 'tokens')) * 100, $lines) : null,
+            handoffs: $this->handoffSummary($rows),
         );
     }
 

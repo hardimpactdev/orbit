@@ -44,6 +44,8 @@ final readonly class UpdateTaskGroupAction
 
                 if ($data->status === TaskGroupStatus::Todo) {
                     self::leavesBacklog($locked->tasks);
+                    // A group that leaves backlog now runs with the handoff gates (docs/reference/tasks.md#handoffs).
+                    $locked->handoffs_gated = $locked->handoffs_gated || $locked->status === TaskGroupStatus::Backlog;
                 }
 
                 $locked->status = $data->status;

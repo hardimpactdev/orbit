@@ -1,5 +1,13 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # The workspace guest prints one JSON object: its refusal with the table it collected first, its result, or, when it crashed, a
+  # traceback that names no table.
+  workspace-guest-refusal-with-parts:
+    workspace_guest: {rc: 1, stdout: '{"error_code": "tasks.workspace_phase_failed", "parts": [{"name": "pest", "result": "passed", "seconds": 1}]}'}
+  workspace-guest-result-with-parts:
+    workspace_guest: {rc: 0, stdout: '{"check": {"steps": {"parts": {"outputs": {"exitCode": 0, "stdout": "[]"}}}}, "outputs": [], "changed": false}'}
+  workspace-guest-crash:
+    workspace_guest: {rc: 1, stdout: "Traceback (most recent call last):"}
   # dpkg-query lists each package as `<status> <architecture> <name> <version>`. As apt names it, a native or `all` package
   # is bare and a foreign one keeps `:<arch>`; every state but `not-installed` and `config-files` has an installed version.
   software-installed:
@@ -1497,6 +1505,21 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-refusal-with-parts
+  expected: {error_code: tasks.workspace_phase_failed, parts: [{name: pest, result: passed, seconds: 1}]}
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-result-with-parts
+  expected: {check: {steps: {parts: {outputs: {exitCode: 0, stdout: '[]'}}}}, outputs: [], changed: false}
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-crash
+  expected: {}
 - file: release-response-wait.yml
   task: Wait for queued response bytes in the former live
   field: vars.queued

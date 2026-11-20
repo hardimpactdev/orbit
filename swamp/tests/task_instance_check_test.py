@@ -107,7 +107,7 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         local = self.ran('local', self.behavior('task-repository/check.ts', 'local', {
             'intent': self.check, 'prepared': self.cel('local', 'prepared'), 'steps': self.cel('local', 'steps'),
             'outputs': self.cel('local', 'outputs')}))['result']
-        self.assertEqual(local, {'error_code': 'tasks.workspace_identity_changed', 'check_id': self.check['check_id']})
+        self.assertEqual(local, {'error_code': 'tasks.workspace_identity_changed', 'check_id': self.check['check_id'], 'parts': None})
         _, finish = self.finished()
         self.assertEqual(json.loads(finish['result_json']), local)
         self.assertNotIn('checked', output)

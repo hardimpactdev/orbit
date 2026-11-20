@@ -12,7 +12,9 @@ that fit the time left; it names the rest as deferred to CI. Every part gets the
 budget stops or leaves out is named, and the final result explicitly marks incomplete coverage without failing it.
 The output starts with CI's per-unit
 time caps and ends with a summary of at most SUMMARY_BYTES: one line per part with its outcome and seconds, then the
-last lines of each failed part, so the stored tail of the output always holds it.
+last lines of each failed part, so the stored tail of the output always holds it. Every run also writes the delivery
+receipt, the commit and the tree it checked and each part with its result and seconds, to the ignored Git path RECEIPT. The
+tree, uncommitted and untracked files included, is what the handoff check compares with the work handed off.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
@@ -93,6 +95,8 @@ LINE_BYTES = 300
 NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the full Gateway, CLI and docs Pest suites, web app '
                 'checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
+# The delivery receipt that every run leaves under the Git directory, never committed (docs/reference/tasks.md#handoffs).
+RECEIPT = 'orbit-handoff/delivery.json'
 
 
 class Part:
@@ -499,6 +503,17 @@ def ci_plan(base, head):
         return jobs, json.loads(path.read_text()), ''
 
 
+def write_receipt(root, commit, tree, parts):
+    """The delivery receipt: the commit and the working tree this run checked and each part with its name, result and seconds."""
+    path = Path(review['git'](root, 'rev-parse', '--path-format=absolute', '--git-path', RECEIPT))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    receipt = {'commit': commit, 'tree': tree, 'parts': [{'name': part.name, 'result': part.status, 'seconds': round(part.seconds, 1)}
+                                           for part in parts]}
+    scratch = path.with_name(path.name + '.tmp')
+    scratch.write_text(json.dumps(receipt) + '\n')
+    os.replace(scratch, path)
+
+
 def report(parts, base, seconds):
     """The summary, within SUMMARY_BYTES: one line per part, the last lines of each failed part, what CI alone runs,
     and the result. The failed parts share the bytes the other lines leave."""
@@ -543,8 +558,10 @@ def main(argv=None):
     deadline = started + args.budget
     selected = set(args.only or PARTS) | {'ci-plan'}
     committed, base, ref, paths = changes(ROOT, args.base)
+    tree = review['working_tree'](ROOT)
     if base is None:
         print('Task check FAILED: no start commit. There is no merge base with origin/main or main; pass --base REF.')
+        write_receipt(ROOT, candidate_head(committed), tree, [Part('start-commit', 'FAILED', 0, 'no start commit')])
         return 1
     print(f'Task check against {base[:12]}, the merge base with {ref}: {len(paths)} changed paths; budget {args.budget:g}s',
           flush=True)
@@ -582,6 +599,7 @@ def main(argv=None):
                         '\n'.join(capacity)))
     if any(part.status == 'FAILED' for part in parts):
         print('\n'.join(report(parts, base, time.monotonic() - started)), flush=True)
+        write_receipt(ROOT, head, tree, parts)
         return 1
 
     def want(part):
@@ -644,6 +662,7 @@ def main(argv=None):
 
     lines = report(parts, base, time.monotonic() - started)
     print('\n'.join(lines), flush=True)
+    write_receipt(ROOT, head, tree, parts)
     return 1 if any(part.status == 'FAILED' for part in parts) else 0
 
 

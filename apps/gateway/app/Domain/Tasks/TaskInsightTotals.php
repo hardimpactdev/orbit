@@ -70,7 +70,7 @@ final readonly class TaskInsightTotals
     }
 
     /**
-     * The ended groups in the trend with no record, or with a group, subtask, thread, verdict, handoff check or question
+     * The ended groups in the trend with no record, or with a group, subtask, thread, verdict, handoff check, handoff or question
      * changed after it. A write that bypasses the model observer still reaches the record this way.
      *
      * @return Builder<Task>
@@ -80,6 +80,9 @@ final readonly class TaskInsightTotals
         // At or after: timestamps have one-second resolution, so a write in the second of its record still counts as changed.
         $changedAfter = static fn (string $table, string $column, string $owner = 'tasks.id') => static fn ($query) => $query->selectRaw('1')->from($table)
             ->whereColumn("{$table}.{$column}", $owner)->whereColumn("{$table}.updated_at", '>=', 'task_insight_records.recorded_at');
+        // A handoff row is written once and never changes.
+        $handoffAfter = static fn (string $owner) => static fn ($query) => $query->selectRaw('1')->from('task_handoffs')
+            ->whereColumn('task_handoffs.task_id', $owner)->whereColumn('task_handoffs.created_at', '>=', 'task_insight_records.recorded_at');
 
         return Task::topLevel()->where('tasks.ended_at', '>=', $since)
             ->whereIn('tasks.status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
@@ -89,10 +92,12 @@ final readonly class TaskInsightTotals
                 ->orWhereExists($changedAfter('agent_threads', 'task_group_id'))
                 ->orWhereExists($changedAfter('task_comments', 'task_group_id'))
                 ->orWhereExists($changedAfter('task_questions', 'task_id'))
+                ->orWhereExists($handoffAfter('tasks.id'))
                 ->orWhereExists(static fn ($query) => $query->selectRaw('1')->from('tasks as subtasks')
                     ->whereColumn('subtasks.parent_id', 'tasks.id')
                     ->where(static fn ($query) => $query->whereColumn('subtasks.updated_at', '>=', 'task_insight_records.recorded_at')
-                        ->orWhereExists($changedAfter('task_checks', 'task_id', 'subtasks.id'))))
+                        ->orWhereExists($changedAfter('task_checks', 'task_id', 'subtasks.id'))
+                        ->orWhereExists($handoffAfter('subtasks.id'))))
                 // A release verified or changed after the record may be the group's release now.
                 ->orWhereExists(static fn ($query) => $query->selectRaw('1')->from('gateway_releases')
                     ->where('gateway_releases.outcome', 'verified')->whereNotNull('gateway_releases.sha')

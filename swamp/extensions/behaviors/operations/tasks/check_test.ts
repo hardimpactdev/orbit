@@ -162,6 +162,7 @@ const intent = {
     repository: null,
     check_name: null,
     branch: "task-1-handoff",
+    handoff_gate: false,
 };
 const local = {
     outcome: "passed" as const,

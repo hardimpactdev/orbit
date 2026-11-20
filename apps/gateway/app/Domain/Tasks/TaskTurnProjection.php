@@ -160,6 +160,8 @@ final readonly class TaskTurnProjection implements DirectOperationProjection, Di
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)
                 ->update(['questions' => $questions === null ? null : json_encode($questions, JSON_THROW_ON_ERROR)]);
         }
+        // The end of the turn is the gate of a review or a question (docs/reference/tasks.md#handoffs).
+        TaskHandoffs::turn($operation, $result);
     }
 
     /**
