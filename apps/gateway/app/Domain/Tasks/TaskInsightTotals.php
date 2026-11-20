@@ -34,12 +34,8 @@ final readonly class TaskInsightTotals
         $payload = DB::table('task_insight_totals')->where('scope', self::scope($projectId))->where('period', $period)->value('payload');
         if (is_string($payload)) {
             $stored = self::decode($payload);
-            // A report stored before `hourly` existed has none: a 7d or 30d one has no hours to give, and a 24h one is computed again below.
-            if ($period !== '24h') {
-                return array_key_exists('hourly', $stored) ? $stored
-                    : [...array_diff_key($stored, ['breakdowns' => true]), 'hourly' => [], ...array_intersect_key($stored, ['breakdowns' => true])];
-            }
-            if (is_array($stored['hourly'] ?? null) && count($stored['hourly']) === 24) {
+            // A report stored before its buckets had their present fields, such as `hourly` or the tile numbers, is computed again below.
+            if (self::bucketShape($stored) === self::bucketShape($this->insights->aggregate($period, [], $now)->toArray())) {
                 return $stored;
             }
         }
@@ -141,6 +137,25 @@ final readonly class TaskInsightTotals
         }
 
         return $payloads;
+    }
+
+    /**
+     * The keys of each daily and hourly bucket of a report, or null when it lacks either list.
+     *
+     * @param  array<string, mixed>  $report
+     * @return ?array<string, list<list<int|string>>>
+     */
+    private static function bucketShape(array $report): ?array
+    {
+        $shape = [];
+        foreach (['daily', 'hourly'] as $list) {
+            if (! is_array($report[$list] ?? null)) {
+                return null;
+            }
+            $shape[$list] = array_map(static fn (mixed $bucket): array => is_array($bucket) ? array_keys($bucket) : [], array_values($report[$list]));
+        }
+
+        return $shape;
     }
 
     /** @return array<string, mixed> */
