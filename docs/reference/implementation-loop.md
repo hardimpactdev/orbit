@@ -806,6 +806,8 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
+Every run, also one that fails before the parts, ends by writing the delivery receipt to `$(git rev-parse --git-path orbit-handoff/delivery.json)`: the commit it checked, the commit of the working tree when work is uncommitted, and each part with its name, result and seconds. It sits under the Git directory, so it is never committed. The copy turn hands it to the Gateway's delivery gate ([Handoffs](/reference/tasks#handoffs)).
+
 The `docs-impact` part builds the API outputs first, as CI's Docs job does. The gate checks the ignored OpenAPI document and MCP manifest against the sources, so an earlier build's outputs never read as stale.
 
 Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select `check-flows` and `docs-lint`. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.

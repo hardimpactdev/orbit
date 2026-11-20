@@ -124,6 +124,11 @@
         "test_a_published_commit_counts_and_holds_the_approved_commit": 0.574,
         "test_a_copy_that_changed_nothing_is_empty": 0.799
       }
+    },
+    "swamp/tests/task_instance_check_receipt_test.py": {
+      "case_seconds": {
+        "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt": 7.284
+      }
     }
   }
 }

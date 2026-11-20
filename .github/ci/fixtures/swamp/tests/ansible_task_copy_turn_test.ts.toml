@@ -45,7 +45,7 @@ cost = 1175
 # The Codex create case (task 5645) has no hosted receipt: its 40s is an ESTIMATE over a 19s local run of its three phases, until a hosted run.
 # Task 5873: the ID readback case's 30s is local 20s plus headroom, and the settle-over case's 80s is an ESTIMATE over a local 57s run now that it
 # reads each recorded run through the helper (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
-# The handoff receipt case has no hosted receipt: its 20s is an ESTIMATE as the completed case it extends, over a local 4s run, until a hosted run.
+# The handoff receipt case has no hosted receipt: its 20s matches the completed case it extends, over a local 4s run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
 slices = 34
 inputs = [

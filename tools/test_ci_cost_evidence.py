@@ -31,8 +31,8 @@ class FixtureCostEvidenceTest(unittest.TestCase):
                 self.assertEqual(entry['cost'], sum(entry['case_costs'].values()))
                 self.assertEqual(units.units_for(entry, budget), [(file, entry['cost'])])
                 self.assertLessEqual(entry['cost'] + budget['slice_startup_seconds'], 90)
-        self.assertEqual(len(seen), 68)
-        self.assertEqual(len(set(seen)), 68)
+        self.assertEqual(len(seen), 69)
+        self.assertEqual(len(set(seen)), 69)
         publish = fixtures['swamp/tests/task_copy_publish_test.py']
         current = units.collect(publish['file'])
         self.assertEqual(publish['cases'], current['cases'])

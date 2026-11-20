@@ -11,6 +11,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskHandoff;
+use App\Support\ValidatedData;
 
 /**
  * The handoff gates of a group that left backlog after they shipped (docs/reference/tasks.md#handoffs). The handoff check is the
@@ -41,14 +42,15 @@ final readonly class TaskHandoffs
             || ! (Task::topLevel()->whereKey($check->target_id)->value('handoffs_gated') ?? false)) {
             return;
         }
-        $subtask = (int) $check->input['subtask'];
+        $subtask = ValidatedData::integer($check->input['subtask']);
         $turn = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $check->target_id)
             ->where('kind', OperationKinds::TasksCopyTurn)->where('status', OperationStatus::Succeeded->value)
             ->where('input->subtask', $subtask)->where('input->role', TaskThreadRole::Implementer->value)
             ->where('result->state', AgentThreadState::Done->value)->where('id', '<', $check->id)->orderByDesc('id')->first();
-        $receipt = self::receipt($turn?->result['receipts']['delivery'] ?? null);
+        $receipts = $turn?->result['receipts'] ?? null;
+        $receipt = self::receipt(is_array($receipts) ? $receipts['delivery'] ?? null : null);
         TaskHandoff::query()->create(['task_id' => $subtask, 'operation_id' => $turn?->id, 'type' => TaskHandoffType::Delivery,
-            'receipt' => $receipt, 'task_check_id' => (int) $check->input['check_id'],
+            'receipt' => $receipt, 'task_check_id' => ValidatedData::integer($check->input['check_id']),
             ...self::verdict($receipt, $result, $passed)]);
     }
 

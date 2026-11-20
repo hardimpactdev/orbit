@@ -1,0 +1,22 @@
+file = "swamp/tests/task_instance_check_receipt_test.py"
+slices = false
+cost = 17
+cases = [
+  "test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/check.ts",
+  "swamp/workflows/workflow-task-instance-check.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt" = 17

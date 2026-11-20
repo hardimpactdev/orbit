@@ -1167,7 +1167,9 @@ The result names `default_commit`, the head the check judged against, and `merge
 
 ### Handoffs
 
-A handoff is the end of one agent run in a copy, where the agent gives control back to the loop. Its type is `delivery` (the implementer), `review` (the reviewer) or `question` (any agent). A receipt is the JSON that a handoff leaves under the copy's Git directory, so it is never committed. The Gateway checks each handoff at its gate and writes one row to `task_handoffs` once the gate has finished: the subtask, the copy turn Operation, `type`, `receipt`, `rejected`, `rejection_reason` (empty unless rejected), `task_check_id` for a delivery, and `created_at`. A row that is not rejected was checked and accepted. A rejected receipt never fails an Operation: the caller sends the turn again.
+A handoff is the end of one agent run in a copy, where the agent gives control back to the loop. Its type is `delivery` (the implementer), `review` (the reviewer) or `question` (any agent). A receipt is the JSON that a handoff leaves under the copy's Git directory, so it is never committed.
+
+The Gateway checks each handoff at its gate and writes one row to `task_handoffs` once the gate has finished: the subtask, the copy turn Operation, `type`, `receipt`, `rejected`, `rejection_reason` (empty unless rejected), `task_check_id` for a delivery, and `created_at`. A row that is not rejected was checked and accepted. A rejected receipt never fails an Operation: the caller sends the turn again.
 
 The gates hold only for a group that leaves backlog after they shipped; the group records it in `handoffs_gated`. A group that was already running finishes without them.
 
