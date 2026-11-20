@@ -44,9 +44,9 @@ final readonly class CliConvergePlan
     }
 
     /** @return CliInput */
-    public function input(Node $node): array
+    public function input(Node $node, ?DesiredCliReleaseData $pin = null): array
     {
-        return $this->capture($node, $this->exclusion($node));
+        return $this->capture($node, $this->exclusion($node), $pin);
     }
 
     /**
@@ -54,9 +54,9 @@ final readonly class CliConvergePlan
      *
      * @return CliInput|null
      */
-    public function nodeInput(Node $node): ?array
+    public function nodeInput(Node $node, ?DesiredCliReleaseData $pin = null): ?array
     {
-        return self::required($node) ? $this->capture($node, null) : null;
+        return self::required($node) ? $this->capture($node, null, $pin) : null;
     }
 
     /** @return CliInput */

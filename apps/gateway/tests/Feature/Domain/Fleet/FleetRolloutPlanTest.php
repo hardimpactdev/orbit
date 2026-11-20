@@ -62,6 +62,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
+use Tests\Support\ObservedReleaseInputs;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -389,44 +390,6 @@ it('recognizes a Node\'s approval of an earlier release from its Git commit, and
     'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
 ]);
 
-/**
- * Release inputs that record the SQLite transaction level of every read, and can run a step after reading a Node's roles.
- *
- * @param  ArrayObject<int, array{string, int}>  $reads
- */
-function observedReleaseInputs(ArrayObject $reads, ?Closure $afterRoles = null): ReleaseNodeInputs
-{
-    return new readonly class($reads, $afterRoles) extends ReleaseNodeInputs
-    {
-        /** @param ArrayObject<int, array{string, int}> $reads */
-        public function __construct(private ArrayObject $reads, private ?Closure $afterRoles) {}
-
-        public function host(?string $root = null, ?Node $node = null): string
-        {
-            $this->reads->append(['host', DB::transactionLevel()]);
-
-            return parent::host($root, $node);
-        }
-
-        public function roles(Node $node, bool $release = true, ?array $selected = null, ?string $root = null, array $renderedRoles = []): array
-        {
-            $this->reads->append(['roles', DB::transactionLevel()]);
-            $roles = parent::roles($node, $release, $selected, $root, $renderedRoles);
-            if ($this->afterRoles !== null) {
-                ($this->afterRoles)($node);
-            }
-
-            return $roles;
-        }
-
-        public function extractHostTree(string $repository, string $commit, string $folder): void
-        {
-            $this->reads->append(['extractHostTree', DB::transactionLevel()]);
-            parent::extractHostTree($repository, $commit, $folder);
-        }
-    };
-}
-
 it('reads every release input and Git tree before it takes the SQLite writer, and cleans up the trees', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
@@ -434,7 +397,7 @@ it('reads every release input and Git tree before it takes the SQLite writer, an
     $dev = Node::query()->findOrFail($this->nodes['dev']);
     $dev->forceFill(['release_inputs' => ['host' => $approved]])->save();
     $reads = new ArrayObject;
-    app()->instance(ReleaseNodeInputs::class, observedReleaseInputs($reads));
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs($reads));
     $before = glob(sys_get_temp_dir().'/orbit-release-host-*');
     // The test database wraps each test in a transaction of its own.
     $outside = DB::transactionLevel();
@@ -456,7 +419,7 @@ it('waits for the next pass when a Node joins after the release inputs were read
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     $joined = null;
-    app()->instance(ReleaseNodeInputs::class, observedReleaseInputs(new ArrayObject, static function (Node $node) use (&$joined): void {
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs(new ArrayObject, static function (Node $node) use (&$joined): void {
         if ($joined === null && $node->id === test()->nodes['prod']) {
             $joined = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'late', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit',
                 'wireguard_ip' => '10.44.0.40', 'ssh_host_fingerprint' => 'SHA256:late', 'status' => LifecycleStatus::Active,

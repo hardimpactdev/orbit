@@ -20,8 +20,10 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofSeeds;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
@@ -41,7 +43,8 @@ use Throwable;
  *
  * @phpstan-type Legacy array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}
  * @phpstan-type HostCheck array{host: string, accept: bool, known: bool}
- * @phpstan-type NodeInputs array{approved: string|null, host: HostCheck|Throwable, roles: array<int, array{role:string,digest:string}>|Throwable}
+ * @phpstan-type RoleInputs array<int, array{role:string,digest:string}>
+ * @phpstan-type NodeInputs array{approved: string|null, host: HostCheck|Throwable, roles: RoleInputs|Throwable, gateway: RoleInputs|Throwable}
  * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>}
  */
 final readonly class ContinueReleaseFleetAction
@@ -191,7 +194,14 @@ final readonly class ContinueReleaseFleetAction
             } catch (Throwable $failure) {
                 $roles = $failure;
             }
-            $prepared['nodes'][$node->id] = ['approved' => $approved, 'host' => $check, 'roles' => $roles];
+            // The full Node converge for changed host inputs also applies the Gateway role, which a release converge leaves out.
+            try {
+                $gateway = $node->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists()
+                    ? $inputs->roles($node, false, [RoleName::Gateway->value]) : [];
+            } catch (Throwable $failure) {
+                $gateway = $failure;
+            }
+            $prepared['nodes'][$node->id] = ['approved' => $approved, 'host' => $check, 'roles' => $roles, 'gateway' => $gateway];
         }
 
         return $prepared;
@@ -556,9 +566,15 @@ final readonly class ContinueReleaseFleetAction
         if ($row['host'] === 'pending' || $changed !== []) {
             // Changed host inputs need the full Node converge an operator runs: the base and every role, and it records the host
             // digest. A busy refusal queues either converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
-            $row['role_operation_id'] = ($row['host'] === 'pending'
-                ? app(StartNodeConvergeAction::class)->execute($node, automatic: true)
-                : app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true))->id;
+            $full = $row['host'] === 'pending';
+            if ($full && $inputs['gateway'] instanceof Throwable) {
+                throw $inputs['gateway'];
+            }
+            $prepared = ['roles' => $full ? $desired + $inputs['gateway'] : $desired, 'host' => $host];
+            ksort($prepared['roles']);
+            $row['role_operation_id'] = ($full
+                ? app(StartNodeConvergeAction::class)->execute($node, automatic: true, releaseInputs: $prepared, cli: $cli)
+                : app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true, releaseInputs: $prepared))->id;
             unset($row['waiting_for']);
 
             return 10;
