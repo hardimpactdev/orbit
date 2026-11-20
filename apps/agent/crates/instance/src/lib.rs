@@ -2,12 +2,17 @@
 //!
 //! - [`clone`] (`instance.clone`): the copy's network ACL, then a copy of the seed snapshot with the copy's config, root
 //!   disk and guarded NIC, then the T3 proxy device. A repeat finds the copy and only completes what is missing.
+//! - [`prepare`] (`instance.prepare`): a stopped copy's files before its first start: the seed's Orbit units that are not
+//!   the copy's go, its own machine id, then the boot, trust and T3 files the Gateway rendered.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
 
+mod prepare;
 #[cfg(test)]
 mod tests;
+
+pub use prepare::prepare;
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -17,7 +22,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 const TIMEOUT: &str = "/usr/bin/timeout";
-const INCUS: &str = "/usr/bin/incus";
+pub(crate) const INCUS: &str = "/usr/bin/incus";
+const CURL: &str = "/usr/bin/curl";
+const SOCKET: &str = "/var/lib/incus/unix.socket";
 
 /// Why the primitive failed: a stable code, and a detail for the executor's log only.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,11 +49,34 @@ pub trait System {
     ///
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String>;
+
+    /// The content of a blob the executor read for this order, by its SHA-256.
+    ///
+    /// # Errors
+    ///
+    /// A message when the blob is not in the local cache.
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String>;
+
+    /// A file of the Node.
+    ///
+    /// # Errors
+    ///
+    /// A message when it cannot be read.
+    fn read(&self, path: &str) -> Result<Vec<u8>, String>;
 }
 
-/// The Node's own system: `timeout`-bounded commands.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NodeSystem;
+/// The Node's own system: `timeout`-bounded commands, the executor's blob cache and the Node's files.
+#[derive(Debug, Clone)]
+pub struct NodeSystem {
+    blobs: std::path::PathBuf,
+}
+
+impl NodeSystem {
+    /// A system that reads blobs from `blobs`, the executor's content cache.
+    pub fn new(blobs: impl Into<std::path::PathBuf>) -> Self {
+        Self { blobs: blobs.into() }
+    }
+}
 
 impl System for NodeSystem {
     fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
@@ -67,6 +97,14 @@ impl System for NodeSystem {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
         }
+    }
+
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        std::fs::read(self.blobs.join(sha256)).map_err(|error| error.to_string())
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+        std::fs::read(path).map_err(|error| error.to_string())
     }
 }
 
@@ -131,7 +169,7 @@ struct Proxy {
 pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     let input: CloneInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.clone_input_invalid", error.to_string()))?;
     check(&input).map_err(|detail| Failure::new("instance.clone_input_invalid", detail))?;
-    let incus = Incus { system };
+    let incus = Incus { system, code: "instance.clone_failed" };
     let instance = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
     ensure_acl(&incus, &input.acl)?;
     let (devices, snapshot) = if let Some(found) = instance {
@@ -159,14 +197,28 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     Ok(serde_json::json!({"snapshot": snapshot}).to_string())
 }
 
+/// A name Incus allows that cannot read as an option.
+pub(crate) fn name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 63
+        && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && !value.starts_with('-')
+}
+
+/// A path as a URL query value.
+pub(crate) fn encode(value: &str) -> String {
+    value.bytes().fold(String::new(), |mut out, byte| {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("%{byte:02X}"));
+        }
+        out
+    })
+}
+
 /// The shapes the Node accepts: names Incus allows, and values that cannot carry a second device key or option.
 fn check(input: &CloneInput) -> Result<(), String> {
-    let name = |value: &str| {
-        !value.is_empty()
-            && value.len() <= 63
-            && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-            && !value.starts_with('-')
-    };
     for (field, value) in [
         ("project", &input.project),
         ("name", &input.name),
@@ -297,26 +349,28 @@ fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> R
     incus.run(&argv, None).map(drop)
 }
 
-/// The `incus` binary.
-struct Incus<'a, S: System> {
-    system: &'a S,
+/// The `incus` binary, and its API socket through `curl` for what the CLI does not show.
+pub(crate) struct Incus<'a, S: System> {
+    pub(crate) system: &'a S,
+    /// The code of a failed command.
+    pub(crate) code: &'static str,
 }
 
 impl<S: System> Incus<'_, S> {
     /// `incus query`: the answer, or None when Incus answers that the object does not exist.
-    fn query(&self, url: &str) -> Result<Option<Value>, Failure> {
+    pub(crate) fn query(&self, url: &str) -> Result<Option<Value>, Failure> {
         match self.system.run(60, &[INCUS.to_owned(), "query".to_owned(), url.to_owned()], None) {
             Ok(text) => serde_json::from_str(&text).map(Some).map_err(|error| Failure::new("instance.clone_failed", format!("{url}: {error}"))),
             Err(detail) if detail.to_ascii_lowercase().contains("not found") => Ok(None),
-            Err(detail) => Err(Failure::new("instance.clone_failed", format!("query {url}: {detail}"))),
+            Err(detail) => Err(Failure::new(self.code, format!("query {url}: {detail}"))),
         }
     }
 
-    fn change(&self, argv: &[&str]) -> Result<(), Failure> {
+    pub(crate) fn change(&self, argv: &[&str]) -> Result<(), Failure> {
         self.run(&argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None).map(drop)
     }
 
-    fn write(&self, argv: &[&str], stdin: &[u8]) -> Result<(), Failure> {
+    pub(crate) fn write(&self, argv: &[&str], stdin: &[u8]) -> Result<(), Failure> {
         self.run(&argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), Some(stdin)).map(drop)
     }
 
@@ -326,6 +380,13 @@ impl<S: System> Incus<'_, S> {
         // A copy reads the whole seed: the bound covers a large one on a busy Node.
         self.system
             .run(300, &full, stdin)
-            .map_err(|detail| Failure::new("instance.clone_failed", format!("{}: {detail}", argv.iter().take(4).cloned().collect::<Vec<_>>().join(" "))))
+            .map_err(|detail| Failure::new(self.code, format!("{}: {detail}", argv.iter().take(4).cloned().collect::<Vec<_>>().join(" "))))
+    }
+
+    /// A request to the Incus API socket; answers what `--write-out` prints.
+    pub(crate) fn curl(&self, argv: &[&str]) -> Result<String, String> {
+        let mut full = vec![CURL.to_owned(), "--silent".to_owned(), "--unix-socket".to_owned(), SOCKET.to_owned()];
+        full.extend(argv.iter().map(|part| (*part).to_owned()));
+        self.system.run(30, &full, None)
     }
 }

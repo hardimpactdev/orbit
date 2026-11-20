@@ -32,8 +32,16 @@ impl System for Fake {
         self.calls.borrow_mut().push((call.clone(), stdin.map(|bytes| String::from_utf8_lossy(bytes).into_owned())));
         self.answers
             .iter()
-            .find(|(prefix, _)| call.starts_with(prefix.as_str()))
+            .find(|(part, _)| call.contains(part.as_str()))
             .map_or_else(|| Ok(String::new()), |(_, answer)| answer.clone())
+    }
+
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        Ok(format!("blob {sha256}").into_bytes())
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+        Err(format!("{path} not in the double"))
     }
 }
 
@@ -177,6 +185,94 @@ fn values_that_could_carry_another_option_are_refused() {
         *input.pointer_mut(pointer).expect("field") = value;
         let fake = Fake::new(&[]);
         assert_eq!(clone(&fake, &input).map_err(|failure| failure.code), Err("instance.clone_input_invalid"), "{pointer}");
+        assert_eq!(fake.calls(), Vec::<String>::new());
+    }
+}
+
+fn stopped() -> Result<Value, &'static str> {
+    Ok(json!({"status": "Stopped", "config": {"volatile.uuid": "01234567-89ab-cdef-0123-456789abcdef"}}))
+}
+
+fn prepare_input(files: Value) -> Value {
+    json!({"project": "orbit-instances", "name": "instance-12", "units": ["orbit-process-7.service"], "process_ids": ["7"], "files": files})
+}
+
+#[test]
+fn a_running_copy_is_left_alone() {
+    let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
+
+    assert_eq!(prepare(&fake, &prepare_input(json!([]))), Ok(0));
+    assert_eq!(fake.calls().len(), 1);
+}
+
+#[test]
+fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
+    let fake = Fake::new(&[
+        ("query /1.0/instances/instance-12?", stopped()),
+        ("path=/etc/systemd/system/multi-user.target.wants", Ok(json!(["orbit-process-3.service", "ssh.service"]))),
+        ("path=/etc/systemd/system", Ok(json!(["orbit-process-3.service", "orbit-process-7.service", "orbit-schedule-1.timer", "t3.service"]))),
+        ("path=/etc/orbit/processes", Ok(json!(["3", "7"]))),
+        ("query /1.0/instances/instance-12/files", MISSING),
+    ]);
+    let files = json!([
+        {"file": {"path": "/etc/orbit/instance", "uid": 0, "gid": 0, "mode": "0644", "content": "ID=12\n"}},
+        {"file": {"path": "/home/agent/.config/orbit/model.env", "uid": 2750, "gid": 2750, "mode": "0600", "blob": "ab12"}},
+        {"link": {"path": "/home/agent/.claude/CLAUDE.md", "target": "/home/agent/.config/orbit/agent/AGENTS.md"}},
+    ]);
+
+    let changes = prepare(&fake, &prepare_input(files)).expect("prepare");
+
+    let calls = fake.calls.borrow().clone();
+    let named = |part: &str| calls.iter().find(|(call, _)| call.contains(part)).cloned().unwrap_or_else(|| panic!("no call {part}"));
+    assert_eq!(named("file delete instance-12").0, "--project orbit-instances file delete instance-12/etc/systemd/system/multi-user.target.wants/orbit-process-3.service");
+    assert_eq!(
+        named("file delete --force").0,
+        "--project orbit-instances file delete --force instance-12/etc/systemd/system/orbit-process-3.service \
+         instance-12/etc/systemd/system/orbit-schedule-1.timer instance-12/etc/orbit/processes/3"
+    );
+    assert_eq!(named("/etc/machine-id").1.as_deref(), Some("0123456789abcdef0123456789abcdef\n"));
+    assert_eq!(named("instance-12/etc/orbit/instance").0, "--project orbit-instances file push --create-dirs --uid 0 --gid 0 --mode 0644 - instance-12/etc/orbit/instance");
+    assert_eq!(named("model.env").1.as_deref(), Some("blob ab12"));
+    assert_eq!(
+        named("--type=symlink").0,
+        "--project orbit-instances file create --type=symlink --force instance-12/home/agent/.claude/CLAUDE.md /home/agent/.config/orbit/agent/AGENTS.md"
+    );
+    assert_eq!(changes, 4 + 1 + 3);
+}
+
+#[test]
+fn a_json_file_merges_over_the_copys_own_and_an_equal_one_stays() {
+    let held = |content: Value| {
+        Fake::new(&[
+            ("query /1.0/instances/instance-12?", stopped()),
+            ("query /1.0/instances/instance-12/files", MISSING),
+            ("%{http_code} %header{x-incus-type} http://incus/1.0/instances/instance-12/files?project=orbit-instances&path=/home/agent/.t3/settings.json", Ok(json!("200 file"))),
+            ("x-incus-uid", Ok(json!("2750 2750 600"))),
+            ("file pull instance-12/home/agent/.t3/settings.json", Ok(content)),
+        ])
+    };
+    let files = json!([{"json": {"path": "/home/agent/.t3/settings.json", "uid": 2750, "gid": 2750, "mode": "0600", "json": {"linked": true}}}]);
+
+    let merged = held(json!({"theme": "dark"}));
+    prepare(&merged, &prepare_input(files.clone())).expect("prepare");
+    let pushed = merged.calls.borrow().iter().find(|(call, _)| call.ends_with("settings.json") && call.contains("push")).and_then(|(_, stdin)| stdin.clone());
+    assert_eq!(pushed.as_deref(), Some("{\"linked\":true,\"theme\":\"dark\"}\n"));
+
+    let same = held(json!({"linked": true, "theme": "dark"}));
+    prepare(&same, &prepare_input(files)).expect("prepare");
+    assert!(!same.calls().iter().any(|call| call.contains("push") && call.ends_with("settings.json")));
+}
+
+#[test]
+fn prepare_refuses_a_path_outside_the_copy_and_any_other_trust_source() {
+    for item in [
+        json!({"file": {"path": "/etc/../root/x", "uid": 0, "gid": 0, "mode": "0644", "content": ""}}),
+        json!({"file": {"path": "etc/x", "uid": 0, "gid": 0, "mode": "0644", "content": ""}}),
+        json!({"file": {"path": "/etc/x", "uid": 0, "gid": 0, "mode": "0644"}}),
+        json!({"trust": {"source": "/etc/shadow", "path": "/usr/local/share/ca-certificates/x.crt", "hash_directory": "/etc/ssl/certs", "uid": 0, "gid": 0, "mode": "0644"}}),
+    ] {
+        let fake = Fake::new(&[]);
+        assert_eq!(prepare(&fake, &prepare_input(json!([item]))).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"), "{item}");
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }

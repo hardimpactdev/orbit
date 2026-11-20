@@ -38,6 +38,8 @@ pub enum Action {
     /// Make an Instance container from its default's seed: its ACL, the seed copy and the T3 proxy (ADR 0271). Its target
     /// is the Node, because the container does not exist yet.
     InstanceClone,
+    /// Place a stopped copy's files before its first start (ADR 0271). Its target is the copy.
+    InstancePrepare,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -52,7 +54,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -62,6 +64,7 @@ impl Action {
         Self::RoutePublishSite,
         Self::DnsPublishRecords,
         Self::InstanceClone,
+        Self::InstancePrepare,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -72,7 +75,7 @@ impl Action {
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
-            Self::InstanceClone => Family::Instance,
+            Self::InstanceClone | Self::InstancePrepare => Family::Instance,
         }
     }
 
@@ -85,7 +88,7 @@ impl Action {
             | Self::RoutePublishSite
             | Self::DnsPublishRecords
             | Self::InstanceClone => TargetKind::Node,
-            Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
+            Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare => TargetKind::Instance,
         }
     }
 
@@ -101,6 +104,7 @@ impl Action {
             Self::RoutePublishSite => "route.publish_site",
             Self::DnsPublishRecords => "dns.publish_records",
             Self::InstanceClone => "instance.clone",
+            Self::InstancePrepare => "instance.prepare",
         }
     }
 }
@@ -124,6 +128,7 @@ impl FromStr for Action {
             "route.publish_site" => Ok(Self::RoutePublishSite),
             "dns.publish_records" => Ok(Self::DnsPublishRecords),
             "instance.clone" => Ok(Self::InstanceClone),
+            "instance.prepare" => Ok(Self::InstancePrepare),
             _ => Err(UnknownActionError),
         }
     }
