@@ -1866,13 +1866,15 @@ Each summary holds `handoffs`, read from the [handoff](#handoffs) rows of the ta
 | Field | Meaning |
 | --- | --- |
 | `tasks` | Ended tasks with the gates |
-| `handoffs_per_subtask` | Handoff rows, rejected ones included, divided by the subtasks that have one |
+| `handoffs_per_subtask` | Handoff rows, rejected ones included, divided by the subtasks of those tasks, those without a row included. A task with no subtask counts as one |
 | `first_review_approval` | Subtasks whose first accepted review row has the verdict `approve`, divided by subtasks with an accepted review row. A rejected review row has no verdict |
 | `findings_per_first_review` | The blocking findings of those first reviews, divided by their number |
-| `questions_per_task` | `question` rows divided by `tasks` |
+| `questions_per_task` | The questions of the `question` rows' receipts divided by `tasks`: one turn that asks two questions counts two |
 | `rejected_deliveries` | Rejected delivery rows for each [rejection reason](#the-delivery-gate), zeros included |
-| `check_parts` | Each part of the handoff checks of the delivery rows, by name: `runs`, `failures` (`FAILED` runs) and the mean `seconds` of a run |
+| `check_parts` | Each part of every recorded check of those tasks, by name: `runs`, `failures` (`FAILED` runs) and the mean `seconds` of a run, null without one |
 | `unresolved_tasks` | Ended tasks with a rejected row that no later accepted row of the same subtask and type follows. It must be 0 |
+
+`check_parts` counts each check once, of any kind, whether or not a delivery row names it. A run is a part that `passed`, `FAILED`, or was `skipped` after it took time. A part `not selected`, or `skipped` at 0 seconds before it started, is no run.
 
 ### Deploy times
 

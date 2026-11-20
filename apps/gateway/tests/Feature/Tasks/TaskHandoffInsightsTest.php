@@ -44,9 +44,9 @@ function handoffSubtask(Task $group, int $position): Task
 }
 
 /** @param  list<array{0: string, 1: string, 2: int|float}>|null  $parts  name, result, seconds */
-function handoffCheck(Task $subtask, ?array $parts): TaskCheck
+function handoffCheck(Task $subtask, ?array $parts, TaskCheckKind $kind = TaskCheckKind::Handoff): TaskCheck
 {
-    return TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
+    return TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => $kind, 'status' => TaskCheckStatus::Passed,
         'pid' => 1, 'process_started' => 'x', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('2', 40), 'exit_code' => 0, 'output' => '',
         'parts' => $parts === null ? null : array_map(static fn (array $part): array => ['name' => $part[0], 'result' => $part[1], 'seconds' => $part[2]], $parts),
         'started_at' => now(), 'finished_at' => now()]);
@@ -63,7 +63,7 @@ function handoff(Task $subtask, TaskHandoffType $type, ?array $receipt, string $
  * Two gated groups that ended, one that is not gated, and one gated group still running, whose handoffs do not count.
  * Expected: 12 handoffs over 3 subtasks; first reviews `changes` with 2 findings and `approve` with 0; 2 questions over 2 gated tasks;
  * one delivery rejected for each of no_receipt, failed_part and claim_disproved; part lint 5 runs, 1 failure, 46 seconds and
- * part tests 5 runs, 1 failure, 120 seconds; one ended task whose rejected delivery no accepted delivery follows.
+ * part tests 4 runs (a skip that never started is none), 1 failure, 120 seconds; one ended task whose rejected delivery no accepted delivery follows.
  */
 function handoffFixture(): void
 {
@@ -106,7 +106,7 @@ function expectedHandoffs(): array
         'rejected_deliveries' => ['check_failed' => 0, 'claim_disproved' => 1, 'failed_part' => 1, 'no_receipt' => 1, 'other_commit' => 0],
         'check_parts' => [
             ['name' => 'lint', 'runs' => 5, 'failures' => 1, 'seconds' => 9.2],
-            ['name' => 'tests', 'runs' => 5, 'failures' => 1, 'seconds' => 24.0],
+            ['name' => 'tests', 'runs' => 4, 'failures' => 1, 'seconds' => 30.0],
         ],
         'unresolved_tasks' => 1,
     ];
@@ -140,4 +140,38 @@ it('gives the same handoff numbers from the stored records, and records a handof
 
     expect($this->getJson('/api/v1/task-insights?period=30d')->assertOk()->json('data.current.handoffs'))
         ->toEqual([...expectedHandoffs(), 'handoffs_per_subtask' => 13 / 3, 'unresolved_tasks' => 0]);
+});
+
+it('counts each recorded check once and only its parts that started, under any name', function (): void {
+    $subtask = handoffSubtask(handoffGroup(TaskGroupStatus::Completed, true), 1);
+    $delivery = ['commit' => str_repeat('b', 40), 'tree' => str_repeat('4', 40), 'parts' => [['name' => '1', 'result' => 'passed', 'seconds' => 1]]];
+    handoffCheck($subtask, [['1', 'passed', 4], ['tests', 'passed', 20], ['fixtures', 'not selected', 0]], TaskCheckKind::Baseline);
+    handoff($subtask, TaskHandoffType::Delivery, $delivery, 'failed_part',
+        handoffCheck($subtask, [['1', 'passed', 6], ['tests', 'FAILED', 10], ['fixtures', 'skipped', 0]]));
+    // A repeat check that no delivery row names; its tests part was skipped after it took 30 seconds.
+    handoffCheck($subtask, [['1', 'passed', 5], ['tests', 'skipped', 30]]);
+    $expected = [
+        ['name' => '1', 'runs' => 3, 'failures' => 0, 'seconds' => 5.0],
+        ['name' => 'fixtures', 'runs' => 0, 'failures' => 0, 'seconds' => null],
+        ['name' => 'tests', 'runs' => 3, 'failures' => 1, 'seconds' => 20.0],
+    ];
+
+    expect(app(TaskInsights::class)->report('30d', null, CarbonImmutable::now())->toArray()['current']['handoffs']['check_parts'])->toEqual($expected);
+
+    app(TaskInsightTotals::class)->refresh(CarbonImmutable::now());
+
+    expect($this->getJson('/api/v1/task-insights?period=30d')->assertOk()->json('data.current.handoffs.check_parts'))->toEqual($expected);
+});
+
+it('divides by every unit of work of the gated tasks and counts each question of a receipt', function (): void {
+    $group = handoffGroup(TaskGroupStatus::Cancelled, true);
+    handoffSubtask($group, 2);
+    handoff(handoffSubtask($group, 1), TaskHandoffType::Question, ['questions' => [['question' => 'Which path?'], ['question' => 'Which name?']]]);
+    // A task with no subtask, cancelled before its first turn, is one unit of work with no handoff.
+    handoffGroup(TaskGroupStatus::Cancelled, true);
+
+    $handoffs = app(TaskInsights::class)->report('30d', null, CarbonImmutable::now())->toArray()['current']['handoffs'];
+
+    expect($handoffs['handoffs_per_subtask'])->toEqual(1 / 3)
+        ->and($handoffs['questions_per_task'])->toEqual(1.0);
 });
