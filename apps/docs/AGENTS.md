@@ -17,7 +17,7 @@ documentation corpus under the repository-root `docs/` directory.
 
 ## Verification
 
-- Run `composer docs:lint` after changing the root documentation corpus.
+- Run `composer docs-lint` after changing the root documentation corpus.
 - Run `composer context:build` after a change affects the context index.
 - Run the Pest tests that cover a change to this application or its
   documentation contracts, with a file path or `--filter`. Follow the root `AGENTS.md` check policy for task and
