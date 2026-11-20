@@ -589,7 +589,7 @@
    "Read macOS version": "unreviewed",
    "Read manager version": "unreviewed",
    "Read the key fingerprint": "read-only",
-   "Refresh the cask metadata": "unreviewed"
+   "Refresh the cask metadata": "idempotent"
   },
   "operation-vault-sync": {
    "Read private inventory": "unreviewed",
