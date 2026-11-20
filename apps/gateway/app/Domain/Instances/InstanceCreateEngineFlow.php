@@ -147,7 +147,9 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             [$step, $code] = self::Failures[$failed->name] ?? ['clone', 'instance.create_clone_failed'];
             $data = ['status' => 'failed', 'error_code' => $failed->error_code ?? $code,
                 'failure' => ['failed_step' => self::Labels[$failed->name] ?? $failed->name, 'stderr_recorded' => false],
+                // The engine never publishes the address: a failed create leaves it to a retry's completion, as a succeeded one does.
                 'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => $step, 'error_code' => $failed->error_code ?? $code,
+                    'route_publication' => 'deferred',
                     ...self::observed($run)]];
         } else {
             $data = ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []];

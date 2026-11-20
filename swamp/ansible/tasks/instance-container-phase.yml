@@ -1129,7 +1129,8 @@
 # file an earlier commit tracked, or ignored by a `.gitignore` the commit removed, would otherwise stay in every seed. It runs after the
 # checkout and before the deploy steps, as the workspace's owner, with the task check's Git settings, in the rounds of a task copy's
 # clean. The `.env` stays: it is excluded first. Ignored files stay. Tracked files are never touched; a changed one refused the
-# checkout already. A file it cannot remove never fails the deployment: the line names it, and a task copy's own clean still runs.
+# checkout already. A file it cannot remove never fails the deployment: the result's `workspace_cleaned` counts it as `left_count`, the
+# seed's manifest says the tree is not clean, and a task copy's own clean runs.
 - name: Remove the untracked files of the default
   tags: [checkout]
   when: phase == 'checkout' and container.name is defined
@@ -1138,11 +1139,6 @@
   register: default_clean
   changed_when: (default_clean.stdout | from_json).removed_count > 0
   failed_when: default_clean.rc != 0
-
-- name: Report the default's clean
-  tags: [checkout]
-  when: phase == 'checkout' and default_clean.stdout is defined
-  ansible.builtin.debug: { msg: "orbit-workspace-clean={{ default_clean.stdout }}" }
 
 
 # A proof run in a copy brings the commit under proof into the copy's workspace (tasks/instance-proof-checkout.yml).
@@ -1834,8 +1830,6 @@
         stdin: "{{ {'items': container.seed_files, 'ca': seed_ca.content | b64decode, 'workspace': container.workspace} | to_json }}"
       register: seed_files_placed
       changed_when: true
-    - name: Report the seed's manifest
-      ansible.builtin.debug: { msg: "orbit-seed-files={{ seed_files_placed.stdout }}" }
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it. Every passed deployment
 # retakes it, also at the same commit: the default's files (caches, built assets) move on between deployments, and a clone must start

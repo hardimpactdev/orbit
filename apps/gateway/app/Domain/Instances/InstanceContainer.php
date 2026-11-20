@@ -601,9 +601,13 @@ final readonly class InstanceContainer
         foreach (self::t3DropIns($conn, $folders) as $file) {
             $items[] = ['file' => ['path' => $file['path'], 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'], 'content' => $file['content'], 'parents' => true]];
         }
-        $instructions = app(InstanceAgentInstructions::class);
-        $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
-        $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
+        // Instructions that cannot be read leave the folder to each clone, whose create reads and checks them again.
+        try {
+            $instructions = app(InstanceAgentInstructions::class);
+            $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
+            $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
+        } catch (ResourceOperationException) {
+        }
         foreach (InstanceAgentInstructions::links() as $link) {
             $items[] = ['link' => [...$link, 'owner' => ['uid' => $agent, 'gid' => $agent]]];
         }
