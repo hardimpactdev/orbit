@@ -136,7 +136,11 @@ fn private_names(hosts: &str, names: &[PrivateName]) -> String {
         kept.extend(names.iter().map(|name| format!("{} {}", name.host, name.name)));
         kept.push(HOSTS_END.to_owned());
     }
-    if kept.is_empty() { String::new() } else { kept.join("\n") + "\n" }
+    let mut text = kept.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    text
 }
 
 /// `hosts` with its `127.0.1.1` line naming the hostname, its first label and the Incus name; every other line stays.
@@ -155,7 +159,9 @@ fn hosts(current: &str, hostname: &str, container: &str) -> String {
     } else {
         lines.insert(0, line);
     }
-    lines.join("\n") + "\n"
+    let mut text = lines.join("\n");
+    text.push('\n');
+    text
 }
 
 /// One range of an Incus ID map.
