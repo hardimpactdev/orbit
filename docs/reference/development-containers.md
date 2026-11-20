@@ -205,15 +205,19 @@ T3 and the agents run as `agent`, and so do the shell commands of Claude Code an
 
 `agent` owns the workspace ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)). Orbit's own work in it runs as `agent` too, with `HOME=/home/agent`. That is the checkout's Git calls, the line that keeps `.env` out of Git and the record of the deploy steps. It is also each development deploy step of a deployment, a create and a proof run. A deploy step runs as uid 2750, so it can reach the model forwarder, as the agent can. `www-data` stays off the model route.
 
-Both users read and write the workspace: a file each one writes is `rw-rw----`, group `www-data`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `www-data` file in the workspace, such as one that the running app wrote in `storage/` or `bootstrap/cache`, stays `www-data`'s only until root's next pass.
+Both users read and write the workspace: a file each one writes is `rw-rw----`, group `www-data`. Some calls only a file's owner may make, such as `chmod`, `utime` with explicit times and `setfacl`. So an `www-data` file in the workspace, such as one that the running app wrote in `public/`, stays `www-data`'s only until root's next pass.
 
 A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root's pass gives the group back what the owner has, and gives `agent` each entry that `www-data` owns. It runs before a deployment's steps and after them, before a proof run's steps, and in the `services` part of a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next pass.
+
+Laravel's runtime trees are the app's. In each folder of the workspace that holds an `artisan` file, the root's and each monorepo app's, the pass gives `storage/`, `bootstrap/cache/` and every entry under them to the app user: `www-data`, or `orbit` (uid 1000) in a nested-fleet container. That includes an entry `agent` made there, such as from a deploy step.
+
+Blade writes a compiled view again and then sets its times, which only its owner may do; a compiled view owned by `agent` made every page answer 500 (`touch(): Utime failed: Operation not permitted`). So an `artisan` command that an agent runs itself and that compiles an existing view again may now fail in the same way, until the next pass. That is accepted.
 
 One program does the pass: `swamp/ansible/instance_workspace_owner.py`. It names each entry it changed, up to 20; above that it prints only the count.
 
 The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path.
 
-The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits, so `www-data` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
+The pass never follows a link: it changes the mode and the owner through the entry it opened without following one, and it gives a link or a socket itself to `agent`, never its target. A file it gives to `agent` loses its setuid and setgid bits; a file it gives to the app user keeps them, so `www-data` cannot make a program that runs as `agent`. A file with a second name, a hard link, keeps its owner, because that name may be outside the workspace; it still gets the group's bits.
 
 Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
 

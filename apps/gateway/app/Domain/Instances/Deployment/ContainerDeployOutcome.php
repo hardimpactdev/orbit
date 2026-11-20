@@ -29,6 +29,9 @@ final readonly class ContainerDeployOutcome
     /** The forEach step that runs each development deploy step, one item per admitted step. */
     public const string DeployStepsStep = 'Run dev deploy steps';
 
+    /** The step that prints, as `,<name>,<name>,`, the steps whose inputs the checkout found unchanged. */
+    public const string SkipStep = 'Read the steps to skip';
+
     /**
      * @param  array<string, mixed>  $data
      * @param  list<string>  $secrets  Values the recorded failure detail must not show: the Instance's environment and the Swamp tokens.
@@ -103,6 +106,44 @@ final readonly class ContainerDeployOutcome
         }
 
         return [$data, $payload];
+    }
+
+    /**
+     * How each admitted development deploy step ended, in the admitted order (docs/reference/deployments.md#history): `succeeded`,
+     * `failed`, `skipped_unchanged` when the checkout found its inputs unchanged ("Read the steps to skip" names it), or `not_run` when
+     * the run skipped it after a failure or never reached it.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<mixed>  $admitted
+     * @return list<array{name:string,phase:DeploymentProgressPhase,status:string}>
+     */
+    public static function stepEvents(array $data, array $admitted): array
+    {
+        $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+        $skip = ValidatedData::object($steps[self::SkipStep] ?? []);
+        $unchanged = ($skip['status'] ?? null) === 'succeeded' && is_string($skip['stdout'] ?? null) ? $skip['stdout'] : '';
+        $ended = [];
+        foreach ($steps as $name => $step) {
+            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', (string) $name, $match) === 1 && is_array($step)) {
+                $ended[(int) $match[1]] = $step['status'] ?? null;
+            }
+        }
+        $events = [];
+        foreach (array_values($admitted) as $index => $intent) {
+            if (! is_array($intent) || ! is_string($intent['name'] ?? null)) {
+                continue;
+            }
+            $status = $ended[$index] ?? null;
+            $events[] = ['name' => $intent['name'],
+                'phase' => DeploymentProgressPhase::tryFrom(is_string($intent['phase'] ?? null) ? $intent['phase'] : '') ?? DeploymentProgressPhase::BeforeActivation,
+                'status' => match (true) {
+                    $status === 'succeeded', $status === 'failed' => $status,
+                    str_contains($unchanged, ','.$intent['name'].',') => 'skipped_unchanged',
+                    default => 'not_run',
+                }];
+        }
+
+        return $events;
     }
 
     /**

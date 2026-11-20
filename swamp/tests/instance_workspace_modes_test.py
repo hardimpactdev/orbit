@@ -92,14 +92,14 @@ class WorkspaceModesTest(unittest.TestCase):
             os.chmod(self.workspace / path, 0o644)
         os.chmod(self.workspace / 'run.sh', 0o744)
 
-    def run_pass(self, from_uid=NOBODY, **environment):
-        return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace), str(from_uid), '2750'], check=False,
+    def run_pass(self, from_uid=NOBODY, agent_uid='2750', **environment):
+        return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace), str(from_uid), str(agent_uid)], check=False,
                               capture_output=True, text=True, env={**os.environ, 'VANISH': '', 'LOCKED': '', 'CHOWN_LOG': '', **environment})
 
-    def test_the_phase_runs_the_shipped_program_as_root_giving_the_app_accounts_entries_to_agent(self):
+    def test_the_phase_runs_the_shipped_program_as_root_with_the_app_uid_and_agents(self):
         self.assertEqual(PASS['when'], "phase in ['checkout', 'processes', 'proof_checkout']")
-        # The intent names whose entries go to `agent` (InstanceContainer::intent `workspace_ids`): `www-data` (33) in a normal container,
-        # the inner fleet's `orbit` (1000) in a nested-fleet one.
+        # The intent names the app user (InstanceContainer::intent `workspace_ids`): `www-data` (33) in a normal container, the inner
+        # fleet's `orbit` (1000) in a nested-fleet one. Its entries go to `agent`, and the Laravel runtime trees go to it.
         self.assertEqual(re.sub(r'\s+', ' ', PASS['ansible.builtin.command']['argv']),
                          "{{ as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_workspace_owner.py'),"
                          " container.workspace, container.workspace_ids.writer | string, '2750'] }}")
@@ -136,6 +136,49 @@ class WorkspaceModesTest(unittest.TestCase):
         log.unlink()
         self.assertEqual(self.run_pass(NOBODY, CHOWN_LOG=str(log)).stdout, '')
         self.assertFalse(log.exists())
+
+    def test_laravel_runtime_trees_go_to_the_app_user_and_the_rest_to_agent(self):
+        # A Laravel app at the root and one in a monorepo folder; `packages/lib` has a `storage` but no `artisan`.
+        outside = self.folder / 'outside'
+        outside.write_text('x')
+        runtime = ['storage', 'storage/framework', 'storage/framework/views', 'storage/framework/views/a.php', 'bootstrap/cache',
+                   'bootstrap/cache/packages.php', 'apps/site/storage', 'apps/site/storage/inertia-devtools', 'apps/site/bootstrap/cache']
+        other = ['artisan', 'bootstrap', 'bootstrap/app.php', 'apps', 'apps/site', 'apps/site/artisan', 'apps/site/bootstrap',
+                 'packages', 'packages/lib', 'packages/lib/storage', 'packages/lib/storage/file', 'node_modules/storage']
+        for path in sorted(runtime + other, key=len):
+            target = self.workspace / path
+            if '.' in target.name or target.name in ('artisan', 'file'):
+                target.write_text('x')
+            elif not target.exists():
+                target.mkdir()
+        os.link(outside, self.workspace / 'storage/hard')
+        (self.workspace / 'storage/link').symlink_to(outside)
+        (self.workspace / 'apps/site/storage/folder-link').symlink_to(self.folder)
+        program = self.workspace / 'storage/framework/views/program'
+        program.write_text('x')
+        os.chmod(program, 0o6770)
+        log = self.folder / 'chown.log'
+        # The test user stands for `agent`, as a deploy step wrote these: each runtime entry goes to the app user, nothing else changes owner.
+        done = self.run_pass(NOBODY, os.getuid(), CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(sorted(log.read_text().splitlines()),
+                         sorted([f'fd {(self.workspace / path).resolve()} {NOBODY}' for path in runtime + ['storage/framework/views/program']]
+                                + [f'entry {self.workspace / "storage/link"} {NOBODY}',
+                                   f'entry {self.workspace / "apps/site/storage/folder-link"} {NOBODY}']))
+        # The hard link keeps its owner, a link's target is untouched, and a file given to the app user keeps its setuid and setgid bits.
+        self.assertFalse(any('hard' in line or str(outside) in line for line in log.read_text().splitlines()))
+        self.assertEqual(mode(program), 0o6770)
+        # The group still gets back what the owner has, in the runtime trees too.
+        self.assertEqual(mode(self.workspace / 'storage/framework/views'), stat.S_IMODE(os.lstat(self.workspace / 'storage').st_mode))
+        self.assertEqual(mode(self.workspace / 'storage/framework/views/a.php') & 0o060, 0o060)
+        # The test user as the app user: the runtime entries are already the app's, and everything else goes to `agent`.
+        log.unlink()
+        done = self.run_pass(os.getuid(), NOBODY, CHOWN_LOG=str(log))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        given = {line.rsplit(' ', 1)[0].split(' ', 1)[1] for line in log.read_text().splitlines()}
+        self.assertTrue({str((self.workspace / path).resolve()) for path in other} <= given)
+        self.assertFalse({str((self.workspace / path).resolve()) for path in runtime} & given)
+        self.assertEqual({line.rsplit(' ', 1)[1] for line in log.read_text().splitlines()}, {NOBODY})
 
     def test_an_orbit_file_hard_linked_from_outside_keeps_its_owner(self):
         # A hard link in the workspace to a file outside it: giving the inode away would give away the outside name too.

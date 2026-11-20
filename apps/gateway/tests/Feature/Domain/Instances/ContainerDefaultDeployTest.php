@@ -49,6 +49,7 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -269,6 +270,40 @@ it('stores a failed best-effort step\'s exit code in the Operation result and th
         // instance:deployment:show returns the record's data.
         ->and(InstanceDeploymentData::fromModel($row)->toArray()['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1]]);
 });
+
+it('records a container deployment with the Operation\'s start, end and duration and how each deploy step ended', function (string $status, array $ended, array $events): void {
+    $instance = deployDefault(container: true);
+    foreach (['composer-install' => 2, 'migrate' => 3] as $name => $position) {
+        ProjectDevelopmentDeployStep::query()->create(['project_id' => $instance->project_id, 'name' => $name, 'position' => $position, 'command' => $name,
+            'required' => true, 'timeout_seconds' => 300]);
+    }
+    $commit = str_repeat('c', 40);
+    // Operation 31024 on Instance 3847 ran from 08:43:20 to 08:44:13; its run's end was projected a second later.
+    $this->travelTo(Carbon::parse('2026-11-20T08:44:14Z'));
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'run-1', 'started_at' => '2026-11-20T08:43:20Z',
+        'finished_at' => '2026-11-20T08:44:13Z', 'result' => ['steps' => [
+            ContainerDeployOutcome::ResultStep => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)],
+            ContainerDeployOutcome::SkipStep => ['status' => 'succeeded', 'stdout' => ',composer-install,'], ...$ended],
+            'summary' => ['failed_steps' => $status === 'failed' ? ['Run dev deploy steps-0-0'] : []]]]);
+
+    $row = InstanceDeployment::query()->findOrFail($operation->refresh()->state['deployment_id']);
+    expect($row->status)->toBe($status)
+        ->and($row->started_at?->toIso8601ZuluString())->toBe('2026-11-20T08:43:20Z')
+        ->and($row->finished_at?->toIso8601ZuluString())->toBe('2026-11-20T08:44:13Z')
+        ->and($row->duration_seconds)->toBe(53)
+        ->and($row->events)->toBe(array_map(static fn (array $event): array => ['type' => 'phase', 'phase' => 'before_activation',
+            'step_name' => $event[0], 'status' => $event[1]], $events));
+})->with([
+    'passed, one step skipped by its inputs' => ['succeeded', ['Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''],
+        'Run dev deploy steps-1-1' => ['status' => 'skipped'], 'Run dev deploy steps-2-2' => ['status' => 'succeeded', 'stdout' => '']],
+        [['npm-build', 'succeeded'], ['composer-install', 'skipped_unchanged'], ['migrate', 'succeeded']]],
+    'the first step failed, the rest never ran' => ['failed', ['Run dev deploy steps-0-0' => ['status' => 'failed'],
+        'Run dev deploy steps-1-1' => ['status' => 'skipped'], 'Run dev deploy steps-2-2' => ['status' => 'skipped']],
+        [['npm-build', 'failed'], ['composer-install', 'skipped_unchanged'], ['migrate', 'not_run']]],
+]);
 
 it('records a running container but no seed when a deployment fails after the container started', function (): void {
     $instance = deployDefault(container: true);
