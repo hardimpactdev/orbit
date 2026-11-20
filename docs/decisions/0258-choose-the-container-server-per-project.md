@@ -6,17 +6,17 @@ description: "In progress. Every task copy runs the Conn Server. A Project choos
 
 # ADR 0258: Choose the container server per Project
 
-A Project chooses the server that runs in its Instance containers: `t3`, the T3 server Orbit runs today and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn), which the Conn monorepo holds. The Conn Server is a Rust server with the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. The purpose was a switch to try the Conn Server on one Project. Since 2026-11-19 every task copy runs the Conn Server, and the Project's choice governs only its dev containers.
+A Project chooses the server that runs in its Instance containers: `conn`, the [Conn Server](https://github.com/nckrtl/conn), which the Conn monorepo holds and the default, or `t3`, the T3 server. The Conn Server is a Rust server with the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. The purpose was a switch to try the Conn Server on one Project. Since 2026-11-19 every task copy runs the Conn Server, and the Project's choice governs only its dev containers.
 
 ## Status
 
 In progress.
 
-The owner decided on 2026-11-15. The recipe pins Conn Server 0.3.0 as the agent folder's part `conn-server`, with Chrome headless shell 157.0.8103.78 as `chrome-headless-shell`, so Orbit accepts the `conn` choice and supplies its preview browser. On 2026-11-16 a clone of the first Project that chose `conn` ran the Conn Server on Beast, and one agent turn through `thread start --wait` completed.
+Decisions so far:
 
-On 2026-11-19 the owner made the Conn Server the server of every task copy, after a task group on Project 20 ran its question, Stop, reviewer turn and thread index on it with every field Orbit reads matching T3, at a twentieth of T3's memory. Dev containers keep the Project's choice while Conn clients still call methods that only T3 serves.
-
-On 2026-11-20 the owner switched every Project to `conn` and made `conn` the default for new Projects, before full client parity. In a clone's create the Conn Server is ready about 0.2 s after it starts, against 1.2–5.8 s for T3. Orbit and Swamp use no method the Conn Server lacks. Conn clients lose, in new dev containers only: agents driving the browser tab open in Conn desktop, the resource and usage panels, session import, clone from the client, the saved-login menu and Linear issues. The Conn Server work closes that gap.
+- **2026-11-15.** The owner decided. The recipe pins Conn Server 0.3.0 as the agent folder's part `conn-server`, with Chrome headless shell 157.0.8103.78 as `chrome-headless-shell`, so Orbit accepts the `conn` choice and supplies its preview browser. On 2026-11-16 a clone of the first Project that chose `conn` ran the Conn Server on Beast, and one agent turn through `thread start --wait` completed.
+- **2026-11-19.** The owner made the Conn Server the server of every task copy, after a task group on Project 20 ran its question, Stop, reviewer turn and thread index on it with every field Orbit reads matching T3, at a twentieth of T3's memory.
+- **2026-11-20.** The owner switched every Project to `conn` and made `conn` the default for new Projects, before full client parity. In a clone's create the Conn Server is ready about 0.2 s after it starts, against 1.2–5.8 s for T3. Orbit and Swamp use no method the Conn Server lacks. However, Conn clients lose, in new dev containers only: agents driving the browser tab open in Conn desktop, the resource and usage panels, session import, clone from the client, the saved-login menu and Linear issues. The Conn Server work closes that gap.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles).
 
