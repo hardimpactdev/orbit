@@ -53,19 +53,20 @@ A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a producti
 
 The engine runs a container clone's create from its admitted intent (`direct_provisioning.container`). Its steps are the executor's `instance` family ([Executor: The instance family](/reference/executor#the-instance-family)):
 
-1. `clone`, on the Node: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule.
+1. `clone`, on the Node: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule. A nested-fleet copy first gets its own inner volume, copied from the default's volume snapshot of the same seed.
 2. `fetch`, on the Node, beside `clone`: the branch into the Node's mirror. The Gateway mints the read credential and sends it as a blob.
 3. `prepare`, on the copy: its files before the first start. The list goes as one blob, because an order holds at most 4 KB.
-4. `start`, on the copy: the network guard, the start and the copy's names.
-5. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render.
-6. `t3`, on the copy: T3 running, its project, and its two sessions sealed to the Gateway's key.
+4. `start`, on the copy: the network guard, the start and the copy's names. A nested-fleet copy starts only when its config, devices and volumes are exactly the ones Orbit writes.
+5. `club_key`, on a nested-fleet copy only: the nested Gateway's Club key in the copy's `/run`. Without a value on the Gateway, it writes nothing.
+6. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render. A task copy's first checkout cleans the default's tree first.
+7. `t3`, on the copy: T3 or the Conn Server running, its project, and its two sessions sealed to the Gateway's key.
 
-The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. The completion runs on Swamp, as before.
+The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. It also names a task copy's `workspace_cleaned` and a nested-fleet copy's Club key outcome, as the Swamp result does. A failed `club_key` step fails the create at `workspace` with its own code, such as `instance.nested_club_key_not_tmpfs`. The completion runs on Swamp, as before.
 
 Some clones start on Swamp:
 
-- a nested-fleet default's copy, a task copy or a branch selection;
-- a clone with attached Node services, Processes or a CI hold;
+- a branch selection;
+- a clone with attached Node services or a CI hold;
 - an already active create;
 - a clone with a firewall row other than a TCP route allow.
 
@@ -77,9 +78,9 @@ An executor reports its primitives when it connects to the bus, and again every 
 
 Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
-`instance.create` needs agent 0.22.0 on the Node: an older executor reports the same `instance` actions but refuses the start's `app_account`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.22.0 or newer.
+`instance.create` needs agent 0.23.0 on the Node. An older executor refuses a task copy's `clean`, the settings' `key_value` and `key`, and a nested copy's inner volume and allowed devices, so the create fails instead of running wrong. A nested-fleet copy also needs `instance.club_key`, which only 0.23.0 reports, so a Node with an older executor keeps those copies on Swamp. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.23.0 or newer.
 
-The `files_blob` holds the model environment inline. The Gateway also puts the placeholder model key into the JSON settings there, in place of the intent's `key_value` ([Antigravity](/reference/development-containers#antigravity)). The agent's prepare step still replaces each top-level settings key whole. That drops a provider instance of the agent's own, and it rewrites a key that the Conn Server already moved into its store. So `instance.create` also stays out of `ORBIT_ENGINE_KINDS` until prepare merges as the other settings writers do.
+The `files_blob` holds the model environment inline. Each JSON settings file goes with the intent's `key_value` and the placeholder model key ([Antigravity](/reference/development-containers#antigravity)). The prepare step merges it object by object as the other settings writers do. A provider instance of the agent's own stays. A file that holds the key, or the Conn Server's mark of a key it already moved into its store, stays as it is.
 
 ## Steps and transitions
 

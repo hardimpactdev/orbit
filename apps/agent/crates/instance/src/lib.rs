@@ -2,6 +2,10 @@
 //!
 //! - [`clone`] (`instance.clone`): the copy's network ACL, then a copy of the seed snapshot with the copy's config, root
 //!   disk and guarded NIC, then the T3 proxy device. A repeat finds the copy and only completes what is missing.
+//! - [`copy_volume`] (`instance.copy_volume`): a nested-fleet copy's own inner volume from the default's volume seed, beside
+//!   the clone.
+//! - [`spare_volume`] (`instance.spare_volume`): the one spare of a default's inner volume, which the next copy takes by a
+//!   rename, made beside a create.
 //! - [`prepare`] (`instance.prepare`): a stopped copy's files before its first start: the seed's Orbit units that are not
 //!   the copy's go, its own machine id, then the boot, trust and T3 files the Gateway rendered.
 //! - [`fetch_branch`] (`instance.fetch_branch`): the Instance's branch in the Node's mirror, when the origin has it.
@@ -9,6 +13,8 @@
 //!   merged from the default's and the Gateway's render.
 //! - [`start`] (`instance.start`): the copy's first start (its files shifted back first on a nested Node), then its
 //!   hostname and `/etc/hosts`.
+//! - [`club_key`] (`instance.club_key`): a nested-fleet copy's Club key in its `/run`, and the nested Gateway's serve told.
+//! - [`stop`] (`instance.stop`): a copy whose create failed stops, and stays for a retry or a destroy.
 //! - [`t3`] (`instance.t3`): the copy's T3 running, its two sessions issued, checked and sealed to the Gateway, and its
 //!   workspace a T3 project.
 //!
@@ -16,19 +22,23 @@
 //! the fixed `incus` binary with fixed arguments.
 
 mod checkout;
+mod club;
 mod env;
 mod fetch;
 mod prepare;
 mod shift;
 mod start;
+mod stop;
 mod t3;
 #[cfg(test)]
 mod tests;
 
 pub use checkout::checkout;
+pub use club::club_key;
 pub use fetch::fetch_branch;
 pub use prepare::prepare;
 pub use start::start;
+pub use stop::stop;
 pub use t3::t3;
 
 use std::collections::BTreeMap;
@@ -182,6 +192,24 @@ struct CloneInput {
     routes: Vec<RouteRule>,
 }
 
+/// What `instance.copy_volume` makes: a nested-fleet copy's own inner volume (docs/reference/development-containers.md#the-inner-volume).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VolumeInput {
+    project: String,
+    /// The copy, whose disk `device` names the volume once its start attached it.
+    name: String,
+    /// The default and its admitted seed, as `instance.clone` reads them.
+    source: String,
+    snapshot: String,
+    device: String,
+    /// The default's volume, whose snapshot of the seed's name the copy's volume starts from.
+    volume_source: String,
+    volume: String,
+    pool: String,
+    size: String,
+}
+
 /// One `ufw route allow in on <in> out on <out> from <from> to <to> port <port> proto tcp comment <comment>`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -240,7 +268,7 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     let (devices, snapshot) = if let Some(found) = instance {
         (found.get("devices").cloned().unwrap_or(Value::Null), None)
     } else {
-        let snapshot = seed(&incus, &input)?;
+        let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
         copy(&incus, &input, &snapshot)?;
         (Value::Null, Some(snapshot))
     };
@@ -308,16 +336,12 @@ fn check(input: &CloneInput) -> Result<(), String> {
             return Err(format!("{field} is not a name"));
         }
     }
-    let seed = input.snapshot.strip_prefix("seed-").unwrap_or_default();
-    if seed.is_empty() || !seed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("snapshot is not seed-<commit>".to_owned());
-    }
+    seed_name(&input.snapshot)?;
     let octets: Vec<&str> = input.address.split('.').collect();
     if octets.len() != 4 || octets.iter().any(|octet| octet.parse::<u8>().is_err()) {
         return Err("address is not IPv4".to_owned());
     }
-    let size = input.root.size.trim_end_matches(|c: char| c.is_ascii_alphabetic());
-    if size.is_empty() || !size.bytes().all(|byte| byte.is_ascii_digit()) || !matches!(&input.root.size[size.len()..], "GiB" | "MiB" | "GB" | "MB") {
+    if !size(&input.root.size) {
         return Err("root.size is not a size".to_owned());
     }
     let key = |value: &str| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
@@ -354,6 +378,21 @@ fn check(input: &CloneInput) -> Result<(), String> {
     Ok(())
 }
 
+/// An admitted seed snapshot, `seed-<commit>`.
+fn seed_name(snapshot: &str) -> Result<(), String> {
+    let seed = snapshot.strip_prefix("seed-").unwrap_or_default();
+    if seed.is_empty() || !seed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("snapshot is not seed-<commit>".to_owned());
+    }
+    Ok(())
+}
+
+/// A size Incus reads, such as `40GiB`.
+fn size(value: &str) -> bool {
+    let digits = value.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) && matches!(&value[digits.len()..], "GiB" | "MiB" | "GB" | "MB")
+}
+
 /// The copy's own ACL: made when missing, its rules written when they differ.
 fn ensure_acl(incus: &Incus<'_, impl System>, acl: &Acl) -> Result<(), Failure> {
     let found = incus.query(&format!("/1.0/network-acls/{}?project=default", acl.name))?;
@@ -370,10 +409,10 @@ fn ensure_acl(incus: &Incus<'_, impl System>, acl: &Acl) -> Result<(), Failure> 
 }
 
 /// The seed to copy: the admitted one, or the newest seed when a deployment replaced it.
-fn seed(incus: &Incus<'_, impl System>, input: &CloneInput) -> Result<String, Failure> {
+fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<String, Failure> {
     let listed = incus
-        .query(&format!("/1.0/instances/{}/snapshots?project={}&recursion=1", input.source, input.project))?
-        .ok_or_else(|| Failure::new("instance.default_seed_missing", format!("{} not found", input.source)))?;
+        .query(&format!("/1.0/instances/{source}/snapshots?project={project}&recursion=1"))?
+        .ok_or_else(|| Failure::new("instance.default_seed_missing", format!("{source} not found")))?;
     let snapshots: Vec<(String, String)> = listed
         .as_array()
         .map(|rows| {
@@ -385,13 +424,13 @@ fn seed(incus: &Incus<'_, impl System>, input: &CloneInput) -> Result<String, Fa
                 .collect()
         })
         .unwrap_or_default();
-    if snapshots.iter().any(|(name, _)| *name == input.snapshot) {
-        return Ok(input.snapshot.clone());
+    if snapshots.iter().any(|(name, _)| name == admitted) {
+        return Ok(admitted.to_owned());
     }
     if !snapshots.iter().any(|(name, _)| name.starts_with("seed-") || name.starts_with("next-")) {
         return Err(Failure::new("instance.default_seed_missing", "no seed"));
     }
-    let retake = format!("next-{}", &input.snapshot["seed-".len()..]);
+    let retake = format!("next-{}", &admitted["seed-".len()..]);
     let newest = snapshots.iter().filter(|(name, _)| name.starts_with("seed-")).max_by(|a, b| a.1.cmp(&b.1));
     match newest {
         Some((name, _)) if !snapshots.iter().any(|(held, _)| *held == retake) => Ok(name.clone()),
@@ -433,6 +472,155 @@ fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> R
         argv.extend(["--device".to_owned(), device]);
     }
     incus.run(&argv, None).map(drop)
+}
+
+/// Makes a nested-fleet copy's own inner volume from the default's volume snapshot of the seed that `instance.clone` copies,
+/// read the same way: the admitted seed, or the newest one a deployment left. A spare made from that same seed
+/// ([`spare_volume`]) is taken by a rename, which Incus does at once; a copy rewrites the whole volume. A rename that fails,
+/// because another create took the spare first, falls back to the copy. Spares of an older seed go. A volume of the copy's
+/// name that its disk does not name yet is left from a failed run, and is made again. The volume records its size, which the
+/// start guard requires. `instance.start` then names it in the copy's disk.
+/// Answers `{"snapshot": <the seed, or null for a volume in use>, "spare": <whether a spare was taken>}`.
+///
+/// # Errors
+///
+/// `instance.copy_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`,
+/// `instance.default_seed_incomplete` or `instance.copy_volume_failed`.
+pub fn copy_volume(system: &impl System, input: &Value) -> Result<String, Failure> {
+    let input: VolumeInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.copy_volume_input_invalid", error.to_string()))?;
+    let checked = [&input.project, &input.name, &input.source, &input.device, &input.volume_source, &input.volume, &input.pool]
+        .iter()
+        .all(|value| name(value))
+        && input.volume != input.volume_source
+        && size(&input.size);
+    if !checked {
+        return Err(Failure::new("instance.copy_volume_input_invalid", "a name or the size is not valid"));
+    }
+    seed_name(&input.snapshot).map_err(|detail| Failure::new("instance.copy_volume_input_invalid", detail))?;
+    let incus = Incus { system, code: "instance.copy_volume_failed" };
+    let copy = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
+    let attached = copy.as_ref().and_then(|copy| copy.pointer(&format!("/devices/{}/source", input.device))).and_then(Value::as_str);
+    if attached == Some(input.volume.as_str()) {
+        return Ok(serde_json::json!({"snapshot": null, "spare": false}).to_string());
+    }
+    let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+    let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
+    let names = pool.volumes()?;
+    if names.contains(&input.volume) {
+        pool.change(&["delete", &input.pool, &input.volume])?;
+    }
+    let spare = spare_name(&input.volume_source, &snapshot);
+    // Incus renames a volume or refuses: a spare goes to one create only.
+    let taken = names.contains(&spare) && pool.change(&["rename", &input.pool, &spare, &input.volume]).is_ok();
+    if !taken {
+        pool.seeded(&input.volume_source, &snapshot)?;
+        pool.change(&["copy", &format!("{}/{}/{snapshot}", input.pool, input.volume_source), &format!("{}/{}", input.pool, input.volume)])?;
+    }
+    pool.drop_stale(&names, &input.volume_source, &spare);
+    // The copy takes the snapshot's config, and a seed that a seed copy moved records `size: 0`: this writes only the record.
+    pool.change(&["set", &input.pool, &input.volume, &format!("size={}", input.size)])?;
+    Ok(serde_json::json!({"snapshot": snapshot, "spare": taken}).to_string())
+}
+
+/// What `instance.spare_volume` makes: the one spare of a default's inner volume.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SpareInput {
+    project: String,
+    /// The default and its admitted seed.
+    source: String,
+    snapshot: String,
+    volume_source: String,
+    /// The copy whose create makes the spare: its builder volume is `next-<volume>`, so two builders never share one.
+    volume: String,
+    pool: String,
+}
+
+/// Makes the one spare of a default's inner volume, `spare-<volume>-<seed>`, from its current seed, when none exists, so the
+/// next copy takes it by a rename instead of a copy ([`copy_volume`]). The spare is built under the copy's own builder
+/// name and renamed into place when complete, so no create ever takes a spare that is still being copied. A spare that another
+/// builder placed first wins, and this one goes. Spares of an older seed go.
+/// Answers `{"spare": "made" | "present"}`.
+///
+/// # Errors
+///
+/// `instance.spare_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`,
+/// `instance.default_seed_incomplete` or `instance.spare_volume_failed`.
+pub fn spare_volume(system: &impl System, input: &Value) -> Result<String, Failure> {
+    let input: SpareInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.spare_volume_input_invalid", error.to_string()))?;
+    let checked = [&input.project, &input.source, &input.volume_source, &input.volume, &input.pool].iter().all(|value| name(value)) && input.volume != input.volume_source;
+    if !checked {
+        return Err(Failure::new("instance.spare_volume_input_invalid", "a name is not valid"));
+    }
+    seed_name(&input.snapshot).map_err(|detail| Failure::new("instance.spare_volume_input_invalid", detail))?;
+    let incus = Incus { system, code: "instance.spare_volume_failed" };
+    let snapshot = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+    let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
+    let names = pool.volumes()?;
+    let spare = spare_name(&input.volume_source, &snapshot);
+    pool.drop_stale(&names, &input.volume_source, &spare);
+    if names.contains(&spare) {
+        return Ok(serde_json::json!({"spare": "present"}).to_string());
+    }
+    pool.seeded(&input.volume_source, &snapshot)?;
+    let builder = format!("next-{}", input.volume);
+    if names.contains(&builder) {
+        pool.change(&["delete", &input.pool, &builder])?;
+    }
+    pool.change(&["copy", &format!("{}/{}/{snapshot}", input.pool, input.volume_source), &format!("{}/{builder}", input.pool)])?;
+    if pool.change(&["rename", &input.pool, &builder, &spare]).is_err() {
+        let _ = pool.change(&["delete", &input.pool, &builder]);
+        return Ok(serde_json::json!({"spare": "present"}).to_string());
+    }
+    Ok(serde_json::json!({"spare": "made"}).to_string())
+}
+
+/// The spare of a default's inner volume made from one seed.
+fn spare_name(volume: &str, snapshot: &str) -> String {
+    format!("spare-{volume}-{snapshot}")
+}
+
+/// The custom volumes of one pool in one project.
+struct Pool<'a, S: System> {
+    incus: &'a Incus<'a, S>,
+    project: &'a str,
+    name: &'a str,
+}
+
+impl<S: System> Pool<'_, S> {
+    fn volumes(&self) -> Result<Vec<String>, Failure> {
+        let listed = self.incus.query(&format!("/1.0/storage-pools/{}/volumes/custom?project={}", self.name, self.project))?;
+        Ok(listed
+            .as_ref()
+            .and_then(Value::as_array)
+            .map(|rows| rows.iter().filter_map(Value::as_str).filter_map(|url| url.split('?').next()?.rsplit('/').next()).map(str::to_owned).collect())
+            .unwrap_or_default())
+    }
+
+    fn change(&self, args: &[&str]) -> Result<(), Failure> {
+        let mut command = vec!["--project", self.project, "storage", "volume"];
+        command.extend_from_slice(args);
+        self.incus.change(&command)
+    }
+
+    /// The default's volume holds a snapshot of the seed's name. A container seed without its volume half was taken before
+    /// the pair existed: the default's next deployment takes the pair.
+    fn seeded(&self, volume: &str, snapshot: &str) -> Result<(), Failure> {
+        let seeds = self.incus.query(&format!("/1.0/storage-pools/{}/volumes/custom/{volume}/snapshots?project={}&recursion=1", self.name, self.project)).ok().flatten();
+        let held = seeds
+            .as_ref()
+            .and_then(Value::as_array)
+            .is_some_and(|rows| rows.iter().any(|row| row.get("name").and_then(Value::as_str).and_then(|name| name.rsplit('/').next()) == Some(snapshot)));
+        if held { Ok(()) } else { Err(Failure::new("instance.default_seed_incomplete", format!("{volume} has no {snapshot}"))) }
+    }
+
+    /// Spares of the default's volume made from another seed: no create takes them any more. A failed delete waits for the next.
+    fn drop_stale(&self, names: &[String], volume: &str, spare: &str) {
+        let prefix = format!("spare-{volume}-seed-");
+        for stale in names.iter().filter(|name| name.starts_with(&prefix) && *name != spare) {
+            let _ = self.change(&["delete", self.name, stale]);
+        }
+    }
 }
 
 /// The `incus` binary, and its API socket through `curl` for what the CLI does not show.

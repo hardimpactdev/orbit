@@ -5,8 +5,11 @@ declare(strict_types=1);
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\NestedFleetClubKey;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 
 /** The admitted clone intent of the first engine clone (nested create 288), as a create Operation. */
 function engineCloneOperation(?Closure $change = null): Operation
@@ -24,13 +27,16 @@ function engineCloneOperation(?Closure $change = null): Operation
 it('runs a container clone as the instance family: copy and fetch on the Node, then the copy\'s own steps in order', function (): void {
     $steps = app(InstanceCreateEngineFlow::class)->steps(engineCloneOperation());
 
-    expect(array_map(static fn (StepSpec $step): array => [$step->name, $step->node, $step->action, $step->target, $step->after], $steps))->toBe([
-        ['clone', 3, 'instance.clone', '3', []],
-        ['fetch', 3, 'instance.fetch_branch', '3', []],
-        ['prepare', 3, 'instance.prepare', '6', ['clone']],
-        ['start', 3, 'instance.start', '6', ['prepare']],
-        ['checkout', 3, 'instance.checkout', '6', ['start', 'fetch']],
-        ['t3', 3, 'instance.t3', '6', ['checkout']],
+    expect(array_map(static fn (StepSpec $step): array => [$step->name, $step->node, $step->action, $step->target, $step->after, $step->onFailure], $steps))->toBe([
+        // Each Node step locks its own part of the Node, so they run side by side.
+        ['clone', 3, 'instance.clone', '3:clone-6', [], false],
+        ['fetch', 3, 'instance.fetch_branch', '3:fetch-6', [], false],
+        ['prepare', 3, 'instance.prepare', '6', ['clone'], false],
+        ['start', 3, 'instance.start', '6', ['prepare'], false],
+        ['checkout', 3, 'instance.checkout', '6', ['start', 'fetch'], false],
+        ['t3', 3, 'instance.t3', '6', ['checkout'], false],
+        // Only after a failed step: the copy stops and stays.
+        ['stop', 3, 'instance.stop', '6', ['clone'], true],
     ]);
 });
 
@@ -42,23 +48,8 @@ it('sends a clone the engine does not cover to Swamp before anything starts', fu
 
         return $input;
     }],
-    'a nested-fleet copy' => [static function (array $input): array {
-        $input['direct_provisioning']['container']['club_key'] = ['directory' => '/run/orbit-club'];
-
-        return $input;
-    }],
-    'a task copy' => [static function (array $input): array {
-        $input['direct_provisioning']['container']['clone']['clean_workspace'] = true;
-
-        return $input;
-    }],
     'a branch selection' => [static function (array $input): array {
         $input['branch_selection'] = ['target' => 'feature/x'];
-
-        return $input;
-    }],
-    'Processes' => [static function (array $input): array {
-        $input['direct_provisioning']['container']['processes'] = [['name' => 'orbit-process-1.service']];
 
         return $input;
     }],
@@ -98,4 +89,89 @@ it('has the started copy run its app-account swap, so a copy of an older default
     $input = app(InstanceCreateEngineFlow::class)->input(engineCloneOperation(), 'start', new EngineRun(288, [], 0, null));
 
     expect($input['app_account'])->toBe('/usr/local/libexec/orbit-app-user');
+});
+
+/** The first engine clone's intent as a nested-fleet task copy with a Process, as Orbit's own task copies are. */
+function nestedTaskCopy(array $input): array
+{
+    $container = &$input['direct_provisioning']['container'];
+    $container['project'] = 'orbit-instances-nested';
+    $container['config'] = [...$container['config'], 'security.nesting' => 'true'];
+    $container['club_key'] = NestedFleetClubKey::intent();
+    $container['inner_volume'] = ['name' => 'inner-6', 'pool' => 'orbit-instances', 'size' => '30GiB', 'device' => 'inner-pool', 'path' => '/srv/inner-pool',
+        'config' => ['block.filesystem' => 'btrfs', 'security.shifted' => 'true'], 'inner_pool' => ['name' => 'inner', 'source' => '/srv/inner-pool/pool']];
+    $container['allowed_devices'] = ['root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => 'old'],
+        'inner-pool' => ['type' => 'disk', 'pool' => 'orbit-instances', 'source' => 'inner-6', 'path' => '/srv/inner-pool']];
+    $container['processes'] = [['id' => 41, 'name' => 'orbit-process-41.service']];
+    $container['clone']['inner_volume'] = 'inner-2';
+    $container['clone']['clean_workspace'] = true;
+
+    return $input;
+}
+
+it('runs a nested-fleet task copy on the engine: its volume beside the clone, its Club key beside the checkout', function (): void {
+    $steps = app(InstanceCreateEngineFlow::class)->steps(engineCloneOperation(nestedTaskCopy(...)));
+
+    expect(array_map(static fn (StepSpec $step): array => [$step->name, $step->action, $step->after], $steps))->toBe([
+        ['clone', 'instance.clone', []],
+        ['fetch', 'instance.fetch_branch', []],
+        ['copy_volume', 'instance.copy_volume', []],
+        ['prepare', 'instance.prepare', ['clone']],
+        ['start', 'instance.start', ['prepare', 'copy_volume']],
+        ['club_key', 'instance.club_key', ['start']],
+        ['spare', 'instance.spare_volume', ['start']],
+        ['checkout', 'instance.checkout', ['start', 'fetch']],
+        ['t3', 'instance.t3', ['checkout']],
+        ['stop', 'instance.stop', ['clone']],
+    ])
+        // The spare is made beside the create, one at a time per default, and never holds it up or fails it.
+        ->and(array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'spare'))[0])
+        ->toMatchObject(['target' => '3:spare-inner-2', 'optional' => true])
+        // The signer signs each of them.
+        ->and(array_diff(array_map(static fn (StepSpec $step): string => $step->action, $steps), ExecutorOrderSigner::Actions))->toBe([]);
+});
+
+it('copies the default\'s inner volume and guards the nested copy\'s exact config, devices and volumes', function (): void {
+    $flow = app(InstanceCreateEngineFlow::class);
+    $run = new EngineRun(288, [], 0, null);
+    $operation = engineCloneOperation(nestedTaskCopy(...));
+
+    $volume = $flow->input($operation, 'copy_volume', $run);
+    $start = $flow->input($operation, 'start', $run);
+
+    expect($volume)->toBe(['project' => 'orbit-instances-nested', 'name' => 'instance-6', 'source' => 'instance-2',
+        'snapshot' => $operation->input['direct_provisioning']['container']['clone']['snapshot'], 'device' => 'inner-pool', 'volume_source' => 'inner-2',
+        'volume' => 'inner-6', 'pool' => 'orbit-instances', 'size' => '30GiB'])
+        ->and($flow->input($operation, 'clone', $run))->not->toHaveKey('inner_volume')
+        ->and($start['volume'])->toBe(['device' => 'inner-pool', 'name' => 'inner-6'])
+        ->and((array) $start['allowed']['config'])->toBe($operation->input['direct_provisioning']['container']['config'])
+        // The admitted root is the intent's own root device, as the clone wrote it.
+        ->and(((array) $start['allowed']['devices'])['root'])->toBe(['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances',
+            'size' => $operation->input['direct_provisioning']['container']['root_disk_size']])
+        ->and((array) $start['allowed']['volumes'])->toBe(['inner-pool' => ['block.filesystem' => 'btrfs', 'security.shifted' => 'true', 'size' => '30GiB']]);
+});
+
+it('delivers the Club key where the nested Gateway reads it, and nothing without a value', function (): void {
+    $input = app(InstanceCreateEngineFlow::class)->input(engineCloneOperation(nestedTaskCopy(...)), 'club_key', new EngineRun(288, [], 0, null));
+
+    expect($input)->toBe(['project' => 'orbit-instances-nested', 'name' => 'instance-6', 'directory' => '/run/orbit-club', 'file' => 'swamp-club-api-key',
+        'owner' => 1000, 'group' => 1000, 'tmpfiles' => '/etc/tmpfiles.d/orbit-club.conf', 'gateway' => 'nested-gateway', 'serve_unit' => 'orbit-swamp-serve']);
+});
+
+
+it('names a task copy\'s clean and the Club key\'s word in the create\'s result, as the Swamp result does', function (): void {
+    $step = static fn (string $output): OperationEngineStep => (new OperationEngineStep)->forceFill(['status' => 'done', 'node_id' => 3, 'output' => $output]);
+    $cleaned = ['reset_count' => 1, 'reset' => ['routes/web.php'], 'removed_count' => 0, 'removed' => []];
+    $run = new EngineRun(288, ['club_key' => $step('{"club_key":"changed"}'), 'checkout' => $step(json_encode(['commit' => str_repeat('a', 40), 'cleaned' => $cleaned]))], 0, null);
+
+    expect(InstanceCreateEngineFlow::observed($run))->toBe(['workspace_cleaned' => $cleaned, 'club_key' => 'changed'])
+        ->and(InstanceCreateEngineFlow::observed(new EngineRun(288, ['club_key' => $step('{"club_key":null}'), 'checkout' => $step('{"commit":"a"}')], 0, null)))->toBe([]);
+});
+
+it('makes the default\'s one spare from the same seed the copy takes, under the copy\'s own builder name', function (): void {
+    $operation = engineCloneOperation(nestedTaskCopy(...));
+
+    expect(app(InstanceCreateEngineFlow::class)->input($operation, 'spare', new EngineRun(288, [], 0, null)))->toBe(['project' => 'orbit-instances-nested',
+        'source' => 'instance-2', 'snapshot' => $operation->input['direct_provisioning']['container']['clone']['snapshot'], 'volume_source' => 'inner-2',
+        'volume' => 'inner-6', 'pool' => 'orbit-instances']);
 });

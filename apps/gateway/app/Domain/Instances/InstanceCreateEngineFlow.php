@@ -19,25 +19,29 @@ use LogicException;
  * A container clone's `instance:create` on the state machine (ADR 0271; docs/cli/instance/container/create.mmd). It runs the
  * admitted clone intent (`direct_provisioning.container`) as the executor's `instance` family:
  *
- * - `clone` and `fetch` (the Node): the copy of the default's seed with its ACL, NIC, T3 proxy and route rule; the branch
- *   into the Node's mirror, beside it;
- * - `prepare` (the copy): its files before the first start;
- * - `start` (the copy): the network guard, the start, its names;
- * - `checkout` (the copy): the branch, the merged `.env`;
- * - `t3` (the copy): T3 running, its sessions sealed to the Gateway, its project.
+ * - at once, on the Node: `clone`, the copy of the default's seed with its ACL, NIC, T3 proxy and route rule; `fetch`, the branch
+ *   into the Node's mirror; and for a nested-fleet copy `copy_volume`, its own inner volume from the same seed;
+ * - `prepare` (the copy, after `clone`): its files before the first start, its settings merged into the seed's;
+ * - `start` (after `prepare` and `copy_volume`): the copy's own volume in its disk, the network guard (for a nested-fleet copy its
+ *   exact config, devices and volumes), the start, its names;
+ * - after `start`, side by side: `club_key` (a nested-fleet copy), its nested Gateway's Club key in its `/run`; and `checkout`
+ *   (after `fetch` too), the branch, a task copy's clean, the merged `.env`;
+ * - `t3` (after `checkout`): Conn or T3 running, its sessions sealed to the Gateway, its project;
+ * - `stop`, only after a failed step: the copy stops and stays for a retry or a destroy.
  *
  * The create's address is left to its completion (`route_publication: deferred`), as for a create whose Route Nodes were held.
- * A clone this flow does not cover starts on Swamp ([EngineUnsupported]): a nested-fleet default's copy (inner volume, Club
- * key), a task copy (`clean_workspace`), a branch selection, attached Node services, Processes, or an already active create.
+ * The completion starts the Processes and publishes the address, as before. A clone this flow does not cover starts on Swamp
+ * ([EngineUnsupported]): a branch selection, attached Node services, a CI hold, or an already active create.
  */
 final readonly class InstanceCreateEngineFlow implements EngineDefinition
 {
     /** Each step's chart label, so a failure records the step the Swamp flow would name. */
-    private const array Labels = ['clone' => 'clone-container', 'fetch' => 'clone-container', 'prepare' => 'clone-container',
-        'start' => 'clone-container', 'checkout' => 'clone-t3', 't3' => 'clone-t3'];
+    private const array Labels = ['clone' => 'clone-container', 'fetch' => 'clone-container', 'copy_volume' => 'clone-container', 'prepare' => 'clone-container',
+        'start' => 'clone-container', 'club_key' => 'clone-club-key', 'checkout' => 'clone-t3', 't3' => 'clone-t3'];
 
-    /** The result's `failed_step` and code for a failed step (swamp result.ts). */
-    private const array Failures = ['clone-container' => ['clone', 'instance.create_clone_failed'], 'clone-t3' => ['t3', 'instance.create_agent_failed']];
+    /** The result's `failed_step` and code for a failed step, as the Swamp result names the phase (swamp result.ts). */
+    private const array Failures = ['club_key' => ['workspace', 'instance.create_workspace_failed'], 'checkout' => ['workspace', 'instance.create_workspace_failed'],
+        't3' => ['t3', 'instance.create_agent_failed']];
 
     /** The first line of Orbit's proxy drop-ins (instance_node_services.py `MARKER`). */
     private const string ProxyMarker = "# Managed by Orbit: attached Node service.\n";
@@ -46,17 +50,30 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
 
     public function steps(Operation $operation): array
     {
-        self::container($operation);
+        $container = self::container($operation);
+        $club = isset($container['club_key']);
+        $volume = isset($container['inner_volume']);
         $node = ValidatedData::integer($operation->node_id);
         $id = (string) ValidatedData::integer($operation->target_id);
+        // A Node step names its part of the Node, which the executor locks: the parts of one create, and other creates, run side by side.
+        $part = static fn (string $scope): string => "{$node}:{$scope}";
+        $default = $volume ? ValidatedData::string(ValidatedData::object(ValidatedData::object($container['clone']))['inner_volume'] ?? null) : '';
 
         return [
-            new StepSpec('clone', $node, 'instance.clone', (string) $node, budgetMs: 420_000, resendMs: 60_000),
-            new StepSpec('fetch', $node, 'instance.fetch_branch', (string) $node, budgetMs: 200_000, resendMs: 60_000),
+            new StepSpec('clone', $node, 'instance.clone', $part('clone-'.$id), budgetMs: 420_000, resendMs: 60_000),
+            new StepSpec('fetch', $node, 'instance.fetch_branch', $part('fetch-'.$id), budgetMs: 200_000, resendMs: 60_000),
+            ...($volume ? [new StepSpec('copy_volume', $node, 'instance.copy_volume', $part('volume-'.$id), budgetMs: 300_000, resendMs: 60_000)] : []),
             new StepSpec('prepare', $node, 'instance.prepare', $id, ['clone'], budgetMs: 180_000, resendMs: 30_000),
-            new StepSpec('start', $node, 'instance.start', $id, ['prepare'], budgetMs: 180_000, resendMs: 30_000),
+            new StepSpec('start', $node, 'instance.start', $id, ['prepare', ...($volume ? ['copy_volume'] : [])], budgetMs: 180_000, resendMs: 30_000),
+            ...($club ? [new StepSpec('club_key', $node, 'instance.club_key', $id, ['start'], budgetMs: 60_000, resendMs: 30_000)] : []),
+            // The default's one spare for the next copy, beside the rest: the create neither waits for it nor fails by it. One part per
+            // default, so its spares are made one at a time.
+            ...($volume ? [new StepSpec('spare', $node, 'instance.spare_volume', $part('spare-'.$default), ['start'], budgetMs: 600_000, resendMs: 120_000,
+                optional: true)] : []),
             new StepSpec('checkout', $node, 'instance.checkout', $id, ['start', 'fetch'], budgetMs: 180_000, resendMs: 30_000),
             new StepSpec('t3', $node, 'instance.t3', $id, ['checkout'], budgetMs: 180_000, resendMs: 30_000),
+            // Only after a failed step, and only once the copy exists: it stops and stays for a retry or a destroy.
+            new StepSpec('stop', $node, 'instance.stop', $id, ['clone'], budgetMs: 90_000, resendMs: 45_000, onFailure: true),
         ];
     }
 
@@ -77,22 +94,33 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'proxy' => ['device' => $t3['device'], 'listen' => 'tcp:'.ValidatedData::string($t3['listen']).':'.ValidatedData::integer($t3['port']),
                     'connect' => 'tcp:'.ValidatedData::string($container['address']).':'.ValidatedData::integer($t3['internal_port'])],
                 'routes' => self::routes($container)],
+            'copy_volume' => [...$where, 'source' => $clone['source'], 'snapshot' => $clone['snapshot'], ...self::innerVolume($container, $clone)],
+            'spare' => ['project' => $where['project'], 'source' => $clone['source'], 'snapshot' => $clone['snapshot'],
+                ...array_intersect_key(self::innerVolume($container, $clone), array_flip(['volume_source', 'volume', 'pool']))],
+            'stop' => $where,
             'fetch' => ['mirror' => $container['mirror'], 'repository' => $container['repository'], 'branch' => $container['branch'],
                 'protocol' => ValidatedData::stringList($container['protocols'])[0],
                 'credential' => ['blob' => ['content' => app(InstanceGitHubReadTokens::class)->line($operation)]]],
             'prepare' => [...$where, 'units' => array_map(static fn (mixed $unit): string => ValidatedData::string(ValidatedData::object($unit)['name']),
-                self::rows($container['processes'] ?? [])), 'process_ids' => [],
+                self::rows($container['processes'] ?? [])),
+                'process_ids' => array_map(static fn (mixed $unit): string => (string) ValidatedData::integer(ValidatedData::object($unit)['id']), self::rows($container['processes'] ?? [])),
                 // The clone's files are kilobytes and an order holds 4 KB: the list goes as one blob, its contents inline.
                 'files_blob' => ['blob' => ['content' => json_encode($this->files($operation, $instance(), $container, $clone), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]]],
             'start' => [...$where, 'source' => $clone['source'], 'network' => $container['network'], 'nic' => 'eth0',
                 'hostname' => ValidatedData::string(ValidatedData::object($container['machine_name'])['hostname']),
                 'app_account' => ValidatedData::string(ValidatedData::object($container['app_account'])['path']),
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
-                    self::rows($container['private_names'] ?? []))],
+                    self::rows($container['private_names'] ?? [])), ...self::allowed($container),
+                ...(isset($container['inner_volume']) ? ['volume' => ['device' => ValidatedData::object($container['inner_volume'])['device'],
+                    'name' => ValidatedData::object($container['inner_volume'])['name']]] : [])],
+            'club_key' => [...$where, ...array_intersect_key(ValidatedData::object($container['club_key']), array_flip(['directory', 'file', 'owner', 'group', 'tmpfiles', 'gateway', 'serve_unit'])),
+                // Read at the step, as Swamp reads it at its run's start; without a value nothing is written.
+                ...(($key = NestedFleetClubKey::value()) === null ? [] : ['key' => ['blob' => ['content' => $key]]])],
             'checkout' => [...$where, 'instance_id' => ValidatedData::integer($operation->target_id), 'workspace' => $container['workspace'], 'branch' => $container['branch'],
                 ...self::start($run, $clone, ValidatedData::string($container['mirror'])),
                 'environment_file' => $container['environment_file'], 'group' => ValidatedData::integer(ValidatedData::object($container['workspace_ids'])['group']),
                 'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance())]],
+                ...(($clone['clean_workspace'] ?? false) === true ? ['clean' => true] : []),
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
                 'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
@@ -113,17 +141,21 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             [$result, $session] = $this->result($operation, $run);
             $data = ['status' => 'succeeded', 'error_code' => null, 'result' => $result];
         } elseif ($failed !== null) {
-            [$step, $code] = self::Failures[self::Labels[$failed->name] ?? 'clone-container'];
+            [$step, $code] = self::Failures[$failed->name] ?? ['clone', 'instance.create_clone_failed'];
             $data = ['status' => 'failed', 'error_code' => $failed->error_code ?? $code,
                 'failure' => ['failed_step' => self::Labels[$failed->name] ?? $failed->name, 'stderr_recorded' => false],
-                'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => $step, 'error_code' => $failed->error_code ?? $code]];
+                'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => $step, 'error_code' => $failed->error_code ?? $code,
+                    ...self::observed($run)]];
         } else {
             $data = ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []];
         }
         $this->projection->apply($operation, [...$data, ...$run->times()], $session);
         if ($data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done') {
-            // The copy started before the create failed: it runs until a retry or a destroy, and the record says so.
-            Instance::query()->findOrFail($operation->target_id)->runtime()->first()?->update(['power_state' => InstanceRuntimePowerState::Running]);
+            // The copy started before the create failed. Its `stop` step stopped it for a retry or a destroy; when that failed, it runs,
+            // and the record says so.
+            $stopped = ($run->steps['stop'] ?? null)?->status === 'done';
+            Instance::query()->findOrFail($operation->target_id)->runtime()->first()
+                ?->update(['power_state' => $stopped ? InstanceRuntimePowerState::Stopped : InstanceRuntimePowerState::Running]);
         }
     }
 
@@ -143,11 +175,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $clone = ValidatedData::object($container['clone']);
         foreach ([
             'already active' => ($plan['already_active'] ?? false) === true,
-            'a nested-fleet copy' => isset($container['inner_volume']) || isset($container['club_key']) || isset($clone['inner_volume']),
-            'a task copy' => isset($clone['clean_workspace']),
             'a branch selection' => isset($input['branch_selection']) || isset($container['branch_selection']),
             'Node services' => ($container['node_services'] ?? []) !== [],
-            'Processes' => ($container['processes'] ?? []) !== [],
             'a CI hold' => isset($clone['ci_hold']),
         ] as $case => $present) {
             if ($present) {
@@ -158,6 +187,55 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         self::routes($container);
 
         return $container;
+    }
+
+    /**
+     * A nested-fleet copy's own inner volume and the default's volume it copies.
+     *
+     * @param  array<string, mixed>  $container
+     * @param  array<string, mixed>  $clone
+     * @return array<string, mixed>
+     */
+    private static function innerVolume(array $container, array $clone): array
+    {
+        $inner = ValidatedData::object($container['inner_volume']);
+
+        return ['device' => $inner['device'], 'volume_source' => ValidatedData::string($clone['inner_volume'] ?? null), 'volume' => $inner['name'],
+            'pool' => $inner['pool'], 'size' => $inner['size']];
+    }
+
+    /**
+     * A nested-fleet copy's exact config, devices and volumes for the start guard (instance_nested.py), or nothing.
+     *
+     * @param  array<string, mixed>  $container
+     * @return array{allowed?: array<string, mixed>}
+     */
+    private static function allowed(array $container): array
+    {
+        if (! isset($container['allowed_devices'])) {
+            return [];
+        }
+        $inner = isset($container['inner_volume']) ? ValidatedData::object($container['inner_volume']) : null;
+        $root = ['type' => 'disk', 'path' => '/', 'pool' => $container['root_disk_pool'], 'size' => $container['root_disk_size']];
+
+        return ['allowed' => ['config' => (object) ValidatedData::object($container['config']),
+            'devices' => (object) [...ValidatedData::object($container['allowed_devices']), 'root' => $root],
+            'volumes' => (object) ($inner === null ? [] : [ValidatedData::string($inner['device']) => [...ValidatedData::object($inner['config']), 'size' => $inner['size']]])]];
+    }
+
+    /**
+     * What the Node steps observed for the create's result, as the Swamp result names it: a task copy's `workspace_cleaned` from its
+     * checkout, and a nested-fleet copy's Club key word, which the projection maps to `nested_fleet_club_key`.
+     *
+     * @return array{workspace_cleaned?: array<string, mixed>, club_key?: string}
+     */
+    public static function observed(EngineRun $run): array
+    {
+        $output = static fn (string $step): mixed => json_decode($run->output($step) ?? 'null', true);
+        $cleaned = $output('checkout')['cleaned'] ?? null;
+        $club = $output('club_key')['club_key'] ?? null;
+
+        return [...(is_array($cleaned) ? ['workspace_cleaned' => $cleaned] : []), ...(is_string($club) ? ['club_key' => $club] : [])];
     }
 
     /** @return list<mixed> */
@@ -237,10 +315,11 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $last = [];
         foreach ($files as $raw) {
             $file = ValidatedData::object($raw);
-            // The key goes in place of the intent's value here, in the blob that holds the model environment too.
+            // The Node merges the settings into the copy's own as the other writers do; the key rides in the blob that holds the model
+            // environment too, and goes in place of the intent's value.
             $item = isset($file['json'])
                 ? ['json' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
-                    'json' => (object) InstanceContainer::withModelKey(ValidatedData::object($file['json']), $key)]]
+                    'json' => (object) ValidatedData::object($file['json']), 'key_value' => $model['key_value'] ?? null, 'key' => $key]]
                 : ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
                     'content' => $blob(ValidatedData::string($file['content'] ?? '')), 'parents' => true]];
             $file['path'] === $condition ? $last[] = $item : $items[] = $item;
@@ -297,6 +376,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'ready' => true, 'instance_id' => $operation->target_id, 'commit' => ValidatedData::string($checkout['commit'] ?? null),
             'environment' => $checkout['environment'] ?? null,
             'route_publication' => 'deferred',
+            ...self::observed($run),
             't3' => ['environment_id' => $environment['environmentId'] ?? null, 'server_version' => $environment['serverVersion'] ?? null,
                 'expires_at' => $body['expiresAt'] ?? null],
         ], ValidatedData::string($gateway['token'] ?? null)];

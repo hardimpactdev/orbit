@@ -624,18 +624,6 @@ final readonly class InstanceContainer
     }
 
     /**
-     * JSON settings with the placeholder model key in place of each self::ModelKeyValue, for a writer that gets the key with them.
-     *
-     * @param  array<array-key, mixed>  $settings
-     * @return array<array-key, mixed>
-     */
-    public static function withModelKey(array $settings, string $key): array
-    {
-        return array_map(static fn (mixed $value): mixed => is_array($value) ? self::withModelKey($value, $key)
-            : ($value === self::ModelKeyValue ? $key : $value), $settings);
-    }
-
-    /**
      * The Conn Server's Antigravity instance: `agy` with the placeholder model key as its Gemini API key, which the writers put in place
      * of self::ModelKeyValue. Conn moves the key into its own secret store and hands it to `agy` as `GEMINI_API_KEY`; the model
      * environment's `GOOGLE_GEMINI_BASE_URL` sends its calls to the forwarder.

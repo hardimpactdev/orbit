@@ -49,6 +49,16 @@ pub enum Action {
     /// Start the copy's T3, issue its two sessions sealed to the Gateway, and add its workspace as a project (ADR 0271).
     /// Its target is the copy.
     InstanceT3,
+    /// Write a nested-fleet copy's Club key into its `/run` and tell the nested Gateway's serve (ADR 0271). Its target is
+    /// the copy.
+    InstanceClubKey,
+    /// Copy a nested-fleet copy's own inner volume from its default's volume seed (ADR 0271). Its target is the Node.
+    InstanceCopyVolume,
+    /// Stop a copy whose create failed, and keep it (ADR 0271). Its target is the copy.
+    InstanceStop,
+    /// Make the one spare of a default's inner volume from its current seed, beside a create (ADR 0271). Its target is the
+    /// Node's part for that default.
+    InstanceSpareVolume,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -63,7 +73,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 18] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -78,6 +88,10 @@ impl Action {
         Self::InstanceFetchBranch,
         Self::InstanceCheckout,
         Self::InstanceT3,
+        Self::InstanceClubKey,
+        Self::InstanceCopyVolume,
+        Self::InstanceStop,
+        Self::InstanceSpareVolume,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -93,7 +107,11 @@ impl Action {
             | Self::InstanceStart
             | Self::InstanceFetchBranch
             | Self::InstanceCheckout
-            | Self::InstanceT3 => {
+            | Self::InstanceT3
+            | Self::InstanceClubKey
+            | Self::InstanceCopyVolume
+            | Self::InstanceStop
+            | Self::InstanceSpareVolume => {
                 Family::Instance
             }
         }
@@ -108,8 +126,18 @@ impl Action {
             | Self::RoutePublishSite
             | Self::DnsPublishRecords
             | Self::InstanceClone
-            | Self::InstanceFetchBranch => TargetKind::Node,
-            Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare | Self::InstanceStart | Self::InstanceCheckout | Self::InstanceT3 => {
+            | Self::InstanceFetchBranch
+            | Self::InstanceCopyVolume
+            | Self::InstanceSpareVolume => TargetKind::Node,
+            Self::Sleep
+            | Self::Wake
+            | Self::Discard
+            | Self::InstancePrepare
+            | Self::InstanceStart
+            | Self::InstanceCheckout
+            | Self::InstanceT3
+            | Self::InstanceClubKey
+            | Self::InstanceStop => {
                 TargetKind::Instance
             }
         }
@@ -132,6 +160,10 @@ impl Action {
             Self::InstanceFetchBranch => "instance.fetch_branch",
             Self::InstanceCheckout => "instance.checkout",
             Self::InstanceT3 => "instance.t3",
+            Self::InstanceClubKey => "instance.club_key",
+            Self::InstanceCopyVolume => "instance.copy_volume",
+            Self::InstanceStop => "instance.stop",
+            Self::InstanceSpareVolume => "instance.spare_volume",
         }
     }
 }
@@ -160,6 +192,10 @@ impl FromStr for Action {
             "instance.fetch_branch" => Ok(Self::InstanceFetchBranch),
             "instance.checkout" => Ok(Self::InstanceCheckout),
             "instance.t3" => Ok(Self::InstanceT3),
+            "instance.club_key" => Ok(Self::InstanceClubKey),
+            "instance.copy_volume" => Ok(Self::InstanceCopyVolume),
+            "instance.stop" => Ok(Self::InstanceStop),
+            "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             _ => Err(UnknownActionError),
         }
     }

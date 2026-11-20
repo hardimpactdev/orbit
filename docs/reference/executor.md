@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone` and `instance.fetch_branch`. Sleep, `instance.prepare`, `instance.start`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone` and `instance.fetch_branch`. Sleep, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -245,7 +245,9 @@ The `instance` family (enabled by the `app-dev` role) makes a clone of a default
 
 The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Then comes the T3 proxy device, and last the copy's ufw route rules, such as the one from WireGuard to its T3 port; ufw skips a rule that is there.
 
-It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
+A nested-fleet copy (`inner_volume`) first gets its own inner volume ([The inner volume](/reference/development-containers#the-inner-volume)). The default's volume must hold a snapshot with the seed's name, or the clone refuses with `instance.default_seed_incomplete`. A volume of the copy's name left by a failed copy is deleted. The snapshot is copied into the copy's volume, and the volume records its size. The copy's disk device names its own volume. A failed container copy deletes the volume.
+
+It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
 
 #### instance.prepare
 
@@ -254,17 +256,19 @@ It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clo
 First the seed's Orbit Process, Schedule and Node service units that are not the copy's go. The copy gets its own machine id. Then each item goes in, in order:
 
 - a file, inline or from a blob for a secret;
-- JSON merged over the copy's own file;
+- JSON merged over the copy's own file, object by object. Each string equal to `key_value` gets the placeholder model `key`. A provider instance of the agent's own stays. A file that already holds Orbit's settings, or the Conn Server's mark of a key it moved into its store, stays as it is. Settings that need the key refuse without it (`instance.clone_t3_files_refused`);
 - a link;
 - the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
 - an NSS store entry;
 - a folder made again with exactly its files, each a blob, owned by root, with an empty `.skills` folder: the agent instructions.
 
-The list may come as one blob, `files_blob`, with each file's content inline. It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+The list may come as one blob, `files_blob`, with each file's content inline. It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 
 #### instance.start
 
 `instance.start` targets the copy. It refuses a copy whose NICs on the Instance bridge are not guarded.
+
+A nested-fleet copy (`allowed`) also starts only when its effective config, devices and volumes are exactly the allowed ones, as `instance_nested.py` checks them. Incus's own `volatile.*` and `image.*` keys and `environment.*` keys do not count. A root disk may be larger than the allowed size; a btrfs root has no size. No volume may be delegated, and the one volume besides the root must hold exactly the inner volume's keys.
 
 On a Node without idmapped mounts, the seed's files are shifted. There a stopped copy's owners, file capabilities and ACLs are shifted back first. A failed shift deletes the copy, so a retry copies again.
 
@@ -293,11 +297,25 @@ Then the `.env` is the default's file from the seed, merged with the Gateway's r
 - the default's hosts in the copied values become the clone's;
 - the render's other keys are added.
 
+A task copy (`clean`) starts from its start commit alone ([A task copy starts clean](/reference/development-containers#a-task-copy-starts-clean)). Its first checkout, before the mark, excludes the `.env` and then cleans the tree, as `agent` with its groups and the task check's Git settings. Hidden skip-worktree and assume-unchanged flags go, modified tracked files go back to the commit, and untracked files go, round after round while an untracked `.gitignore` hid more. A tree that is still not clean fails the checkout. The answer adds `cleaned`: the counts and the first 20 names of each kind.
+
 Git never takes the `.env`: one line in the checkout's `info/exclude` names it. It answers `{"commit", "environment"}` with the key names only. Codes: `instance.checkout_input_invalid`, `instance.checkout_content_missing`, `instance.container_checkout_failed`.
+
+#### instance.club_key
+
+`instance.club_key` targets a running nested-fleet copy. It writes the nested Gateway's Club key into the copy's `/run`, a tmpfs that no snapshot holds ([The Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). Each step is one fixed command in the copy, as `instance_nested_club_key.sh` runs them:
+
+- `/run` and the key's folder must be tmpfs, or it refuses with `instance.nested_club_key_not_tmpfs`;
+- the folder is root's with the nested Gateway's group, mode 0750, and a tmpfiles rule makes it at each boot;
+- a key equal to the one there changes nothing;
+- a new key goes into a `.next` file with the key's owner and mode 0600, then replaces the key;
+- when the inner Incus answers and the nested Gateway runs, its Swamp serve restarts. Otherwise serve reads the key when it next starts.
+
+The key comes as a blob; without one, nothing is written. It answers `{"club_key"}`: `changed`, `changed_serve_pending`, `unchanged` or null. Codes: `instance.club_key_input_invalid`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed`.
 
 #### instance.t3
 
-`instance.t3` targets the copy. It starts T3 when it is not running, and waits up to 30 s until T3 answers its environment. Then it issues the Gateway's and Swamp's sessions as the workspace's writer. Each token is checked against T3, with the token on curl's standard input, never in an argument. The workspace becomes a T3 project once; a mark file records it.
+`instance.t3` targets the copy. It starts T3, or the Conn Server that the copy's unit runs, when it is not running, and waits up to 30 s until T3 answers its environment. Then it issues the Gateway's and Swamp's sessions as the workspace's writer. Each token is checked against T3, with the token on curl's standard input, never in an argument. The workspace becomes a T3 project once; a mark file records it.
 
 The tokens leave only sealed to the Gateway's key, `seal_to` in the signed input. It answers `{"environment_id", "at_boot", "sealed"}`. Codes: `instance.t3_input_invalid`, `instance.t3_unready`, `instance.create_agent_failed`, `instance.t3_session_failed`.
 
@@ -305,7 +323,7 @@ The tokens leave only sealed to the Gateway's key, `seal_to` in the signed input
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`, `instance.checkout`, `instance.t3`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`, `instance.checkout`, `instance.t3`, `instance.club_key`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 

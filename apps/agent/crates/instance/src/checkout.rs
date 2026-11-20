@@ -12,6 +12,13 @@ const MARK: &str = "/var/lib/orbit/workspace-checkout";
 /// The workspace's writer inside the copy.
 const AGENT: u32 = 2750;
 const GIT: &str = "/usr/bin/git";
+const RUNUSER: &str = "/usr/sbin/runuser";
+/// The agent's own ignore file, which the task check reads as `agent` with no global configuration.
+const AGENT_IGNORE: &str = "/home/agent/.config/git/ignore";
+/// The names a task copy's clean reports of each kind; the counts give the rest.
+const CLEANED_NAMES: usize = 20;
+/// The most clean rounds: one per untracked `.gitignore` nested in another untracked folder that it hides.
+const CLEAN_ROUNDS: usize = 64;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,11 +40,15 @@ struct CheckoutInput {
     environment: crate::BlobRef,
     #[serde(default)]
     merge: Option<Merge>,
+    /// A task copy: its first checkout drops the default's modified and untracked files before the mark.
+    #[serde(default)]
+    clean: bool,
 }
 
 /// Checks the workspace out on the branch once per Instance (a mark records it), from a bundle of the Node's mirror when it
 /// holds the branch, or at the seed's commit. Then the `.env` is the default's merged with the render, and Git never takes
-/// it. Answers `{"commit", "environment": <key names>}`.
+/// it. A task copy (`clean`) first drops the default's modified and untracked files, once, before the mark. Answers
+/// `{"commit", "environment": <key names>}`, and a task copy's first checkout also `cleaned`: the counts and the first names.
 ///
 /// # Errors
 ///
@@ -53,9 +64,15 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
     let mark: Value = files.pull(MARK)?.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null);
     // A checkout done for this Instance reports the commit it checked out, so a retry never reports a later one.
     let mut commit = mark.get("commit").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let mut cleaned = None;
     if mark.get("instance_id").and_then(Value::as_u64) != Some(input.instance_id) {
         commit.clone_from(&input.expected_commit);
         branch(system, &incus, &files, &input)?;
+        if input.clean {
+            // The `.env` is excluded first, so the clean keeps the default's file for the merge below.
+            exclude(&files, &input)?;
+            cleaned = Some(clean(&incus, &input)?);
+        }
         let mut written = serde_json::json!({"instance_id": input.instance_id, "commit": input.expected_commit}).to_string();
         written.push('\n');
         files.push(MARK, 0, 0, "0600", written.as_bytes(), Folders::Root)?;
@@ -67,7 +84,11 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
         files.push(&input.environment_file, AGENT, input.group, "0640", updated.as_bytes(), Folders::Present)?;
     }
     exclude(&files, &input)?;
-    Ok(serde_json::json!({"commit": commit, "environment": keys}).to_string())
+    let mut output = serde_json::json!({"commit": commit, "environment": keys});
+    if let Some(cleaned) = cleaned {
+        output["cleaned"] = cleaned;
+    }
+    Ok(output.to_string())
 }
 
 fn check(input: &CheckoutInput) -> Result<(), String> {
@@ -149,6 +170,59 @@ fn git(incus: &Incus<'_, impl System>, input: &CheckoutInput, args: &[&str]) -> 
     .collect();
     command.extend(args.iter().map(|part| (*part).to_owned()));
     incus.run(&command, None)
+}
+
+/// A task copy's tree is its start commit plus what Git ignores (development-containers.md#a-task-copy-starts-clean): the
+/// default's hidden flags go, its modified tracked files go back to the commit, and its untracked files go, nested
+/// repositories too, round after round while an untracked `.gitignore` hid more. Git runs as `agent` with its groups and
+/// the task check's ignore rules. A tree that is still not clean fails the checkout. Answers the counts and the first names.
+fn clean(incus: &Incus<'_, impl System>, input: &CheckoutInput) -> Result<Value, Failure> {
+    let git = |args: &[&str], stdin: Option<&[u8]>| -> Result<String, Failure> {
+        let safe = format!("safe.directory={}", input.workspace);
+        let excludes = format!("core.excludesFile={AGENT_IGNORE}");
+        let mut command: Vec<String> = [
+            "--project", &input.project, "exec", &input.name, "--cwd", &input.workspace, "--env", "HOME=/home/agent", "--env", "GIT_CONFIG_GLOBAL=/dev/null",
+            "--env", "GIT_CONFIG_NOSYSTEM=1", "--env", "LC_ALL=C", "--", RUNUSER, "-u", "agent", "--", GIT, "-c", "core.hooksPath=/dev/null", "-c",
+            "core.fsmonitor=false", "-c", &safe, "-c", "core.quotePath=false", "-c", &excludes,
+        ]
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect();
+        command.extend(args.iter().map(|part| (*part).to_owned()));
+        incus.run(&command, stdin)
+    };
+    let entries = git(&["ls-files", "-v", "-z"], None)?;
+    let entries: Vec<&str> = entries.split('\0').filter(|entry| entry.len() > 2).collect();
+    // `S` or `s` is skip-worktree, a lower case tag assume-unchanged: each flag goes in its own call.
+    let skipped: Vec<&str> = entries.iter().filter(|entry| entry.starts_with(['S', 's'])).map(|entry| &entry[2..]).collect();
+    let assumed: Vec<&str> = entries.iter().filter(|entry| entry.starts_with(|c: char| c.is_ascii_lowercase())).map(|entry| &entry[2..]).collect();
+    for (flag, hidden) in [("--no-skip-worktree", skipped), ("--no-assume-unchanged", assumed)] {
+        if !hidden.is_empty() {
+            let names: String = hidden.iter().flat_map(|name| [*name, "\0"]).collect();
+            git(&["update-index", flag, "-z", "--stdin"], Some(names.as_bytes()))?;
+        }
+    }
+    let diff = git(&["diff", "--name-only", "--no-renames", "-z", "HEAD"], None)?;
+    let mut reset: Vec<String> = diff.split('\0').filter(|name| !name.is_empty()).map(str::to_owned).collect();
+    git(&["reset", "--quiet", "--hard", "HEAD"], None)?;
+    let mut removed: Vec<String> = Vec::new();
+    for _ in 0..CLEAN_ROUNDS {
+        let listed = git(&["clean", "-d", "-ff", "-n"], None)?;
+        let found: Vec<String> = listed.lines().filter_map(|line| line.strip_prefix("Would remove ")).map(str::to_owned).collect();
+        if found.is_empty() || found.iter().all(|name| removed.contains(name)) {
+            break;
+        }
+        git(&["clean", "-d", "-ff", "--quiet"], None)?;
+        removed.extend(found);
+    }
+    let status = git(&["status", "--porcelain", "--ignore-submodules=none", "--untracked-files=all"], None)?;
+    if !status.is_empty() {
+        return Err(Failure::new("instance.container_checkout_failed", "the task copy's tree is not clean after the clean"));
+    }
+    reset.sort();
+    removed.sort();
+    Ok(serde_json::json!({"reset_count": reset.len(), "reset": reset.iter().take(CLEANED_NAMES).collect::<Vec<_>>(),
+        "removed_count": removed.len(), "removed": removed.iter().take(CLEANED_NAMES).collect::<Vec<_>>()}))
 }
 
 /// Git never takes the `.env`: one line in the checkout's own `info/exclude`, written once with the file's owner.

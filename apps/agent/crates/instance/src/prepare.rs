@@ -47,8 +47,19 @@ enum Item {
         #[serde(default)]
         parents: bool,
     },
-    /// A JSON file merged over the copy's own: its other keys stay.
-    Json { path: String, uid: u32, gid: u32, mode: String, json: Value },
+    /// A JSON file merged over the copy's own, object by object: an entry Orbit does not name, such as a provider instance
+    /// of the agent's own, stays. Each string equal to `key_value` holds the placeholder model `key`.
+    Json {
+        path: String,
+        uid: u32,
+        gid: u32,
+        mode: String,
+        json: Value,
+        #[serde(default)]
+        key_value: Option<String>,
+        #[serde(default)]
+        key: Option<String>,
+    },
     /// A symbolic link, replaced when it exists. With an owner, missing folders above it are made for that user first.
     Link {
         path: String,
@@ -190,6 +201,46 @@ fn check(input: &PrepareInput) -> Result<(), String> {
     Ok(())
 }
 
+/// What the Conn Server leaves in its settings file in place of a secret it moved into its own store.
+const IMPORTED_SECRET: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+/// Orbit's settings over the held ones, object by object; Orbit's value wins at each leaf and list.
+fn deep_merge(held: &Value, orbit: &Value) -> Value {
+    match (held, orbit) {
+        (Value::Object(held), Value::Object(orbit)) => {
+            let mut merged = held.clone();
+            for (name, value) in orbit {
+                let next = deep_merge(held.get(name).unwrap_or(&Value::Null), value);
+                merged.insert(name.clone(), next);
+            }
+            Value::Object(merged)
+        }
+        _ => orbit.clone(),
+    }
+}
+
+/// The settings with each string equal to `value` replaced by `key` (or removed as a match when `key` is None).
+fn with_model_key(settings: &Value, value: Option<&str>, key: Option<&str>) -> Value {
+    match settings {
+        Value::Object(map) => Value::Object(map.iter().map(|(name, item)| (name.clone(), with_model_key(item, value, key))).collect()),
+        Value::Array(items) => Value::Array(items.iter().map(|item| with_model_key(item, value, key)).collect()),
+        Value::String(text) if value == Some(text.as_str()) => key.map_or(Value::Null, |key| Value::String(key.to_owned())),
+        other => other.clone(),
+    }
+}
+
+/// The settings to write, or None when the held ones already hold Orbit's: with the model key where Orbit holds `value`, or
+/// with the Conn Server's mark of a key it already moved into its store (`instance_clone.py` `merged_settings`). Orbit's
+/// settings that need the key, with no key, refuse.
+fn merged_settings(held: &Value, orbit: &Value, value: Option<&str>, key: Option<&str>) -> Result<Option<Value>, ()> {
+    if value.is_some() && with_model_key(orbit, value, None) != *orbit && key.is_none_or(str::is_empty) {
+        return Err(());
+    }
+    let merged = deep_merge(held, &with_model_key(orbit, value, key));
+    let moved = deep_merge(held, &with_model_key(orbit, value, Some(IMPORTED_SECRET)));
+    Ok((*held != merged && *held != moved).then_some(merged))
+}
+
 /// The seed's Orbit units, links and Schedule files that are not the copy's own.
 #[expect(clippy::case_sensitive_file_extension_comparisons, reason = "systemd unit and Schedule file names are lowercase")]
 fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Failure> {
@@ -256,19 +307,21 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             files.push(path, *uid, *gid, mode, &bytes, if *parents { Folders::Present } else { Folders::Root })?;
             Ok(made + 1)
         }
-        Item::Json { path, uid, gid, mode, json } => {
+        Item::Json { path, uid, gid, mode, json, key_value, key } => {
             let held = files.read(path, "instance.clone_files_refused")?;
-            let mut merged = held.as_ref().and_then(|held| serde_json::from_slice::<Value>(&held.content).ok()).unwrap_or_else(|| serde_json::json!({}));
-            let before = merged.clone();
-            if let (Some(object), Some(over)) = (merged.as_object_mut(), json.as_object()) {
-                object.extend(over.iter().map(|(key, value)| (key.clone(), value.clone())));
-            }
+            let old = match &held {
+                Some(held) => serde_json::from_slice::<Value>(&held.content).map_err(|error| Failure::new("instance.prepare_failed", format!("{path}: {error}")))?,
+                None => serde_json::json!({}),
+            };
+            let merged = merged_settings(&old, json, key_value.as_deref(), key.as_deref()).map_err(|()| Failure::new("instance.clone_t3_files_refused", path.clone()))?;
             let owned = held.as_ref().is_some_and(|held| (held.uid, held.gid) == (*uid, *gid) && held.mode == four(mode));
-            if held.is_some() && merged == before && owned {
+            // A file that already holds Orbit's settings with the owner and mode stays as it is.
+            if held.is_some() && merged.is_none() && owned {
                 return Ok(0);
             }
             let made = files.parents(path, *uid, *gid)?;
-            files.push(path, *uid, *gid, mode, format!("{merged}\n").as_bytes(), Folders::Present)?;
+            let text = format!("{}\n", merged.unwrap_or(old));
+            files.push(path, *uid, *gid, mode, text.as_bytes(), Folders::Present)?;
             Ok(made + 1)
         }
         Item::Link { path, target, owner } => {

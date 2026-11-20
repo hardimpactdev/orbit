@@ -1,5 +1,6 @@
 //! `instance.start`: the copy's first start, then its names.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -30,6 +31,31 @@ struct StartInput {
     /// The app-account swap file that prepare wrote (`/usr/local/libexec/orbit-app-user`): root runs it in the running copy
     /// before any command as `agent` or `www-data`, so a copy of an older default moves from `orbit`/`work` to `www-data`.
     app_account: String,
+    /// A nested-fleet copy's exact config, devices and volumes: it starts only when its effective ones are these.
+    #[serde(default)]
+    allowed: Option<Allowed>,
+    /// A nested-fleet copy's own inner volume, which `instance.copy_volume` made: its disk names it before the guard.
+    #[serde(default)]
+    volume: Option<Volume>,
+}
+
+/// The disk device of the copy's inner volume and the volume it names.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Volume {
+    device: String,
+    name: String,
+}
+
+/// What a nested-fleet copy may hold (`instance_nested.py`): the config the clone wrote, the devices Orbit writes, and the
+/// one volume besides the root with exactly its keys.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Allowed {
+    config: BTreeMap<String, String>,
+    devices: BTreeMap<String, BTreeMap<String, String>>,
+    #[serde(default)]
+    volumes: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +70,7 @@ struct PrivateName {
 /// swap, which only reads on a copy that already uses `www-data`. The copy's Incus templates
 /// rewrite both files at the first start, so the names come after it. On a Node whose seed holds shifted files (a nested
 /// Node without idmapped mounts), a stopped copy's files are shifted back first, so its first start can apply its own map.
+/// A nested-fleet copy (`allowed`) starts only when its effective config, devices and volumes are exactly the allowed ones.
 /// Answers how many changes it made.
 ///
 /// # Errors
@@ -56,11 +83,25 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.start_input_invalid", error.to_string()))?;
     check(&input).map_err(|detail| Failure::new("instance.start_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.container_start_failed" };
-    let copy = incus
-        .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
-        .ok_or_else(|| Failure::new("instance.container_start_failed", "the copy does not exist"))?;
-    guard(&copy, &input.network, &input.nic)?;
+    let read = || -> Result<Value, Failure> {
+        incus
+            .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
+            .ok_or_else(|| Failure::new("instance.container_start_failed", "the copy does not exist"))
+    };
+    let mut copy = read()?;
     let mut changes = 0;
+    if let Some(volume) = &input.volume {
+        // The copy took the seed's disk, which names the default's volume; its own goes in before the guard reads it.
+        if copy.pointer(&format!("/devices/{}/source", volume.device)).and_then(Value::as_str) != Some(volume.name.as_str()) {
+            incus.change(&["--project", &input.project, "config", "device", "set", &input.name, &volume.device, &format!("source={}", volume.name)])?;
+            changes += 1;
+            copy = read()?;
+        }
+    }
+    if let Some(allowed) = &input.allowed {
+        nested(&incus, &input, &copy, allowed)?;
+    }
+    guard(&copy, &input.network, &input.nic)?;
     if copy.get("status").and_then(Value::as_str) == Some("Stopped") {
         if unshift(&incus, &input, &copy)? {
             changes += 1;
@@ -96,6 +137,11 @@ fn check(input: &StartInput) -> Result<(), String> {
             && !value.starts_with('-')
             && !value.ends_with('-')
     };
+    if let Some(volume) = &input.volume {
+        if !crate::name(&volume.device) || !crate::name(&volume.name) {
+            return Err("volume is not a device and a volume name".to_owned());
+        }
+    }
     let path = Path::new(&input.app_account);
     if !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
         return Err("app_account is not an absolute path".to_owned());
@@ -111,6 +157,87 @@ fn check(input: &StartInput) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Keys Incus writes itself, and keys that only set the environment of processes in the copy.
+const OWNED_BY_INCUS: [&str; 3] = ["volatile.", "image.", "environment."];
+
+/// A nested-fleet copy's effective config and devices are exactly what Orbit writes (`instance_nested.py`), and its volumes
+/// too: the root is not delegated, and the one other volume holds exactly the inner volume's keys.
+fn nested(incus: &Incus<'_, impl System>, input: &StartInput, copy: &Value, allowed: &Allowed) -> Result<(), Failure> {
+    let unsafe_copy = |what: String| Failure::new("instance.container_network_unsafe", what);
+    let strings = |value: Option<&Value>| -> BTreeMap<String, String> {
+        value.and_then(Value::as_object).map(|map| map.iter().map(|(key, value)| (key.clone(), value.as_str().unwrap_or_default().to_owned())).collect()).unwrap_or_default()
+    };
+    let config = strings(copy.get("expanded_config"));
+    for (key, value) in &config {
+        if !OWNED_BY_INCUS.iter().any(|prefix| key.starts_with(prefix)) && allowed.config.get(key) != Some(value) {
+            return Err(unsafe_copy(format!("config {key}")));
+        }
+    }
+    for (key, value) in &allowed.config {
+        if !key.starts_with("environment.") && config.get(key) != Some(value) {
+            return Err(unsafe_copy(format!("config {key}")));
+        }
+    }
+    let devices: BTreeMap<String, BTreeMap<String, String>> = copy
+        .get("expanded_devices")
+        .and_then(Value::as_object)
+        .map(|map| map.iter().map(|(name, device)| (name.clone(), strings(Some(device)))).collect())
+        .unwrap_or_default();
+    let without = |device: &BTreeMap<String, String>, size: bool| -> BTreeMap<String, String> {
+        device.iter().filter(|(key, _)| !FILTERS.iter().any(|(filter, _)| filter == key) && (size || *key != "size")).map(|(k, v)| (k.clone(), v.clone())).collect()
+    };
+    let gib = |value: Option<&String>| value.and_then(|value| value.strip_suffix("GiB")).filter(|n| !n.starts_with('0')).and_then(|n| n.parse::<u64>().ok());
+    for (name, device) in &devices {
+        let Some(wanted) = allowed.devices.get(name) else { return Err(unsafe_copy(format!("device {name}"))) };
+        let fits = if name == "root" && device.get("path").map(String::as_str) == Some("/") {
+            // The start grows a smaller root, and a larger quota stays safe. A btrfs root carries no size at all.
+            let mut wanted = wanted.clone();
+            if pool_driver(incus, wanted.get("pool").map_or("", String::as_str))? == "btrfs" {
+                wanted.remove("size");
+            }
+            without(device, false) == without(&wanted, false)
+                && match wanted.get("size") {
+                    None => !device.contains_key("size"),
+                    Some(size) => matches!((gib(device.get("size")), gib(Some(size))), (Some(own), Some(want)) if own >= want),
+                }
+        } else {
+            without(device, true) == without(wanted, true)
+        };
+        if !fits {
+            return Err(unsafe_copy(format!("device {name}")));
+        }
+    }
+    if let Some(name) = allowed.devices.keys().find(|name| !devices.contains_key(*name)) {
+        return Err(unsafe_copy(format!("device {name} missing")));
+    }
+    for (name, device) in &devices {
+        let Some(pool) = device.get("pool").filter(|pool| device.get("type").map(String::as_str) == Some("disk") && !pool.is_empty()) else { continue };
+        let root = device.get("path").map(String::as_str) == Some("/");
+        let (kind, volume) = if root { ("container", input.name.as_str()) } else { ("custom", device.get("source").map_or("", String::as_str)) };
+        let read = incus.query(&format!("/1.0/storage-pools/{pool}/volumes/{kind}/{volume}?project={}", input.project)).ok().flatten();
+        let Some(read) = read else { return Err(unsafe_copy(format!("volume {name} unreadable"))) };
+        let held = strings(read.get("config"));
+        if held.get("zfs.delegate").map_or("false", String::as_str) != "false" {
+            return Err(unsafe_copy(format!("volume {name} zfs.delegate")));
+        }
+        if root {
+            continue;
+        }
+        let Some(wanted) = allowed.volumes.get(name) else { return Err(unsafe_copy(format!("volume {name}"))) };
+        // An empty value is an unset key for Incus.
+        let own: BTreeMap<&String, &String> = held.iter().filter(|(key, value)| !key.starts_with("volatile.") && !value.is_empty()).collect();
+        if own != wanted.iter().collect::<BTreeMap<_, _>>() {
+            return Err(unsafe_copy(format!("volume {name} keys")));
+        }
+    }
+    Ok(())
+}
+
+fn pool_driver(incus: &Incus<'_, impl System>, pool: &str) -> Result<String, Failure> {
+    let read = incus.query(&format!("/1.0/storage-pools/{pool}"))?.ok_or_else(|| Failure::new("instance.container_network_unsafe", format!("pool {pool} not found")))?;
+    Ok(read.get("driver").and_then(Value::as_str).unwrap_or_default().to_owned())
 }
 
 /// Each Instance NIC accepts only its own IPv4 and MAC address.

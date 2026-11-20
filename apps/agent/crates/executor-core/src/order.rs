@@ -305,7 +305,7 @@ pub fn check_with_target(
         return Err(OrderRefusal::WrongNode);
     }
     let target_exists = match action.target_kind() {
-        TargetKind::Node => payload.target.as_str() == checks.node.as_str(),
+        TargetKind::Node => node_target(payload.target.as_str(), checks.node.as_str()),
         TargetKind::Instance => target_exists(action, &payload.target),
     };
     if !target_exists {
@@ -326,6 +326,15 @@ pub fn check_with_target(
         power_check: payload.power_check,
         input: payload.input,
     })
+}
+
+/// A Node action's target: the Node itself, or `<node>:<scope>`, a part of the Node with its own lock, so that orders for
+/// different parts, such as two copies' clones, run side by side, and orders for one part one at a time.
+fn node_target(target: &str, node: &str) -> bool {
+    target == node
+        || target.strip_prefix(node).and_then(|rest| rest.strip_prefix(':')).is_some_and(|scope| {
+            !scope.is_empty() && !scope.starts_with('-') && scope.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
 }
 
 #[cfg(test)]
@@ -501,6 +510,17 @@ pub(crate) mod tests {
             check_with_target(&sign(1, &p), &checks, NOW, |_, _| false),
             Err(OrderRefusal::UnknownTarget)
         );
+    }
+
+    #[test]
+    fn a_node_action_targets_the_node_or_one_scope_of_it() {
+        assert!(node_target("7", "7"));
+        assert!(node_target("7:volume-12", "7"));
+        assert!(!node_target("70:volume-12", "7"));
+        assert!(!node_target("8:volume-12", "7"));
+        for scope in ["7:", "7:-x", "7:Volume", "7:a:b", "7:a b"] {
+            assert!(!node_target(scope, "7"), "{scope}");
+        }
     }
 
     #[test]
