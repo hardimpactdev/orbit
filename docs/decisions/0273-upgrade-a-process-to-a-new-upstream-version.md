@@ -59,7 +59,7 @@ A systemd Process may carry one release artifact. It has these fields:
 | `sha256` | The checksum of the installed asset |
 | `latest_version`, `latest_checked_at` | The daily check's last answer |
 
-The folder is not a field. It comes from the Process command: the command must run `<folder>/current/<binary>`. `process:artifact:set` refuses any other command with `process.artifact_invalid`. A Docker Process carries no release artifact in this record; see the build order.
+The folder is not a field. It comes from the Process command: the command must run `<folder>/current/<binary>`. `process:artifact:set` refuses any other command with `process.artifact_invalid`. Only the executable counts: the command's first argument, or the first one after `/usr/bin/env` and its `NAME=VALUE` arguments. An argument after the executable never names the folder, and a folder that another Process on the same Node names in its command is refused, so that pruning never removes another Process's release. A Docker Process carries no release artifact in this record; see the build order.
 
 ### U2. Recording an artifact
 
@@ -78,22 +78,24 @@ An adopted Process, such as Process 103, gets its artifact this way. When the in
 
 The admitted input carries the download URL and SHA-256 only. The Node never resolves a version itself. An upgrade to the recorded version succeeds at once with outcome `unchanged` and starts no run.
 
+An open `process.upgrade` holds its Process both ways: while it runs, `process:stop`, `start`, `restart`, `update` and `destroy` get `operation.target_busy`. After the GitHub read, the Gateway checks again, under the lock, that the Process is still desired `running` and has the same artifact. Admission leaves the Process's lifecycle state alone. A failure before `Switch current`, or a verified switch back, leaves the Process as it was, its error and pending runtime cleanup included. The Gateway decides `unchanged` from its record only; when the Node's `current` already names the requested version but the record does not, the run still checks the binary, restarts and verifies before the version is recorded.
+
 Swamp runs `operation-process-upgrade` on control Node 209, over SSH to the Process's Node, like the other Process workflows. Files are written as the owner of `<folder>`. The steps:
 
 | Step | What it does |
 | --- | --- |
-| `Read the installed release` | `current` must be a relative link to `releases/<version>`. Anything else fails with `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
+| `Read the installed release` | `current` must be a relative link to `releases/<version>`, and neither `releases` nor `current` may be a symbolic link that leaves `<folder>`. Anything else fails with `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
 | `Download the release` | Downloads the asset into a staging folder under `<folder>/releases/` and checks its SHA-256 |
 | `Unpack the release` | Unpacks it and renames the staging folder to `releases/<VERSION>`. A folder that already holds a checked copy of this release is reused, so a resume repeats nothing |
 | `Check the binary` | With `version_args`, runs the new binary and requires `VERSION` in its output |
 | `Switch current` | Writes a new relative link and renames it over `current` in one step |
 | `Restart the Process` | Restarts the systemd unit, as `process:restart` does |
 | `Verify it runs` | The unit is active and still active, with the same restart count, after 10 seconds |
-| `Keep the previous release` | After a pass, keeps `current` and the `before` release, and removes the other folders under `releases/` |
+| `Keep the previous release` | After a pass, keeps `current` and the `before` release, and removes the other folders under `releases/` whose names are versions. A prune failure leaves the pass standing; `pruned` names only the folders actually removed |
 
-A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After any failure from `Switch current` on, the run switches `current` back to `before`, restarts the Process and verifies it again. The Operation then fails with `process.upgrade_rolled_back`; nothing is pruned. When the rollback fails too, it fails with `process.rollback_failed`, and the Process shows as failed.
+A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After a failure in `Switch current`, `Restart the Process` or `Verify it runs`, the run switches `current` back to `before`, restarts the Process and verifies it again. The Operation then fails with `process.upgrade_rolled_back`; nothing is pruned. When the rollback fails too, or the Node cannot be reached during it, it fails with `process.rollback_failed`, and the Process shows as failed. Only a verified switch back reports `process.upgrade_rolled_back`.
 
-After a pass, the Gateway records `version`, `previous_version` and `sha256`. The Operation result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and the pruned versions. It carries no command output or secrets.
+After a pass, the Gateway records `version`, `previous_version` and `sha256` on the artifact the upgrade was admitted for; when that artifact was replaced or removed meanwhile, it records nothing. The Operation result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and the pruned versions. It carries no command output or secrets.
 
 ### U4. Daily release check
 

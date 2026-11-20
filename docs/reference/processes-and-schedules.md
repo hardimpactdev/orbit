@@ -361,7 +361,7 @@ The artifact names the GitHub repository and asset of the releases, and the vers
 | `sha256` | The checksum of the installed asset |
 | `latest_version`, `latest_checked_at` | The daily check's last answer |
 
-The folder is not a field. The Process command must run `<folder>/current/<binary>`, and `<folder>` comes from it. Each release lives in `<folder>/releases/<version>/`, and `current` is a relative link to one of them.
+The folder is not a field. The Process command must run `<folder>/current/<binary>`, and `<folder>` comes from it. Only the executable counts: the command's first argument, or the first one after `/usr/bin/env` and its `NAME=VALUE` arguments. An argument after the executable never names the folder, and a folder that another Process on the same Node names in its command is refused, so that pruning never removes another Process's release. Each release lives in `<folder>/releases/<version>/`, and `current` is a relative link to one of them.
 
 [`process:artifact:set`](/cli/process/artifact-set) (`PUT /api/v1/processes/{process}/artifact`) records the artifact, and [`process:artifact:unset`](/cli/process/artifact-unset) (`DELETE`) removes it. Both write the Gateway record only: they change nothing on the Node and start no Operation. A Docker Process, or a command that does not run `<folder>/current/<binary>`, is refused with `process.artifact_invalid`. `--preset=NAME` fills every field except the version from a preset; explicit options override it. A role declares its preset in its service provider through the core preset registry. The `ai-router` extension declares `cliproxyapi`: `router-for-me/CLIProxyAPI`, asset `CLIProxyAPI_{version}_linux_amd64.tar.gz`, binary `cli-proxy-api`, checksums `checksums.txt`, version arguments `["--help"]`.
 
@@ -377,22 +377,24 @@ The folder is not a field. The Process command must run `<folder>/current/<binar
 
 A release resolves when exactly one asset matches the pattern and a SHA-256 comes from the checksum asset or the asset digest. The admitted input carries the download URL and SHA-256; the Node never resolves a version. An upgrade to the recorded version succeeds at once with outcome `unchanged` and starts no run.
 
+An open `process.upgrade` holds its Process both ways: while it runs, `process:stop`, `start`, `restart`, `update` and `destroy` get `operation.target_busy`. After the GitHub read, the Gateway checks again, under the lock, that the Process is still desired `running` and has the same artifact. Admission leaves the Process's lifecycle state alone. A failure before `Switch current`, or a verified switch back, leaves the Process as it was, its error and pending runtime cleanup included. The Gateway decides `unchanged` from its record only; when the Node's `current` already names the requested version but the record does not, the run still checks the binary, restarts and verifies before the version is recorded.
+
 Swamp runs `operation-process-upgrade` on Node 209, over SSH to the Process's Node. Files are written as the owner of `<folder>`.
 
 | Step | What it does |
 | --- | --- |
-| Read the installed release | `current` must be a relative link to `releases/<version>`, else `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
+| Read the installed release | `current` must be a relative link to `releases/<version>`, and neither `releases` nor `current` may be a symbolic link that leaves `<folder>`, else `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
 | Download the release | Downloads the asset into a staging folder under `releases/` and checks its SHA-256 |
 | Unpack the release | Unpacks it and renames the staging folder to `releases/<VERSION>`. A folder with a checked copy of this release is reused |
 | Check the binary | With `version_args`, runs the new binary and requires `VERSION` in its output |
 | Switch current | Writes a new relative link and renames it over `current` in one step |
 | Restart the Process | Restarts the systemd unit |
 | Verify it runs | The unit is active, and still active with the same restart count 10 seconds later |
-| Keep the previous release | Keeps `current` and the `before` release, and removes the other folders under `releases/` |
+| Keep the previous release | Keeps `current` and the `before` release, and removes the other folders under `releases/` whose names are versions. A prune failure leaves the pass standing; `pruned` names only the folders actually removed |
 
-A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After any failure from `Switch current` on, the run switches `current` back to `before`, restarts the Process and verifies it again; the Operation fails with `process.upgrade_rolled_back` and prunes nothing. When that rollback fails too, the Operation fails with `process.rollback_failed` and the Process shows as failed.
+A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After a failure in `Switch current`, `Restart the Process` or `Verify it runs`, the run switches `current` back to `before`, restarts the Process and verifies it again; the Operation fails with `process.upgrade_rolled_back` and prunes nothing. When the rollback fails too, or the Node cannot be reached during it, it fails with `process.rollback_failed`, and the Process shows as failed. Only a verified switch back reports `process.upgrade_rolled_back`.
 
-After a pass, the Gateway records `version`, `previous_version` and `sha256`. The result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and `pruned`, the removed versions. It carries no command output or secrets. A restart drops requests in flight; for the AI router, Tasks retries a failed model call as a [transient provider error](/reference/tasks#execution-ownership).
+After a pass, the Gateway records `version`, `previous_version` and `sha256` on the artifact the upgrade was admitted for; when that artifact was replaced or removed meanwhile, it records nothing. The result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and `pruned`, the removed versions. It carries no command output or secrets. A restart drops requests in flight; for the AI router, Tasks retries a failed model call as a [transient provider error](/reference/tasks#execution-ownership).
 
 ### The daily release check
 

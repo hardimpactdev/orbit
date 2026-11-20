@@ -31,8 +31,8 @@ The API is `POST /api/v1/processes/{process}/upgrade` with `{"version": "8.0.80"
 | `process.not_running` | The Process is not desired running. Start it first. |
 | `process.target_unsupported` | The Process runs in an Instance container. The upgrade acts on a host systemd unit only. |
 | `process.version_unknown` (422) | No release with tag `v{VERSION}` or `{VERSION}`, no single matching asset, or no SHA-256 for it. Nothing changes. |
-| `operation.target_busy` | Another Operation holds the Process. |
+| `operation.target_busy` | Another Operation holds the Process. While an upgrade runs, other Process commands get this code too. |
 | `process.artifact_layout_invalid` | `current` is not a relative link to `releases/<version>`. Nothing changes. |
 | `process.upgrade_failed` | The download, checksum, unpack or binary check failed before the switch. The running release is untouched. |
 | `process.upgrade_rolled_back` | The switch, restart or check failed; the old release runs again. |
-| `process.rollback_failed` | The switch back failed too; the Process shows as failed. |
+| `process.rollback_failed` | The switch back failed too, or the Node could not be reached; the Process shows as failed. |

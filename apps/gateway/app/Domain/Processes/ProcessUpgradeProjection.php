@@ -67,19 +67,34 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
                 return $projected;
             }
             if ($status === OperationStatus::Succeeded) {
-                ProcessArtifact::query()->where('process_id', $operation->target_id)->update(['version' => $result['after'], 'sha256' => $operation->input['sha256'],
-                    ...($result['before'] !== null && $result['before'] !== $result['after'] ? ['previous_version' => $result['before']] : [])]);
+                self::record($operation, $result);
+
+                return $projected;
             }
-            $outcome = match (true) {
-                $status === OperationStatus::Cancelled => OperationOutcome::cancelled(),
-                $status === OperationStatus::Succeeded || $untouched => OperationOutcome::succeeded(['state' => 'active']),
-                $status === OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
-                default => OperationOutcome::interrupted($code, $result),
-            };
-            $this->completion->complete($projected, $outcome);
+            // A failure before `Switch current`, or a verified switch back, leaves the Process as it was: its state, error and pending
+            // runtime cleanup stay. Any other end may have left the new release, or none, running.
+            if ($status === OperationStatus::Cancelled || $untouched) {
+                return $projected;
+            }
+            $this->completion->complete($projected, $status === OperationStatus::Failed
+                ? OperationOutcome::failed($code ?? 'process.rollback_failed', $result)
+                : OperationOutcome::interrupted($code, $result));
 
             return $projected;
         });
+    }
+
+    /** Records the installed release on the artifact the upgrade was admitted for; a replaced or removed artifact keeps its own record.
+     * @param  array<string,mixed>  $result
+     */
+    private static function record(Operation $operation, array $result): void
+    {
+        $input = $operation->input;
+        ProcessArtifact::query()->whereKey($input['artifact_id'] ?? null)->where('process_id', $operation->target_id)
+            ->where('repository', $input['repository'] ?? null)->where('asset', $input['asset_pattern'] ?? null)->where('binary', $input['binary'] ?? null)
+            ->where(static fn ($query) => isset($input['recorded_version']) ? $query->where('version', $input['recorded_version']) : $query->whereNull('version'))
+            ->update(['version' => $result['after'], 'sha256' => $input['sha256'],
+                ...($result['before'] !== null && $result['before'] !== $result['after'] ? ['previous_version' => $result['before']] : [])]);
     }
 
     private static function version(mixed $version): ?string

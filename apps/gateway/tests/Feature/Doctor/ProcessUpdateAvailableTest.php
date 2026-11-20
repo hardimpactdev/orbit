@@ -110,3 +110,19 @@ it('resolves the problem once the Process runs the latest release', function ():
 
     expect(ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->where('evidence->doctor_code', 'process.update_available')->sole()->evidence['resolution'])->toBe('fresh_doctor_success');
 });
+
+it('resolves the problem once the artifact is removed or its version is unknown', function (Closure $change): void {
+    [, $process] = update_router('8.0.63', '8.0.80');
+    config(['orbit.gateway_queue.connection' => '']);
+    app(RunDoctorAction::class)->scheduled();
+
+    $change(ProcessArtifact::query()->where('process_id', $process->id));
+    $this->travel(5)->minutes();
+    $this->view->putSubscriber(true, true, 1);
+    app(RunDoctorAction::class)->scheduled();
+
+    expect(ProblemFingerprint::query()->where('source', ProblemSource::Doctor)->where('evidence->doctor_code', 'process.update_available')->sole()->evidence['resolution'])->toBe('fresh_doctor_success');
+})->with([
+    'unset' => [fn ($artifact) => $artifact->delete()],
+    'unknown version' => [fn ($artifact) => $artifact->update(['version' => null])],
+]);

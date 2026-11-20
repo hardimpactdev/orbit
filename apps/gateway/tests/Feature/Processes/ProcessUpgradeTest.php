@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\Artifacts\ProcessArtifactPresets;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessUpgradeProjection;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
 use App\Models\Operation;
@@ -102,13 +104,51 @@ describe('process:artifact:set and unset', function (): void {
         expect(ProcessArtifact::query()->count())->toBe(0);
     })->with([
         'binary outside current' => [['/home/orbit/.local/share/cliproxyapi/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
+        'folder in a later argument' => [['/usr/bin/stat', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
+        'folder after an env flag' => [['/usr/bin/env', '-i', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
         'Docker Process' => [['cli-proxy-api'], 'docker', ['preset' => 'cliproxyapi']],
         'unknown preset' => [null, 'systemd', ['preset' => 'nope']],
         'asset without {version}' => [null, 'systemd', ['repository' => 'a/b', 'asset' => 'router.tar.gz', 'binary' => 'cli-proxy-api']],
     ]);
 });
 
+it('refuses a release folder that another Process on the Node names', function (): void {
+    $process = upgrade_router();
+    Process::query()->create(['owner_type' => Node::class, 'owner_id' => $process->owner_id, 'name' => 'router-copy', 'runtime' => 'systemd',
+        'runtime_config' => ['command' => ['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/tmp/other.yaml']],
+        'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+
+    $this->putJson('/api/v1/processes/'.$process->id.'/artifact', ['preset' => 'cliproxyapi'])->assertUnprocessable()
+        ->assertJsonPath('error.code', 'process.artifact_invalid');
+});
+
 describe('process:upgrade admission', function (): void {
+    it('holds the Process: no other mutation is admitted while the upgrade is open', function (string $verb): void {
+        $process = upgrade_router();
+        upgrade_artifact($process);
+        upgrade_github();
+        $this->postJson('/api/v1/processes/'.$process->id.'/upgrade', ['version' => '8.0.80'])->assertAccepted();
+
+        expect(fn () => app(ProcessOperationAdmission::class)->execute($process->refresh(), $verb))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.target_busy'));
+        expect(Operation::query()->count())->toBe(1);
+    })->with(['stop', 'start', 'restart', 'update', 'destroy']);
+
+    it('refuses when the Process is stopped while the release resolves', function (): void {
+        $process = upgrade_router();
+        upgrade_artifact($process);
+        upgrade_github();
+        Http::globalRequestMiddleware(function ($request) use ($process) {
+            Process::query()->whereKey($process->id)->update(['desired_state' => 'stopped']);
+
+            return $request;
+        });
+
+        $this->postJson('/api/v1/processes/'.$process->id.'/upgrade', ['version' => '8.0.80'])->assertConflict()
+            ->assertJsonPath('error.code', 'process.not_running');
+        expect(Operation::query()->count())->toBe(0);
+    });
+
     it('admits a process.upgrade with the resolved URL and the SHA-256 from the checksums asset', function (string $requested, string $tag): void {
         $process = upgrade_router();
         upgrade_artifact($process);
@@ -123,7 +163,7 @@ describe('process:upgrade admission', function (): void {
             'version' => '8.0.80', 'asset' => 'CLIProxyAPI_8.0.80_linux_amd64.tar.gz', 'sha256' => UPGRADE_SHA, 'version_args' => ['--help'],
             'url' => 'https://github.com/router-for-me/CLIProxyAPI/releases/download/'.$tag.'/CLIProxyAPI_8.0.80_linux_amd64.tar.gz',
         ])->and($operation->lock_key)->toBe('process:'.$process->id)
-            ->and($process->refresh()->status->value)->toBe('provisioning');
+            ->and($process->refresh()->status->value)->toBe('active');
     })->with(['v tag' => ['8.0.80', 'v8.0.80'], 'leading v, bare tag' => ['v8.0.80', '8.0.80']]);
 
     it('takes the asset digest without a checksums asset', function (): void {
@@ -228,11 +268,39 @@ describe('process.upgrade projection', function (): void {
             ->and($process->error_code)->toBe('process.rollback_failed');
     });
 
-    it('keeps the Process active when the run fails before it switches current', function (): void {
+    it('leaves the Process lifecycle as it was when the run fails before it switches current', function (): void {
         [$process, $operation] = upgrade_admitted();
+        $process->forceFill(['status' => 'failed', 'error_code' => 'process.runtime_failed', 'retired_runtime' => 'docker'])->save();
 
         upgrade_finish($operation, 'failed', ['error_code' => 'process.artifact_layout_invalid', 'before' => null, 'after' => '8.0.80', 'pruned' => []], 'process.artifact_layout_invalid');
 
-        expect($process->refresh()->status->value)->toBe('active')->and($process->artifact()->firstOrFail()->version)->toBe('8.0.63');
+        $process->refresh();
+        expect($process->status->value)->toBe('failed')->and($process->error_code)->toBe('process.runtime_failed')
+            ->and($process->retired_runtime?->value)->toBe('docker')
+            ->and($process->artifact()->firstOrFail()->version)->toBe('8.0.63');
     });
+
+    it('shows the Process as failed when the run ends without a verified result', function (): void {
+        [$process, $operation] = upgrade_admitted();
+
+        upgrade_finish($operation, 'failed', []);
+
+        expect($process->refresh()->status->value)->toBe('failed')->and($process->error_code)->toBe('process.rollback_failed');
+    });
+
+    it('records nothing on an artifact that was replaced or removed while the upgrade ran', function (Closure $replace): void {
+        [$process, $operation] = upgrade_admitted();
+        $replace($process);
+
+        upgrade_finish($operation, 'succeeded', ['before' => '8.0.63', 'after' => '8.0.80', 'outcome' => 'upgraded', 'pruned' => []]);
+
+        $artifact = $process->artifact()->first();
+        expect($artifact?->version)->not->toBe('8.0.80')->and($artifact?->sha256)->toBeNull();
+    })->with([
+        'another repository' => [fn (Process $process) => test()->putJson('/api/v1/processes/'.$process->id.'/artifact', ['repository' => 'other/router', 'asset' => 'router_{version}.tar.gz', 'binary' => 'cli-proxy-api'])->assertOk()],
+        'unset, then set again' => [function (Process $process): void {
+            test()->deleteJson('/api/v1/processes/'.$process->id.'/artifact')->assertOk();
+            test()->putJson('/api/v1/processes/'.$process->id.'/artifact', ['preset' => 'cliproxyapi'])->assertOk();
+        }],
+    ]);
 });

@@ -294,16 +294,15 @@ final readonly class FactDoctor
             return;
         }
         $names = array_column($processes, 'name', 'id');
-        $artifacts = ProcessArtifact::query()->whereIn('process_id', array_keys($names))->orderBy('process_id')->get(['process_id', 'version', 'latest_version']);
-        foreach ($artifacts as $artifact) {
-            if ($artifact->version === null) {
-                continue;
-            }
-            if ($artifact->latest_version !== null && version_compare($artifact->latest_version, $artifact->version, '>')) {
-                $check->issue('process.update_available', $artifact->process_id, $names[$artifact->process_id], 'A newer upstream release of the Process is available.',
+        $artifacts = ProcessArtifact::query()->whereIn('process_id', array_keys($names))->get(['process_id', 'version', 'latest_version'])->keyBy('process_id');
+        // Every Process is observed, so a finding retires once its artifact is gone or its version is unknown.
+        foreach ($names as $id => $name) {
+            $artifact = $artifacts->get($id);
+            if ($artifact?->version !== null && $artifact->latest_version !== null && version_compare($artifact->latest_version, $artifact->version, '>')) {
+                $check->issue('process.update_available', $id, $name, 'A newer upstream release of the Process is available.',
                     $artifact->latest_version, $artifact->version, DoctorIssueKind::Informational);
             }
-            $check->observed($artifact->process_id, 'process.update_available');
+            $check->observed($id, 'process.update_available');
         }
     }
 
