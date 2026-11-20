@@ -488,12 +488,13 @@
             fail_msg: "{{ review_error | default('') }}"
     # Only a receipt that this turn's run writes counts (docs/reference/tasks.md#handoffs): what an earlier run left, also one written
     # after its turn read its receipts, goes before the launch. A copy where it cannot go launches nothing. A link, as the receipt
-    # folder or as the receipt, is removed itself: nothing follows it to its target.
+    # folder or as the receipt, is removed itself: nothing follows it to its target. The Git directory is resolved first and the
+    # literal `orbit-handoff` entry in it inspected, since `git rev-parse --git-path` would resolve that link.
     - name: Clear earlier handoff receipts
       ansible.builtin.command:
         argv: >-
           {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
-             'd=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path orbit-handoff) || exit 1;
+             'g=$(git -C /srv/workspace rev-parse --absolute-git-dir) || exit 1; d="$g/orbit-handoff";
               if [ -L "$d" ]; then rm -f -- "$d" || exit 1; exit 0; fi; f="$d/delivery.json"; rm -rf -- "$f"', 'sh'] }}
       changed_when: true
     # The run and its read; the reviewer's restore follows whatever happened in them.
@@ -812,7 +813,7 @@
           ansible.builtin.command:
             argv: >-
               {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
-                 'd=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path orbit-handoff) || exit 3;
+                 'g=$(git -C /srv/workspace rev-parse --absolute-git-dir) || exit 3; d="$g/orbit-handoff";
                   if [ -L "$d" ]; then rm -f -- "$d"; exit 3; fi; f="$d/$1.json";
                   if [ -L "$f" ] || [ ! -f "$f" ]; then rm -rf -- "$f"; exit 3; fi;
                   if [ "$(wc -c < "$f")" -gt 65536 ]; then printf "too large";

@@ -15,13 +15,13 @@ final class StoreTaskHandoffRequest extends FormRequest
     {
         return [
             'verdict' => ['required', 'string', 'in:approve,changes'],
-            // `approve` has no blocking finding; `changes` has at least one.
-            'findings' => ['required', 'integer', 'min:0', 'max:100', function (string $attribute, mixed $value, Closure $fail): void {
+            // A JSON integer only: `true`, `"2"` and `2.0` are refused, not coerced. `approve` has no blocking finding; `changes` has at
+            // least one.
+            'findings' => ['bail', 'required', 'integer:strict', 'min:0', 'max:100', function (string $attribute, mixed $value, Closure $fail): void {
                 $verdict = $this->input('verdict');
-                $count = filter_var($value, FILTER_VALIDATE_INT);
-                if ($verdict === 'approve' && $count !== 0) {
+                if ($verdict === 'approve' && $value !== 0) {
                     $fail('An approve has no blocking finding: findings must be 0.');
-                } elseif ($verdict === 'changes' && (! is_int($count) || $count < 1)) {
+                } elseif ($verdict === 'changes' && (! is_int($value) || $value < 1)) {
                     $fail('Changes need at least one blocking finding.');
                 }
             }],

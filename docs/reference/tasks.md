@@ -1183,7 +1183,7 @@ The gates hold only for a group that leaves backlog after they shipped; the grou
 {"commit": "<sha>", "tree": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
 ```
 
-Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it. A link, as the `orbit-handoff` folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
+Only a receipt that the turn's own run writes counts. Before a copy turn launches, its phase removes the receipt path; a copy where it cannot go launches nothing. After the turn, the phase reads `orbit-handoff/delivery.json` once and removes it. The phase resolves the Git directory first and inspects the literal `orbit-handoff` entry in it. A link, as that folder or as the receipt, is removed itself, never followed to its target, and like a folder or an absent file leaves no receipt. A file over 64 KiB is removed and passes on as the text `too large`, and one that is not UTF-8 as `not utf-8`. An empty file is still a receipt: only an absent file is none.
 
 The turn result returns it as `receipts.delivery`, or null. It keeps only its commit, its tree and its parts, each part's name redacted; any other shape is `invalid`. A part's result is `passed`, `FAILED`, `skipped` or `not selected`, and its seconds are finite and not negative.
 
@@ -1216,7 +1216,7 @@ A reviewer turn of a gated group posts its review receipt to the Gateway, the wa
 {"verdict": "changes", "findings": 2}
 ```
 
-`verdict` is `approve` or `changes`. `findings` is the number of blocking findings, an integer from 0 to 100: 0 for `approve`, at least 1 for `changes`. Any other body answers `validation.failed` (422), and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts.
+`verdict` is `approve` or `changes`. `findings` is the number of blocking findings, an integer from 0 to 100: 0 for `approve`, at least 1 for `changes`. `findings` must be a JSON integer: `true`, `"2"` and `2.0` are refused, not coerced. Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts.
 
 #### The review gate
 

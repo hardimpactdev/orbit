@@ -75,17 +75,21 @@ function reviewStart(TaskDoneFixture $world, string $role): Operation|string
 }
 
 /**
- * The reviewer posts BODY from copy INSTANCE, as its prompt shows: with the copy key its model environment carries, from its own Node.
+ * The reviewer posts BODY from copy INSTANCE, as its prompt shows: with the copy key its model environment carries, from its own Node. A
+ * string BODY is sent as the raw JSON text, so a float such as `2.0` reaches the Gateway as written.
  *
- * @param  array<string, mixed>  $body
+ * @param  array<string, mixed>|string  $body
  */
-function reviewPosts(int|TaskDoneFixture $instance, array $body): TestResponse
+function reviewPosts(int|TaskDoneFixture $instance, array|string $body): TestResponse
 {
     $instance = Instance::query()->with('node')->findOrFail($instance instanceof TaskDoneFixture ? $instance->instance->id : $instance);
     $environment = app(InstanceContainer::class)->modelEnvironment(InstanceRuntime::query()->where('instance_id', $instance->id)->sole(), 'placeholder');
     preg_match('/^ORBIT_COPY_KEY=([0-9a-f]{64})$/m', $environment, $match);
 
-    return test()->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->withToken($match[1] ?? '')->postJson('/api/v1/copy/handoff', $body);
+    $caller = test()->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->withToken($match[1] ?? '');
+
+    return is_string($body) ? $caller->call('POST', '/api/v1/copy/handoff', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer '.($match[1] ?? '')], $body)
+        : $caller->postJson('/api/v1/copy/handoff', $body);
 }
 
 /**
@@ -153,7 +157,7 @@ it('rejects a review whose turn posted no receipt, and the turn still succeeds',
         ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded);
 });
 
-it('refuses a receipt that does not fit the schema with validation.failed, and the reviewer can post again', function (array $body, string $field): void {
+it('refuses a receipt that does not fit the schema with validation.failed, and the reviewer can post again', function (array|string $body, string $field): void {
     $world = reviewWorld();
     $turn = reviewStart($world, 'reviewer');
 
@@ -171,6 +175,28 @@ it('refuses a receipt that does not fit the schema with validation.failed, and t
     'more than 100 findings' => [['verdict' => 'changes', 'findings' => 101], 'findings'],
     'approve with a finding' => [['verdict' => 'approve', 'findings' => 1], 'findings'],
     'changes with no finding' => [['verdict' => 'changes', 'findings' => 0], 'findings'],
+    'a boolean count' => [['verdict' => 'changes', 'findings' => true], 'findings'],
+    'a count as a string' => [['verdict' => 'changes', 'findings' => '2'], 'findings'],
+    'a count as a float' => ['{"verdict":"changes","findings":2.0}', 'findings'],
+    'zero as a string for approve' => [['verdict' => 'approve', 'findings' => '0'], 'findings'],
+    'zero as a float for approve' => ['{"verdict":"approve","findings":0.0}', 'findings'],
+]);
+
+it('keeps the last valid post when a malformed one is refused', function (array|string $malformed): void {
+    $world = reviewWorld();
+    $turn = reviewStart($world, 'reviewer');
+
+    reviewPosts($world, ['verdict' => 'changes', 'findings' => 3])->assertStatus(202);
+    reviewPosts($world, $malformed)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+    reviewEnded($turn, 'done');
+
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'changes', 'findings' => 3]);
+})->with([
+    'a boolean count' => [['verdict' => 'changes', 'findings' => true]],
+    'a count as a string' => [['verdict' => 'changes', 'findings' => '2']],
+    'a count as a float' => ['{"verdict":"changes","findings":2.0}'],
+    'zero as a string for approve' => [['verdict' => 'approve', 'findings' => '0']],
+    'zero as a float for approve' => ['{"verdict":"approve","findings":0.0}'],
 ]);
 
 it('counts the last post of a turn, and admits a post only during a running reviewer turn', function (): void {
