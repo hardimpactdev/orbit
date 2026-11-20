@@ -9,6 +9,7 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Instances\ContainerServer;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -20,6 +21,7 @@ use App\Domain\Tasks\TaskTurnPrompt;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use App\Models\TaskCheck;
 use App\Models\TaskHandoff;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -112,6 +114,7 @@ it('accepts a review receipt whose verdict matches its findings, and keeps the v
 })->with([
     'approve with no finding' => [reviewReceipt('approve'), 'approve', 0],
     'changes with two findings' => [reviewReceipt('changes', ['The export drops the header row.', 'No test covers an empty board.']), 'changes', 2],
+    'fields in another order' => ['{"findings":[],"verdict":"approve"}', 'approve', 0],
 ]);
 
 it('rejects a review receipt with one reason', function (?string $receipt, string $reason): void {
@@ -119,7 +122,10 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
 
     $row = reviewed($world, $receipt);
 
-    expect($row->only(['type', 'rejected', 'rejection_reason']))->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => $reason]);
+    expect($row->only(['type', 'rejected', 'rejection_reason']))->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => $reason])
+        // A rejected receipt never fails the turn: its Operation ends, and an invalid receipt is kept as its text.
+        ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded)
+        ->and($row->receipt)->toBe($reason === TaskHandoffs::InvalidReceipt ? ['text' => $receipt] : ($receipt === null ? null : json_decode($receipt, true)));
 })->with([
     'no receipt' => [null, TaskHandoffs::NoReceipt],
     'text that is not JSON' => ['VERDICT: APPROVE', TaskHandoffs::InvalidReceipt],
@@ -130,6 +136,9 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     'a finding without a summary' => ['{"verdict":"changes","findings":[{"file":"a.php"}]}', TaskHandoffs::InvalidReceipt],
     'a finding with an empty summary' => ['{"verdict":"changes","findings":[{"summary":" "}]}', TaskHandoffs::InvalidReceipt],
     'a field outside the schema' => ['{"verdict":"approve","findings":[],"note":"x"}', TaskHandoffs::InvalidReceipt],
+    'an empty object for findings' => ['{"verdict":"approve","findings":{}}', TaskHandoffs::InvalidReceipt],
+    'an object with list keys for findings' => ['{"verdict":"changes","findings":{"0":{"summary":"Missing column"}}}', TaskHandoffs::InvalidReceipt],
+    'a number that does not encode again' => ['{"verdict":"approve","findings":[],"size":1e400}', TaskHandoffs::InvalidReceipt],
     'changes with no finding' => [reviewReceipt('changes'), TaskHandoffs::ChangesWithoutFinding],
     'approve with a finding' => [reviewReceipt('approve', ['The export drops the header row.']), TaskHandoffs::ApproveWithFinding],
 ]);
@@ -186,8 +195,17 @@ it('refuses an implementer turn after an accepted delivery until an accepted rev
     reviewDelivery($world, false);
     expect(reviewStart($world, 'implementer'))->toBe('tasks.handoff_required 409');
 
-    // A newer handoff check that did not pass, such as one that ended with tasks.check_conflict, lets the merge turn run.
-    TaskDoneFixture::check($world->group, $world->subtask, TaskDoneFixture::Commit, status: TaskCheckStatus::Failed);
+    // A newer handoff check that failed, was cancelled or was lost is no review.
+    $recheck = fn (string $status, string $code): bool => Operation::query()->where('kind', 'tasks.check')
+        ->where('input->check_id', TaskDoneFixture::check($world->group, $world->subtask, TaskDoneFixture::Commit, status: TaskCheckStatus::Failed)->id)
+        ->sole()->forceFill(['status' => $status, 'error_code' => $code])->save();
+    foreach ([['failed', 'tasks.check_failed'], ['cancelled', 'operation.cancelled'], ['interrupted', 'operation.interrupted']] as [$status, $code]) {
+        $recheck($status, $code);
+        expect(reviewStart($world, 'implementer'))->toBe('tasks.handoff_required 409');
+    }
+
+    // A newer handoff check that ended with tasks.check_conflict lets the merge turn run.
+    $recheck('failed', 'tasks.check_conflict');
     expect(reviewStart($world, 'implementer'))->toBeInstanceOf(Operation::class);
 
     // An ungated group keeps the old rule.
@@ -207,9 +225,9 @@ it('refuses to complete a subtask or publish unless its latest review is an acce
 
         return 'completed';
     };
-    $publish = function () use ($world): string {
+    $publish = function (?TaskCheck $check = null) use ($world): string {
         try {
-            app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($world->check->id), 'test', null);
+            app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData(($check ?? $world->check)->id), 'test', null);
         } catch (ResourceOperationException $error) {
             return $error->errorCode.' '.$error->status;
         }
@@ -235,8 +253,40 @@ it('refuses to complete a subtask or publish unless its latest review is an acce
 
     $delivery->delete();
     expect($complete())->toBe('completed')
-        ->and($world->subtask->refresh()->status)->toBe(TaskStatus::Completed)
-        ->and($publish())->toBe('admitted');
+        ->and($world->subtask->refresh()->status)->toBe(TaskStatus::Completed);
+
+    // The approve covers the commit it reviewed: a check of another commit does not publish, another check of the same commit does.
+    $other = TaskDoneFixture::check($world->group, $world->subtask, str_repeat('d', 40));
+    expect($publish($other))->toBe('tasks.handoff_required 409');
+    $same = TaskDoneFixture::check($world->group, $world->subtask, TaskDoneFixture::Commit);
+    expect($publish($same))->toBe('admitted');
+});
+
+it('refuses to complete a subtask of a gated group that has no task copy yet', function (): void {
+    $world = reviewWorld();
+    $world->group->update(['taskable_type' => null, 'taskable_id' => null]);
+
+    try {
+        app(UpdateTaskAction::class)->execute($world->group->refresh(), $world->subtask->refresh(),
+            new UpdateTaskData(title: null, brief: null, position: null, status: TaskStatus::Completed));
+        $outcome = 'completed';
+    } catch (ResourceOperationException $error) {
+        $outcome = $error->errorCode.' '.$error->status;
+    }
+
+    expect($outcome)->toBe('tasks.handoff_required 409')
+        ->and($world->subtask->refresh()->status)->toBe(TaskStatus::Running);
+});
+
+it('counts only an accepted review for the round of the next review in a gated group', function (): void {
+    $world = reviewWorld();
+
+    reviewed($world, null);
+    $retry = reviewStart($world, 'reviewer');
+    expect($retry->input['turn']['prompt'])->toContain('This is the first review of this subtask');
+    reviewEnded($retry, 'done', reviewReceipt('changes', ['The export drops the header row.']));
+
+    expect(reviewStart($world, 'reviewer')->input['turn']['prompt'])->toContain('This is review round 2 of this subtask');
 });
 
 it('names the review receipt path and its schema in the prompt of a gated group only', function (bool $gated): void {

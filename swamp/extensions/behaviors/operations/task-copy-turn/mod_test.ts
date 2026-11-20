@@ -273,6 +273,15 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
         }));
         const redacted = await behavior.methods.result.execute({ folder }, context);
         assertEquals(JSON.stringify(redacted.turn.receipts).includes(secret), false);
+        // A review receipt stays JSON when a finding quotes a header that redaction cuts to the end of its line.
+        const review = { verdict: "changes", findings: [{ summary: `The proxy drops the Authorization: Bearer ${secret} header.` }] };
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: JSON.stringify(review) }));
+        const kept = JSON.parse((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review ?? "");
+        assertEquals(Object.keys(kept), ["verdict", "findings"]);
+        assertEquals(kept.findings.length, 1);
+        assertEquals(JSON.stringify(kept).includes(secret), false);
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: `VERDICT: APPROVE ${secret}` }));
+        assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review?.includes(secret), false);
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),

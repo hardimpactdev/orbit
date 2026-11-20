@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -118,8 +117,8 @@ final readonly class TaskHandoffs
 
     /**
      * Refuses an implementer turn of a gated group after an accepted delivery until an accepted review of it exists: the reviewer
-     * judges each delivery before the work goes on. A newer handoff check of the subtask that did not pass, such as one that ended with
-     * `tasks.check_conflict`, lets the merge turn run: its work is a new delivery.
+     * judges each delivery before the work goes on. A newer handoff check of the subtask that ended with `tasks.check_conflict` lets the
+     * merge turn run: its work is a new delivery. No other check outcome does.
      */
     public static function requireReview(Task $group, Task $subtask): void
     {
@@ -130,8 +129,9 @@ final readonly class TaskHandoffs
             ->where('rejected', false)->orderByDesc('id')->first();
         if (! $delivery instanceof TaskHandoff
             || TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->where('rejected', false)->where('id', '>', $delivery->id)->exists()
-            || TaskCheck::query()->where('task_id', $subtask->id)->where('kind', TaskCheckKind::Handoff->value)->where('id', '>', (int) $delivery->task_check_id)
-                ->whereNot('status', TaskCheckStatus::Passed->value)->exists()) {
+            || Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+                ->where('kind', OperationKinds::TasksCheck)->where('input->subtask', $subtask->id)->where('input->phase', TaskCheckKind::Handoff->value)
+                ->where('input->check_id', '>', (int) $delivery->task_check_id)->where('error_code', 'tasks.check_conflict')->exists()) {
             return;
         }
 
@@ -140,16 +140,19 @@ final readonly class TaskHandoffs
     }
 
     /**
-     * Refuses to complete a subtask, or to publish a check of it, in a gated group with a task copy unless the subtask's latest review
-     * row is an accepted `approve` that came after its latest delivery row.
+     * Refuses to complete a subtask of a gated group, or to publish a check of it, unless the subtask's latest review row is an accepted
+     * `approve` that came after its latest delivery row. A publish also needs that review to have judged the commit it publishes: another
+     * check of the same commit counts. A gated group without its copy yet has no review, so its subtask does not complete.
      */
-    public static function requireApproval(Task $group, Task $subtask, string $step): void
+    public static function requireApproval(Task $group, Task $subtask, string $step, ?string $commit = null): void
     {
-        if (! $group->handoffs_gated || ! $group->taskable instanceof Instance) {
+        if (! $group->handoffs_gated) {
             return;
         }
         $review = TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Review->value)->orderByDesc('id')->first();
+        $reviewed = $review?->operation_id === null ? null : Operation::query()->find($review->operation_id)?->input['candidate'] ?? null;
         if ($review instanceof TaskHandoff && ! $review->rejected && ($review->receipt['verdict'] ?? null) === 'approve'
+            && ($commit === null || $reviewed === $commit)
             && ! TaskHandoff::query()->where('task_id', $subtask->id)->where('type', TaskHandoffType::Delivery->value)->where('id', '>', $review->id)->exists()) {
             return;
         }
@@ -207,8 +210,9 @@ final readonly class TaskHandoffs
 
     /**
      * The review receipt as the turn returned it, its redacted text, and the gate's reason: empty when it is a JSON object of exactly
-     * `verdict` (`approve` or `changes`) and `findings`, a list of objects of exactly a non-empty `summary`, with a finding only for
-     * `changes`. The row keeps the receipt when it parses to a JSON object.
+     * `verdict` (`approve` or `changes`) and `findings`, a JSON list of objects of exactly a non-empty `summary`, with a finding only for
+     * `changes`. JSON objects decode as objects, so an object never passes for a list. The row keeps a valid receipt as it is, and any
+     * other receipt as its text under `text`, which always encodes again.
      *
      * @return array{0: array<string, mixed>|null, 1: string}
      */
@@ -218,25 +222,28 @@ final readonly class TaskHandoffs
             return [null, self::NoReceipt];
         }
         try {
-            $receipt = json_decode($text, true, 16, JSON_THROW_ON_ERROR);
+            $receipt = json_decode($text, false, 16, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            return [null, self::InvalidReceipt];
+            $receipt = null;
         }
-        if (! is_array($receipt) || ($receipt !== [] && array_is_list($receipt))) {
-            return [null, self::InvalidReceipt];
-        }
-        $findings = $receipt['findings'] ?? null;
-        $keys = array_keys($receipt);
+        $findings = $receipt instanceof \stdClass ? $receipt->findings ?? null : null;
+        $keys = $receipt instanceof \stdClass ? array_keys(get_object_vars($receipt)) : [];
         sort($keys);
-        $valid = $keys === ['findings', 'verdict'] && in_array($receipt['verdict'], ['approve', 'changes'], true)
-            && is_array($findings) && array_is_list($findings)
-            && array_filter($findings, static fn (mixed $finding): bool => ! is_array($finding) || array_keys($finding) !== ['summary']
-                || ! is_string($finding['summary']) || trim($finding['summary']) === '') === [];
+        $summaries = [];
+        foreach (is_array($findings) ? $findings : [] as $finding) {
+            if ($finding instanceof \stdClass && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary) && trim($finding->summary) !== '') {
+                $summaries[] = ['summary' => $finding->summary];
+            }
+        }
+        if (! $receipt instanceof \stdClass || $keys !== ['findings', 'verdict'] || ! in_array($receipt->verdict, ['approve', 'changes'], true)
+            || ! is_array($findings) || count($summaries) !== count($findings)) {
+            return [['text' => $text], self::InvalidReceipt];
+        }
+        $kept = ['verdict' => $receipt->verdict, 'findings' => $summaries];
 
-        return [$receipt, match (true) {
-            ! $valid => self::InvalidReceipt,
-            $receipt['verdict'] === 'changes' && $findings === [] => self::ChangesWithoutFinding,
-            $receipt['verdict'] === 'approve' && $findings !== [] => self::ApproveWithFinding,
+        return [$kept, match (true) {
+            $kept['verdict'] === 'changes' && $findings === [] => self::ChangesWithoutFinding,
+            $kept['verdict'] === 'approve' && $findings !== [] => self::ApproveWithFinding,
             default => '',
         }];
     }

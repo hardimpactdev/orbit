@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { redactText } from "../../_lib/public_output.ts";
+import { redactText, redactValue } from "../../_lib/public_output.ts";
 
 /** The longest public transcript of one turn, as for a task VM turn. */
 const TranscriptBytes = 262144;
@@ -153,7 +153,7 @@ export const Turn = z.object({
     spent: z.array(z.string()),
     transcript: z.array(Entry),
     // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
-    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its redacted text. Null
+    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its text, each JSON string redacted on its own. Null
     // for a receipt the turn did not leave.
     receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
@@ -419,12 +419,29 @@ function delivered(text: string): z.infer<typeof DeliveryReceipt> | "invalid" {
     return redacted.success ? redacted.data : "invalid";
 }
 
+/**
+ * The review receipt as the Gateway gets it: a receipt that parses as JSON is serialized again with each key and string redacted on
+ * its own, so redaction never breaks its JSON; any other text is redacted as text.
+ */
+function reviewed(text: string): string {
+    let receipt: unknown;
+    try {
+        receipt = JSON.parse(text);
+    } catch {
+        return redactText(text);
+    }
+    const keys = (value: unknown): unknown => Array.isArray(value) ? value.map(keys)
+        : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [redactText(key), keys(item)]))
+        : value;
+    return JSON.stringify(keys(redactValue(receipt)));
+}
+
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.2",
+    version: "2026.11.20.3",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -451,7 +468,7 @@ export const behavior = {
                 const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
                 turn.receipts = {
                     delivery: left?.delivery === undefined ? null : delivered(left.delivery),
-                    review: left?.review === undefined ? null : redactText(left.review),
+                    review: left?.review === undefined ? null : reviewed(left.review),
                 };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
