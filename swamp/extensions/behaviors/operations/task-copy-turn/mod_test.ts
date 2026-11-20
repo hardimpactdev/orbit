@@ -280,20 +280,17 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
         assertEquals(Object.keys(kept), ["verdict", "findings"]);
         assertEquals(kept.findings.length, 1);
         assertEquals(JSON.stringify(kept).includes(secret), false);
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: `VERDICT: APPROVE ${secret}` }));
-        assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review?.includes(secret), false);
-        // Any other receipt is redacted as text: a value secret only by its field's name is gone, at the top or nested.
+        // Any other receipt is invalid before any redaction and passes on no content: a secret under any field name, a field that a
+        // line break parts from its value, a verdict that only redaction would make valid, terminal formatting around JSON, deep nesting.
         const plain = "hunter2-plain-value";
-        for (const other of [{ verdict: "approve", findings: [], password: plain }, { verdict: "approve", findings: [{ summary: "x", token: plain }] },
-            { verdict: "approve", findings: [], nested: { secret: { value: plain } } }, { verdict: "approve", findings: [], api_key: [plain] }]) {
-            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: JSON.stringify(other) }));
-            assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review?.includes(plain), false);
+        const esc = "\u001b[31m";
+        for (const other of [`VERDICT: APPROVE ${secret}`, JSON.stringify({ verdict: "approve", findings: [], key: plain }),
+            JSON.stringify({ verdict: "approve", findings: [{ summary: "x", keys: [plain] }] }), `{"verdict":"approve","findings":[],"password":\n"${plain}"}`,
+            JSON.stringify({ verdict: `${esc}approve\u001b[0m`, findings: [] }), `${esc}{"verdict":"approve","findings":[]}`,
+            '{"verdict":"approve","findings":[],"x":' + "[".repeat(30000) + "]".repeat(30000) + "}"]) {
+            Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: other }));
+            assertEquals((await behavior.methods.result.execute({ folder }, context)).turn.receipts?.review, "invalid");
         }
-        // A receipt nested deeper than any stack still returns the turn, its text redacted for the Gateway to reject.
-        const deep = '{"verdict":"approve","findings":[],"x":' + "[".repeat(30000) + "]".repeat(30000) + "}";
-        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: deep }));
-        const turned = await behavior.methods.result.execute({ folder }, context);
-        assertEquals(turned.turn.receipts?.review?.startsWith('{"verdict":"approve"'), true);
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),

@@ -123,9 +123,10 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     $row = reviewed($world, $receipt);
 
     expect($row->only(['type', 'rejected', 'rejection_reason']))->toBe(['type' => TaskHandoffType::Review, 'rejected' => true, 'rejection_reason' => $reason])
-        // A rejected receipt never fails the turn: its Operation ends, and an invalid receipt is kept as its text.
+        // A rejected receipt never fails the turn: its Operation ends.
         ->and(Operation::query()->findOrFail($row->operation_id)->status)->toBe(OperationStatus::Succeeded)
-        ->and($row->receipt)->toBe($reason === TaskHandoffs::InvalidReceipt ? ['text' => $receipt] : ($receipt === null ? null : json_decode($receipt, true)));
+        // A rejected row keeps no receipt content.
+        ->and($row->receipt)->toBeNull();
 })->with([
     'no receipt' => [null, TaskHandoffs::NoReceipt],
     'text that is not JSON' => ['VERDICT: APPROVE', TaskHandoffs::InvalidReceipt],
@@ -138,6 +139,9 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     'a field outside the schema' => ['{"verdict":"approve","findings":[],"note":"x"}', TaskHandoffs::InvalidReceipt],
     'an empty object for findings' => ['{"verdict":"approve","findings":{}}', TaskHandoffs::InvalidReceipt],
     'an object with list keys for findings' => ['{"verdict":"changes","findings":{"0":{"summary":"Missing column"}}}', TaskHandoffs::InvalidReceipt],
+    'a receipt Swamp found invalid' => ['invalid', TaskHandoffs::InvalidReceipt],
+    'a verdict in terminal formatting' => [json_encode(['verdict' => "\u{1b}[31mapprove\u{1b}[0m", 'findings' => []], JSON_THROW_ON_ERROR), TaskHandoffs::InvalidReceipt],
+    'a secret under a field of another name' => ["{\"verdict\":\"approve\",\"findings\":[],\"password\":\n\"hunter2\"}", TaskHandoffs::InvalidReceipt],
     'a number that does not encode again' => ['{"verdict":"approve","findings":[],"size":1e400}', TaskHandoffs::InvalidReceipt],
     'changes with no finding' => [reviewReceipt('changes'), TaskHandoffs::ChangesWithoutFinding],
     'approve with a finding' => [reviewReceipt('approve', ['The export drops the header row.']), TaskHandoffs::ApproveWithFinding],

@@ -209,10 +209,10 @@ final readonly class TaskHandoffs
     }
 
     /**
-     * The review receipt as the turn returned it, its redacted text, and the gate's reason: empty when it is a JSON object of exactly
-     * `verdict` (`approve` or `changes`) and `findings`, a JSON list of objects of exactly a non-empty `summary`, with a finding only for
-     * `changes`. JSON objects decode as objects, so an object never passes for a list. The row keeps a valid receipt as it is, and any
-     * other receipt as its text under `text`, which always encodes again.
+     * The review receipt as the turn returned it, which Swamp validated before it redacted the summaries, and the gate's reason: empty
+     * when it is a JSON object of exactly `verdict` (`approve` or `changes`) and `findings`, a JSON list of objects of exactly a non-empty
+     * `summary`, with a finding only for `changes`. JSON objects decode as objects, so an object never passes for a list. An accepted row
+     * keeps the receipt's verdict and summaries; a rejected row keeps no receipt content.
      *
      * @return array{0: array<string, mixed>|null, 1: string}
      */
@@ -237,15 +237,17 @@ final readonly class TaskHandoffs
         }
         if (! $receipt instanceof \stdClass || $keys !== ['findings', 'verdict'] || ! in_array($receipt->verdict, ['approve', 'changes'], true)
             || ! is_array($findings) || count($summaries) !== count($findings)) {
-            return [['text' => $text], self::InvalidReceipt];
+            return [null, self::InvalidReceipt];
         }
         $kept = ['verdict' => $receipt->verdict, 'findings' => $summaries];
 
-        return [$kept, match (true) {
+        $reason = match (true) {
             $kept['verdict'] === 'changes' && $findings === [] => self::ChangesWithoutFinding,
             $kept['verdict'] === 'approve' && $findings !== [] => self::ApproveWithFinding,
             default => '',
-        }];
+        };
+
+        return [$reason === '' ? $kept : null, $reason];
     }
 
     /**
