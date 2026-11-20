@@ -45,8 +45,13 @@ enum Item {
     },
     /// A JSON file merged over the copy's own: its other keys stay.
     Json { path: String, uid: u32, gid: u32, mode: String, json: Value },
-    /// A symbolic link, replaced when it exists.
-    Link { path: String, target: String },
+    /// A symbolic link, replaced when it exists. With an owner, missing folders above it are made for that user first.
+    Link {
+        path: String,
+        target: String,
+        #[serde(default)]
+        owner: Option<Owner>,
+    },
     /// The Orbit root from `source`, linked by its name and its OpenSSL hash in `hash_directory`, and appended to that
     /// folder's bundle once. A link to an older root under another hash goes.
     Trust { source: String, path: String, hash_directory: String, uid: u32, gid: u32, mode: String },
@@ -64,6 +69,14 @@ enum Item {
         library: String,
         version: String,
     },
+}
+
+/// The user and group that own a link's missing folders.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Owner {
+    uid: u32,
+    gid: u32,
 }
 
 /// Places a stopped copy's files: the seed's Orbit units that are not the copy's go, the machine id is the copy's own, then
@@ -118,7 +131,7 @@ fn check(input: &PrepareInput) -> Result<(), String> {
                 }
                 (vec![path], vec![mode])
             }
-            Item::Link { path, target } => (vec![path, target], vec![]),
+            Item::Link { path, target, .. } => (vec![path, target], vec![]),
             Item::Trust { source, path, hash_directory, mode, .. } => {
                 if !TRUST_SOURCES.contains(&source.as_str()) {
                     return Err(format!("{source} is not a trust source"));
@@ -222,9 +235,13 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             files.push(path, *uid, *gid, mode, format!("{merged}\n").as_bytes(), Folders::Present)?;
             Ok(made + 1)
         }
-        Item::Link { path, target } => {
+        Item::Link { path, target, owner } => {
+            let made = match owner {
+                Some(owner) => files.parents(path, owner.uid, owner.gid)?,
+                None => 0,
+            };
             files.incus.change(&["--project", files.project, "file", "create", "--type=symlink", "--force", &format!("{}{path}", files.name), target])?;
-            Ok(1)
+            Ok(made + 1)
         }
         Item::Trust { source, path, hash_directory, uid, gid, mode } => trust(system, files, source, path, hash_directory, (*uid, *gid, mode)),
         Item::Nss { home, directories, path, entry, uid, gid, mode, directory_mode, library, version } => {

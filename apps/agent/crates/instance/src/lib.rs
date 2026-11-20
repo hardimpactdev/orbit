@@ -380,7 +380,7 @@ impl<S: System> Incus<'_, S> {
         // A copy reads the whole seed: the bound covers a large one on a busy Node.
         self.system
             .run(300, &full, stdin)
-            .map_err(|detail| Failure::new(self.code, format!("{}: {detail}", argv.iter().take(4).cloned().collect::<Vec<_>>().join(" "))))
+            .map_err(|detail| Failure::new(self.code, format!("{}: {detail}", argv.join(" "))))
     }
 
     /// A request to the Incus API socket; answers what `--write-out` prints.
