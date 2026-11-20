@@ -177,6 +177,21 @@ struct CloneInput {
     /// The NIC's address filters, `security.ipv4_filtering` and `security.mac_filtering`.
     filters: BTreeMap<String, String>,
     proxy: Proxy,
+    /// The `ufw` route rules that let the Node's `WireGuard` side reach the copy, such as T3's port.
+    #[serde(default)]
+    routes: Vec<RouteRule>,
+}
+
+/// One `ufw route allow in on <in> out on <out> from <from> to <to> port <port> proto tcp comment <comment>`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RouteRule {
+    interface_in: String,
+    interface_out: String,
+    from: String,
+    to: String,
+    port: u16,
+    comment: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,6 +259,17 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
             "nat=true",
         ])?;
     }
+    for rule in &input.routes {
+        let port = rule.port.to_string();
+        let argv: Vec<String> = [
+            "/usr/sbin/ufw", "route", "allow", "in", "on", &rule.interface_in, "out", "on", &rule.interface_out, "from", &rule.from, "to", &rule.to,
+            "port", &port, "proto", "tcp", "comment", &rule.comment,
+        ]
+        .iter()
+        .map(|part| (*part).to_owned())
+        .collect();
+        system.run(60, &argv, None).map_err(|detail| Failure::new("instance.clone_failed", format!("ufw route: {detail}")))?;
+    }
     Ok(serde_json::json!({"snapshot": snapshot}).to_string())
 }
 
@@ -295,9 +321,11 @@ fn check(input: &CloneInput) -> Result<(), String> {
         return Err("root.size is not a size".to_owned());
     }
     let key = |value: &str| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
-    let value = |value: &str| !value.is_empty() && !value.bytes().any(|byte| byte.is_ascii_control() || byte == b',');
+    // A `--config` value may hold commas, such as a NO_PROXY list; only a `--device` value splits on them.
+    let value = |value: &str| !value.is_empty() && !value.bytes().any(|byte| byte.is_ascii_control());
+    let device = |value: &str| value.bytes().all(|byte| byte != b',');
     for (k, v) in input.config.iter().chain(&input.filters) {
-        if !key(k) || !value(v) {
+        if !key(k) || !value(v) || (input.filters.contains_key(k) && !device(v)) {
             return Err(format!("{k} is not a config key and value"));
         }
     }
@@ -311,6 +339,14 @@ fn check(input: &CloneInput) -> Result<(), String> {
     };
     if !endpoint(&input.proxy.listen) || !endpoint(&input.proxy.connect) {
         return Err("proxy endpoint is not tcp:<IPv4>:<port>".to_owned());
+    }
+    let interface = |value: &str| !value.is_empty() && value.len() <= 15 && !value.starts_with('-') && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
+    let address = |value: &str| value == "any" || (value.split('.').count() == 4 && value.split('.').all(|octet| octet.parse::<u8>().is_ok()));
+    for rule in &input.routes {
+        let comment = rule.comment.strip_prefix("orbit:").is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)));
+        if !interface(&rule.interface_in) || !interface(&rule.interface_out) || !address(&rule.from) || rule.to == "any" || !address(&rule.to) || rule.port == 0 || !comment {
+            return Err("a route rule is not an Instance route rule".to_owned());
+        }
     }
     if !input.acl.rules.is_object() {
         return Err("acl.rules is not an object".to_owned());

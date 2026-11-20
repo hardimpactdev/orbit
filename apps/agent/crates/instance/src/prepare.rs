@@ -22,7 +22,11 @@ struct PrepareInput {
     #[serde(default)]
     process_ids: Vec<String>,
     /// Placed in order. The file T3's unit waits for comes last.
+    #[serde(default)]
     files: Vec<Item>,
+    /// The same list as a blob: a clone's files are kilobytes, and an order holds at most 4 KB.
+    #[serde(default)]
+    files_blob: Option<crate::BlobRef>,
 }
 
 /// One thing to place in the copy.
@@ -79,8 +83,11 @@ enum Item {
 #[serde(deny_unknown_fields)]
 struct FolderFile {
     path: String,
-    /// The file's content: a blob, because instructions are kilobytes and an order holds at most 4 KB.
-    blob: crate::BlobRef,
+    /// The file's content inline, inside a `files_blob`, or a blob of its own.
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    blob: Option<crate::BlobRef>,
 }
 
 /// The user and group that own a link's missing folders.
@@ -101,8 +108,15 @@ struct Owner {
 /// `instance.agent_folder_refused`,
 /// `schedule.container_clone_cleanup_failed` or `instance.prepare_failed`.
 pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
-    let input: PrepareInput =
+    let mut input: PrepareInput =
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.prepare_input_invalid", error.to_string()))?;
+    if let Some(blob) = input.files_blob.take() {
+        if !input.files.is_empty() {
+            return Err(Failure::new("instance.prepare_input_invalid", "files and files_blob both given"));
+        }
+        let bytes = system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?;
+        input.files = serde_json::from_slice(&bytes).map_err(|error| Failure::new("instance.prepare_input_invalid", error.to_string()))?;
+    }
     check(&input).map_err(|detail| Failure::new("instance.prepare_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.prepare_failed" };
     let copy = incus
@@ -271,7 +285,11 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             }
             let _ = files.incus.change(&["--project", files.project, "file", "delete", "--force", &format!("{}{path}", files.name)]);
             for entry in entries {
-                let content = system.blob(&entry.blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?;
+                let content = match (&entry.content, &entry.blob) {
+                    (Some(text), _) => text.clone().into_bytes(),
+                    (None, Some(blob)) => system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?,
+                    (None, None) => return Err(Failure::new("instance.prepare_input_invalid", format!("{} has no content", entry.path))),
+                };
                 files.push(&format!("{path}/{}", entry.path), 0, 0, "0644", &content, Folders::Root)?;
             }
             files.incus.change(&["--project", files.project, "file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755", &format!("{}{path}/.skills", files.name)])?;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Firewall\FirewallEngineFlow;
+use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -23,6 +24,7 @@ final readonly class EngineKinds
         'firewall.deny' => FirewallEngineFlow::class,
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
+        'instance.create' => InstanceCreateEngineFlow::class,
     ];
 
     public function __construct(private MachineBus $bus) {}

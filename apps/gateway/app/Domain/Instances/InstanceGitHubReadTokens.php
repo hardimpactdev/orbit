@@ -64,6 +64,19 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     }
 
     /**
+     * The admitted repository's read credential as one git credential-store line, for an engine step that carries it as a blob to
+     * the Instance's Node alone. A public repository gets an empty line and fetches anonymously.
+     */
+    public function line(Operation $operation): string
+    {
+        $authority = $this->repository($operation);
+        $credential = $this->mint($authority['repository']);
+        $token = $credential?->reveal();
+
+        return $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
+    }
+
+    /**
      * Development create and a normal removal mint when their run starts, as the legacy Gateway did before its source call.
      * An already active create runs no source phase and gets no credential.
      *

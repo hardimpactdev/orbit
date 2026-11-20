@@ -1,0 +1,370 @@
+{
+  "note": "The admitted container clone intent of nested create 288 (copy 3728), the first engine clone; long texts trimmed.",
+  "node_id": 3,
+  "target_id": 6,
+  "input": {
+    "instance_id": 6,
+    "project_id": 2,
+    "node_id": 3,
+    "name": "engine-proof-4",
+    "environment_clone": {
+      "own": [
+        "APP_URL"
+      ],
+      "drop": [],
+      "guard": [],
+      "shared": [],
+      "hosts": {
+        "from": [
+          "shop.nested-dev"
+        ],
+        "to": "engine-proof-4.shop.nested-dev"
+      }
+    },
+    "direct_provisioning": {
+      "container": {
+        "instance_id": 6,
+        "project": "orbit-instances",
+        "name": "instance-6",
+        "machine_name": {
+          "hostname": "engine-proof-4.shop",
+          "pretty": "engine-proof-4.shop"
+        },
+        "config": {
+          "limits.cpu": "4",
+          "limits.memory": "8GiB",
+          "limits.processes": "4096",
+          "environment.NO_PROXY": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev",
+          "environment.no_proxy": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev"
+        },
+        "root_disk_pool": "orbit-instances",
+        "root_disk_size": "40GiB",
+        "image": "orbit-instance",
+        "address": "10.253.1.6",
+        "network": "orbitinst0",
+        "acl": "instance-6",
+        "nic_acl": "orbitinst0-proxy",
+        "bridge_cidr": "10.253.1.0/24",
+        "bridge_admitted_at": 1795173258288907,
+        "bridge_endpoints": [],
+        "acl_rules": {
+          "description": "Orbit Instance 6",
+          "egress": [
+            {
+              "action": "allow",
+              "destination": "10.253.1.1/32",
+              "protocol": "tcp",
+              "destination_port": "443",
+              "state": "enabled",
+              "description": "Orbit own site"
+            },
+            {
+              "action": "allow",
+              "destination": "10.253.1.1/32",
+              "protocol": "tcp",
+              "destination_port": "5173-5199",
+              "state": "enabled",
+              "description": "Orbit own development ports"
+            }
+          ],
+          "ingress": [
+            {
+              "action": "allow",
+              "source": "10.253.1.1/32",
+              "protocol": "tcp",
+              "destination_port": "8080",
+              "state": "enabled"
+            },
+            {
+              "action": "allow",
+              "protocol": "tcp",
+              "destination_port": "3773",
+              "state": "enabled"
+            },
+            {
+              "action": "allow",
+              "source": "10.253.1.1/32",
+              "protocol": "tcp",
+              "destination_port": "1024-65535",
+              "state": "enabled"
+            }
+          ]
+        },
+        "firewall": [
+          {
+            "route": "yes",
+            "interface_in": "orbit",
+            "interface_out": "orbitinst0",
+            "to_ip": "10.253.1.6",
+            "to_port": "3773",
+            "proto": "tcp",
+            "rule": "allow",
+            "from_ip": "any",
+            "comment": "orbit:instance-6-t3"
+          }
+        ],
+        "mirror": "/var/lib/orbit/instance-repositories/6.git",
+        "repository": "https://github.com/laravel/laravel.git",
+        "protocols": [
+          "https"
+        ],
+        "branch": "engine-proof-4",
+        "commit": null,
+        "workspace": "/srv/workspace",
+        "environment_file": "/srv/workspace/.env",
+        "workspace_ids": {
+          "group": 33,
+          "writer": 33
+        },
+        "app_account": {
+          "path": "/usr/local/libexec/orbit-app-user",
+          "content": "#!/bin/sh\n# orbit-app-user: move an Instance container's app user from `orbit` (uid 1000) and `work` (gid 2760) to the s\n# (trimmed for the fixture)\n"
+        },
+        "environment": [
+          "HOME=/home/agent",
+          "USER=agent",
+          "LOGNAME=agent",
+          "PATH=/opt/orbit-runtime/current/php/8.5/bin:/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+          "VP_HOME=/var/lib/orbit/vite-plus-home",
+          "VP_NO_UPDATE_CHECK=1",
+          "HTTP_PROXY=http://10.253.1.1:3128",
+          "HTTPS_PROXY=http://10.253.1.1:3128",
+          "NO_PROXY=localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev",
+          "http_proxy=http://10.253.1.1:3128",
+          "https_proxy=http://10.253.1.1:3128",
+          "no_proxy=localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev",
+          "NODE_USE_ENV_PROXY=1",
+          "PLAYWRIGHT_BROWSERS_PATH=0",
+          "AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell"
+        ],
+        "private_names": [
+          {
+            "name": "engine-proof-4.shop.nested-dev",
+            "host": "10.253.1.1",
+            "port": 443
+          }
+        ],
+        "proxy_environment": {
+          "NO_PROXY": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev",
+          "no_proxy": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev"
+        },
+        "mail": null,
+        "mail_units": [],
+        "units": [
+          {
+            "name": "orbit-frankenphp.service",
+            "content": "# Managed by Orbit.\n[Unit]\nDescription=FrankenPHP\nAfter=network.target\n\n[Service]\nType=simple\nUser=www-data\nGroup=www-da\n# (trimmed for the fixture)\n"
+          }
+        ],
+        "web_config": {
+          "path": "/etc/orbit/frankenphp.Caddyfile",
+          "content": "# Managed by Orbit.\n{\n    admin off\n    auto_https off\n    frankenphp\n    servers {\n        trusted_proxies static 10.25\n# (trimmed for the fixture)\n"
+        },
+        "web_port": 8080,
+        "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
+        "php_cli_ini": "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n",
+        "clone": {
+          "source": "instance-2",
+          "snapshot": "seed-a255d7688770af9713daff1439c47ff9bc6abd47",
+          "seed_commit": "a255d7688770af9713daff1439c47ff9bc6abd47",
+          "t3": {
+            "port": 3803,
+            "listen": "10.45.0.2",
+            "device": "t3",
+            "title": "shop",
+            "unit": "t3.service",
+            "internal_port": 3773,
+            "ready_seconds": 30,
+            "url": "http://10.45.0.2:3803",
+            "label": "shop / engine-proof-4",
+            "t3": "/opt/orbit-agent/current/agent/bin/t3",
+            "project_mark": "/home/agent/.config/orbit/t3-project",
+            "condition": "/etc/orbit/instance"
+          },
+          "model_environment": {
+            "path": "/home/agent/.config/orbit/model.env",
+            "uid": 2750,
+            "gid": 2750,
+            "mode": "0600",
+            "frame": "#orbit-model-environment"
+          },
+          "proxy_environment": {
+            "NO_PROXY": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev",
+            "no_proxy": "localhost,127.0.0.1,::1,10.253.1.1,engine-proof-4.shop.nested-dev"
+          },
+          "boot_files": [
+            {
+              "path": "/etc/ld.so.conf.d/zz-orbit-browser.conf",
+              "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "path": "/etc/fonts/fonts.conf",
+              "content": "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<!-- Managed by Orbit. -->\n<fontconfig>\n  \n# (trimmed for the fixture)\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "path": "/etc/gitconfig",
+              "content": "# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "path": "/etc/sudoers.d/orbit-agent",
+              "content": "agent ALL=(ALL:ALL) NOPASSWD: ALL\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0440"
+            },
+            {
+              "path": "/usr/local/libexec/orbit-app-user",
+              "content": "#!/bin/sh\n# orbit-app-user: move an Instance container's app user from `orbit` (uid 1000) and `work` (gid 2760) to the s\n# (trimmed for the fixture)\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0755"
+            },
+            {
+              "path": "/etc/ld.so.cache",
+              "content": "",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "source": "/etc/orbit/agent/ca.pem",
+              "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+              "hash_directory": "/etc/ssl/certs",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "home": "/home/agent",
+              "directories": [
+                "/home/agent/.pki",
+                "/home/agent/.pki/nssdb"
+              ],
+              "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+              "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+              "uid": 2750,
+              "gid": 2750,
+              "mode": "0600",
+              "directory_mode": "0700",
+              "library": "libp11-kit0",
+              "version": "0.26.2-2"
+            },
+            {
+              "path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf",
+              "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "path": "/etc/profile.d/91-orbit-browsers.sh",
+              "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0 AGENT_BROWSER_EXECUTABLE_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            },
+            {
+              "path": "/etc/machine-info",
+              "content": "PRETTY_HOSTNAME=engine-proof-4.shop\n",
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644"
+            }
+          ],
+          "files": [
+            {
+              "path": "/etc/orbit/instance",
+              "before_start": true,
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644",
+              "content": "# Managed by Orbit.\nORBIT_INSTANCE_ID=6\nORBIT_INSTANCE=engine-proof-4\nORBIT_PROJECT=shop\nORBIT_PROJECT_ID=2\nORBIT_PROJECT_NAME=\"shop\"\nORBIT_NODE=app-dev\nORBIT_URL=https://engine-proof-4.shop.nested-dev\nORBIT_DEV_PORTS=1024-65535\nORBIT_DEV_PORTS_TAKEN=3128,3800-3999,8318-8319,51820\n"
+            },
+            {
+              "path": "/home/agent/.codex/config.toml",
+              "before_start": true,
+              "uid": 2750,
+              "gid": 2750,
+              "mode": "0600",
+              "content": "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\nbase_url = \"http://10.253.1.1:8319/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"/srv/workspace\"]\ntrust_level = \"trusted\"\n"
+            },
+            {
+              "path": "/home/agent/.claude.json",
+              "before_start": true,
+              "uid": 2750,
+              "gid": 2750,
+              "mode": "0600",
+              "json": {
+                "hasCompletedOnboarding": true
+              }
+            },
+            {
+              "path": "/home/agent/.t3/userdata/settings.json",
+              "before_start": true,
+              "uid": 2750,
+              "gid": 2750,
+              "mode": "0600",
+              "json": {
+                "linkedEnvironmentsEnabled": true
+              }
+            },
+            {
+              "path": "/etc/systemd/system/t3.service.d/10-orbit-boot.conf",
+              "before_start": true,
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644",
+              "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+            },
+            {
+              "path": "/etc/systemd/system/t3.service.d/20-orbit-server.conf",
+              "before_start": true,
+              "uid": 0,
+              "gid": 0,
+              "mode": "0644",
+              "content": "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"
+            }
+          ],
+          "links": [
+            {
+              "path": "/home/agent/.claude/CLAUDE.md",
+              "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+            },
+            {
+              "path": "/home/agent/.codex/AGENTS.md",
+              "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+            },
+            {
+              "path": "/home/agent/.claude/skills",
+              "target": "/home/agent/.config/orbit/agent/.skills"
+            },
+            {
+              "path": "/home/agent/.agents/skills",
+              "target": "/home/agent/.config/orbit/agent/.skills"
+            }
+          ],
+          "agent_instructions": {
+            "folder": "/home/agent/.config/orbit/agent",
+            "files": [
+              {
+                "path": "AGENTS.md",
+                "content": "# This environment\n\nYou work in an Orbit development Instance: one container that holds one web app.\n\n- The workspace is\n# (trimmed for the fixture)\n"
+              }
+            ]
+          }
+        },
+        "processes": [],
+        "steps": []
+      }
+    }
+  }
+}
