@@ -271,7 +271,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::RoutePublishSite
             | orbit_executor_core::action::Action::DnsPublishRecords
             | orbit_executor_core::action::Action::InstanceClone
-            | orbit_executor_core::action::Action::InstancePrepare => {
+            | orbit_executor_core::action::Action::InstancePrepare
+            | orbit_executor_core::action::Action::InstanceStart => {
                 panic!("power actions only")
             }
         }

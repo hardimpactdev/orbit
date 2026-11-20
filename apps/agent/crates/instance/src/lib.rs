@@ -4,15 +4,20 @@
 //!   disk and guarded NIC, then the T3 proxy device. A repeat finds the copy and only completes what is missing.
 //! - [`prepare`] (`instance.prepare`): a stopped copy's files before its first start: the seed's Orbit units that are not
 //!   the copy's go, its own machine id, then the boot, trust and T3 files the Gateway rendered.
+//! - [`start`] (`instance.start`): the copy's first start (its files shifted back first on a nested Node), then its
+//!   hostname and `/etc/hosts`.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
 
 mod prepare;
+mod shift;
+mod start;
 #[cfg(test)]
 mod tests;
 
 pub use prepare::prepare;
+pub use start::start;
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -374,7 +379,7 @@ impl<S: System> Incus<'_, S> {
         self.run(&argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), Some(stdin)).map(drop)
     }
 
-    fn run(&self, argv: &[String], stdin: Option<&[u8]>) -> Result<String, Failure> {
+    pub(crate) fn run(&self, argv: &[String], stdin: Option<&[u8]>) -> Result<String, Failure> {
         let mut full = vec![INCUS.to_owned()];
         full.extend_from_slice(argv);
         // A copy reads the whole seed: the bound covers a large one on a busy Node.
