@@ -253,6 +253,7 @@ fn a_json_file_merges_over_the_copys_own_and_an_equal_one_stays() {
             ("query /1.0/instances/instance-12/files", MISSING),
             ("%{http_code} %header{x-incus-type} http://incus/1.0/instances/instance-12/files?project=orbit-instances&path=/home/agent/.t3/settings.json", Ok(json!("200 file"))),
             ("x-incus-uid", Ok(json!("2750 2750 600"))),
+            ("&path=/home/agent/.t3", Ok(json!("200 directory"))),
             ("file pull instance-12/home/agent/.t3/settings.json", Ok(content)),
         ])
     };
