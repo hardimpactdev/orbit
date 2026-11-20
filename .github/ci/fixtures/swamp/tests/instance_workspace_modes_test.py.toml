@@ -1,7 +1,9 @@
 order = 1480
 cases = [
-  "test_the_phase_runs_the_shipped_program_as_root_giving_the_app_accounts_entries_to_agent",
+  "test_the_phase_runs_the_shipped_program_as_root_with_the_app_uid_and_agents",
   "test_entries_of_the_other_user_become_agents_and_a_link_is_changed_itself_never_its_target",
+  "test_laravel_runtime_trees_go_to_the_app_user_and_the_rest_to_agent",
+  "test_a_runtime_entry_of_any_owner_goes_to_the_app_user_and_only_a_real_folder_starts_a_runtime_tree",
   "test_an_orbit_file_hard_linked_from_outside_keeps_its_owner",
   "test_a_given_file_loses_setuid_and_setgid_and_a_socket_gets_its_owner_without_being_opened",
   "test_a_pass_that_changes_many_entries_prints_only_their_count",
@@ -17,7 +19,7 @@ cases = [
   "test_a_refusal_and_other_phases_write_no_checkout_detail",
 ]
 file = "swamp/tests/instance_workspace_modes_test.py"
-cost = 20
+cost = 22
 # The files it reads: the container phase (its workspace pass task and workspace Git options), the pass program, and the play's
 # rescue (the checkout detail).
 inputs = [
@@ -38,6 +40,8 @@ inputs = [
 "test_entries_of_the_other_user_become_agents_and_a_link_is_changed_itself_never_its_target" = 1
 "test_entries_that_vanish_during_the_pass_are_skipped_and_the_rest_gets_the_group_bits" = 1
 "test_the_checkout_repack_keeps_the_pack_count_bounded_after_many_fetches" = 3
-"test_the_phase_runs_the_shipped_program_as_root_giving_the_app_accounts_entries_to_agent" = 1
+"test_the_phase_runs_the_shipped_program_as_root_with_the_app_uid_and_agents" = 1
 "test_the_workspace_fetch_starts_no_automatic_maintenance" = 1
 "test_an_orbit_file_hard_linked_from_outside_keeps_its_owner" = 1
+"test_laravel_runtime_trees_go_to_the_app_user_and_the_rest_to_agent" = 1
+"test_a_runtime_entry_of_any_owner_goes_to_the_app_user_and_only_a_real_folder_starts_a_runtime_tree" = 1

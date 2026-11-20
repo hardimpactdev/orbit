@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceUnregisterAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
@@ -21,7 +22,9 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -211,6 +214,46 @@ it('destroys a listed container default without a copy and frees its records', f
     expect($default->fresh())->toBeNull()
         ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
 })->with(['inner volume' => true, 'no inner volume' => false]);
+
+it('destroys an unlisted container default whose create failed and is retained for a retry', function (InstanceState $state): void {
+    $default = destroyDefault();
+    $default->update(['status' => $state, 'failed_step' => 'container', 'error_code' => 'instance.container_endpoint_unresolved']);
+    config(['instances.default_destroy_projects' => []]);
+    // The failed create has ended and let go of the Instance.
+    Operation::query()->where('lock_key', OperationStore::lockKey('instance', $default->id))->update(['lock_key' => null]);
+
+    $operation = app(StartInstanceDestroyAction::class)->execute($default->refresh(), true);
+    expect($operation->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$default->id, 'acl' => 'instance-'.$default->id])
+        ->and($default->fresh()->status)->toBe(InstanceState::Removing);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
+    expect($default->fresh())->toBeNull()
+        ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
+})->with(['reserved' => InstanceState::Reserved, 'source resolved' => InstanceState::SourceResolved]);
+
+it('keeps an unlisted container default refused while a create holds it, also an expired retry whose run is unsettled', function (InstanceState $state, bool $expired): void {
+    $default = destroyDefault();
+    config(['instances.default_destroy_projects' => []]);
+    $default->update(['status' => $state, 'failed_step' => 'container', 'error_code' => 'instance.create_container_failed']);
+    // The default's own create has ended and let go of the Instance; its retry now holds it.
+    Operation::query()->where('lock_key', OperationStore::lockKey('instance', $default->id))->update(['lock_key' => null]);
+    $retry = containerCreate($default->project, $default->node);
+    $retry->forceFill(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now(), 'state' => [...($retry->state ?? []), 'swamp_run_id' => 'retry-run']])->save();
+    expect($retry->target_id)->toBe($default->id)->and($retry->lock_key)->toBe(OperationStore::lockKey('instance', $default->id));
+    if ($expired) {
+        // The Gateway times the retry out while its run may still go: it keeps the Instance lock until the run settles.
+        $this->travel(OperationRunBudgets::seconds($retry) + 60)->seconds();
+        app(ExpireOperationAction::class)->execute($retry->refresh());
+        expect(ExpireOperationAction::expiredUnsettled($retry->refresh()))->toBeTrue()
+            ->and($retry->lock_key)->toBe(OperationStore::lockKey('instance', $default->id));
+    }
+    $before = Operation::query()->count();
+    $cancel = $retry->refresh()->cancel_requested_at?->toIso8601String();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('operation.kind_unavailable')
+        ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe($state)
+        ->and($retry->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Running)->and($retry->cancel_requested_at?->toIso8601String())->toBe($cancel)
+        ->and($retry->lock_key)->toBe(OperationStore::lockKey('instance', $default->id));
+})->with(['reserved' => InstanceState::Reserved, 'source resolved' => InstanceState::SourceResolved])
+    ->with(['running retry' => false, 'expired unsettled retry' => true]);
 
 it('requires force for non-default cleanup until guarded removal is built', function (bool $migrated): void {
     $clone = destroyClone(destroyDefault(), $migrated);

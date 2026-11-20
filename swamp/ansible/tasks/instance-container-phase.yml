@@ -1227,8 +1227,9 @@
 
 # `agent` owns the workspace and shares it with `www-data` through the group `www-data` (ADR 0268). Before the deploy steps (`checkout`,
 # `proof_checkout`) and after them (`processes`) root gives the group back what the owner has, and gives `agent` each entry that `www-data`
-# owns, such as a file the running app wrote. The program is instance_workspace_owner.py, which a clone's `services` part runs too: it
-# never follows a link, skips an entry that is gone, and prints only a count when it changed many entries.
+# owns, such as a file the running app wrote. A Laravel app's `storage` and `bootstrap/cache` go to `www-data` instead, so Blade can set the
+# times of a view it compiled again. The program is instance_workspace_owner.py, which a clone's `services` part runs too: it never follows
+# a link, skips an entry that is gone, and prints only a count when it changed many entries.
 - name: Keep the workspace writable for its group
   tags: [checkout, processes, proof_checkout]
   when: phase in ['checkout', 'processes', 'proof_checkout']

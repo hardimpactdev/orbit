@@ -49,6 +49,7 @@ use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -269,6 +270,58 @@ it('stores a failed best-effort step\'s exit code in the Operation result and th
         // instance:deployment:show returns the record's data.
         ->and(InstanceDeploymentData::fromModel($row)->toArray()['best_effort_steps'])->toBe([['name' => 'tia-warm', 'exit_code' => 1]]);
 });
+
+it('records a container deployment with the Operation\'s start, end and duration and how each deploy step ended', function (string $status, array $ended, array $events): void {
+    $instance = deployDefault(container: true);
+    // `composer-install` watches its inputs, and `tia-warm` is best-effort.
+    foreach ([['composer-install', 2, true, ['composer.json', 'composer.lock']], ['tia-warm', 3, false, []], ['migrate', 4, true, []]] as [$name, $position, $required, $inputs]) {
+        ProjectDevelopmentDeployStep::query()->create(['project_id' => $instance->project_id, 'name' => $name, 'position' => $position, 'command' => $name,
+            'required' => $required, 'timeout_seconds' => 300, 'inputs' => $inputs]);
+    }
+    $commit = str_repeat('c', 40);
+    // Operation 31024 on Instance 3847 ran from 08:43:20 to 08:44:13; its run's end was projected a second later.
+    $this->travelTo(Carbon::parse('2026-11-20T08:44:14Z'));
+    $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    expect(array_column($snapshot['steps'], 'inputs', 'name'))->toBe(['npm-build' => [], 'composer-install' => ['composer.json', 'composer.lock'], 'tia-warm' => [], 'migrate' => []]);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => $snapshot], 'state' => ['swamp_run_id' => 'run-1']]);
+    $failed = array_keys(array_filter($ended, static fn (array $step): bool => in_array($step['status'], ['failed', 'interrupted'], true)));
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'run-1', 'started_at' => '2026-11-20T08:43:20Z',
+        'finished_at' => '2026-11-20T08:44:13Z', 'result' => ['steps' => [
+            ContainerDeployOutcome::ResultStep => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)],
+            // The checkout found the inputs of `composer-install` unchanged.
+            ContainerDeployOutcome::SkipStep => ['status' => 'succeeded', 'stdout' => ',composer-install,'], ...$ended],
+            'summary' => ['failed_steps' => $status === 'failed' ? ($failed === [] ? ['Run dev deploy steps'] : $failed) : []]]]);
+
+    $row = InstanceDeployment::query()->findOrFail($operation->refresh()->state['deployment_id']);
+    expect($row->status)->toBe($status)
+        ->and($row->started_at?->toIso8601ZuluString())->toBe('2026-11-20T08:43:20Z')
+        ->and($row->finished_at?->toIso8601ZuluString())->toBe('2026-11-20T08:44:13Z')
+        ->and($row->duration_seconds)->toBe(53)
+        ->and(array_column($row->events ?? [], 'status', 'step_name'))->toBe(array_combine(['npm-build', 'composer-install', 'tia-warm', 'migrate'], $events))
+        ->and($row->events[0] ?? null)->toBe(['type' => 'phase', 'phase' => 'before_activation', 'step_name' => 'npm-build', 'status' => $events[0]]);
+})->with([
+    'passed, one step skipped by its inputs, a best-effort step timed out' => ['succeeded', [
+        'Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''], 'Run dev deploy steps-1-1' => ['status' => 'skipped'],
+        'Run dev deploy steps-2-2' => ['status' => 'succeeded', 'stdout' => "124\n"], 'Run dev deploy steps-3-3' => ['status' => 'succeeded', 'stdout' => '']],
+        ['succeeded', 'skipped_unchanged', 'timed_out', 'succeeded']],
+    'a best-effort step failed and the deployment passed' => ['succeeded', [
+        'Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''], 'Run dev deploy steps-1-1' => ['status' => 'skipped'],
+        'Run dev deploy steps-2-2' => ['status' => 'succeeded', 'stdout' => "1\n"], 'Run dev deploy steps-3-3' => ['status' => 'succeeded', 'stdout' => '']],
+        ['succeeded', 'skipped_unchanged', 'failed', 'succeeded']],
+    'the first step failed, so no later one was reached, the unchanged one neither' => ['failed', [
+        'Run dev deploy steps-0-0' => ['status' => 'failed'], 'Run dev deploy steps-1-1' => ['status' => 'skipped'],
+        'Run dev deploy steps-2-2' => ['status' => 'skipped'], 'Run dev deploy steps-3-3' => ['status' => 'skipped']],
+        ['failed', 'not_run', 'not_run', 'not_run']],
+    'the run ended inside a step, before the rest had an entry' => ['failed', [
+        'Run dev deploy steps-0-0' => ['status' => 'succeeded', 'stdout' => ''], 'Run dev deploy steps-1-1' => ['status' => 'skipped'],
+        'Run dev deploy steps-2-2' => ['status' => 'interrupted']],
+        ['succeeded', 'skipped_unchanged', 'interrupted', 'not_run']],
+    'the run ended inside the first step, so the unchanged one has no entry' => ['failed', [
+        'Run dev deploy steps-0-0' => ['status' => 'running']],
+        ['interrupted', 'not_run', 'not_run', 'not_run']],
+]);
 
 it('records a running container but no seed when a deployment fails after the container started', function (): void {
     $instance = deployDefault(container: true);
