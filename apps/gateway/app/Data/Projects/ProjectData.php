@@ -42,7 +42,7 @@ final class ProjectData extends Data
         public ?string $taskReviewerEffort = null,
         public ?TaskPrMode $taskPrMode = null,
         public bool $defaultAutoDeploy = true,
-        public ContainerServer $containerServer = ContainerServer::T3,
+        public ContainerServer $containerServer = ContainerServer::Conn,
     ) {}
 
     public static function fromModel(Project $project): self
