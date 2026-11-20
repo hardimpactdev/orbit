@@ -45,7 +45,7 @@ A converge skips the executor install until the Gateway has both parts it needs.
 - `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
 - `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
 
-A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0, `route` from 0.17.0 and `dns` from 0.18.0. An older executor refuses to start on an unknown family.
+A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0. An older executor refuses to start on an unknown family.
 
 Roll out in this order:
 
@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site` and `dns.publish_records`. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone` and `instance.fetch_branch`. Sleep, `instance.prepare` and `instance.start` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -182,8 +182,10 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
-2. reports its primitives and version to key `n<id>` of the `NODES` bucket, every minute; the Gateway routes a kind by this report;
+2. reports its primitives, version and clock state to key `n<id>` of the `NODES` bucket, every minute;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
+
+The Gateway routes a kind by the reported primitives, and Doctor reads the clock state.
 
 It runs orders in slots: two per CPU, between 2 and 8. It pulls one order at a time and only when a slot is free, so a pulled order never waits past its acknowledgement wait. In an Incus container the CPU count comes from the smaller of the affinity mask and `/proc/cpuinfo`, which lxcfs limits to the container's quota.
 
@@ -233,11 +235,55 @@ Then `dnsmasq --test` checks the configuration, and `dnsmasq.service` and `orbit
 
 It answers `applied` with the number of changed files. Codes: `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed`, `dns.restart_failed`.
 
+### The instance family
+
+The `instance` family (enabled by the `app-dev` role) makes a clone of a default's seed, the work of the Swamp `clone-container` step. The Gateway renders every value. The Node checks each value's shape, builds every command itself and moves the copy's files only through Incus. No action runs a shell or delivered code.
+
+#### instance.clone
+
+`instance.clone` targets the Node. It makes the copy's network ACL, or rewrites its rules when they differ. When the copy does not exist, it copies the admitted seed snapshot. When a deployment replaced that seed, it copies the newest seed. A retake whose `next-` snapshot is not renamed yet refuses.
+
+The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Last comes the T3 proxy device.
+
+It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
+
+#### instance.prepare
+
+`instance.prepare` targets the copy. It places a stopped copy's files before its first start. A running copy is left alone.
+
+First the seed's Orbit Process, Schedule and Node service units that are not the copy's go. The copy gets its own machine id. Then each item goes in, in order:
+
+- a file, inline or from a blob for a secret;
+- JSON merged over the copy's own file;
+- a link;
+- the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
+- an NSS store entry.
+
+It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+
+#### instance.start
+
+`instance.start` targets the copy. It refuses a copy whose NICs on the Instance bridge are not guarded.
+
+On a Node without idmapped mounts, the seed's files are shifted. There a stopped copy's owners, file capabilities and ACLs are shifted back first. A failed shift deletes the copy, so a retry copies again.
+
+Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block.
+
+It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
+
+#### instance.fetch_branch
+
+`instance.fetch_branch` targets the Node. It asks the origin for the Instance's branch. When the origin has it, the branch is fetched into the Node's bare mirror under `/var/lib/orbit/instance-repositories`.
+
+Git may use only https, with no hooks, no redirects and no system or global config. The credential comes as a blob. It is written root-only for the two Git calls and removed after them, and a file a stopped run left behind goes at the next fetch. The blob itself stays in the executor's root-only content cache.
+
+It answers `{"commit"}`, or null when the branch starts at the seed. Codes: `instance.fetch_input_invalid`, `instance.fetch_credential_missing`, `instance.branch_fetch_failed`.
+
 ## The Gateway signer and the event
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
