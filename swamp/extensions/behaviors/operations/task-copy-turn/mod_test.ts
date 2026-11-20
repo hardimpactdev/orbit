@@ -273,13 +273,13 @@ Deno.test("the turn returns the handoff receipts that its phase read and removed
         }));
         const redacted = await behavior.methods.result.execute({ folder }, context);
         assertEquals(JSON.stringify(redacted.turn.receipts?.delivery).includes(secret), false);
-        // A review receipt passes on raw in the method's output for the Gateway to validate; the stored resource keeps none of it.
+        // A review receipt passes on raw, in the method's output and in its resource, for the Gateway to validate.
         const written: unknown[] = [];
         const recording = { writeResource: (_spec: string, _name: string, value: unknown) => Promise.resolve(written.push(value)) };
         const raw = '{"verdict":"approve","findings":[],"password":\n"hunter2"}';
         Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: raw }));
         assertEquals((await behavior.methods.result.execute({ folder }, recording)).turn.receipts?.review, raw);
-        assertEquals(JSON.stringify(written.at(-1)).includes("hunter2"), false);
+        assertEquals((written.at(-1) as { turn: { receipts: { review: string } } }).turn.receipts.review, raw);
         // Anything else is invalid, never passed on.
         for (const invalid of ["not json", JSON.stringify({ ...receipt, parts: {} }), JSON.stringify({ ...receipt, parts: [] }),
             JSON.stringify({ ...receipt, commit: "HEAD" }), JSON.stringify({ ...receipt, parts: [{ name: "pest", result: "failed", seconds: 1 }] }),

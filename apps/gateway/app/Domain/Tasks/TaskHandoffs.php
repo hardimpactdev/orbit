@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -110,10 +109,15 @@ final readonly class TaskHandoffs
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Question, 'receipt' => ['questions' => $questions]]);
         } elseif ($result['state'] === AgentThreadState::Done->value && ($turn->input['role'] ?? null) === TaskThreadRole::Reviewer->value) {
             $receipts = $result['receipts'] ?? null;
-            // The turn's projection already validated the raw receipt and kept the reduced receipt or the reason alone (stored()).
+            // The turn's projection already validated the raw receipt and kept the verdict and the number of findings as JSON, or the
+            // reason alone (stored()): the row takes its decision.
             $stored = is_array($receipts) ? $receipts['review'] ?? null : null;
-            [$receipt, $reason] = in_array($stored, [self::InvalidReceipt, self::ChangesWithoutFinding, self::ApproveWithFinding], true)
-                ? [null, $stored] : self::review($stored);
+            $kept = is_string($stored) ? json_decode($stored, true) : null;
+            [$receipt, $reason] = match (true) {
+                ! is_string($stored) => [null, self::NoReceipt],
+                is_array($kept) => [$kept, ''],
+                default => [null, $stored],
+            };
             TaskHandoff::query()->create([...$row, 'type' => TaskHandoffType::Review, 'receipt' => $receipt,
                 'rejected' => $reason !== '', 'rejection_reason' => $reason]);
         }
@@ -213,8 +217,8 @@ final readonly class TaskHandoffs
     }
 
     /**
-     * What a turn's result keeps of its review receipt: the valid receipt reduced to its schema fields, as JSON, or the reason alone
-     * that its gate rejects it for. The raw text is never kept.
+     * What a turn's result keeps of its review receipt: the valid receipt as its verdict and its number of
+     * findings, as JSON, or the reason alone that its gate rejects it for. The raw text is never kept.
      */
     public static function stored(string $text): string
     {
@@ -226,11 +230,12 @@ final readonly class TaskHandoffs
     /**
      * The one validator of a review receipt: its raw text as the turn returned it, and the gate's reason. It is valid when it is a JSON
      * object of exactly `verdict` (the raw value `approve` or `changes`) and `findings`, a JSON list of objects of exactly a `summary`
-     * string that holds a visible character once redacted and stripped of terminal formatting, with a finding only for `changes`. JSON objects decode as objects, so an object never
-     * passes for a list; text that is not valid UTF-8 JSON, such as half a surrogate pair or Swamp's `too large`, is invalid. A valid
-     * receipt keeps only its verdict and its summaries, each redacted on its own; a rejected one keeps nothing.
+     * string that holds a visible character once control characters and terminal formatting are removed, with a finding only for
+     * `changes`. JSON objects decode as objects, so an object never passes for a list; text that is not valid UTF-8 JSON, such as half
+     * a surrogate pair or Swamp's `too large` and `not utf-8`, is invalid. A valid receipt keeps only its verdict and its number of
+     * findings, never a summary; a rejected one keeps nothing.
      *
-     * @return array{0: array{verdict: string, findings: list<array{summary: string}>}|null, 1: string}
+     * @return array{0: array{verdict: string, findings: int}|null, 1: string}
      */
     private static function review(mixed $text): array
     {
@@ -245,17 +250,11 @@ final readonly class TaskHandoffs
         $findings = $receipt instanceof \stdClass ? $receipt->findings ?? null : null;
         $keys = $receipt instanceof \stdClass ? array_keys(get_object_vars($receipt)) : [];
         sort($keys);
-        $summaries = [];
-        foreach (is_array($findings) ? $findings : [] as $finding) {
-            $summary = $finding instanceof \stdClass && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary)
-                ? app(LogRedactor::class)->redact($finding->summary, []) : '';
-            // Terminal formatting is no text: a summary must hold a visible character without it.
-            if (preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', (string) preg_replace('/\e\[[0-?]*[ -\/]*[@-~]/', '', $summary)) === 1) {
-                $summaries[] = ['summary' => $summary];
-            }
-        }
+        $visible = array_filter(is_array($findings) ? $findings : [], static fn (mixed $finding): bool => $finding instanceof \stdClass
+            && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary)
+            && preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', (string) preg_replace('/\e\[[0-?]*[ -\/]*[@-~]/', '', $finding->summary)) === 1);
         if (! $receipt instanceof \stdClass || $keys !== ['findings', 'verdict'] || ! in_array($receipt->verdict, ['approve', 'changes'], true)
-            || ! is_array($findings) || count($summaries) !== count($findings)) {
+            || ! is_array($findings) || count($visible) !== count($findings)) {
             return [null, self::InvalidReceipt];
         }
         $reason = match (true) {
@@ -264,7 +263,7 @@ final readonly class TaskHandoffs
             default => '',
         };
 
-        return [$reason === '' ? ['verdict' => $receipt->verdict, 'findings' => $summaries] : null, $reason];
+        return [$reason === '' ? ['verdict' => $receipt->verdict, 'findings' => count($findings)] : null, $reason];
     }
 
     /**

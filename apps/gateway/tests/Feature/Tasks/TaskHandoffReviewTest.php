@@ -110,8 +110,8 @@ it('accepts a review receipt whose verdict matches its findings, and keeps the v
         ->and($row->task_id)->toBe($world->subtask->id)
         ->and($row->task_check_id)->toBeNull()
         ->and($row->receipt['verdict'])->toBe($verdict)
-        ->and(count($row->receipt['findings']))->toBe($findings)
-        // The turn's stored result keeps the receipt reduced to its schema fields, never the raw text.
+        // Only the verdict and the number of findings are stored, in the row and in the turn's result: never a summary or the raw text.
+        ->and($row->receipt)->toBe(['verdict' => $verdict, 'findings' => $findings])
         ->and(Operation::query()->findOrFail($row->operation_id)->result['receipts']['review'])->toBe(json_encode($row->receipt, JSON_THROW_ON_ERROR));
 })->with([
     'approve with no finding' => [reviewReceipt('approve'), 'approve', 0],
@@ -120,15 +120,18 @@ it('accepts a review receipt whose verdict matches its findings, and keeps the v
     'an ordinary finding beside a summary that holds a secret' => [reviewReceipt('changes', ['The export drops the header row.', 'The proxy drops the Authorization: Bearer ghp_'.str_repeat('a1B2', 9).' header.']), 'changes', 2],
 ]);
 
-it('redacts each summary that a valid receipt keeps', function (): void {
-    $secret = 'ghp_'.str_repeat('a1B2', 9);
-
-    $row = reviewed(reviewWorld(), reviewReceipt('changes', ["The proxy drops the Authorization: Bearer {$secret} header."]));
+it('stores no summary of an accepted receipt, so no secret in one reaches a record', function (string $secret): void {
+    $row = reviewed(reviewWorld(), reviewReceipt('changes', ["The proxy drops the header {$secret}."]));
 
     expect($row->rejected)->toBeFalse()
-        ->and(json_encode($row->receipt))->not->toContain($secret)
-        ->and(json_encode(Operation::query()->findOrFail($row->operation_id)->result))->not->toContain($secret);
-});
+        ->and($row->receipt)->toBe(['verdict' => 'changes', 'findings' => 1])
+        ->and(json_encode(Operation::query()->findOrFail($row->operation_id)->result))->not->toContain($secret)->not->toContain('drops the header');
+})->with([
+    'a standalone 64-hex credential' => [str_repeat('a1', 32)],
+    'a JWT' => ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl'],
+    'a cookie header value' => ['Cookie: session=0123456789abcdef'],
+    'a punctuated installation token' => ['ghs_abcdEFGH1234.wxyz-5678IJKL'],
+]);
 
 it('rejects a review receipt with one reason', function (?string $receipt, string $reason): void {
     $world = reviewWorld();
@@ -160,6 +163,7 @@ it('rejects a review receipt with one reason', function (?string $receipt, strin
     'a newline-only file' => ["\n", TaskHandoffs::InvalidReceipt],
     'a file Swamp found not UTF-8' => ['not utf-8', TaskHandoffs::InvalidReceipt],
     'a summary of terminal formatting only' => [reviewReceipt('changes', ["\u{1b}[31m\u{1b}[0m"]), TaskHandoffs::InvalidReceipt],
+    'a summary of control characters only' => [reviewReceipt('changes', ["\u{7}\u{1b}\u{7f}"]), TaskHandoffs::InvalidReceipt],
     'terminal formatting around JSON' => ["\u{1b}[31m".reviewReceipt('approve'), TaskHandoffs::InvalidReceipt],
     'a secret under a field named key' => ['{"verdict":"approve","findings":[],"key":"hunter2"}', TaskHandoffs::InvalidReceipt],
     'a secret under a nested field named keys' => ['{"verdict":"approve","findings":[{"summary":"x","keys":["hunter2"]}]}', TaskHandoffs::InvalidReceipt],

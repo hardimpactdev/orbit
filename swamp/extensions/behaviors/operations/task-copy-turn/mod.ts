@@ -153,7 +153,7 @@ export const Turn = z.object({
     spent: z.array(z.string()),
     transcript: z.array(Entry),
     // The handoff receipts the turn left under the Git directory; the phase removed them (docs/reference/tasks.md#handoffs). A delivery
-    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its raw text, at most 64 KiB or `too large`, which the Gateway alone validates and only the method's output carries. Null
+    // receipt keeps only its validated fields, its part names redacted, or is `invalid`; a review receipt is its raw text, at most 64 KiB or `too large`, which the Gateway alone validates. Null
     // for a receipt the turn did not leave.
     receipts: z.object({ delivery: z.union([DeliveryReceipt, z.literal("invalid")]).nullable(), review: z.string().nullable() }).strict().optional(),
     // The thread's token use over all its provider turns, which replaces what the thread holds; null when unknown.
@@ -424,7 +424,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.20.7",
+    version: "2026.11.20.8",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -455,9 +455,9 @@ export const behavior = {
                 };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
-                // The Gateway reads the turn from this method's output, raw review receipt included, and validates it; the stored
-                // resource keeps no review receipt.
-                await ctx.writeResource("result", "result", { ...result, turn: { ...turn, receipts: { delivery: turn.receipts.delivery, review: null } } });
+                // The resource carries the raw review receipt like the transcript: the Gateway reads it there when the run history
+                // does not inline this output, and validates it.
+                await ctx.writeResource("result", "result", result);
                 return result;
             },
         },
