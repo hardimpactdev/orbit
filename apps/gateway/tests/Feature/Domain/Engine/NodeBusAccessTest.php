@@ -138,12 +138,14 @@ it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, a
     @unlink($manifest);
 });
 
-it('makes only seeds the NATS client reads back, also when a checksum ends in a zero byte', function (): void {
-    // One seed in 256 has such a checksum; the client's Base32 decoder strips that byte. 2,000 of each find one almost surely.
+it('makes only seeds the NATS client reads back, also when the last byte would be zero', function (): void {
+    // The client's Base32 decoder strips a seed's last byte, the CRC high byte, when it is zero: one seed in 256.
     for ($i = 0; $i < 2000; $i++) {
-        foreach ([NatsCredentials::newSeed(), NatsCredentials::userSeed($this->seed, "user-{$i}")] as $seed) {
-            expect(strlen(SecretKey::fromSeed($seed)->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
-        }
+        expect(strlen(SecretKey::fromSeed(NatsCredentials::newSeed())->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
     }
-    expect(NatsCredentials::userSeed($this->seed, 'gateway'))->toBe(NatsCredentials::userSeed($this->seed, 'gateway'));
+    $account = 'SAAAOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOB6O4U';
+
+    // `node-228`'s first derivation ends in a zero byte, so it takes the next round; `gateway`'s first round keeps its key.
+    expect(strlen(SecretKey::fromSeed(NatsCredentials::userSeed($account, 'node-228'))->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES)
+        ->and(NatsCredentials::publicKey(NatsCredentials::userSeed($account, 'gateway')))->toBe('UCM7UXV5YX3VUSJY35QZRAJ4BJV7DRMF7EQOHUGGX2SHGOPGBVSAIQVC');
 });

@@ -113,8 +113,8 @@ final readonly class NatsCredentials
     }
 
     /**
-     * The encoded seed, or null when its checksum ends in a zero byte: the client library's Base32 decoder strips trailing
-     * zero bytes, so it would read that seed one byte short and refuse it (one seed in 256).
+     * The encoded seed, or null when its last byte, the CRC high byte, is zero: the client library's Base32 decoder strips
+     * trailing zero bytes, so it would read that seed one byte short and refuse it (one seed in 256).
      */
     private static function seed(int $prefix, #[SensitiveParameter] string $raw): ?string
     {
