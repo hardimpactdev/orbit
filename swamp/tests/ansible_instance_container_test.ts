@@ -98,7 +98,8 @@ function fixture() {
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py", "instance_root_disk.py",
-    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
+    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml", "instance_default_clean.py",
+    "instance_seed_files.py"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -470,7 +471,8 @@ Deno.test({
       assert(f.run("fetch").ok);
       assertEquals(sent()!.prerequisites, [first]);
       assert(!f.run("checkout").ok);
-      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      // The test reuses one run folder: the earlier checkout's clean stays in its result, as a later phase of one run keeps it.
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged", workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
       assertEquals(f.workspace("rev-parse", `refs/remotes/origin/${f.container.branch}`), moved);
       // A local commit that the mirror does not hold: the whole branch, and the same refusal.
@@ -480,7 +482,7 @@ Deno.test({
       assert(f.run("fetch").ok);
       assertEquals(sent()!.prerequisites, []);
       assert(!f.run("checkout").ok);
-      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged", workspace_cleaned: { removed: [], removed_count: 0 } });
     } finally {
       f.cleanup();
     }
@@ -616,7 +618,8 @@ Deno.test({
           assertEquals(names.filter((name) => name.startsWith("tmp_")), ["tmp_pack_new"]);
         }
       }
-      assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"] });
+      // The checkout's clean is carried to the later phases' result, as the Club key's word is.
+      assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"], workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
       // Only what the workspace lacks travelled: the bundle's prerequisite is the workspace's HEAD before the fetch.
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
@@ -705,7 +708,7 @@ Deno.test({
         assert(done.ok, `${phases}: ${done.output}`);
       }
       // Both paths must reach this independently known state, rather than merely agree with each other's bundle count.
-      assertEquals(f.result(), { commit, ...(merged ? { phases_passed: ["processes", "seed", "check"] } : {}) });
+      assertEquals(f.result(), { commit, ...(merged ? { phases_passed: ["processes", "seed", "check"] } : {}), workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), commit);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
@@ -2259,6 +2262,8 @@ Deno.test({
       const calls = () => f.state().workspace_calls as string[];
       assertEquals([...new Set(calls())].sort(), ["agent git", "agent python3", "agent test"]);
 
+      // A Project ignores its dependencies, so a deployment's clean keeps them.
+      Deno.writeTextFileSync(exclude, Deno.readTextFileSync(exclude) + "/node_modules/\n");
       // An install as `orbit` asks for 0755 folders and 0644 files, as Bun does in node_modules.
       Deno.mkdirSync(`${workspace}/node_modules/react`, { recursive: true, mode: 0o755 });
       Deno.chmodSync(`${workspace}/node_modules`, 0o755);
@@ -2281,7 +2286,7 @@ Deno.test({
       assert(checkout.ok, checkout.output);
       assertEquals(mode("node_modules/.vite"), 0o775);
       // The checkout's Git calls, the repack and its clean-up run as `agent` too; root's pass runs outside the workspace's cwd.
-      assertEquals([...new Set(calls().slice(beforeCheckout))].sort(), ["agent find", "agent git"]);
+      assertEquals([...new Set(calls().slice(beforeCheckout))].sort(), ["agent find", "agent git", "agent python3"]);
     } finally {
       f.cleanup();
     }
@@ -3921,7 +3926,7 @@ Deno.test({
       const failed = f.run("seed");
       assert(!failed.ok);
       assertEquals(f.result(), { error_code: "instance.seed_volume_snapshot_failed",
-        detail: "Snapshot the inner volume: Failed to create volume snapshot. The old seed stays." });
+        detail: "Snapshot the inner volume: Failed to create volume snapshot. The old seed stays.", workspace_cleaned: { removed: [], removed_count: 0 } });
       // No half pair: the new container snapshot is gone, and the older pair stays for a restore.
       assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
       // The Processes run again after the failure.

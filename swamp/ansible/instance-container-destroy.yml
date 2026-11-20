@@ -223,7 +223,7 @@
             - name: Read the custom volumes beside the inner volume
               when: container.inner_volume is defined
               ansible.builtin.command:
-                argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}/volumes/custom?project={{ container.project }}"]
+                argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}/volumes?project={{ container.project }}&recursion=1"]
                 stdin: ""
               register: destroy_spares
               changed_when: false
@@ -235,7 +235,7 @@
               vars:
                 spare_pattern: "^(spare-{{ container.inner_volume | regex_escape }}-[0-9a-f]+|build-{{ container.inner_volume | regex_escape }})$"
               loop: >-
-                {{ destroy_spares.stdout | from_json | map('regex_replace', '[?].*$', '') | map('regex_replace', '^.*/', '')
+                {{ destroy_spares.stdout | from_json | selectattr('type', 'equalto', 'custom') | map(attribute='name')
                    | select('match', spare_pattern) | list }}
               changed_when: true
             - name: Read the remaining containers
