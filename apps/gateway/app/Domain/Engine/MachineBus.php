@@ -29,4 +29,7 @@ interface MachineBus
 
     /** @return list<string> */
     public function nodeActions(int $node): array;
+
+    /** Whether the Node's executor last reported its clock as synchronized; null without a fresh report that says. */
+    public function nodeClock(int $node): ?bool;
 }
