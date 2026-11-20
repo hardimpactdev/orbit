@@ -1,7 +1,7 @@
 {
-  "release": "cli-v0.10877.0",
+  "release": "cli-v0.10887.0",
   "platform": "linux-x86_64",
-  "agent_sha256": "fe71768aa64321e01383feb779894c5d11f8c9531cd4bc452c5d27b9555962fa",
+  "agent_sha256": "0e7b7a746cd9b3edbc7a379786025c804679adf99632246cd3584ced53b78ce9",
   "contract_sha256": "77da006b18bb58c9a8f1c56aacc6f4662c0523c6cdba5f41749f851ed49ea9f0",
   "command": [
     "orbit-agent",

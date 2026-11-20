@@ -27,11 +27,12 @@ describe('the container server setting', function (): void {
         $this->project = Project::query()->create(['name' => 'app', 'slug' => 'app', 'repository_url' => 'https://github.com/example/app.git', 'default_branch' => 'main', 'root' => 'public']);
     });
 
-    it('is t3 for a Project that chose none, and the reply names it', function (): void {
-        $this->getJson('/api/v1/projects/'.$this->project->id)->assertOk()->assertJsonPath('data.container_server', 't3');
+    it('is conn for a Project that chose none, and the reply names it', function (): void {
+        $this->getJson('/api/v1/projects/'.$this->project->id)->assertOk()->assertJsonPath('data.container_server', 'conn');
     });
 
     it('refuses conn while the recipe pins no Conn Server, and changes nothing', function (): void {
+        $this->project->update(['container_server' => ContainerServer::T3]);
         containerServerConnUnpinned();
 
         $this->patchJson('/api/v1/projects/'.$this->project->id, ['container_server' => 'conn'])
