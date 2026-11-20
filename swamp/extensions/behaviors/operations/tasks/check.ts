@@ -36,6 +36,8 @@ export const CheckInput = z.object({
     repository: z.string().nullable(),
     check_name: z.string().nullable(),
     branch: z.string().regex(/^task-[1-9][0-9]*-handoff$/),
+    // The delivery gate of a gated group's handoff check (docs/reference/tasks.md#the-delivery-gate).
+    handoff_gate: z.boolean().default(false),
 });
 const Evidence = z.object({
     start: z.string().nullable(),

@@ -99,6 +99,9 @@ final readonly class TaskCheckIntent
             'base' => TaskReviewBase::commit($task), 'message' => TaskHandoffCiChecks::message($task),
             'repository' => $repository === null ? null : $repository->owner.'/'.$repository->name,
             'check_name' => $ci, 'branch' => TaskRemoteBranch::handoff($group),
+            // Only the delivery gate of a gated group requires the check to keep the handed-off work as it was before its commands
+            // (docs/reference/tasks.md#the-delivery-gate); a baseline or an ungated check keeps the post-Project snapshot.
+            'handoff_gate' => $input->phase === TaskCheckKind::Handoff && $group->handoffs_gated,
             'ssh_execution' => $ssh, 'execution_secrets' => $copies, 'admitted_at' => now()->toISOString(),
             // The time limit of each SSH step of the check workflows, so a step against a Node that is gone ends with the Operation.
             'run_budget_seconds' => OperationRunBudgets::historySeconds(OperationKinds::TasksCheck),

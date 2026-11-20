@@ -31,6 +31,7 @@ const input = {
     repository: "acme/check",
     check_name: "Required checks",
     branch: "task-1-handoff",
+    handoff_gate: false,
 };
 const pending = {
     inputs: { operation_id: 7, node_id: 3, kind: "tasks.check", intent: input },
@@ -513,15 +514,25 @@ Deno.test("a check keeps the part table of the receipt its Project check wrote, 
     }
 });
 
-Deno.test("a setup or Project command that moved the handed-off work ends CHANGED", async () => {
+Deno.test("at the delivery gate a setup or Project command that moved the handed-off work ends CHANGED", async () => {
     for (const started of [{ original: ran(0, "f".repeat(40) + "\n") }, { "handed-tree": ran(0, "f".repeat(40) + "\n") }]) {
         const value = await localResult(
-            { ...input, command: "true" },
+            { ...input, command: "true", handoff_gate: true },
             valid,
             { ...snapshots(), project: ran(0), ...started },
             outputs({ project: "fine" }),
         );
         assertEquals("outcome" in value && value.outcome, "changed");
+        // A baseline or an ungated check keeps the post-Project snapshot: a formatter's edit belongs to the checked tree.
+        for (const phase of ["baseline", "handoff"] as const) {
+            const kept = await localResult(
+                { ...input, phase, command: "true" },
+                valid,
+                { ...snapshots(), project: ran(0), ...started },
+                outputs({ project: "fine" }),
+            );
+            assertEquals("outcome" in kept && kept.outcome, "passed");
+        }
     }
     const kept = await localResult(
         { ...input, command: "true" },

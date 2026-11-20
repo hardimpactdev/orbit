@@ -322,15 +322,16 @@ export async function localResult(
             }]];
         }),
     );
-    // The work as it stood when the phase started, before any command: a setup or Project command that moved it moved the workspace
-    // too, so the check never pins a tree other than the one handed off (docs/reference/tasks.md#the-delivery-gate).
+    // The work as it stood when the phase started, before any command. At the delivery gate a setup or Project command that moved it
+    // moved the workspace too, so the check never pins a tree other than the one handed off (docs/reference/tasks.md#the-delivery-gate).
+    // A baseline or an ungated check keeps the post-Project snapshot: its formatters' edits belong to the checked tree.
     const started = {
         head: (run(steps, "original").stdout ?? "").trim(),
         tree: (run(steps, "handed-tree").stdout ?? "").trim(),
     };
-    const changed = before.head !== after.head || before.tree !== after.tree ||
-        (started.head !== "" && started.head !== before.head) ||
-        (started.tree !== "" && started.tree !== before.tree);
+    const moved = input.handoff_gate &&
+        ((started.head !== "" && started.head !== before.head) || (started.tree !== "" && started.tree !== before.tree));
+    const changed = before.head !== after.head || before.tree !== after.tree || moved;
     const local = Local.parse({
         outcome: changed
             ? "changed"
