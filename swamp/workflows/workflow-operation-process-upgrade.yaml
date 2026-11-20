@@ -1,0 +1,260 @@
+id: 07c80740-47dc-4f83-8074-d94d330c86b8
+name: operation-process-upgrade
+autoContinue: false
+description: 'process.upgrade: a systemd Process to a resolved upstream release over SSH from the swamp Node: read, download and check, unpack,
+  check the binary, switch current, restart, verify, keep the previous release; switch back on a failure from the switch on (ADR 0273).'
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: process.upgrade}
+    intent:
+      type: object
+      properties:
+        upgrade:
+          type: object
+          properties:
+            process_id: {type: integer, minimum: 1}
+            name: {type: string, pattern: '^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$'}
+            folder: {type: string, pattern: '^/(?:[A-Za-z0-9._+-]+/)*[A-Za-z0-9._+-]+$'}
+            binary: {type: string, pattern: '^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$'}
+            version: {type: string, pattern: '^[0-9A-Za-z][0-9A-Za-z._+-]*$'}
+            asset: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._+-]*$'}
+            url: {type: string, pattern: '^https://'}
+            sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+            version_args: {type: array, items: {type: string}}
+          required: [process_id, name, folder, binary, version, asset, url, sha256, version_args]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [upgrade, ssh_execution]
+      additionalProperties: false
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: upgrade
+  labels: {role: swamp}
+  steps:
+    # Input: the intent and the shipped playbooks, as the run folder the phases read.
+  - name: input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input" }}
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+    # One tagged phase of swamp/ansible/operation-process-upgrade.yml per step. `Read the installed release` refuses before any change;
+    # a phase after a failed or cancelled one is skipped.
+  - name: Read the installed release
+    labels: {role: swamp}
+    dependsOn:
+    - {step: input, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags read "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Download the release
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Read the installed release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags download "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Unpack the release
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Download the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags unpack "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Check the binary
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Unpack the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || size(inputs.intent.upgrade.version_args) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Switch current
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Check the binary, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags switch "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Restart the Process
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Switch current, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags restart "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Verify it runs
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Restart the Process, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 45 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags verify "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Keep the previous release
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Verify it runs, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 30 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags keep "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # After a failure from `Switch current` on: current back to the `before` release, restart and verify; it always fails the run,
+    # with process.upgrade_rolled_back, or process.rollback_failed when the rollback fails too.
+  - name: Switch back
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Switch current, condition: {type: always}}
+    - {step: Restart the Process, condition: {type: always}}
+    - {step: Verify it runs, condition: {type: always}}
+    - {step: Keep the previous release, condition: {type: always}}
+    guard: '${{ !(steps["Switch current"].status == "failed" || steps["Restart the Process"].status == "failed" || steps["Verify it runs"].status == "failed" || steps["Keep the previous release"].status == "failed") }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "process-upgrade-" + string(inputs.node_id) + "-" + string(inputs.intent.upgrade.process_id) }}'
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollback "$ORBIT_ANSIBLE/operation-process-upgrade.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+    # The public result the playbook wrote, on success and on failure: before, after, outcome, pruned, or the error code.
+  - name: result
+    labels: {role: swamp}
+    dependsOn: [{step: Switch back, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "process-upgrade-result" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 cat "$ORBIT_RUN/result.json"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+  - name: cleanup
+    labels: {role: swamp}
+    dependsOn: [{step: result, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "process-upgrade-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

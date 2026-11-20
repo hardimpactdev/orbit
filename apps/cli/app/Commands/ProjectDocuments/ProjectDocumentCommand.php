@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\ProjectDocuments;
 
+use App\Commands\Concerns\OwnsVersionOption;
 use App\Commands\GatewayCommand;
 use App\Commands\ProjectDocuments\Concerns\GatesDocumentsExtension;
 use App\Repositories\GatewayConfigRepository;
@@ -52,31 +53,11 @@ use UnexpectedValueException;
 abstract class ProjectDocumentCommand extends GatewayCommand implements GatedExtensionCommand
 {
     use GatesDocumentsExtension;
+    use OwnsVersionOption;
 
     protected string $verb;
 
     private ?string $downloadOutput = null;
-
-    public function mergeApplicationDefinition(bool $mergeArgs = true): void
-    {
-        $application = $this->getApplication();
-        if ($application === null || ! $this->getNativeDefinition()->hasOption('version')) {
-            parent::mergeApplicationDefinition($mergeArgs);
-
-            return;
-        }
-        $definition = $application->getDefinition();
-        $scoped = clone $definition;
-        $options = $scoped->getOptions();
-        unset($options['version']);
-        $scoped->setOptions($options);
-        $application->setDefinition($scoped);
-        try {
-            parent::mergeApplicationDefinition($mergeArgs);
-        } finally {
-            $application->setDefinition($definition);
-        }
-    }
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors, DocumentFileWriter $downloads): int
     {

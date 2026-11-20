@@ -10,6 +10,7 @@ use App\Console\Commands\BootstrapControlPlanCommand;
 use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
+use App\Console\Commands\CheckProcessArtifactReleasesCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
@@ -48,6 +49,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             BootstrapControlPlanCommand::class,
             BootstrapPlanCommand::class,
             CaddyBuildCommand::class,
+            CheckProcessArtifactReleasesCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
             NodeAddCommand::class,

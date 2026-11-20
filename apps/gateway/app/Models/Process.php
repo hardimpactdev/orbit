@@ -96,8 +96,11 @@ final class Process extends Model
         return $this->morphTo();
     }
 
-    /** The release artifact of a systemd Process (docs/reference/processes-and-schedules.md#upgrade-a-process). */
-    /** @return HasOne<ProcessArtifact, $this> */
+    /**
+     * The release artifact of a systemd Process (docs/reference/processes-and-schedules.md#upgrade-a-process).
+     *
+     * @return HasOne<ProcessArtifact, $this>
+     */
     public function artifact(): HasOne
     {
         return $this->hasOne(ProcessArtifact::class);

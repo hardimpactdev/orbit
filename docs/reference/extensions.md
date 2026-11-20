@@ -102,6 +102,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, and `digest()` |
 | `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
 | `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process/destroy) | `assertRemovable()` |
+| `App\Domain\Processes\Artifacts\ProcessArtifactPreset` | [`process:artifact:set --preset`](/cli/process/artifact-set) ([Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process)) | `name()` and `fields()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database/update) | `validate()` and `afterCommit()` |
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |

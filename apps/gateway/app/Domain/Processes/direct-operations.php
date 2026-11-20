@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Processes\ProcessControlProjection;
 use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\Processes\ProcessUpgradeProjection;
 
 $control = ['workflow' => 'operation-process-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'Verify the state', 'native' => true], 'projection' => ProcessControlProjection::class];
 
@@ -15,4 +16,5 @@ return [
     'process.restart' => ['workflow' => 'operation-process-control'] + $control,
     'process.start' => ['workflow' => 'operation-process-start'] + $control,
     'process.stop' => ['workflow' => 'operation-process-stop'] + $control,
+    'process.upgrade' => ['workflow' => 'operation-process-upgrade', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'upgrade', 'step' => 'result'], 'projection' => ProcessUpgradeProjection::class],
 ];

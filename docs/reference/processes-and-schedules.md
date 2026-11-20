@@ -4,12 +4,12 @@ description: "How Orbit runs Processes for an Instance or a Node, and how a Proj
 covers:
   - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/Domain/{Processes/**,Instances/InstanceNodeService*.php}
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table,2027_03_19_000000_create_process_artifacts}.php
   - apps/gateway/{app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver,ContainerProcessInspection}.php,resources/processes/container-process-read.py}
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
-  - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
+  - apps/gateway/app/Models/{Process,ProcessArtifact,ProcessDefinition,ScheduleDefinition}.php
 ---
 
 # Processes and schedules
@@ -339,6 +339,66 @@ Container Process logs and runtime status reach the container in the Incus proje
 For a systemd Process desired `running`, a crash loop means either `ActiveState=activating` with `SubState=auto-restart`, or an `NRestarts` count that increases between observations during the same bounded inspection. An `active` sample does not cancel evidence of repeated restarts. A nonzero restart count left by earlier restarts alone does not qualify. Ordinary startup in `activating` without `auto-restart` or an increasing restart count is not a crash loop, though it can still differ from the desired running state. A Process desired `stopped` uses the ordinary state comparison instead. This crash-loop rule does not apply to Docker Processes.
 
 Doctor reports `process.crash_loop` as `drift`, with the Process ID and name and `expected=running`. Its bounded `observed` evidence carries the unit's active state and sub-state, plus the restart counts when available. For example, `activating` / `auto-restart` explains a restart wait, while an `active` / `running` sample with `NRestarts` increasing from 3 to 4 explains a restart observed between samples. Doctor emits this finding instead of an additional `process.state_mismatch` for that observation. It reads only and never starts, stops, or restarts the unit.
+
+## Upgrade a Process
+
+A systemd Process that runs a downloaded release may carry one release artifact ([ADR 0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version)). Then `process:upgrade` moves it to a new upstream version, and Orbit reports when a newer release exists. Orbit never upgrades a Process by itself: the operator chooses the time.
+
+### The artifact record
+
+The artifact names the GitHub repository and asset of the releases, and the version that runs.
+
+| Field | Meaning |
+| --- | --- |
+| `source` | `github_release`, the only source |
+| `repository` | `OWNER/REPO` on GitHub |
+| `asset` | The asset name pattern, with `{version}` for the version, such as `CLIProxyAPI_{version}_linux_amd64.tar.gz` |
+| `binary` | The executable's path inside the unpacked archive, such as `cli-proxy-api` |
+| `checksums` | Optional: the checksum asset, such as `checksums.txt`. Without it, the asset's GitHub SHA-256 digest is used |
+| `version_args` | Optional: arguments that make the binary print its version, such as `["--help"]` |
+| `version` | The installed version, without a leading `v`; null while unknown |
+| `previous_version` | The version before the last upgrade, kept on the Node |
+| `sha256` | The checksum of the installed asset |
+| `latest_version`, `latest_checked_at` | The daily check's last answer |
+
+The folder is not a field. The Process command must run `<folder>/current/<binary>`, and `<folder>` comes from it. Each release lives in `<folder>/releases/<version>/`, and `current` is a relative link to one of them.
+
+[`process:artifact:set`](/cli/process/artifact-set) (`PUT /api/v1/processes/{process}/artifact`) records the artifact, and [`process:artifact:unset`](/cli/process/artifact-unset) (`DELETE`) removes it. Both write the Gateway record only: they change nothing on the Node and start no Operation. A Docker Process, or a command that does not run `<folder>/current/<binary>`, is refused with `process.artifact_invalid`. `--preset=NAME` fills every field except the version from a preset; explicit options override it. A role declares its preset in its service provider through the core preset registry. The `ai-router` extension declares `cliproxyapi`: `router-for-me/CLIProxyAPI`, asset `CLIProxyAPI_{version}_linux_amd64.tar.gz`, binary `cli-proxy-api`, checksums `checksums.txt`, version arguments `["--help"]`.
+
+### The upgrade
+
+[`process:upgrade PROCESS VERSION`](/cli/process/upgrade) (`POST /api/v1/processes/{process}/upgrade`) returns 202 with a `process.upgrade` Operation. `VERSION` may carry a leading `v`. The Gateway admits it only when:
+
+- the Process has an artifact, else `process.artifact_missing`;
+- the Process is desired `running`, else `process.not_running`;
+- the Process runs on its Node's host, not in an Instance container, else `process.target_unsupported`;
+- the GitHub release with tag `v{VERSION}` or `{VERSION}` resolves, else `process.version_unknown` (422);
+- no other Operation holds the Process, else `operation.target_busy`.
+
+A release resolves when exactly one asset matches the pattern and a SHA-256 comes from the checksum asset or the asset digest. The admitted input carries the download URL and SHA-256; the Node never resolves a version. An upgrade to the recorded version succeeds at once with outcome `unchanged` and starts no run.
+
+Swamp runs `operation-process-upgrade` on Node 209, over SSH to the Process's Node. Files are written as the owner of `<folder>`.
+
+| Step | What it does |
+| --- | --- |
+| Read the installed release | `current` must be a relative link to `releases/<version>`, else `process.artifact_layout_invalid` before any change. The version read is the run's `before` |
+| Download the release | Downloads the asset into a staging folder under `releases/` and checks its SHA-256 |
+| Unpack the release | Unpacks it and renames the staging folder to `releases/<VERSION>`. A folder with a checked copy of this release is reused |
+| Check the binary | With `version_args`, runs the new binary and requires `VERSION` in its output |
+| Switch current | Writes a new relative link and renames it over `current` in one step |
+| Restart the Process | Restarts the systemd unit |
+| Verify it runs | The unit is active, and still active with the same restart count 10 seconds later |
+| Keep the previous release | Keeps `current` and the `before` release, and removes the other folders under `releases/` |
+
+A failure before `Switch current` leaves the running release untouched and fails with `process.upgrade_failed`. After any failure from `Switch current` on, the run switches `current` back to `before`, restarts the Process and verifies it again; the Operation fails with `process.upgrade_rolled_back` and prunes nothing. When that rollback fails too, the Operation fails with `process.rollback_failed` and the Process shows as failed.
+
+After a pass, the Gateway records `version`, `previous_version` and `sha256`. The result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and `pruned`, the removed versions. It carries no command output or secrets. A restart drops requests in flight; for the AI router, Tasks retries a failed model call as a [transient provider error](/reference/tasks#execution-ownership).
+
+### The daily release check
+
+A daily Gateway schedule reads the latest GitHub release that is no prerelease, once for each distinct repository that an artifact names, and stores `latest_version` and `latest_checked_at` on each artifact. A failed check keeps the last answer and is no finding.
+
+Doctor's Process family reports `process.update_available` when `latest_version` is newer than a known `version`, with the latest version as expected and the installed one as observed. The finding is informational: `orbit doctor` stays healthy and exits 0. A null version gives no finding. The [problem collector](/reference/tasks#outer-loop) records this one informational finding, so a stale Process gets a Backlog task.
 
 ## Locks
 

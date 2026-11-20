@@ -1,0 +1,38 @@
+---
+title: "orbit process:upgrade"
+sidebarTitle: "process:upgrade"
+description: "Upgrade a systemd Process to a new upstream release, and switch back on failure."
+---
+
+```bash
+orbit process:upgrade <process> <version> [--idempotency-key=KEY] [--json]
+```
+
+| Argument or option | Default | Meaning |
+| --- | --- | --- |
+| `process` | required | Numeric Process ID from `process:list`. |
+| `version` | required | The upstream version, such as `8.0.80`. A leading `v` is dropped. |
+| `--idempotency-key=KEY` | none | Reuse the task of an earlier identical request. |
+| `--json` | off | One final JSON response, without prompts or progress output. |
+
+The Process needs a release artifact, which [`process:artifact:set`](/cli/process/artifact-set) records. The Gateway resolves the GitHub release and its SHA-256, then Swamp downloads it into `<folder>/releases/<version>/`, switches the `current` link, restarts the Process and checks that it runs. On a failure after the switch, it switches back and restarts the old release. After a pass, the release before stays on disk and older ones are removed.
+
+The API is `POST /api/v1/processes/{process}/upgrade` with `{"version": "8.0.80"}`; the MCP tool is `process-upgrade`. The result names `before`, `after`, `outcome` (`upgraded`, `unchanged` or `rolled_back`) and `pruned`. An upgrade to the recorded version succeeds at once with outcome `unchanged`. See [Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process).
+
+## How it works
+
+<div className="flow-at" data-chart="process/upgrade"></div>
+
+## Errors
+
+| Code | When |
+| --- | --- |
+| `process.artifact_missing` | The Process has no release artifact. |
+| `process.not_running` | The Process is not desired running. Start it first. |
+| `process.target_unsupported` | The Process runs in an Instance container. The upgrade acts on a host systemd unit only. |
+| `process.version_unknown` (422) | No release with tag `v{VERSION}` or `{VERSION}`, no single matching asset, or no SHA-256 for it. Nothing changes. |
+| `operation.target_busy` | Another Operation holds the Process. |
+| `process.artifact_layout_invalid` | `current` is not a relative link to `releases/<version>`. Nothing changes. |
+| `process.upgrade_failed` | The download, checksum, unpack or binary check failed before the switch. The running release is untouched. |
+| `process.upgrade_rolled_back` | The switch, restart or check failed; the old release runs again. |
+| `process.rollback_failed` | The switch back failed too; the Process shows as failed. |

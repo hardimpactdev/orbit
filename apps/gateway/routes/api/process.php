@@ -34,6 +34,12 @@ Route::middleware([
         ->name('process:stop');
     Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
         ->name('process:restart');
+    Route::post('processes/{process}/upgrade', [ProcessesController::class, 'upgrade'])
+        ->name('process:upgrade');
+    Route::put('processes/{process}/artifact', [ProcessesController::class, 'setArtifact'])
+        ->name('process:artifact:set');
+    Route::delete('processes/{process}/artifact', [ProcessesController::class, 'unsetArtifact'])
+        ->name('process:artifact:unset');
     Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
         ->name('process:destroy');
 });

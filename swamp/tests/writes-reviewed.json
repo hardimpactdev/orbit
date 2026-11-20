@@ -416,6 +416,13 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-process-upgrade": {
+   "Read the installed release": "read-only",
+   "Check the binary": "read-only",
+   "Verify it runs": "read-only",
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-conn-environment-restart": {
    "result": "read-only",
    "cleanup": "idempotent"

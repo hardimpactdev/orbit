@@ -1,0 +1,37 @@
+---
+title: "orbit process:artifact:set"
+sidebarTitle: "process:artifact:set"
+description: "Record where a systemd Process's releases come from, so process:upgrade can upgrade it."
+---
+
+```bash
+orbit process:artifact:set <process> [--preset=NAME] [--repository=OWNER/REPO] [--asset=PATTERN] [--binary=PATH] [--checksums=ASSET] [--version-args=ARG ...] [--version=VERSION] [--json]
+```
+
+| Argument or option | Default | Meaning |
+| --- | --- | --- |
+| `process` | required | Numeric Process ID of a systemd Process. |
+| `--preset=NAME` | none | Fill every field except the version from a role's preset, such as `cliproxyapi`. Other options override it. |
+| `--repository=OWNER/REPO` | from preset | The GitHub repository that publishes the releases. |
+| `--asset=PATTERN` | from preset | The asset name, with `{version}` for the version, such as `CLIProxyAPI_{version}_linux_amd64.tar.gz`. |
+| `--binary=PATH` | from preset | The executable's path inside the unpacked archive. |
+| `--checksums=ASSET` | none | A checksum asset such as `checksums.txt`. Without it, the asset's GitHub SHA-256 digest is used. |
+| `--version-args=ARG` | none | Repeat for each argument that makes the binary print its version, such as `--version-args=--help`. |
+| `--version=VERSION` | none | The installed version, when known. Without it, the first upgrade reads it from the `current` link. |
+| `--json` | off | One final JSON response. |
+
+The command writes the Gateway record only. It changes nothing on the Node and starts no Operation. It replaces an existing artifact. The Process command must run `<folder>/current/<binary>`; the folder comes from it. The API is `PUT /api/v1/processes/{process}/artifact`, and the MCP tool is `process-artifact-set`.
+
+For example, record the AI router's release artifact:
+
+```bash
+orbit process:artifact:set 103 --preset=cliproxyapi
+```
+
+See [Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process).
+
+## Errors
+
+| Code | When |
+| --- | --- |
+| `process.artifact_invalid` | The Process is not a systemd Process, its command does not run `<folder>/current/<binary>`, the preset is unknown, or a field is missing or invalid. |

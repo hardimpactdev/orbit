@@ -104,7 +104,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `ai-router` | `setup`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
 | `node` | `converge`, `relocate` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), or moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
-| `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
+| `process` | `logs`, `restart`, `start`, `stop`, `upgrade` | The CLI reads Process logs, changes Process runtime state, or upgrades a Process to another release of its artifact. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `inspect`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content, or [inspects](/cli/project/maintenance-inspect) a Project's dependencies. |
 | `proof` | `drain`, `proof`, `resume`, `run` | [proof](/cli/proof/proof) proves one command. [proof:run](/cli/proof/run) proves a commit. [proof:pool:drain](/cli/proof/pool-drain) and [proof:pool:resume](/cli/proof/pool-resume) stop and restart the warm copy pool. |
