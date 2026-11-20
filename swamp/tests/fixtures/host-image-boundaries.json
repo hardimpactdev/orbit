@@ -234,6 +234,18 @@
         "mode": 493,
         "directory": true
       },
+      "systemd/incus.service.d": {
+        "mode": 493,
+        "directory": true
+      },
+      "systemd/incus.service.d/70-orbit-runtime-path.conf": {
+        "mode": 420,
+        "text": "# Managed by Orbit. Temporary, for the runtime folder's btrfstune wrapper (lxc/incus#4435).\n[Service]\nEnvironmentFile=@FIXTURE@/systemd/incus.service.d/orbit-runtime-path.env\n"
+      },
+      "systemd/incus.service.d/orbit-runtime-path.env": {
+        "mode": 420,
+        "text": "PATH=@FIXTURE@/opt/orbit-runtime/current/bin:/opt/incus/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+      },
       "targets": {
         "mode": 420,
         "text": "{\"args\":[\"query\",\"--\",\"/1.0/storage-pools/orbit-instances\"],\"remote\":false,\"configRemote\":\"\",\"socket\":\"\"}\n{\"args\":[\"query\",\"/1.0\"],\"remote\":false,\"configRemote\":\"\",\"socket\":\"\"}\n"

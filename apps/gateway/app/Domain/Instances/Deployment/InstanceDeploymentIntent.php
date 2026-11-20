@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\Instances\DefaultInstanceName;
 use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;

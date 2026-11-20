@@ -158,7 +158,6 @@ it('delivers the Club key where the nested Gateway reads it, and nothing without
         'owner' => 1000, 'group' => 1000, 'tmpfiles' => '/etc/tmpfiles.d/orbit-club.conf', 'gateway' => 'nested-gateway', 'serve_unit' => 'orbit-swamp-serve']);
 });
 
-
 it('names a task copy\'s clean and the Club key\'s word in the create\'s result, as the Swamp result does', function (): void {
     $step = static fn (string $output): OperationEngineStep => (new OperationEngineStep)->forceFill(['status' => 'done', 'node_id' => 3, 'output' => $output]);
     $cleaned = ['reset_count' => 1, 'reset' => ['routes/web.php'], 'removed_count' => 0, 'removed' => []];

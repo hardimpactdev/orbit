@@ -118,7 +118,7 @@
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
                   | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
-                  | combine(executor_carried) | combine(workspace_clean_carried)
+                  | combine(executor_carried) | combine(workspace_clean_carried | default({}))
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
                             if phases is defined else {}))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"

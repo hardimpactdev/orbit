@@ -257,7 +257,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $cleaned = $output('checkout')['cleaned'] ?? null;
         $club = $output('club_key')['club_key'] ?? null;
 
-        return [...(is_array($cleaned) ? ['workspace_cleaned' => $cleaned] : []), ...(is_string($club) ? ['club_key' => $club] : [])];
+        return [...(is_array($cleaned) ? ['workspace_cleaned' => ValidatedData::object($cleaned)] : []), ...(is_string($club) ? ['club_key' => $club] : [])];
     }
 
     /**
