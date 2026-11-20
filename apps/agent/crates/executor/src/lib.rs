@@ -158,11 +158,7 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::InstanceClone
-            | Action::InstancePrepare
-            | Action::InstanceStart
-            | Action::InstanceFetchBranch
-            | Action::InstanceCheckout => instance(order),
+            action if action.family() == orbit_executor_core::action::Family::Instance => instance(order),
         }
     }
 }
