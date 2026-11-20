@@ -43,7 +43,7 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
         if ($operation->kind !== 'process.upgrade' || $operation->target_type !== 'process' || $operation->target_id !== ($input['process_id'] ?? null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process intent does not match its target.', 422);
         }
-        $intent = ['upgrade' => Arr::only($input, ['process_id', 'name', 'folder', 'binary', 'version', 'asset', 'url', 'sha256', 'version_args']),
+        $intent = ['upgrade' => [...Arr::only($input, ['process_id', 'name', 'folder', 'binary', 'version', 'asset', 'url', 'sha256', 'version_args']), 'previous_version' => $input['previous_version'] ?? null],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))];
 
         return ['intent' => $intent, 'execution_secrets' => []];
@@ -102,7 +102,8 @@ final readonly class ProcessUpgradeProjection implements DirectOperationProjecti
             $steps = is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [];
             foreach ($steps as $step) {
                 if (is_array($step) && ($step['name'] ?? null) === self::SwitchStep) {
-                    return in_array($step['status'] ?? null, ['running', 'succeeded', 'failed', 'cancelled'], true);
+                    // An interrupted step is recorded as `unknown`: its rename may have taken effect, so only a step that never started is untouched.
+                    return ! in_array($step['status'] ?? null, ['pending', 'skipped', null], true);
                 }
             }
         }

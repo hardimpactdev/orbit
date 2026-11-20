@@ -73,7 +73,8 @@ final readonly class UpgradeProcessAction
             $input = [...$this->placement($current, $caller), 'artifact_id' => $currentArtifact->id, 'repository' => $currentArtifact->repository,
                 'asset_pattern' => $currentArtifact->asset, 'recorded_version' => $currentArtifact->version,
                 'folder' => $folder, 'binary' => $currentArtifact->binary, 'version' => $release->version,
-                'asset' => $release->asset, 'url' => $release->url, 'sha256' => $release->sha256, 'version_args' => $currentArtifact->version_args ?? []];
+                'asset' => $release->asset, 'url' => $release->url, 'sha256' => $release->sha256, 'version_args' => $currentArtifact->version_args ?? [],
+                'previous_version' => $currentArtifact->previous_version];
 
             // The Process keeps its lifecycle state: a failure before `Switch current` leaves it as it was.
             return $this->operations->execute(self::Kind, 'process', $current->id, ValidatedData::integer($input['node_id']), $input, 'operator', $requestId,

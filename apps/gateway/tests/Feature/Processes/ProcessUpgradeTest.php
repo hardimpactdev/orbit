@@ -102,8 +102,9 @@ describe('process:artifact:set and unset', function (): void {
         expect(ProcessArtifact::query()->count())->toBe(0)->and($process->refresh()->status->value)->toBe('active');
     });
 
-    it('refuses a command that does not run <folder>/current/<binary>, a Docker Process and an unknown preset', function (?array $command, string $runtime, array $body): void {
+    it('refuses a command that does not run <folder>/current/<binary>, a Docker Process and an unknown preset', function (?array $command, string $runtime, array $body, ?string $directory = null): void {
         $process = upgrade_router(command: $command, runtime: $runtime);
+        $process->update(['working_directory' => $directory]);
 
         $this->putJson('/api/v1/processes/'.$process->id.'/artifact', $body)->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.artifact_invalid');
@@ -111,6 +112,9 @@ describe('process:artifact:set and unset', function (): void {
     })->with([
         'binary outside current' => [['/home/orbit/.local/share/cliproxyapi/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
         'folder in a later argument' => [['/usr/bin/stat', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
+        'working directory in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi'], '/home/orbit/.local/share/cliproxyapi/releases/8.0.17'],
+        'config in a release' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi/releases/8.0.17/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
+        'config behind current' => [['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.local/share/cliproxyapi/current/config.yaml'], 'systemd', ['preset' => 'cliproxyapi']],
         'folder after an env flag' => [['/usr/bin/env', '-i', '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api'], 'systemd', ['preset' => 'cliproxyapi']],
         'Docker Process' => [['cli-proxy-api'], 'docker', ['preset' => 'cliproxyapi']],
         'unknown preset' => [null, 'systemd', ['preset' => 'nope']],
@@ -129,6 +133,15 @@ it('refuses a release folder that another Process on the Node names or works in'
     'command' => [['runtime_config' => ['command' => ['/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/tmp/other.yaml']]]],
     'working directory' => [['runtime_config' => ['command' => ['/usr/bin/python3', 'worker.py']], 'working_directory' => '/home/orbit/.local/share/cliproxyapi/releases/8.0.17']],
 ]);
+
+it('accepts Process 103 as it runs on services', function (): void {
+    $process = upgrade_router();
+    $process->update(['working_directory' => '/home/orbit/.local/share/cliproxyapi', 'runtime_config' => ['command' => [
+        '/usr/bin/env', 'MANAGEMENT_STATIC_PATH=/home/orbit/.local/share/cliproxyapi/static',
+        '/home/orbit/.local/share/cliproxyapi/current/cli-proxy-api', '-config', '/home/orbit/.config/cliproxyapi/config.yaml']]]);
+
+    $this->putJson('/api/v1/processes/'.$process->id.'/artifact', ['preset' => 'cliproxyapi'])->assertOk();
+});
 
 describe('process:upgrade admission', function (): void {
     it('holds the Process: no other mutation is admitted while the upgrade is open', function (string $verb): void {
@@ -331,6 +344,7 @@ describe('process.upgrade projection', function (): void {
         'SSH lost during the download' => ['failed', ['Read the installed release' => 'succeeded', 'Download the release' => 'failed', 'Switch current' => 'skipped'], 'active', null],
         'cancelled during the download' => ['cancelled', ['Read the installed release' => 'succeeded', 'Download the release' => 'cancelled'], 'active', null],
         'failed after the switch' => ['failed', ['Switch current' => 'succeeded', 'Restart the Process' => 'failed'], 'failed', 'process.rollback_failed'],
+        'worker lost during the switch' => ['interrupted', ['Read the installed release' => 'succeeded', 'Switch current' => 'unknown'], 'failed', 'process.rollback_failed'],
         'cancelled during the verify' => ['cancelled', ['Switch current' => 'succeeded', 'Restart the Process' => 'succeeded', 'Verify it runs' => 'cancelled'], 'failed', 'process.rollback_failed'],
     ]);
 

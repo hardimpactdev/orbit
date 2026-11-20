@@ -29,6 +29,7 @@ final class ProcessArtifactFolder
         if ($folder === '' || preg_match('#\A(?:/[A-Za-z0-9._+-]+)+\z#D', $folder) !== 1 || preg_match('#/\.\.?(?:/|\z)#', $folder) === 1) {
             throw new ResourceOperationException('process.artifact_invalid', "The Process command must run <folder>/current/{$binary}.", 422);
         }
+        self::assertOwnPaths($process, $folder, $executable);
         self::assertExclusive($process, $folder);
 
         return $folder;
@@ -49,6 +50,32 @@ final class ProcessArtifactFolder
         $executable = $arguments[$index] ?? null;
 
         return is_string($executable) && str_starts_with($executable, '/') ? $executable : null;
+    }
+
+    /**
+     * A release folder is pruned and `current` moves: the Process itself may name neither in its working directory or in any
+     * argument but its executable, or an upgrade would remove or swap a file it reads.
+     */
+    private static function assertOwnPaths(Process $process, string $folder, string $executable): void
+    {
+        $inside = static fn (string $path): bool => array_any([$folder.'/releases', $folder.'/current'],
+            static fn (string $root): bool => $path === $root || str_contains($path, $root.'/'));
+        $command = $process->runtime_config['command'] ?? null;
+        $skipped = false;
+        foreach (is_array($command) ? $command : [] as $argument) {
+            if (! $skipped && $argument === $executable) {
+                $skipped = true;
+
+                continue;
+            }
+            if (is_string($argument) && $inside($argument)) {
+                throw new ResourceOperationException('process.artifact_invalid', "Process [{$process->name}] names a path inside {$folder}/releases or {$folder}/current beside its executable.", 422);
+            }
+        }
+        $directory = $process->working_directory;
+        if (is_string($directory) && $inside($directory)) {
+            throw new ResourceOperationException('process.artifact_invalid', "Process [{$process->name}] works inside {$folder}/releases or {$folder}/current.", 422);
+        }
     }
 
     /** Pruning assumes the folder's releases belong to one Process: refuse a folder that another Process on the Node names in its command or works in. */
