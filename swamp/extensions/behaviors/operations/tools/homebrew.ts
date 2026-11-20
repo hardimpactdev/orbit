@@ -3,7 +3,7 @@ import { safeVersion, type ToolInput, ToolRefusal } from "./contract.ts";
 const Row = z.record(z.string(), z.unknown());
 const sha = (v: unknown) => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const prefixKinds =
-    "binary manpage bash_completion fish_completion zsh_completion generate_completions_from_executable"
+    "binary command_wrapper manpage bash_completion fish_completion zsh_completion generate_completions_from_executable"
         .split(" ");
 const homeKinds =
     "font colorpicker dictionary internet_plugin prefpane qlplugin mdimporter screen_saver service audio_unit_plugin vst_plugin vst3_plugin"
@@ -178,6 +178,11 @@ export function homebrewBlock(
         typeof value.url !== "string" || !/^https:\/\/\S+$/.test(value.url)
     ) return "unsupported_source";
     if (z.boolean().parse(value.disabled)) return "unsupported_artifact";
+    // A cask with a Linux build clears `depends_on.macos` in its Linux variation.
+    if (
+        input.platform === "linux" &&
+        "macos" in Row.parse(value.depends_on ?? {})
+    ) return "unsupported_artifact";
     const block = caskArtifactBlock(value, facts);
     if (block) return block;
     if (!sha(value.sha256)) return "checksum_unavailable";

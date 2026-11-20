@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\HomebrewPackageName;
 use App\Domain\Tools\InstalledToolInventory;
+use App\Domain\Tools\ObservedPackages;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -31,9 +32,11 @@ final readonly class HomebrewCaskToolManager implements ToolManager
         return ToolManagerName::BrewCask;
     }
 
+    /** A Linux Node offers casks once the Node agent reports its Homebrew prefix; Orbit does not install Homebrew for a cask. */
     public function supportsNode(Node $node): bool
     {
-        return $node->platform === 'macos';
+        return $node->platform === 'macos'
+            || ($node->platform === 'linux' && ObservedPackages::find($node, ToolManagerName::Brew) !== null);
     }
 
     public function validatePackage(string $package): bool
@@ -48,9 +51,10 @@ final readonly class HomebrewCaskToolManager implements ToolManager
         return $this->homebrew->inventory($this->agentCommand($node, 'tool.homebrew-cask-inventory', [], 'installed-version'));
     }
 
+    /** A cask version carries its build after a comma, such as `1.5.13,5253791805734912`; SemVer reads the part before it. */
     public function normalizeVersion(string $rawVersion): ?string
     {
-        return $this->versions->normalize($rawVersion);
+        return $this->versions->normalize(explode(',', $rawVersion, 2)[0]);
     }
 
     private function guardSupportedNode(Node $node): void
@@ -61,7 +65,7 @@ final readonly class HomebrewCaskToolManager implements ToolManager
 
         throw new ToolManagerException(
             step: 'node',
-            message: 'Homebrew casks require a macOS node.',
+            message: 'Homebrew casks require a macOS node, or a Linux node with Homebrew.',
         );
     }
 
