@@ -27,6 +27,9 @@ struct StartInput {
     /// The access plan's private names: `<host> <name>` lines in Orbit's block of `/etc/hosts`.
     #[serde(default)]
     private_names: Vec<PrivateName>,
+    /// The app-account swap file that prepare wrote (`/usr/local/libexec/orbit-app-user`): root runs it in the running copy
+    /// before any command as `agent` or `www-data`, so a copy of an older default moves from `orbit`/`work` to `www-data`.
+    app_account: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,7 +40,8 @@ struct PrivateName {
 }
 
 /// Starts a stopped copy, then gives the running copy its hostname and its `/etc/hosts`: the `127.0.1.1` line names the
-/// hostname, its first label and the Incus name, and Orbit's block holds the private names. The copy's Incus templates
+/// hostname, its first label and the Incus name, and Orbit's block holds the private names. Root then runs the app-account
+/// swap, which only reads on a copy that already uses `www-data`. The copy's Incus templates
 /// rewrite both files at the first start, so the names come after it. On a Node whose seed holds shifted files (a nested
 /// Node without idmapped mounts), a stopped copy's files are shifted back first, so its first start can apply its own map.
 /// Answers how many changes it made.
@@ -65,6 +69,11 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
         changes += 1;
     }
     changes += names(&incus, &input).map_err(|failure| Failure::new("instance.clone_private_names_failed", failure.detail))?;
+    let swap = ["--project", input.project.as_str(), "exec", input.name.as_str(), "--", input.app_account.as_str()].map(str::to_owned);
+    let moved = incus.run(&swap, None)?;
+    if moved.contains("moved to www-data") {
+        changes += 1;
+    }
     Ok(changes)
 }
 
@@ -87,6 +96,10 @@ fn check(input: &StartInput) -> Result<(), String> {
             && !value.starts_with('-')
             && !value.ends_with('-')
     };
+    let path = Path::new(&input.app_account);
+    if !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        return Err("app_account is not an absolute path".to_owned());
+    }
     let host = |value: &str| value.len() <= 253 && value.split('.').all(label);
     if !host(&input.hostname) {
         return Err("hostname is not a host name".to_owned());

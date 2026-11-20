@@ -412,3 +412,39 @@ fn an_agent_folder_is_made_again_with_exactly_its_files_and_refuses_a_path_outsi
     let outside = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "../../.ssh/authorized_keys", "blob": {"blob": {"sha256": "k"}}}]}}]);
     assert_eq!(prepare(&Fake::new(&[]), &prepare_input(&outside)).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"));
 }
+
+fn start_input(app_account: &str) -> Value {
+    json!({"project": "orbit-instances", "name": "instance-12", "source": "instance-2", "network": "orbitinst0", "nic": "eth0",
+        "hostname": "engine-proof.orbit", "app_account": app_account})
+}
+
+fn running() -> Value {
+    json!({"status": "Running", "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.12",
+        "security.acls": "orbitinst0-proxy,instance-12", "security.acls.default.egress.action": "reject",
+        "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}})
+}
+
+#[test]
+fn a_started_copy_runs_the_app_account_swap_as_root_after_its_names() {
+    let swap = |said: &str| {
+        let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(running())), ("-- /usr/local/libexec/orbit-app-user", Ok(json!(said)))]);
+        let changes = start(&fake, &start_input("/usr/local/libexec/orbit-app-user")).expect("started");
+        (changes, fake.calls().last().cloned())
+    };
+
+    let (moved, last) = swap("orbit-app-user: moved to www-data (restarted: none)");
+    let (kept, _) = swap("orbit-app-user: already www-data");
+
+    assert_eq!(last.as_deref(), Some("--project orbit-instances exec instance-12 -- /usr/local/libexec/orbit-app-user"));
+    assert_eq!(moved, kept + 1);
+}
+
+#[test]
+fn start_refuses_an_app_account_swap_that_is_no_absolute_path() {
+    let fake = Fake::new(&[]);
+
+    for path in ["orbit-app-user", "/usr/local/../bin/sh"] {
+        assert_eq!(start(&fake, &start_input(path)).map_err(|failure| failure.code), Err("instance.start_input_invalid"));
+    }
+    assert_eq!(fake.calls(), Vec::<String>::new());
+}
