@@ -140,6 +140,19 @@ The collector reads Claude, Codex, Grok, Kimi, and Antigravity windows from CLIP
 
 When Grok returns no percentage, the collector calls Grok's billing RPC through CLIProxyAPI. It accepts zero use only from a complete response with an active weekly or monthly period, as [CodexBar](https://github.com/steipete/CodexBar/pull/3325) does.
 
+## Model aliases
+
+Orbit owns one key of the router's configuration: the `antigravity` list of `oauth-model-alias`. agy sends base Gemini names, and the Antigravity pool has only tiered ids, so without these aliases a prompt fails with `model_not_found`. `ANTIGRAVITY` in the extension's `agent/src/aliases.rs` holds the list. Every entry has `fork: true`.
+
+| Name | Alias |
+| --- | --- |
+| `gemini-4-argon-high` | `gemini-4-argon`, `gemini-3.1-pro`, `gemini-3.1-pro-preview` |
+| `gemini-3.8-flash-high` | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.1-flash-lite-preview` |
+
+Before each collection round, the collector reads `GET /v0/management/oauth-model-alias` with the management key. When the `antigravity` list differs from `ANTIGRAVITY`, it sends `PATCH /v0/management/oauth-model-alias` with only that channel. CLIProxyAPI saves the change to `config.yaml` and reloads it. An unchanged list sends no write. A failed read or write is logged and retried in the next round, and collection still runs.
+
+The rule: Orbit replaces the `antigravity` list and nothing else. The lists of other channels, the key list, the account files, and every other key stay as the operator or the router set them. A hand change to the `antigravity` list is replaced within a minute; change `ANTIGRAVITY` instead. Setup, a release converge, and a Node rebuild start the collector, so a new router gets the list in its first round.
+
 ## Collector endpoints
 
 The collector serves these paths on `https://collector.ai-router.orbit`. The read token and the control token are bearer tokens in Gateway settings.

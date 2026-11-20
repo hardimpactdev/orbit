@@ -1,4 +1,5 @@
 use crate::{
+    aliases,
     collector::{Collector, Error, Management},
     quota::{array, now},
     snapshot,
@@ -97,6 +98,9 @@ async fn serve(config: Config) -> Result<(), Error> {
     let worker = app.clone();
     let task = tokio::spawn(async move {
         loop {
+            if let Err(error) = aliases::converge(&worker.collector.api).await {
+                eprintln!("Model alias convergence failed: {}", error.message());
+            }
             if let Err(error) = worker.collector.collect(now()).await {
                 eprintln!("Quota collection failed: {}", error.message());
             }
