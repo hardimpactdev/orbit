@@ -70,6 +70,7 @@ fn input() -> Value {
         "root": {"pool": "orbit-instances", "size": "40GiB"},
         "filters": {"security.ipv4_filtering": "true", "security.mac_filtering": "true"},
         "proxy": {"device": "t3", "listen": "tcp:10.44.0.7:3801", "connect": "tcp:10.253.0.12:3773"},
+        "routes": [{"interface_in": "orbit", "interface_out": "orbitinst0", "from": "any", "to": "10.253.0.12", "port": 3773, "comment": "orbit:instance-12-t3"}],
     })
 }
 
@@ -108,7 +109,8 @@ fn a_new_copy_gets_its_acl_the_seed_copy_and_the_t3_proxy() {
         calls[7],
         "--project orbit-instances config device add instance-12 t3 proxy listen=tcp:10.44.0.7:3801 connect=tcp:10.253.0.12:3773 nat=true"
     );
-    assert_eq!(calls.len(), 8);
+    assert_eq!(calls[8], "route allow in on orbit out on orbitinst0 from any to 10.253.0.12 port 3773 proto tcp comment orbit:instance-12-t3");
+    assert_eq!(calls.len(), 9);
 }
 
 #[test]
@@ -134,7 +136,7 @@ fn a_repeat_finds_the_copy_and_its_acl_and_changes_nothing() {
     ]);
 
     assert_eq!(clone(&fake, &input()).expect("clone"), r#"{"snapshot":null}"#);
-    assert_eq!(fake.calls().len(), 2);
+    assert_eq!(fake.calls().len(), 3, "the copy and its ACL are found; only the route rule is applied again, which ufw skips");
 }
 
 #[test]
@@ -184,13 +186,14 @@ fn an_incus_failure_other_than_not_found_fails_the_clone() {
 
 #[test]
 fn values_that_could_carry_another_option_are_refused() {
-    let cases: [(&str, Value); 6] = [
+    let cases: [(&str, Value); 7] = [
         ("/name", json!("instance-12 --force")),
         ("/snapshot", json!("next-abc")),
         ("/address", json!("10.253.0.1,eth1")),
         ("/config", json!({"limits.cpu": "4,root,pool=x"})),
         ("/filters", json!({"security.acls": "none"})),
         ("/proxy/listen", json!("tcp:0.0.0.0:22 --x")),
+        ("/routes/0/comment", json!("--force")),
     ];
     for (pointer, value) in cases {
         let mut input = input();
