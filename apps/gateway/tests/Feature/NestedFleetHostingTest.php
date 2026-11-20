@@ -1435,6 +1435,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             // the model environment's frame line, and the files that go in before the first start.
             $expected['clone']['t3']['condition'] = '/etc/orbit/instance';
             $expected['clone']['model_environment']['frame'] = '#orbit-model-environment';
+            // The value an Antigravity instance holds in place of the model key (InstanceContainer::ModelKeyValue).
+            $expected['clone']['model_environment']['key_value'] = InstanceContainer::ModelKeyValue;
             foreach ($expected['clone']['files'] as $index => $file) {
                 $expected['clone']['files'][$index] = ['path' => $file['path'], 'before_start' => true, ...array_diff_key($file, ['path' => true])];
             }

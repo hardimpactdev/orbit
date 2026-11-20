@@ -46,6 +46,38 @@ class PhaseRefusal(AssertionError):
         self.evidence = evidence
 
 
+# The same settings rule as instance_clone.py's: the guest runs alone in the copy and imports nothing of it.
+# What the Conn Server leaves in its settings file in place of a secret it moved into its own store.
+IMPORTED_SECRET = "\u2022" * 6
+
+
+def deep_merge(held, orbit):
+    """Orbit's JSON settings over the held ones, object by object: an entry Orbit does not name, such as a provider instance of
+    the agent's own, stays; Orbit's value wins at each leaf and list."""
+    if not isinstance(held, dict) or not isinstance(orbit, dict):
+        return orbit
+    return held | {name: deep_merge(held.get(name), value) for name, value in orbit.items()}
+
+
+def with_model_key(settings, value, key):
+    """The JSON settings with each string equal to `value` replaced by `key`. A Gateway that names no value leaves them as they are."""
+    if isinstance(settings, dict):
+        return {name: with_model_key(item, value, key) for name, item in settings.items()}
+    if isinstance(settings, list):
+        return [with_model_key(item, value, key) for item in settings]
+    return key if value is not None and settings == value else settings
+
+
+def merged_settings(held, orbit, value, key):
+    """The settings to write, or None when the held ones already hold Orbit's: with the placeholder model key where the intent
+    holds `value`, or with the Conn Server's mark of a key it already moved into its store. A value with no key in the model
+    environment refuses the create (docs/reference/development-containers.md#antigravity)."""
+    if value is not None and with_model_key(orbit, value, None) != orbit and not key:
+        raise RuntimeError("instance.clone_t3_files_refused")
+    merged = deep_merge(held, with_model_key(orbit, value, key))
+    return None if held in (merged, deep_merge(held, with_model_key(orbit, value, IMPORTED_SECRET))) else merged
+
+
 def process_failure(unit, state):
     """Public classes and exit facts only; a Process journal can contain arbitrary secrets."""
     classes = {
@@ -599,16 +631,21 @@ def phase_main(phase, raw):
         # The container phase wrote the model environment before the copy's first start; the agent part only finds it.
         if not root(c["clone"]["model_environment"]["path"]).is_file():
             raise RuntimeError("model environment missing")
+        # A JSON setting holds the model environment's `key_value` where the placeholder model key goes: the key comes from the
+        # copy's own model environment, which only the vault's copy wrote.
+        model = root(c["clone"]["model_environment"]["path"]).read_text()
+        key = next((line.partition("=")[2] for line in model.splitlines() if line.startswith("ORBIT_MODEL_KEY=")), None)
+        key_value = c["clone"]["model_environment"].get("key_value")
         for f in c["clone"]["files"]:
             value = f.get("content")
             if "json" in f:
                 p = root(f["path"])
                 old = json.loads(p.read_text()) if p.exists() else {}
-                merged = old | f["json"]
+                merged = merged_settings(old, f["json"], key_value, key)
                 value = (
                     p.read_text()
-                    if p.exists() and merged == old
-                    else json.dumps(merged, separators=(",", ":")) + "\n"
+                    if p.exists() and merged is None
+                    else json.dumps(old if merged is None else merged, separators=(",", ":")) + "\n"
                 )
             write(f["path"], value, f["uid"], f["gid"], f["mode"])
         agent_folder()

@@ -341,10 +341,10 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |
 | `/opt/orbit-runtime/vite-plus/<digest>` | The [Vite+ home](/reference/compute-drivers#the-vite-home) that `vp` runs from, linked as `<version>/vite-plus-home` | Everyone |
 | `/opt/orbit-agent/<version>/agent/bin` | `t3`, `claude`, `codex`, `conn-server`, `chrome-headless-shell` ([Container server](#container-server)) and `agent-browser` ([agent-browser](#agent-browser)) | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
-| `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,agent-browser,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
+| `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,agent-browser,claude-code,codex,antigravity}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, the Chrome headless shell, agent-browser, Claude Code and Codex.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, the Chrome headless shell, agent-browser, Claude Code, Codex and Antigravity. Antigravity's part `antigravity` is the release tarball `agy_cli_linux_x64.tar.gz` of `google-antigravity/antigravity-cli`, which holds one file, `antigravity`; its `bin` names it `agy`.
 
 The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge, the static PHP builds and the same pinned Chrome headless shell for [production containers](/reference/production-containers#host-paths), which have no agent folder. The recipe requires the two Chrome parts to be one pin, so a Node downloads it once. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
@@ -362,7 +362,7 @@ For the agent folder, Orbit then restarts T3 in each running container, one afte
 
 A running process runs only what existed when it started. So a new version that only adds files restarts nothing, such as the [browser libraries and fonts](#browser-libraries-and-fonts) or a new program. The converge compares the version in use with the new one and does not follow links. It restarts only when a file, link or mode of the version in use changed or went.
 
-The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, and `check_for_update_on_startup = false` in the image's Codex configuration. The T3 server has no self-updater; it runs from the read-only folder.
+The CLI self-updaters are off: `DISABLE_AUTOUPDATER=1` in the T3 unit, which Claude Code inherits, `check_for_update_on_startup = false` in the image's Codex configuration, and `AGY_CLI_DISABLE_AUTO_UPDATE=true` in the Conn Server's drop-in, which the Conn Server hands to `agy`. `agy` 1.5.4 reads only `true` there: `1` still starts its updater. The Node converge rewrites the drop-in, so existing Conn containers get it too. The T3 server has no self-updater; it runs from the read-only folder.
 
 The OS packages of the image change rarely. The Node's patch run of ADR 0250 upgrades them in each running container from the Node; a sleeping container gets the upgrade when it next wakes.
 
@@ -969,6 +969,23 @@ A clone needs neither Conn enabled nor ai-router configured. Its container run s
 Clone create and migration of a non-default Instance record the model route at admission. The Operation result includes `model_route: {"ready": true}` when ready, or `model_route: {"ready": false, "error_code": "ai_router.disabled", "message": "…"}` when unavailable; a missing guard reports `ai_router.guard_missing`. T3 runs without a ready route but cannot reach a model. Human output from `instance:create`, `instance:migrate` and `operation:show` prints one line with the reason. The result is the admission snapshot, not a live routing check.
 
 A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
+
+### Antigravity
+
+In a container whose server is the [Conn Server](#container-server), Antigravity (`agy`) runs too. Its provider instance `antigravity` in T3's `settings.json` is enabled, with `authMethod` `gemini-api-key` and the placeholder key as `apiKey`. The intent holds only the value `#orbit-model-key` in the key's place, named as the model environment's `key_value`.
+
+Every writer of the settings follows one rule: the copy step before the first start, the guest's agent part and the Ansible agent part.
+
+- Orbit's settings merge into the held ones object by object. A provider instance of the agent's own stays.
+- The vault's `ORBIT_MODEL_KEY` goes in place of `key_value`. A model environment without it fails the write, so the value never reaches the file.
+- Held settings that already match stay as they are.
+- So does `••••••` in the key's place: the Conn Server's mark of a key it moved into its own store.
+
+The Conn Server hands the key to `agy` as `GEMINI_API_KEY`. Only the Conn Server's `model.env` holds `GOOGLE_GEMINI_BASE_URL`, the same forwarder origin as `ANTHROPIC_BASE_URL`. So `agy` calls `/v1beta/models/<model>:streamGenerateContent` there, with the key in `X-Goog-Api-Key`.
+
+A container with stock T3 gets neither the instance nor the variable. Stock T3 0.1.7 has its own Antigravity driver, which would send a personal key to the forwarder. Only a new clone gets the instance and the variable, because the Node converge rewrites neither `model.env` nor `settings.json` in an existing container.
+
+The `instance.create` engine path puts the key into the settings in the Gateway, in the blob that holds the model environment too. The Node agent's prepare step still replaces each top-level key whole, so it must merge as above before that path is enabled.
 
 ### The copy key
 

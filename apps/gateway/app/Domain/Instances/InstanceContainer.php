@@ -68,7 +68,7 @@ final readonly class InstanceContainer
     /** The file whose presence starts T3: the Instance, its Project and its URL. */
     public const string InstanceFile = '/etc/orbit/instance';
 
-    /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
+    /** The placeholder model key and the model origin, which T3's unit hands to Claude Code, Codex and Antigravity. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
 
     /**
@@ -87,6 +87,13 @@ final readonly class InstanceContainer
      * starts T3 (docs/reference/development-containers.md#t3-starts-with-the-copy). Git's credential store skips the line and the rest.
      */
     public const string ModelEnvironmentFrame = '#orbit-model-environment';
+
+    /**
+     * The value in a JSON setting that its writers replace with the placeholder model key, `ORBIT_MODEL_KEY` of the model environment
+     * they get through the vault: the clone script before a copy's first start and the agent part. The intent holds only this value,
+     * as the model environment's `key_value`.
+     */
+    public const string ModelKeyValue = '#orbit-model-key';
 
     /** The runtime's Node.js in a container, which runs Orbit's T3 RPC helper of a task copy's turn. */
     public const string Node = InstanceHostIntent::RuntimeFolder.'/current/bin/node';
@@ -457,7 +464,9 @@ final readonly class InstanceContainer
     }
 
     /**
-     * The placeholder model key and the model origin for T3's unit, which hands them to Claude Code and Codex. It goes to the run
+     * The placeholder model key and the model origin for T3's unit, which hands them to Claude Code and Codex. The Conn Server also
+     * gets the origin as Antigravity's Gemini endpoint and hands Antigravity the key from its provider instance; stock T3 gets no such
+     * endpoint, as its own Antigravity driver would send a personal key there. It goes to the run
      * through the vault: the key is fixed, but it is still a key. A task copy also gets a new copy key and the origin of its Orbit
      * routes on the same forwarder (docs/reference/development-containers.md#the-copy-key); writing it replaces the copy's older key.
      */
@@ -468,7 +477,9 @@ final readonly class InstanceContainer
         $copy = Instance::query()->whereKey($runtime->instance_id)->value('task_workspace_owner_id') === null ? ''
             : 'ORBIT_COPY_KEY='.TaskKey::mint($runtime)."\nORBIT_COPY_API={$origin}".TaskKey::Path."\n";
 
-        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\nORBIT_MODEL_KEY={$key}\n{$copy}"
+        $gemini = $runtime->container_server === ContainerServer::Conn ? "GOOGLE_GEMINI_BASE_URL={$origin}\n" : '';
+
+        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\n{$gemini}ORBIT_MODEL_KEY={$key}\n{$copy}"
             ."CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nDISABLE_TELEMETRY=1\nDISABLE_ERROR_REPORTING=1\n";
     }
 
@@ -497,6 +508,8 @@ final readonly class InstanceContainer
         $codex = "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\n"
             ."base_url = \"http://{$gateway}:".InstanceHostIntent::ModelForwarderPort."/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\n"
             ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
+        $providers = [...($instance->task_workspace_owner_id === null ? [] : [...self::claudeInstances(), ...self::codexInstances()]),
+            ...($runtime->server() === ContainerServer::Conn ? self::antigravityInstance() : [])];
 
         return [
             // The seed of the copy's own Node (TaskStart::seed): the default's pair on its Node, else that Node's seed holder. A new
@@ -513,7 +526,8 @@ final readonly class InstanceContainer
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => $runtime->server()->program(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
-            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame],
+            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame,
+                'key_value' => self::ModelKeyValue],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
             // `proxy-files`): the composed one, with the copy's private names and a nested fleet's inner fleet. A copy of a default with a
             // Node service elsewhere gets it even at the base, so that host goes. Absent, the seed's drop-ins stay.
@@ -533,9 +547,10 @@ final readonly class InstanceContainer
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
-                // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
+                // A task copy's turns pick their effort through these instances: stock T3's CLI takes none. Only the Conn Server has
+                // the Antigravity driver.
                 ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
-                    ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => [...self::claudeInstances(), ...self::codexInstances()]])]],
+                    ...($providers === [] ? [] : ['providerInstances' => $providers])]],
                 // No default dependencies, and the runtime's recorded server; the Node converge keeps both current (t3DropIns).
                 ...array_map(static fn (array $file): array => ['path' => $file['path'], 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'],
                     'content' => $file['content']], self::t3DropIns($runtime, $this->folders())),
@@ -606,6 +621,31 @@ final readonly class InstanceContainer
     {
         return array_combine(array_map(static fn (string $effort): string => self::providerInstance('codex', $effort), self::CodexEfforts),
             array_map(static fn (string $effort): array => ['driver' => 'codex', 'displayName' => 'Codex, '.$effort.' effort'], self::CodexEfforts));
+    }
+
+    /**
+     * JSON settings with the placeholder model key in place of each self::ModelKeyValue, for a writer that gets the key with them.
+     *
+     * @param  array<array-key, mixed>  $settings
+     * @return array<array-key, mixed>
+     */
+    public static function withModelKey(array $settings, string $key): array
+    {
+        return array_map(static fn (mixed $value): mixed => is_array($value) ? self::withModelKey($value, $key)
+            : ($value === self::ModelKeyValue ? $key : $value), $settings);
+    }
+
+    /**
+     * The Conn Server's Antigravity instance: `agy` with the placeholder model key as its Gemini API key, which the writers put in place
+     * of self::ModelKeyValue. Conn moves the key into its own secret store and hands it to `agy` as `GEMINI_API_KEY`; the model
+     * environment's `GOOGLE_GEMINI_BASE_URL` sends its calls to the forwarder.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function antigravityInstance(): array
+    {
+        return ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
+            'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => self::ModelKeyValue]]];
     }
 
     /**

@@ -3112,6 +3112,10 @@ cases:
     libc6:i386: [2.42-0ubuntu2]
     tzdata: [2025b]
 non_command_output:
+- file: tasks/instance-container-phase.yml
+  task: Merge Orbit's changed JSON settings
+  field: vars.model_key
+  reason: Takes the value of `ORBIT_MODEL_KEY=` from the model environment the vault hands the run as a variable; it parses no command output.
 - file: tasks/node-role-runtime.yml
   task: Refresh the system roots
   field: when

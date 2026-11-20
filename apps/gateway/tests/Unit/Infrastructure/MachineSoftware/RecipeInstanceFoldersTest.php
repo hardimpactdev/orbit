@@ -31,11 +31,16 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
         ->and($recipe->instances->vitePlus?->part)->toBe('vite-plus')
         ->and($recipe->instances->vitePlus?->vp)->toBe($recipe->tools['vp'])
         ->and($recipe->instances->vitePlus?->node)->toBe($node->version)
-        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
+        ->and(array_keys($recipe->instances->agent))->toBe(['t3', 'claude-code', 'codex', 'antigravity', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
         ->and($recipe->instances->runtime['node']->artifact)->toBe($node->artifacts['amd64'])
         ->and($recipe->instances->runtime['node']->version)->toBe($node->version)
         ->and($recipe->instances->agent['claude-code']->artifact->algorithm)->toBe('sha512')
         ->and($recipe->instances->agent['codex']->bin)->toBe(['codex' => 'package/vendor/x86_64-unknown-linux-musl/bin/codex'])
+        // The release tarball holds the one CLI binary, `antigravity`; containers call it `agy`.
+        ->and($recipe->instances->agent['antigravity']->artifact->location)->toBe('https://github.com/google-antigravity/antigravity-cli/releases/download/'
+            .$recipe->instances->agent['antigravity']->version.'/agy_cli_linux_x64.tar.gz')
+        ->and($recipe->instances->agent['antigravity']->artifact->algorithm)->toBe('sha256')
+        ->and($recipe->instances->agent['antigravity']->bin)->toBe(['agy' => 'antigravity'])
         ->and($recipe->instances->agent['conn-server']->artifact->location)->toStartWith('https://github.com/nckrtl/conn/releases/download/conn-server-v'.$recipe->instances->agent['conn-server']->version.'/')
         ->and($recipe->instances->agent['conn-server']->bin)->toBe(['conn-server' => 'conn-server-'.$recipe->instances->agent['conn-server']->version.'-linux-x64/conn-server']);
 });
