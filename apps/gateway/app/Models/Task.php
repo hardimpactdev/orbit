@@ -141,6 +141,7 @@ use LogicException;
  * @property string|null $fixup_head_sha
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
+ * @property bool $handoffs_gated whether the handoff gates hold for this group: it left backlog after they shipped ([Handoffs](/reference/tasks#handoffs))
  * @property CarbonImmutable|null $ready_at
  * @property CarbonImmutable|null $ended_at
  * @property CarbonImmutable|null $merged_at
@@ -285,6 +286,7 @@ final class Task extends Model
         'copy_correction_check_id',
         'deliverable_correction_resume',
         'settled_at',
+        'handoffs_gated',
         'completion_attempt',
         'completion_handoff_comment_id',
         'completion_reminder_attempt',
@@ -655,6 +657,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
+            'handoffs_gated' => 'boolean',
             'current_recipe' => 'boolean',
             'review_mode' => TaskReviewMode::class,
             'pr_mode' => TaskPrMode::class,

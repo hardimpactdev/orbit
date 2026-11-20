@@ -457,6 +457,37 @@ Deno.test("a passed check lists each deliverable passed and ends PASSED", async 
     assertEquals("output" in plain && plain.output, "fine\nTask check PASSED");
 });
 
+Deno.test("a check keeps the part table of the receipt its Project check wrote, and none without one", async () => {
+    const parts = [
+        { name: "ci-plan", result: "passed", seconds: 0.5 },
+        { name: "pest apps/gateway", result: "FAILED", seconds: 41.2 },
+    ];
+    const value = await localResult(
+        { ...input, command: "exit 1" },
+        valid,
+        {
+            ...snapshots(),
+            project: ran(1),
+            parts: ran(0, JSON.stringify({ commit, parts })),
+        },
+        outputs({ project: "failed" }),
+    );
+    assertEquals("parts" in value && value.parts, parts);
+    for (const receipt of [undefined, "not json", '{"parts": [{"name": 1}]}']) {
+        const none = await localResult(
+            { ...input, command: "true" },
+            valid,
+            {
+                ...snapshots(),
+                project: ran(0),
+                ...(receipt === undefined ? {} : { parts: ran(0, receipt) }),
+            },
+            outputs({ project: "fine" }),
+        );
+        assertEquals("parts" in none && none.parts, null);
+    }
+});
+
 Deno.test("a long Project output gives way to the deliverables block and the outcome line", async () => {
     const value = await deliverablesChecked(
         "older line\n".repeat(2048) + "Task check PASSED\n",
@@ -833,6 +864,15 @@ Deno.test("a copy's handoff check states its base, and a check without one state
             },
         }),
         { base: "current", default_commit: head, merged_default: null },
+    );
+    // The head the implementer handed off, before the base-merge, is the commit its delivery receipt must name.
+    assertEquals(
+        baseFields({
+            requested: true,
+            status: "succeeded",
+            merge: { head: commit, default_commit: head, merged_default: head, changed: true },
+        }),
+        { handed_off: commit, base: "current", default_commit: head, merged_default: head },
     );
     // A conflict keeps its bounded paths in the result.
     assertEquals(

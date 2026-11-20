@@ -101,6 +101,9 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
                 if ($projected->status === OperationStatus::Succeeded && ($result['outcome'] ?? null) === 'passed' && ($operation->input['phase'] ?? null) === TaskCheckKind::Handoff->value) {
                     self::recordMode(ValidatedData::integer($operation->input['check_id']), $operation->target_id);
                 }
+                if (! $pending && $projected->status !== OperationStatus::Cancelled) {
+                    TaskHandoffs::delivery($projected, $result, $projected->status === OperationStatus::Succeeded && ($result['outcome'] ?? null) === 'passed');
+                }
                 if (is_string($result['subtask_start_commit'] ?? null)) {
                     Task::query()->whereKey($operation->input['subtask'])->whereNull('subtask_start_commit')->update(['subtask_start_commit' => $result['subtask_start_commit']]);
                 }
@@ -149,7 +152,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
             'head_after' => $result['head'] ?? null, 'tree_after' => $result['tree'] ?? null,
             'exit_code' => $result['exit_code'] ?? null, 'changed_paths' => $result['changed_paths'] ?? [],
             'output' => $result['output'] ?? '', 'failed_step' => $result['failed_step'] ?? null,
-            'deliverable_evidence' => $result['evidence'] ?? null, 'commit_sha' => $result['commit'] ?? null,
+            'deliverable_evidence' => $result['evidence'] ?? null, 'parts' => is_array($result['parts'] ?? null) ? $result['parts'] : null, 'commit_sha' => $result['commit'] ?? null,
             'pushed_at' => $ci['pushed_at'] ?? null, 'finished_at' => $pending ? null : now(),
         ]);
     }

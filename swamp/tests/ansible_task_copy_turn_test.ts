@@ -108,6 +108,11 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
     else:
         assert git in (['checkout', '--quiet', '--detach', 'c' * 40], ['reset', '--quiet', '--hard'], ['clean', '--quiet', '-fd'], ['checkout', '--quiet', 'task-4970']), git
     sys.exit(0)
+# The handoff receipt the turn left: T3_RECEIPT_DELIVERY and T3_RECEIPT_REVIEW hold its text; the phase reads it once and removes it.
+if rest[:4] == ['/usr/bin/timeout', '20', '/bin/sh', '-c']:
+    assert rest[5:6] == ['sh'] and rest[6] in ('delivery', 'review') and 'rm -f -- "$f"' in rest[4], rest
+    print(os.environ.get('T3_RECEIPT_' + rest[6].upper(), ''), end='')
+    sys.exit(0)
 if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     catalog = os.environ.get('T3_CATALOG', 'cached')
     if rest[3] == '/home/agent/.t3/userdata/settings.json':
@@ -289,7 +294,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
 Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back", ignore: !available, async fn() {
     const done = await phase("completed");
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 7);
+    assertEquals(done.calls.length, 9);
     // The new thread is made first with its title, instance, model and model options; its first turn is a send to it.
     const create = done.calls[3];
     assertEquals(create.args.slice(20), ["create", turn.title, "claudeMedium", "claude-opus-5-5", "[]"]);
@@ -304,11 +309,22 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
     assertEquals(done.output.includes("Subtask: Doctor note"), false);
 } });
 
+Deno.test({ name: "a turn reads and removes the handoff receipts it left, and returns their text", ignore: !available, async fn() {
+    const delivery = JSON.stringify({ commit: "a".repeat(40), parts: [{ name: "pest", result: "passed", seconds: 1.5 }] });
+    const done = await phase("completed", {}, "clean", "questions", "", { T3_RECEIPT_DELIVERY: delivery });
+    assert(done.ok, done.output);
+    // One read-and-remove per receipt type, in the copy as agent, after the turn.
+    assertEquals(done.calls.slice(-2).map((call) => call.args.slice(15, 19).concat(call.args.slice(20))),
+        [["/usr/bin/timeout", "20", "/bin/sh", "-c", "sh", "delivery"], ["/usr/bin/timeout", "20", "/bin/sh", "-c", "sh", "review"]]);
+    assertEquals(done.result.receipts, { delivery, review: null });
+    // The phase never prints the receipt.
+    assertEquals(done.output.includes(delivery), false);
+} });
 Deno.test({ name: "a continued turn finds its thread by title and sends the prompt to it, with no model and no title", ignore: !available, async fn() {
     // An intent admitted before answered was added omits it; JSON serialization drops undefined.
     const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-5-5", answered: undefined });
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 5);
+    assertEquals(done.calls.length, 7);
     assertEquals(done.calls[1].args.slice(18), ["thread", "list", "--project", "/srv/workspace", "--json"]);
     assertEquals([done.calls[2].args.slice(19), done.calls[2].stdin], [["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"], turn.prompt]);
     assertEquals([done.resumed, done.launched, JSON.parse(done.start!.start as string).status, done.read!.found], [{ list_exit: 0, found: 1 }, true, "completed", 1]);
@@ -387,7 +403,7 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 6]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 8]);
     // T3 refuses a start on stderr only; the evidence keeps it.
     assertEquals(refused.start!.error, 'Provider instance "claudeMedium" is disabled for project p.');
     // A copy the phase cannot reach launches nothing, so no turn can hold its group.
@@ -447,7 +463,7 @@ Deno.test({ name: "a thread list that is not JSON reads as no thread, and the st
     const garbled = await phase("garbled");
     assert(garbled.ok, garbled.output);
     assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
-        ["completed", null, 0, null, 6]);
+        ["completed", null, 0, null, 8]);
 } });
 
 Deno.test({ name: "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start", ignore: !available, async fn() {

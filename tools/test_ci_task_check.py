@@ -465,6 +465,29 @@ class StartCommitTest(unittest.TestCase):
         self.assertEqual(check['changes'](self.repo, first), (True, first, first, ['seed', 'work']))
 
 
+class ReceiptTest(unittest.TestCase):
+    setUp, git, commit = StartCommitTest.setUp, StartCommitTest.git, StartCommitTest.commit
+
+    def receipt(self):
+        path = Path(self.git('rev-parse', '--path-format=absolute', '--git-path', 'orbit-handoff/delivery.json'))
+        self.assertIn('.git', path.parts)
+        return json.loads(path.read_text())
+
+    def test_the_receipt_names_the_checked_commit_and_each_part(self):
+        head = self.commit('first')
+        check['write_receipt'](self.repo, head, [Part('ci-plan', 'passed', 0.52), Part('pest', 'FAILED', 12.04, 'exit 1')])
+        self.assertEqual(self.receipt(), {'commit': head, 'parts': [{'name': 'ci-plan', 'result': 'passed', 'seconds': 0.5},
+                                                                    {'name': 'pest', 'result': 'FAILED', 'seconds': 12.0}]})
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_a_run_that_stops_early_still_writes_its_receipt(self):
+        self.git('checkout', '--quiet', '--orphan', 'task')
+        head = self.commit('first')
+        with patch.dict(check['main'].__globals__, {'ROOT': self.repo}), redirect_stdout(io.StringIO()):
+            self.assertEqual(check['main']([]), 1)
+        self.assertEqual(self.receipt(), {'commit': head, 'parts': [{'name': 'start-commit', 'result': 'FAILED', 'seconds': 0.0}]})
+
+
 class ReportTest(unittest.TestCase):
     def test_one_line_per_part_then_the_result(self):
         parts = [Part('ci-plan', 'passed', 0.52, 'jobs: docs'),

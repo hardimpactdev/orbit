@@ -763,3 +763,32 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        # The receipts the turn left under the Git directory (docs/reference/tasks.md#handoffs): each is read once and removed, so a
+        # receipt never counts for two turns. A link or a file over 64 KiB is removed unread; the Gateway validates what was read.
+        - name: Read and remove the handoff receipts
+          ansible.builtin.command:
+            argv: >-
+              {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
+                 'f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$1.json") || exit 0;
+                  if [ -f "$f" ] && [ ! -L "$f" ] && [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; fi; rm -f -- "$f"',
+                 'sh', item] }}
+          loop: [delivery, review]
+          register: handoff_receipts
+          changed_when: true
+          failed_when: false
+          no_log: true
+        - name: Write the handoff receipts
+          ansible.builtin.copy:
+            content: >-
+              {{ dict(handoff_receipts.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
+                 | selectattr('stdout', 'ne', '') | map(attribute='item')
+                 | zip(handoff_receipts.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
+                       | selectattr('stdout', 'ne', '') | map(attribute='stdout'))) | to_json }}
+            dest: "{{ run }}/receipts.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"

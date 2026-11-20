@@ -77,6 +77,25 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(self.git('rev-parse', 'HEAD'), first['commit'])
         self.assertEqual(json.loads(finish['result_json']), second)
 
+    def test_the_check_keeps_the_part_table_of_its_own_receipt_and_removes_every_receipt(self):
+        # A receipt the implementer's turn left is never this check's: the check removes it before its command.
+        receipt = self.checkout / '.git/orbit-handoff/delivery.json'
+        receipt.parent.mkdir()
+        receipt.write_text('{"commit": "stale", "parts": [{"name": "stale", "result": "passed", "seconds": 1}]}')
+        parts = [{'name': 'ci-plan', 'result': 'passed', 'seconds': 0.5}, {'name': 'pest', 'result': 'FAILED', 'seconds': 3.1}]
+        self.check['command'] = ('f=$(git rev-parse --path-format=absolute --git-path orbit-handoff/delivery.json) && '
+                                 + "printf '%s' " + repr(json.dumps({'commit': self.base, 'parts': parts})) + ' > "$f"')
+        _, local = self.checked()
+        self.assertEqual(local['parts'], parts, local)
+        self.assertFalse(receipt.exists())
+        # A command that writes none leaves no part table, and a stale receipt is gone all the same.
+        receipt.write_text('{"commit": "stale", "parts": []}')
+        self.check['command'] = 'true'
+        self.steps = {}
+        _, local = self.checked()
+        self.assertIsNone(local['parts'], local)
+        self.assertFalse(receipt.exists())
+
     def test_failed_setup_keeps_output_skips_the_check_and_commits_nothing(self):
         self.check.update({'phase': 'baseline', 'base': '', 'deliverables': [], 'command_deliverables': [],
                            'setup': [{'name': 'install', 'command': "echo 'dependency missing'; exit 4", 'timeout_seconds': 60}]})

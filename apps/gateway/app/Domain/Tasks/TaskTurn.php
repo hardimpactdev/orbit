@@ -103,6 +103,8 @@ final readonly class TaskTurn
             if (! $check instanceof TaskCheck || ! $owner instanceof Operation || ! $this->candidates->eligible($group, $check)) {
                 throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
             }
+            // The delivery gate (docs/reference/tasks.md#handoffs): only an accepted delivery for this check is reviewed.
+            TaskHandoffs::requireDelivery($group, $task, $check);
             $candidate = (string) $check->commit_sha;
             $review = TaskTurnReview::of($group, $task, $check, $owner);
         }

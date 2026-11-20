@@ -1165,6 +1165,39 @@ A Project without a GitHub repository or a valid default branch brings in no bas
 
 The result names `default_commit`, the head the check judged against, and `merged_default`, the head it merged or null, so the driver and the reviewer see the base. `base` is `current` when the head was brought in. Only the copy's own workflow changes refuse at publish: the default branch's workflow changes that this merge brings in are never the copy's ([The base of a copy publish](#the-base-of-a-copy-publish)). A baseline check brings in no base.
 
+### Handoffs
+
+A handoff is the end of one agent run in a copy, where the agent gives control back to the loop. Its type is `delivery` (the implementer), `review` (the reviewer) or `question` (any agent). A receipt is the JSON that a handoff leaves under the copy's Git directory, so it is never committed. The Gateway checks each handoff at its gate and writes one row to `task_handoffs` once the gate has finished: the subtask, the copy turn Operation, `type`, `receipt`, `rejected`, `rejection_reason` (empty unless rejected), `task_check_id` for a delivery, and `created_at`. A row that is not rejected was checked and accepted. A rejected receipt never fails an Operation: the caller sends the turn again.
+
+The gates hold only for a group that leaves backlog after they shipped; the group records it in `handoffs_gated`. A group that was already running finishes without them.
+
+#### The delivery receipt
+
+`bin/task-check` writes the delivery receipt at the end of every run to `$(git rev-parse --git-path orbit-handoff/delivery.json)`: the commit it checked, and each part with its name, its result and its seconds.
+
+```json
+{"commit": "<sha>", "parts": [{"name": "pest apps/gateway", "result": "passed", "seconds": 41.2}]}
+```
+
+At the end of every copy turn, the turn phase reads `orbit-handoff/delivery.json` and `orbit-handoff/review.json`, removes them, and returns their redacted text in the turn result as `receipts.delivery` and `receipts.review`, or null. A receipt never counts for two turns. A link, or a file over 64 KiB, is removed unread.
+
+#### The delivery gate
+
+The handoff check is the delivery gate. It removes any receipt before the Project check runs, then stores the part table of the receipt that its own run wrote as the check's `parts`, and removes that receipt too. When the check ends, other than cancelled, the Gateway writes a delivery row for the subtask's last finished implementer turn before it. It compares the receipt with the commit that the implementer handed off: HEAD before the check [merged main](#the-handoff-check-merges-main-first), which the result names as `handed_off`, else HEAD when the check started.
+
+| Result | When |
+| --- | --- |
+| Accepted | The turn left a receipt for the handed-off commit with no failed part, and the check passed |
+| `no_receipt` | The turn left no receipt, or one that is not a commit and a list of parts |
+| `other_commit` | The receipt names another commit, such as one of uncommitted work |
+| `failed_part` | The receipt shows a failed part |
+| `claim_disproved` | A part the receipt shows passed failed in the check |
+| `check_failed` | The check failed, `tasks.check_conflict` included |
+
+A merge-main implementer turn after `tasks.check_conflict` stays allowed: that check wrote a rejected delivery row.
+
+A reviewer turn requires the subtask's latest delivery row to be accepted for the check under review. Otherwise the turn is refused with `tasks.handoff_required` (409): the implementer hands off again and the handoff check runs.
+
 ### Workspace ownership
 
 When provisioning creates the workspace, it records the task as the workspace's owner, before any remote work. An owner is set only when the Instance is created: the database refuses any new owner afterwards. Deleting the task clears it. A task owns at most one Instance.
@@ -1374,6 +1407,8 @@ Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#
 - `Task check summary`, then one line per part with its outcome, its seconds and its detail.
 - For each failed part, `Last lines of <part>:` and the newest lines of its output. The failed parts share the bytes that the other summary lines leave.
 - The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
+
+Next to the output, a check stores its part table as `parts`: each part's name, result and seconds, from the delivery receipt of its run ([The delivery gate](#the-delivery-gate)). It is null when the Project check wrote no receipt.
 
 Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
 

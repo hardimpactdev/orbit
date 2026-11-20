@@ -51,6 +51,8 @@ final readonly class CreateTaskGroupAction
             'title' => $data->title,
             'brief' => $data->brief,
             'status' => $data->status,
+            // A group created out of backlog runs with the handoff gates (docs/reference/tasks.md#handoffs).
+            'handoffs_gated' => $data->status !== TaskGroupStatus::Backlog,
             'preview' => $data->preview,
             'current_recipe' => $data->currentRecipe,
             ...TaskAgent::groupColumns($data->agents),

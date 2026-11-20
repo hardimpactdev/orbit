@@ -253,6 +253,27 @@ Deno.test("transcript text is redacted and bounded to the newest entries", () =>
     assertEquals(new TextEncoder().encode(JSON.stringify(bounded.transcript)).length < 262144 + 1024, true);
 });
 
+Deno.test("the turn returns the handoff receipts that its phase read and removed, and null for one it did not leave", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    Deno.mkdirSync(folder);
+    try {
+        const context = { writeResource: () => Promise.resolve(undefined) };
+        const none = await behavior.methods.result.execute({ folder }, context);
+        assertEquals(none.turn.receipts, { delivery: null, review: null });
+        const delivery = JSON.stringify({ commit: "a".repeat(40), parts: [{ name: "pest", result: "passed", seconds: 1.5 }] });
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ delivery }));
+        const left = await behavior.methods.result.execute({ folder }, context);
+        assertEquals(left.turn.receipts, { delivery, review: null });
+        // A receipt is agent text: it is redacted like the reply.
+        const secret = "ghp_" + "a1B2".repeat(9);
+        Deno.writeTextFileSync(`${folder}/receipts.json`, JSON.stringify({ review: `{"verdict": "${secret}"}` }));
+        const redacted = await behavior.methods.result.execute({ folder }, context);
+        assertEquals(redacted.turn.receipts?.review?.includes(secret), false);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});
+
 Deno.test("the method reads each evidence file on its own, so an oversized read keeps the start's end", async () => {
     const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
     Deno.mkdirSync(folder);

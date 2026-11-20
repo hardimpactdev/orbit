@@ -134,8 +134,12 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
+    // The handoff receipts the turn left under the Git directory, as text, redacted; the phase removed them, and the Gateway validates
+    // them (docs/reference/tasks.md#handoffs). Null for a receipt the turn did not leave.
+    receipts: z.object({ delivery: z.string().nullable(), review: z.string().nullable() }).strict().optional(),
 });
 export type Turn = z.infer<typeof Turn>;
+const Receipts = z.object({ delivery: z.string().optional(), review: z.string().optional() }).strict();
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -363,7 +367,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.18.1",
+    version: "2026.11.20.1",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -386,6 +390,11 @@ export const behavior = {
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
                 }));
+                const left = await evidence(args.folder + "/receipts.json", 2 * 65536 * 6 + 1024, Receipts);
+                turn.receipts = {
+                    delivery: left?.delivery === undefined ? null : redactText(left.delivery),
+                    review: left?.review === undefined ? null : redactText(left.review),
+                };
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };
                 await ctx.writeResource("result", "result", result);

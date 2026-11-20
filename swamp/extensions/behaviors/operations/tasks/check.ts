@@ -51,6 +51,12 @@ const Evidence = z.object({
         }).passthrough(),
     ),
 });
+/** One part of `bin/task-check` as its delivery receipt names it (docs/reference/tasks.md#handoffs). */
+export const CheckPart = z.object({
+    name: z.string(),
+    result: z.string(),
+    seconds: z.number(),
+}).strict();
 export const Local = z.object({
     outcome: z.enum(["passed", "failed", "changed"]),
     exit_code: z.number().int(),
@@ -63,6 +69,8 @@ export const Local = z.object({
     failed_step: z.string().nullable(),
     evidence: Evidence.nullable(),
     subtask_start_commit: Sha,
+    // The part table of the Project check's delivery receipt; null when its command wrote none.
+    parts: z.array(CheckPart).nullable().optional(),
 });
 export type CheckIntent = z.infer<typeof CheckInput>;
 export type LocalCheck = z.infer<typeof Local>;

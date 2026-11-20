@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     CheckInput,
+    CheckPart,
     classifyCi,
     deliverableResults,
     Local,
@@ -243,6 +244,19 @@ function stepRefusal(input: Input, steps: Steps): string | null {
 }
 
 /**
+ * The part table of the delivery receipt that the Project check wrote and the guest read and removed: each part's name, result and
+ * seconds; null without a receipt or with one of another shape.
+ */
+export function receiptParts(text: string | undefined) {
+    try {
+        const receipt = z.object({ parts: z.array(CheckPart) }).safeParse(JSON.parse(text ?? ""));
+        return receipt.success ? receipt.data.parts : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * The local check evidence. `outputs` is the private worker directory that
  * holds the downloaded command output files; each is deleted after it is read.
  */
@@ -331,6 +345,7 @@ export async function localResult(
             : null,
         subtask_start_commit: input.base ||
             (run(steps, "original").stdout ?? "").trim(),
+        parts: receiptParts(run(steps, "parts").stdout),
     });
     const deliverables = deliverableResults(input, local);
     const failed = local.outcome === "passed"
@@ -579,6 +594,8 @@ export function baseFields(
     }
     const merge = ObjectValue.parse(base.merge ?? {});
     const fields = {
+        // The commit the implementer handed off: HEAD before the base-merge (docs/reference/tasks.md#handoffs).
+        ...(typeof merge.head === "string" ? { handed_off: merge.head } : {}),
         base: "current",
         default_commit: typeof merge.default_commit === "string"
             ? merge.default_commit

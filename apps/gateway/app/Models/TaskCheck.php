@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property list<string>|null $changed_paths
  * @property string|null $output
  * @property array<string, mixed>|null $deliverable_evidence
+ * @property list<array{name: string, result: string, seconds: float}>|null $parts each part of `bin/task-check` with its result and seconds ([Handoffs](/reference/tasks#handoffs))
  * @property string|null $commit_sha the handoff commit that CI tests, once Orbit committed it ([Handoff CI](/reference/tasks#handoff-ci))
  * @property Carbon|null $pushed_at when Orbit saw that commit pushed for CI
  * @property Carbon $started_at
@@ -48,7 +49,7 @@ final class TaskCheck extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
-        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
+        'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'parts', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
         'pr_title', 'pr_body', 'pr_text_operation_id',
     ];
 
@@ -70,6 +71,7 @@ final class TaskCheck extends Model
             'exit_code' => 'integer',
             'changed_paths' => 'array',
             'deliverable_evidence' => 'array',
+            'parts' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'pushed_at' => 'datetime',
