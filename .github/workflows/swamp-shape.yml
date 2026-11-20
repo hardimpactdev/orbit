@@ -39,7 +39,8 @@ jobs:
     name: Swamp Ansible and Python lint
     if: ${{ !inputs.changed-only || inputs.shape }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 2
+    # Cold Galaxy installs take 55–90 s before lint; allow setup and cache publication too.
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -50,8 +51,13 @@ jobs:
           python-version: "3.13"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: ~/.cache/orbit-shape-gate
-          key: shape-lint-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
+          path: ~/.cache/orbit-shape-gate/venv-*
+          key: shape-lint-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt') }}
+      # Collections are interpreter-independent; a Python update must not discard them.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/orbit-shape-gate/collections-*
+          key: shape-collections-${{ runner.os }}-${{ hashFiles('swamp/ansible/requirements.yml') }}
       - name: Run the pinned linters
         run: bin/swamp-shape-gate --only lint --strict
 

@@ -69,6 +69,27 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         for output in ('python-version', 'python-path'):
             self.assertIn(f"${{{{ steps.{python['id']}.outputs.{output} }}}}", cache['with']['key'])
 
+    def test_lint_collection_cache_survives_interpreter_and_linter_updates(self):
+        import yaml
+        lint = yaml.safe_load(WORKFLOW)['jobs']['lint']
+        caches = [step['with'] for step in lint['steps'] if step.get('uses', '').startswith('actions/cache@')]
+        tools = next(cache for cache in caches if 'python-version' in cache['key'])
+        collections = next(cache for cache in caches if 'swamp/ansible/requirements.yml' in cache['key'])
+        # Restore the directories the gate actually uses, with no overlapping cache ownership.
+        root = Path('/cache')
+        for directory, owner, other in ((root / gate['venv_name'](), tools, collections),
+                                         (gate['collections_path'](root), collections, tools)):
+            self.assertTrue(directory.match(Path(owner['path']).name))
+            self.assertFalse(directory.match(Path(other['path']).name))
+        self.assertNotIn('steps.python', collections['key'])
+        self.assertNotIn('shape-gate-requirements.txt', collections['key'])
+        self.assertNotIn('swamp/ansible/requirements.yml', tools['key'])
+        self.assertNotIn('restore-keys', collections)
+        # Observed cold setup: up to 90 s Galaxy + 20 s venv + 60 s lint;
+        # retain 30 s for checkout, restore, save and job teardown.
+        self.assertGreaterEqual(lint['timeout-minutes'] * 60, 90 + 20 + 60 + 30)
+        self.assertLessEqual(lint['timeout-minutes'], 4)
+
 
 class PlanTest(unittest.TestCase):
     def test_the_shape_group_runs_ci_s_checks_in_ci_s_order(self):
