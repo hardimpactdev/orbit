@@ -134,13 +134,12 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     let incus = Incus { system };
     let instance = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
     ensure_acl(&incus, &input.acl)?;
-    let (devices, snapshot) = match instance {
-        Some(found) => (found.get("devices").cloned().unwrap_or(Value::Null), None),
-        None => {
-            let snapshot = seed(&incus, &input)?;
-            copy(&incus, &input, &snapshot)?;
-            (Value::Null, Some(snapshot))
-        }
+    let (devices, snapshot) = if let Some(found) = instance {
+        (found.get("devices").cloned().unwrap_or(Value::Null), None)
+    } else {
+        let snapshot = seed(&incus, &input)?;
+        copy(&incus, &input, &snapshot)?;
+        (Value::Null, Some(snapshot))
     };
     if devices.get(&input.proxy.device).is_none() {
         incus.change(&[
