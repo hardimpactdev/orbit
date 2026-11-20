@@ -1056,7 +1056,7 @@ mod tests {
 
         assert_eq!(
             host_data("linux", "x86_64", &fs, Value::Null, Some(true)),
-            json!({"os": "linux", "arch": "x86_64", "instance_bridge": null, "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
+            json!({"os": "linux", "arch": "x86_64", "clock_synchronized": true, "instance_bridge": null, "filesystems": [{"mount": "/", "size": 100, "free": 40, "observed_at": "2026-11-09T00:00:00Z", "stale": true}]})
         );
     }
 
