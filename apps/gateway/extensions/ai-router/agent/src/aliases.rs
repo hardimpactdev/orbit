@@ -15,7 +15,7 @@ pub const CONFIG: &str = ".config/cliproxyapi/config.yaml";
 
 /// Base Gemini names that agy sends, mapped to the tiered ids of the Antigravity pool, as (name, alias).
 /// Every entry forks, so the tiered id stays listed beside its alias.
-pub const ANTIGRAVITY: [(&str, &str); 9] = [
+pub const ANTIGRAVITY: [(&str, &str); 10] = [
     ("gemini-4-argon-high", "gemini-4-argon"),
     ("gemini-4-argon-high", "gemini-3.1-pro"),
     ("gemini-4-argon-high", "gemini-3.1-pro-preview"),
@@ -25,6 +25,7 @@ pub const ANTIGRAVITY: [(&str, &str); 9] = [
     ("gemini-3.8-flash-high", "gemini-3.1-flash-lite-preview"),
     ("gemini-4-carbon-high", "gemini-4-carbon"),
     ("gemini-4-hydrogen-xhigh", "gemini-4-hydrogen"),
+    ("gemini-4-neon-xhigh", "gemini-4-neon"),
 ];
 
 /// CLIProxyAPI v8 reads `oauth.model-alias` when that key is present, and the legacy root key otherwise.
@@ -430,6 +431,7 @@ mod tests {
     - {name: gemini-3.8-flash-high, alias: gemini-3.1-flash-lite-preview, fork: true}
     - {name: gemini-4-carbon-high, alias: gemini-4-carbon, fork: true}
     - {name: gemini-4-hydrogen-xhigh, alias: gemini-4-hydrogen, fork: true}
+    - {name: gemini-4-neon-xhigh, alias: gemini-4-neon, fork: true}
 ";
 
     const ADOPTED: &str = "# operator notes stay
