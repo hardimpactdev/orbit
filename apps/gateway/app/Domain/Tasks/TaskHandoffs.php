@@ -226,7 +226,7 @@ final readonly class TaskHandoffs
     /**
      * The one validator of a review receipt: its raw text as the turn returned it, and the gate's reason. It is valid when it is a JSON
      * object of exactly `verdict` (the raw value `approve` or `changes`) and `findings`, a JSON list of objects of exactly a `summary`
-     * string that is not blank once redacted, with a finding only for `changes`. JSON objects decode as objects, so an object never
+     * string that holds a visible character once redacted and stripped of terminal formatting, with a finding only for `changes`. JSON objects decode as objects, so an object never
      * passes for a list; text that is not valid UTF-8 JSON, such as half a surrogate pair or Swamp's `too large`, is invalid. A valid
      * receipt keeps only its verdict and its summaries, each redacted on its own; a rejected one keeps nothing.
      *
@@ -249,7 +249,8 @@ final readonly class TaskHandoffs
         foreach (is_array($findings) ? $findings : [] as $finding) {
             $summary = $finding instanceof \stdClass && array_keys(get_object_vars($finding)) === ['summary'] && is_string($finding->summary)
                 ? app(LogRedactor::class)->redact($finding->summary, []) : '';
-            if (trim($summary) !== '') {
+            // Terminal formatting is no text: a summary must hold a visible character without it.
+            if (preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', (string) preg_replace('/\e\[[0-?]*[ -\/]*[@-~]/', '', $summary)) === 1) {
                 $summaries[] = ['summary' => $summary];
             }
         }

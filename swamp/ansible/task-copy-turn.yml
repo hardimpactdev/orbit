@@ -803,14 +803,16 @@
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
         # The receipts the turn left under the Git directory (docs/reference/tasks.md#handoffs): each is read once and removed, so a
-        # receipt never counts for two turns. A link or a folder is removed unread, and a file over 64 KiB passes on as `too large`; the
-        # result step validates a delivery receipt field by field, and the Gateway alone a review receipt.
+        # receipt never counts for two turns. A link or a folder is removed unread. A file that is there prints `R` before its text, so
+        # an empty one is still a receipt and only an absent file leaves none; a file over 64 KiB passes on as `too large`, one that is
+        # not UTF-8 as `not utf-8`. The result step validates a delivery receipt field by field, and the Gateway alone a review receipt.
         - name: Read and remove the handoff receipts
           ansible.builtin.command:
             argv: >-
               {{ copy_exec + ['/usr/bin/timeout', '20', '/bin/sh', '-c',
                  'f=$(git -C /srv/workspace rev-parse --path-format=absolute --git-path "orbit-handoff/$1.json") || exit 0;
-                  if [ -f "$f" ] && [ ! -L "$f" ]; then if [ "$(wc -c < "$f")" -le 65536 ]; then cat -- "$f"; else printf "too large"; fi; fi; rm -rf -- "$f"',
+                  if [ -f "$f" ] && [ ! -L "$f" ]; then printf R; if [ "$(wc -c < "$f")" -gt 65536 ]; then printf "too large";
+                  elif iconv -f UTF-8 -t UTF-8 -- "$f" >/dev/null 2>&1; then cat -- "$f"; else printf "not utf-8"; fi; fi; rm -rf -- "$f"',
                  'sh', item] }}
           loop: [delivery, review]
           register: handoff_receipts
@@ -823,7 +825,7 @@
               {{ dict(handoff_receipts.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
                  | selectattr('stdout', 'ne', '') | map(attribute='item')
                  | zip(handoff_receipts.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0)
-                       | selectattr('stdout', 'ne', '') | map(attribute='stdout'))) | to_json }}
+                       | selectattr('stdout', 'ne', '') | map(attribute='stdout') | map('regex_replace', '^R', ''))) | to_json }}
             dest: "{{ run }}/receipts.json"
             mode: "0600"
           delegate_to: localhost
