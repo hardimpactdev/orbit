@@ -1,4 +1,5 @@
 use crate::{
+    aliases,
     collector::{Collector, Error, Management},
     quota::{array, now},
     snapshot,
@@ -27,6 +28,7 @@ impl Service for CollectorService {
             eprintln!("The AI router collector accepts no arguments.");
             return 1;
         }
+        ignore_file_size_signal();
         let result = Config::load(|name| std::env::var(name).ok()).and_then(|config| {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -50,6 +52,7 @@ struct Config {
     key: String,
     read_token: String,
     control_token: String,
+    home: String,
 }
 impl Config {
     fn load(env: impl Fn(&str) -> Option<String>) -> Result<Self, Error> {
@@ -77,17 +80,20 @@ impl Config {
             key: required("AI_ROUTER_MANAGEMENT_KEY")?,
             read_token: required("AI_ROUTER_READ_TOKEN")?,
             control_token: required("AI_ROUTER_CONTROL_TOKEN")?,
+            home: required("HOME")?,
         })
     }
 }
 struct App {
     collector: Collector<Valkey, Management>,
+    router_config: std::path::PathBuf,
     read_token: String,
     control_token: String,
 }
 async fn serve(config: Config) -> Result<(), Error> {
     let app = Arc::new(App {
         collector: Collector::new(config.cache, Management::new(config.origin, config.key)?),
+        router_config: std::path::Path::new(&config.home).join(aliases::CONFIG),
         read_token: config.read_token,
         control_token: config.control_token,
     });
@@ -97,9 +103,7 @@ async fn serve(config: Config) -> Result<(), Error> {
     let worker = app.clone();
     let task = tokio::spawn(async move {
         loop {
-            if let Err(error) = worker.collector.collect(now()).await {
-                eprintln!("Quota collection failed: {}", error.message());
-            }
+            round(&worker).await;
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
@@ -108,6 +112,22 @@ async fn serve(config: Config) -> Result<(), Error> {
         .map_err(|_| Error::Invalid("Collector listener failed"));
     task.abort();
     result
+}
+/// A file size limit makes a write fail with EFBIG instead of ending the collector, so an alias write that hits it
+/// is an ordinary error and collection still runs.
+fn ignore_file_size_signal() {
+    // SAFETY: SIG_IGN installs no handler code; it only sets the disposition of SIGXFSZ for this process.
+    unsafe {
+        libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+    }
+}
+async fn round(app: &App) {
+    if let Err(error) = aliases::converge(&app.router_config) {
+        eprintln!("Model alias convergence failed: {}", error.message());
+    }
+    if let Err(error) = app.collector.collect(now()).await {
+        eprintln!("Quota collection failed: {}", error.message());
+    }
 }
 fn router(app: Arc<App>) -> Router {
     Router::new()
@@ -258,6 +278,7 @@ mod tests {
             ("AI_ROUTER_MANAGEMENT_KEY", "management"),
             ("AI_ROUTER_READ_TOKEN", "read"),
             ("AI_ROUTER_CONTROL_TOKEN", "control"),
+            ("HOME", "/home/orbit"),
         ];
         assert!(Config::load(|key| config
             .iter()
@@ -308,6 +329,7 @@ mod tests {
                 cache.client(),
                 Management::new(origin, "management-secret".into()).unwrap(),
             ),
+            router_config: "/nonexistent".into(),
             read_token: "read".into(),
             control_token: "control".into(),
         });
@@ -407,6 +429,56 @@ mod tests {
             )]
         );
         task.abort();
+        upstream_task.abort();
+    }
+    #[tokio::test]
+    async fn an_alias_write_over_the_file_size_limit_fails_and_collection_still_runs() {
+        const CHILD: &str = "ORBIT_AI_ROUTER_FSIZE_CHILD";
+        let Ok(dir) = std::env::var(CHILD) else {
+            let dir =
+                std::env::temp_dir().join(format!("orbit-fsize-{:016x}", rand::random::<u64>()));
+            std::fs::create_dir(&dir).unwrap();
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "service::tests::an_alias_write_over_the_file_size_limit_fails_and_collection_still_runs", "--nocapture"])
+                .env(CHILD, &dir)
+                .status()
+                .unwrap();
+            let config = std::fs::read_to_string(dir.join("config.yaml")).unwrap();
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert!(status.success(), "{status}");
+            assert_eq!(config, "port: 8317\n");
+            return;
+        };
+        let path = std::path::Path::new(&dir).join("config.yaml");
+        std::fs::write(&path, "port: 8317\n").unwrap();
+        ignore_file_size_signal();
+        let limit = libc::rlimit {
+            rlim_cur: 512,
+            rlim_max: libc::RLIM_INFINITY,
+        };
+        // SAFETY: setrlimit reads the given struct; this child test process owns its limits.
+        assert_eq!(unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &limit) }, 0);
+        let cache = Server::start().await;
+        let management = Router::new().route(
+            "/v0/management/auth-files",
+            get(|| async { Json(json!({"files": []})) }),
+        );
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", upstream.local_addr().unwrap());
+        let upstream_task =
+            tokio::spawn(async move { axum::serve(upstream, management).await.unwrap() });
+        let app = App {
+            collector: Collector::new(
+                cache.client(),
+                Management::new(origin, "management".into()).unwrap(),
+            ),
+            router_config: path.clone(),
+            read_token: "read".into(),
+            control_token: "control".into(),
+        };
+        assert!(aliases::converge(&path).is_err());
+        round(&app).await;
+        assert!(cache.values.lock().unwrap().contains_key(SNAPSHOT_KEY));
         upstream_task.abort();
     }
 }

@@ -140,6 +140,43 @@ The collector reads Claude, Codex, Grok, Kimi, and Antigravity windows from CLIP
 
 When Grok returns no percentage, the collector calls Grok's billing RPC through CLIProxyAPI. It accepts zero use only from a complete response with an active weekly or monthly period, as [CodexBar](https://github.com/steipete/CodexBar/pull/3325) does.
 
+## Model aliases
+
+Orbit owns one list of the router's configuration: the `antigravity` channel of the model alias map. agy sends base Gemini names, and the Antigravity pool has only tiered ids, so without these aliases a prompt fails with `model_not_found`. `ANTIGRAVITY` in the extension's `agent/src/aliases.rs` holds the list. Every entry has `fork: true`.
+
+| Name | Alias |
+| --- | --- |
+| `gemini-4-argon-high` | `gemini-4-argon`, `gemini-3.1-pro`, `gemini-3.1-pro-preview` |
+| `gemini-3.8-flash-high` | `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.1-flash-lite-preview` |
+
+Before each collection round, the collector reads `~/.config/cliproxyapi/config.yaml` of its own account, which is the router's account and file. It decides from that file, not from the router's management API: the router can hold a list in memory that its file lacks, and that list is lost on the next restart.
+
+CLIProxyAPI v8 reads the alias map from `oauth.model-alias` when that key is present, and from the root `oauth-model-alias` otherwise. The collector converges the same key and leaves the other one alone. It parses the file as YAML and compares the effective `antigravity` list in any YAML form. When it already equals `ANTIGRAVITY`, the collector writes nothing.
+
+When the list differs, the collector replaces only the lines of that channel, or adds them. It parses the result and writes it only when the result equals the original document with only the managed list changed. Comments, the lists of other channels, the key lists, and every other key stay byte for byte. CLIProxyAPI watches the file, sees the write, and reloads it.
+
+The collector never asks the router to save its configuration, because a router save rewrites the whole file and drops keys it does not know, such as legacy Amp settings and stored keys in older fields.
+
+| Case | What the collector does |
+| --- | --- |
+| No alias map | Appends `oauth-model-alias` with the `antigravity` list at the end of the file. |
+| A map without an `antigravity` channel | Adds the channel after the last channel. |
+| The `antigravity` list in another form or with other values, a quoted channel key, or a list at the column of its key | Replaces the lines of that channel with the list in block form. |
+| A form whose edit would change anything else or not parse | Writes nothing and logs `Router configuration has a model alias form Orbit cannot edit safely`. |
+| The file changed between its read and its write | Writes nothing. The next round reads it again. |
+
+Forms that the collector refuses include a flow root, an indented root, a document end marker before the edit, an anchor that another node uses, a channel named twice, and a dotted `oauth.model-alias` root key.
+
+Every write, including a restore, rewrites the same file in place. It keeps the file's owner, mode, and inode, because a file replaced by rename loses the router's file watch and is not reloaded. So the collector first stores the previous and the next version beside the file, as `.config.yaml.orbit-previous` and `.config.yaml.orbit-next` with mode `0600`, and then rewrites the file in place:
+
+- A write that fails part-way puts the previous version back in place at once.
+- A read-only file fails before anything is written.
+- A collector that is killed mid-write leaves only the start of the next version in the file.
+- In that case, the next round puts the previous version back and writes again.
+- A size limit stops the write of the next version before the file is touched. The collector ignores `SIGXFSZ`, so that write fails as an ordinary error and collection still runs.
+
+Both copies are deleted when the write ends, or after the next round has restored the file.
+
 ## Collector endpoints
 
 The collector serves these paths on `https://collector.ai-router.orbit`. The read token and the control token are bearer tokens in Gateway settings.
