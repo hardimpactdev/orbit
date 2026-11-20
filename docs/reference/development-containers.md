@@ -968,13 +968,24 @@ A clone needs neither Conn enabled nor ai-router configured. Its container run s
 
 Clone create and migration of a non-default Instance record the model route at admission. The Operation result includes `model_route: {"ready": true}` when ready, or `model_route: {"ready": false, "error_code": "ai_router.disabled", "message": "…"}` when unavailable; a missing guard reports `ai_router.guard_missing`. T3 runs without a ready route but cannot reach a model. Human output from `instance:create`, `instance:migrate` and `operation:show` prints one line with the reason. The result is the admission snapshot, not a live routing check.
 
-A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address.
+A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
 
-In a container whose server is the [Conn Server](#container-server), Antigravity (`agy`) runs too. Its provider instance `antigravity` in T3's `settings.json` is enabled, with `authMethod` `gemini-api-key` and the placeholder key as `apiKey`. The intent holds only the value `#orbit-model-key` in its place, named as the model environment's `key_value`. The copy step and the agent part put the vault's `ORBIT_MODEL_KEY` there, and refuse a model environment without it.
+### Antigravity
 
-The Conn Server moves the key into its own secret store and hands it to `agy` as `GEMINI_API_KEY`. `GOOGLE_GEMINI_BASE_URL` in `model.env` is the same forwarder origin as `ANTHROPIC_BASE_URL`, so `agy` calls `/v1beta/models/<model>:streamGenerateContent` there with the key in `X-Goog-Api-Key`.
+In a container whose server is the [Conn Server](#container-server), Antigravity (`agy`) runs too. Its provider instance `antigravity` in T3's `settings.json` is enabled, with `authMethod` `gemini-api-key` and the placeholder key as `apiKey`. The intent holds only the value `#orbit-model-key` in the key's place, named as the model environment's `key_value`.
 
-A container with stock T3 gets no Antigravity instance: T3 0.1.7 has no such driver. Only a new clone gets the instance and the variable: the Node converge rewrites neither `model.env` nor `settings.json` in an existing container. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
+Every writer of the settings follows one rule: the copy step before the first start, the guest's agent part and the Ansible agent part.
+
+- Orbit's settings merge into the held ones object by object. A provider instance of the agent's own stays.
+- The vault's `ORBIT_MODEL_KEY` goes in place of `key_value`. A model environment without it fails the write, so the value never reaches the file.
+- Held settings that already match stay as they are.
+- So does `••••••` in the key's place: the Conn Server's mark of a key it moved into its own store.
+
+The Conn Server hands the key to `agy` as `GEMINI_API_KEY`. Only the Conn Server's `model.env` holds `GOOGLE_GEMINI_BASE_URL`, the same forwarder origin as `ANTHROPIC_BASE_URL`. So `agy` calls `/v1beta/models/<model>:streamGenerateContent` there, with the key in `X-Goog-Api-Key`.
+
+A container with stock T3 gets neither the instance nor the variable. Stock T3 0.1.7 has its own Antigravity driver, which would send a personal key to the forwarder. Only a new clone gets the instance and the variable, because the Node converge rewrites neither `model.env` nor `settings.json` in an existing container.
+
+The `instance.create` engine path puts the key into the settings in the Gateway, in the blob that holds the model environment too. The Node agent's prepare step still replaces each top-level key whole, so it must merge as above before that path is enabled.
 
 ### The copy key
 

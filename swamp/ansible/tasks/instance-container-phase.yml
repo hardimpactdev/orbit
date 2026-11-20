@@ -1552,23 +1552,28 @@
       changed_when: false
       failed_when: agent_settings.rc != 0 and 'No such file or directory' not in agent_settings.stderr
       no_log: true
-    # A setting that holds the model environment's `key_value` gets the placeholder model key there, from the vault's copy: the intent
-    # holds no key. A model environment without the key fails the step.
+    # Orbit's settings merge into the held ones object by object, so a provider instance of the agent's own stays. A setting that
+    # holds the model environment's `key_value` gets the placeholder model key there, from the vault's copy: the intent holds no key.
+    # Held settings that already match, with the key or with the Conn Server's mark of a key it moved into its store, stay. A model
+    # environment without the key fails the step. instance_clone.py's `merged_settings` keeps the same rule.
     - name: Merge Orbit's changed JSON settings
       vars:
         settings: "{{ item.stdout | from_json if item.rc == 0 else {} }}"
         key_value: "{{ container.clone.model_environment.key_value | default('') }}"
+        keyed: "{{ key_value != '' and key_value | to_json in item.item.json | to_json }}"
         model_key: >-
           {{ (lookup('ansible.builtin.env', 'ORBIT_MODEL_ENVIRONMENT').splitlines() | select('match', 'ORBIT_MODEL_KEY=') | first) | regex_replace('^ORBIT_MODEL_KEY=', '') }}
         orbit_settings: >-
-          {{ item.item.json if key_value == '' or key_value | to_json not in item.item.json | to_json
-             else item.item.json | to_json | replace(key_value | to_json, model_key | to_json) | from_json }}
-      when: item.rc != 0 or settings != (settings | combine(orbit_settings))
+          {{ item.item.json | to_json | replace(key_value | to_json, model_key | to_json) | from_json if keyed | bool else item.item.json }}
+        imported_settings: >-
+          {{ item.item.json | to_json | replace(key_value | to_json, '"••••••"') | from_json if keyed | bool else item.item.json }}
+        merged_settings: "{{ settings | combine(orbit_settings, recursive=True) }}"
+      when: item.rc != 0 or (settings != merged_settings and settings != (settings | combine(imported_settings, recursive=True)))
       ansible.builtin.command:
         argv: >-
           {{ incus_project + ['file', 'push', '--uid', item.item.uid | string, '--gid', item.item.gid | string, '--mode', item.item.mode,
               '-', container.name ~ item.item.path] }}
-        stdin: "{{ settings | combine(orbit_settings) | to_json }}\n"
+        stdin: "{{ merged_settings | to_json }}\n"
         stdin_add_newline: false
       loop: "{{ agent_settings.results }}"
       loop_control: { label: "{{ item.item.path }}" }

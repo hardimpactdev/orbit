@@ -220,7 +220,7 @@ The admitted sources are the task VM range and the WireGuard address of every No
 
 The allowed query is none, except `beta=true` on the two messages routes. Claude Code sends `?beta=true` on every call and has no setting to drop it. Any other query, and `beta=true` on any other route, is refused: 401 from an admitted source, 403 from any other. So no client passes router options in the query. [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder) records why.
 
-The Gemini routes serve Antigravity (`agy`) in [Conn Server containers](/reference/development-containers#model-access). It sends its key only in `X-Goog-Api-Key`. A model name is letters and digits joined by single `.`, `_` or `-`, so `..`, an empty name and an extra segment do not pass, and neither does `key=` or any other query.
+The Gemini routes serve Antigravity (`agy`) in [Conn Server containers](/reference/development-containers#antigravity). It sends its key only in `X-Goog-Api-Key`. A model name is letters and digits joined by single `.`, `_` or `-`, so `..`, an empty name and an extra segment do not pass, and neither does `key=` or any other query.
 
 The guard matches the path and the query as the client sent them, so `/v1//responses`, a path with `..`, or `?beta=true&key=x` does not pass.
 

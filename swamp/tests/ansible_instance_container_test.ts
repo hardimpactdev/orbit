@@ -1275,9 +1275,9 @@ Deno.test({
         clone: {
           files: [
             { path: claude, uid: 2750, gid: 2750, mode: "0600", json: { hasCompletedOnboarding: true } },
-            { path: t3, uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+            { path: t3, uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true, ...antigravity("#orbit-model-key") } },
           ],
-          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600", key_value: "#orbit-model-key" },
           links: [],
         },
       });
@@ -1286,7 +1286,7 @@ Deno.test({
       const first = f.run("agent");
       assert(first.ok, first.output);
       assertEquals(read(claude), { hasCompletedOnboarding: true });
-      assertEquals(read(t3), { linkedEnvironmentsEnabled: true });
+      assertEquals(read(t3), { linkedEnvironmentsEnabled: true, ...antigravity("placeholder") });
       for (const path of [claude, t3]) {
         assertEquals(Deno.statSync(rootfs + path).mode! & 0o777, 0o600);
         assertEquals(f.state().files[path], { uid: "2750", gid: "2750", mode: "0600" });
@@ -1295,10 +1295,13 @@ Deno.test({
       // T3 and Claude add their identity, migration state and preferences after the first start.
       const runtimeClaude = { machineID: "machine-7", userID: "user-7", firstStartTime: "2026-11-10T10:00:00Z",
         firstStartVersion: "2.1", migrationVersion: 4, pluginUsage: {}, seenNotifications: ["welcome"] };
-      const runtimeT3 = { idleCompaction: { enabled: true }, projectSettingsFolded: { tool: false } };
+      // The agent's own provider instances stay beside Orbit's.
+      const own = { myClaude: { driver: "claudeAgent" }, myCodex: { driver: "codex" } };
+      const runtimeT3 = { idleCompaction: { enabled: true }, projectSettingsFolded: { tool: false }, providerInstances: own };
+      const managedT3 = { linkedEnvironmentsEnabled: true, providerInstances: { ...own, ...antigravity("placeholder").providerInstances } };
       const populated = [
         { path: claude, value: { ...runtimeClaude, hasCompletedOnboarding: true } },
-        { path: t3, value: { ...runtimeT3, linkedEnvironmentsEnabled: true } },
+        { path: t3, value: { ...runtimeT3, ...managedT3 } },
       ];
       for (const { path, value } of populated) Deno.writeTextFileSync(rootfs + path, JSON.stringify(value, null, 4));
       const unchanged = f.run("agent");
@@ -1319,6 +1322,14 @@ Deno.test({
       const again = f.run("agent");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
+
+      // The Conn Server moved the key into its store and left its mark: the entry stays, and no write puts the key back.
+      const imported = { ...runtimeT3, ...managedT3, providerInstances: { ...own, ...antigravity("\u2022".repeat(6)).providerInstances } };
+      Deno.writeTextFileSync(rootfs + t3, JSON.stringify(imported));
+      const afterImport = f.run("agent");
+      assert(afterImport.ok, afterImport.output);
+      assertEquals(afterImport.changed, 0, afterImport.output);
+      assertEquals(read(t3), imported);
 
       // A damaged runtime file fails the phase rather than replacing the runtime's state with defaults.
       Deno.writeTextFileSync(rootfs + claude, '{"machineID":');

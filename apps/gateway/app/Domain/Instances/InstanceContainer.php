@@ -464,8 +464,9 @@ final readonly class InstanceContainer
     }
 
     /**
-     * The placeholder model key and the model origin for T3's unit, which hands them to Claude Code and Codex, and the origin to
-     * Antigravity as its Gemini endpoint; the Conn Server hands Antigravity the key from its provider instance. It goes to the run
+     * The placeholder model key and the model origin for T3's unit, which hands them to Claude Code and Codex. The Conn Server also
+     * gets the origin as Antigravity's Gemini endpoint and hands Antigravity the key from its provider instance; stock T3 gets no such
+     * endpoint, as its own Antigravity driver would send a personal key there. It goes to the run
      * through the vault: the key is fixed, but it is still a key. A task copy also gets a new copy key and the origin of its Orbit
      * routes on the same forwarder (docs/reference/development-containers.md#the-copy-key); writing it replaces the copy's older key.
      */
@@ -476,7 +477,9 @@ final readonly class InstanceContainer
         $copy = Instance::query()->whereKey($runtime->instance_id)->value('task_workspace_owner_id') === null ? ''
             : 'ORBIT_COPY_KEY='.TaskKey::mint($runtime)."\nORBIT_COPY_API={$origin}".TaskKey::Path."\n";
 
-        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\nGOOGLE_GEMINI_BASE_URL={$origin}\nORBIT_MODEL_KEY={$key}\n{$copy}"
+        $gemini = $runtime->container_server === ContainerServer::Conn ? "GOOGLE_GEMINI_BASE_URL={$origin}\n" : '';
+
+        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\n{$gemini}ORBIT_MODEL_KEY={$key}\n{$copy}"
             ."CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nDISABLE_TELEMETRY=1\nDISABLE_ERROR_REPORTING=1\n";
     }
 
@@ -618,6 +621,18 @@ final readonly class InstanceContainer
     {
         return array_combine(array_map(static fn (string $effort): string => self::providerInstance('codex', $effort), self::CodexEfforts),
             array_map(static fn (string $effort): array => ['driver' => 'codex', 'displayName' => 'Codex, '.$effort.' effort'], self::CodexEfforts));
+    }
+
+    /**
+     * JSON settings with the placeholder model key in place of each self::ModelKeyValue, for a writer that gets the key with them.
+     *
+     * @param  array<array-key, mixed>  $settings
+     * @return array<array-key, mixed>
+     */
+    public static function withModelKey(array $settings, string $key): array
+    {
+        return array_map(static fn (mixed $value): mixed => is_array($value) ? self::withModelKey($value, $key)
+            : ($value === self::ModelKeyValue ? $key : $value), $settings);
     }
 
     /**

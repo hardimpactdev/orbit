@@ -940,12 +940,25 @@ class CloneTest(unittest.TestCase):
 
     def test_t3_settings_get_the_model_key_from_the_model_environment_in_place_of_the_key_value(self):
         model = self.MODEL + "ORBIT_MODEL_KEY=PLACEHOLDER\n"
-        calls, _, error = self.clone_with(self.antigravity_files(), rootfs=self.T3_ROOT,
-                                          stdin="https://x-access-token:PRIVATE@github.com\n" + self.FRAME + "\n" + model)
+        stdin = "https://x-access-token:PRIVATE@github.com\n" + self.FRAME + "\n" + model
+        own = {"myClaude": {"driver": "claudeAgent"}, "myCodex": {"driver": "codex"}}
+        path = "instance-7/home/agent/.t3/userdata/settings.json"
+        # A seed whose settings hold the agent's own providers keeps them; the key goes in place of the value.
+        rootfs = {**self.T3_ROOT, "home/agent/.t3/userdata/.keep": ""}
+        held = lambda settings: {"fixture_files": {"/home/agent/.t3/userdata/settings.json": {
+            "content": json.dumps(settings), "uid": "2750", "gid": "2750", "mode": "0600"}}}
+        calls, _, error = self.clone_with(self.antigravity_files(), rootfs=rootfs, overrides=held({"providerInstances": own}), stdin=stdin)
         self.assertEqual(error, "")
-        settings = next(call for call in self.t3_writes(calls) if call[-1] == "instance-7/home/agent/.t3/userdata/settings.json")
-        self.assertEqual(json.loads(self.inputs[id(settings)])["providerInstances"]["antigravity"]["config"],
-                         {"authMethod": "gemini-api-key", "apiKey": "PLACEHOLDER"})
+        settings = next(call for call in self.t3_writes(calls) if call[-1] == path)
+        self.assertNotIn("#orbit-model-key", self.inputs[id(settings)])
+        self.assertEqual(json.loads(self.inputs[id(settings)])["providerInstances"], {**own, "antigravity": {
+            "driver": "antigravity", "enabled": True, "config": {"authMethod": "gemini-api-key", "apiKey": "PLACEHOLDER"}}})
+        # A seed that holds the Conn Server's mark of a key it already moved into its store is left as it is.
+        imported = {"linkedEnvironmentsEnabled": True, "providerInstances": {**own, "antigravity": {
+            "driver": "antigravity", "enabled": True, "config": {"authMethod": "gemini-api-key", "apiKey": "\u2022" * 6}}}}
+        calls, _, error = self.clone_with(self.antigravity_files(), rootfs=rootfs, overrides=held(imported), stdin=stdin)
+        self.assertEqual(error, "")
+        self.assertFalse(any(call[-1] == path for call in self.t3_writes(calls)))
 
     def test_t3_settings_with_a_key_value_refuse_a_model_environment_without_the_key(self):
         calls, _, error = self.clone_with(self.antigravity_files(), rootfs=self.T3_ROOT,

@@ -107,20 +107,35 @@ def public_text(text, values, room):
     return "\n".join(reversed(kept))
 
 
+# What the Conn Server leaves in its settings file in place of a secret it moved into its own store.
+IMPORTED_SECRET = "\u2022" * 6
+
+
+def deep_merge(held, orbit):
+    """Orbit's JSON settings over the held ones, object by object: an entry Orbit does not name, such as a provider instance of
+    the agent's own, stays; Orbit's value wins at each leaf and list."""
+    if not isinstance(held, dict) or not isinstance(orbit, dict):
+        return orbit
+    return held | {name: deep_merge(held.get(name), value) for name, value in orbit.items()}
+
+
 def with_model_key(settings, value, key):
-    """The JSON settings with each string equal to `value` replaced by the placeholder model key. A Gateway that names no value
-    leaves them as they are; a value with no key in the model environment refuses the create."""
-    if value is None:
-        return settings
+    """The JSON settings with each string equal to `value` replaced by `key`. A Gateway that names no value leaves them as they are."""
     if isinstance(settings, dict):
         return {name: with_model_key(item, value, key) for name, item in settings.items()}
     if isinstance(settings, list):
         return [with_model_key(item, value, key) for item in settings]
-    if settings == value:
-        if not key:
-            raise RuntimeError("instance.clone_t3_files_refused")
-        return key
-    return settings
+    return key if value is not None and settings == value else settings
+
+
+def merged_settings(held, orbit, value, key):
+    """The settings to write, or None when the held ones already hold Orbit's: with the placeholder model key where the intent
+    holds `value`, or with the Conn Server's mark of a key it already moved into its store. A value with no key in the model
+    environment refuses the create (docs/reference/development-containers.md#antigravity)."""
+    if value is not None and with_model_key(orbit, value, None) != orbit and not key:
+        raise RuntimeError("instance.clone_t3_files_refused")
+    merged = deep_merge(held, with_model_key(orbit, value, key))
+    return None if held in (merged, deep_merge(held, with_model_key(orbit, value, IMPORTED_SECRET))) else merged
 
 
 def purpose(argv):
@@ -608,14 +623,14 @@ def main():
         for item in files:
             content = item.get("content")
             if "json" in item:
-                settings = with_model_key(item["json"], value, key)
                 held = file_read(item["path"], "instance.clone_t3_files_refused")
                 old = json.loads(held["content"]) if held is not None else {}
+                merged = merged_settings(old, item["json"], value, key)
                 # A seed file that holds the keys with the agent part's owner and mode stays as it is.
-                if held is not None and old | settings == old and (held["uid"], held["gid"], held["mode"]) == (
+                if held is not None and merged is None and (held["uid"], held["gid"], held["mode"]) == (
                         str(item["uid"]), str(item["gid"]), item["mode"].zfill(4)):
                     continue
-                content = json.dumps(old | settings, separators=(",", ":")) + "\n"
+                content = json.dumps(old if merged is None else merged, separators=(",", ":")) + "\n"
             parents = []
             for parent in Path(item["path"]).parents:
                 if str(parent) in ("/", "/home", "/etc"):

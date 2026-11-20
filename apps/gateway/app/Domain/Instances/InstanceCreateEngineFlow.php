@@ -227,7 +227,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             };
         }
         $model = ValidatedData::object($clone['model_environment']);
-        $content = app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(ContainerModelRoute::class)->key());
+        $key = app(ContainerModelRoute::class)->key();
+        $content = app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), $key);
         $items[] = ['file' => ['path' => $model['path'], 'uid' => $model['uid'], 'gid' => $model['gid'], 'mode' => $model['mode'], 'content' => $blob($content), 'parents' => true]];
         $condition = ValidatedData::object($clone['t3'])['condition'] ?? null;
         $files = array_values(array_filter(self::rows($clone['files'] ?? []), static fn (mixed $file): bool => (ValidatedData::object($file)['before_start'] ?? false) === true));
@@ -235,8 +236,10 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $last = [];
         foreach ($files as $raw) {
             $file = ValidatedData::object($raw);
+            // The key goes in place of the intent's value here, in the blob that holds the model environment too.
             $item = isset($file['json'])
-                ? ['json' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'], 'json' => (object) ValidatedData::object($file['json'])]]
+                ? ['json' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
+                    'json' => (object) InstanceContainer::withModelKey(ValidatedData::object($file['json']), $key)]]
                 : ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'],
                     'content' => $blob(ValidatedData::string($file['content'] ?? '')), 'parents' => true]];
             $file['path'] === $condition ? $last[] = $item : $items[] = $item;
