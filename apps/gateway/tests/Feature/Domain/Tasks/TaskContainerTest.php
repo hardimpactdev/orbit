@@ -2332,6 +2332,26 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(json_encode($read, JSON_THROW_ON_ERROR))->not->toContain('Run Doctor.');
     });
 
+    it('records the T3 thread\'s token use on its agent thread, replacing the stored total, and leaves unknown use null', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $usage = ['tokens' => 1370, 'input_tokens' => 500, 'cached_input_tokens' => 800, 'output_tokens' => 70, 'model_calls' => 2];
+        $metrics = static fn (): array => Arr::only(AgentThread::query()->where('task_group_id', $group->id)->sole()->getAttributes(), array_keys($usage));
+
+        copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), 'usage' => null]);
+        expect($metrics())->toBe(array_fill_keys(array_keys($usage), null));
+
+        AgentThread::query()->where('task_group_id', $group->id)->update(['tokens' => 9]);
+        copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), 'usage' => $usage]);
+        expect($metrics())->toBe($usage);
+
+        // An older worker's result without usage, and a usage that is not a set of non-negative counts, change nothing.
+        foreach ([[], ['usage' => [...$usage, 'tokens' => -1]], ['usage' => [...$usage, 'tokens' => '5']], ['usage' => Arr::except($usage, 'model_calls')]] as $change) {
+            copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), ...$change]);
+            expect($metrics())->toBe($usage);
+        }
+    });
+
     it('names the agent thread and the agent\'s last reply in the result, so a driver reads the turn in one call', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);

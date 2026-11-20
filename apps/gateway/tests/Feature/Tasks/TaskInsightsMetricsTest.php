@@ -41,7 +41,8 @@ it('exposes the current summary of each stored scope and period from the totals 
     $project = Project::query()->create(['name' => 'Web', 'slug' => 'web', 'code' => 'WEB', 'repository_url' => 'https://github.com/example/web.git', 'default_branch' => 'main', 'root' => 'public']);
     insightMetricsTotal(null, '7d', '2026-11-19 10:00:00', ['tasks' => 12, 'merged' => 9, 'tokens' => 120000, 'cost_usd' => 3.25,
         'yield' => 0.75, 'wasted_share' => 0.125, 'lead_time_ms' => 5400000, 'pr_merge_wait_ms' => 1500, 'delivery_time_ms' => null]);
-    insightMetricsTotal($project, '30d', '2026-11-19 10:05:00', ['tasks' => 0, 'merged' => 0, 'tokens' => 0, 'cost_usd' => null, 'yield' => null]);
+    // Unknown tokens are null in the totals: their gauge has no sample.
+    insightMetricsTotal($project, '30d', '2026-11-19 10:05:00', ['tasks' => 0, 'merged' => 0, 'tokens' => null, 'cost_usd' => null, 'yield' => null]);
     $tables = [];
     DB::listen(static function (QueryExecuted $query) use (&$tables): void {
         preg_match_all('/(?:from|join)\s+"?(\w+)"?/i', $query->sql, $matches);
@@ -67,7 +68,6 @@ it('exposes the current summary of each stored scope and period from the totals 
         # HELP orbit_task_insights_tokens Tokens of every agent thread of the ended task groups.
         # TYPE orbit_task_insights_tokens gauge
         orbit_task_insights_tokens{project="all",period="7d"} 120000
-        orbit_task_insights_tokens{project="WEB",period="30d"} 0
         # HELP orbit_task_insights_cost_usd Cost in USD of every agent thread of the ended task groups.
         # TYPE orbit_task_insights_cost_usd gauge
         orbit_task_insights_cost_usd{project="all",period="7d"} 3.25

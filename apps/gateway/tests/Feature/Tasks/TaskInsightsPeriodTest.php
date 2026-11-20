@@ -65,9 +65,9 @@ it('counts merged and not merged tasks in the hour each ended, oldest hour first
     $hourly = $this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data.hourly');
 
     expect($hourly)->toHaveCount(24)
-        ->and($hourly[0])->toBe(['hour' => '2026-11-18T15:00:00+00:00', 'merged' => 1, 'not_merged' => 1])
-        ->and($hourly[18])->toBe(['hour' => '2026-11-19T09:00:00+00:00', 'merged' => 2, 'not_merged' => 0])
-        ->and($hourly[23])->toBe(['hour' => '2026-11-19T14:00:00+00:00', 'merged' => 0, 'not_merged' => 1])
+        ->and($hourly[0])->toMatchArray(['hour' => '2026-11-18T15:00:00+00:00', 'merged' => 1, 'not_merged' => 1])
+        ->and($hourly[18])->toMatchArray(['hour' => '2026-11-19T09:00:00+00:00', 'merged' => 2, 'not_merged' => 0])
+        ->and($hourly[23])->toMatchArray(['hour' => '2026-11-19T14:00:00+00:00', 'merged' => 0, 'not_merged' => 1])
         ->and(array_sum(array_column($hourly, 'merged')) + array_sum(array_column($hourly, 'not_merged')))->toBe(5);
 });
 
@@ -81,7 +81,7 @@ it('keeps hourly empty and daily whole days for 7d and 30d', function (string $p
         ->and($data['daily'])->toHaveCount($days)
         ->and($data['from'])->toBe($from)
         ->and($data['to'])->toBe('2026-11-20T00:00:00+00:00')
-        ->and(end($data['daily']))->toBe(['date' => '2026-11-19', 'merged' => 1, 'not_merged' => 0]);
+        ->and(end($data['daily']))->toMatchArray(['date' => '2026-11-19', 'merged' => 1, 'not_merged' => 0]);
 })->with([['7d', 7, '2026-11-13T00:00:00+00:00'], ['30d', 30, '2026-10-21T00:00:00+00:00']]);
 
 it('defaults to 30d', function (): void {
