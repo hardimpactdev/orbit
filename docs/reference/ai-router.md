@@ -167,14 +167,15 @@ The collector never asks the router to save its configuration, because a router 
 
 Forms that the collector refuses include a flow root, an indented root, a document end marker before the edit, an anchor that another node uses, a channel named twice, and a dotted `oauth.model-alias` root key.
 
-The write keeps the file's owner, mode, and inode, because a file replaced by rename loses the router's file watch and is not reloaded. So the collector first stores the previous and the next version beside the file, as `.config.yaml.orbit-previous` and `.config.yaml.orbit-next` with mode `0600`, and then rewrites the file in place:
+Every write, including a restore, rewrites the same file in place. It keeps the file's owner, mode, and inode, because a file replaced by rename loses the router's file watch and is not reloaded. So the collector first stores the previous and the next version beside the file, as `.config.yaml.orbit-previous` and `.config.yaml.orbit-next` with mode `0600`, and then rewrites the file in place:
 
-- A write that fails, such as on a read-only file, puts the previous version back by rename at once.
+- A write that fails part-way puts the previous version back in place at once.
+- A read-only file fails before anything is written.
 - A collector that is killed mid-write leaves only the start of the next version in the file.
 - In that case, the next round puts the previous version back and writes again.
-- A size limit stops the write of the next version before the file is touched.
+- A size limit stops the write of the next version before the file is touched. The collector ignores `SIGXFSZ`, so that write fails as an ordinary error and collection still runs.
 
-Both copies are deleted when the write ends.
+Both copies are deleted when the write ends, or after the next round has restored the file.
 
 ## Collector endpoints
 

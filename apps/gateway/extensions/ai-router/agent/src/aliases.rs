@@ -322,17 +322,43 @@ fn store(path: &Path, bytes: &str) -> std::io::Result<()> {
     file.sync_all()
 }
 
-/// Finishes a write that stopped part-way: a file that holds only the start of the next version gets the previous
-/// version back.
+/// Rewrites the file in place and checks the result. CLIProxyAPI watches the file itself, so only an in-place write
+/// reloads it, and it keeps the owner, mode and inode. A rename would end the router's watch.
+fn overwrite(
+    file: &mut fs::File,
+    path: &Path,
+    bytes: &str,
+    write: &impl Fn(&mut fs::File, &[u8]) -> std::io::Result<()>,
+) -> bool {
+    file.seek(SeekFrom::Start(0))
+        .and_then(|_| file.set_len(0))
+        .and_then(|()| write(file, bytes.as_bytes()))
+        .and_then(|()| file.sync_all())
+        .and_then(|()| fs::read_to_string(path))
+        .is_ok_and(|now| now == bytes)
+}
+
+fn open(path: &Path) -> std::io::Result<fs::File> {
+    fs::OpenOptions::new().read(true).write(true).open(path)
+}
+
+/// Finishes a write that stopped part-way: a file that holds only the start of the previous or the next version
+/// gets the previous version back, in place. The copies stay until that succeeds.
 fn recover(path: &Path) -> Result<(), Error> {
     let failed = Error::Invalid("Router configuration could not be recovered");
     let previous = sibling(path, "previous").ok_or(failed.clone())?;
     let next = sibling(path, "next").ok_or(failed.clone())?;
-    if previous.exists() {
+    if let Ok(old) = fs::read_to_string(&previous) {
         let current = fs::read_to_string(path).unwrap_or_default();
-        if fs::read_to_string(&next).is_ok_and(|next| current != next && next.starts_with(&current))
+        let new = fs::read_to_string(&next).ok();
+        let partial = current != old
+            && new.as_ref().is_none_or(|new| current != *new)
+            && (old.starts_with(&current) || new.is_some_and(|new| new.starts_with(&current)));
+        if partial
+            && !open(path)
+                .is_ok_and(|mut file| overwrite(&mut file, path, &old, &|f, b| f.write_all(b)))
         {
-            fs::rename(&previous, path).map_err(|_| failed)?;
+            return Err(failed);
         }
     }
     let _ = fs::remove_file(&previous);
@@ -340,9 +366,9 @@ fn recover(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Rewrites the file in place, unless it changed since it was read. CLIProxyAPI watches the file itself, so only an
-/// in-place write reloads it, and it keeps the owner and mode. The previous version is stored first: a write that
-/// fails gets it back at once by rename, and a write that stops part-way gets it back in the next round.
+/// Rewrites the file in place, unless it changed since it was read. The previous and next versions are stored first:
+/// a write that fails gets the previous version back in place at once, and a write that stops part-way gets it back
+/// in the next round.
 fn replace(
     path: &Path,
     original: &str,
@@ -363,7 +389,7 @@ fn replace(
         discard();
         return Err(failed);
     }
-    let Ok(mut file) = fs::OpenOptions::new().read(true).write(true).open(path) else {
+    let Ok(mut file) = open(path) else {
         discard();
         return Err(failed);
     };
@@ -374,21 +400,13 @@ fn replace(
             "Router configuration changed while it was edited",
         ));
     }
-    let written = file
-        .seek(SeekFrom::Start(0))
-        .and_then(|_| file.set_len(0))
-        .and_then(|()| write(&mut file, edited.as_bytes()))
-        .and_then(|()| file.sync_all())
-        .and_then(|()| fs::read_to_string(path))
-        .is_ok_and(|now| now == edited);
-    if !written {
-        let restored = fs::rename(&previous, path).is_ok();
+    if !overwrite(&mut file, path, edited, &write) {
+        if !overwrite(&mut file, path, original, &|f, b| f.write_all(b)) {
+            // The copies stay, so the next round restores the previous version.
+            return Err(Error::Invalid("Router configuration could not be restored"));
+        }
         discard();
-        return Err(if restored {
-            failed
-        } else {
-            Error::Invalid("Router configuration could not be restored")
-        });
+        return Err(failed);
     }
     discard();
     Ok(())
@@ -584,8 +602,10 @@ ampcode:
             file.write_all(&bytes[..bytes.len() / 2])?;
             Err(std::io::Error::other("File too large"))
         };
+        let inode = fs::metadata(&path).unwrap().ino();
         assert!(converge_with(&path, half).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), ADOPTED);
+        assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
         assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
         assert!(converge(&path).unwrap());
     }
@@ -597,7 +617,9 @@ ampcode:
         fs::write(sibling(&path, "previous").unwrap(), ADOPTED).unwrap();
         fs::write(sibling(&path, "next").unwrap(), &next).unwrap();
         fs::write(&path, &next[..next.len() / 3]).unwrap();
+        let inode = fs::metadata(&path).unwrap().ino();
         assert!(converge(&path).unwrap());
+        assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
         assert_eq!(fs::read_to_string(&path).unwrap(), next);
         assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
     }
@@ -611,5 +633,21 @@ ampcode:
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
         assert!(converge(&path).unwrap());
         assert!(!converge(&path).unwrap());
+    }
+
+    #[test]
+    fn a_restore_or_staging_that_stopped_part_way_is_finished_in_the_next_round() {
+        let next = written(ADOPTED);
+        let (_dir, path) = file(&ADOPTED[..ADOPTED.len() / 2]);
+        fs::write(sibling(&path, "previous").unwrap(), ADOPTED).unwrap();
+        fs::write(sibling(&path, "next").unwrap(), &next).unwrap();
+        assert!(converge(&path).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), next);
+        let (_dir, path) = file(ADOPTED);
+        fs::write(sibling(&path, "previous").unwrap(), ADOPTED).unwrap();
+        fs::write(sibling(&path, "next").unwrap(), &next[..10]).unwrap();
+        assert!(converge(&path).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), next);
+        assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
     }
 }
