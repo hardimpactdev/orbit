@@ -34,6 +34,7 @@ use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
+use App\Domain\Operations\OperationStore;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRuntime;
@@ -225,12 +226,21 @@ it('destroys an unlisted container default whose create failed and is retained f
         ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
 })->with(['reserved' => InstanceState::Reserved, 'source resolved' => InstanceState::SourceResolved]);
 
-it('keeps an unlisted container default refused while its create runs or after it served', function (): void {
+it('keeps an unlisted container default refused while a create owns it, also after an earlier failure', function (InstanceState $state): void {
     $default = destroyDefault();
     config(['instances.default_destroy_projects' => []]);
-    $default->update(['status' => InstanceState::SourceResolved, 'failed_step' => null, 'error_code' => null]);
-    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('operation.kind_unavailable');
-});
+    $default->update(['status' => $state, 'failed_step' => 'container', 'error_code' => 'instance.create_container_failed']);
+    // The default's own create has ended; its retry now holds the Instance.
+    expect(Operation::query()->where('lock_key', OperationStore::lockKey('instance', $default->id))->whereNotIn('status', OperationStatus::terminalValues())->exists())->toBeFalse();
+    Operation::query()->where('lock_key', OperationStore::lockKey('instance', $default->id))->update(['lock_key' => null]);
+    $retry = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $default->id,
+        'node_id' => $default->node_id, 'status' => OperationStatus::Running, 'attempts' => 1, 'state' => [], 'input' => [],
+        'lock_key' => OperationStore::lockKey('instance', $default->id)]);
+    $before = Operation::query()->count();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('operation.kind_unavailable')
+        ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe($state)
+        ->and($retry->refresh()->status)->toBe(OperationStatus::Running)->and($retry->cancel_requested_at)->toBeNull();
+})->with(['reserved' => InstanceState::Reserved, 'source resolved' => InstanceState::SourceResolved]);
 
 it('requires force for non-default cleanup until guarded removal is built', function (bool $migrated): void {
     $clone = destroyClone(destroyDefault(), $migrated);

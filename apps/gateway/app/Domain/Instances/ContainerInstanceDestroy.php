@@ -8,9 +8,12 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRuntime;
+use App\Models\Operation;
 
 /** The container identity of the saved removal; no execution. */
 final readonly class ContainerInstanceDestroy
@@ -39,17 +42,21 @@ final readonly class ContainerInstanceDestroy
     }
 
     /**
-     * A default whose create failed and is retained for a retry, or the removal of one: it never served, no Instance copies it, and
-     * its create names its removal (docs/reference/development-containers.md#destroy), so the operator list does not apply.
+     * A default retained for a retry after its create failed or was cancelled, or the removal of one: it never served, no Instance
+     * copies it, and no create Operation owns it now, so the operator list does not apply
+     * (docs/reference/development-containers.md#destroy). `$ending`: the create whose end is being recorded, which still holds the
+     * Instance; its recovery receipt names the destroy that this check admits after it.
      */
-    private static function failedDefault(Instance $instance): bool
+    public static function failedDefault(Instance $instance, ?Operation $ending = null): bool
     {
         if ($instance->status === InstanceState::Removing) {
             return InstanceRemovalMember::query()->where('instance_id', $instance->id)->live()->where('runtime_published', false)->exists();
         }
 
         return in_array($instance->status, [InstanceState::Reserved, InstanceState::SourceResolved], true)
-            && $instance->failed_step !== null && $instance->error_code !== null;
+            && ! Operation::query()->where('kind', 'instance.create')->whereNotIn('status', OperationStatus::terminalValues())
+                ->where('lock_key', OperationStore::lockKey('instance', $instance->id))
+                ->when($ending !== null, static fn ($query) => $query->whereKeyNot($ending->id))->exists();
     }
 
     /**

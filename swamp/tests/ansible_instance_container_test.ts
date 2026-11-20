@@ -2636,6 +2636,37 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a create's failed container task keeps its name and phase code: a private one only its name, a long one its head and stderr tail",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // Run the real phase rescue for a task of the container phase.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Write the read token\n  tags: [container]\n  no_log: true\n  ansible.builtin.command: { argv: [sh, -c, "echo private-fixture-value >&2; exit 1"] }\n`);
+      let result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_container_failed", detail: "Write the read token"});
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Install the packages\n  tags: [container]\n  ansible.builtin.fail:\n    msg: "{{ 'm' * 5000 }}"\n`);
+      result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_container_failed", detail: "Install the packages: " + "m".repeat(1000)});
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Install the packages\n  tags: [container]\n  ansible.builtin.command:\n    argv: [sh, -c, "printf '%05000d the last stderr line\\\\n' 0 >&2; exit 1"]\n`);
+      result = f.run("container");
+      assert(!result.ok, result.output);
+      const detail = f.result().detail as string;
+      assert(detail.startsWith("Install the packages: non-zero return code: "), detail);
+      assert(detail.endsWith("the last stderr line"), detail);
+      assertEquals(detail.length, 4096);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a copied seed with an unguarded extra local NIC refuses before the clone starts",
   ignore: !hasAnsible,
   fn() {

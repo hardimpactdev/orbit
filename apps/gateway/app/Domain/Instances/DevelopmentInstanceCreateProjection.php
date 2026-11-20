@@ -67,14 +67,17 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
-            if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null) && trim($result['detail']) !== '') {
+            if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null)) {
                 // A default's container phase writes its failed task and its refusal or stderr tail into the run's result file, because
-                // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again.
-                $native = ValidatedData::object($data['failure'] ?? []);
-                $data['failure'] = app(NativeStepFailure::class)->written(
-                    is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation);
+                // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again. Any
+                // other step's detail, such as a proof copy's CI hold guidance, stays in the result.
+                if (trim($result['detail']) !== '') {
+                    $native = ValidatedData::object($data['failure'] ?? []);
+                    $data['failure'] = app(NativeStepFailure::class)->written(
+                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation);
+                }
+                unset($result['detail']);
             }
-            unset($result['detail']);
             if (is_array($operation->input['model_route'] ?? null)) {
                 $result['model_route'] = $operation->input['model_route'];
             }
@@ -246,8 +249,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             return null;
         }
 
-        // A failed default goes with the same removal as a clone: its container, ACL, bridge endpoint records and Route, and its databases
-        // by the removal's own rules (docs/reference/development-containers.md#destroy).
+        // The receipt names the destroy that admission takes: a clone's, or a retained default's once no create owns it
+        // (ContainerInstanceDestroy::failedDefault, docs/reference/development-containers.md#destroy).
+        $available = $retained->name !== DefaultInstanceName::Name || ContainerInstanceDestroy::failedDefault($retained, $operation);
+
         return [
             'state' => 'retained_for_retry',
             'retry' => [
@@ -257,7 +262,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             ],
             'destroy' => [
                 'command' => 'instance:destroy', 'instance_id' => $operation->target_id,
-                'available' => true, 'options' => ['yes' => true, 'force' => true],
+                'available' => $available, 'options' => ['yes' => true, 'force' => true],
+                ...($available ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
             ],
         ];
     }

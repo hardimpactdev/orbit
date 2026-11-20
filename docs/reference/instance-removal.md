@@ -174,7 +174,7 @@ After 3 failed reaper starts, Doctor reports `instance.removal_stuck` on the Ins
 
 This parent supports development Instances on managed app-dev Nodes, including their native Process, Schedule and Route withdrawal children. Owned SQLite, managed server databases and registered external database records are supported. Each server child reads the server's admin login from the server's own vault key; the database intent records no password. Production Instances and TaskVM-owned workspaces return `operation.kind_unavailable` before admission. An ordinary development checkout has no fabricated TaskVM identity.
 
-A container default whose create failed and is retained for a retry is removable too, without the operator list of [container default removal](/reference/development-containers#destroy): it never served and no Instance copies it. Its removal takes the container's path: the container, its ACL and Route, and its databases by the rules above.
+A container default retained for a retry after a failed or cancelled create, with no create Operation that owns it, is removable too, without the operator list of [container default removal](/reference/development-containers#destroy): it never served and no Instance copies it. Its removal takes the container's path: the container, its ACL and Route, and its databases by the rules above.
 
 A [proof copy on a CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) is a development Instance too, so its removal takes the same path. The database's removal contract follows the same placement rule: it admits a development removal on a Node with an `app-dev` role, or on a Node with a `ci-runner` role that is not being removed and no app role.
 

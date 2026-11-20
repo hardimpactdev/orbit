@@ -390,7 +390,10 @@ Deno.test("a default's failed container phase keeps its written refusal and the 
         {error_code: "instance.container_endpoint_unresolved", detail});
     // The phase's generic code stays the create's own code; its detail still says why.
     assertEquals(defaultContainerFailure({error_code: "instance.container_container_failed", detail: "Start the container: non-zero return code: boom"}),
-        {detail: "Start the container: non-zero return code: boom"});
+        {error_code: "instance.container_container_failed", detail: "Start the container: non-zero return code: boom"});
+    // A private task's failure keeps its phase code and the task's name.
+    assertEquals(defaultContainerFailure({error_code: "instance.container_container_failed", detail: "Write the read token"}),
+        {error_code: "instance.container_container_failed", detail: "Write the read token"});
     // What containerFailure keeps stays, now with the detail.
     assertEquals(defaultContainerFailure({error_code: "instance.nested_fleet_image_unavailable", detail: "Refuse: x"}),
         {error_code: "instance.nested_fleet_image_unavailable", detail: "Refuse: x"});
@@ -398,7 +401,12 @@ Deno.test("a default's failed container phase keeps its written refusal and the 
     assertEquals(defaultContainerFailure({error_code: "Not A Code", detail: "y"}), null);
     assertEquals(defaultContainerFailure({detail: "no code"}), null);
     assertEquals(defaultContainerFailure(null), null);
-    assertEquals((defaultContainerFailure({error_code: "instance.container_endpoint_unresolved", detail: "a" + "b".repeat(5000)})?.detail as string).length, 4096);
+    // An oversized detail keeps its head, the task's name, and the end of its stderr, in 4096 characters.
+    const long = defaultContainerFailure({error_code: "instance.container_container_failed",
+        detail: "Install the packages: non-zero return code: " + "x".repeat(5000) + "the last stderr line"})?.detail as string;
+    assertEquals(long.length, 4096);
+    assertEquals(long.startsWith("Install the packages: non-zero return code: "), true);
+    assertEquals(long.endsWith("the last stderr line"), true);
 });
 
 Deno.test("default and clone finish workspace T3 and registration despite bounded mail failure", () => {

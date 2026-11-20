@@ -83,17 +83,17 @@ export function containerFailure(raw: unknown): Record<string, unknown> | null {
 
 /**
  * The public part of a container default's failed `container` phase, from the run's result.json, or null: what containerFailure
- * keeps, else the phase's refusal code (its generic `instance.container_container_failed` stays the create's own
- * `instance.create_container_failed`) and its detail, the failed task with the refusal or the end of its stderr. The command step keeps
- * no stderr of a failed playbook, so the Gateway records the detail as the failure's stderr and redacts it again.
+ * keeps, else the phase's own code (a refusal's, or the generic `instance.container_container_failed`) and its detail, the failed task
+ * with its message and the end of its stderr. A detail above 4096 characters keeps its head, which names the task, and its tail. The
+ * command step keeps no stderr of a failed playbook, so the Gateway records the detail as the failure's stderr and redacts it again.
  */
 export function defaultContainerFailure(raw: unknown): Record<string, unknown> | null {
     const kept = containerFailure(raw);
     const failure = z.object({ error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), detail: z.string().optional() }).safeParse(raw);
     if (!failure.success) return kept;
     const { error_code, detail } = failure.data;
-    const refusal = kept ?? (error_code === "instance.container_container_failed" ? {} : { error_code });
-    return { ...refusal, ...(detail ? { detail: detail.slice(-4096) } : {}) };
+    const bounded = detail === undefined || detail.length <= 4096 ? detail : detail.slice(0, 1000) + "\n...\n" + detail.slice(-(4096 - 1005));
+    return { ...(kept ?? { error_code }), ...(bounded ? { detail: bounded } : {}) };
 }
 
 /**
