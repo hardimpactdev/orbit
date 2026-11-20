@@ -129,14 +129,13 @@ export function normalizeVersion(
         : null;
 }
 
-/** The installed version Orbit reports: a cask's SemVer without its comma build, which only the package reads compare. */
+/** The installed version Orbit reports: a cask version without its comma build. Package reads compare the raw coordinate. */
 export function publicVersion(
     raw: string,
     manager: ToolInput["manager"],
 ): string {
-    return manager === "brew-cask"
-        ? normalizeVersion(raw, manager) ?? raw
-        : raw;
+    const comma = raw.indexOf(",");
+    return manager === "brew-cask" && comma > 0 ? raw.slice(0, comma) : raw;
 }
 
 export function validateConstraint(input: ToolInput): void {

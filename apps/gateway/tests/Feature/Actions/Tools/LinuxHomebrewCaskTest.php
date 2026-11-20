@@ -8,6 +8,7 @@ use App\Actions\Tools\ScanToolInventoryAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolInventoryScan;
 use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManagerIntent;
@@ -16,6 +17,7 @@ use App\Domain\Tools\ToolOperationException;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Models\Node;
+use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
@@ -99,3 +101,18 @@ it('installs a Linux cask into the existing Homebrew prefix without a Homebrew s
     expect($intent->nativeInput($node, ToolManagerName::BrewCask))->toBeNull()
         ->and($intent->nativeInput($node, ToolManagerName::Brew)['manager'] ?? null)->toBe('homebrew');
 });
+
+it('reports a new cask build as applied and the same build as unchanged, both as the public version', function (?string $before, string $after, string $outcome): void {
+    $operation = new Operation(['kind' => 'tool.update', 'input' => ['installed_version' => '1.5.13']]);
+    $native = ['steps' => ['Assert package state' => ['status' => 'succeeded']],
+        'decision' => ['ready' => true, 'outcome' => 'applied', 'installed_version' => '1.5.13', 'installed_coordinate' => $before],
+        'observation' => ['installed_version' => '1.5.13', 'installed_coordinate' => $after]];
+    $projection = app(ToolIntentProjection::class);
+
+    $result = (fn (): array => $this->nativeResult($operation, ['status' => 'succeeded'], $native))->call($projection);
+
+    expect([$result['outcome'], $result['installed_version']])->toBe([$outcome, '1.5.13']);
+})->with([
+    'a new build' => ['1.5.13,5999302598852608', '1.5.13,6000000000000000', 'applied'],
+    'the same build' => ['1.5.13,5999302598852608', '1.5.13,5999302598852608', 'unchanged'],
+]);

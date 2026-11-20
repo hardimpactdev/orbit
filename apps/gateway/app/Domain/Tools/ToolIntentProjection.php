@@ -93,7 +93,10 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
                     $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded';
                 }
             } elseif (array_key_exists('installed_version', $observation)) {
-                $result['outcome'] = $observation['installed_version'] === ($decision['installed_version'] ?? null) ? 'unchanged' : 'applied';
+                // The raw coordinates tell a new cask build from the same one; both show the same public version.
+                $after = $observation['installed_coordinate'] ?? $observation['installed_version'];
+                $before = $decision['installed_coordinate'] ?? $decision['installed_version'] ?? null;
+                $result['outcome'] = $after === $before ? 'unchanged' : 'applied';
             }
         } elseif (($data['status'] ?? null) === 'failed') {
             $code = $decision['error_code'] ?? 'tool.version_probe_failed';

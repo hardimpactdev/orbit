@@ -22,6 +22,15 @@ export function stdout(step: Step, absent = false): string {
     ) throw new ToolRefusal("tool.version_probe_failed");
     return z.string().parse(step.outputs?.stdout);
 }
+/** The Linux cask API refresh succeeded: exit 0 and no warning that Homebrew fell back to its cached API data. */
+export function refreshed(step: Step): void {
+    const output = step?.status === "succeeded" && step.outputs?.exitCode === 0
+        ? String(step.outputs.stdout ?? "") + String(step.outputs.stderr ?? "")
+        : null;
+    if (output === null || /falling back to cached/i.test(output)) {
+        throw new ToolRefusal("tool.candidate_version_probe_failed");
+    }
+}
 /** Public argv only. Scope ownership is admission's concern, not a Node phase. */
 export function commands(input: Input) {
     const brew = input.manager.startsWith("brew"),

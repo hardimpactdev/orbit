@@ -102,7 +102,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Read manager version, condition: {type: succeeded}}, {step: Read installed package, condition: {type: succeeded}}]
     guard: ${{ inputs.intent.platform != "linux" || inputs.intent.manager != "brew-cask" }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "refresh-cask-metadata-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "refresh-cask-metadata-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps["Prepare package commands"].outputs.refresh }}', okExitCodes: [0, 1]}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "refresh-cask-metadata-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "refresh-cask-metadata-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps["Prepare package commands"].outputs.refresh }}'}}
   - name: Check the candidate
     labels: {role: swamp}
     dependsOn: [{step: Read manager version, condition: {type: succeeded}}, {step: Read installed package, condition: {type: succeeded}}, {step: Read macOS version, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Refresh the cask metadata, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -110,7 +110,7 @@ jobs:
   - name: Choose package action
     labels: {role: swamp}
     dependsOn: [{step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tw-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ steps["Read manager version"] }}', query: '${{ steps["Read installed package"] }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}'}}
+    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tw-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ steps["Read manager version"] }}', query: '${{ steps["Read installed package"] }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}', refresh: '${{ "Refresh the cask metadata" in steps ? steps["Refresh the cask metadata"] : null }}'}}
     guard: ${{ !("Read manager version" in steps) || !("Read installed package" in steps) }}
   - name: Apply the package
     labels: {role: swamp}

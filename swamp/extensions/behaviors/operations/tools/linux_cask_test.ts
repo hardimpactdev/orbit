@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { normalizeVersion, ToolRefusal } from "./contract.ts";
+import { normalizeVersion, publicVersion, ToolRefusal } from "./contract.ts";
 import { homebrewBlock } from "./homebrew.ts";
 import { commands, inventory } from "./native.ts";
 import { removalDecision, RemoveInput } from "./remove.ts";
@@ -250,15 +250,21 @@ Deno.test("Linux casks record an installed comma-build version against the const
         false,
         "1.5.13",
     ]);
+    const refused = decide(
+        write({
+            tool_id: 1,
+            tool_status: "failed",
+            version_constraint: "^2.0",
+        }),
+        { facts: facts([version]) },
+    );
+    // A refusal after the installed read reports the same public version as a successful read.
+    assertEquals([refused.installed_version, refused.installed_coordinate], [
+        "1.5.13",
+        version,
+    ]);
     assertEquals(
-        decide(
-            write({
-                tool_id: 1,
-                tool_status: "failed",
-                version_constraint: "^2.0",
-            }),
-            { facts: facts([version]) },
-        ).error_code,
+        refused.error_code,
         "tool.installed_version_constraint_violated",
     );
 });
@@ -333,5 +339,85 @@ Deno.test("Linux arm64 has no cask tag and the build is dropped only for casks",
     }
     for (const manager of ["brew", "apt", "vp", "composer"] as const) {
         assertEquals(normalizeVersion(version, manager), null);
+    }
+});
+
+const ok = (stdout: string, stderr = "", exitCode = 0) => ({
+    status: "succeeded",
+    outputs: { stdout, stderr, exitCode },
+});
+const ctx = {
+    extensionFile: (p: string) => new URL(p, import.meta.url).pathname,
+    writeResource: () => Promise.resolve(null),
+};
+
+Deno.test("a failed or stale Linux cask API refresh stops the candidate read", async () => {
+    const run = (refresh: ReturnType<typeof ok> | null) =>
+        behavior.methods.decide.execute({
+            input: write({ kind: "tool.update", tool_id: 1 }),
+            version: ok("Homebrew 7.0.13\n"),
+            query: ok(JSON.stringify({
+                formulae: [],
+                casks: [{ ...cask, installed: version }],
+            })),
+            os: null,
+            check: ok(JSON.stringify({
+                formulae: [],
+                casks: [{ ...cask, version: "1.5.13,6000000000000000" }],
+            })),
+            refresh,
+        }, ctx);
+    const fresh = await run(ok(
+        "",
+        "==> Downloading Homebrew API data\nJSON API packages.x86_64_linux.jws.json\n",
+    ));
+    assertEquals([fresh.mutate, fresh.outcome, fresh.installed_coordinate], [
+        true,
+        "applied",
+        version,
+    ]);
+    assertEquals((await run(ok(""))).mutate, true);
+    for (
+        const refresh of [
+            ok(
+                "",
+                "Warning: packages.x86_64_linux.jws.json: update failed, falling back to cached version.\n",
+            ),
+            ok("", "", 1),
+            null,
+        ]
+    ) {
+        const stale = await run(refresh);
+        assertEquals([stale.mutate, stale.error_code], [
+            false,
+            "tool.candidate_version_probe_failed",
+        ]);
+    }
+});
+
+Deno.test("the post-write read keeps the raw cask coordinate beside the public version", async () => {
+    const observed = await behavior.methods.observe.execute({
+        input: write(),
+        after: {
+            exitCode: 0,
+            stdout: JSON.stringify({
+                formulae: [],
+                casks: [{ ...cask, installed: version }],
+            }),
+        },
+    }, ctx);
+    assertEquals([observed.installed_version, observed.installed_coordinate], [
+        "1.5.13",
+        version,
+    ]);
+});
+
+Deno.test("only comma-bearing cask versions change their public form", () => {
+    assertEquals(publicVersion(version, "brew-cask"), "1.5.13");
+    for (const raw of ["140.0", "v1.2", "3.003", "latest"]) {
+        assertEquals(publicVersion(raw, "brew-cask"), raw);
+    }
+    for (const manager of ["brew", "apt", "vp", "composer"] as const) {
+        assertEquals(publicVersion(version, manager), version);
     }
 });

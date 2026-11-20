@@ -46,6 +46,7 @@ Steps carry the exact labels of the reviewed flow charts ([ADR 0246](/decisions/
 - `Write the apt source` runs only with `--repository`, after worker-side download, fingerprint inspection and a native assertion. Binary key publication, text files and scoped apt refresh remain separate steps.
 - `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
 - For a Linux cask, `Refresh the cask metadata` runs `brew outdated --cask --quiet`. It refreshes the cask API without `brew update`.
+- A non-zero exit, or a warning that Homebrew fell back to cached API data, stops the operation with `tool.candidate_version_probe_failed`.
 - `Choose package action` applies the refusals and the constraint before the package write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
 - `Apply the package` writes the candidate for every manager. `Check apt package` uses the official apt check; `Check the package` queries other managers. `Decode package state` shapes the observation, and `Assert package state` enforces it.
@@ -432,7 +433,9 @@ In that read, only an entry from `homebrew/cask` counts as the official Tool. A 
 
 The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`, on Linux and macOS, so a new cask build is visible without `brew update`. Linux formula commands do not set it. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
 
-An unsupported installed cask stays in discovery with `adoption` `unsupported` and one block token. Discovery does not create a Tool and does not mean the cask can be adopted. A supported cask can be installed, updated, and removed as a normal Tool. A policy refusal or a failed command returns that operation's own error: `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed` and can be retried. The error never includes raw Homebrew output. Adoption of a cask that needs an interactive or administrator prompt uses `tool.adoption_unsupported` with `adoption_block` `authorization_required`. Formula and cask operations share the Homebrew prefix lock, including when their manager records have different ids.
+An unsupported installed cask stays in discovery with `adoption` `unsupported` and one block token. Discovery does not create a Tool and does not mean the cask can be adopted. A supported cask can be installed, updated, and removed as a normal Tool. A policy refusal or a failed command returns that operation's own error: `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed` and can be retried. The error never includes raw Homebrew output.
+
+`authorization_required` is a write-policy refusal. Adoption cannot see cask artifacts, so it refuses every valid, unprotected cask with `tool.adoption_unsupported` and `adoption_block` `unsupported_artifact`. Formula and cask operations share the Homebrew prefix lock, including when their manager records have different ids.
 
 ## Remove a Tool
 
@@ -530,7 +533,9 @@ Discovery shows installed packages and creates no Tool rows. Adoption is the sep
 
 Owning every installed package was rejected because a scan is not a request to own the machine. Silent adoption during install was rejected because installing and taking ownership are different intentions. Storing discoveries as Tools was rejected because a Tool row is selected intent, not an observation. One identity for a formula and a cask was rejected because the names can collide and the operations differ. Separate locks were rejected because both change the same Homebrew prefix. Adopting tunnel and bootstrap packages was rejected because removal would then uninstall SSH, WireGuard, DNS, Docker, the firewall, sudo, Caddy, or a manager.
 
-A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. A cask version with a build after a comma, such as `1.5.13,5999302598852608`, reads as the SemVer before the comma, `1.5.13`, in the scan, constraints, and the version read. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
+A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan.
+
+A cask version with a build after a comma, such as `1.5.13,5999302598852608`, reads as the SemVer before the comma, `1.5.13`, in the scan and constraints. The version a write reports is the part before the comma; a cask version without a comma, such as `140.0`, stays as it is. A new build of the same version is still `applied`, because the write compares the full versions. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
 
 ## Recipe convergence
 

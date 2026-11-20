@@ -37,6 +37,8 @@ export type Decision = {
     outcome?: string;
     manager_version: string | null;
     installed_version: string | null;
+    /** The raw installed coordinate, such as a cask's `1.5.13,<build>`, which tells a new build from the same one. */
+    installed_coordinate?: string | null;
     candidate_json: string;
 };
 const plain = (input: Input) => ({
@@ -106,6 +108,16 @@ export function candidate(
 }
 /** Decide from "Check the candidate" whether the package write runs; every refusal happens here, before it (flows/tool.install.mmd, tool.update.mmd). */
 export function decide(input: Input, phase: Phase): Decision {
+    const decision = choose(input, phase);
+    return {
+        ...decision,
+        installed_version: decision.installed_version === null
+            ? null
+            : publicVersion(decision.installed_version, input.manager),
+        installed_coordinate: decision.installed_version,
+    };
+}
+function choose(input: Input, phase: Phase): Decision {
     let managerVersion: string | null = null,
         installed = input.installed_version;
     const refused = (code: string, native?: string): Decision => ({
@@ -140,9 +152,7 @@ export function decide(input: Input, phase: Phase): Decision {
                 mutate: false,
                 outcome: "unchanged",
                 manager_version: managerVersion,
-                installed_version: present
-                    ? publicVersion(installed!, input.manager)
-                    : null,
+                installed_version: present ? installed : null,
                 candidate_json: "null",
             };
         }
@@ -158,9 +168,7 @@ export function decide(input: Input, phase: Phase): Decision {
             mutate: outcome === "applied",
             outcome,
             manager_version: managerVersion,
-            installed_version: present
-                ? publicVersion(installed!, input.manager)
-                : null,
+            installed_version: present ? installed : null,
             candidate_json: JSON.stringify(phase.candidate),
         };
     } catch (error) {
@@ -223,6 +231,7 @@ export const behavior = {
                 query: Step.nullable(),
                 os: Step.nullable(),
                 check: Step.nullable(),
+                refresh: Step.nullable().default(null),
             }),
             execute: async (
                 args: {
@@ -231,6 +240,7 @@ export const behavior = {
                     query: StepValue;
                     os: StepValue;
                     check: StepValue;
+                    refresh?: StepValue;
                 },
                 ctx: Context,
             ) => {
@@ -243,6 +253,11 @@ export const behavior = {
                         args.os,
                     );
                     phase = { facts, candidate: null };
+                    // A stale Linux cask API would hide a new build, so the candidate needs a successful refresh.
+                    if (
+                        args.input.platform === "linux" &&
+                        args.input.manager === "brew-cask"
+                    ) native.refreshed(args.refresh ?? null);
                     phase.candidate = native.candidate(
                         args.input,
                         args.check,
@@ -300,6 +315,7 @@ export const behavior = {
                     installed_version: installed_version === null
                         ? null
                         : publicVersion(installed_version, args.input.manager),
+                    installed_coordinate: installed_version,
                     present: facts.versions.length === 1,
                     absent: facts.versions.length === 0,
                     compliant: args.input.manager !== "apt" ||
