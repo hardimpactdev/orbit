@@ -93,3 +93,9 @@ it('gives the copy its admitted NIC, config, T3 proxy and route rule', function 
         ->and($input['routes'])->toBe([['interface_in' => 'orbit', 'interface_out' => 'orbitinst0', 'from' => 'any', 'to' => $input['address'], 'port' => 3773,
             'comment' => 'orbit:instance-6-t3']]);
 });
+
+it('has the started copy run its app-account swap, so a copy of an older default moves to www-data before checkout', function (): void {
+    $input = app(InstanceCreateEngineFlow::class)->input(engineCloneOperation(), 'start', new EngineRun(288, [], 0, null));
+
+    expect($input['app_account'])->toBe('/usr/local/libexec/orbit-app-user');
+});

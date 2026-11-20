@@ -77,7 +77,7 @@ An executor reports its primitives when it connects to the bus, and again every 
 
 Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
-`instance.create` needs agent 0.21.0 on the Node: an executor at 0.20.0 reports the same `instance` actions but refuses the clone's route rules and its `files_blob`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.21.0 or newer.
+`instance.create` needs agent 0.22.0 on the Node: an older executor reports the same `instance` actions but refuses the start's `app_account`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.22.0 or newer.
 
 ## Steps and transitions
 
@@ -212,8 +212,11 @@ To turn the engine on for a fleet:
 2. Add the seed from `orbit:engine-keys` to the Gateway environment.
 3. Converge the Gateway role, then the Nodes.
 4. List the kinds in `ORBIT_ENGINE_KINDS`.
+5. Reload the Gateway processes: `php artisan gateway:release:configure`, PHP-FPM, `orbit-gateway-engine.service` and Horizon.
 
-To turn it off, empty `ORBIT_ENGINE_KINDS` first. Removing the seed stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
+A running worker keeps the kinds it read at its start. Without step 5, it still starts the kind on Swamp.
+
+To turn it off, empty `ORBIT_ENGINE_KINDS` first, then repeat step 5. Removing the seed stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
 
 ## Proof
 
