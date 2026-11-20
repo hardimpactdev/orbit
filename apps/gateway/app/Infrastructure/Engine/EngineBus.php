@@ -161,6 +161,25 @@ final class EngineBus implements MachineBus
      */
     public function nodeActions(int $node): array
     {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['actions'] ?? null) ? array_values(array_filter($report['actions'], is_string(...))) : [];
+    }
+
+    public function nodeClock(int $node): ?bool
+    {
+        $clock = $this->nodeReport($node)['clock_synchronized'] ?? null;
+
+        return is_bool($clock) ? $clock : null;
+    }
+
+    /**
+     * A Node executor's last report (KV `NODES`, key `n<node>`); empty when none is under five minutes old.
+     *
+     * @return array<string, mixed>
+     */
+    private function nodeReport(int $node): array
+    {
         try {
             $reply = $this->client()->dispatch("\$JS.API.DIRECT.GET.KV_NODES.\$KV.NODES.n{$node}", '');
         } catch (Throwable) {
@@ -171,7 +190,7 @@ final class EngineBus implements MachineBus
         $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
         $decoded = json_decode($body, true);
 
-        return is_array($decoded) && is_array($decoded['actions'] ?? null) ? array_values(array_filter($decoded['actions'], is_string(...))) : [];
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**

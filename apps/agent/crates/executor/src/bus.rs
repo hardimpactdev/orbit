@@ -174,8 +174,24 @@ fn consumer_missing(error: &jetstream::stream::ConsumerError) -> bool {
         if inner.error_code() == jetstream::ErrorCode::CONSUMER_NOT_FOUND)
 }
 
+/// Whether the kernel's clock follows a time source, as chrony or timesyncd set it; None when the kernel cannot say. A
+/// read-only `adjtimex`: it changes nothing. Signed orders expire seconds after the Gateway signs them, so the Gateway's
+/// Doctor warns about a Node whose clock drifts unsynchronized.
+fn clock_synchronized() -> Option<bool> {
+    // SAFETY: `timex` is a plain C struct of integers, for which all zero bytes are a valid value.
+    let mut timex: libc::timex = unsafe { std::mem::zeroed() };
+    // SAFETY: `modes` is 0, so adjtimex only reads the kernel's clock state into the struct, which is a valid, exclusive
+    // reference for the call.
+    let state = unsafe { libc::adjtimex(&mut timex) };
+    if state < 0 {
+        return None;
+    }
+    Some(state != libc::TIME_ERROR && timex.status & libc::STA_UNSYNC == 0)
+}
+
 /// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
-/// `n<node>`. The Gateway starts a kind on the state machine only when every Node it touches reported its primitives.
+/// `n<node>`, with its clock's state. The Gateway starts a kind on the state machine only when every Node it touches reported
+/// its primitives.
 async fn report_actions(
     context: &jetstream::Context,
     settings: &Settings,
@@ -186,7 +202,8 @@ async fn report_actions(
         .filter(|action| settings.enabled.allows(*action))
         .map(orbit_executor_core::action::Action::name)
         .collect();
-    let body = serde_json::json!({"actions": actions, "version": env!("CARGO_PKG_VERSION")}).to_string();
+    let body = serde_json::json!({"actions": actions, "version": env!("CARGO_PKG_VERSION"), "clock_synchronized": clock_synchronized()})
+        .to_string();
     context.publish(format!("$KV.NODES.n{node}"), body.into()).await?.await?;
     Ok(())
 }
