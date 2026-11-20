@@ -158,6 +158,7 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
+            Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3 => instance(order),
         }
     }
 }
@@ -304,6 +305,24 @@ fn dns(order: &VerifiedOrder) -> Outcome {
         },
         |changes| Outcome::Applied { changes },
     )
+}
+
+/// The instance family (ADR 0271): an Instance container made from its default's seed, and its files before its first
+/// start. A failure's code goes to the Gateway, its detail only to the log.
+fn instance(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+    let result = match order.action() {
+        Action::InstanceClone => orbit_executor_instance::clone(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceFetchBranch => orbit_executor_instance::fetch_branch(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceCheckout => orbit_executor_instance::checkout(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceT3 => orbit_executor_instance::t3(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        _ => orbit_executor_instance::start(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+    };
+    result.unwrap_or_else(|failure| {
+        log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+        Outcome::Failed { code: failure.code.to_owned() }
+    })
 }
 
 #[cfg(test)]

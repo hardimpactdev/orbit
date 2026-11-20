@@ -35,6 +35,20 @@ pub enum Action {
     /// Place a VPN Node's private DNS records and catalog, then restart dnsmasq and the listener (ADR 0271). Its target
     /// is the Node, so the Node's DNS publications run one at a time.
     DnsPublishRecords,
+    /// Make an Instance container from its default's seed: its ACL, the seed copy and the T3 proxy (ADR 0271). Its target
+    /// is the Node, because the container does not exist yet.
+    InstanceClone,
+    /// Place a stopped copy's files before its first start (ADR 0271). Its target is the copy.
+    InstancePrepare,
+    /// Start a prepared copy and give it its names (ADR 0271). Its target is the copy.
+    InstanceStart,
+    /// Fetch an Instance's branch into the Node's mirror of its repository (ADR 0271). Its target is the Node.
+    InstanceFetchBranch,
+    /// Check the copy's workspace out on its branch and merge its `.env` (ADR 0271). Its target is the copy.
+    InstanceCheckout,
+    /// Start the copy's T3, issue its two sessions sealed to the Gateway, and add its workspace as a project (ADR 0271).
+    /// Its target is the copy.
+    InstanceT3,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -49,7 +63,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 14] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -58,6 +72,12 @@ impl Action {
         Self::TlsEnsureCsr,
         Self::RoutePublishSite,
         Self::DnsPublishRecords,
+        Self::InstanceClone,
+        Self::InstancePrepare,
+        Self::InstanceStart,
+        Self::InstanceFetchBranch,
+        Self::InstanceCheckout,
+        Self::InstanceT3,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -68,16 +88,30 @@ impl Action {
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
             Self::DnsPublishRecords => Family::Dns,
+            Self::InstanceClone
+            | Self::InstancePrepare
+            | Self::InstanceStart
+            | Self::InstanceFetchBranch
+            | Self::InstanceCheckout
+            | Self::InstanceT3 => {
+                Family::Instance
+            }
         }
     }
 
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {
-            Self::ProofNoop | Self::UfwEnsureRule | Self::TlsEnsureCsr | Self::RoutePublishSite | Self::DnsPublishRecords => {
-                TargetKind::Node
+            Self::ProofNoop
+            | Self::UfwEnsureRule
+            | Self::TlsEnsureCsr
+            | Self::RoutePublishSite
+            | Self::DnsPublishRecords
+            | Self::InstanceClone
+            | Self::InstanceFetchBranch => TargetKind::Node,
+            Self::Sleep | Self::Wake | Self::Discard | Self::InstancePrepare | Self::InstanceStart | Self::InstanceCheckout | Self::InstanceT3 => {
+                TargetKind::Instance
             }
-            Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
 
@@ -92,6 +126,12 @@ impl Action {
             Self::TlsEnsureCsr => "tls.ensure_csr",
             Self::RoutePublishSite => "route.publish_site",
             Self::DnsPublishRecords => "dns.publish_records",
+            Self::InstanceClone => "instance.clone",
+            Self::InstancePrepare => "instance.prepare",
+            Self::InstanceStart => "instance.start",
+            Self::InstanceFetchBranch => "instance.fetch_branch",
+            Self::InstanceCheckout => "instance.checkout",
+            Self::InstanceT3 => "instance.t3",
         }
     }
 }
@@ -114,6 +154,12 @@ impl FromStr for Action {
             "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
             "route.publish_site" => Ok(Self::RoutePublishSite),
             "dns.publish_records" => Ok(Self::DnsPublishRecords),
+            "instance.clone" => Ok(Self::InstanceClone),
+            "instance.prepare" => Ok(Self::InstancePrepare),
+            "instance.start" => Ok(Self::InstanceStart),
+            "instance.fetch_branch" => Ok(Self::InstanceFetchBranch),
+            "instance.checkout" => Ok(Self::InstanceCheckout),
+            "instance.t3" => Ok(Self::InstanceT3),
             _ => Err(UnknownActionError),
         }
     }
@@ -153,6 +199,8 @@ pub enum Family {
     Route,
     /// A VPN Node's private DNS records (ADR 0271).
     Dns,
+    /// Instance containers made from a seed (ADR 0271).
+    Instance,
 }
 
 /// The family name is unknown to this executor.
@@ -171,6 +219,7 @@ impl Family {
             "firewall" => Some(Self::Firewall),
             "route" => Some(Self::Route),
             "dns" => Some(Self::Dns),
+            "instance" => Some(Self::Instance),
             _ => None,
         }
     }
@@ -219,6 +268,8 @@ mod tests {
         assert_eq!("dns.publish_records".parse(), Ok(Action::DnsPublishRecords));
         assert_eq!(Action::DnsPublishRecords.family(), Family::Dns);
         assert!(Enabled::parse("dns\n").expect("valid file").allows(Action::DnsPublishRecords));
+        assert_eq!("instance.clone".parse(), Ok(Action::InstanceClone));
+        assert!(Enabled::parse("instance\n").expect("valid file").allows(Action::InstanceClone));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));
