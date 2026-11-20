@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/InstanceCreateEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/2027_03_10_000000_create_operation_engine_steps_table.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -127,7 +127,7 @@ A start or an order can be lost when the Gateway stops between a commit and its 
 
 ### Cancel
 
-`operation:cancel` sets `cancel_requested_at` and sends a nudge with its own message id. The next transition ends the Operation as cancelled and sends nothing more. An order already on its Node still runs to its end, and when every step has ended, their result counts instead. If the bus is down, the cancel waits for the next receipt, deadline or nudge.
+`operation:cancel` sets `cancel_requested_at` and sends a nudge with its own message id. The next transition ends the Operation as cancelled, with `operation.cancelled`, and sends nothing more. An order already on its Node still runs to its end, and when every step has ended, their result counts instead. If the bus is down, the cancel waits for the next receipt, deadline or nudge.
 
 ## The machine bus
 
