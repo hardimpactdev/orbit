@@ -159,7 +159,7 @@ Two files need a note:
 - `firewall-list.json` answers `GET /api/v1/firewall-rules` for every Node. The demo Gateway derives the one-Node, `managed` and `live` forms from it.
 - `ci-runners.json` answers `GET /api/v1/ci/runners` with one CI Node, its runners and the jobs of its window.
 
-The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
+The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` and `brew-cask` completed with no packages, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
 
 Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
 

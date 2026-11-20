@@ -9,6 +9,7 @@ import {
     normalizeVersion,
     PackageInput,
     platformSupports,
+    publicVersion,
     safeVersion,
     Step,
     ToolRefusal,
@@ -36,6 +37,8 @@ export type Decision = {
     outcome?: string;
     manager_version: string | null;
     installed_version: string | null;
+    /** The raw installed coordinate, such as a cask's `1.5.13,<build>`, which tells a new build from the same one. */
+    installed_coordinate?: string | null;
     candidate_json: string;
 };
 const plain = (input: Input) => ({
@@ -105,6 +108,16 @@ export function candidate(
 }
 /** Decide from "Check the candidate" whether the package write runs; every refusal happens here, before it (flows/tool.install.mmd, tool.update.mmd). */
 export function decide(input: Input, phase: Phase): Decision {
+    const decision = choose(input, phase);
+    return {
+        ...decision,
+        installed_version: decision.installed_version === null
+            ? null
+            : publicVersion(decision.installed_version, input.manager),
+        installed_coordinate: decision.installed_version,
+    };
+}
+function choose(input: Input, phase: Phase): Decision {
     let managerVersion: string | null = null,
         installed = input.installed_version;
     const refused = (code: string, native?: string): Decision => ({
@@ -133,6 +146,9 @@ export function decide(input: Input, phase: Phase): Decision {
         }
         const { facts, present } = writeInventory(phase.facts);
         installed = present ? facts.versions![0]! : installed;
+        if (typeof phase.refresh_error === "string") {
+            return refused(phase.refresh_error);
+        }
         if (!before(input, facts, present)) {
             return {
                 ready: true,
@@ -218,6 +234,7 @@ export const behavior = {
                 query: Step.nullable(),
                 os: Step.nullable(),
                 check: Step.nullable(),
+                refresh: Step.nullable().default(null),
             }),
             execute: async (
                 args: {
@@ -226,6 +243,7 @@ export const behavior = {
                     query: StepValue;
                     os: StepValue;
                     check: StepValue;
+                    refresh?: StepValue;
                 },
                 ctx: Context,
             ) => {
@@ -238,6 +256,18 @@ export const behavior = {
                         args.os,
                     );
                     phase = { facts, candidate: null };
+                    // A stale Linux cask API would hide a new build, so every Linux cask write needs a successful refresh.
+                    if (
+                        args.input.platform === "linux" &&
+                        args.input.manager === "brew-cask"
+                    ) {
+                        try {
+                            native.refreshed(args.refresh ?? null);
+                        } catch (error) {
+                            if (!(error instanceof ToolRefusal)) throw error;
+                            phase.refresh_error = error.code;
+                        }
+                    }
                     phase.candidate = native.candidate(
                         args.input,
                         args.check,
@@ -292,7 +322,10 @@ export const behavior = {
                     );
                 }
                 const value = {
-                    installed_version,
+                    installed_version: installed_version === null
+                        ? null
+                        : publicVersion(installed_version, args.input.manager),
+                    installed_coordinate: installed_version,
                     present: facts.versions.length === 1,
                     absent: facts.versions.length === 0,
                     compliant: args.input.manager !== "apt" ||

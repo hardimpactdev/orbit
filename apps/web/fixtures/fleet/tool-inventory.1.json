@@ -14,7 +14,7 @@
                 },
                 {
                     "manager": "brew-cask",
-                    "scan_state": "unsupported",
+                    "scan_state": "complete",
                     "packages": []
                 },
                 {

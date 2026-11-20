@@ -17,7 +17,8 @@ final readonly class ToolManagerIntent
     /** @return array<string, mixed>|null */
     public function nativeInput(Node $node, ToolManagerName $manager): ?array
     {
-        if ($node->platform !== 'linux' || $manager === ToolManagerName::Apt) {
+        // A cask uses the Homebrew prefix the Node already has; its install never provisions Homebrew.
+        if ($node->platform !== 'linux' || $manager === ToolManagerName::Apt || $manager === ToolManagerName::BrewCask) {
             return null;
         }
         $recipe = new RecipeLoader()->source();

@@ -18,7 +18,7 @@ describe('tool inventory responses', function (): void {
             ->and(array_map(static fn (ToolInventoryManagerResponse $manager): string => $manager->manager, $inventory->managers))
             ->toBe(['brew', 'brew-cask', 'vp', 'apt'])
             ->and(array_map(static fn (ToolInventoryManagerResponse $manager): string => $manager->scanState, $inventory->managers))
-            ->toBe(['complete', 'unsupported', 'complete', 'not_observed'])
+            ->toBe(['complete', 'complete', 'complete', 'not_observed'])
             ->and($packages['brew']['pcre2']->packageKind)
             ->toBe('formula')
             ->and($packages['brew']['pcre2']->dependency)

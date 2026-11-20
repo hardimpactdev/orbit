@@ -35,7 +35,7 @@ A signed apt source stages its key, reads it with one `gpg --with-colons --show-
 
 | Workflow | Steps |
 | --- | --- |
-| Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
+| Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Refresh the cask metadata` for a Linux cask, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
 | Remove | `Prepare package commands`, parallel manager and package reads, `Plan the removal`, `Choose package action`, `Remove the package`, apt check or manager query, optional source and preference removal, `Decode package state`, `Assert package state` |
 
 ### Install and update steps
@@ -45,6 +45,8 @@ Steps carry the exact labels of the reviewed flow charts ([ADR 0246](/decisions/
 - `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
 - `Write the apt source` runs only with `--repository`, after worker-side download, fingerprint inspection and a native assertion. Binary key publication, text files and scoped apt refresh remain separate steps.
 - `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
+- For a Linux cask, `Refresh the cask metadata` runs `brew outdated --cask --quiet`. It refreshes the cask API without `brew update`.
+- A non-zero exit, or a warning that Homebrew fell back to cached API data, stops the operation with `tool.candidate_version_probe_failed`.
 - `Choose package action` applies the refusals and the constraint before the package write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
 - `Apply the package` writes the candidate for every manager. `Check apt package` uses the official apt check; `Check the package` queries other managers. `Decode package state` shapes the observation, and `Assert package state` enforces it.
@@ -82,7 +84,7 @@ The Gateway manages Tools only on an active Node that it manages over SSH. That 
 
 Manager setup captures the ordered recipe artifact candidates at admission. Pinned Debian prerequisites, including Git for Composer, download from the [artifact mirror](/reference/compute-drivers#the-recipe-artifact-mirror) at its pinned checksum. The structured curl exit code permits upstream fallback only after a transport failure. Local I/O, size-limit and checksum failures stop setup.
 
-Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on macOS only.
+Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on Linux and macOS. On Linux, the Node must already have Homebrew, and a cask must ship a Linux build.
 
 Manager state remains after its last Tool is removed. Failed materialization remains retryable. Role removal implicitly removes neither packages nor Tool intent nor manager state; roles may require managers but do not own them. On macOS, verify the existing Homebrew prefix and enrolled account's Vite+ scope in place rather than replacing them.
 
@@ -96,9 +98,9 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 | `composer` | Linux only | A `vendor/package` name | Orbit's shared Composer global scope | On first Linux use, or with `app-dev` or `app-prod` |
 | `vp` | Linux and macOS | An npm package name | The enrolled account's Vite+ global scope | Linux: first use or an application role. macOS: verified in place |
 | `brew` | Linux and macOS | A verified Homebrew Core bottle | `/home/linuxbrew/.linuxbrew` on Linux; the existing prefix on macOS | Linux: pinned revision on first use. macOS: verified in place |
-| `brew-cask` | macOS only | An official Homebrew cask | That macOS prefix and its casks; shares the `brew` lock | Verified in place. Orbit does not install it |
+| `brew-cask` | Linux and macOS | An official Homebrew cask; on Linux, one that ships a Linux build | The `brew` prefix and its casks; shares the `brew` lock | Linux: once the Node agent reports Homebrew. macOS: verified in place. Orbit does not install Homebrew for a cask |
 
-`apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Install, update, removal, and adoption return `tool.manager_unsupported` (HTTP 422) before a lock or SSH. An absent or conflicting scope still returns `tool.manager_unavailable` (HTTP 409).
+`apt` and `composer` are not offered on macOS. `brew-cask` is not offered on a Linux Node until the [Node agent](/reference/node-agent) reports its Homebrew prefix. Install, update, removal, and adoption return `tool.manager_unsupported` (HTTP 422) before a lock or SSH. An absent or conflicting scope still returns `tool.manager_unavailable` (HTTP 409).
 
 On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Linux materialization skip account-owned directories without `bin/vp`, such as a cache-only `~/.vite-plus/package_manager/npm` directory. They choose the first Vite+ store with `bin/vp` for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. The Node agent reads its [packages fact](/reference/node-agent#packages) from the same scope, without running `vp`; the Gateway names the home candidates from the managed user, `/home/<user>`, without asking the Node. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
 
@@ -220,7 +222,7 @@ The response has no paths, environment values, or credentials. Registered apt pa
 | Scan state | Meaning |
 | --- | --- |
 | `complete` | The agent reported this manager. The package array is the inventory and may be empty. |
-| `unsupported` | This platform does not offer the manager. `brew-cask` is unsupported on Linux; `apt` is unsupported on macOS. |
+| `unsupported` | This Node does not offer the manager. `brew-cask` is unsupported on a Linux Node whose agent has not reported Homebrew; `apt` is unsupported on macOS. |
 | `not_observed` | The agent has not reported this manager. `tool:scan` prints "not observed yet". |
 
 A manager is `not_observed` while the agent is new or silent, when the manager is not installed, and on a Node that runs no observing agent, such as a macOS Node. The agent watches every manager a Linux Node can run, recorded or not. A manager removed after the agent reported it keeps its last fact until the agent reports its absence.
@@ -409,13 +411,15 @@ Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_N
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on macOS. The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
+`brew-cask` supports official Homebrew casks on Linux and macOS. On Linux it uses the Node's existing `/home/linuxbrew/.linuxbrew` prefix, and a cask must ship a Linux build. Linux `brew info --json=v2 --cask` prints the record already resolved for x86_64 Linux, with no `variations`. That record's `depends_on` may name no macOS requirement and no CPU other than 64-bit Intel, and a `supported_platforms` list, when present, must include `x86_64_linux`. A macOS-only cask is `unsupported_artifact`. Linux arm64 has no cask tag, so a cask there fails with `tool.version_probe_failed`.
+
+The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
 
 Before install or update, the Gateway reads `brew info --json=v2 --cask` for that coordinate. The cask must come from the `homebrew/cask` tap, use an `https` URL, and name itself with the same unqualified token. The Gateway then applies one refusal, in this order: an unsupported artifact, interactive or administrator authorization, the checksum policy, then an unreadable version.
 
-`brew info --json=v2` returns the current arm64 definition as the base fields. Other Mac definitions are shallow overrides under `variations`, keyed by the same bottle tag formulae use (`sw_vers` plus the code-owned symbol table; arm64 prefixes the symbol, Intel uses the symbol alone). The Gateway applies `variations[<tag>]` before it checks the URL, version, checksum, and artifacts. `sha256` must be one lowercase SHA-256 on that definition. `no_check` fails the checksum policy. Discovery reports that checksum failure as `unsupported_artifact`.
+`brew info --json=v2` returns the current arm64 definition as the base fields. Other definitions are shallow overrides under `variations`, keyed by the same bottle tag formulae use (`sw_vers` plus the code-owned symbol table; arm64 prefixes the symbol, Intel uses the symbol alone; Linux x86_64 is `x86_64_linux`). The Gateway applies `variations[<tag>]` before it checks the URL, version, checksum, and artifacts. `sha256` must be one lowercase SHA-256 on that definition. `no_check` fails the checksum policy. Discovery reports that checksum failure as `unsupported_artifact`.
 
-Supported artifacts install into the enrolled user's home or the Homebrew prefix. That includes fonts, binaries, man pages, completions, and user plugins whose target is `/$HOME`, `~/`, or `$HOMEBREW_PREFIX`. `brew info --json=v2` expands a default home target to that account's absolute home, such as `/Users/mini/Library/Fonts/Hack.ttf`. The same expansion applies to uninstall `trash`, `delete`, and `rmdir` paths. An absolute path inside the resolved home is still the user's home.
+Supported artifacts install into the enrolled user's home or the Homebrew prefix. That includes fonts, binaries, command wrappers, man pages, completions, and user plugins whose target is `/$HOME`, `~/`, or `$HOMEBREW_PREFIX`. `brew info --json=v2` expands a default home target to that account's absolute home, such as `/Users/mini/Library/Fonts/Hack.ttf`. The same expansion applies to uninstall `trash`, `delete`, and `rmdir` paths. An absolute path inside the resolved home is still the user's home.
 
 An app or suite that targets `/Applications`, another account's home, a package installer, a privileged plugin, or an uninstall that uses `pkgutil`, `kext`, `launchctl`, or a system path is `authorization_required`. Preflight, postflight, stage-only, and arbitrary uninstall scripts are `unsupported_artifact`. A disabled cask is too. Zap stanzas are ignored and never run.
 
@@ -423,13 +427,15 @@ Removal does not repeat the disabled, checksum, version, or source gates. It sti
 
 When the official cask is gone, Homebrew says `homebrew/cask/<token>` is unavailable because the tap is not installed. Removal then reads that token from `info --json=v2 --cask --installed`. It uninstalls only when that entry's tap is `homebrew/cask`, and it passes the plain token to `uninstall --cask`. The same bottle-tag override applies.
 
-Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed` and `list --cask -1`. A cask that `list` names and `info` omits stays in discovery with `unsupported_source`.
+Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. The installed-version read of a write uses `info --json=v2 --cask --installed`.
 
-The installed-version read uses `info --json=v2 --cask --installed`. Only an entry from `homebrew/cask` counts as the official Tool. A same-token cask from another tap does not count. Discovery reports it as `unsupported_source`; adoption returns `tool.package_absent` (HTTP 409) and creates no Tool. An unreadable installed version affects only that cask.
+In that read, only an entry from `homebrew/cask` counts as the official Tool. A same-token cask from another tap does not count. Discovery and adoption read the [packages fact](#discover-installed-packages), which lists each cask in the Caskroom with neither its tap nor its artifacts. Discovery reports every cask with block `unsupported_artifact`, and adoption of a valid, unprotected token returns `tool.adoption_unsupported` with that block and creates no Tool. An unreadable installed version affects only that cask.
 
-The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
+The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`, on Linux and macOS, so a new cask build is visible without `brew update`. Linux formula commands do not set it. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
 
-An unsupported installed cask stays in discovery with `adoption` `unsupported` and one block token. Discovery does not create a Tool and does not mean the cask can be adopted. A supported cask can be installed, updated, and removed as a normal Tool. A policy refusal or a failed command returns that operation's own error: `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed` and can be retried. The error never includes raw Homebrew output. Adoption of a cask that needs an interactive or administrator prompt uses `tool.adoption_unsupported` with `adoption_block` `authorization_required`. Formula and cask operations share the Homebrew prefix lock, including when their manager records have different ids.
+An unsupported installed cask stays in discovery with `adoption` `unsupported` and one block token. Discovery does not create a Tool and does not mean the cask can be adopted. A supported cask can be installed, updated, and removed as a normal Tool. A policy refusal or a failed command returns that operation's own error: `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed` and can be retried. The error never includes raw Homebrew output.
+
+`authorization_required` is a write-policy refusal. Adoption cannot see cask artifacts, so it refuses every valid, unprotected cask with `tool.adoption_unsupported` and `adoption_block` `unsupported_artifact`. Formula and cask operations share the Homebrew prefix lock, including when their manager records have different ids.
 
 ## Remove a Tool
 
@@ -519,7 +525,7 @@ A manager serves any Node that the Gateway manages. Tying `vp` and `composer` to
 
 ### Bottled Homebrew Core only
 
-The formula manager accepts only Homebrew Core bottles with verified checksums, on Linux and macOS. The macOS tag comes from `sw_vers` and the code-owned symbol table, never from a Homebrew developer command. Casks use a separate macOS adapter with official metadata and supported artifacts. Taps, source builds, caller options, and arbitrary installers remain outside both contracts. Separate package identities avoid formula and cask collisions; a shared prefix lock prevents concurrent mutations of their common installation.
+The formula manager accepts only Homebrew Core bottles with verified checksums, on Linux and macOS. The macOS tag comes from `sw_vers` and the code-owned symbol table, never from a Homebrew developer command. Casks use a separate adapter with official metadata and supported artifacts, on macOS and on a Linux Node with Homebrew. Taps, source builds, caller options, and arbitrary installers remain outside both contracts. Separate package identities avoid formula and cask collisions; a shared prefix lock prevents concurrent mutations of their common installation.
 
 ### Selected adoption
 
@@ -527,7 +533,9 @@ Discovery shows installed packages and creates no Tool rows. Adoption is the sep
 
 Owning every installed package was rejected because a scan is not a request to own the machine. Silent adoption during install was rejected because installing and taking ownership are different intentions. Storing discoveries as Tools was rejected because a Tool row is selected intent, not an observation. One identity for a formula and a cask was rejected because the names can collide and the operations differ. Separate locks were rejected because both change the same Homebrew prefix. Adopting tunnel and bootstrap packages was rejected because removal would then uninstall SSH, WireGuard, DNS, Docker, the firewall, sudo, Caddy, or a manager.
 
-A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
+A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan.
+
+A cask version with a build after a comma, such as `1.5.13,5999302598852608`, reads as the SemVer before the comma, `1.5.13`, in the scan and constraints. The version a write reports is the part before the comma; a cask version without a comma, such as `140.0`, stays as it is. A new build of the same version is still `applied`, because the write compares the full versions. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
 
 ## Recipe convergence
 
