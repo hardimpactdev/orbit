@@ -56,6 +56,15 @@ final readonly class AiRouterTaskGuard
 
     public const string GeminiPath = '^/v1beta/models/'.self::GeminiModel.':(?:generateContent|countTokens)$';
 
+    /**
+     * The playbooks that apply the guard, both for a guard run and for a forwarder run's guard phase. Their bytes move the
+     * {@see self::digest()}, so a release that changes how the guard is applied applies it again.
+     */
+    public const array Playbooks = ['swamp/ansible/ai-router-task-guard.yml', 'swamp/ansible/tasks/address-node.yml', 'swamp/ansible/tasks/firewall.yml'];
+
+    /** The parts of an intent the guard phase applies on the router's Node. The SSH target and a forwarder's own part stay out. */
+    private const array Applied = ['state', 'origin', 'directory', 'unit', 'caddyfile', 'firewall'];
+
     /** Guard and forwarder runs share it: two at once could each drop the other's forwarder Node from the guard. */
     public const string LockPrefix = 'ai_router_guard:';
 
@@ -246,10 +255,43 @@ final readonly class AiRouterTaskGuard
      */
     public function applied(Node $node): bool
     {
-        $last = Operation::query()->whereIn('kind', ['ai_router.task_guard', AiRouterModelForwarder::Kind])->where('node_id', $node->id)
-            ->where('status', OperationStatus::Succeeded)->latest('id')->first();
+        $last = $this->last($node);
 
         return $last !== null && (ValidatedData::object($last->input['intent'])['state'] ?? null) === 'present';
+    }
+
+    /**
+     * The digest of the guard the last succeeded guard or forwarder run applied, or null when the guard is off or the run recorded none,
+     * as a run admitted before digests were recorded.
+     */
+    public function appliedDigest(Node $node): ?string
+    {
+        return $this->applied($node) ? ValidatedData::nullableString($this->last($node)?->input['guard_digest'] ?? null) : null;
+    }
+
+    /**
+     * What the guard phase applies, without a secret: the guard's parts of the intent (its Caddyfile with its routes and sources, its UFW
+     * rules, its state) and the bytes of the playbooks that apply them. Each run records it, so the [release
+     * pass](/reference/ai-router#the-guard-follows-its-config) can tell a guard that no longer matches its config.
+     *
+     * @param  array<string, mixed>  $intent
+     */
+    public function digest(array $intent): string
+    {
+        $root = dirname(base_path(), 2);
+        $playbooks = [];
+        foreach (self::Playbooks as $file) {
+            $playbooks[$file] = hash_file('sha256', $root.'/'.$file)
+                ?: throw new ResourceOperationException('ai_router.guard_inputs_unavailable', "Cannot read the guard playbook [{$file}].", 503);
+        }
+
+        return 'sha256:'.hash('sha256', json_encode([array_intersect_key($intent, array_flip(self::Applied)), $playbooks], JSON_THROW_ON_ERROR));
+    }
+
+    private function last(Node $node): ?Operation
+    {
+        return Operation::query()->whereIn('kind', ['ai_router.task_guard', AiRouterModelForwarder::Kind])->where('node_id', $node->id)
+            ->where('status', OperationStatus::Succeeded)->latest('id')->first();
     }
 
     /**

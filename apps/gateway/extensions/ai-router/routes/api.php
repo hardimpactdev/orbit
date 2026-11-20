@@ -16,6 +16,7 @@ Route::middleware(['api', RequireActiveWireGuardPeer::class, RequireNodeAccess::
     Route::get('ai-router/providers/{provider}', [AiRouterController::class, 'show'])
         ->where('provider', '[a-z][a-z0-9-]*')
         ->name('ai-router:provider:show');
+    Route::post('ai-router/task-guard', [AiRouterController::class, 'taskGuard'])->name('ai-router:task-guard');
     Route::get('ai-router/models', [AiRouterController::class, 'models'])->name('ai-router:model:list');
     Route::post('ai-router/accounts/{account}/enable', [AiRouterController::class, 'enableAccount'])
         ->where('account', '[A-Za-z0-9._-]+')->name('ai-router:account:enable');

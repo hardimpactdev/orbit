@@ -60,11 +60,11 @@ final readonly class AdmitAiRouterModelForwarderAction
         }
         $others = array_values(array_filter($this->guard->forwarders($router), static fn (Node $other): bool => $other->id !== $node->id));
         $rule = $this->forwarder->rule($bridge, $address);
+        $applied = [...$this->guard->intent($router, $remove ? $others : $this->byId([...$others, $node]), false), 'state' => $guard ? 'present' : 'absent'];
 
         return $this->start->execute(AiRouterModelForwarder::Kind, 'node', $node->id, $router->id, [
             'intent' => [
-                ...$this->guard->intent($router, $remove ? $others : $this->byId([...$others, $node]), false),
-                'state' => $guard ? 'present' : 'absent',
+                ...$applied,
                 'forwarder' => [
                     'ssh' => $this->ssh->forNode($node),
                     'state' => $remove ? 'absent' : 'present',
@@ -86,6 +86,7 @@ final readonly class AdmitAiRouterModelForwarderAction
                 ],
             ],
             'execution_secrets' => $this->guard->executionSecrets($router),
+            'guard_digest' => $this->guard->digest($applied),
         ], $triggeredBy, $requestId, lockKey: $this->guard->lock($router));
     }
 

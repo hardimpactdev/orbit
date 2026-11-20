@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: Nick 2026-11-07, one fixed model key for all task VMs, usable only inside the task VM network; the guard pattern of /reference/tasks#credentials-in-task-vms.
   %% status: draft
-  %% command: none · `ai-router:task-guard` on the Gateway, after setup and on a key rotation
+  %% command: ai-router:task-guard · also each release when the guard's config changed, and `ai-router:task-guard` on the Gateway
   %% kind: ai_router.task_guard
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -16,6 +16,8 @@ sequenceDiagram
   %%> - pushes vault copies of the task key and the anchor key; the intent holds neither
   %%> - `--remove` records the guard's removal instead: the same run takes it off the Node, with each forwarder Node's allow
   %%> - takes the lock `ai_router_guard:<router Node>`, which forwarder runs share
+  %%> - records the digest of what it applies, without a secret: the guard's Caddyfile, its UFW rules, its state and the bytes of its playbooks
+  %%> - each release's `ai_router_guard` phase admits this run by itself, as `release:<commit>`, when the guard is in place and its digest differs from the one the last guard or forwarder run applied
   %%> Requirements:
   %%> - the ai-router extension is set up on its Node
   GW->>SW: Start run, full intent<br/>operation-ai-router-task-guard
