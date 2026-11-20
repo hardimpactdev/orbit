@@ -239,7 +239,6 @@ The implementer's last message is the handoff note, which the reviewer gets. The
 - the commit;
 - one line for each outcome or deliverable, with its evidence;
 - what was real and what was a stand-in, and evidence from an earlier turn;
-- answers to open questions in the brief;
 - what is not done or not proven, and other problems it did not fix.
 
 To ask, the implementer uses its question tool. Asking ends the turn, and the answer comes as the next turn.

@@ -38,12 +38,16 @@ enum ContainerServer: string
         return $this->program().' serve --host=0.0.0.0 --port='.InstanceHostIntent::T3Port.' --no-browser';
     }
 
-    /** The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too. */
+    /**
+     * The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too, and Antigravity's
+     * self-updater off: Conn hands its own environment to `agy`, which takes only `true` here.
+     */
     public function dropIn(InstanceFolders $folders): string
     {
         $browser = '';
         if ($this === self::Conn) {
-            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n";
+            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n"
+                ."Environment=AGY_CLI_DISABLE_AUTO_UPDATE=true\n";
         }
 
         return "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=".$this->serve()."\n".$browser;

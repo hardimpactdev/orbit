@@ -1,4 +1,5 @@
 //! AI router Node behavior, composed into the pinned agent binary.
+mod aliases;
 mod collector;
 mod grpc;
 mod quota;

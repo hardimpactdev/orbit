@@ -1645,6 +1645,57 @@ class CloneGuestTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 run()
 
+    def test_agent_puts_the_model_key_in_place_of_its_value_keeps_other_providers_and_an_imported_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            for name in ["home/agent/.claude", "home/agent/.t3/userdata", "home/agent/.config/orbit"]:
+                (base / name).mkdir(parents=True, exist_ok=True)
+            settings = base / "home/agent/.t3/userdata/settings.json"
+            # A seed with the agent's own providers, and an older Orbit entry the intent names again.
+            own = {"myClaude": {"driver": "claudeAgent", "displayName": "Mine"}, "myCodex": {"driver": "codex"}}
+            settings.write_text(json.dumps({"theme": "dark", "providerInstances": {
+                **own, "antigravity": {"driver": "antigravity", "enabled": False, "config": {"binaryPath": "/x"}}}}))
+            (base / "home/agent/.config/orbit/model.env").write_text("ANTHROPIC_AUTH_TOKEN=seeded\nORBIT_MODEL_KEY=seeded\n")
+            antigravity = {"driver": "antigravity", "enabled": True, "config": {"authMethod": "gemini-api-key", "apiKey": "#orbit-model-key"}}
+            container = {"workspace": "/srv/workspace", "clone": {
+                "files": [{"path": "/home/agent/.t3/userdata/settings.json", "uid": os.getuid(), "gid": os.getgid(), "mode": "0600",
+                           "json": {"linkedEnvironmentsEnabled": True, "providerInstances": {"antigravity": antigravity}}}],
+                "links": [], "agent_instructions": {"folder": "/home/agent/.config/orbit/agent", "files": []},
+                "model_environment": {"path": "/home/agent/.config/orbit/model.env", "uid": os.getuid(), "gid": os.getgid(),
+                                      "mode": "0600", "key_value": "#orbit-model-key"}}}
+
+            def command(argv, **_kwargs):
+                if "/usr/local/libexec/orbit-instance-node-runtime.py" in argv:
+                    return subprocess.CompletedProcess(argv, 0, '{"status":"unchanged"}', "")
+                return subprocess.CompletedProcess(argv, 0, "/srv/workspace\n" if argv[-1] == "safe.directory" else "Agent\n", "")
+
+            def run():
+                output = io.StringIO()
+                with (patch.object(GUEST.pathlib, "Path", lambda value: base / str(value).lstrip("/")),
+                      patch.object(GUEST.subprocess, "run", command), contextlib.redirect_stdout(output)):
+                    GUEST.phase_main("agent", json.dumps(container))
+                self.assertNotIn("seeded", output.getvalue())
+                return json.loads(output.getvalue())["changes"]
+
+            self.assertIn("/home/agent/.t3/userdata/settings.json", run())
+            written = json.loads(settings.read_text())
+            self.assertNotIn("#orbit-model-key", settings.read_text())
+            self.assertEqual(written["providerInstances"], {**own, "antigravity": {"driver": "antigravity", "enabled": True,
+                "config": {"binaryPath": "/x", "authMethod": "gemini-api-key", "apiKey": "seeded"}}})
+            self.assertEqual(written["theme"], "dark")
+            self.assertEqual(run(), [])
+            # The Conn Server moved the key into its store and left its mark: the entry stays as it is.
+            written["providerInstances"]["antigravity"]["config"]["apiKey"] = "\u2022" * 6
+            settings.write_text(json.dumps(written))
+            self.assertEqual(run(), [])
+            self.assertEqual(json.loads(settings.read_text()), written)
+            # A model environment without the key refuses rather than write the value.
+            (base / "home/agent/.config/orbit/model.env").write_text("ANTHROPIC_AUTH_TOKEN=seeded\n")
+            settings.write_text("{}")
+            with self.assertRaises(RuntimeError):
+                run()
+            self.assertEqual(settings.read_text(), "{}")
+
 
 class AgentFolderTest(unittest.TestCase):
     """A clone's agent folder (development-containers.md#agent-instructions), written by the agent part under a temporary root."""

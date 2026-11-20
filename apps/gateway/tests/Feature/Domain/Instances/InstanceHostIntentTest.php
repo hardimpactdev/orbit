@@ -228,13 +228,13 @@ describe('the container branch of the app-dev converge', function (): void {
                 ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3{$serve}\n"],
             ]],
-            // A Conn container's server drop-in carries the preview browser of the recipe's agent folder.
+            // A Conn container's server drop-in carries the preview browser of the recipe's agent folder, and Antigravity's updater off.
             ['project' => 'orbit-instances-nested', 'container' => $conn->container_name, 'program' => '/opt/orbit-agent/current/agent/bin/conn-server', 'files' => [
                 ['path' => InstanceContainer::T3BootDropIn, 'mode' => '0644', 'content' => $boot],
                 ['path' => InstanceContainer::ServerDropIn, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server{$serve}\n"
                         ."Environment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\n"
-                        ."Environment=T3CODE_SERVER_BROWSER_SANDBOX=0\n"],
+                        ."Environment=T3CODE_SERVER_BROWSER_SANDBOX=0\nEnvironment=AGY_CLI_DISABLE_AUTO_UPDATE=true\n"],
             ]],
         ])
             // The same texts a clone's create writes before its first start.
@@ -580,10 +580,10 @@ describe('the shared folders', function (): void {
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
         expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg', 'chrome-headless-shell'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
-            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
+            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'agy', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
             ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'chrome-headless-shell' => 'zip', 'php/8.5' => 'tar'])
             ->and(array_unique(array_values($browser)))->toBe(['deb'])
-            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip', 'agent-browser' => 'file'])
+            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'antigravity' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip', 'agent-browser' => 'file'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);
     });
 

@@ -3,14 +3,7 @@
 declare(strict_types=1);
 
 use App\Providers\AppServiceProvider;
-use Spatie\Guidelines\GuidelinesServiceProvider;
 
-$providers = [
+return [
     AppServiceProvider::class,
 ];
-
-if (class_exists(GuidelinesServiceProvider::class)) {
-    $providers[] = GuidelinesServiceProvider::class;
-}
-
-return $providers;

@@ -150,7 +150,6 @@ it('gives the implementer its fixed text: the briefs, the deliverables, its rule
       and where the evidence is (a test, a receipt path, an Operation ID).
     - What was real and what was a stand-in.
     - Evidence from an earlier turn: say so, and name its commit.
-    - For an open question in the brief: the answer, with file and line.
     - What is not done or not proven, and why.
     - Other problems you found and did not fix.
 
