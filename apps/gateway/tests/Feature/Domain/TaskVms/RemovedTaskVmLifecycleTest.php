@@ -31,6 +31,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -484,6 +485,19 @@ it('reads a merged pull request with its own token when its branch is gone, and 
     expect($reads)->toContain('branch:contents-read', 'pull:pull-requests-read', 'compare:contents-read')
         ->and($reads)->not->toContain('compare:pull-requests-read', 'branch:pull-requests-read');
 });
+
+// Group 6078 of Project 78: its pull request merged, but the group kept the watched state "open" after task:complete.
+it('records how the watched pull request ended as its state when task:complete ends a running external group', function (GitHubPullRequestState $state): void {
+    $a = str_repeat('a', 40);
+    $origin = ['branch' => [$a]];
+    [$group, , $gateway] = originWorld([$a], $origin, merged: $a, status: TaskGroupStatus::Running, state: $state);
+    $group->update(['orchestration' => TaskOrchestration::External, 'watched_pr_state' => 'open']);
+
+    groupCall($gateway, $group, 'complete')->assertOk();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+        ->and($group->watched_pr_state)->toBe($state->value)->and($group->watched_pr_completion)->toBe($state->value);
+})->with([GitHubPullRequestState::Merged, GitHubPullRequestState::Closed]);
 
 it('refuses when the task branch cannot be read, though the merged pull request\'s head is the approved commit', function (): void {
     $a = str_repeat('a', 40);
