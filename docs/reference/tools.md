@@ -45,7 +45,7 @@ Steps carry the exact labels of the reviewed flow charts ([ADR 0246](/decisions/
 - `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
 - `Write the apt source` runs only with `--repository`, after worker-side download, fingerprint inspection and a native assertion. Binary key publication, text files and scoped apt refresh remain separate steps.
 - `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
-- `Refresh the cask metadata` runs only for a Linux cask. It runs `brew outdated --cask --quiet`, an auto-update command that refreshes Homebrew's cask API with `HOMEBREW_FORCE_API_AUTO_UPDATE` and no `brew update`, so `Check the candidate` sees a new build. Linux `brew info` alone reads the cached API.
+- For a Linux cask, `Refresh the cask metadata` runs `brew outdated --cask --quiet`. It refreshes the cask API without `brew update`.
 - `Choose package action` applies the refusals and the constraint before the package write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
 - `Apply the package` writes the candidate for every manager. `Check apt package` uses the official apt check; `Check the package` queries other managers. `Decode package state` shapes the observation, and `Assert package state` enforces it.
