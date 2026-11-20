@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInsightRecorder;
 use App\Domain\Tasks\TaskInsights;
+use App\Domain\Tasks\TaskInsightsExposition;
 use App\Domain\Tasks\TaskInsightTotals;
 use App\Models\AgentThread;
 use App\Models\GatewayRelease;
@@ -123,8 +124,8 @@ it('answers from the stored totals exactly what the report computes from the sou
     Artisan::call('task:insights-refresh');
     insightPeer();
 
-    foreach (TaskInsights::Periods as $period => $days) {
-        $report = app(TaskInsights::class)->report($days, $projectId, CarbonImmutable::now())->toArray();
+    foreach (array_keys(TaskInsights::Periods) as $period) {
+        $report = app(TaskInsights::class)->report($period, $projectId, CarbonImmutable::now())->toArray();
         $stored = app(TaskInsightTotals::class)->read($period, $projectId, CarbonImmutable::now());
         expect($report['current']['tasks'])->toBeGreaterThan(0)
             ->and($stored)->toBe($report);
@@ -258,7 +259,7 @@ it('answers the endpoint from the stored totals without a task query, and comput
 
     $first = $this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data');
     expect($source($queries))->toBe([])->and(DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->count())->toBe(1)
-        ->and($first)->toBe(json_decode((string) json_encode(app(TaskInsights::class)->report(7, $app->id, CarbonImmutable::now())->toArray()), true));
+        ->and($first)->toBe(json_decode((string) json_encode(app(TaskInsights::class)->report('7d', $app->id, CarbonImmutable::now())->toArray()), true));
 
     $queries = [];
     expect($this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data'))->toBe($first)
@@ -272,7 +273,7 @@ it('answers from the source tables and stores nothing before the first refresh h
     insightPeer();
 
     foreach ([null, $app->id] as $projectId) {
-        $report = app(TaskInsights::class)->report(7, $projectId, CarbonImmutable::now())->toArray();
+        $report = app(TaskInsights::class)->report('7d', $projectId, CarbonImmutable::now())->toArray();
         expect($report['current']['tasks'])->toBeGreaterThan(0)
             ->and($this->getJson('/api/v1/task-insights?period=7d'.($projectId === null ? '' : '&project_id='.$projectId))->assertOk()->json('data'))
             ->toBe(json_decode((string) json_encode($report), true));
@@ -280,7 +281,7 @@ it('answers from the source tables and stores nothing before the first refresh h
     expect(DB::table('task_insight_totals')->count())->toBe(0);
 
     Artisan::call('task:insights-refresh');
-    expect(app(TaskInsightTotals::class)->read('7d', $app->id, CarbonImmutable::now()))->toBe(app(TaskInsights::class)->report(7, $app->id, CarbonImmutable::now())->toArray());
+    expect(app(TaskInsightTotals::class)->read('7d', $app->id, CarbonImmutable::now()))->toBe(app(TaskInsights::class)->report('7d', $app->id, CarbonImmutable::now())->toArray());
 });
 
 it('stores one report per scope and period when another read stores the same missing scope first', function (?string $scope): void {
@@ -302,7 +303,7 @@ it('stores one report per scope and period when another read stores the same mis
     $report = app(TaskInsightTotals::class)->read('7d', $projectId, CarbonImmutable::now());
 
     expect($raced)->toBeTrue()
-        ->and($report)->toBe(app(TaskInsights::class)->report(7, $projectId, CarbonImmutable::now())->toArray())
+        ->and($report)->toBe(app(TaskInsights::class)->report('7d', $projectId, CarbonImmutable::now())->toArray())
         ->and(DB::table('task_insight_totals')->where('scope', $key)->where('period', '7d')->count())->toBe(1);
 })->with(['all Projects' => null, 'one Project' => 'app']);
 
@@ -315,7 +316,7 @@ it('aggregates every record of a renamed Project under its current code', functi
     Artisan::call('task:insights-refresh');
 
     foreach ([null, $app->id] as $projectId) {
-        $report = app(TaskInsights::class)->report(30, $projectId, CarbonImmutable::now())->toArray();
+        $report = app(TaskInsights::class)->report('30d', $projectId, CarbonImmutable::now())->toArray();
         expect(app(TaskInsightTotals::class)->read('30d', $projectId, CarbonImmutable::now())['breakdowns']['project'])->toBe($report['breakdowns']['project']);
     }
     expect(array_column($report['breakdowns']['project'], 'label'))->toBe(['NEW']);
@@ -353,3 +354,77 @@ it('recovers on the refresh a write whose record rewrite failed, even in the sec
     expect($source[$key])->not->toBe($before[$key])
         ->and($facts()[$key])->toBe($source[$key]);
 })->with(['handoff', 'release', 'tokens']);
+
+it('stores the 24h report on each refresh with the hour window of the refresh time, and serves it until the next refresh', function (): void {
+    test()->travelTo(CarbonImmutable::parse('2026-11-19 12:07:00', 'UTC'));
+    app(TaskExtensionState::class)->enable();
+    $app = insightProject('app');
+    // The refresh re-records each group after this write, which bypasses the observers.
+    $ended = static fn (string $at, bool $merged): int => DB::table('tasks')->where('id', insightGroup($app, 0, ['merged' => $merged])->id)
+        ->update(['ended_at' => $at, 'merged_at' => $merged ? $at : null, 'updated_at' => now()]);
+    $ended('2026-11-19 12:01:00', true);  // the current hour
+    $ended('2026-11-18 13:00:00', false); // the first hour
+    $ended('2026-11-18 12:59:59', true);  // the previous period
+    test()->travel(1)->seconds();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $stored = static fn (string $period): array => json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', $period)->value('payload'), true);
+
+    $day = $stored('24h');
+    expect([$day['period'], $day['from'], $day['to']])->toBe(['24h', '2026-11-18T13:00:00+00:00', '2026-11-19T13:00:00+00:00'])
+        ->and([$day['current']['tasks'], $day['current']['merged'], $day['previous']['tasks']])->toBe([2, 1, 1])
+        ->and(array_sum(array_column($day['breakdowns']['project'], 'tasks')))->toBe(2)
+        ->and($day['daily'])->toBe([])
+        ->and($day['hourly'])->toHaveCount(24)
+        ->and($day['hourly'][0])->toBe(['hour' => '2026-11-18T13:00:00+00:00', 'merged' => 0, 'not_merged' => 1])
+        ->and($day['hourly'][23])->toBe(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0])
+        ->and([$stored('7d')['hourly'], count($stored('7d')['daily']), $stored('30d')['hourly'], count($stored('30d')['daily'])])->toBe([[], 7, [], 30])
+        ->and(app(TaskInsightsExposition::class)->render())->toContain('orbit_task_insights_tasks{project="all",period="24h"} 2');
+
+    // Between refreshes the endpoint serves the stored window, even past the hour.
+    test()->travelTo(CarbonImmutable::parse('2026-11-19 13:02:00', 'UTC'));
+    expect($this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data'))->toBe(json_decode((string) json_encode($day), true));
+
+    Artisan::call('task:insights-refresh');
+    $next = $this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data');
+    expect([$next['from'], $next['to'], $next['current']['tasks']])->toBe(['2026-11-18T14:00:00+00:00', '2026-11-19T14:00:00+00:00', 1])
+        ->and($next['hourly'][22])->toBe(['hour' => '2026-11-19T12:00:00+00:00', 'merged' => 1, 'not_merged' => 0]);
+});
+
+it('serves a 7d or 30d report stored before hourly buckets with an empty hourly list and its stored numbers', function (?string $scope): void {
+    [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $key = $scope === null ? 'all' : 'project:'.$app->id;
+    $query = static fn (?string $period): string => '/api/v1/task-insights?'.http_build_query(array_filter(['period' => $period, 'project_id' => $scope === null ? null : $app->id]));
+    $refreshes = DB::table('task_insight_totals')->max('computed_at');
+
+    foreach (['7d', '30d'] as $period) {
+        // The report as #4116 stored it: no hourly key, and numbers the source tables no longer give.
+        $old = json_decode((string) DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->value('payload'), true);
+        unset($old['hourly']);
+        $old['current']['tasks'] = 999;
+        DB::table('task_insight_totals')->where('scope', $key)->where('period', $period)->update(['payload' => json_encode($old)]);
+
+        $expected = [...$old, 'hourly' => []];
+        foreach ($period === '30d' ? [$period, null] : [$period] as $requested) {
+            $data = $this->getJson($query($requested))->assertOk()->json('data');
+            expect(array_keys($data))->toBe(['period', 'from', 'to', 'current', 'previous', 'weekly', 'daily', 'hourly', 'breakdowns'])
+                ->and($data)->toEqual($expected);
+        }
+    }
+    expect(DB::table('task_insight_totals')->max('computed_at'))->toBe($refreshes);
+})->with(['all Projects' => null, 'one Project' => 'app']);
+
+it('computes a stored 24h report again when it lacks its 24 hourly buckets', function (): void {
+    insightWorld();
+    Artisan::call('task:insights-refresh');
+    insightPeer();
+    $old = json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true);
+    $fresh = json_decode((string) json_encode(app(TaskInsights::class)->report('24h', null, CarbonImmutable::now())->toArray()), true);
+    unset($old['hourly']);
+    DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->update(['payload' => json_encode($old)]);
+
+    expect($this->getJson('/api/v1/task-insights?period=24h')->assertOk()->json('data'))->toBe($fresh)
+        ->and(json_decode((string) DB::table('task_insight_totals')->where('scope', 'all')->where('period', '24h')->value('payload'), true)['hourly'])->toHaveCount(24);
+});

@@ -33,12 +33,19 @@ final readonly class TaskInsightTotals
     {
         $payload = DB::table('task_insight_totals')->where('scope', self::scope($projectId))->where('period', $period)->value('payload');
         if (is_string($payload)) {
-            /** @var array<string, mixed> */
-            return json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
+            $stored = self::decode($payload);
+            // A report stored before `hourly` existed has none: a 7d or 30d one has no hours to give, and a 24h one is computed again below.
+            if ($period !== '24h') {
+                return array_key_exists('hourly', $stored) ? $stored
+                    : [...array_diff_key($stored, ['breakdowns' => true]), 'hourly' => [], ...array_intersect_key($stored, ['breakdowns' => true])];
+            }
+            if (is_array($stored['hourly'] ?? null) && count($stored['hourly']) === 24) {
+                return $stored;
+            }
         }
         // Only a finished refresh stores reports before this point, so any stored report means the records are complete.
         if (! DB::table('task_insight_totals')->exists()) {
-            return $this->insights->report(TaskInsights::Periods[$period], $projectId, $now)->toArray();
+            return $this->insights->report($period, $projectId, $now)->toArray();
         }
 
         return $this->store($projectId, [$period], $this->rows($projectId, $now), $now)[$period];
@@ -125,7 +132,7 @@ final readonly class TaskInsightTotals
     {
         $payloads = [];
         foreach ($periods as $period) {
-            $payloads[$period] = $this->insights->aggregate(TaskInsights::Periods[$period], $rows, $now)->toArray();
+            $payloads[$period] = $this->insights->aggregate($period, $rows, $now)->toArray();
             // An upsert, so two first reads of one scope both store it.
             DB::table('task_insight_totals')->upsert([[
                 'scope' => self::scope($projectId), 'project_id' => $projectId, 'period' => $period, 'computed_at' => $now->utc()->format('Y-m-d H:i:s'),
@@ -134,6 +141,13 @@ final readonly class TaskInsightTotals
         }
 
         return $payloads;
+    }
+
+    /** @return array<string, mixed> */
+    private static function decode(string $payload): array
+    {
+        /** @var array<string, mixed> */
+        return json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
     }
 
     private static function scope(?int $projectId): string

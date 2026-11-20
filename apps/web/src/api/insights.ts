@@ -3,7 +3,7 @@ import type { components } from "./schema";
 import { get } from "./client";
 
 type Schemas = components["schemas"];
-export type InsightsPeriod = "7d" | "30d";
+export type InsightsPeriod = "24h" | "7d" | "30d";
 export type InsightsSummary = Omit<
     Required<Schemas["TaskInsightsSummary"]>,
     "questions_by_cause"
@@ -12,6 +12,7 @@ export type InsightsSummary = Omit<
 };
 export type InsightsWeek = Required<Schemas["TaskInsightsWeek"]>;
 export type InsightsDay = Required<Schemas["TaskInsightsDay"]>;
+export type InsightsHour = Required<Schemas["TaskInsightsHour"]>;
 export type InsightsBreakdownRow = Required<Schemas["TaskInsightsBreakdownRow"]>;
 export type InsightsDimension = "model" | "project" | "release";
 export type TaskInsights = {
@@ -22,6 +23,7 @@ export type TaskInsights = {
     previous: InsightsSummary;
     weekly: InsightsWeek[];
     daily: InsightsDay[];
+    hourly: InsightsHour[];
     breakdowns: Record<InsightsDimension, InsightsBreakdownRow[]>;
 };
 

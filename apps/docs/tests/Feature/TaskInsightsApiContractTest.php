@@ -10,8 +10,8 @@ describe('the generated task insights contract', function (): void {
         $catalogue = json_decode((string) file_get_contents($root.'/apps/gateway/resources/mcp/tools.json'), true, flags: JSON_THROW_ON_ERROR);
         $tool = collect($catalogue['tools'])->firstWhere('name', 'task-insights');
 
-        expect($period['schema']['enum'])->toBe(['7d', '30d'])
-            ->and($tool['input_schema']['properties']['period'])->toBe(['type' => 'string', 'enum' => ['7d', '30d']])
+        expect($period['schema']['enum'])->toBe(['24h', '7d', '30d'])
+            ->and($tool['input_schema']['properties']['period'])->toBe(['type' => 'string', 'enum' => ['24h', '7d', '30d']])
             ->and($tool['input_schema']['properties']['project_id'])->toBe(['type' => 'integer', 'minimum' => 1]);
     });
 });
