@@ -7,10 +7,9 @@ cases = [
   "a proof copy's destroy releases its CI place only after the container is gone; any other removal, and a Node without the hold script, release nothing",
   "a destroy whose ZFS datasets went outside Incus gives back only this Instance's missing datasets so Incus deletes its records, deletes a dangling inner clone by name, and a removal with nothing left changes nothing",
   "the stop phase stops a running container before its databases drop; a stopped or missing one counts as stopped and nothing changes",
-  "a destroy withdraws the bridge endpoints only its Instance needed, keeps one another Instance needs and one admitted since its capture",
 ]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
-cost = 397
+cost = 366
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (12s); these are estimates, not completed measurements.
 slices = 1
@@ -32,8 +31,6 @@ inputs = [
   "swamp/ansible/files/instance-container-power.py",
   "swamp/tests/fixtures/instance-power-helper.ts",
   "swamp/tests/_support/power_helper.ts",
-  "swamp/ansible/instance_bridge.py",
-  "swamp/tests/fixtures/instance-bridge-curl.ts",
 ]
 
 [case_costs]
@@ -44,4 +41,3 @@ inputs = [
   "a container removal stops the container before its databases drop and deletes it after them" = 1
   "a destroy whose ZFS datasets went outside Incus gives back only this Instance's missing datasets so Incus deletes its records, deletes a dangling inner clone by name, and a removal with nothing left changes nothing" = 109 # estimate: local time on this branch x 3.4, the ratio PR #3910's unit #1/2 showed when it reached the 180 s ceiling; not a CI measurement
   "the stop phase stops a running container before its databases drop; a stopped or missing one counts as stopped and nothing changes" = 51 # estimate: local time on this branch x 3.4, the ratio PR #3910's unit #1/2 showed when it reached the 180 s ceiling; not a CI measurement
-  "a destroy withdraws the bridge endpoints only its Instance needed, keeps one another Instance needs and one admitted since its capture" = 31 # estimate: local time on this branch (9s) x 3.4, as the cases above

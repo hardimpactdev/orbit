@@ -6,16 +6,13 @@ namespace App\Domain\Instances;
 
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\InstancePower;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRuntime;
-use App\Models\Node;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 
 /** The container identity of the saved removal; no execution. */
 final readonly class ContainerInstanceDestroy
@@ -45,7 +42,7 @@ final readonly class ContainerInstanceDestroy
 
     /**
      * A default retained for a retry after its create failed or was cancelled, or the removal of one: it never served, no Instance
-     * copies it, and no create Operation owns it now, so the operator list does not apply
+     * copies it, and no create Operation holds its lock now, also one that expired while its run may still go (ExpireOperationAction), so the operator list does not apply
      * (docs/reference/development-containers.md#destroy). `$ending`: the create whose end is being recorded, which still holds the
      * Instance; its recovery receipt names the destroy that this check admits after it.
      */
@@ -56,8 +53,7 @@ final readonly class ContainerInstanceDestroy
         }
 
         return in_array($instance->status, [InstanceState::Reserved, InstanceState::SourceResolved], true)
-            && ! Operation::query()->where('kind', 'instance.create')->whereNotIn('status', OperationStatus::terminalValues())
-                ->where('lock_key', OperationStore::lockKey('instance', $instance->id))
+            && ! Operation::query()->where('kind', 'instance.create')->where('lock_key', OperationStore::lockKey('instance', $instance->id))
                 ->when($ending?->id, static fn ($query, int $id) => $query->whereKeyNot($id))->exists();
     }
 
@@ -93,11 +89,6 @@ final readonly class ContainerInstanceDestroy
             'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
             // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
             'asleep_marker' => InstancePower::markerPath($instance),
-            // The bridge endpoints that every other Instance on the Node still needs, read after the admission stamp: the destroy withdraws
-            // the records that only this Instance needed, and keeps any admitted after the stamp (docs/reference/development-containers.md#destroy).
-            'bridge' => ['network' => InstanceHostIntent::Network, 'cidr' => ValidatedData::string(Node::query()->whereKey($instance->node_id)->value('instance_bridge')),
-                'admitted_at' => (int) now()->format('Uu'),
-                'endpoints' => app(InstanceContainer::class)->nodeEndpoints(Node::query()->findOrFail($instance->node_id), $instance->id)],
             // The removal deletes an inner volume with its snapshots, after the container.
             ...($runtime->inner_volume === null ? [] : ['inner_volume' => $runtime->inner_volume]),
             // A proof copy's removal releases its CI place: the last hold on the Node starts the runners that the holds stopped

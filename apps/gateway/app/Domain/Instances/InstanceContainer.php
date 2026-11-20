@@ -850,11 +850,10 @@ final readonly class InstanceContainer
      *
      * @return list<array{host: string, port: int, docker: bool}>
      */
-    public function nodeEndpoints(Node $node, ?int $except = null): array
+    public function nodeEndpoints(Node $node): array
     {
         $endpoints = [];
-        foreach (InstanceRuntime::query()->where('node_id', $node->id)->when($except !== null, static fn ($query) => $query->where('instance_id', '!=', $except))
-            ->with('instance')->orderBy('id')->get() as $runtime) {
+        foreach (InstanceRuntime::query()->where('node_id', $node->id)->with('instance')->orderBy('id')->get() as $runtime) {
             foreach (self::bridgeEndpoints($this->targetAccesses($runtime->instance, $runtime, null, app(DevelopmentMail::class)->forInstance($runtime->instance),
                 InstanceNodeServiceTargets::endpoints($runtime->instance, requireRunning: false))) as $endpoint) {
                 $endpoints[$endpoint['host'].':'.$endpoint['port']] = $endpoint;

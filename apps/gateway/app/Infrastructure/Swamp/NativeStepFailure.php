@@ -69,7 +69,8 @@ final readonly class NativeStepFailure
 
     /**
      * A failed step's stderr that its phase wrote into the run's result file, because Swamp keeps no stderr of a failed command
-     * step. It is redacted and bounded to its tail as a native step's stderr is.
+     * step. It is redacted whole, then bounded to 4096 bytes: a longer one keeps its first line's head, which names the failed task,
+     * and the tail of its last whole lines, cut between UTF-8 characters only.
      *
      * @return array{failed_step:string,detail:string,stderr_recorded:true}
      */
@@ -77,7 +78,13 @@ final readonly class NativeStepFailure
     {
         $target = $this->target($operation);
         $values = $target === null ? [] : $this->redactor->valuesFor($target);
-        $detail = $this->text($stderr, $values);
+        $whole = $this->text($stderr, $values, PHP_INT_MAX, false);
+        $detail = $whole;
+        if (strlen($whole) > self::MaximumBytes) {
+            $head = mb_strcut($whole, 0, 1000, 'UTF-8');
+            $tail = $this->text($whole, $values, self::MaximumBytes - strlen($head) - 5);
+            $detail = $head."\n...\n".$tail;
+        }
 
         return ['failed_step' => $this->text($failedStep, $values, 255, false),
             'detail' => $detail !== '' ? $detail : 'The incomplete native diagnostic line was omitted.', 'stderr_recorded' => true];

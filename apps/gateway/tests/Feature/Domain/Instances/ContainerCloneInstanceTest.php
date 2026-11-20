@@ -1281,6 +1281,29 @@ it('records a default container phase refusal from its written result as the fai
         ->and(Instance::query()->findOrFail($operation->target_id)->error_code)->toBe('instance.container_endpoint_unresolved');
 });
 
+it('keeps the failed task\'s name and whole UTF-8 characters in a long written container failure', function (string $unit): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $operation = containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+    $head = 'Install the packages: non-zero return code: ';
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.container_container_failed',
+        'failure' => ['failed_step' => 'container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'container',
+            'error_code' => 'instance.container_container_failed', 'detail' => $head.str_repeat($unit, 3000)."\nthe last line"],
+    ]);
+    $failure = $operation->refresh()->state['native_failure'];
+    expect($failure['stderr_recorded'])->toBeTrue()
+        ->and($failure['detail'])->toStartWith($head)->toEndWith("\nthe last line")
+        ->and(strlen($failure['detail']))->toBeLessThanOrEqual(NativeStepFailure::MaximumBytes)
+        ->and(mb_check_encoding($failure['detail'], 'UTF-8'))->toBeTrue()
+        ->and(json_encode($failure, JSON_THROW_ON_ERROR))->toBeString();
+})->with(['accented' => 'é', 'emoji' => '😀']);
+
 it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit, string $status): void {
     $node = containerDefaultNode();
     $node->update(['tld' => 'beast.test']);

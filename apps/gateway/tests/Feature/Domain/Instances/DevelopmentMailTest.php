@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DevelopmentMail;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\RoleName;
@@ -112,24 +111,4 @@ it('refuses a Mailpit port configured in the development band by name instead of
 
     config(['instances.mailpit.port' => 1025]);
     expect(app(DevelopmentMail::class)->endpoint($instance->node))->toBe(['host' => '10.253.0.1', 'port' => 1025, 'docker' => true]);
-});
-
-it('captures for a destroy only the bridge endpoints that the Node\'s other Instances still need', function (): void {
-    [$instance] = forwarderFixture();
-    $endpoint = ['host' => '10.253.0.1', 'port' => 1025, 'docker' => true];
-    $bridge = fn (Instance $target): array => app(ContainerInstanceDestroy::class)->capture($target->refresh())['bridge'];
-
-    // Alone on the Node, its SMTP endpoint is its own: the destroy withdraws it.
-    expect($bridge($instance))->toMatchArray(['network' => 'orbitinst0', 'cidr' => $instance->node->instance_bridge, 'endpoints' => []])
-        ->and($bridge($instance)['admitted_at'])->toBeInt();
-
-    // A clone still needs the same endpoint, so the default's destroy keeps it, and the clone's keeps it for the default.
-    $clone = tap($instance->replicate(), function (Instance $copy): void {
-        $copy->name = 'clone';
-        $copy->checkout_path = '/workspace/clone';
-        $copy->save();
-    });
-    app(InstanceContainer::class)->reserve($clone, $clone->node, $instance);
-    expect($bridge($instance)['endpoints'])->toBe([$endpoint])
-        ->and($bridge($clone)['endpoints'])->toBe([$endpoint]);
 });

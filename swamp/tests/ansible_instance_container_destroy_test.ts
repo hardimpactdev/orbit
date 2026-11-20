@@ -252,7 +252,7 @@ Deno.test({
             assert(!state["network-acls"].some((acl: {name: string}) => acl.name === "instance-7"));
             assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[1].destination, "172.17.0.2/32");
             assertEquals(Deno.readTextFileSync(`${folder}/bridge/endpoints/mailpit.json`), sharedMail);
-            // A destroy whose intent names no bridge capture withdraws no bridge endpoint.
+            // A concurrent destroy never withdraws another Instance's bridge endpoint. Host reconcile owns removal.
             assertEquals(state["network-acls"].find((acl: {name: string}) => acl.name === "orbitinst0-egress").egress[0].destination, "10.44.0.7/32");
             // Only instance-7's two rules went; the shifted numbers did not take instance-8's or instance-70's.
             assertEquals(
@@ -602,72 +602,6 @@ Deno.test({
             const kept = refusal.detail.slice(head.length).split("\n");
             assertEquals(kept, lines.slice(lines.length - kept.length));
             assert(kept.length > 1 && kept.length < lines.length, String(kept.length));
-        } finally {
-            Deno.removeSync(folder, { recursive: true });
-        }
-    },
-});
-
-Deno.test({
-    name: "a destroy withdraws the bridge endpoints only its Instance needed, keeps one another Instance needs and one admitted since its capture",
-    ignore: !available,
-    async fn() {
-        const folder = Deno.makeTempDirSync();
-        const root = new URL("../ansible/", import.meta.url);
-        try {
-            for (const dir of ["bin", "run", "tasks", "mirror.git", "containers/instance-7"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
-            Deno.writeTextFileSync(`${folder}/instance-container-destroy.yml`, Deno.readTextFileSync(new URL("instance-container-destroy.yml", root))
-                .replaceAll("/usr/local/libexec/orbit-instance-bridge", `${folder}/instance_bridge.py`)
-                .replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge`).replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`));
-            Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
-            Deno.copyFileSync(new URL("tasks/address-node.yml", root), `${folder}/tasks/address-node.yml`);
-            Deno.copyFileSync(new URL("tasks/task-copy-base-names.yml", root), `${folder}/tasks/task-copy-base-names.yml`);
-            installPowerHelper(folder, folder);
-            const fixtureBin = (name: string, fixture: string) => {
-                Deno.writeTextFileSync(`${folder}/bin/${name}`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL(`fixtures/${fixture}`, import.meta.url).pathname}' "$@"\n`);
-                Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
-            };
-            fixtureBin("incus", "instance-container-incus.ts");
-            fixtureBin("ufw", "instance-container-ufw.ts");
-            fixtureBin("curl", "instance-bridge-curl.ts");
-            Deno.writeTextFileSync(`${folder}/ufw.json`, "[]");
-            Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
-                containers: { "instance-7": { status: "Stopped" } },
-                "network-acls": [{ name: "orbitinst0-egress", egress: [], ingress: [] }, { name: "instance-7", egress: [] }],
-            }));
-            const env = { HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" };
-            const stamp = (n: number) => 1800000000000000 + n;
-            const endpoint = (host: string, port: number) => ({ host, port, docker: false });
-            const helper = (intent: Record<string, unknown>, ...flags: string[]) => {
-                const done = new Deno.Command("python3", { args: [`${folder}/instance_bridge.py`, "--state-dir", `${folder}/bridge`, "--intent", ...flags], env, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
-                const writer = done.stdin.getWriter();
-                writer.write(new TextEncoder().encode(JSON.stringify({ network: "orbitinst0", cidr: "10.253.0.0/24", baseline: { egress: [], ingress: [] }, ...intent })));
-                writer.close();
-                return done.output();
-            };
-            const shared = endpoint("10.44.0.7", 3306), own = endpoint("10.44.0.7", 5434), later = endpoint("10.44.0.9", 6379);
-            // Host convergence admits the shared and the destroyed Instance's own endpoint; another Instance attaches one after the capture.
-            assert((await (helper({ endpoints: [shared, own], admitted_at: stamp(1) }, "--reconcile"))).success);
-            assert((await (helper({ endpoints: [later], admitted_at: stamp(3) }))).success);
-            Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
-                ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
-                container_destroy: { instance_id: 7, name: "instance-7", project: "orbit-instances", pool: "orbit-instances", acl: "instance-7", mirror: `${folder}/mirror.git`,
-                    firewall_prefix: "orbit:instance-7-", bridge: { network: "orbitinst0", cidr: "10.253.0.0/24", admitted_at: stamp(2), endpoints: [shared] } },
-            }));
-            const done = new Deno.Command("ansible-playbook", {
-                args: ["-i", "localhost,", "--tags", "remove", "-e", "ansible_connection=local", "-e", "ansible_become=false",
-                    "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`, `${folder}/instance-container-destroy.yml`],
-                env: { ...env, ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG },
-            }).outputSync();
-            const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
-            assert(done.success, output);
-            const records = [...Deno.readDirSync(`${folder}/bridge/endpoints`)].map((entry) => entry.name).sort();
-            // The shared record stays, restamped at the destroy's capture as a host convergence restamps it; the own one goes.
-            assertEquals(records, [`10.44.0.7-3306-${stamp(2)}.json`, `10.44.0.9-6379-${stamp(3)}.json`]);
-            const rules = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`))["network-acls"]
-                .find((acl: { name: string }) => acl.name === "orbitinst0-egress").egress.map((rule: { destination: string; destination_port: string }) => `${rule.destination}:${rule.destination_port}`);
-            assertEquals(rules.sort(), ["10.44.0.7/32:3306", "10.44.0.9/32:6379"]);
-            assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/run/remove.json`)), { container_present: true, removed: true, bridge_withdrawal: "withdrawn" });
         } finally {
             Deno.removeSync(folder, { recursive: true });
         }

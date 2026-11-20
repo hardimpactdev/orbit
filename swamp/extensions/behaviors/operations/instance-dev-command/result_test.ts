@@ -404,9 +404,25 @@ Deno.test("a default's failed container phase keeps its written refusal and the 
     // An oversized detail keeps its head, the task's name, and the end of its stderr, in 4096 characters.
     const long = defaultContainerFailure({error_code: "instance.container_container_failed",
         detail: "Install the packages: non-zero return code: " + "x".repeat(5000) + "the last stderr line"})?.detail as string;
-    assertEquals(long.length, 4096);
+    assertEquals(new TextEncoder().encode(long).length, 4096);
     assertEquals(long.startsWith("Install the packages: non-zero return code: "), true);
     assertEquals(long.endsWith("the last stderr line"), true);
+});
+
+Deno.test("an oversized container failure detail stays within 4096 UTF-8 bytes, keeps its task name and never splits a character", () => {
+    const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    for (const [name, unit] of [["accented", "é"], ["emoji", "😀"], ["mixed", "aé😀"]] as const) {
+        const raw = "Install the packages: non-zero return code: " + unit.repeat(4096) + "the last line";
+        const detail = defaultContainerFailure({error_code: "instance.container_container_failed", detail: raw})?.detail as string;
+        const encoded = new TextEncoder().encode(detail);
+        assertEquals(encoded.length <= 4096, true, name);
+        assertEquals(new TextDecoder("utf-8", {fatal: true}).decode(encoded), detail, name);
+        assertEquals(lone.test(detail), false, name);
+        assertEquals(detail.startsWith("Install the packages: non-zero return code: "), true, name);
+        assertEquals(detail.endsWith("the last line"), true, name);
+        // The receipt is JSON the Gateway decodes whole.
+        assertEquals(JSON.parse(JSON.stringify({detail})).detail, detail, name);
+    }
 });
 
 Deno.test("default and clone finish workspace T3 and registration despite bounded mail failure", () => {
