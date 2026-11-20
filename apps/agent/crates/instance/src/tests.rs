@@ -357,6 +357,7 @@ fn a_checked_out_workspace_only_gets_its_env_merged() {
     let output: Value = serde_json::from_str(&checkout(&fake, &checkout_input()).expect("checkout")).expect("json");
 
     assert_eq!(output["environment"]["copied"], json!(["KEEP"]));
+    assert_eq!(output["commit"], json!("a".repeat(40)), "the commit the mark records");
     assert!(!fake.calls().iter().any(|call| call.contains("checkout --quiet") || call.contains("rev-parse")), "no checkout when the mark names this Instance");
     let pushed = fake.calls.borrow().iter().find(|(call, _)| call.ends_with("instance-12/srv/workspace/.env")).and_then(|(_, stdin)| stdin.clone());
     assert_eq!(pushed.as_deref(), Some("APP_URL=new\nKEEP=1\n"));
@@ -395,7 +396,7 @@ fn checkout_refuses_an_env_outside_the_workspace_and_a_commit_that_is_no_commit(
 #[test]
 fn an_agent_folder_is_made_again_with_exactly_its_files_and_refuses_a_path_outside_it() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(stopped())), ("query /1.0/instances/instance-12/files", MISSING), ("%{http_code}", Ok(json!("200 directory")))]);
-    let folder = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "AGENTS.md", "content": "# Rules\n"}, {"path": ".skills/x/SKILL.md", "content": "s"}]}}]);
+    let folder = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "AGENTS.md", "blob": {"blob": {"sha256": "rules"}}}, {"path": ".skills/x/SKILL.md", "blob": {"blob": {"sha256": "skill"}}}]}}]);
 
     prepare(&fake, &prepare_input(&folder)).expect("prepare");
 
@@ -405,6 +406,6 @@ fn an_agent_folder_is_made_again_with_exactly_its_files_and_refuses_a_path_outsi
     assert!(delete < pushed);
     assert!(calls.iter().any(|call| call.ends_with("--mode 0755 instance-12/home/agent/.config/orbit/agent/.skills")));
 
-    let outside = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "../../.ssh/authorized_keys", "content": "k"}]}}]);
+    let outside = json!([{"folder": {"path": "/home/agent/.config/orbit/agent", "files": [{"path": "../../.ssh/authorized_keys", "blob": {"blob": {"sha256": "k"}}}]}}]);
     assert_eq!(prepare(&Fake::new(&[]), &prepare_input(&outside)).map_err(|failure| failure.code), Err("instance.prepare_input_invalid"));
 }

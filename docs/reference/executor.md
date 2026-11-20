@@ -258,7 +258,7 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 - a link;
 - the Orbit root from `/etc/orbit/agent/ca.pem`, with its name and hash links and its bundle entry;
 - an NSS store entry;
-- a folder made again with exactly its files, owned by root, with an empty `.skills` folder: the agent instructions.
+- a folder made again with exactly its files, each a blob, owned by root, with an empty `.skills` folder: the agent instructions.
 
 It answers `applied`. Codes: `instance.prepare_input_invalid`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 

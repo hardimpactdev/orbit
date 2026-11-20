@@ -51,7 +51,10 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
     let files = Files { incus: &incus, project: &input.project, name: &input.name };
     identity(&incus, &input)?;
     let mark: Value = files.pull(MARK)?.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null);
+    // A checkout done for this Instance reports the commit it checked out, so a retry never reports a later one.
+    let mut commit = mark.get("commit").and_then(Value::as_str).unwrap_or_default().to_owned();
     if mark.get("instance_id").and_then(Value::as_u64) != Some(input.instance_id) {
+        commit.clone_from(&input.expected_commit);
         branch(system, &incus, &files, &input)?;
         let mut written = serde_json::json!({"instance_id": input.instance_id, "commit": input.expected_commit}).to_string();
         written.push('\n');
@@ -64,7 +67,7 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
         files.push(&input.environment_file, AGENT, input.group, "0640", updated.as_bytes(), Folders::Present)?;
     }
     exclude(&files, &input)?;
-    Ok(serde_json::json!({"commit": input.expected_commit, "environment": keys}).to_string())
+    Ok(serde_json::json!({"commit": commit, "environment": keys}).to_string())
 }
 
 fn check(input: &CheckoutInput) -> Result<(), String> {

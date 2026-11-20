@@ -32,8 +32,8 @@ struct T3Input {
     seal_to: String,
 }
 
-/// Starts T3 when it is not running, issues the two sessions while T3 comes up, waits until T3 answers, adds the workspace
-/// as a T3 project once, then checks each session against T3. Answers `{"environment_id", "at_boot", "sealed"}`, where
+/// Starts T3 when it is not running, waits until T3 answers, issues the two sessions, adds the workspace as a T3 project
+/// once, then checks each session against T3. Answers `{"environment_id", "at_boot", "sealed"}`, where
 /// `sealed` holds `{"environment", "gateway", "swamp"}` sealed to the Gateway: each session's token, status and body.
 ///
 /// # Errors

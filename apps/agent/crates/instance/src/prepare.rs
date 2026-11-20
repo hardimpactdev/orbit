@@ -79,7 +79,8 @@ enum Item {
 #[serde(deny_unknown_fields)]
 struct FolderFile {
     path: String,
-    content: String,
+    /// The file's content: a blob, because instructions are kilobytes and an order holds at most 4 KB.
+    blob: crate::BlobRef,
 }
 
 /// The user and group that own a link's missing folders.
@@ -270,7 +271,8 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             }
             let _ = files.incus.change(&["--project", files.project, "file", "delete", "--force", &format!("{}{path}", files.name)]);
             for entry in entries {
-                files.push(&format!("{path}/{}", entry.path), 0, 0, "0644", entry.content.as_bytes(), Folders::Root)?;
+                let content = system.blob(&entry.blob.blob.sha256).map_err(|detail| Failure::new("instance.prepare_failed", detail))?;
+                files.push(&format!("{path}/{}", entry.path), 0, 0, "0644", &content, Folders::Root)?;
             }
             files.incus.change(&["--project", files.project, "file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755", &format!("{}{path}/.skills", files.name)])?;
             Ok(u32::try_from(entries.len()).unwrap_or(u32::MAX) + 1)
