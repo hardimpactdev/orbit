@@ -1170,7 +1170,7 @@ Deno.test({
       const ruledRun = f.run("rules");
       assert(ruledRun.ok, ruledRun.output);
       const files = f.state().containers["nested-gateway"].files;
-      assertEquals([files[units[2]], files[pool]], [dropIn, poolFile]);
+      assertEquals([files[units[2]], files[units[3]], files[pool]], [dropIn, dropIn, poolFile]);
       for (const key of ["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"]) assertStringIncludes(files[pool], `env[${key}] = "`);
       // The pool file names the role's own pool; it never touches the role's file.
       assertStringIncludes(files[pool], "[orbit-gateway]\n");
@@ -1194,7 +1194,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [units[2]]: dropIn, [units[3]]: dropIn, [pool]: poolFile, [marker]: markerFile } : {}), ...ownedBy(name) };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -1221,7 +1221,7 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [units[2], units[3], pool, marker] : []), ...Object.keys(ownedBy(name))].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.flatMap((name) => ["boot.autostart=true", ...(name === "nested-app-dev" ? Object.entries(instanceHostKeys).map(([key, value]) => `${key}=${value}`) : []),
           ...(name === "nested-gateway" ? [] : [`limits.memory=${memory[name]}`]), `limits.memory.swap=${memory[name]}`]
