@@ -141,7 +141,6 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'Node services' => ($container['node_services'] ?? []) !== [],
             'Processes' => ($container['processes'] ?? []) !== [],
             'a CI hold' => isset($input['ci_hold']) || isset($container['ci_hold']),
-            'a shared Route publication' => ClonePublication::sharesNodes($operation),
         ] as $case => $present) {
             if ($present) {
                 throw new EngineUnsupported("A clone with {$case} runs on Swamp.");
