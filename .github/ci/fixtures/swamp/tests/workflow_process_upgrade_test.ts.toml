@@ -9,13 +9,15 @@ cases = [
   "a switch back that cannot reach the Node fails with process.rollback_failed",
   "a current that already names the requested release is checked, restarted and verified, never taken as installed",
   "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched",
-  "an upgrade to the release current names keeps the newest other version as its rollback copy",
+  "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one",
   "an existing folder of the version is checked in place and kept, never replaced by the staged copy",
+  "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept",
+  "the prune keeps the recorded previous version and every link target",
 ]
 file = "swamp/tests/workflow_process_upgrade_test.ts"
-cost = 176
-# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11 s for the three release-folder cases; no hosted receipt yet.
-slices = 4
+cost = 202
+# ESTIMATES from one local run in a task copy (12, 9, 21, 13, 13, 13, 11, 14 s for the Ansible cases) + 25%, rounded up, and 5, 11, 11, 7, 13 s for the five release-folder cases; no hosted receipt yet.
+slices = 5
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -39,5 +41,7 @@ inputs = [
   "a switch back that cannot reach the Node fails with process.rollback_failed" = 14
   "a current that already names the requested release is checked, restarted and verified, never taken as installed" = 18
   "an installed release of the version that fails its check fails the upgrade and stays, with current, untouched" = 7
-  "an upgrade to the release current names keeps the newest other version as its rollback copy" = 14
+  "a same-version re-check prunes nothing, so the working release before stays beside a newer failed one" = 14
   "an existing folder of the version is checked in place and kept, never replaced by the staged copy" = 14
+  "a folder of the version that is a link, unmarked, or marked for another digest is refused before any change and kept" = 9
+  "the prune keeps the recorded previous version and every link target" = 17

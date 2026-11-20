@@ -4,7 +4,8 @@
 # never a version for the Node to resolve. Releases sit in `<folder>/releases/<version>/`, and `<folder>/current` is a relative link
 # to one of them. Files are owned by the owner of `<folder>`. One tag per phase of the workflow:
 #   read      `<folder>` and `<folder>/releases` must be real folders, no link on their path, and `current` a relative link to
-#             `releases/<version>`, else process.artifact_layout_invalid before any change.
+#             a real folder `releases/<version>`, and an existing `releases/<VERSION>` a real folder whose `.orbit-sha256` marker holds the
+#             admitted SHA-256, else process.artifact_layout_invalid before any change.
 #   download  the asset into `releases/.staging-<VERSION>`, checked against the SHA-256, unless `releases/<VERSION>` exists.
 #   unpack    unpacked inside the staging folder. An existing `releases/<VERSION>` is never moved, replaced or removed.
 #   check     the binary that will run must exist and, with version_args, print VERSION: an existing `releases/<VERSION>` is checked in
@@ -13,8 +14,8 @@
 #             reports it; then a new relative link renamed over `current` in one step.
 #   restart   the unit restarts, as process:restart does.
 #   verify    the unit is active, and 10 s later still active with the same restart count; then writes the pass result.
-#   keep      keeps `current`, the `before` release and, when `before` is VERSION, the newest other version as the rollback copy, and
-#             removes the other folders under `releases/` whose names are versions. A
+#   keep      keeps VERSION, `before`, the recorded previous version, the folder `current` resolves to and every link target, and
+#             removes the other real folders under `releases/` whose names are versions; a same-version re-check prunes nothing. A
 #             removal that fails is skipped; the result is rewritten with the versions removed. It never fails the upgrade.
 #   rollback  after a failure of `switch`, `restart` or `verify`: `current` back to `before`, restart, verify; only then the result
 #             becomes process.upgrade_rolled_back. Any other end, an unreachable Node included, leaves process.rollback_failed.
@@ -88,6 +89,24 @@
           register: upgrade_installed
         - name: Refuse a current link that names no release folder
           ansible.builtin.assert: { that: [upgrade_installed.stat.isdir | default(false)], fail_msg: process.artifact_layout_invalid, quiet: true }
+        # An existing folder of the version is reused only as the admitted release: a real folder whose marker holds the admitted
+        # SHA-256. Anything else is refused and left alone; no self-reported version stands in for the digest.
+        - name: Read the folder of the requested version
+          ansible.builtin.stat: { path: "{{ target }}", follow: false }
+          register: upgrade_target
+        - name: Read the marker of the folder of the requested version
+          when: upgrade_target.stat.exists
+          ansible.builtin.slurp: { src: "{{ target }}/.orbit-sha256" }
+          register: upgrade_target_marker
+          failed_when: false
+        - name: Refuse a folder of the requested version that is not the admitted release
+          when: upgrade_target.stat.exists
+          ansible.builtin.assert:
+            that:
+              - upgrade_target.stat.isdir | default(false)
+              - (upgrade_target_marker.content | default('') | b64decode | trim) == up.sha256
+            fail_msg: process.artifact_layout_invalid
+            quiet: true
         - name: Write the installed release
           ansible.builtin.copy:
             content: >-
@@ -312,17 +331,28 @@
     - name: Keep the previous release
       tags: [keep]
       vars:
-        # The version folders, oldest first.
+        # The real version folders; a link is never one.
         upgrade_versions: >-
-          {{ upgrade_releases.files | selectattr('path', 'search', '/v?[0-9][0-9A-Za-z._+-]*$') | sort(attribute='mtime')
+          {{ upgrade_releases.files | selectattr('path', 'search', '/v?[0-9][0-9A-Za-z._+-]*$')
              | map(attribute='path') | map('basename') | list }}
-        # An upgrade to the release `current` already named has no distinct `before`: the newest other version stays as the rollback copy.
-        upgrade_rollback_copy: "{{ (upgrade_versions | reject('equalto', up.version) | list | last | default('')) if installed.before == up.version else '' }}"
-        upgrade_pruned: "{{ upgrade_versions | reject('in', [up.version, installed.before, upgrade_rollback_copy]) | sort }}"
+        # Kept: the new release, `before`, the recorded previous version, the folder `current` resolves to and every link target.
+        upgrade_kept: >-
+          {{ [up.version, installed.before, up.previous_version | default('', true)]
+             + ((upgrade_links.stdout_lines | default([])) + (upgrade_current_real.stdout_lines | default([]))) | map('basename') | list }}
+        # A same-version re-check has no distinct `before`: it prunes nothing.
+        upgrade_pruned: "{{ [] if installed.before == up.version else upgrade_versions | reject('in', upgrade_kept) | sort }}"
       block:
         - name: Read the release folders
           ansible.builtin.find: { paths: "{{ releases }}", file_type: directory, hidden: true, recurse: false }
           register: upgrade_releases
+        - name: Resolve the links in the release store
+          ansible.builtin.command: { argv: [find, "{{ releases }}", -mindepth, "1", -maxdepth, "1", -type, l, -exec, realpath, -m, --, "{}", +] }
+          register: upgrade_links
+          changed_when: false
+        - name: Resolve current
+          ansible.builtin.command: { argv: [realpath, -m, --, "{{ folder }}/current"] }
+          register: upgrade_current_real
+          changed_when: false
         - name: Remove the other release folders
           ansible.builtin.file: { path: "{{ releases }}/{{ item }}", state: absent }
           loop: "{{ upgrade_pruned }}"
