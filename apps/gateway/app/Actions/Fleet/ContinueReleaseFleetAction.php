@@ -36,7 +36,14 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-/** Advances the serving release's ordered pass by one admission. The existing queue job observes terminal Operations. */
+/**
+ * Advances the serving release's ordered pass by one admission. The existing queue job observes terminal Operations.
+ *
+ * @phpstan-type Legacy array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}
+ * @phpstan-type HostCheck array{host: string, accept: bool, known: bool}
+ * @phpstan-type NodeInputs array{approved: string|null, host: HostCheck|Throwable, roles: array<int, array{role:string,digest:string}>|Throwable}
+ * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>}
+ */
 final readonly class ContinueReleaseFleetAction
 {
     public function current(): ?GatewayRelease
@@ -77,14 +84,15 @@ final readonly class ContinueReleaseFleetAction
     {
         try {
             return app(GatewayReleaseLock::class)->run(function () use ($release): ?int {
-                // Resolve the catalog before taking the SQLite writer, while this pass owns the release lock.
+                // Resolve the catalog and read every release input before taking the SQLite writer, while this pass owns the release lock.
+                $members = $this->members();
                 $desired = app(DesiredFleetState::class);
-                $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
+                $cli = config('fleet.rollout') && array_any($members, CliConvergePlan::required(...))
                     ? $desired->current()->cli : null;
                 $exhausted = $cli !== null && ! $cli->isAvailable()
                     && ($cli->reason === CliReleaseUnavailableReason::ReleaseUnverified || $desired->cliFallbackExhausted((string) $release->sha));
 
-                return $this->advance($release, $cli, $exhausted);
+                return $this->advance($release, $cli, $exhausted, $this->prepare($release, $members));
             });
         } catch (GatewayReleaseException $busy) {
             if ($busy->errorCode !== 'gateway.release_in_progress') {
@@ -95,114 +103,17 @@ final readonly class ContinueReleaseFleetAction
         }
     }
 
-    private function advance(GatewayRelease $release, ?DesiredCliReleaseData $cli, bool $cliUnavailable): ?int
+    /** @param Prepared $prepared */
+    private function advance(GatewayRelease $release, ?DesiredCliReleaseData $cli, bool $cliUnavailable, array $prepared): ?int
     {
-        $delay = DB::transaction(function () use ($release, $cli, $cliUnavailable): ?int {
-            $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
-            if ($this->current()?->id !== $release->id) {
-                return null;
+        try {
+            $delay = DB::transaction(fn (): ?int => $this->pass($release, $cli, $cliUnavailable, $prepared));
+        } finally {
+            // The release trees read from Git for this pass.
+            foreach ($prepared['legacy']['folders'] ?? [] as $folder) {
+                File::deleteDirectory($folder);
             }
-            $phase = ValidatedData::object($release->phases['fleet']);
-            if (GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
-                return 30;
-            }
-            if (($phase['status'] ?? null) === 'current' && (data_get($release->phases, 'default_refresh.status') === 'pending'
-                || data_get($release->phases, 'seed_publication.status') === 'pending')) {
-                return null;
-            }
-            $members = $this->members();
-            $this->preserveHostBaselines($release->previous_release_id, $members);
-            if (! config('fleet.rollout')) {
-                $this->save($release, $phase, 'disabled');
-
-                return null;
-            }
-            $root = app(GatewayServingHost::class)->nodeId();
-            if ($root !== null) {
-                Node::query()->whereKey($root)->lockForUpdate()->firstOrFail();
-            }
-            if (FleetReboot::open() !== null || AdmitFleetRolloutAction::open()) {
-                return 10;
-            }
-
-            // One pass visits each Node once, from its start until the phase settles. The next pass starts every Node afresh.
-            $previousRows = (array) ($phase['nodes'] ?? []);
-            if (! in_array($phase['status'] ?? null, ['pending', 'deferred'], true)) {
-                $phase['started_at'] = now()->toISOString();
-                $previousRows = array_map(static fn (mixed $row): array => array_intersect_key(ValidatedData::object($row), array_flip(['node_id', 'name']))
-                    + ['status' => 'pending'], $previousRows);
-            }
-            // The release projection opens the first pass at verification. Drop this fallback after one release.
-            $phase['started_at'] ??= $release->created_at?->copy()->addMilliseconds((int) $release->duration_ms)->toISOString() ?? now()->toISOString();
-            $rows = [];
-            $phase['nodes'] = &$rows;
-            foreach ($members as $node) {
-                $rows[$node->id] = isset($previousRows[$node->id]) ? ValidatedData::object($previousRows[$node->id])
-                    : ['node_id' => $node->id, 'name' => $node->name, 'status' => 'pending'];
-            }
-            $inputs = app(ReleaseNodeInputs::class);
-            try {
-                $legacy = $this->legacyTrees($release, $inputs, $members);
-            } catch (Throwable) {
-                $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
-
-                return null;
-            }
-            try {
-                unset($phase['error_code']);
-                $failed = false;
-                foreach ($members as $node) {
-                    $row = &$rows[$node->id];
-                    // A Node keeps its outcome for the rest of the pass: drift after `current` waits for the next pass, and a failed
-                    // Node never holds back the Nodes after it.
-                    if (in_array($row['status'], ['current', 'failed'], true)) {
-                        $failed = $failed || $row['status'] === 'failed';
-
-                        continue;
-                    }
-                    try {
-                        $delay = $this->visit($release, $node, $row, $inputs, $legacy, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
-                        if ($delay !== null) {
-                            $this->save($release, $phase, 'pending');
-
-                            return $delay;
-                        }
-                    } catch (ResourceOperationException $failure) {
-                        if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
-                            $row['status'] = 'pending';
-                            // The Operations a queued role converge waits for, so an operator sees what holds the Node.
-                            $row['waiting_for'] = ValidatedData::integerList($failure->details['operation_ids'] ?? []);
-                            $this->save($release, $phase, 'pending');
-
-                            return 15;
-                        }
-                        $row['error_code'] = $failure->errorCode;
-                        $row['status'] = 'failed';
-                        $failed = true;
-                        // A failed delivery stops the pass. Any other failure, such as a changed host input, holds only this Node.
-                        if (($row['agent'] ?? null) === 'failed') {
-                            $this->save($release, $phase, 'failed');
-
-                            return null;
-                        }
-                    } catch (Throwable) {
-                        $row['error_code'] = 'fleet.inputs_unavailable';
-                        $row['status'] = 'failed';
-                        $this->save($release, $phase, 'failed');
-
-                        return null;
-                    }
-                }
-                $this->save($release, $phase, $failed ? 'failed' : 'current');
-
-                return null;
-            } finally {
-                // The release trees read from Git for this pass.
-                foreach ($legacy['folders'] as $folder) {
-                    File::deleteDirectory($folder);
-                }
-            }
-        });
+        }
         if ($delay !== null) {
             return $delay;
         }
@@ -237,6 +148,164 @@ final readonly class ContinueReleaseFleetAction
         });
     }
 
+    /**
+     * Reads every file and Git tree the pass needs, outside the SQLite writer: the host baselines of Nodes without one, the
+     * legacy release trees, and each member's host and role digests. A failure is kept and surfaces where the pass would have read.
+     *
+     * @param  list<Node>  $members
+     * @return Prepared
+     */
+    private function prepare(GatewayRelease $release, array $members): array
+    {
+        $prepared = ['baselines' => $this->hostBaselines($release->previous_release_id, $members), 'legacy' => null, 'nodes' => []];
+        if (! config('fleet.rollout')) {
+            return $prepared;
+        }
+        $inputs = app(ReleaseNodeInputs::class);
+        try {
+            $legacy = $prepared['legacy'] = $this->legacyTrees($release, $inputs, $members);
+        } catch (Throwable) {
+            return $prepared;
+        }
+        foreach ($members as $node) {
+            $approved = self::legacyApproval($node);
+            try {
+                $host = $inputs->host(node: $node);
+                // A baseline recorded before host inputs were classified by Node approved a release tree. It stands when this Node's
+                // own inputs are the same in that tree and in this release. When a release tree cannot be read, nothing can prove a
+                // change: the release record and the log name the Node. A Node whose own inputs are all the legacy digest covered
+                // needs no tree: the digests compare directly, and a difference is a change. Drop after one release.
+                $own = $approved !== null && $inputs->coversLegacy($node);
+                $known = $own || ($approved !== null && array_key_exists($approved, $legacy['trees']));
+                $accept = match (true) {
+                    $own => ReleaseNodeInputs::NodeScope.$approved === $host,
+                    $known => $inputs->host($legacy['trees'][(string) $approved], $node) === $host,
+                    default => $approved !== null && $legacy['unreadable'],
+                };
+                $check = ['host' => $host, 'accept' => $accept, 'known' => $known];
+            } catch (Throwable $failure) {
+                $check = $failure;
+            }
+            try {
+                $roles = $inputs->roles($node);
+            } catch (Throwable $failure) {
+                $roles = $failure;
+            }
+            $prepared['nodes'][$node->id] = ['approved' => $approved, 'host' => $check, 'roles' => $roles];
+        }
+
+        return $prepared;
+    }
+
+    /** @param Prepared $prepared */
+    private function pass(GatewayRelease $release, ?DesiredCliReleaseData $cli, bool $cliUnavailable, array $prepared): ?int
+    {
+        $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
+        if ($this->current()?->id !== $release->id) {
+            return null;
+        }
+        $phase = ValidatedData::object($release->phases['fleet']);
+        if (GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
+            return 30;
+        }
+        if (($phase['status'] ?? null) === 'current' && (data_get($release->phases, 'default_refresh.status') === 'pending'
+            || data_get($release->phases, 'seed_publication.status') === 'pending')) {
+            return null;
+        }
+        $members = $this->members();
+        if (array_any($members, static fn (Node $node): bool => ! array_key_exists('host', $node->release_inputs ?? [])
+            && ! array_key_exists($node->id, $prepared['baselines']))) {
+            // Membership changed after the inputs were read. The next pass reads them before it takes the writer.
+            return 10;
+        }
+        $this->recordHostBaselines($members, $prepared['baselines']);
+        if (! config('fleet.rollout')) {
+            $this->save($release, $phase, 'disabled');
+
+            return null;
+        }
+        $root = app(GatewayServingHost::class)->nodeId();
+        if ($root !== null) {
+            Node::query()->whereKey($root)->lockForUpdate()->firstOrFail();
+        }
+        if (FleetReboot::open() !== null || AdmitFleetRolloutAction::open()) {
+            return 10;
+        }
+
+        // One pass visits each Node once, from its start until the phase settles. The next pass starts every Node afresh.
+        $previousRows = (array) ($phase['nodes'] ?? []);
+        if (! in_array($phase['status'] ?? null, ['pending', 'deferred'], true)) {
+            $phase['started_at'] = now()->toISOString();
+            $previousRows = array_map(static fn (mixed $row): array => array_intersect_key(ValidatedData::object($row), array_flip(['node_id', 'name']))
+                + ['status' => 'pending'], $previousRows);
+        }
+        // The release projection opens the first pass at verification. Drop this fallback after one release.
+        $phase['started_at'] ??= $release->created_at?->copy()->addMilliseconds((int) $release->duration_ms)->toISOString() ?? now()->toISOString();
+        $rows = [];
+        $phase['nodes'] = &$rows;
+        foreach ($members as $node) {
+            $rows[$node->id] = isset($previousRows[$node->id]) ? ValidatedData::object($previousRows[$node->id])
+                : ['node_id' => $node->id, 'name' => $node->name, 'status' => 'pending'];
+        }
+        if ($prepared['legacy'] === null) {
+            $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
+
+            return null;
+        }
+        if (array_any($members, static fn (Node $node): bool => ! isset($prepared['nodes'][$node->id])
+            || $prepared['nodes'][$node->id]['approved'] !== self::legacyApproval($node))) {
+            // Membership or a host approval changed after the inputs were read. The next pass reads them again.
+            return 10;
+        }
+        unset($phase['error_code']);
+        $failed = false;
+        foreach ($members as $node) {
+            $row = &$rows[$node->id];
+            // A Node keeps its outcome for the rest of the pass: drift after `current` waits for the next pass, and a failed
+            // Node never holds back the Nodes after it.
+            if (in_array($row['status'], ['current', 'failed'], true)) {
+                $failed = $failed || $row['status'] === 'failed';
+
+                continue;
+            }
+            try {
+                $delay = $this->visit($release, $node, $row, $prepared['nodes'][$node->id], $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
+                if ($delay !== null) {
+                    $this->save($release, $phase, 'pending');
+
+                    return $delay;
+                }
+            } catch (ResourceOperationException $failure) {
+                if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
+                    $row['status'] = 'pending';
+                    // The Operations a queued role converge waits for, so an operator sees what holds the Node.
+                    $row['waiting_for'] = ValidatedData::integerList($failure->details['operation_ids'] ?? []);
+                    $this->save($release, $phase, 'pending');
+
+                    return 15;
+                }
+                $row['error_code'] = $failure->errorCode;
+                $row['status'] = 'failed';
+                $failed = true;
+                // A failed delivery stops the pass. Any other failure, such as a changed host input, holds only this Node.
+                if (($row['agent'] ?? null) === 'failed') {
+                    $this->save($release, $phase, 'failed');
+
+                    return null;
+                }
+            } catch (Throwable) {
+                $row['error_code'] = 'fleet.inputs_unavailable';
+                $row['status'] = 'failed';
+                $this->save($release, $phase, 'failed');
+
+                return null;
+            }
+        }
+        $this->save($release, $phase, $failed ? 'failed' : 'current');
+
+        return null;
+    }
+
     /** @return list<Node> */
     private function members(): array
     {
@@ -259,13 +328,22 @@ final readonly class ContinueReleaseFleetAction
     public function preserveHostBaselines(?string $previousRelease, ?array $members = null): void
     {
         $members ??= $this->members();
-        $missing = array_filter($members, static fn (Node $node): bool => ! array_key_exists('host', $node->release_inputs ?? []));
-        if ($missing === []) {
-            return;
-        }
+        $this->recordHostBaselines($members, $this->hostBaselines($previousRelease, $members));
+    }
 
+    /**
+     * The previous release's host digest of each member without a host approval, or null when it cannot be read.
+     *
+     * @param  list<Node>  $members
+     * @return array<int, string|null>
+     */
+    private function hostBaselines(?string $previousRelease, array $members): array
+    {
         $baselines = [];
-        foreach ($missing as $node) {
+        foreach ($members as $node) {
+            if (array_key_exists('host', $node->release_inputs ?? [])) {
+                continue;
+            }
             try {
                 $baselines[$node->id] = app(ReleaseNodeInputs::class)->host($previousRelease === null ? null
                     : GatewayReleaseLayout::fromConfig()->releasePath($previousRelease), $node);
@@ -273,6 +351,22 @@ final readonly class ContinueReleaseFleetAction
                 $baselines[$node->id] = null;
             }
         }
+
+        return $baselines;
+    }
+
+    /**
+     * @param  list<Node>  $members
+     * @param  array<int, string|null>  $baselines
+     */
+    private function recordHostBaselines(array $members, array $baselines): void
+    {
+        $missing = array_filter($members, static fn (Node $node): bool => ! array_key_exists('host', $node->release_inputs ?? [])
+            && array_key_exists($node->id, $baselines));
+        if ($missing === []) {
+            return;
+        }
+
         DB::transaction(static function () use ($missing, $baselines): void {
             $locked = Node::query()->whereKey(array_map(static fn (Node $node): int => $node->id, $missing))
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
@@ -293,7 +387,7 @@ final readonly class ContinueReleaseFleetAction
      * verified release, read from Git objects, mapped to its tree. Drop after one release.
      *
      * @param  list<Node>  $members
-     * @return array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}
+     * @return Legacy
      */
     private function legacyTrees(GatewayRelease $release, ReleaseNodeInputs $inputs, array $members): array
     {
@@ -329,24 +423,15 @@ final readonly class ContinueReleaseFleetAction
 
     /**
      * @param  array<string,mixed>  $row
-     * @param  array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}  $legacy
+     * @param  NodeInputs  $inputs
      */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, array $legacy, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, array $inputs, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
     {
         $recorded = $node->release_inputs ?? [];
-        $host = $inputs->host(node: $node);
-        $approved = self::legacyApproval($node);
-        // A baseline recorded before host inputs were classified by Node approved a release tree. It stands when this Node's own
-        // inputs are the same in that tree and in this release. When a release tree cannot be read, nothing can prove a change:
-        // the release record and the log name the Node. A Node whose own inputs are all the legacy digest covered needs no tree:
-        // the digests compare directly, and a difference is a change. Drop after one release.
-        $own = $approved !== null && $inputs->coversLegacy($node);
-        $known = $own || ($approved !== null && array_key_exists($approved, $legacy['trees']));
-        $accept = match (true) {
-            $own => ReleaseNodeInputs::NodeScope.$approved === $host,
-            $known => $inputs->host($legacy['trees'][(string) $approved], $node) === $host,
-            default => $approved !== null && $legacy['unreadable'],
-        };
+        if ($inputs['host'] instanceof Throwable) {
+            throw $inputs['host'];
+        }
+        ['host' => $host, 'accept' => $accept, 'known' => $known] = $inputs['host'];
         if ($accept) {
             if (! $known) {
                 $row['host_baseline'] = 'legacy_baseline_unreadable';
@@ -363,7 +448,10 @@ final readonly class ContinueReleaseFleetAction
             // Membership changed during catalog preflight. The next visit resolves the pin before admission.
             return 10;
         }
-        $desired = $inputs->roles($node);
+        if ($inputs['roles'] instanceof Throwable) {
+            throw $inputs['roles'];
+        }
+        $desired = $inputs['roles'];
         $applied = (array) ($recorded['roles'] ?? []);
         $changed = array_filter($desired, static fn (array $role, int $id): bool => ($applied[$id] ?? null) !== $role['digest'], ARRAY_FILTER_USE_BOTH);
         $delivery = app(AgentDelivery::class);

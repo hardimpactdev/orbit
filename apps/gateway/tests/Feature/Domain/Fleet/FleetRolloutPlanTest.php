@@ -56,6 +56,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -387,6 +388,92 @@ it('recognizes a Node\'s approval of an earlier release from its Git commit, and
     'a Gateway-only change' => ['swamp/ansible/tasks/gateway-runtime.yml', false],
     'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
 ]);
+
+/**
+ * Release inputs that record the SQLite transaction level of every read, and can run a step after reading a Node's roles.
+ *
+ * @param  ArrayObject<int, array{string, int}>  $reads
+ */
+function observedReleaseInputs(ArrayObject $reads, ?Closure $afterRoles = null): ReleaseNodeInputs
+{
+    return new readonly class($reads, $afterRoles) extends ReleaseNodeInputs
+    {
+        /** @param ArrayObject<int, array{string, int}> $reads */
+        public function __construct(private ArrayObject $reads, private ?Closure $afterRoles) {}
+
+        public function host(?string $root = null, ?Node $node = null): string
+        {
+            $this->reads->append(['host', DB::transactionLevel()]);
+
+            return parent::host($root, $node);
+        }
+
+        public function roles(Node $node, bool $release = true, ?array $selected = null, ?string $root = null, array $renderedRoles = []): array
+        {
+            $this->reads->append(['roles', DB::transactionLevel()]);
+            $roles = parent::roles($node, $release, $selected, $root, $renderedRoles);
+            if ($this->afterRoles !== null) {
+                ($this->afterRoles)($node);
+            }
+
+            return $roles;
+        }
+
+        public function extractHostTree(string $repository, string $commit, string $folder): void
+        {
+            $this->reads->append(['extractHostTree', DB::transactionLevel()]);
+            parent::extractHostTree($repository, $commit, $folder);
+        }
+    };
+}
+
+it('reads every release input and Git tree before it takes the SQLite writer, and cleans up the trees', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $approved = previousReleaseCommit('swamp/ansible/tasks/gateway-runtime.yml');
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $dev->forceFill(['release_inputs' => ['host' => $approved]])->save();
+    $reads = new ArrayObject;
+    app()->instance(ReleaseNodeInputs::class, observedReleaseInputs($reads));
+    $before = glob(sys_get_temp_dir().'/orbit-release-host-*');
+    // The test database wraps each test in a transaction of its own.
+    $outside = DB::transactionLevel();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // The legacy tree, each Node's baseline, host and role digests, and the legacy comparison: all outside the transaction.
+    expect(array_count_values(array_column($reads->getArrayCopy(), 0)))->toEqual(['extractHostTree' => 1, 'host' => 6, 'roles' => 3])
+        ->and(array_unique(array_column($reads->getArrayCopy(), 1)))->toBe([$outside])
+        ->and(glob(sys_get_temp_dir().'/orbit-release-host-*'))->toBe($before);
+    $fleet = $release->refresh()->phases['fleet'];
+    expect($fleet['status'])->toBe('failed')
+        ->and($fleet['nodes'][$dev->id]['host'])->toBe('unchanged')
+        ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->refresh()->release_inputs['host'])->toBe(app(ReleaseNodeInputs::class)->host(node: $dev));
+});
+
+it('waits for the next pass when a Node joins after the release inputs were read', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $joined = null;
+    app()->instance(ReleaseNodeInputs::class, observedReleaseInputs(new ArrayObject, static function (Node $node) use (&$joined): void {
+        if ($joined === null && $node->id === test()->nodes['prod']) {
+            $joined = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'late', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit',
+                'wireguard_ip' => '10.44.0.40', 'ssh_host_fingerprint' => 'SHA256:late', 'status' => LifecycleStatus::Active,
+                'platform' => 'linux', 'architecture' => 'x86_64']));
+            $joined->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        }
+    }));
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10)
+        ->and($release->refresh()->phases['fleet'])->toBe(['status' => 'pending', 'nodes' => []])
+        ->and($joined?->refresh()->release_inputs)->toBeNull();
+
+    $fleet->execute($release);
+    expect($release->refresh()->phases['fleet']['nodes'][$joined->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($joined->refresh()->release_inputs['host'])->toBe(app(ReleaseNodeInputs::class)->host(node: $joined));
+});
 
 it('records the current host inputs, with a visible reason, when the release tree a legacy approval names cannot be read', function (): void {
     $release = GatewayRelease::query()->sole();

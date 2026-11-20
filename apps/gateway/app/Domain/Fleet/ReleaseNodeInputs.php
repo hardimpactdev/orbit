@@ -23,8 +23,11 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
-/** Fingerprints of the declared inputs to release-time Node work. Agent and CLI delivery have their own pins. */
-final readonly class ReleaseNodeInputs
+/**
+ * Fingerprints of the declared inputs to release-time Node work. Agent and CLI delivery have their own pins.
+ * Not final: a test decorates its reads to prove the fleet pass never runs them under the SQLite writer.
+ */
+readonly class ReleaseNodeInputs
 {
     private const string Recipe = 'apps/gateway/resources/machine-software/recipe.json';
 
