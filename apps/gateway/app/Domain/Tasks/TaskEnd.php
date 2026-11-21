@@ -70,7 +70,7 @@ final readonly class TaskEnd
     /** Refuses while an Operation holds the copy: its create still runs, or an earlier destroy has not ended. Call before any change. */
     public static function assertFree(Instance $copy): void
     {
-        $held = Operation::query()->where('target_type', 'instance')->where('target_id', $copy->id)
+        $held = Operation::query()->exceptFleetWait()->where('target_type', 'instance')->where('target_id', $copy->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
         if ($held !== null) {
             throw new ResourceOperationException('operation.target_busy', 'An Operation still holds the task copy; cancel again when it has ended.', 409,

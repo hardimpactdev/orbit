@@ -114,7 +114,7 @@ final readonly class InstanceRemovalReaper
         if (! $instance instanceof Instance || $instance->status !== InstanceState::Removing
             || ! InstanceRemovalMember::query()->live()->where('instance_removal_id', $removal->id)->where('instance_id', $instance->id)->exists()
             || InstanceTransfer::query()->where('instance_id', $instance->id)->open()->exists()
-            || Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+            || Operation::query()->exceptFleetWait()->whereNotIn('status', OperationStatus::terminalValues())
                 // Its own target, or the Instance lock that a create or completion holds: admission would cancel or wait behind those.
                 ->where(fn ($query) => $query->where(fn ($own) => $own->where('target_type', 'instance')->where('target_id', $instance->id))
                     ->orWhere('lock_key', OperationStore::lockKey('instance', $instance->id)))->exists()) {

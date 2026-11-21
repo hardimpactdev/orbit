@@ -1,4 +1,4 @@
-//! `instance.fleet_ready`: a nested-fleet copy's inner fleet, started and ready, inside the create.
+//! `instance.fleet_ready`: a nested-fleet copy's inner fleet, started and ready, beside its completion (`instance.fleet`).
 //!
 //! The clone part of the Swamp phases `fleet_check` and `fleet_resume` (docs/reference/development-containers.md#a-clone-starts-its-fleet).
 //! The copy holds the exact seed of its default, so what the default's deployment checked and placed before its snapshot is in
@@ -22,11 +22,13 @@ const SYSTEMCTL: &str = "/usr/bin/systemctl";
 /// The operator tunnel's boot unit, which the default's seed holds and a clone keeps (instance.prepare).
 pub(crate) const TUNNEL_UNIT: &str = "orbit-inner-fleet-tunnel.service";
 /// The first line that Orbit writes into the unit (tasks/instance-fleet-start.yml); a hand-made unit of the same name has none.
-const MARKER: &str = "# Managed by Orbit: the operator tunnel";
+pub(crate) const MARKER: &str = "# Managed by Orbit: the operator tunnel";
 
 const FAILED: &str = "instance.container_fleet_resume_failed";
 /// How often readiness is read.
 const POLL: Duration = Duration::from_millis(250);
+/// How long the unit's files are read again after the start, while the copy's `incus exec` may not answer yet.
+const UNIT_READ: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,11 +45,12 @@ struct FleetInput {
     seconds: u32,
 }
 
-/// Waits for the inner Incus, starts a nested container that is stopped, then reads every 250 ms: the tunnel's boot unit is
-/// active, Doctor of the nested Gateway is healthy over the tunnel, every named Node's agent is online, and the Gateway knows
-/// the operator with its key. One deadline, `seconds` from the step's start, bounds every command. A copy whose seed holds no
-/// Orbit tunnel unit, or whose unit failed at boot, has no tunnel it can trust: it answers `{"fleet": "seed_without_tunnel"}`,
-/// and the completion starts its fleet. Else it answers `{"fleet": "ready", "started": [...]}`.
+/// Waits for the inner Incus and starts a nested container that is stopped, always first. Then it reads the tunnel's boot unit
+/// again for up to 30 s, and every 250 ms: the unit is active, Doctor of the nested Gateway is healthy over the tunnel, every
+/// named Node's agent is online, and the Gateway knows the operator with its key. A unit that failed is reset and restarted once.
+/// One deadline, `seconds` from the step's start, bounds every command. A copy whose seed holds no Orbit tunnel unit, or whose
+/// unit failed again, has no tunnel it can trust: it answers `{"fleet": "seed_without_tunnel", "started": [...]}`, and the Gateway
+/// starts its fleet as Swamp does. Else it answers `{"fleet": "ready", "started": [...]}`.
 ///
 /// # Errors
 ///
@@ -68,14 +71,6 @@ pub fn fleet_ready(system: &impl System, input: &Value) -> Result<String, Failur
         system.run(seconds.min(left).max(1), &command, None)
     };
     let fail = |check: &str, detail: String| Failure::new(FAILED, format!("Readiness check '{check}' failed: {detail}"));
-    let without = || Ok(serde_json::json!({"fleet": "seed_without_tunnel"}).to_string());
-    // The unit and its link, read as files: right after the start, systemd in the copy may not answer yet. A hand-made unit of
-    // the same name is not Orbit's tunnel.
-    let link = format!("/etc/systemd/system/multi-user.target.wants/{TUNNEL_UNIT}");
-    let unit = format!("/etc/systemd/system/{TUNNEL_UNIT}");
-    if exec(30, &[TEST, "-L", &link]).is_err() || exec(30, &[GREP, "-q", "-F", "--", MARKER, &unit]).is_err() {
-        return without();
-    }
     // The inner Incus starts at the copy's boot and starts the fleet; a read before it is ready is not a failure.
     exec(90, &[INNER_INCUS, "admin", "waitready", "--timeout", "80"]).map_err(|detail| fail("incus", detail))?;
     let listed = exec(30, &[INNER_INCUS, "list", "--format", "csv", "--columns", "ns"]).map_err(|detail| fail("running", detail))?;
@@ -86,6 +81,18 @@ pub fn fleet_ready(system: &impl System, input: &Value) -> Result<String, Failur
         let mut start = vec![INNER_INCUS, "start"];
         start.extend(&stopped);
         exec(120, &start).map_err(|detail| fail("running", format!("{} did not start: {detail}", stopped.join(", "))))?;
+    }
+    let without = || Ok(serde_json::json!({"fleet": "seed_without_tunnel", "started": stopped}).to_string());
+    // The unit and its link, read as files: right after the start, systemd in the copy may not answer yet, and an `incus exec`
+    // may fail once. A hand-made unit of the same name is not Orbit's tunnel.
+    let link = format!("/etc/systemd/system/multi-user.target.wants/{TUNNEL_UNIT}");
+    let unit = format!("/etc/systemd/system/{TUNNEL_UNIT}");
+    let unit_read = (Instant::now() + UNIT_READ).min(deadline);
+    while exec(30, &[TEST, "-L", &link]).is_err() || exec(30, &[GREP, "-q", "-F", "--", MARKER, &unit]).is_err() {
+        if Instant::now() >= unit_read {
+            return without();
+        }
+        std::thread::sleep(Duration::from_secs(1));
     }
     let api = |path: &str, post: bool| -> Result<String, String> {
         let url = format!("https://{}/api/v1/{path}", input.hub);
@@ -100,6 +107,7 @@ pub fn fleet_ready(system: &impl System, input: &Value) -> Result<String, Failur
         exec(15, &curl)
     };
     let mut tunnel = false;
+    let mut restarted = false;
     loop {
         // The whole script must have run: its last commands give the tunnel the hub's resolver, which Doctor does not need.
         let (check, last): (&str, String) = if tunnel {
@@ -114,8 +122,16 @@ pub fn fleet_ready(system: &impl System, input: &Value) -> Result<String, Failur
                     tunnel = true;
                     continue;
                 }
-                // A unit that failed at boot made no tunnel to trust; the completion makes it.
-                Ok(state) if state == "failed" => return without(),
+                // A unit that failed at boot, such as on a hub that did not answer yet, runs once more; a second failure leaves the
+                // tunnel to the Gateway's fleet start.
+                Ok(state) if state == "failed" && restarted => return without(),
+                Ok(state) if state == "failed" => {
+                    restarted = true;
+                    exec(15, &[SYSTEMCTL, "reset-failed", TUNNEL_UNIT]).and_then(|_| exec(15, &[SYSTEMCTL, "restart", "--no-block", TUNNEL_UNIT])).map_or_else(
+                        |detail| ("tunnel", format!("{TUNNEL_UNIT} did not restart: {}", detail.trim())),
+                        |_| ("tunnel", format!("{TUNNEL_UNIT} restarted")),
+                    )
+                }
                 Ok(state) => ("tunnel", format!("{TUNNEL_UNIT} is {state}")),
                 Err(detail) => ("tunnel", format!("systemd does not answer: {}", detail.trim())),
             }

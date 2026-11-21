@@ -47,7 +47,7 @@ sequenceDiagram
         SW-->>GW: Run succeeded<br/>copy active
         Note over GW: Run the task<br/>running
         %%> When:
-        %%> - the completion succeeded and the copy is `active`: fully set up, a nested copy with its healthy fleet
+        %%> - the completion succeeded and the copy is `active`: fully set up; a nested copy's fleet may still be starting (`instance.fleet`, see `fleet_ready_at`), and a proof waits for it
         %%> - after a retried completion, the task also drops the assistance that the failed completion recorded, and only that request
       else the completion fails
         SW--xGW: Run failed<br/>failed step

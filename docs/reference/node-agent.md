@@ -57,7 +57,7 @@ Until the Gateway pins a delivery with that mode, Nodes still run the executor f
 
 Agent 0.19.0 adds the `instance` family for app-dev Nodes: `instance.clone`, `instance.prepare`, `instance.start` and `instance.fetch_branch`. Agent 0.20.0 adds `instance.checkout` and `instance.t3`. Agent 0.21.0 lets `instance.clone` apply the copy's ufw route rules and `instance.prepare` take its file list as one blob, which the Gateway's engine create needs. Agent 0.22.0 lets `instance.start` run the copy's app-account swap, so a copy of an older default works. Agent 0.23.0 adds `instance.club_key`, `instance.copy_volume`, `instance.spare_volume` and `instance.stop`, and runs the rest of a task copy and a nested-fleet copy: the checkout's clean, the nested start guard, settings merged object by object and the seed's manifest. Its Node actions may name a part of the Node (`<node>:<part>`), so they run side by side.
 
-Agent 0.24.0 adds `instance.fleet_ready`, so a nested-fleet clone's create waits for its inner fleet. Agent 0.25.0 asks again every half second while the Gateway or Reverb is not up yet, so a nested fleet's agents join right after its Reverb starts.
+Agent 0.24.0 adds `instance.fleet_ready`, which waits for the inner fleet of a nested-fleet clone. Agent 0.25.0 asks again every half second while the Gateway or Reverb is not up yet, so a nested fleet's agents join right after its Reverb starts. Agent 0.26.0 lets `instance.prepare` report the seed's tunnel boot unit (`fleet_tunnel`), so the clone's fleet starts beside its completion ([`instance.fleet`](/reference/gateway-engine#instancefleet)).
 
 ## What it observes
 
@@ -300,7 +300,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.10898.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.10901.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity, and with `--operator-ip` the roleless `operator` Node, from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
@@ -639,7 +639,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.10898.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.10901.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {

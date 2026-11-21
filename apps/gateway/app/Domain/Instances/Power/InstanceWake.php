@@ -111,7 +111,9 @@ final readonly class InstanceWake extends InstancePower
     private function admitWake(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         $runtime = $instance->runtime()->first();
-        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
+        // A frozen clone resumes with its fleet as it was, unless that fleet is owed: its start never proved it ready, so it starts now.
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime)
+            || ($runtime !== null && self::frozen($runtime, $instance) && ! $runtime->fleet_start_pending)) {
             return parent::start($instance, $caller, $requestId);
         }
         $idempotency = app(OperationIdempotency::class);

@@ -251,7 +251,7 @@ final readonly class ContainerIdleSweep
 
     private function hasOpenOperation(Instance $instance): bool
     {
-        return Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+        return Operation::query()->exceptFleetWait()->whereNotIn('status', OperationStatus::terminalValues())
             ->where(static fn (Builder $query) => $query
                 ->where(static fn (Builder $query) => $query->where('target_type', 'instance')->where('target_id', $instance->id))
                 ->orWhere(static fn (Builder $query) => $query->where('target_type', 'process')->whereIn('target_id', $instance->processes()->select('id'))))

@@ -1051,11 +1051,13 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | Cap | A start needs a free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the copy and one for the default's next seed, else `tasks.copy_id_range_full`. `ORBIT_TASKS_COPIES_MAX` (default 1) caps nested-fleet copies per Node: `tasks.copy_capacity_full`. Neither waits |
 | Publish | Only for a nested-fleet Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation. The [mode](#task-group-modes) decides whether Orbit publishes by itself once the work is done |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
-| Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
+| Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then. |
 | Failed create | The task goes back to `todo`, Orbit [removes the copy](#removal-by-orbit) and starts the create once more; see [a failed create](#a-failed-create) |
 | Failed completion | The copy stays and the task stays `reserved`, with an assistance request and the retry. See [a failed completion](#a-failed-completion) |
 | Kept copy | After an expired run budget, a failed completion, a failed destroy or a copy that Orbit would not remove, the task keeps the copy until `task:cancel`, `task:complete` or `instance:destroy --force` |
 | End | When the copy's destroy succeeds, a running task is `cancelled`, a failed task stays `failed` and a completed task stays `completed`. All let go of the copy |
+
+A nested copy can be `active` while its fleet still starts ([`instance.fleet`](/reference/development-containers#a-clone-starts-its-fleet)). That wait holds nothing: a task cancel, a copy's destroy and a settle pass do not wait for it, and a destroy cancels it. A proof resets the fleet and waits for it.
 
 #### A failed completion
 

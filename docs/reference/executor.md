@@ -269,11 +269,11 @@ It reads the seed's take before it copies and keeps it as the volume's descripti
 
 #### instance.fleet_ready
 
-`instance.fleet_ready` targets the Node's part for one copy of a nested-fleet default, so it runs beside the copy's own steps. It waits for the copy's inner fleet, as Swamp's `clone-fleet` does ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)). It waits for the inner Incus and starts a nested container that is stopped, all in one call.
+`instance.fleet_ready` targets the Node's part for one copy of a nested-fleet default, so it runs beside the copy's own steps. It waits for the copy's inner fleet, as Swamp's `clone-fleet` does ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)). It waits for the inner Incus and starts a nested container that is stopped, all in one call. It always does this first, so the fleet runs whatever the tunnel unit says.
 
-Then it reads every 250 ms: the tunnel's boot unit is active, then the nested Gateway's Doctor over the tunnel, the agents of `nodes`, and the operator with its key. One deadline, `seconds` from the step's start, bounds it all. Each command runs in the copy with `incus exec`, with its own time limit or what is left of the deadline.
+Then it reads the unit and its link as files, again every second for up to 30 s: right after the start, an `incus exec` may fail once. Then it reads every 250 ms: the tunnel's boot unit is active, then the nested Gateway's Doctor over the tunnel, the agents of `nodes`, and the operator with its key. One deadline, `seconds` from the step's start, bounds it all. Each command runs in the copy with `incus exec`, with its own time limit or what is left of the deadline.
 
-A copy whose tunnel unit is missing, lacks Orbit's marker, or failed at boot answers `{"fleet": "seed_without_tunnel"}` and changes nothing. Else it answers `{"fleet": "ready", "started"}`, with the nested containers it started. Codes: `instance.fleet_ready_input_invalid`, `instance.container_fleet_resume_failed`. The log names the failed check.
+A unit that failed is reset and restarted once (`systemctl reset-failed`, then `restart --no-block`). A copy whose tunnel unit is missing, lacks Orbit's marker, or failed again answers `{"fleet": "seed_without_tunnel", "started"}`, and the Gateway starts the fleet as Swamp does. Else it answers `{"fleet": "ready", "started"}`, with the nested containers it started. Codes: `instance.fleet_ready_input_invalid`, `instance.container_fleet_resume_failed`. The log names the failed check.
 
 #### instance.prepare
 
@@ -290,7 +290,7 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 
 The seed's manifest, `/etc/orbit/seed-manifest.json` ([The seed manifest](/reference/development-containers#the-seed-manifest)), is read once first. An item the seed holds as rendered is not placed, and the manifest's unit list replaces the folder listings.
 
-The list may come as one blob, `files_blob`, with each file's content inline. It answers `{"changes", "manifest", "app_account_current", "workspace_clean"}`: whether the manifest was there, whether the seed's swap ran with this create's swap file (`app_account`), and whether its tree was clean. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+The list may come as one blob, `files_blob`, with each file's content inline. It answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel"}`: whether the manifest was there, whether the seed's swap ran with this create's swap file (`app_account`), whether its tree was clean, and whether the stopped copy holds Orbit's tunnel boot unit with Orbit's marker (`fleet_tunnel`). A running copy answers `false`: its first boot is over. The Gateway starts a nested-fleet clone's fleet in the background only when `fleet_tunnel` is true. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 
 #### JSON settings
 

@@ -90,7 +90,7 @@ final class DestroyTaskCopy implements ShouldQueue
     {
         $instance = Instance::query()->find($this->instanceId);
         if ($instance === null || $instance->task_workspace_owner_id === null || ! $instance->runtime()->exists()
-            || Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            || Operation::query()->exceptFleetWait()->where('target_type', 'instance')->where('target_id', $instance->id)->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
             return null;
         }
         $group = Task::topLevel()->find($instance->task_workspace_owner_id);

@@ -159,6 +159,8 @@ The reaper waits after each failure: 5 minutes, 15 minutes, 1 hour, then every 6
 
 A refused start is never only in the Gateway log. The removal record keeps the refusal's error code in `start_refusal`. The Gateway records one Activity entry `instance.removal_retry_refused` with that error code, and Doctor reports `instance.removal_retry_refused` on the Instance with the code. A start that fails with another error counts and shows the same way, with the code `instance.removal_retry_failed`. The next admitted start clears the code, and the issue goes.
 
+An open `instance.fleet` of the Instance does not hold the reaper back: that wait holds nothing, and the destroy's admission cancels it.
+
 A removal that holds no saved intent, such as an older one from before the intent was kept on every removal, cannot start again: admission replays the saved intent and refuses with `instance.removal_conflict`. The reaper never starts such a removal. On its first pass it records `instance.removal_intent_missing` and reports the removal stuck at once.
 
 The operator turns the reaper off with `ORBIT_INSTANCE_REMOVAL_REAPER=false` in the Gateway's environment; its scheduled pass then does nothing. It is on by default. A HOLD on Operations is a convention between people, not a Gateway setting: use this switch to stop new reaper starts during one.
