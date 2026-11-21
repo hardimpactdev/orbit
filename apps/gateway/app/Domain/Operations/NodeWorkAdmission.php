@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
-use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;

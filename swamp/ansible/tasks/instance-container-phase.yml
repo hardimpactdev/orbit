@@ -898,7 +898,7 @@
     - name: Read whether the mirror's branch holds HEAD past the commit
       when: >-
         workspace_head.results[0].stdout | default('') | trim == container.branch
-        and workspace_head.results[1].stdout | default('') | trim is match('^[0-9a-f]{40}$')
+        and workspace_head.results[1].rc == 0
         and workspace_head.results[1].stdout | trim != container_commit
       ansible.builtin.command: { argv: "{{ mirror_git + item }}" }
       loop:
