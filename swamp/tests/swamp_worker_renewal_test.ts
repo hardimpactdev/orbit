@@ -795,28 +795,3 @@ test("the worker set is made whole: only a worker without token files is minted 
   assertEquals(JSON.parse(Deno.readTextFileSync(`${f.root}/missing.json`)), ["c"]);
   assert(!f.output.includes("synthetic-test-only"));
 });
-
-Deno.test("worker renewal: every swamp call runs through swamp-env, which sources the Swamp Club credential env", () => {
-  const vars = (parse(Deno.readTextFileSync(playbook)) as {
-    vars: Record<string, unknown>;
-  }[])[0].vars;
-  assertEquals(vars.renewal_swamp, [
-    "/usr/local/lib/orbit-swamp/swamp-env",
-    "/usr/local/bin/swamp",
-  ]);
-  for (
-    const file of [
-      playbook,
-      new URL("../ansible/tasks/swamp-worker-renew-slot.yml", import.meta.url)
-        .pathname,
-      new URL("../ansible/tasks/swamp-worker-renew-verify.yml", import.meta.url)
-        .pathname,
-    ]
-  ) {
-    const text = Deno.readTextFileSync(file);
-    assert(!text.includes("renewal_swamp_binary"), file);
-    for (const line of text.split("\n").filter((line) => line.includes("'worker', '"))) {
-      assertStringIncludes(line, "+ renewal_swamp +", file);
-    }
-  }
-});

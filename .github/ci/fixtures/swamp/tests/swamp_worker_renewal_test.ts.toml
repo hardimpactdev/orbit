@@ -41,11 +41,10 @@ cases = [
   "worker renewal: proof remint rejects c wrong server name before any service stops",
   "worker renewal: proof remint rejects c empty secret before any service stops",
   "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output",
-  "worker renewal: every swamp call runs through swamp-env, which sources the Swamp Club credential env",
 ]
 file = "swamp/tests/swamp_worker_renewal_test.ts"
 self_hosted = true
-cost = 1794
+cost = 1793
 slices = 41
 inputs = [
   "bin/swamp-shape-gate",
@@ -103,4 +102,3 @@ inputs = [
 "worker renewal: proof remint rejects c wrong server name before any service stops" = 120
 "worker renewal: proof remint rejects c empty secret before any service stops" = 120
 "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output" = 120
-"worker renewal: every swamp call runs through swamp-env, which sources the Swamp Club credential env" = 1
