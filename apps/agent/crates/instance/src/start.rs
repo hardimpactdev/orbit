@@ -98,13 +98,6 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.start_input_invalid", error.to_string()))?;
     check(&input).map_err(|detail| Failure::new("instance.start_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.container_start_failed" };
-    if let Some(take) = &input.seed_take {
-        // Both copies ran side by side: they hold one take only when each read the seed's current take before it copied.
-        let (_, current) = crate::exact(&incus, &input.project, &input.source, &take.snapshot)?;
-        if take.clone != current || take.volume != current {
-            return Err(Failure::new("instance.default_seed_moved", format!("{} was retaken while the copy ran", take.snapshot)));
-        }
-    }
     let read = || -> Result<Value, Failure> {
         incus
             .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
@@ -112,6 +105,15 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
     };
     let mut copy = read()?;
     let mut changes = 0;
+    // A copy that ran already passed this check: a resent start after a later retake must not refuse it.
+    let started = copy.get("status").and_then(Value::as_str) == Some("Running") || copy.pointer("/config/volatile.last_state.power").is_some();
+    if let (Some(take), false) = (&input.seed_take, started) {
+        // Both copies ran side by side: they hold one take only when each read the seed's current take before it copied.
+        let (_, current) = crate::exact(&incus, &input.project, &input.source, &take.snapshot)?;
+        if take.clone != current || take.volume != current {
+            return Err(Failure::new("instance.default_seed_moved", format!("{} was retaken while the copy ran", take.snapshot)));
+        }
+    }
     if let Some(volume) = &input.volume {
         // The copy took the seed's disk, which names the default's volume; its own goes in before the guard reads it.
         if copy.pointer(&format!("/devices/{}/source", volume.device)).and_then(Value::as_str) != Some(volume.name.as_str()) {

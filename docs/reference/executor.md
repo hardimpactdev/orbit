@@ -304,7 +304,7 @@ On a Node without idmapped mounts, the seed's files are shifted. There a stopped
 
 Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block. Last, root runs the app-account swap file that prepare wrote (`app_account`, `/usr/local/libexec/orbit-app-user`). A copy of an older default moves from `orbit` and `work` to `www-data` there, before checkout runs Git as `agent`. On a copy that already uses `www-data`, the swap only reads. Without `app_account`, when the seed's own swap ran with the same file, the step runs none.
 
-With `seed_take`, before anything else, the start reads the admitted seed's take again. It refuses with `instance.default_seed_moved` unless the takes that `instance.clone` and `instance.copy_volume` answered both match it.
+With `seed_take`, before it changes anything, the start reads the admitted seed's take again. A copy that is running or ran before skips this, so a start resent after a later retake never refuses a good copy. Otherwise it refuses with `instance.default_seed_moved` unless the takes that `instance.clone` and `instance.copy_volume` answered both match it.
 
 Before the guard reads the devices, the copy's disk names the volume that `instance.copy_volume` made (`volume`).
 
