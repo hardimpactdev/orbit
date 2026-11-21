@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
+use App\Domain\Instances\InstanceFleetOperation;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
@@ -95,6 +96,10 @@ final readonly class OperationStore
             }
 
             return $this->idempotency->replay($kind, $parent) ?? throw OperationVersions::deprecated();
+        }
+        // A destroy or a sleep of an Instance ends its fleet wait: nothing waits for a fleet that goes or sleeps.
+        if ($targetType === OperationKinds::InstanceTarget && in_array($kind, InstanceFleetOperation::Ends, true)) {
+            InstanceFleetOperation::cancelFor($targetId);
         }
         $this->broadcaster->created($operation);
 

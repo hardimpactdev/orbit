@@ -27,9 +27,11 @@ use LogicException;
  * - after `start`, side by side: `club_key` (a nested-fleet copy), its nested Gateway's Club key in its `/run`; and `checkout`
  *   (after `fetch` too), the branch, a task copy's clean, the merged `.env`;
  * - `t3` (after `checkout`): Conn or T3 running, its sessions sealed to the Gateway, its project;
- * - `fleet` (a clone of a nested-fleet default, after `start` and `club_key`, beside `checkout` and `t3`): its inner fleet runs and is
- *   ready, so the completion skips `clone-fleet` (docs/reference/development-containers.md#a-clone-starts-its-fleet);
  * - `stop`, only after a failed step: the copy stops and stays for a retry or a destroy.
+ *
+ * A clone of a nested-fleet default whose seed holds Orbit's tunnel boot unit does not wait for its fleet: its result says
+ * `fleet_start: background`, and the projection admits `instance.fleet` beside the completion ({@see InstanceFleetOperation};
+ * docs/reference/development-containers.md#a-clone-starts-its-fleet). Any other nested-fleet clone keeps the completion's `clone-fleet`.
  *
  * The create's address is left to its completion (`route_publication: deferred`), as for a create whose Route Nodes were held.
  * The completion starts the Processes and publishes the address, as before. A clone this flow does not cover starts on Swamp
@@ -39,14 +41,11 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
 {
     /** Each step's chart label, so a failure records the step the Swamp flow would name. */
     private const array Labels = ['clone' => 'clone-container', 'fetch' => 'clone-container', 'copy_volume' => 'clone-container', 'prepare' => 'clone-container',
-        'start' => 'clone-container', 'club_key' => 'clone-club-key', 'checkout' => 'clone-t3', 't3' => 'clone-t3', 'fleet' => 'clone-fleet'];
+        'start' => 'clone-container', 'club_key' => 'clone-club-key', 'checkout' => 'clone-t3', 't3' => 'clone-t3'];
 
     /** The result's `failed_step` and code for a failed step, as the Swamp result names the phase (swamp result.ts). */
     private const array Failures = ['club_key' => ['workspace', 'instance.create_workspace_failed'], 'checkout' => ['workspace', 'instance.create_workspace_failed'],
-        't3' => ['t3', 'instance.create_agent_failed'], 'fleet' => ['fleet', 'instance.container_fleet_resume_failed']];
-
-    /** The bound of the fleet's readiness wait, as the Swamp fleet start's (`fleet_ready_seconds`). */
-    public const int FleetReadySeconds = 300;
+        't3' => ['t3', 'instance.create_agent_failed']];
 
     /** The first line of Orbit's proxy drop-ins (instance_node_services.py `MARKER`). */
     private const string ProxyMarker = "# Managed by Orbit: attached Node service.\n";
@@ -77,10 +76,6 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 optional: true)] : []),
             new StepSpec('checkout', $node, 'instance.checkout', $id, ['start', 'fetch'], budgetMs: 180_000, resendMs: 30_000),
             new StepSpec('t3', $node, 'instance.t3', $id, ['checkout'], budgetMs: 180_000, resendMs: 30_000),
-            // A clone of a nested-fleet default waits for its fleet beside the checkout: its own part of the Node, so it locks no step
-            // of the copy. The nested Gateway's Swamp reads the Club key, so the wait starts after it.
-            ...((ValidatedData::object($container['clone'])['fleet'] ?? false) === true ? [new StepSpec('fleet', $node, 'instance.fleet_ready', $part('fleet-'.$id), ['start', ...($club ? ['club_key'] : [])],
-                budgetMs: (self::FleetReadySeconds + 120) * 1000, resendMs: 60_000)] : []),
             // Only after a failed step, and only once the copy exists: it stops and stays for a retry or a destroy.
             new StepSpec('stop', $node, 'instance.stop', $id, ['clone'], budgetMs: 90_000, resendMs: 45_000, onFailure: true),
         ];
@@ -138,9 +133,6 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'environment' => ['blob' => ['content' => app(DevelopmentCreateEnvironment::class)->content($instance())]],
                 ...(($clone['clean_workspace'] ?? false) === true && ! self::seedClean($run, $clone) ? ['clean' => true] : []),
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
-            // The nested Gateway answers over the operator tunnel by its own name, as the proof reads it (instance-fleet.yml `fleet_curl`).
-            'fleet' => [...$where, 'guests' => array_values(NestedFleetLayout::Guests), 'hub' => NestedFleetLayout::operator()['hub'],
-                'host' => 'gateway.orbit', 'nodes' => array_keys(NestedFleetLayout::Guests), 'seconds' => self::FleetReadySeconds],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
                 'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
             default => throw new LogicException("Step [{$step}] is not an instance step."),
@@ -223,14 +215,6 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         return $container;
     }
 
-    /** Whether the create's `fleet` step made the fleet ready; a seed without the tunnel's boot unit leaves it to the completion. */
-    public static function fleetReady(EngineRun $run): bool
-    {
-        $output = json_decode($run->output('fleet') ?? 'null', true);
-
-        return is_array($output) && ($output['fleet'] ?? null) === 'ready';
-    }
-
     /**
      * A nested-fleet copy's own inner volume and the default's volume it copies.
      *
@@ -290,6 +274,17 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $output = json_decode($run->output($step) ?? 'null', true);
 
         return is_array($output) && is_string($output['seed_taken_at'] ?? null) ? $output['seed_taken_at'] : '';
+    }
+
+    /**
+     * Whether the clone's fleet starts in the background: a clone of a nested-fleet default, from a seed whose tunnel unit boots it
+     * (prepare's `fleet_tunnel`), and an engine that runs `instance.fleet` on the Node.
+     */
+    private static function background(Operation $operation, EngineRun $run): bool
+    {
+        $clone = ValidatedData::object(self::container($operation)['clone']);
+
+        return ($clone['fleet'] ?? false) === true && (self::prepared($run)['fleet_tunnel'] ?? false) === true && InstanceFleetOperation::runs($operation);
     }
 
     /**
@@ -461,8 +456,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             'environment' => $checkout['environment'] ?? null,
             'route_publication' => 'deferred',
             ...self::observed($run),
-            // The completion skips `clone-fleet` only for a fleet this create made ready.
-            ...(self::fleetReady($run) ? ['fleet_ready' => true] : []),
+            // The fleet starts beside the completion only from a seed that holds Orbit's tunnel boot unit, and only when the engine runs its wait.
+            ...(self::background($operation, $run) ? ['fleet_start' => 'background'] : []),
             't3' => ['environment_id' => $environment['environmentId'] ?? null, 'server_version' => $environment['serverVersion'] ?? null,
                 'expires_at' => $body['expiresAt'] ?? null],
         ], ValidatedData::string($gateway['token'] ?? null)];

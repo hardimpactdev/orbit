@@ -212,6 +212,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'completion_operation_id' => $completion->id]]);
                 $operation->refresh();
             }
+            if ($handover && ! $ended && ($result['fleet_start'] ?? null) === 'background') {
+                // The clone's fleet starts beside its completion: its wait holds no lock and never fails the create.
+                app(InstanceFleetOperation::class)->admit($operation);
+            }
 
             return $operation;
         });

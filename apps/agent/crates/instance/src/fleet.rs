@@ -22,7 +22,7 @@ const SYSTEMCTL: &str = "/usr/bin/systemctl";
 /// The operator tunnel's boot unit, which the default's seed holds and a clone keeps (instance.prepare).
 pub(crate) const TUNNEL_UNIT: &str = "orbit-inner-fleet-tunnel.service";
 /// The first line that Orbit writes into the unit (tasks/instance-fleet-start.yml); a hand-made unit of the same name has none.
-const MARKER: &str = "# Managed by Orbit: the operator tunnel";
+pub(crate) const MARKER: &str = "# Managed by Orbit: the operator tunnel";
 
 const FAILED: &str = "instance.container_fleet_resume_failed";
 /// How often readiness is read.

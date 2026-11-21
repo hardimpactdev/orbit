@@ -5,10 +5,15 @@ declare(strict_types=1);
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceCompleteAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Data\Instances\CreateInstanceData;
+use App\Data\Instances\InstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\ClonePublication;
@@ -16,6 +21,8 @@ use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstanceFleetEngineFlow;
+use App\Domain\Instances\InstanceFleetOperation;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -39,6 +46,7 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Route;
@@ -383,32 +391,191 @@ it('runs a non-PHP clone and a nested-fleet clone from create to active: the Clu
         ->toBe([OperationStatus::Succeeded, OperationStatus::Succeeded, InstanceState::Active]);
 })->with(['non-PHP' => false, 'nested fleet' => true]);
 
-it('waits for a nested clone\'s fleet on the engine beside its checkout, and its completion then skips clone-fleet', function (bool $nested): void {
+/** A bus whose Node reports `instance.fleet_ready`, and that keeps what the engine publishes. */
+function fleetBus(): MachineBus
+{
+    return new class implements MachineBus
+    {
+        /** @var list<int> */
+        public array $starts = [];
+
+        /** @var list<int> */
+        public array $nudges = [];
+
+        /** @var list<int> */
+        public array $orders = [];
+
+        public function publishOrder(int $node, SignedExecutorOrder $order): void
+        {
+            $this->orders[] = $node;
+        }
+
+        public function publishStart(int $operation): void
+        {
+            $this->starts[] = $operation;
+        }
+
+        public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void {}
+
+        public function nudge(int $operation, string $id): void
+        {
+            $this->nudges[] = $operation;
+        }
+
+        public function putContent(int $node, string $content): array
+        {
+            return ['sha256' => hash('sha256', $content)];
+        }
+
+        public function nodeActions(int $node): array
+        {
+            return ['instance.fleet_ready'];
+        }
+
+        public function nodeClock(int $node): ?bool
+        {
+            return null;
+        }
+    };
+}
+
+/** A nested clone whose create ended with its fleet in the background, and the `instance.fleet` it admitted, sent to the Node. */
+function fleetWait(object $test): Operation
+{
+    config(['orbit.engine.kinds' => ['instance.create'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $test->bus = fleetBus();
+    app()->instance(MachineBus::class, $test->bus);
+    $create = handoverCreate(handoverDefault(containerDefaultNode(), ProjectType::NodePackage, null, true));
+    $succeeded = handoverSucceeded($create);
+    $succeeded['result']['fleet_start'] = 'background';
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, $succeeded);
+    $fleet = Operation::query()->where('kind', InstanceFleetOperation::Kind)->sole();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $fleet->id]);
+
+    return $fleet->refresh();
+}
+
+/** The executor's receipt for the wait's one step. */
+function fleetReceipt(Operation $fleet, array $line): void
+{
+    app(Engine::class)->onReceipt(['node' => $fleet->node_id, 'line' => ['operation' => $fleet->id.':fleet', ...$line]]);
+}
+
+it('starts a nested clone\'s fleet beside its completion: the create has no fleet step, and the completion skips clone-fleet', function (bool $background): void {
+    config(['orbit.engine.kinds' => ['instance.create'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $this->bus = fleetBus();
+    app()->instance(MachineBus::class, $this->bus);
     $node = containerDefaultNode();
-    $create = handoverCreate(handoverDefault($node, ProjectType::NodePackage, null, $nested));
-    $flow = app(InstanceCreateEngineFlow::class);
-    $id = $create->target_id;
+    $create = handoverCreate(handoverDefault($node, ProjectType::NodePackage, null, true));
+    $succeeded = handoverSucceeded($create);
+    if ($background) {
+        $succeeded['result']['fleet_start'] = 'background';
+    }
 
-    $fleet = array_values(array_filter($flow->steps($create), static fn (StepSpec $step): bool => $step->name === 'fleet'));
+    $names = array_map(static fn (StepSpec $step): string => $step->name, app(InstanceCreateEngineFlow::class)->steps($create));
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, $succeeded);
 
-    if (! $nested) {
-        expect($fleet)->toBe([]);
-
+    $fleet = Operation::query()->where('kind', InstanceFleetOperation::Kind)->first();
+    expect($names)->not->toContain('fleet')
+        ->and(array_key_exists('fleet', app(NativeInstanceCompleteInput::class)->input(handoverCompletion($create))['intent']))->toBe(! $background)
+        ->and($fleet !== null)->toBe($background);
+    if (! $background) {
         return;
     }
-    // Its own part of the Node: it locks no step of the copy, so the checkout and T3 run beside it.
-    expect([$fleet[0]->action, $fleet[0]->target, $fleet[0]->after])->toBe(['instance.fleet_ready', $node->id.':fleet-'.$id, ['start', 'club_key']])
-        ->and($flow->input($create, 'fleet', new EngineRun($create->id, [], 0, null)))->toBe(['project' => InstancePlacement::NestedProject,
-            'name' => 'instance-'.$id, 'guests' => ['nested-gateway', 'nested-app-dev', 'nested-app-prod'], 'hub' => '10.45.0.1', 'host' => 'gateway.orbit',
+    // Started on the engine after the commit, on its own part of the Node, holding no lock: the completion and a destroy never wait for it.
+    expect([$fleet->target_type, $fleet->target_id, $fleet->node_id, $fleet->lock_key, $fleet->status, $fleet->state['swamp_run_id']])
+        ->toBe(['instance', $create->target_id, $node->id, null, OperationStatus::Running, 'engine-'.$fleet->id])
+        ->and($this->bus->starts)->toBe([$fleet->id])
+        ->and(OperationEngineStep::query()->where('operation_id', $fleet->id)->pluck('target', 'name')->all())->toBe(['fleet' => $node->id.':fleet-'.$create->target_id])
+        ->and(app(InstanceFleetEngineFlow::class)->input($fleet, 'fleet', new EngineRun($fleet->id, [], 0, null)))->toBe(['project' => InstancePlacement::NestedProject,
+            'name' => 'instance-'.$create->target_id, 'guests' => ['nested-gateway', 'nested-app-dev', 'nested-app-prod'], 'hub' => '10.45.0.1', 'host' => 'gateway.orbit',
             'nodes' => ['gateway', 'app-dev', 'app-prod'], 'seconds' => 300]);
+})->with(['in the background' => true, 'a seed without the tunnel unit' => false]);
 
-    // The create's result says the fleet is ready: the completion's intent has no fleet, so Swamp skips `clone-fleet`.
-    $ready = handoverSucceeded($create);
-    $ready['result']['fleet_ready'] = true;
-    app(DevelopmentInstanceCreateProjection::class)->apply($create, $ready);
+it('records the fleet\'s end on the Instance: its ready time, or its failure, without failing the Instance', function (array $line, ?string $code): void {
+    $fleet = fleetWait($this);
 
-    expect(app(NativeInstanceCompleteInput::class)->input(handoverCompletion($create))['intent'])->not->toHaveKey('fleet');
-})->with(['non-PHP' => false, 'nested fleet' => true]);
+    fleetReceipt($fleet, $line);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    $instance = Instance::query()->findOrFail($fleet->target_id);
+    expect([$fleet->refresh()->status, $fleet->error_code])->toBe([$code === null ? OperationStatus::Succeeded : OperationStatus::Failed, $code])
+        ->and($runtime->fleet_ready_at !== null)->toBe($code === null)
+        ->and([$runtime->fleet_failed_at !== null, $runtime->fleet_error_code])->toBe([$code !== null, $code])
+        ->and($instance->status)->toBe(InstanceState::SourceResolved)
+        ->and(InstanceData::fromModel($instance)->toArray())->toMatchArray(['fleet_ready_at' => $runtime->fleet_ready_at?->toIso8601String(),
+            'fleet_error_code' => $code]);
+})->with([
+    'ready' => [['status' => 'output', 'stdout' => '{"fleet":"ready","started":["nested-app-prod"]}'], null],
+    'a failed check' => [['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed'], 'instance.container_fleet_resume_failed'],
+    'a tunnel unit that failed at boot' => [['status' => 'output', 'stdout' => '{"fleet":"seed_without_tunnel"}'], InstanceFleetEngineFlow::TunnelFailed],
+]);
+
+it('cancels the fleet wait when a destroy or a sleep of the Instance is admitted, and records nothing', function (string $kind): void {
+    $fleet = fleetWait($this);
+
+    app(OperationStore::class)->create($kind, 'instance', $fleet->target_id, $fleet->node_id, ['instance_id' => $fleet->target_id], null, null);
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $fleet->id]);
+    // The executor's answer after the end changes nothing.
+    fleetReceipt($fleet, ['status' => 'output', 'stdout' => '{"fleet":"ready","started":[]}']);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect($fleet->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($fleet->cancel_requested_at)->not->toBeNull()
+        ->and($this->bus->nudges)->toContain($fleet->id)
+        ->and([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null]);
+})->with(InstanceFleetOperation::Ends);
+
+it('writes nothing to an Instance that a removal owns when its fleet answers after the destroy, or to one that is gone', function (): void {
+    $fleet = fleetWait($this);
+    $instance = Instance::query()->findOrFail($fleet->target_id);
+    $destroy = app(StartInstanceDestroyAction::class)->execute($instance, true, cancelCompletion: true);
+
+    // The Node answered before the cancel reached the run: what happened on the Node ends it, but the Instance is the removal's.
+    fleetReceipt($fleet, ['status' => 'output', 'stdout' => '{"fleet":"ready","started":[]}']);
+    InstanceFleetOperation::record($instance->id + 1000, 'instance.container_fleet_resume_failed');
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->sole();
+    expect($destroy->kind)->toBe('instance.destroy')
+        ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+        ->and($fleet->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null]);
+});
+
+it('ends a wait cancelled before its start without running it', function (): void {
+    config(['orbit.engine.kinds' => ['instance.create']]);
+    $this->bus = fleetBus();
+    app()->instance(MachineBus::class, $this->bus);
+    $create = handoverCreate(handoverDefault(containerDefaultNode(), ProjectType::NodePackage, null, true));
+    $fleet = DB::transaction(function () use ($create): Operation {
+        $fleet = app(InstanceFleetOperation::class)->admit($create);
+        // A destroy admitted in the same transaction, before the start after the commit.
+        InstanceFleetOperation::cancelFor((int) $create->target_id);
+
+        return $fleet;
+    });
+
+    expect([$fleet->refresh()->status, $fleet->error_code])->toBe([OperationStatus::Cancelled, 'operation.cancelled'])
+        ->and($this->bus->starts)->toBe([])
+        ->and(OperationEngineStep::query()->where('operation_id', $fleet->id)->exists())->toBeFalse();
+});
+
+it('starts a wait whose start was lost, nudges a stalled one, and ends one past its budget on the reconciler\'s pass', function (): void {
+    $fleet = fleetWait($this);
+    $lost = $fleet->replicate()->forceFill(['status' => OperationStatus::Queued, 'state' => [], 'created_at' => now()->subMinutes(2)]);
+    $lost->save();
+
+    app(InstanceFleetOperation::class)->sweep();
+    expect($lost->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($this->bus->starts)->toContain($lost->id);
+
+    $this->travel(451)->seconds();
+    app(InstanceFleetOperation::class)->sweep();
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect([$fleet->refresh()->status, $fleet->error_code])->toBe([OperationStatus::Failed, 'operation.timed_out'])
+        ->and($runtime->fleet_error_code)->toBe('operation.timed_out');
+});
 
 it('resumes a clone whose completion failed: the baseline stays, and the create admits a new completion', function (): void {
     $node = containerDefaultNode();

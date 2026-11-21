@@ -240,6 +240,8 @@ Automatic Gateway release commands use `gateway:auto-release:{status,enable,disa
 
 Instance responses expose nullable `retained_git_path` and `retained_git_at` after [checkout migration](/cli/instance/migrate#retained-git-data). They identify retained Node-side Git data and the time it was retained.
 
+Instance responses also expose nullable `fleet_ready_at`, `fleet_failed_at` and `fleet_error_code`. They record how the fleet of a nested-fleet clone [started in the background](/reference/development-containers#a-clone-starts-its-fleet).
+
 Conn Instance create accepts an optional closed `branch` object: `{"mode":"new","from":"release"}` or `{"mode":"existing","name":"feature/login"}`. See [Conn](/reference/conn#threads-in-an-orbit-project) for admission refusals, branch holding, frozen retries and seed dependencies. Omit it to keep the installed-client behavior.
 
 ## Instance attached targets

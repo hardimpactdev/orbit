@@ -3671,17 +3671,23 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 
 A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. Its fleet boots with its container: the inner Incus starts at boot and starts the nested containers (`boot.autostart`), and the [tunnel's boot unit](#the-operator-tunnel-at-boot) brings up `wg-nested`.
 
-On the [engine](/reference/gateway-engine#instancecreate), the create's step `fleet` (`instance.fleet_ready`) waits for that fleet. It starts after `start` and `club_key`, and runs beside `checkout` and `t3` on its own part of the Node. It waits for the inner Incus, starts a nested container that did not start by itself, then reads readiness every 250 ms for at most 300 s. Readiness is the same check that a proof uses: the nested Gateway's Doctor is healthy over the tunnel, its three agents are online, and it knows the operator with its key. Then the create's result says `fleet_ready: true`, and the completion skips its step `clone-fleet`.
+On the [engine](/reference/gateway-engine#instancecreate), the create does not wait for that fleet. Its `prepare` step reports whether the seed holds Orbit's tunnel unit with Orbit's marker (`fleet_tunnel`). Orbit writes that unit enabled, and the clone's purge keeps it. When it does, and the engine can run `instance.fleet` on the Node, the create's result says `fleet_start: background`. The create then ends when T3 answers, and the Gateway admits the Operation `instance.fleet` beside the completion. The completion skips `clone-fleet`, and the Instance goes active without waiting for its fleet.
 
-The clone holds the exact seed of its default. The default's deployment checked the rest before its snapshot, so the step checks none of it. That is the fleet rules, the nested hosts' socket groups and pid-file heal, the nested Gateway's SSH pins and Club key link, and the tunnel's boot unit.
+`instance.fleet` runs one engine step, `instance.fleet_ready`, on its own part of the Node. It waits for the inner Incus, starts a nested container that did not start by itself, then reads readiness every 250 ms for at most 300 s. Readiness is the same as the [fleet step](#the-fleet-step)'s: the three nested Nodes answer, Doctor passes, and the operator tunnel reaches the nested Gateway. The clone holds the exact seed of its default. The default's deployment checked the rest before its snapshot, so the step checks none of it.
 
-A failed step fails the create at `fleet` with `instance.container_fleet_resume_failed`. The executor's log names the failed check: `incus`, `running`, `doctor` with what its last poll got, `agents` or `operator`. The copy stops and stays, as after every failed engine step.
+The Operation holds no Instance lock, so the completion, a destroy and a sleep never wait for it. Its end is recorded on the Instance's runtime and shown by the Instance API:
 
-The step waits until the unit has run its whole script, resolver included. A copy of a seed taken before Orbit's unit has none to trust: a hand-made unit of the same name lacks Orbit's marker. That copy, and one whose unit failed at boot, answers `seed_without_tunnel` at once, and the completion's `clone-fleet` starts the fleet. A clone that Swamp creates does so too.
+- a ready fleet sets `fleet_ready_at`;
+- a failed step sets `fleet_failed_at` and `fleet_error_code`, such as `instance.container_fleet_resume_failed`; the executor's log names the failed check: `incus`, `running`, `doctor` with what its last poll got, `agents` or `operator`;
+- a tunnel unit that failed at boot sets `fleet_error_code` to `instance.fleet_tunnel_failed`.
+
+A failed fleet does not stop the copy or change its status. The admission of a destroy or a sleep of the Instance cancels its open `instance.fleet`. A cancelled wait records nothing, and no end writes to an Instance that a removal owns or that is gone.
+
+A copy of a seed taken before Orbit's tunnel unit, a clone that Swamp creates, and a create whose Node cannot run `instance.fleet_ready` keep the completion's `clone-fleet`: their create's result has no `fleet_start`.
 
 `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the tunnel. Then it waits for readiness. The step can run for minutes, and Swamp fails a step that waits 60 s for a name another run holds. So the step takes one of 64 names per Node, `ic-clone-fleet-<node>-<instance id % 64>`. Its failure names `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`, and `error.detail` names the failed check. The container is kept.
 
-The Gateway gives the completion's intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`) and whose create did not make the fleet ready. The create intent's `clone.fleet` says the first, and only then does the engine add its step.
+The Gateway gives the completion's intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`) and whose fleet does not start in the background. The create intent's `clone.fleet` says the first.
 
 A clone keeps the fleet of the seed it copied. A later refresh does not change it. When the checkout moves a branch ahead of the seed's commit, the nested Gateway still runs the seed's schema; the clone migrates nothing.
 

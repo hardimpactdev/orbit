@@ -119,8 +119,10 @@ struct Owner {
 /// Places a stopped copy's files: the seed's Orbit units that are not the copy's go, the machine id is the copy's own, then
 /// each item in order. A running copy is left alone: its first boot is over. The seed's manifest, read once, names the units to
 /// remove and what the seed already holds: an item the seed holds as rendered is not placed again.
-/// Answers `{"changes", "manifest", "app_account_current", "workspace_clean"}`: whether the seed's manifest was there, whether
-/// its app-account swap ran with this create's swap file, and whether its workspace was clean.
+/// Answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel"}`: whether the seed's manifest was
+/// there, whether its app-account swap ran with this create's swap file, whether its workspace was clean, and whether it holds
+/// Orbit's operator tunnel boot unit, so a nested fleet's copy has its tunnel at every boot (`instance.fleet_ready`). A running copy
+/// answers `false` for the unit: its first boot is over.
 ///
 /// # Errors
 ///
@@ -143,14 +145,16 @@ pub fn prepare(system: &impl System, input: &Value) -> Result<String, Failure> {
     let copy = incus
         .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
         .ok_or_else(|| Failure::new("instance.prepare_failed", "the copy does not exist"))?;
-    let answer = |changes: u32, manifest: Option<&Value>, swapped: bool| {
+    let files = Files { incus: &incus, project: &input.project, name: &input.name };
+    let answer = |changes: u32, manifest: Option<&Value>, swapped: bool, tunnel: bool| {
         let clean = manifest.and_then(|manifest| manifest.get("workspace_clean")).and_then(Value::as_bool).unwrap_or(false);
-        serde_json::json!({"changes": changes, "manifest": manifest.is_some(), "app_account_current": swapped, "workspace_clean": clean}).to_string()
+        serde_json::json!({"changes": changes, "manifest": manifest.is_some(), "app_account_current": swapped, "workspace_clean": clean,
+            "fleet_tunnel": tunnel})
+        .to_string()
     };
     if copy.get("status").and_then(Value::as_str) != Some("Stopped") {
-        return Ok(answer(0, None, false));
+        return Ok(answer(0, None, false, false));
     }
-    let files = Files { incus: &incus, project: &input.project, name: &input.name };
     let manifest: Option<Value> = files.pull(MANIFEST)?.and_then(|bytes| serde_json::from_slice(&bytes).ok());
     let mut changes = match manifest.as_ref().and_then(|manifest| manifest.get("units")).and_then(Value::as_array) {
         Some(listed) => remove(&files, &input, listed)?,
@@ -173,7 +177,14 @@ pub fn prepare(system: &impl System, input: &Value) -> Result<String, Failure> {
         }
         changes += place(system, &files, item)?;
     }
-    Ok(answer(changes, manifest.as_ref(), swapped && input.app_account.is_some()))
+    Ok(answer(changes, manifest.as_ref(), swapped && input.app_account.is_some(), fleet_tunnel(&files)?))
+}
+
+/// Whether the copy holds Orbit's operator tunnel boot unit: the unit with Orbit's marker, which Orbit writes enabled and the purge
+/// keeps. A hand-made unit of the same name, and a seed taken before the unit, has none. `instance.fleet_ready` checks its link.
+fn fleet_tunnel(files: &Files<'_, impl System>) -> Result<bool, Failure> {
+    let content = files.pull(&format!("/etc/systemd/system/{}", crate::fleet::TUNNEL_UNIT))?;
+    Ok(content.is_some_and(|bytes| String::from_utf8_lossy(&bytes).starts_with(crate::fleet::MARKER)))
 }
 
 /// The seed's Orbit units that the manifest names, less the copy's own.
