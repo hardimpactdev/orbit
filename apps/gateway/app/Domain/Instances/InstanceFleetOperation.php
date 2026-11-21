@@ -145,6 +145,8 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
     public function close(Operation $operation, OperationStatus $status, ?string $code, ?string $failedStep = null): void
     {
         $closed = DB::transaction(function () use ($operation, $status, $code, $failedStep): ?Operation {
+            // The Instance first, then the wait: the order of a sleep's or a destroy's admission, so neither waits on the other's lock.
+            Instance::query()->whereKey($operation->target_id)->lockForUpdate()->first();
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->first();
             if ($current === null || $current->status->terminal()) {
                 return null;
@@ -155,7 +157,7 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
                 'failed_step' => $failedStep,
                 'state' => [...($current->state ?? []), ...($failed ? ['fallback' => self::FallbackPending] : [])],
                 'result' => ['instance_id' => $current->target_id, 'fleet' => $status === OperationStatus::Succeeded ? 'ready' : ($code ?? 'cancelled')]]);
-            // Under the wait's lock, so a start admitted after this end clears what it wrote, never the other way round.
+            // Under the locks, so a start admitted after this end clears what it wrote, never the other way round.
             if ($status !== OperationStatus::Cancelled) {
                 self::record((int) $current->target_id, $failed ? $code : null);
             }

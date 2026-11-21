@@ -97,7 +97,8 @@ final readonly class OperationStore
 
             return $this->idempotency->replay($kind, $parent) ?? throw OperationVersions::deprecated();
         }
-        // A destroy or a sleep of an Instance ends its fleet wait, and a sleep, a wake, a start or a new create makes its recorded fleet stale.
+        // A destroy or a sleep of an Instance ends its fleet wait; a start or a new create makes its recorded fleet stale. A sleep and a
+        // wake keep it: a freeze keeps the boot (InstanceFleetOperation::Resets).
         if ($targetType === OperationKinds::InstanceTarget) {
             InstanceFleetOperation::admitted($kind, $targetId);
         }

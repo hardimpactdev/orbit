@@ -32,6 +32,7 @@ use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -588,7 +589,10 @@ it('starts the fleet as Swamp does when the wait fails, once the clone is active
     $start->forceFill(['status' => 'running', 'state' => [...($start->state ?? []), 'swamp_run_id' => 'start-run']])->save();
     app(InstanceStart::class)->apply($start->refresh(), ['status' => 'succeeded', 'run_id' => 'start-run', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['fleet_seconds' => 12]]);
-    expect(InstanceRuntime::query()->where('instance_id', $instance->id)->value('fleet_ready_at'))->not->toBeNull();
+    $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->sole();
+    expect($runtime->fleet_ready_at)->not->toBeNull()
+        // The fleet is paid: the next wake of a frozen copy resumes it.
+        ->and($runtime->fleet_start_pending)->toBeFalse();
 })->with([
     'seed_without_tunnel after a background create' => [['status' => 'output', 'stdout' => '{"fleet":"seed_without_tunnel","started":["nested-app-dev"]}']],
     'a failed check' => [['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']],
@@ -689,8 +693,37 @@ it('drops the fallback of a clone whose completion failed, and the completion\'s
     app(InstanceFleetOperation::class)->sweep();
 
     expect($fleet->refresh()->state['fallback'])->toBe('dropped')
-        ->and(Operation::query()->where('kind', InstanceStart::Kind)->exists())->toBeFalse()
-        ->and(app(NativeInstanceCompleteInput::class)->input($completion->refresh())['intent'])->toHaveKey('fleet');
+        ->and(Operation::query()->where('kind', InstanceStart::Kind)->exists())->toBeFalse();
+
+    // The retry starts the fleet itself, and its success proves the fleet ready.
+    $instance = Instance::query()->findOrFail($create->target_id);
+    $retry = DB::transaction(fn (): Operation => app(OperationIdempotency::class)->suspended(
+        fn (): Operation => app(StartInstanceCompleteAction::class)->admit($instance, null, null)));
+    expect(app(NativeInstanceCompleteInput::class)->input($retry)['intent'])->toHaveKey('fleet')
+        ->and($retry->refresh()->state['fleet_start'])->toBeTrue();
+    $retry->forceFill(['status' => 'running', 'state' => [...($retry->state ?? []), 'swamp_run_id' => 'retry-run']])->save();
+    app(InstanceCompleteProjection::class)->apply($retry->refresh(), ['status' => 'succeeded', 'run_id' => 'retry-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['instance_id' => $create->target_id, 'ready' => true]]);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $create->target_id)->sole();
+    expect([$runtime->fleet_ready_at !== null, $runtime->fleet_failed_at, $runtime->fleet_error_code, $runtime->fleet_start_pending])
+        ->toBe([true, null, null, false]);
+});
+
+it('starts an owed fleet on a wake while the cancelled wait is still open, and the wait then ends without a write', function (): void {
+    $fleet = fleetWait($this);
+    fleetCompleted($fleet);
+    fleetSleep($fleet);
+    expect($fleet->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($fleet->cancel_requested_at)->not->toBeNull();
+
+    expect(fleetWakeKind($fleet))->toBe(InstanceStart::Kind);
+
+    // The Node's late answer after the wake: the cancel wins, and the start's own end will be the fleet's.
+    fleetReceipt($fleet, ['status' => 'output', 'stdout' => '{"fleet":"ready","started":[]}']);
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect($fleet->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and([$runtime->fleet_ready_at, $runtime->fleet_start_pending])->toBe([null, true]);
 });
 
 it('lets a task cancel, a copy destroy and a settle pass an open fleet wait: it holds nothing', function (): void {

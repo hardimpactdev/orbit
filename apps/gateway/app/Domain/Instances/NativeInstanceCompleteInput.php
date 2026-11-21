@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -40,6 +41,8 @@ final readonly class NativeInstanceCompleteInput
         $runtime = $instance->runtime()->firstOrFail();
         $fleet = ($create?->result['fleet_start'] ?? null) === 'background' && ($runtime->fleet_ready_at !== null || InstanceFleetOperation::open($instance->id))
             ? null : app(NestedFleetIntent::class)->forClone($instance, $runtime);
+        // Its end reads this: a completion that started the fleet itself proves it ready (InstanceCompleteProjection).
+        app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'fleet_start' => $fleet !== null]]);
 
         // The release scripts beside the Process files, in the completion's one copy, as the create's launch copy holds them (CloneStage).
         $stage = new CloneStage;
