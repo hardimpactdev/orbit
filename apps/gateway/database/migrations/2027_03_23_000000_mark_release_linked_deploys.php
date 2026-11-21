@@ -16,7 +16,8 @@ return new class extends Migration
     {
         DB::table('gateway_releases')->orderBy('id')->select(['id', 'phases'])->each(function (object $release): void {
             $phases = is_string($release->phases) ? json_decode($release->phases, true) : null;
-            $defaults = is_array($phases) ? ($phases['default_refresh']['defaults'] ?? null) : null;
+            $refresh = is_array($phases) ? ($phases['default_refresh'] ?? null) : null;
+            $defaults = is_array($refresh) ? ($refresh['defaults'] ?? null) : null;
             foreach (is_array($defaults) ? $defaults : [] as $instanceId => $row) {
                 $operationId = is_array($row) ? ($row['operation_id'] ?? null) : null;
                 if (! is_int($operationId)) {
