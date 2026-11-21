@@ -7,6 +7,7 @@ use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
@@ -112,6 +113,67 @@ describe('the copy turn agent of a task group', function (): void {
         'an empty provider' => [['reviewer_provider' => ''], 'reviewer_provider'],
         'a blank effort' => [['implementer_effort' => '  '], 'implementer_effort'],
     ]);
+
+    it('names the field, the value and what is accepted for an unknown provider, an unknown effort or no model name, on every surface', function (array $body, string $field, string $message): void {
+        $prefixed = static fn (array $values): array => array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($values)), $values);
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', ...$body])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonPath('error.details.'.$field.'.0', $message);
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+        $this->patchJson('/api/v1/tasks/'.$group->id, $body)->assertUnprocessable()->assertJsonPath('error.details.'.$field.'.0', $message);
+        $this->patchJson('/api/v1/projects/'.$this->project->id, $prefixed($body))->assertUnprocessable()->assertJsonPath('error.details.task_'.$field.'.0', $message);
+    })->with([
+        'an unknown provider' => [['implementer_provider' => 'pi'], 'implementer_provider',
+            'The implementer provider pi is no task copy provider; the providers are claude, codex, antigravity.'],
+        'an unknown effort' => [['reviewer_effort' => 'minimal'], 'reviewer_effort',
+            'The reviewer effort minimal is no effort of a task copy provider; claude accepts low, medium, high, xhigh, max; codex accepts low, medium, high, xhigh, max, ultra; '
+            .'antigravity accepts low, medium, high, xhigh by model.'],
+        'no model name' => [['reviewer_model' => 'claudeAgent/claude-opus-5-5'], 'reviewer_model',
+            'The reviewer model claudeAgent/claude-opus-5-5 is no model name. A model name starts with a letter or digit and has up to 128 letters, digits, dots, underscores, colons and hyphens.'],
+    ]);
+
+    it('checks both resolved roles on task:create, even with no agent field', function (): void {
+        // Stored before the rule: the Project's implementer default names Antigravity, over the Gateway's Claude model.
+        $this->project->update(['task_implementer_provider' => 'antigravity']);
+        $before = Task::query()->count();
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief'])->assertUnprocessable()
+            ->assertJsonPath('error.details.implementer_model.0', 'The implementer model claude-opus-5-5 (from the Gateway) is no Antigravity model; antigravity accepts gemini-4-neon, '
+                .'gemini-4-hydrogen, gemini-4-carbon, gemini-4-argon, gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro. Set the implementer model.');
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'reviewer_effort' => 'low'])->assertUnprocessable()
+            ->assertJsonValidationErrors('implementer_model', 'error.details');
+        expect(Task::query()->count())->toBe($before);
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'implementer_model' => 'gemini-4-neon',
+            'implementer_effort' => 'medium'])->assertCreated();
+    });
+
+    it('checks the whole resolved role on task:update and project:update when one value of it is sent, model name included', function (): void {
+        // Stored before the rule: a Project model that is no model name.
+        $this->project->update(['task_reviewer_model' => 'claudeAgent/claude-opus-5-5']);
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+        $message = 'The reviewer model claudeAgent/claude-opus-5-5 (from the Project) is no model name. A model name starts with a letter or digit and has up to 128 letters, '
+            .'digits, dots, underscores, colons and hyphens.';
+
+        $this->patchJson('/api/v1/tasks/'.$group->id, ['reviewer_effort' => 'low'])->assertUnprocessable()->assertJsonPath('error.details.reviewer_model.0', $message);
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_reviewer_effort' => 'low'])->assertUnprocessable()
+            ->assertJsonPath('error.details.task_reviewer_model.0', $message);
+        // A role the request does not touch stays as stored.
+        $this->patchJson('/api/v1/tasks/'.$group->id, ['implementer_effort' => 'low'])->assertOk();
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_implementer_effort' => 'low'])->assertOk();
+    });
+
+    it('rewrites no group on project:update: a group a new default leaves unhonoured keeps its values', function (): void {
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog,
+            'implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-3.1-pro']);
+        $columns = ['implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort'];
+        $stored = $group->only($columns);
+
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_implementer_effort' => 'medium'])->assertOk();
+
+        expect($group->refresh()->only($columns))->toBe($stored)
+            ->and(TaskAgent::refusal(TaskThreadRole::Implementer, TaskAgent::resolve($group, TaskThreadRole::Implementer))['message'] ?? null)
+            ->toBe('The implementer effort medium (from the Project) is not offered for gemini-3.1-pro on antigravity; it accepts low, high.');
+    });
 
     it('takes Codex for the reviewer on a task and as the Project\'s default, at each effort the copy offers it', function (): void {
         $body = ['reviewer_provider' => 'codex', 'reviewer_model' => 'gpt-6.1-sol', 'reviewer_effort' => 'high'];

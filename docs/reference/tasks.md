@@ -1328,9 +1328,17 @@ A resolved value reaches the provider as resolved: Orbit never replaces a model 
 | `antigravity` | `gemini-4-carbon`, `gemini-4-argon`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash` | `low`, `medium`, `high` |
 | `antigravity` | `gemini-3.1-pro` | `low`, `high` |
 
-`task:create` and `task:update` refuse a role they set whose resolved provider, model and effort the provider cannot honour, and `project:update` refuses such a Project default, with `validation.failed` (422). The error names the field, the value, where the value comes from and what the provider accepts. A task that sets only `--implementer-provider=antigravity` while the Project's or the Gateway's model is a Claude model is refused on `implementer_model`: set the model too. `antigravity` with `gemini-3.1-pro` at `medium` is refused on the effort, which offers `low` and `high`. `codex` takes `ultra`, and `claude` refuses it.
+`task:create` checks both roles of the new task, even when it names no agent value. `task:update` checks a role when it sets any of the role's three values. `project:update` checks a Project role the same way, resolved from the Project and the Gateway. Each checks the whole resolved role: its provider, its model and its effort. A Claude or Codex model must be a model name of up to 128 letters, digits, dots, underscores, colons and hyphens.
+
+A role the provider cannot honour is refused with `validation.failed` (422). The error names the field, the value, where the value comes from and what the provider accepts. An unknown provider or effort, or a model that is no model name, gets the same kind of message on its field.
+
+A task that sets only `--implementer-provider=antigravity` while the Project's or the Gateway's model is a Claude model is refused on `implementer_model`: set the model too. `antigravity` with `gemini-3.1-pro` at `medium` is refused on the effort, which offers `low` and `high`. `codex` takes `ultra`, and `claude` refuses it.
+
+`project:update` changes no task: a task its new default leaves unhonoured is refused at its next new thread.
 
 A Project default or a Gateway setting changed later, or a value stored before this rule, can still leave a task's role unhonoured. The turn's admission refuses such a new thread with `tasks.agent_unsupported` (422) and the same message, before Swamp runs and before anything is recorded. Orbit changes no stored value.
+
+An Antigravity thread starts on the tiered model `<model>-<effort>`, such as `gemini-4-neon-medium`: `agy` splits it into the model and its thought level, and sends the level with each request. The thread records the model and the effort as resolved. An Antigravity thread that started before this rule ran on its bare model, so `agy` runs it at its own default level. A turn that would continue such a thread is refused with `tasks.copy_thread_untiered` (422), and nothing is recorded: start a new thread with `--thread=new`.
 
 A copy offers Claude and Codex, and Antigravity only when the settings Orbit wrote at its create hold the `antigravity` instance. The copy's `instance.create` input keeps them. A copy made before Antigravity, or one on stock T3, refuses an Antigravity thread with `tasks.copy_turn_unoffered`, and nothing is recorded. Start the task on a new copy to run Antigravity.
 

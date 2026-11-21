@@ -33,6 +33,9 @@ final readonly class TaskAgent
     /** A model slug as T3's `--model` takes it. */
     public const string ModelPattern = '/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/D';
 
+    /** What self::ModelPattern accepts, as a refusal says it. */
+    private const string ModelSyntax = 'A model name starts with a letter or digit and has up to 128 letters, digits, dots, underscores, colons and hyphens.';
+
     /**
      * The request and response fields of the values: `implementer_provider` … for a group, `task_implementer_provider` … for a
      * Project with `task_`. A Project field is its column; a group field maps to its column through groupColumns().
@@ -57,12 +60,35 @@ final readonly class TaskAgent
         $rules = [];
         foreach (TaskThreadRole::cases() as $role) {
             $key = $prefix.$role->value.'_';
-            $rules[$key.'provider'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_keys(InstanceContainer::CopyProviders))];
+            $rules[$key.'provider'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_keys(InstanceContainer::copyProviders()))];
             $rules[$key.'model'] = ['sometimes', new NotBlank, 'nullable', 'string', 'max:128', 'regex:'.self::ModelPattern];
-            $rules[$key.'effort'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_values(array_unique(array_merge(...array_values(InstanceContainer::CopyProviders)))))];
+            $rules[$key.'effort'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_values(array_unique(array_merge(...array_values(InstanceContainer::copyProviders())))))];
         }
 
         return $rules;
+    }
+
+    /**
+     * The messages of self::rules: an unknown provider or effort, or a model that is no model name, names its field, the value and what
+     * is accepted, as self::refusal names a resolved role's.
+     *
+     * @return array<string, string>
+     */
+    public static function messages(string $prefix = ''): array
+    {
+        $accepted = [];
+        foreach (InstanceContainer::copyProviders() as $provider => $efforts) {
+            $accepted[] = $provider.' accepts '.self::listed($efforts).($provider === 'antigravity' ? ' by model' : '');
+        }
+        $messages = [];
+        foreach (TaskThreadRole::cases() as $role) {
+            $key = $prefix.$role->value.'_';
+            $messages[$key.'provider.in'] = "The {$role->value} provider :input is no task copy provider; the providers are ".self::listed(array_keys(InstanceContainer::copyProviders())).'.';
+            $messages[$key.'model.regex'] = "The {$role->value} model :input is no model name. ".self::ModelSyntax;
+            $messages[$key.'effort.in'] = "The {$role->value} effort :input is no effort of a task copy provider; ".implode('; ', $accepted).'.';
+        }
+
+        return $messages;
     }
 
     /**
@@ -145,9 +171,9 @@ final readonly class TaskAgent
                 'project' => 'Project', 'gateway' => 'Gateway', default => $of['source']
             }.')';
         $refused = static fn (string $value, string $message): array => ['value' => $value, 'source' => $resolved[$value]['source'], 'message' => $message];
-        $efforts = InstanceContainer::CopyProviders[$provider['value']] ?? null;
+        $efforts = InstanceContainer::copyProviders()[$provider['value']] ?? null;
         if ($efforts === null) {
-            return $refused('provider', $named('provider', $provider).' is no task copy provider; the providers are '.self::listed(array_keys(InstanceContainer::CopyProviders)).'.');
+            return $refused('provider', $named('provider', $provider).' is no task copy provider; the providers are '.self::listed(array_keys(InstanceContainer::copyProviders())).'.');
         }
         if ($provider['value'] === 'antigravity') {
             $efforts = InstanceContainer::AntigravityModels[$model['value']] ?? null;
@@ -161,6 +187,9 @@ final readonly class TaskAgent
 
             return null;
         }
+        if (preg_match(self::ModelPattern, $model['value']) !== 1) {
+            return $refused('model', $named('model', $model).' is no model name. '.self::ModelSyntax);
+        }
         if (! in_array($effort['value'], $efforts, true)) {
             return $refused('effort', $named('effort', $effort)." is no {$provider['value']} effort; {$provider['value']} accepts ".self::listed($efforts).'.');
         }
@@ -170,19 +199,20 @@ final readonly class TaskAgent
 
     /**
      * Refuses, as a validation failure on the field of the refused value, a role whose resolved values its provider cannot honour
-     * (self::refusal). A request checks only the roles it sets, keyed by field in `$provided`: a value stored before the rule surfaces
-     * at the turn's admission.
+     * (self::refusal). A new group checks both roles; a change checks each role it sets any value of, keyed by field in `$provided`,
+     * as a whole: a value stored before the rule surfaces at the turn's admission.
      *
-     * @param  array<string, string|null>  $provided
+     * @param  array<string, string|null>|null  $provided  null for a new group
      */
-    public static function assertGroupHonours(Task $group, array $provided): void
+    public static function assertGroupHonours(Task $group, ?array $provided = null): void
     {
         self::assertHonoured($provided, '', static fn (TaskThreadRole $role): array => self::resolve($group, $role));
     }
 
     /**
-     * The Project's own defaults as self::assertGroupHonours checks a group's: each role `$provided` sets resolves from the Project and
-     * the Gateway. A group's role that a changed default leaves unhonoured is refused at its turn's admission.
+     * The Project's own defaults as self::assertGroupHonours checks a changed group's: each role `$provided` sets resolves, as a whole,
+     * from the Project and the Gateway. No group changes: a group's role that a changed default leaves unhonoured is refused at its
+     * turn's admission.
      *
      * @param  array<string, string|null>  $provided  keyed by `task_` field
      */
@@ -214,9 +244,6 @@ final readonly class TaskAgent
             throw new ResourceOperationException('tasks.copy_turn_unoffered', "The task copy's T3 offers no provider instance for {$provider} at {$effort} effort.", 422,
                 details: ['role' => $role->value, 'provider' => $resolved['provider'], 'effort' => $resolved['effort'], 'offered' => $offered]);
         }
-        if (preg_match(self::ModelPattern, $model) !== 1) {
-            throw new ResourceOperationException('tasks.copy_turn_model_invalid', 'ORBIT_TASKS_COPY_'.strtoupper($role->value).'_MODEL must be a model name.', 503);
-        }
 
         return ['provider' => $provider, 'instance' => InstanceContainer::providerInstance($provider, $effort), 'model' => $model,
             't3_model' => InstanceContainer::providerModel($provider, $model, $effort), 'effort' => $effort, 'options' => InstanceContainer::providerOptions($provider, $effort)];
@@ -240,15 +267,15 @@ final readonly class TaskAgent
     }
 
     /**
-     * @param  array<string, string|null>  $provided
+     * @param  array<string, string|null>|null  $provided  null checks every role
      * @param  callable(TaskThreadRole): array{provider: array{value: string, source: string}, model: array{value: string, source: string}, effort: array{value: string, source: string}}  $resolve
      */
-    private static function assertHonoured(array $provided, string $prefix, callable $resolve): void
+    private static function assertHonoured(?array $provided, string $prefix, callable $resolve): void
     {
         $messages = [];
         foreach (TaskThreadRole::cases() as $role) {
-            $set = array_filter(self::Values, static fn (string $value): bool => array_key_exists($prefix.$role->value.'_'.$value, $provided));
-            $refusal = $set === [] ? null : self::refusal($role, $resolve($role));
+            $set = $provided === null || array_filter(self::Values, static fn (string $value): bool => array_key_exists($prefix.$role->value.'_'.$value, $provided)) !== [];
+            $refusal = $set ? self::refusal($role, $resolve($role)) : null;
             if ($refusal !== null) {
                 $messages[$prefix.$role->value.'_'.$refusal['value']] = [$refusal['message']];
             }

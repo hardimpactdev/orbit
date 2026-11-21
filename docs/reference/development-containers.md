@@ -2455,9 +2455,9 @@ The Conn Server's antigravity driver sets no thought level itself, but passes a 
 
 The task, the Project, the thread and the turn's result keep the model and the effort apart, as set: `gemini-4-neon` and `medium`. A copy whose create settings hold no Antigravity instance refuses a new Antigravity thread with `tasks.copy_turn_unoffered`.
 
-The turn's model check reads an Antigravity thread's base model: the catalog lists `gemini-4-neon`, not `gemini-4-neon-medium`. Only the `antigravity` instance may start on a model other than its base, and only on the base and one tier. The Conn Server keeps no `model-manifest.json`, and it lists Antigravity's models only after a first session, so without a catalog the turn skips the model check for Antigravity as for Claude.
+The turn's model check reads an Antigravity thread's base model: the catalog lists `gemini-4-neon`, not `gemini-4-neon-medium`. Only the `antigravity` instance may start on a model other than its base, and only on the base, a hyphen and one Antigravity effort: `low`, `medium`, `high` or `xhigh`. An intent with no base model, from a turn admitted before Orbit sent one, takes its model as its base. The Conn Server keeps no `model-manifest.json`, and it lists Antigravity's models only after a first session, so without a catalog the turn skips the model check for Antigravity as for Claude.
 
-A continued thread stays on its instance and keeps its options, so it keeps its model and effort. A copy made before these instances existed refuses new threads, and a copy made before the Codex instances cannot run a new Codex thread; cancel it and start the task again on a new copy.
+A continued thread stays on its instance and keeps its options, so it keeps its model and effort. A continued Antigravity thread that started on its bare model, before Orbit sent the tiered model, is refused with `tasks.copy_thread_untiered`: start a new thread with `--thread=new`. A copy made before these instances existed refuses new threads, and a copy made before the Codex instances cannot run a new Codex thread; cancel it and start the task again on a new copy.
 ### Gaps of the CLI path
 
 These hold until a T3 server gives Swamp a full-access MCP session:

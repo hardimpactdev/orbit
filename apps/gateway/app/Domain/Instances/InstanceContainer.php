@@ -125,17 +125,29 @@ final readonly class InstanceContainer
         'gemini-3.1-pro' => ['low', 'high'],
     ];
 
-    /** Every effort of an Antigravity model (self::AntigravityModels). */
-    public const array AntigravityEfforts = ['low', 'medium', 'high', 'xhigh'];
-
     /** The Conn Server's one Antigravity provider instance (self::antigravityInstance). */
     public const string AntigravityInstance = 'antigravity';
 
     /**
      * What a task copy's T3 can offer: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold
      * them. A copy offers the providers its runtime records (self::offered).
+     *
+     * @return array{claude: list<string>, codex: list<string>, antigravity: list<string>}
      */
-    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::AntigravityEfforts];
+    public static function copyProviders(): array
+    {
+        return ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::antigravityEfforts()];
+    }
+
+    /**
+     * Every effort of an Antigravity model (self::AntigravityModels), in the order the models list them.
+     *
+     * @return list<string>
+     */
+    public static function antigravityEfforts(): array
+    {
+        return array_values(array_unique(array_merge(...array_values(self::AntigravityModels))));
+    }
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
@@ -678,7 +690,7 @@ final readonly class InstanceContainer
         $settings = collect(is_array($files) ? $files : [])->first(static fn (mixed $file): bool => is_array($file) && ($file['path'] ?? null) === self::T3Settings);
         $antigravity = is_array($settings) && is_array(Arr::get($settings, 'json.providerInstances.'.self::AntigravityInstance));
 
-        return array_diff_key(self::CopyProviders, $antigravity ? [] : ['antigravity' => true]);
+        return array_diff_key(self::copyProviders(), $antigravity ? [] : ['antigravity' => true]);
     }
 
     /**
@@ -693,7 +705,7 @@ final readonly class InstanceContainer
     /** The provider of a task copy's T3 provider instance (self::providerInstance), or null for an instance no provider has. */
     public static function instanceProvider(?string $instance): ?string
     {
-        foreach (self::CopyProviders as $provider => $efforts) {
+        foreach (self::copyProviders() as $provider => $efforts) {
             foreach ($efforts as $effort) {
                 if ($instance === self::providerInstance($provider, $effort)) {
                     return $provider;

@@ -654,14 +654,21 @@ Deno.test({ name: "without T3's cached catalog the check is skipped and the turn
     assertEquals([done.model, done.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
 } });
 
-Deno.test({ name: "an Antigravity thread starts on the antigravity instance with its model and no options; no catalog lists it", ignore: !available, async fn() {
-    const agy = { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-3.8-flash", T3_CATALOG: "missing" };
-    const done = await phase("completed", { provider: "antigravity", model: "gemini-3.8-flash", options: [] }, "clean", "questions", "", agy);
-    assert(done.ok, done.output);
-    assertEquals([done.model, done.launched], [{ model: "gemini-3.8-flash", offered: null, accepted: true }, true]);
-    const create = done.calls.find((call) => call.args[20] === "create")!;
-    assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, "antigravity", "gemini-3.8-flash", []]);
-    assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
+Deno.test({ name: "a turn admitted before the base model, with none in its intent, starts a Claude, Codex or Antigravity thread on its model", ignore: !available, async fn() {
+    const options = [{ id: "reasoningEffort", value: "high" }];
+    for (const [change, copy] of [
+        [{ provider: "claudeMedium", model: "claude-opus-5-5", options: [] }, {}],
+        [{ provider: "codexHigh", model: "gpt-6.1-sol", options }, { T3_INSTANCE: "codexHigh", T3_MODEL: "gpt-6.1-sol", T3_OPTIONS: JSON.stringify(options) }],
+        [{ provider: "antigravity", model: "gemini-3.8-flash", options: [] }, { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-3.8-flash", T3_CATALOG: "missing" }],
+    ] as [Record<string, unknown>, Record<string, string>][]) {
+        // The old intent shape: no `base_model` key at all.
+        const done = await phase("completed", { ...change, base_model: undefined }, "clean", "questions", "", copy);
+        assert(done.ok, done.output);
+        assertEquals(done.launched, true, JSON.stringify(change));
+        const create = done.calls.find((call) => call.args[20] === "create")!;
+        assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, change.provider, change.model, change.options]);
+        assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
+    }
 } });
 
 Deno.test({ name: "an Antigravity thread starts on its tiered model, which the catalog's base model confirms; a base it does not list is refused", ignore: !available, async fn() {
@@ -677,12 +684,16 @@ Deno.test({ name: "an Antigravity thread starts on its tiered model, which the c
     assertEquals([unlisted.launched, unlisted.start], [false, null]);
 } });
 
-Deno.test({ name: "only the Antigravity instance takes a model that differs from its base model, and only as the base and one tier", ignore: !available, async fn() {
+Deno.test({ name: "only the Antigravity instance takes a model that differs from its base model, and only as the base and one effort", ignore: !available, async fn() {
     for (const change of [
         { model: "claude-opus-5-5-high", base_model: "claude-opus-5-5" },
         { provider: "codexHigh", model: "gpt-6.1-sol-high", base_model: "gpt-6.1-sol", options: [{ id: "reasoningEffort", value: "high" }] },
         { provider: "antigravity", model: "gemini-4-neon", base_model: "gemini-4-carbon", options: [] },
         { provider: "antigravity", model: "gemini-4-neon-medium-high", base_model: "gemini-4-neon", options: [] },
+        // Only one effort of an Antigravity model follows its base.
+        { provider: "antigravity", model: "gemini-4-neon-ultra", base_model: "gemini-4-neon", options: [] },
+        { provider: "antigravity", model: "gemini-4-neon-max", base_model: "gemini-4-neon", options: [] },
+        { provider: "antigravity", model: "gemini-4-neon-", base_model: "gemini-4-neon", options: [] },
     ]) {
         const refused = await phase("completed", change);
         assert(!refused.ok && refused.output.includes("tasks.copy_turn_invalid"), refused.output);

@@ -37,6 +37,9 @@
           '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin'] }}
     copy_git: "{{ copy_exec + ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace'] }}"
     reviewer: "{{ intent.turn.candidate | default(none) is not none }}"
+    base_model: "{{ intent.turn.base_model | default(intent.turn.model, true) }}"
+    # Every effort of an Antigravity model (InstanceContainer::antigravityEfforts); the Gateway checks each model's own at set time and admission.
+    antigravity_efforts: ['low', 'medium', 'high', 'xhigh']
     # T3's run statuses that end a run, and the thread states that run nothing; the result step's RunOver and ThreadOver hold the same
     # lists (task-copy-turn/mod.ts). A state in neither is unknown and names no end.
     run_over: ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back']
@@ -54,11 +57,11 @@
           - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
           - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
           # The role's model, which T3's catalog lists: the model itself, or under the one Antigravity instance the base of its tiered
-          # model `<model>-<effort>` (InstanceContainer::providerModel).
-          - intent.turn.thread != 'new' or intent.turn.base_model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          # model `<model>-<effort>` (InstanceContainer::providerModel). A turn admitted before the base model names none: its model is its base.
+          - intent.turn.thread != 'new' or base_model is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
           - >-
-            intent.turn.thread != 'new' or intent.turn.model == intent.turn.base_model
-            or (intent.turn.provider == 'antigravity' and intent.turn.model is match('^' ~ (intent.turn.base_model | regex_escape) ~ '-[a-z]+$'))
+            intent.turn.thread != 'new' or intent.turn.model == base_model
+            or (intent.turn.provider == 'antigravity' and intent.turn.model in antigravity_efforts | map('regex_replace', '^', base_model ~ '-'))
           # A new thread's model options (InstanceContainer::providerOptions): T3 runs its every turn with them.
           - intent.turn.thread != 'new' or (intent.turn.options is defined and intent.turn.options is sequence and intent.turn.options is not string)
           - intent.turn.thread != 'new' or intent.turn.options | rejectattr('id', 'match', '^[A-Za-z][A-Za-z0-9]{0,63}$') | list | length == 0
@@ -93,7 +96,7 @@
     - name: Check the new thread's model
       when: intent.turn.thread == 'new'
       vars:
-        listed_model: "{{ intent.turn.base_model if model_driver | default(none) == 'antigravity' else intent.turn.model }}"
+        listed_model: "{{ base_model if model_driver | default(none) == 'antigravity' else intent.turn.model }}"
         catalog_match: >-
           {{ model_entries is not none
              and listed_model in (model_entries | map(attribute='slug') | list

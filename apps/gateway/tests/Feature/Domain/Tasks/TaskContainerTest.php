@@ -2033,9 +2033,38 @@ describe('a turn of a group that owns a copy', function (): void {
         expect(Arr::only($ended->result ?? [], ['model', 'effort']))->toBe(['model' => 'gemini-4-neon', 'effort' => 'medium']);
     });
 
+    it('continues an Antigravity thread that started on its tiered model, and refuses one that started on its bare model until a new thread starts', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->update(['implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-3.8-flash', 'implementer_agent_effort' => 'high']);
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-3.8-flash-high']);
+
+        $continued = copyTurn($group);
+        expect($continued->input['turn'])->toMatchArray(['thread' => 'continue', 'model' => 'gemini-3.8-flash', 'base_model' => 'gemini-3.8-flash']);
+        copyTurnEnded($continued, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-3.8-flash-high']);
+
+        // A thread admitted before the tiered model: its first turn sent the bare model, which agy runs at its default thought level.
+        $first->update(['input' => [...$first->input, 'turn' => Arr::except([...$first->input['turn'], 'model' => 'gemini-3.8-flash'], ['base_model'])]]);
+        $thread = AgentThread::query()->findOrFail($first->input['thread_id']);
+        $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+            $refused = null;
+        } catch (ResourceOperationException $error) {
+            $refused = $error;
+        }
+
+        expect($refused?->errorCode)->toBe('tasks.copy_thread_untiered')->and($refused?->status)->toBe(422)
+            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-3.8-flash with no effort tier, so agy does not run it at its high effort. Start a new thread with --thread=new.")
+            ->and(Operation::query()->count())->toBe($before)
+            ->and($thread->refresh()->only(['model', 'effort', 'provider_instance']))->toBe(['model' => 'gemini-3.8-flash', 'effort' => 'high', 'provider_instance' => 'antigravity'])
+            ->and(copyTurn($group, ['thread' => 'new'])->input['turn'])->toMatchArray(['thread' => 'new', 'model' => 'gemini-3.8-flash-high']);
+    });
+
     it('sends each Claude and Codex model as set, and each Antigravity model at each of its efforts as its tiered model', function (): void {
         foreach (['claude' => 'claude-opus-5-5', 'codex' => 'gpt-6.1-sol'] as $provider => $model) {
-            foreach (InstanceContainer::CopyProviders[$provider] as $effort) {
+            foreach (InstanceContainer::copyProviders()[$provider] as $effort) {
                 expect(InstanceContainer::providerModel($provider, $model, $effort))->toBe($model);
             }
         }
@@ -2046,7 +2075,8 @@ describe('a turn of a group that owns a copy', function (): void {
             }
         }
         expect($tiered)->toContain('gemini-4-neon-medium', 'gemini-4-hydrogen-xhigh', 'gemini-3.1-pro-low')->not->toContain('gemini-3.1-pro-medium', 'gemini-4-carbon-xhigh')
-            ->and(InstanceContainer::AntigravityEfforts)->toBe(array_values(array_unique(array_merge(...array_values(InstanceContainer::AntigravityModels)))));
+            ->and(InstanceContainer::antigravityEfforts())->toBe(['low', 'medium', 'high', 'xhigh'])
+            ->and(InstanceContainer::copyProviders()['antigravity'])->toBe(InstanceContainer::antigravityEfforts());
     });
 
     it('offers Antigravity only in a copy whose create settings hold its instance; an older copy refuses it and can change back to Claude', function (string $role): void {
@@ -2196,8 +2226,14 @@ describe('a turn of a group that owns a copy', function (): void {
         finishedCopy($group, startCopy($group));
         config(['orbit.tasks.copy_agents.implementer.model' => 'claudeAgent/claude-opus-5-5']);
         $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+        } catch (ResourceOperationException $error) {
+            expect($error->getMessage())->toBe('The implementer model claudeAgent/claude-opus-5-5 (from the Gateway) is no model name. A model name starts with a letter or digit '
+                .'and has up to 128 letters, digits, dots, underscores, colons and hyphens.');
+        }
 
-        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_model_invalid 503')
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.agent_unsupported 422')
             ->and(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     });
 
