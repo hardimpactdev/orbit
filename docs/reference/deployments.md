@@ -109,15 +109,19 @@ A container default's checkout can already be at a newer commit of the branch th
 - **Release or automatic.** A deployment that a release refresh or the automatic policy admitted succeeds as a no-op. It keeps the checkout and takes no new seed.
 - **Nothing runs after the probe.** No unit restarts. No seed hold, fleet check, PHP change, bundle, checkout, deploy step or Process runs.
 - **The result.** Its `result` holds `outcome: already_newer`, `target_commit`, and `kept_commit`, the real `HEAD` that the probe read. Its `commit` and its deployment-history row name the kept commit.
-- **By hand.** A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing in the container; its admission's configuration is put back as below. Its detail says that the requested commit is older than the checkout `HEAD` and names both commits.
+- **By hand.** A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing in the container. Its admission's configuration comes back, as below.
+- **The refusal's detail.** It says that the requested commit is older than the checkout `HEAD` and names both commits.
 
 A release publishes the seed of a no-op only when that seed is the seed of the `kept_commit`. Any other seed has moved, the release commit's seed included ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
 
-The admission records the target commit's source facts, PHP selection, `.env` template and Process rows before the run, as for every deployment. It first keeps the earlier values in its input as `prior_config`: the Project's source facts, the template's reference and a hash of its entries, never their values, and the Instance's Process rows. A run that ends at the probe, as a no-op or as one of the probe's refusals, puts them back in the transaction that records its end and frees the Instance. A Process that the admission set to `provisioning` or changed returns as it was, and a Process row that it created goes. The kept configuration then matches the kept checkout.
+The admission records the target commit's source facts, PHP selection, `.env` template and Process rows before the run, as for every deployment. It first keeps the earlier values in its input as `prior_config`: the Project's source facts, the template's reference and a hash of its entries, never their values, and the Instance's Process rows.
+
+A run that ends at the probe, as a no-op or as one of the probe's refusals, puts them back in the transaction that records its end and frees the Instance. A Process that the admission set to `provisioning` or changed returns as it was, and a Process row that it created goes. The kept configuration then matches the kept checkout.
 
 Known limits:
 
-- When the older commit's `.env.example` changed the template's entries, the restore puts back the template's reference without its blob. The entries stay those of the older commit until the next head that the Gateway reads, which downloads the file again.
+- When the older commit's `.env.example` changed the template's entries, the restore puts back the template's reference without its blob.
+- Those entries stay the older commit's until the Gateway reads the next head. That read downloads the file again.
 - The admission can refuse on the target commit's facts before it records anything, such as with `app-dev.php_version_unsupported`. That refusal ends with its code and holds no release's fleet.
 
 A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin`, or, for a deployment admitted before the input named one, by the Operation ID its `default_refresh` row stored. An unknown executor result still holds the Instance itself.
