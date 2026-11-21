@@ -222,7 +222,7 @@ fn a_running_copy_is_left_alone() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
 
     let output: Value = serde_json::from_str(&prepare(&fake, &prepare_input(&json!([]))).expect("prepare")).expect("json");
-    assert_eq!(output, json!({"app_account_current": false, "changes": 0, "manifest": false, "workspace_clean": false, "fleet_tunnel": false}));
+    assert_eq!(output, json!({"app_account_current": false, "changes": 0, "manifest": false, "workspace_clean": false, "fleet_tunnel": false, "services_digest": null}));
     assert_eq!(fake.calls().len(), 1);
 }
 
@@ -276,6 +276,7 @@ fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() 
             "/etc/systemd/system/multi-user.target.wants/orbit-process-3.service", "/etc/systemd/system/orbit-process-3.service",
             "/etc/systemd/system/orbit-process-7.service", "/etc/orbit/processes/3"],
         "workspace_clean": true,
+        "services_digest": "d".repeat(64),
     });
     let fake = Fake::new(&[
         ("query /1.0/instances/instance-12?", Ok(stopped())),
@@ -301,7 +302,8 @@ fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() 
     let pushed: Vec<&String> = calls.iter().filter(|call| call.contains("file push") || call.contains("--type=symlink")).collect();
     assert_eq!(pushed.len(), 2, "{pushed:?}");
     assert!(pushed[1].ends_with("instance-12/usr/local/libexec/orbit-app-user"));
-    assert_eq!(output, json!({"changes": 5, "manifest": true, "app_account_current": false, "workspace_clean": true, "fleet_tunnel": false}));
+    assert_eq!(output, json!({"changes": 5, "manifest": true, "app_account_current": false, "workspace_clean": true, "fleet_tunnel": false,
+        "services_digest": "d".repeat(64)}));
 }
 
 fn sha256_hex(text: &str) -> String {

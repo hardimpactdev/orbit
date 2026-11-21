@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCompleteEngineFlow,InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -80,6 +80,10 @@ Some clones start on Swamp:
 - a clone with a firewall row other than a TCP route allow.
 
 A default's own create stays on Swamp.
+
+### instance.complete
+
+A clone's completion runs on the engine only when nothing is left on its Node ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)): the create said `services: seed`, and there is no database, Valkey user, Route publication or fleet start. It then has no step: its start ends it at once, and its projection makes the clone `active`. Any other completion starts on Swamp. It follows `instance.create` in `ORBIT_ENGINE_KINDS`.
 
 ### instance.fleet
 

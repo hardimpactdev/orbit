@@ -7,6 +7,7 @@ use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Models\Operation;
@@ -257,4 +258,36 @@ it('starts a nested clone\'s fleet in the background only from a seed with Orbit
     $this->actions = ['instance.fleet_ready'];
     config(['orbit.engine.kinds' => []]);
     expect($background($nested, true))->toBeFalse();
+});
+
+it('says the seed holds a clone\'s services part only for a clone with no unit, web config or Process, at the seed\'s commit and digest', function (): void {
+    $plain = static function (array $input): array {
+        $input['direct_provisioning']['container']['units'] = [];
+        $input['direct_provisioning']['container']['web_config'] = null;
+
+        return $input;
+    };
+    $operation = engineCloneOperation($plain);
+    $container = $operation->input['direct_provisioning']['container'];
+    $seed = $container['clone']['seed_commit'];
+    $holds = static fn (Operation $operation, ?string $digest, string $commit): bool => (new ReflectionMethod(InstanceCreateEngineFlow::class, 'seedServices'))
+        ->invoke(null, $operation, engineRunWith(['prepare' => json_encode(['changes' => 1, 'services_digest' => $digest])]), ['commit' => $commit]);
+    $digest = InstanceContainer::servicesDigest($container);
+
+    expect($holds($operation, $digest, $seed))->toBeTrue()
+        // A seed taken before the digest, or by another guest program or PHP settings.
+        ->and($holds($operation, null, $seed))->toBeFalse()
+        ->and($holds($operation, str_repeat('0', 64), $seed))->toBeFalse()
+        // A checkout at another commit may hold files whose owners root's workspace pass gives.
+        ->and($holds($operation, $digest, str_repeat('c', 40)))->toBeFalse()
+        // A web app's units and web config are the clone's own.
+        ->and($holds(engineCloneOperation(), $digest, $seed))->toBeFalse();
+});
+
+it('changes the services digest with the guest program and the PHP settings it writes', function (): void {
+    $container = ['php' => '/opt/orbit-runtime/current/php/8.5/bin/php', 'php_cli_ini' => "extension=pcov.so\n"];
+
+    expect(InstanceContainer::servicesDigest($container))->toBe(InstanceContainer::servicesDigest($container))
+        ->and(InstanceContainer::servicesDigest([...$container, 'php_cli_ini' => null]))->not->toBe(InstanceContainer::servicesDigest($container))
+        ->and(InstanceContainer::servicesDigest([...$container, 'php' => null]))->not->toBe(InstanceContainer::servicesDigest($container));
 });

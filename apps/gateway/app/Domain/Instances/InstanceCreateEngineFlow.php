@@ -280,6 +280,23 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
      * Whether the clone's fleet starts in the background: a clone of a nested-fleet default, from a seed whose tunnel unit boots it
      * (prepare's `fleet_tunnel`), and an engine that runs `instance.fleet` on the Node.
      */
+    /**
+     * Whether the seed holds the clone's services part: the clone has no Process, unit or web config of its own, its checkout kept the
+     * seed's commit, so root's workspace pass has nothing to give, and the seed's services digest is the clone's own
+     * (InstanceContainer::servicesDigest).
+     *
+     * @param  array<string, mixed>  $checkout
+     */
+    private static function seedServices(Operation $operation, EngineRun $run, array $checkout): bool
+    {
+        $container = self::container($operation);
+        $clone = ValidatedData::object($container['clone']);
+
+        return ($container['processes'] ?? []) === [] && ($container['units'] ?? []) === [] && ($container['web_config'] ?? null) === null
+            && is_string($clone['seed_commit'] ?? null) && ($checkout['commit'] ?? null) === $clone['seed_commit']
+            && (self::prepared($run)['services_digest'] ?? null) === InstanceContainer::servicesDigest($container);
+    }
+
     private static function background(Operation $operation, EngineRun $run): bool
     {
         $clone = ValidatedData::object(self::container($operation)['clone']);
@@ -458,6 +475,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             ...self::observed($run),
             // The fleet starts beside the completion only from a seed that holds Orbit's tunnel boot unit, and only when the engine runs its wait.
             ...(self::background($operation, $run) ? ['fleet_start' => 'background'] : []),
+            // The seed holds the clone's services part: its completion has nothing to do for it.
+            ...(self::seedServices($operation, $run, $checkout) ? ['services' => 'seed'] : []),
             't3' => ['environment_id' => $environment['environmentId'] ?? null, 'server_version' => $environment['serverVersion'] ?? null,
                 'expires_at' => $body['expiresAt'] ?? null],
         ], ValidatedData::string($gateway['token'] ?? null)];
