@@ -43,7 +43,7 @@ Neither registration nor sync creates an Operation. Callback exchanges expire af
 
 ## Instance source credentials
 
-Deploy, automatic deploy, development create, production clone, and source-reading removals mint a repository-scoped `contents: read` token before fetching (missing installations fall back to anonymous access only when GitHub confirms the repository is public).
+Deploy, automatic deploy, development create, production clone, and source-reading removals mint a repository-scoped `contents: read` token before fetching (missing installations fall back to anonymous access only when GitHub confirms the repository is public). Swamp runs mint a fresh token per run; Gateway engine `fetch` steps reuse an encrypted, scope-verified token in `GitHubTokenCache` for 50 minutes (clearing the entry on any fetch failure).
 
 | Code | HTTP / Scope | Meaning |
 | --- | --- | --- |

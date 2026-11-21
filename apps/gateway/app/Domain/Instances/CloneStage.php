@@ -135,6 +135,12 @@ final readonly class CloneStage
         return $value !== null && $value !== false && $value !== '' && $value !== 0;
     }
 
+    /** The digest of the guest program, which writes a clone's services part: a new program makes every seed's digest stale. */
+    public function guestDigest(): string
+    {
+        return hash('sha256', $this->read('scripts/instance_clone_guest.py'));
+    }
+
     private function read(string $path): string
     {
         $file = ($this->swamp ?? base_path('../../swamp')).'/'.$path;

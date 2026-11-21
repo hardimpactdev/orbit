@@ -27,7 +27,7 @@ Install the tools for the projects you change:
 | Playwright Chromium & WebKit | Locked by `apps/web` | Web app browser tests |
 | [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) | OS-specific | Desktop app |
 
-Bun enforces a 3-day release cooldown (`bunfig.toml`; see [Dependencies](/contributor-guide#dependencies)). In `apps/web`, keep `vite`, `overrides.vite`, and `vitest` overrides aligned with `vite-plus`.
+In `apps/web`, keep `vite`, `overrides.vite`, and `vitest` overrides aligned with `vite-plus`. See [Dependencies](/contributor-guide#dependencies) for update and audit rules.
 
 ## Web app
 

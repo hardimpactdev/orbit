@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
@@ -50,7 +51,7 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
     /** The first line of Orbit's proxy drop-ins (instance_node_services.py `MARKER`). */
     private const string ProxyMarker = "# Managed by Orbit: attached Node service.\n";
 
-    public function __construct(private DevelopmentInstanceCreateProjection $projection) {}
+    public function __construct(private DevelopmentInstanceCreateProjection $projection, private MachineBus $bus) {}
 
     public function steps(Operation $operation): array
     {
@@ -62,14 +63,18 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         // A Node step names its part of the Node, which the executor locks: the parts of one create, and other creates, run side by side.
         $part = static fn (string $scope): string => "{$node}:{$scope}";
         $default = $volume ? ValidatedData::string(ValidatedData::object(ValidatedData::object($container['clone']))['inner_volume'] ?? null) : '';
+        // `club_key` only writes inside `/run` and restarts the inner nested Gateway's serve, disjoint from checkout and T3.
+        // Use its own Node-part target once the Node's executor reports `instance.club_key` in `node_targets`, else keep the copy lock.
+        $clubTarget = $club && in_array('instance.club_key', $this->bus->nodeTargetActions($node), true) ? $part('club-'.$id) : $id;
 
         return [
             new StepSpec('clone', $node, 'instance.clone', $part('clone-'.$id), budgetMs: 420_000, resendMs: 60_000),
-            new StepSpec('fetch', $node, 'instance.fetch_branch', $part('fetch-'.$id), budgetMs: 200_000, resendMs: 60_000),
+            // Publish `copy_volume` (no external I/O) before `fetch`, so even a cold GitHub token mint never delays volume work.
             ...($volume ? [new StepSpec('copy_volume', $node, 'instance.copy_volume', $part('volume-'.$id), budgetMs: 300_000, resendMs: 60_000)] : []),
+            new StepSpec('fetch', $node, 'instance.fetch_branch', $part('fetch-'.$id), budgetMs: 200_000, resendMs: 60_000),
             new StepSpec('prepare', $node, 'instance.prepare', $id, ['clone'], budgetMs: 180_000, resendMs: 30_000),
             new StepSpec('start', $node, 'instance.start', $id, ['prepare', ...($volume ? ['copy_volume'] : [])], budgetMs: 180_000, resendMs: 30_000),
-            ...($club ? [new StepSpec('club_key', $node, 'instance.club_key', $id, ['start'], budgetMs: 60_000, resendMs: 30_000)] : []),
+            ...($club ? [new StepSpec('club_key', $node, 'instance.club_key', $clubTarget, ['start'], budgetMs: 60_000, resendMs: 30_000)] : []),
             // The default's one spare for the next copy, beside the rest: the create neither waits for it nor fails by it. One part per
             // default, so its spares are made one at a time.
             ...($volume ? [new StepSpec('spare', $node, 'instance.spare_volume', $part('spare-'.$default), ['start'], budgetMs: 600_000, resendMs: 120_000,
@@ -154,6 +159,9 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             $data = self::ended($operation, $run);
         }
         $this->projection->apply($operation, [...$data, ...$run->times()], $session);
+        if ($run->failed()?->name === 'fetch') {
+            app(InstanceGitHubReadTokens::class)->forget($operation);
+        }
         if ($data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done') {
             // The copy started before the create failed. Its `stop` step stopped it for a retry or a destroy; when that failed, it runs,
             // and the record says so.
@@ -280,6 +288,23 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
      * Whether the clone's fleet starts in the background: a clone of a nested-fleet default, from a seed whose tunnel unit boots it
      * (prepare's `fleet_tunnel`), and an engine that runs `instance.fleet` on the Node.
      */
+    /**
+     * Whether the seed holds the clone's services part: the clone has no Process, unit or web config of its own, its checkout kept the
+     * seed's commit, so root's workspace pass has nothing to give, and the seed's services digest is the clone's own
+     * (InstanceContainer::servicesDigest).
+     *
+     * @param  array<string, mixed>  $checkout
+     */
+    private static function seedServices(Operation $operation, EngineRun $run, array $checkout): bool
+    {
+        $container = self::container($operation);
+        $clone = ValidatedData::object($container['clone']);
+
+        return ($container['processes'] ?? []) === [] && ($container['units'] ?? []) === [] && ($container['web_config'] ?? null) === null
+            && is_string($clone['seed_commit'] ?? null) && ($checkout['commit'] ?? null) === $clone['seed_commit']
+            && (self::prepared($run)['services_digest'] ?? null) === InstanceContainer::servicesDigest($container);
+    }
+
     private static function background(Operation $operation, EngineRun $run): bool
     {
         $clone = ValidatedData::object(self::container($operation)['clone']);
@@ -458,6 +483,8 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             ...self::observed($run),
             // The fleet starts beside the completion only from a seed that holds Orbit's tunnel boot unit, and only when the engine runs its wait.
             ...(self::background($operation, $run) ? ['fleet_start' => 'background'] : []),
+            // The seed holds the clone's services part: its completion has nothing to do for it.
+            ...(self::seedServices($operation, $run, $checkout) ? ['services' => 'seed'] : []),
             't3' => ['environment_id' => $environment['environmentId'] ?? null, 'server_version' => $environment['serverVersion'] ?? null,
                 'expires_at' => $body['expiresAt'] ?? null],
         ], ValidatedData::string($gateway['token'] ?? null)];

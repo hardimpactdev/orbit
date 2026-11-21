@@ -23,6 +23,7 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
+use App\Domain\Instances\InstanceFinalize;
 use App\Domain\Instances\InstanceFleetOperation;
 use App\Domain\Instances\InstanceNodeServiceProcessRemovalGuard;
 use App\Domain\Instances\InstanceOperationAlerts;
@@ -86,7 +87,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceNodeServiceProcessRemovalGuard::class], ProcessRemovalGuard::class);
-        $this->app->tag([InstanceFleetOperation::class], OperationRecordCoordinator::class);
+        $this->app->tag([InstanceFleetOperation::class, InstanceFinalize::class], OperationRecordCoordinator::class);
         $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),

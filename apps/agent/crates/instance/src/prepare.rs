@@ -119,10 +119,11 @@ struct Owner {
 /// Places a stopped copy's files: the seed's Orbit units that are not the copy's go, the machine id is the copy's own, then
 /// each item in order. A running copy is left alone: its first boot is over. The seed's manifest, read once, names the units to
 /// remove and what the seed already holds: an item the seed holds as rendered is not placed again.
-/// Answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel"}`: whether the seed's manifest was
-/// there, whether its app-account swap ran with this create's swap file, whether its workspace was clean, and whether it holds
-/// Orbit's operator tunnel boot unit, so a nested fleet's copy has its tunnel at every boot (`instance.fleet_ready`). A running copy
-/// answers `false` for the unit: its first boot is over.
+/// Answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel", "services_digest"}`: whether the
+/// seed's manifest was there, whether its app-account swap ran with this create's swap file, whether its workspace was clean,
+/// whether it holds Orbit's operator tunnel boot unit, so a nested fleet's copy has its tunnel at every boot (`instance.fleet_ready`),
+/// and the digest of the services part the seed holds, or null (the Gateway compares it with the clone's own and skips that part when
+/// they match). A running copy answers `false` for the unit: its first boot is over.
 ///
 /// # Errors
 ///
@@ -148,8 +149,9 @@ pub fn prepare(system: &impl System, input: &Value) -> Result<String, Failure> {
     let files = Files { incus: &incus, project: &input.project, name: &input.name };
     let answer = |changes: u32, manifest: Option<&Value>, swapped: bool, tunnel: bool| {
         let clean = manifest.and_then(|manifest| manifest.get("workspace_clean")).and_then(Value::as_bool).unwrap_or(false);
+        let services = manifest.and_then(|manifest| manifest.get("services_digest")).and_then(Value::as_str);
         serde_json::json!({"changes": changes, "manifest": manifest.is_some(), "app_account_current": swapped, "workspace_clean": clean,
-            "fleet_tunnel": tunnel})
+            "fleet_tunnel": tunnel, "services_digest": services})
         .to_string()
     };
     if copy.get("status").and_then(Value::as_str) != Some("Stopped") {

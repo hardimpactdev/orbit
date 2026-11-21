@@ -69,11 +69,11 @@ final class EngineBus implements MachineBus
         }
         $this->usedAt = $now;
 
-        return $this->client ??= ($this->connector ?? self::connect(...))();
+        return $this->client ??= ($this->connector ?? static fn (): Client => self::connect(reconnect: false))();
     }
 
     /** A connection of its own, so a subscription never shares a socket with publishes made inside its handler. */
-    public static function connect(): Client
+    public static function connect(bool $reconnect = true): Client
     {
         $host = GatewayBus::address();
         if ($host === null) {
@@ -81,7 +81,9 @@ final class EngineBus implements MachineBus
         }
 
         // The Gateway's own nkey user skips the auth callout and may use every subject of the account.
-        return new Client(new Configuration(host: $host, port: GatewayBus::port(), nkey: GatewayBus::gatewaySeed(), timeout: 2));
+        // Request/publish connections pass `reconnect: false` so a server-closed idle socket fails `ping()` immediately
+        // instead of silently reconnecting inside `getMessage()` and blocking for the full 2 s timeout waiting on an unsent PONG.
+        return new Client(new Configuration(host: $host, port: GatewayBus::port(), nkey: GatewayBus::gatewaySeed(), reconnect: $reconnect, timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */
@@ -164,6 +166,13 @@ final class EngineBus implements MachineBus
         $report = $this->nodeReport($node);
 
         return is_array($report['actions'] ?? null) ? array_values(array_filter($report['actions'], is_string(...))) : [];
+    }
+
+    public function nodeTargetActions(int $node): array
+    {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['node_targets'] ?? null) ? array_values(array_filter($report['node_targets'], is_string(...))) : [];
     }
 
     public function nodeClock(int $node): ?bool

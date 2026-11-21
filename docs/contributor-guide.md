@@ -4,9 +4,9 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - "{.agents/skills/reviewing-pull-requests/references/test-*.md,.agents/swamp-upstream/**,tools/test_ci_swamp_skills.py}"
-  - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
+  - "{composer.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
-  - "{apps/*,packages/php-sdk}/{composer,vet}.json"
+  - "{apps/*,packages/php-sdk}/composer.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/Support/TestToolchain.php}
   - apps/docs/**
@@ -118,7 +118,7 @@ To run Linux-only Gateway tests from macOS, point `ORBIT_LINUX_TEST_HOST` (optio
 
 ## Dependencies
 
-All package managers enforce a 3-day release cooldown (`vet.json` for Composer, `minimumReleaseAge = 259200` in `bunfig.toml`). Dependabot opens a daily grouped update PR with a 7-day cooldown. Keep Vite+ and its `vite` / `vitest` overrides aligned across `apps/web/package.json`. Run `composer audit:dependencies` (`bin/dependency-audit`) locally; `.github/workflows/dependency-audit.yml` runs nightly.
+Dependabot opens one daily multi-ecosystem update PR across Composer, Bun, and full-SHA GitHub Actions pins. Keep Vite+ and its `vite` / `vitest` overrides aligned across `apps/web/package.json`. Run `composer audit:dependencies` (`bin/dependency-audit`) locally; `.github/workflows/dependency-audit.yml` runs nightly.
 
 ## Review and merge
 

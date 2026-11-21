@@ -50,7 +50,7 @@ pub enum Action {
     /// Its target is the copy.
     InstanceT3,
     /// Write a nested-fleet copy's Club key into its `/run` and tell the nested Gateway's serve (ADR 0271). Its target is
-    /// the copy.
+    /// the Node's part for that copy, so it runs beside checkout and T3.
     InstanceClubKey,
     /// Copy a nested-fleet copy's own inner volume from its default's volume seed (ADR 0271). Its target is the Node.
     InstanceCopyVolume,
@@ -62,6 +62,9 @@ pub enum Action {
     /// Wait until a nested-fleet copy's inner fleet runs and is ready, beside its checkout (ADR 0271). Its target is the
     /// Node's part for that copy.
     InstanceFleetReady,
+    /// Give a reserved copy its final name and branch, and restart its T3 for its label (docs/reference/conn.md#reserve-a-clone).
+    /// Its target is the copy.
+    InstanceNames,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -76,7 +79,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -96,6 +99,7 @@ impl Action {
         Self::InstanceStop,
         Self::InstanceSpareVolume,
         Self::InstanceFleetReady,
+        Self::InstanceNames,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -116,7 +120,8 @@ impl Action {
             | Self::InstanceCopyVolume
             | Self::InstanceStop
             | Self::InstanceSpareVolume
-            | Self::InstanceFleetReady => {
+            | Self::InstanceFleetReady
+            | Self::InstanceNames => {
                 Family::Instance
             }
         }
@@ -132,6 +137,7 @@ impl Action {
             | Self::DnsPublishRecords
             | Self::InstanceClone
             | Self::InstanceFetchBranch
+            | Self::InstanceClubKey
             | Self::InstanceCopyVolume
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady => TargetKind::Node,
@@ -142,8 +148,8 @@ impl Action {
             | Self::InstanceStart
             | Self::InstanceCheckout
             | Self::InstanceT3
-            | Self::InstanceClubKey
-            | Self::InstanceStop => {
+            | Self::InstanceStop
+            | Self::InstanceNames => {
                 TargetKind::Instance
             }
         }
@@ -171,6 +177,7 @@ impl Action {
             Self::InstanceStop => "instance.stop",
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
+            Self::InstanceNames => "instance.names",
         }
     }
 }
@@ -204,6 +211,7 @@ impl FromStr for Action {
             "instance.stop" => Ok(Self::InstanceStop),
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
+            "instance.names" => Ok(Self::InstanceNames),
             _ => Err(UnknownActionError),
         }
     }

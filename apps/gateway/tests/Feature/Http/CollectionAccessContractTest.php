@@ -27,6 +27,8 @@ function collection_access_policies(): array
             // extensions/conn/src/Actions/ReadConnLaunchesAction.php and Domain/ConnLaunchAccess.php scope both reads to the current profile and accessible target Nodes.
             'conn:launch:list' => ServingNode::Collection,
             'conn:launch:show' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnReservationsController.php owned() serves a reservation to the Node that made it only.
+            'conn:reservation:show' => ServingNode::Collection,
             // extensions/conn/src/Domain/ConnThreadProjects.php:32 filters ready defaults by accessibleNodeIds.
             'conn:project:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Requests/ListConnProjectBranchesRequest.php:20 requires access to the default Instance's Node; ConnProjectBranches.php:62 filters matched Instances by accessibleNodeIds.

@@ -19,6 +19,7 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\ClonePublication;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\InstanceCompleteEngineFlow;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
@@ -44,6 +45,7 @@ use App\Domain\Tasks\TaskEnd;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Swamp\NativeRunProgress;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
 use App\Models\Activity;
@@ -437,6 +439,11 @@ function fleetBus(): MachineBus
             return ['instance.fleet_ready'];
         }
 
+        public function nodeTargetActions(int $node): array
+        {
+            return [];
+        }
+
         public function nodeClock(int $node): ?bool
         {
             return null;
@@ -787,6 +794,56 @@ it('starts a wait whose start was lost, nudges a stalled one, and ends one past 
     expect([$fleet->refresh()->status, $fleet->error_code])->toBe([OperationStatus::Failed, 'operation.timed_out'])
         ->and($runtime->fleet_error_code)->toBe('operation.timed_out');
 });
+
+it('ends a completion with nothing left on its Node at once on the engine, and the clone goes active without a Swamp run', function (bool $seed): void {
+    config(['orbit.engine.kinds' => ['instance.create'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $this->bus = fleetBus();
+    app()->instance(MachineBus::class, $this->bus);
+    $default = handoverDefault(containerDefaultNode(), ProjectType::NodePackage, null);
+    // A Project without Processes: the seed holds all of the clone's services part.
+    ProcessDefinition::query()->where('project_id', $default->project_id)->delete();
+    $create = handoverCreate($default);
+    $succeeded = handoverSucceeded($create);
+    if ($seed) {
+        $succeeded['result']['services'] = 'seed';
+    }
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, $succeeded);
+    $completion = handoverCompletion($create);
+    expect(InstanceCompleteEngineFlow::nothingLeft($completion))->toBe($seed);
+    if (! $seed) {
+        return;
+    }
+    app(StartSwampRun::class)->start($completion->refresh());
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $completion->id]);
+
+    expect([$completion->refresh()->status, $completion->state['swamp_run_id'], $completion->result['ready']])
+        ->toBe([OperationStatus::Succeeded, 'engine-'.$completion->id, true])
+        ->and(OperationEngineStep::query()->where('operation_id', $completion->id)->exists())->toBeFalse()
+        ->and(Instance::query()->findOrFail($create->target_id)->status)->toBe(InstanceState::Active);
+})->with(['the seed holds the services part' => true, 'a seed without the digest' => false]);
+
+it('keeps a completion on Swamp while its clone has a database, a Route, a Process or a fleet to start', function (Closure $change): void {
+    $default = handoverDefault(containerDefaultNode(), ProjectType::NodePackage, null);
+    ProcessDefinition::query()->where('project_id', $default->project_id)->delete();
+    $create = handoverCreate($default);
+    $succeeded = handoverSucceeded($create);
+    $succeeded['result']['services'] = 'seed';
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, $succeeded);
+    $completion = handoverCompletion($create);
+    $completion->forceFill(['input' => $change($completion->input)])->save();
+
+    expect(InstanceCompleteEngineFlow::nothingLeft($completion->refresh()))->toBeFalse();
+})->with([
+    'a database' => [static fn (array $input): array => [...$input, 'direct_provisioning' => [...$input['direct_provisioning'], 'database' => ['name' => 'app']]]],
+    'a server database' => [static fn (array $input): array => [...$input, 'direct_provisioning' => [...$input['direct_provisioning'], 'server_database' => ['id' => 1]]]],
+    'a Route to publish' => [static fn (array $input): array => [...$input, 'route_create' => ['route_id' => 1]]],
+    'a Process' => [static function (array $input): array {
+        $input['direct_provisioning']['container']['processes'] = [['id' => 4, 'name' => 'orbit-process-4.service']];
+
+        return $input;
+    }],
+]);
 
 it('resumes a clone whose completion failed: the baseline stays, and the create admits a new completion', function (): void {
     $node = containerDefaultNode();

@@ -170,7 +170,11 @@ Before deploy steps and the seed snapshot, a default deployment removes untracke
 
 #### The seed manifest
 
-Right before snapshotting `seed-<commit>`, the default writes shared clone files (`seed_files`) and records `/etc/orbit/seed-manifest.json` (`files`, `links`, `folders`, `bundles`, `nss`, `units`, `workspace_clean`). Clone preparation reads the manifest and writes only what differs; task copies skip workspace cleaning when `workspace_clean` is true and the commit matches the seed.
+Right before snapshotting `seed-<commit>`, the default writes shared clone files (`seed_files`) and records `/etc/orbit/seed-manifest.json` (`files`, `links`, `folders`, `bundles`, `nss`, `units`, `workspace_clean`, `services_digest`). Clone preparation reads the manifest and writes only what differs; task copies skip workspace cleaning when `workspace_clean` is true and the commit matches the seed.
+
+#### A completion with nothing left
+
+When a clone has no custom Processes, units, or web config and its seed's `services_digest` matches `InstanceContainer::servicesDigest`, [`instance.complete`](/reference/gateway-engine#instancecomplete) ends immediately on the Gateway engine with zero steps and transitions the clone to `active` without starting a Swamp run.
 
 #### Spare volumes
 

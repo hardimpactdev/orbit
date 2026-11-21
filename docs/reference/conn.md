@@ -8,6 +8,7 @@ covers:
   - swamp/ansible/conn-*.yml
   - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/database/migrations/2027_03_22_000001_let_a_reserved_clone_take_its_name.php
   - apps/gateway/database/migrations/*_conn_*.php
 ---
 
@@ -113,6 +114,23 @@ If `instance.complete` fails after clone creation, `POST /api/v1/conn/instances/
 ### Remove a clone whose create runs
 
 If a user deletes a clone while `instance.create` is still running, Conn cancels the create and schedules destroy once the create settles.
+
+## Reserve a clone
+
+A Conn device can pre-warm a clone while the user types a new thread ([finalize chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/finalize.mmd)). `POST /projects/{id}/reservations` with `{}` admits `instance.create` under a `draft-<8 hex>` name and returns HTTP 202 (or 200 for the caller's existing open reservation).
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `project_id`, `instance_id` | Reservation UUID, Project ID, and reserved clone ID. |
+| `state`, `expires_at`, `error_code` | `preparing`, `ready`, `finalizing`, `finalized`, `failed`, `expired`, or `released`; expiry timestamp; failure code. |
+| `create_operation_id`, `finalize_operation_id`, `destroy_operation_id` | Associated lifecycle Operation IDs. |
+| `environment_id`, `pairing` | Clone T3 server ID from `ready` on, and one-time `IssuedConnPairingData` (`Cache-Control: no-store`, read once on `GET /reservations/{id}`). |
+
+Rules:
+
+- One open reservation per device, profile, and Project (max three per device; a fourth releases and destroys the oldest).
+- Open reservations expire 10 minutes after creation or last read, destroying the clone and cancelling any open [fleet wait](/reference/development-containers#a-clone-starts-its-fleet).
+- Open reservations keep the clone awake (`conn_reservation`). Submitting the thread finalizes the clone's name and branch via `instance.names` and live-reloads Conn Server (`SIGHUP`).
 
 ### Remove a clone whose completion runs
 

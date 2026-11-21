@@ -26,6 +26,7 @@ final readonly class OperationKinds
         'executor.proof' => ['executor' => 'gateway'],
         'executor.power_proof' => ['executor' => 'gateway'],
         'instance.fleet' => ['executor' => 'gateway'],
+        'instance.finalize' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */

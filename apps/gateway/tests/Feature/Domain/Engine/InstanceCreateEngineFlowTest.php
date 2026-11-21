@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Models\Operation;
@@ -115,8 +117,8 @@ it('runs a nested-fleet task copy on the engine: its volume beside the clone, it
 
     expect(array_map(static fn (StepSpec $step): array => [$step->name, $step->action, $step->after], $steps))->toBe([
         ['clone', 'instance.clone', []],
-        ['fetch', 'instance.fetch_branch', []],
         ['copy_volume', 'instance.copy_volume', []],
+        ['fetch', 'instance.fetch_branch', []],
         ['prepare', 'instance.prepare', ['clone']],
         ['start', 'instance.start', ['prepare', 'copy_volume']],
         ['club_key', 'instance.club_key', ['start']],
@@ -128,8 +130,34 @@ it('runs a nested-fleet task copy on the engine: its volume beside the clone, it
         // The spare is made beside the create, one at a time per default, and never holds it up or fails it.
         ->and(array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'spare'))[0])
         ->toMatchObject(['target' => '3:spare-inner-2', 'optional' => true])
+        // Without a node_targets report from the executor, club_key keeps the copy target for backwards compatibility.
+        ->and(array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'club_key'))[0]->target)
+        ->toBe('6')
         // The signer signs each of them.
         ->and(array_diff(array_map(static fn (StepSpec $step): string => $step->action, $steps), ExecutorOrderSigner::Actions))->toBe([]);
+});
+
+it('gives club_key its own Node-part target once the Node executor reports instance.club_key in node_targets', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeTargetActions')->with(3)->once()->andReturn(['instance.clone', 'instance.club_key']);
+    app()->instance(MachineBus::class, $bus);
+
+    $steps = app(InstanceCreateEngineFlow::class)->steps(engineCloneOperation(nestedTaskCopy(...)));
+    $club = array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'club_key'))[0];
+    $checkout = array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'checkout'))[0];
+
+    expect($club->target)->toBe('3:club-6')
+        ->and($checkout->target)->toBe('6');
+});
+
+it('reads a Node\'s reported actions once per Node when routing a multi-step Operation', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeTargetActions')->with(3)->once()->andReturn([]);
+    $bus->shouldReceive('nodeActions')->with(3)->once()->andReturn(ExecutorOrderSigner::Actions);
+    app()->instance(MachineBus::class, $bus);
+    config(['orbit.engine.kinds' => ['instance.create']]);
+
+    expect(app(EngineKinds::class)->routes(engineCloneOperation(nestedTaskCopy(...))))->toBeTrue();
 });
 
 it('copies the default\'s inner volume and guards the nested copy\'s exact config, devices and volumes', function (): void {
@@ -257,4 +285,36 @@ it('starts a nested clone\'s fleet in the background only from a seed with Orbit
     $this->actions = ['instance.fleet_ready'];
     config(['orbit.engine.kinds' => []]);
     expect($background($nested, true))->toBeFalse();
+});
+
+it('says the seed holds a clone\'s services part only for a clone with no unit, web config or Process, at the seed\'s commit and digest', function (): void {
+    $plain = static function (array $input): array {
+        $input['direct_provisioning']['container']['units'] = [];
+        $input['direct_provisioning']['container']['web_config'] = null;
+
+        return $input;
+    };
+    $operation = engineCloneOperation($plain);
+    $container = $operation->input['direct_provisioning']['container'];
+    $seed = $container['clone']['seed_commit'];
+    $holds = static fn (Operation $operation, ?string $digest, string $commit): bool => (new ReflectionMethod(InstanceCreateEngineFlow::class, 'seedServices'))
+        ->invoke(null, $operation, engineRunWith(['prepare' => json_encode(['changes' => 1, 'services_digest' => $digest])]), ['commit' => $commit]);
+    $digest = InstanceContainer::servicesDigest($container);
+
+    expect($holds($operation, $digest, $seed))->toBeTrue()
+        // A seed taken before the digest, or by another guest program or PHP settings.
+        ->and($holds($operation, null, $seed))->toBeFalse()
+        ->and($holds($operation, str_repeat('0', 64), $seed))->toBeFalse()
+        // A checkout at another commit may hold files whose owners root's workspace pass gives.
+        ->and($holds($operation, $digest, str_repeat('c', 40)))->toBeFalse()
+        // A web app's units and web config are the clone's own.
+        ->and($holds(engineCloneOperation(), $digest, $seed))->toBeFalse();
+});
+
+it('changes the services digest with the guest program and the PHP settings it writes', function (): void {
+    $container = ['php' => '/opt/orbit-runtime/current/php/8.5/bin/php', 'php_cli_ini' => "extension=pcov.so\n"];
+
+    expect(InstanceContainer::servicesDigest($container))->toBe(InstanceContainer::servicesDigest($container))
+        ->and(InstanceContainer::servicesDigest([...$container, 'php_cli_ini' => null]))->not->toBe(InstanceContainer::servicesDigest($container))
+        ->and(InstanceContainer::servicesDigest([...$container, 'php' => null]))->not->toBe(InstanceContainer::servicesDigest($container));
 });

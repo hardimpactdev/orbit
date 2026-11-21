@@ -297,6 +297,8 @@ it('never puts to sleep an Instance whose turn runs, whatever its age, or whose 
     'a turn runs, started long ago' => [fn () => AgentActivity::read(true, CarbonImmutable::parse('2026-11-14 01:00:00')->getTimestamp()), 't3_turn_running'],
     'unreadable' => [fn () => AgentActivity::unreadable(), 't3_unreadable'],
     'a user message inside the window' => [fn () => AgentActivity::read(false, CarbonImmutable::parse('2026-11-14 11:30:00')->getTimestamp()), 't3_active'],
+    // A reserved clone whose user still types its first message: its server has no thread yet (docs/reference/conn.md#reserve-a-clone).
+    'a hold, such as a Conn reservation' => [fn () => AgentActivity::held('conn_reservation'), 'conn_reservation'],
 ]);
 
 it('lets an Instance sleep whose last T3 activity is older than the window', function (): void {

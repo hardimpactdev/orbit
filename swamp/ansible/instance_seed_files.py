@@ -1,11 +1,12 @@
 """The files that every clone of a default needs, placed in the default before its seed, and the seed's manifest.
 
 Root runs it in the default container in the seed phase, after the app-user swap and before the snapshot. Stdin is JSON:
-`{"items": [...], "ca": "<the Node's Orbit root>", "workspace": "/srv/workspace"}`. `items` are the clone-identical items of the
+`{"items": [...], "ca": "<the Node's Orbit root>", "workspace": "/srv/workspace", "services_digest": "<sha256>"}`. `items` are the clone-identical items of the
 executor's `instance.prepare` (file, link, folder, trust, nss), and each is placed as that primitive places it. Then the manifest
 `/etc/orbit/seed-manifest.json` records, for each item's paths, what the seed holds: content digests, owners, modes and link
 targets, the trust bundle's certificates, the NSS store's lines and the trust module's package version. It also records the
-default's Orbit units that no clone keeps, and whether the workspace is clean as a task copy's clean reads it. A clone's prepare
+default's Orbit units that no clone keeps, whether the workspace is clean as a task copy's clean reads it, and the digest of the
+services part the default holds. A clone's prepare
 reads the manifest once and places only what differs (docs/reference/executor.md#instanceprepare).
 
 Prints one JSON line: `{"placed": <count>, "units": <count>}`. Names only. With the argument `clean`, it only records whether the
@@ -210,7 +211,10 @@ def main():
     for item in data["items"]:
         place(item, data["ca"])
     # Not clean until the seed phase checks the tree right before the snapshot (`clean`).
-    manifest = {"version": 1, **record(data["items"], data["ca"]), "units": units(), "workspace_clean": False}
+    # The digest of the services part the default holds (InstanceContainer::servicesDigest): a clone whose own digest matches, with
+    # nothing else to start, skips that part.
+    manifest = {"version": 1, **record(data["items"], data["ca"]), "units": units(), "workspace_clean": False,
+                "services_digest": data.get("services_digest")}
     os.makedirs(os.path.dirname(MANIFEST), exist_ok=True)
     write(MANIFEST, (json.dumps(manifest, sort_keys=True) + "\n").encode(), 0, 0, "0644")
     print(json.dumps({"placed": len(data["items"]), "units": len(manifest["units"])}))

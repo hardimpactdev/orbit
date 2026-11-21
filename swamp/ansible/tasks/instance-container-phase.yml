@@ -1830,7 +1830,7 @@
       ansible.builtin.command:
         argv: >-
           {{ ['timeout', '60'] + as_root + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_seed_files.py')] }}
-        stdin: "{{ {'items': container.seed_files, 'ca': seed_ca.content | b64decode, 'workspace': container.workspace} | to_json }}"
+        stdin: "{{ {'items': container.seed_files, 'ca': seed_ca.content | b64decode, 'workspace': container.workspace, 'services_digest': container.services_digest | default(none)} | to_json }}"
       register: seed_files_placed
       changed_when: true
 

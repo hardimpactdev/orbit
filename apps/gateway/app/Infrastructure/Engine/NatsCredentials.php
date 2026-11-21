@@ -27,26 +27,15 @@ final readonly class NatsCredentials
     /** A new random account seed: the callout issuer. */
     public static function newSeed(): string
     {
-        do {
-            $seed = self::seed(self::PrefixAccount, random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES));
-        } while ($seed === null);
-
-        return $seed;
+        return self::seed(self::PrefixAccount, random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES));
     }
 
-    /**
-     * The seed of a user derived from the account seed: the same name always gives the same key. A derivation the client
-     * library cannot read takes the next round, `<name>:<round>`.
-     */
+    /** The seed of a user derived from the account seed: the same name always gives the same key. */
     public static function userSeed(#[SensitiveParameter] string $accountSeed, string $name): string
     {
         SecretKey::fromSeed($accountSeed);
-        for ($round = 0; ; $round++) {
-            $seed = self::seed(self::PrefixUser, hash_hmac('sha256', 'orbit-nats-user:'.$name.($round === 0 ? '' : ':'.$round), $accountSeed, true));
-            if ($seed !== null) {
-                return $seed;
-            }
-        }
+
+        return self::seed(self::PrefixUser, hash_hmac('sha256', 'orbit-nats-user:'.$name, $accountSeed, true));
     }
 
     public static function publicKey(#[SensitiveParameter] string $seed): string
@@ -112,20 +101,14 @@ final readonly class NatsCredentials
         return $signing.'.'.self::base64url(sodium_crypto_sign_detached($signing, $secret));
     }
 
-    /**
-     * The encoded seed, or null when its last byte, the CRC high byte, is zero: the client library's Base32 decoder strips
-     * trailing zero bytes, so it would read that seed one byte short and refuse it (one seed in 256).
-     */
-    private static function seed(int $prefix, #[SensitiveParameter] string $raw): ?string
+    /** The encoded seed: two prefix bytes, the 32 raw bytes and the CRC. */
+    private static function seed(int $prefix, #[SensitiveParameter] string $raw): string
     {
         if (! in_array($prefix, [self::PrefixAccount, self::PrefixUser], true) || strlen($raw) !== SODIUM_CRYPTO_SIGN_SEEDBYTES) {
             throw new InvalidArgumentException('An nkey seed needs a known prefix and 32 bytes.');
         }
         $bytes = chr(self::PrefixSeed | ($prefix >> 5)).chr(($prefix & 31) << 3).$raw;
         $crc = CRC16::hash(array_values(unpack('C*', $bytes) ?: []));
-        if (($crc >> 8) === 0) {
-            return null;
-        }
 
         return rtrim((new Base32)->encode($bytes.pack('v', $crc)), '=');
     }

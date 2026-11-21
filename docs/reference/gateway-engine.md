@@ -32,6 +32,7 @@ Otherwise the Operation runs on its Swamp workflow. The table below lists the ki
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.fleet` | `fleet_ready` | `instance.fleet_ready` |
+| `instance.complete` | zero steps (when nothing remains on the Node) | none |
 
 ### route.create
 
@@ -70,9 +71,13 @@ The Gateway unseals the sessions without using a vault and records `route_public
 
 `instance.fleet` waits for the inner fleet of a nested-fleet clone (`instance.fleet_ready`) in the background alongside `instance.complete`, updating `fleet_ready_at`, `fleet_failed_at`, and `fleet_error_code` on the Instance without holding an Operation lock ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
 
+### instance.complete
+
+When a clone's `services_digest` matches the current seed and nothing remains for `clone-services` on the Node, `instance.complete` settles immediately on the engine with zero steps ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)).
+
 ### Capability reporting
 
-An executor reports `{actions, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after. Entries expire after five minutes, so a stopped executor stops receiving engine Operations. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations fall back to Swamp.
+An executor reports `{actions, node_targets, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations fall back to Swamp.
 
 `clock_synchronized` comes from `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false because clock drift causes the executor to reject signed orders.
 

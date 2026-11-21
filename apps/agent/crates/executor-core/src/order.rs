@@ -305,7 +305,12 @@ pub fn check_with_target(
         return Err(OrderRefusal::WrongNode);
     }
     let target_exists = match action.target_kind() {
-        TargetKind::Node => node_target(payload.target.as_str(), checks.node.as_str()),
+        // `instance.club_key` moved from an Instance target to a Node-part target so it runs beside checkout and T3;
+        // older Gateways still send the copy's id, so accept either.
+        TargetKind::Node => {
+            node_target(payload.target.as_str(), checks.node.as_str())
+                || (action == Action::InstanceClubKey && target_exists(action, &payload.target))
+        }
         TargetKind::Instance => target_exists(action, &payload.target),
     };
     if !target_exists {
@@ -521,6 +526,43 @@ pub(crate) mod tests {
         for scope in ["7:", "7:-x", "7:Volume", "7:a:b", "7:a b"] {
             assert!(!node_target(scope, "7"), "{scope}");
         }
+    }
+
+    #[test]
+    fn club_key_accepts_a_node_part_target_and_a_legacy_instance_target() {
+        let keys = pinned(1);
+        let enabled = Enabled::parse("instance").expect("instance");
+        let node = "7".parse().expect("node");
+        let checks = Checks {
+            keys: &keys,
+            enabled: &enabled,
+            node: &node,
+        };
+        let mut p = payload();
+        p["action"] = "instance.club_key".into();
+
+        // A new Gateway sends `<node>:club-<id>` so club_key runs beside checkout and T3 without hitting Incus target checks.
+        p["target"] = "7:club-23".into();
+        assert!(check_with_target(&sign(1, &p), &checks, NOW, |_, _| false).is_ok());
+
+        // An older Gateway still sends the copy's numeric id, which falls back to local target truth.
+        p["target"] = "23".into();
+        assert_eq!(
+            check_with_target(&sign(1, &p), &checks, NOW, |_, _| false),
+            Err(OrderRefusal::UnknownTarget)
+        );
+        assert!(
+            check_with_target(&sign(1, &p), &checks, NOW, |action, id| {
+                action == Action::InstanceClubKey && id.as_str() == "23"
+            })
+            .is_ok()
+        );
+
+        p["target"] = "8:club-23".into();
+        assert_eq!(
+            check_with_target(&sign(1, &p), &checks, NOW, |_, _| false),
+            Err(OrderRefusal::UnknownTarget)
+        );
     }
 
     #[test]

@@ -617,6 +617,19 @@ final readonly class InstanceContainer
     }
 
     /**
+     * The digest of the services part that a clone shares with its default's seed: PHP's runtime settings and CLI file, as the guest
+     * program writes them. The default's seed records it in its manifest; a clone whose own digest matches, and that has no Process,
+     * unit or web config of its own, finds that part done (docs/reference/development-containers.md#complete-a-clone).
+     *
+     * @param  array<string, mixed>  $container
+     */
+    public static function servicesDigest(array $container): string
+    {
+        return hash('sha256', json_encode(['guest' => (new CloneStage)->guestDigest(), 'php' => ($container['php'] ?? null) !== null,
+            'php_cli_ini' => $container['php_cli_ini'] ?? null], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
      * The files that every clone of this default gets, in the items of the executor's `instance.prepare`: the boot and trust files,
      * Codex's settings for the default's Node, T3's drop-ins for the Conn Server (a task copy's server), the agent folder with the
      * Project's instructions, and its links. The default's seed phase places them before the seed and records the seed's manifest, so
