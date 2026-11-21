@@ -16,6 +16,7 @@ use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Data\ConnEnvironmentData;
+use Orbit\Extensions\Conn\Domain\ConnReservations;
 use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Http\Requests\RegisterConnEnvironmentRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -29,13 +30,18 @@ final class ConnEnvironmentsController extends Controller
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
 
+        $environments = $access->visible($caller, ConnEnvironment::query())
+            ->with(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes'])
+            ->orderBy('label')
+            ->orderBy('id')
+            ->get();
+        // A reserved clone's server names its reservation until the finalize (/reference/conn#reserve-a-clone): one read for the list.
+        $reservations = ConnReservations::open(array_values($environments->pluck('instance_id')->filter()->all()));
+
         return response()->json([
-            'data' => $access->visible($caller, ConnEnvironment::query())
-                ->with(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes'])
-                ->orderBy('label')
-                ->orderBy('id')
-                ->get()
-                ->map(static fn (ConnEnvironment $environment): array => ConnEnvironmentData::fromModel($environment)->toArray())
+            'data' => $environments
+                ->map(static fn (ConnEnvironment $environment): array => ConnEnvironmentData::fromModel($environment,
+                    $environment->instance_id === null ? null : ($reservations[$environment->instance_id] ?? null))->toArray())
                 ->values()
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

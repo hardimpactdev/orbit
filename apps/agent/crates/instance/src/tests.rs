@@ -1206,3 +1206,169 @@ fn prepare_says_whether_the_seed_holds_orbits_tunnel_boot_unit() {
     // A running copy is a retry: its first boot is over, and the completion starts its fleet.
     assert_eq!(read(json!({"status": "Running"}), orbits), json!(false));
 }
+
+fn names_input() -> Value {
+    json!({"project": "orbit-instances-nested", "name": "instance-12", "instance_id": 12, "workspace": "/srv/workspace", "group": 2760,
+        "hostname": "fix-login.orbit", "pretty": "fix-login.orbit", "instance_file": "# Managed by Orbit.\nORBIT_INSTANCE=fix-login\n",
+        "branch": {"mode": "rename", "from": "draft-ab12cd34", "to": "fix-login"}, "t3_unit": "t3.service", "t3_port": 3773, "label_seconds": 1})
+}
+
+#[test]
+fn a_reserved_copy_takes_its_name_renames_its_branch_and_reloads_t3_live_on_sighup() {
+    let fake = Fake::new(&[
+        ("symbolic-ref", Ok(json!("draft-ab12cd34\n"))),
+        ("rev-parse HEAD", Ok(json!(format!("{}\n", "a".repeat(40))))),
+        ("file pull instance-12/etc/hostname", Ok(json!("draft-ab12cd34.orbit\n"))),
+        ("file pull instance-12/etc/hosts", Ok(json!("127.0.0.1 localhost\n127.0.1.1\tdraft-ab12cd34.orbit draft-ab12cd34 instance-12\n"))),
+        ("/.well-known/t3/environment", Ok(json!(r#"{"label":"fix-login.orbit","environmentId":"e"}"#))),
+    ]);
+
+    let output = parsed(&names(&fake, &names_input()).expect("names"));
+
+    let calls = fake.calls();
+    let pushed = |path: &str| fake.calls.borrow().clone().into_iter().find(|(call, _)| call.ends_with(&format!("instance-12{path}"))).and_then(|(_, input)| input);
+    assert!(calls.iter().any(|call| call.ends_with("git -c core.hooksPath=/dev/null -c core.fsmonitor=false branch -m draft-ab12cd34 fix-login")), "{calls:?}");
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/hostname fix-login.orbit")), "{calls:?}");
+    assert_eq!(pushed("/etc/hostname").as_deref(), Some("fix-login.orbit\n"));
+    assert_eq!(pushed("/etc/hosts").as_deref(), Some("127.0.0.1 localhost\n127.0.1.1\tfix-login.orbit fix-login instance-12\n"));
+    assert_eq!(pushed("/etc/machine-info").as_deref(), Some("PRETTY_HOSTNAME=fix-login.orbit\n"));
+    assert_eq!(pushed("/etc/orbit/instance").as_deref(), Some("# Managed by Orbit.\nORBIT_INSTANCE=fix-login\n"));
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/systemctl kill -s HUP --kill-who=main t3.service")), "{calls:?}");
+    assert!(!calls.iter().any(|call| call.contains("systemctl restart")), "{calls:?}");
+    assert_eq!(output["commit"], json!("a".repeat(40)));
+    assert_eq!(output["reloaded"], json!(true));
+    assert!(output["restart_ms"].is_u64());
+}
+
+#[test]
+fn an_older_server_that_dies_on_sighup_falls_back_to_a_restart_at_once() {
+    struct FallBack {
+        restarted: std::cell::Cell<bool>,
+        calls: RefCell<Vec<String>>,
+    }
+    impl System for FallBack {
+        fn run(&self, _seconds: u32, argv: &[String], _stdin: Option<&[u8]>) -> Result<String, String> {
+            let call = argv[1..].join(" ");
+            self.calls.borrow_mut().push(call.clone());
+            if call.contains("symbolic-ref") {
+                return Ok("fix-login\n".to_owned());
+            }
+            if call.contains("rev-parse HEAD") {
+                return Ok(format!("{}\n", "a".repeat(40)));
+            }
+            if call.contains("systemctl restart") {
+                self.restarted.set(true);
+                return Ok(String::new());
+            }
+            if call.contains("systemctl is-active") {
+                return Err("inactive".to_owned());
+            }
+            if call.contains("/.well-known/t3/environment") {
+                if self.restarted.get() {
+                    return Ok(r#"{"label":"fix-login.orbit","environmentId":"e"}"#.to_owned());
+                }
+                return Err("Connection refused".to_owned());
+            }
+            Ok(String::new())
+        }
+
+        fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
+            Err("no blob".to_owned())
+        }
+
+        fn read(&self, _path: &str) -> Result<Vec<u8>, String> {
+            Err("no read".to_owned())
+        }
+    }
+    let fake = FallBack { restarted: std::cell::Cell::new(false), calls: RefCell::new(Vec::new()) };
+
+    let output = parsed(&names(&fake, &names_input()).expect("fallback"));
+
+    let calls = fake.calls.borrow();
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/systemctl kill -s HUP --kill-who=main t3.service")), "{calls:?}");
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/systemctl restart t3.service")), "{calls:?}");
+    assert_eq!(output["reloaded"], json!(false));
+}
+
+#[test]
+fn an_older_server_that_ignores_sighup_falls_back_to_a_restart_after_the_reload_window() {
+    struct IgnoreHup {
+        restarted: std::cell::Cell<bool>,
+        calls: RefCell<Vec<String>>,
+    }
+    impl System for IgnoreHup {
+        fn run(&self, _seconds: u32, argv: &[String], _stdin: Option<&[u8]>) -> Result<String, String> {
+            let call = argv[1..].join(" ");
+            self.calls.borrow_mut().push(call.clone());
+            if call.contains("symbolic-ref") {
+                return Ok("fix-login\n".to_owned());
+            }
+            if call.contains("rev-parse HEAD") {
+                return Ok(format!("{}\n", "a".repeat(40)));
+            }
+            if call.contains("systemctl restart") {
+                self.restarted.set(true);
+                return Ok(String::new());
+            }
+            if call.contains("/.well-known/t3/environment") {
+                let label = if self.restarted.get() { "fix-login.orbit" } else { "draft-ab12cd34.orbit" };
+                return Ok(format!(r#"{{"label":"{label}","environmentId":"e"}}"#));
+            }
+            Ok(String::new())
+        }
+
+        fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
+            Err("no blob".to_owned())
+        }
+
+        fn read(&self, _path: &str) -> Result<Vec<u8>, String> {
+            Err("no read".to_owned())
+        }
+    }
+    let fake = IgnoreHup { restarted: std::cell::Cell::new(false), calls: RefCell::new(Vec::new()) };
+
+    let output = parsed(&names(&fake, &names_input()).expect("fallback"));
+
+    let calls = fake.calls.borrow();
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/systemctl kill -s HUP --kill-who=main t3.service")), "{calls:?}");
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/systemctl restart t3.service")), "{calls:?}");
+    assert_eq!(output["reloaded"], json!(false));
+}
+
+#[test]
+fn a_copy_on_another_branch_than_its_reservation_refuses_and_names_nothing() {
+    let fake = Fake::new(&[("symbolic-ref", Ok(json!("feature/other\n")))]);
+
+    let failure = names(&fake, &names_input()).expect_err("refused");
+
+    assert_eq!(failure.code, "instance.container_checkout_failed");
+    assert!(!fake.calls().iter().any(|call| call.contains("hostname") || call.contains("systemctl")), "{:?}", fake.calls());
+}
+
+#[test]
+fn a_t3_that_keeps_its_old_label_fails_the_names_within_their_bound() {
+    let fake = Fake::new(&[
+        ("symbolic-ref", Ok(json!("fix-login\n"))),
+        ("rev-parse HEAD", Ok(json!("a".repeat(40)))),
+        ("/.well-known/t3/environment", Ok(json!(r#"{"label":"draft-ab12cd34.orbit"}"#))),
+    ]);
+
+    let failure = names(&fake, &names_input()).expect_err("old label");
+
+    assert_eq!(failure.code, "instance.names_failed");
+    assert!(fake.calls().iter().any(|call| call.ends_with("-- /usr/bin/systemctl restart t3.service")));
+    assert!(failure.detail.contains("it said draft-ab12cd34.orbit"), "{}", failure.detail);
+}
+
+#[test]
+fn the_names_refuse_a_name_a_host_or_a_branch_they_cannot_trust_before_any_change() {
+    for (pointer, value) in [("/hostname", json!("bad host")), ("/branch/to", json!("-x")), ("/t3_unit", json!("t3")), ("/label_seconds", json!(0)),
+        ("/instance_file", json!("a\u{0}b"))]
+    {
+        let mut input = names_input();
+        *input.pointer_mut(pointer).expect("field") = value;
+        let fake = Fake::new(&[]);
+        assert_eq!(names(&fake, &input).map_err(|failure| failure.code), Err("instance.names_input_invalid"), "{pointer}");
+        assert_eq!(fake.calls(), Vec::<String>::new());
+    }
+}

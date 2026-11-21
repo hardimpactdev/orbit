@@ -31,6 +31,7 @@ use Orbit\Extensions\Conn\Domain\ConnLaunchDispatchSource;
 use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
+use Orbit\Extensions\Conn\Domain\ConnReservations;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedNoticePublisher;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedRevocation;
@@ -63,6 +64,8 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         $this->contribute(DirectOperationContribution::class, ConnDirectOperations::class);
         $this->contribute(OperationSecretSource::class, ConnLaunchDispatchSource::class);
         $this->contribute(OperationRecordCoordinator::class, ConnLaunchSettlement::class);
+        // Reserved clones that nobody finalized expire and are destroyed (/reference/conn#reserve-a-clone).
+        $this->contribute(OperationRecordCoordinator::class, ConnReservations::class);
         $this->contribute(ActivityInputRedaction::class, ConnActivityInputRedaction::class);
         $this->contribute(InstanceLifecycleContribution::class, ConnInstanceLifecycle::class);
         $this->contribute(InstanceAgentActivity::class, ConnAgentActivity::class);

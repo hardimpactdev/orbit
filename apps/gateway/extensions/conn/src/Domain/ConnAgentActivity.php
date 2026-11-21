@@ -29,6 +29,10 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
         if (! $this->extensions->enabled('conn')) {
             return null;
         }
+        // A reserved clone stays awake while its user types the first message, though its server has no thread yet.
+        if (ConnReservations::holds($instance)) {
+            return AgentActivity::held('conn_reservation');
+        }
         $environment = ConnEnvironment::query()->where('instance_id', $instance->id)->first();
         if (! $environment instanceof ConnEnvironment) {
             return null;

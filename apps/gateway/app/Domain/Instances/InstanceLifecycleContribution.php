@@ -27,6 +27,9 @@ interface InstanceLifecycleContribution
     /** Whether the contribution holds the clone's T3 server, as `projectCreate` recorded it. A completion needs it (`instance:complete`). */
     public function registered(Instance $instance): bool;
 
+    /** Records the clone's new name after its finalize renamed it, inside that transaction: the T3 server's label is `$label`. */
+    public function projectRename(Instance $instance, string $label): void;
+
     /** Remove extension records after native destruction, inside the projection transaction. */
     public function projectDestroy(Instance $instance): void;
 

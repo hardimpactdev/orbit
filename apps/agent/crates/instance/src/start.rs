@@ -355,7 +355,7 @@ fn private_names(hosts: &str, names: &[PrivateName]) -> String {
 }
 
 /// `hosts` with its `127.0.1.1` line naming the hostname, its first label and the Incus name; every other line stays.
-fn hosts(current: &str, hostname: &str, container: &str) -> String {
+pub(crate) fn hosts(current: &str, hostname: &str, container: &str) -> String {
     let first = hostname.split('.').next().unwrap_or(hostname);
     let mut names: Vec<&str> = Vec::new();
     for name in [hostname, first, container] {

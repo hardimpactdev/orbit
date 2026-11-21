@@ -7,6 +7,7 @@ namespace App\Domain\Engine;
 use App\Domain\Firewall\FirewallEngineFlow;
 use App\Domain\Instances\InstanceCompleteEngineFlow;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
@@ -29,10 +30,11 @@ final readonly class EngineKinds
         'instance.create' => InstanceCreateEngineFlow::class,
         'instance.complete' => InstanceCompleteEngineFlow::class,
         'instance.fleet' => InstanceFleetEngineFlow::class,
+        'instance.finalize' => InstanceFinalizeEngineFlow::class,
     ];
 
     /** A kind that runs only on the engine, as part of another kind's flow: it is on whenever that kind is. */
-    private const array Follows = ['instance.fleet' => 'instance.create', 'instance.complete' => 'instance.create'];
+    private const array Follows = ['instance.fleet' => 'instance.create', 'instance.complete' => 'instance.create', 'instance.finalize' => 'instance.create'];
 
     public function __construct(private MachineBus $bus) {}
 
