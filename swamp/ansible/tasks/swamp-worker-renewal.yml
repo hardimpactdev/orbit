@@ -18,7 +18,8 @@
     - {src: swamp-token-renewal.yml, dest: token-renewal.yml}
     - {src: library/orbit_swamp_token_renewal.py, dest: library/orbit_swamp_token_renewal.py}
   loop_control: {label: "{{ item.dest }}"}
-# Every non-interactive swamp call on this Node runs through swamp-env, which sources the account's Swamp Club credential env.
+# The token renewal, the Gateway token entrypoint and the Load step run swamp through swamp-env, which sources the account's Swamp
+# Club credential env.
 - name: Install the Gateway token entrypoint and the Swamp credential env wrapper
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/files/{{ item.src }}"
