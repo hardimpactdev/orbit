@@ -50,7 +50,7 @@ pub enum Action {
     /// Its target is the copy.
     InstanceT3,
     /// Write a nested-fleet copy's Club key into its `/run` and tell the nested Gateway's serve (ADR 0271). Its target is
-    /// the copy.
+    /// the Node's part for that copy, so it runs beside checkout and T3.
     InstanceClubKey,
     /// Copy a nested-fleet copy's own inner volume from its default's volume seed (ADR 0271). Its target is the Node.
     InstanceCopyVolume,
@@ -137,6 +137,7 @@ impl Action {
             | Self::DnsPublishRecords
             | Self::InstanceClone
             | Self::InstanceFetchBranch
+            | Self::InstanceClubKey
             | Self::InstanceCopyVolume
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady => TargetKind::Node,
@@ -147,7 +148,6 @@ impl Action {
             | Self::InstanceStart
             | Self::InstanceCheckout
             | Self::InstanceT3
-            | Self::InstanceClubKey
             | Self::InstanceStop
             | Self::InstanceNames => {
                 TargetKind::Instance

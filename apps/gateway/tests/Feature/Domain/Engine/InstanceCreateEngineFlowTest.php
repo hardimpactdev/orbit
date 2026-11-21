@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
@@ -116,8 +117,8 @@ it('runs a nested-fleet task copy on the engine: its volume beside the clone, it
 
     expect(array_map(static fn (StepSpec $step): array => [$step->name, $step->action, $step->after], $steps))->toBe([
         ['clone', 'instance.clone', []],
-        ['fetch', 'instance.fetch_branch', []],
         ['copy_volume', 'instance.copy_volume', []],
+        ['fetch', 'instance.fetch_branch', []],
         ['prepare', 'instance.prepare', ['clone']],
         ['start', 'instance.start', ['prepare', 'copy_volume']],
         ['club_key', 'instance.club_key', ['start']],
@@ -129,8 +130,34 @@ it('runs a nested-fleet task copy on the engine: its volume beside the clone, it
         // The spare is made beside the create, one at a time per default, and never holds it up or fails it.
         ->and(array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'spare'))[0])
         ->toMatchObject(['target' => '3:spare-inner-2', 'optional' => true])
+        // Without a node_targets report from the executor, club_key keeps the copy target for backwards compatibility.
+        ->and(array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'club_key'))[0]->target)
+        ->toBe('6')
         // The signer signs each of them.
         ->and(array_diff(array_map(static fn (StepSpec $step): string => $step->action, $steps), ExecutorOrderSigner::Actions))->toBe([]);
+});
+
+it('gives club_key its own Node-part target once the Node executor reports instance.club_key in node_targets', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeTargetActions')->with(3)->once()->andReturn(['instance.clone', 'instance.club_key']);
+    app()->instance(MachineBus::class, $bus);
+
+    $steps = app(InstanceCreateEngineFlow::class)->steps(engineCloneOperation(nestedTaskCopy(...)));
+    $club = array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'club_key'))[0];
+    $checkout = array_values(array_filter($steps, static fn (StepSpec $step): bool => $step->name === 'checkout'))[0];
+
+    expect($club->target)->toBe('3:club-6')
+        ->and($checkout->target)->toBe('6');
+});
+
+it('reads a Node\'s reported actions once per Node when routing a multi-step Operation', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeTargetActions')->with(3)->once()->andReturn([]);
+    $bus->shouldReceive('nodeActions')->with(3)->once()->andReturn(ExecutorOrderSigner::Actions);
+    app()->instance(MachineBus::class, $bus);
+    config(['orbit.engine.kinds' => ['instance.create']]);
+
+    expect(app(EngineKinds::class)->routes(engineCloneOperation(nestedTaskCopy(...))))->toBeTrue();
 });
 
 it('copies the default\'s inner volume and guards the nested copy\'s exact config, devices and volumes', function (): void {

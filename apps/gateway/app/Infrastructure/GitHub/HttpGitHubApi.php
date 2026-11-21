@@ -88,7 +88,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read', 'pull_requests' => 'read']]));
     }
 
-    public function scopedRepositoryToken(GitHubAppCredentials $credentials, GitHubTokenGrant $grant): GitHubAccessToken
+    public function scopedRepositoryToken(GitHubAppCredentials $credentials, GitHubTokenGrant $grant, ?int $installationId = null): GitHubAccessToken
     {
         $repository = $grant->repository;
         $requestedPermissions = $grant->permissions;
@@ -97,13 +97,17 @@ final readonly class HttpGitHubApi implements GitHubApi
         $phase = 'installation';
         $httpStatus = null;
         try {
-            $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
-                ->get($this->repositoryPath($repository).'/installation');
-            $httpStatus = $installation->status();
-            $id = $installation->json('id');
-            $this->assertDependencyTokenResponse($installation);
-            if (! $installation->successful() || ! is_int($id) || $id <= 0 || microtime(true) >= $deadline) {
-                throw new \UnexpectedValueException;
+            if ($installationId !== null && $installationId > 0) {
+                $id = $installationId;
+            } else {
+                $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
+                    ->get($this->repositoryPath($repository).'/installation');
+                $httpStatus = $installation->status();
+                $id = $installation->json('id');
+                $this->assertDependencyTokenResponse($installation);
+                if (! $installation->successful() || ! is_int($id) || $id <= 0 || microtime(true) >= $deadline) {
+                    throw new \UnexpectedValueException;
+                }
             }
             $remaining = max(0.001, $deadline - microtime(true));
             $phase = 'mint';
