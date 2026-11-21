@@ -324,4 +324,3 @@ packages/php-sdk/composer.json
 packages/php-sdk/composer.lock
 swamp/config/gateway-workflow-grants.json
 swamp/tests/node_add_bootstrap_test.ts
-vet.json

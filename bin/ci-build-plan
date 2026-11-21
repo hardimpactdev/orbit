@@ -244,6 +244,13 @@ def check_table():
     return table, checks, roots
 
 
+def without_rootless_deletions(paths, deleted):
+    """A deleted file under no source root left nothing to build or check, so it needs no root of its own."""
+    _, _, roots = check_table()
+    return [path for path in paths
+            if path not in deleted or any(matches(path, rules) for _, rules, _ in roots)]
+
+
 def check_source_roots(paths):
     _, _, roots = check_table()
     for path in paths:
@@ -338,7 +345,8 @@ def changed_paths(ancestor, head):
 def changed_inputs(base, head):
     """Select head's changes; the checkout must contain both refs and their common ancestry."""
     ancestor = subprocess.check_output(['git', 'merge-base', base, head], text=True, timeout=60).strip()
-    return ancestor, changed_paths(ancestor, head)
+    deleted = set(listed_paths('diff', '--name-only', '--no-renames', '--diff-filter=D', '-z', ancestor, head))
+    return ancestor, without_rootless_deletions(changed_paths(ancestor, head), deleted)
 
 
 def main():
