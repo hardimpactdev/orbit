@@ -36,12 +36,6 @@ sequenceDiagram
     SW-->>GW: Verified commit and owner
   else Development or host checkout
   opt Development default in a container
-    Note over GW: Compare deployed commit<br/>GitHub compare · release
-    %%> What it does:
-    %%> - a deployment that a release admitted compares its commit with the commit the default last deployed (its seed), through GitHub's compare, before any write
-    %%> - the deployed commit descends from the target: the deployment ends at once as a succeeded no-op, `outcome` `already_newer`, with `kept_commit`, `target_commit` and `commit` the kept one; it writes no fact, definition, PHP selection or `.env`, holds nothing and starts no run
-    %%> - a failed compare or no deployed commit admits the deployment as below; its fetch keeps the newer checkout as the backstop
-    %%> - a deployment by hand or by the automatic policy does not compare
     Note over GW: Capture source facts<br/>project:update capture
     %%> What it does:
     %%> - reads the requested commit, or the default branch head once; freezes that SHA for the run
@@ -113,22 +107,31 @@ sequenceDiagram
   end
   opt Development default in a container
     Note over SW: Write the container intent<br/>ansible-input
+    SW->>N: Start the container<br/>Ansible · start · probe
+    %%> What it does:
+    %%> - one play runs the phases `start` and `probe`, with `checkout_probe`, before the seed hold and before any other change
+    %%> - `start`: starts a stopped default container and delivers what every start delivers; the Project's PHP link and settings wait for `probe`
+    %%> - `probe`, only reading the workspace, with the checkout's rules in their order: tracked changes refuse `deployment.checkout_dirty`; a workspace off the branch refuses `deployment.branch_diverged`; a pinned commit that HEAD reaches only through a merge's second parent refuses `deployment.commit_not_on_branch`; a pinned commit neither behind nor ahead of HEAD refuses `deployment.branch_diverged`
+    %%> - `probe`, a pinned commit on HEAD's first-parent chain behind HEAD: a deployment by hand refuses `deployment.commit_behind_checkout` with a detail that names both commits; one that a release or the automatic policy admitted (its admission's `origin`, intent `keep_newer`) prints `orbit-checkout=already_newer` and writes `outcome` `already_newer`, `kept_commit` (the real HEAD) and `target_commit`; every later step skips, so the run holds no seed, takes no seed, applies no PHP, pushes no bundle and restarts nothing
+    %%> - `probe`, any other case (HEAD itself, a newer commit, a commit the workspace lacks): applies the Project's PHP link and settings and the deployment goes on
+    %%> On failure:
+    %%> - a refusal or a failed start restores nothing: the workspace has not changed
     SW->>GW: Hold the seed<br/>seed-hold call
     %%> When:
     %%> - only the proof Project's default, whose seed a seed copy sends; its container intent has `seed_hold`; every other default skips the step
     %%> What it does:
-    %%> - asks the Gateway for the default's seed hold before any phase and waits while a seed copy holds it, for up to 1,800 s; the deployment then holds the seed to its end (docs/reference/development-containers.md#the-seed-hold, container/deploy-default.mmd)
+    %%> - after the start and the probe, for a deployment that goes on, asks the Gateway for the default's seed hold and waits while a seed copy holds it, for up to 1,800 s; the deployment then holds the seed to its end (docs/reference/development-containers.md#the-seed-hold, container/deploy-default.mmd)
     %%> On failure:
     %%> - the hold stays busy to the bound: `instance.seed_hold_timeout`; nothing changed and no seed is restored
-    SW->>N: Prepare the container<br/>Ansible · start · fetch
+    SW->>N: Prepare the container<br/>Ansible · fetch
     %%> What it does:
-    %%> - one play runs the phases `start` and `fetch`, in this order; a nested-fleet default runs `start`, `fetch`, `fleet_start` and `seed`
+    %%> - runs only for a deployment that goes on after the probe of "Start the container"
+    %%> - one play runs the phase `fetch`; a nested-fleet default runs `fleet_start`, `seed` and `fetch`, in this order
     %%> - `start`: starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd; a nested-fleet default's root disk grows to the intent's size first, online, and never shrinks; it waits only for FrankenPHP and the enabled Process units, which the container's boot starts
     %%> - `start` of a sleeping container (frozen or stopped by a sleep): resumes it through the power helper's `restore`, which reads the plan's pages back while frozen, consumes the plan and closes swap on each cgroup of `limits.json` that still exists, or discards the plan and boots a stopped one, then removes the asleep marker once the `start` part passed (the container runs and its units are active; no web probe), so the Route serves the app without a wake; the result records `power_state` `running`; the end of the deployment counts as activity, `deployed_recently`
     %%> - `start`, before the boot of a stopped container: the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
     %%> - `fleet_start`, nested-fleet default only: the run's one fleet check; compares the inner fleet with its rules, starts what is stopped and brings up the tunnel with the hub's resolver for the fleet's TLDs, and changes no key; refuses `instance.container_fleet_drift` for a conflicting build rule before the seed, but admits an absent build rule because refresh will install it with the fleet stopped
     %%> - `seed`, nested-fleet default only: retakes the seed of the default as it is, fleet included, so a failed refresh never restores a seed from before the fleet
-    %%> - `fetch`, then, only reading the workspace and the mirror: a checkout already past a pinned commit (the commit is an ancestor of HEAD, HEAD on the branch): a deployment by hand refuses `deployment.commit_behind_checkout` with a detail that names both commits, and nothing restores; one that a release or the automatic policy admitted (its admission's `origin`, intent `keep_newer`) prints `orbit-checkout=already_newer`, `fleet_start` and `seed` do not run, and every later step skips, so the run passes with `already_newer`, changes nothing and takes no seed
     %%> - `fetch`: fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle that holds only what the workspace lacks; a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
     %%> Why one step:
     %%> - none of these phases changes the workspace, so a failure in any of them restores nothing; they share their failure handling

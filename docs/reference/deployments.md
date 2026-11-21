@@ -96,21 +96,24 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
-A release's commit can be older than the commit that the default last deployed, as when a deployment by hand moved the default on first. The Gateway decides this at the release's admission, before it writes anything. It compares the release commit with the default's deployed commit, its seed, through GitHub's compare.
+A container default's checkout can already be at a newer commit of the branch than the pinned target, as when a deployment by hand moved the default on before a release's refresh ran. One read-only probe decides it, in the run's first step, "Start the container", right after the container's start. It runs before the seed hold, the fleet check, the seed, the Project's PHP, the bundle, any unit restart and any deploy-step record. The probe applies the checkout's rules in the checkout's order, to the workspace's real `HEAD`:
 
-When the deployed commit descends from the release commit, the deployment ends at once as a succeeded no-op, and no run starts. Its `result` holds `outcome: already_newer`, `already_newer: true`, `kept_commit`, `target_commit` and `commit`, the kept commit. It writes no source fact, Process definition, PHP selection or `.env` template, and it holds nothing. When GitHub cannot answer or the default has no deployed commit, the release's deployment runs, and its fetch decides as follows.
+1. Tracked changes refuse with `deployment.checkout_dirty`.
+2. A workspace off the default branch refuses with `deployment.branch_diverged`.
+3. A target that `HEAD` reaches only through a merge's second parent refuses with `deployment.commit_not_on_branch`.
+4. A target that is neither behind nor ahead of `HEAD` refuses with `deployment.branch_diverged`.
+5. A target on `HEAD`'s first-parent chain, behind `HEAD`, is older than the checkout.
 
-A container default's checkout can already be at a newer commit of the branch, so the target commit is an ancestor of its `HEAD`. The run's fetch decides this by reading the workspace and the Node's mirror, after the container's start and before any fleet check, seed or checkout. What the deployment does then depends on its origin, which its admission records: the release's refresh or the automatic policy. A caller's name is no origin.
+`HEAD` itself, a newer target and a target that the workspace lacks go on as a normal deployment. For an older target, the deployment's origin decides. Its admission records the origin: the release's refresh or the automatic policy. A caller's name is no origin.
 
-- A deployment that a release refresh or the automatic policy admitted succeeds as a no-op.
-- That no-op keeps the checkout and takes no new seed. No unit stops or restarts.
-- The fleet check, the checkout, the deploy steps and the Processes do not run.
-- Its `result` holds `already_newer: true`. Its `commit` is the newer commit that the checkout keeps.
-- The release that admitted it publishes the kept seed to the CI Nodes. It must be the seed of the kept commit ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
-- A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing; nothing is restored. Its detail says that the requested commit is older than the checkout `HEAD` and names both commits.
-- A branch that diverged from the target stays refused with `deployment.branch_diverged` at the checkout.
+- **Release or automatic.** A deployment that a release refresh or the automatic policy admitted succeeds as a no-op. It keeps the checkout and takes no new seed. Nothing restarts, and no seed hold, fleet check, PHP change, bundle, checkout, deploy step or Process runs. Its `result` holds `outcome: already_newer`, `kept_commit` (the real `HEAD` that the probe read), `target_commit` and `commit`, the kept commit. Its deployment-history row records the kept commit as well.
+- **By hand.** A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing; nothing is restored. Its detail says that the requested commit is older than the checkout `HEAD` and names both commits.
 
-A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)).
+A release publishes the seed of a no-op only when that seed is the seed of the `kept_commit`. Any other seed has moved, the release commit's seed included ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
+
+The admission still records the target commit's source facts, Process definitions, PHP selection and `.env` template before the run, as for every deployment, and it can refuse on them first, such as with `app-dev.php_version_unsupported`. A no-op does not undo them.
+
+A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin`, or, for a deployment admitted before the input named one, by the Operation ID its `default_refresh` row stored. An unknown executor result still holds the Instance itself.
 
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 

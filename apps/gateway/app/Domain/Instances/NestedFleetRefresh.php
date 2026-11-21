@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofSeeds;
@@ -111,9 +112,14 @@ final readonly class NestedFleetRefresh
      */
     private function advanceDefault(Instance $instance, string $commit, array $previous): array
     {
+        // The release's own attempts, by the admission's record (`origin`, or the Operation this row stored before the input named
+        // it), never by `triggered_by`, which any caller names.
+        $linked = is_int($previous['operation_id'] ?? null) ? $previous['operation_id'] : null;
         $attempts = Operation::query()->where('kind', OperationKinds::InstanceDeploy)
-            ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)
-            ->where('triggered_by', self::Trigger)->where('input->commit', $commit)->latest('id')->limit(self::Attempts)->get();
+            ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)->where('input->commit', $commit)
+            ->where(static fn ($query) => $query->where('input->origin', ContainerDeployOutcome::ReleaseOrigin)
+                ->when($linked !== null, static fn ($query) => $query->orWhere('id', $linked)))
+            ->latest('id')->limit(self::Attempts)->get();
         $last = $attempts->first();
         $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
         $receipt = $last === null ? [] : ['operation_id' => $last->id];
@@ -124,18 +130,22 @@ final readonly class NestedFleetRefresh
             return ['status' => 'pending', ...$receipt];
         }
         $runtime = $instance->runtime;
+        if ($last !== null && $last->status === OperationStatus::Succeeded && ($last->result['outcome'] ?? null) === ContainerDeployOutcome::AlreadyNewer) {
+            // The default's checkout was already past the release commit: the run kept it, and its seed, as they were. Only the seed of
+            // the checkout that the run read publishes; any other seed, the release commit's included, has moved.
+            $kept = $last->result['kept_commit'] ?? null;
+            if (is_string($kept) && $runtime?->seed_commit === $kept && $runtime->seed_taken_at !== null) {
+                return ['status' => 'current', 'already_newer' => true, 'commit' => $kept, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
+                    'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
+            }
+
+            return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
+        }
         if ($runtime?->seed_commit === $commit && $runtime->seed_taken_at !== null) {
             return ['status' => 'current', 'commit' => $commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
                 'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
         }
         if ($last !== null) {
-            // The default's checkout was already past the release commit: the deployment kept it and its seed as they were.
-            // Only the seed of the commit that the no-op named publishes; any other seed has moved.
-            if ($last->status === OperationStatus::Succeeded && ($last->result['already_newer'] ?? false) === true && $runtime?->seed_taken_at !== null
-                && is_string($last->result['commit'] ?? null) && $runtime->seed_commit === $last->result['commit']) {
-                return ['status' => 'current', 'already_newer' => true, 'commit' => $runtime->seed_commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
-                    'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
-            }
             if ($last->status === OperationStatus::Succeeded) {
                 return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
             }
@@ -152,6 +162,10 @@ final readonly class NestedFleetRefresh
         }
         try {
             $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit, release: true);
+            // An admission that returns an ended, unlocked Operation (a replay) is read on this pass, never waited for.
+            if ($operation->status->terminal() && $operation->lock_key === null && $operation->id !== $last?->id) {
+                return $this->advanceDefault($instance, $commit, [...$previous, 'operation_id' => $operation->id]);
+            }
 
             return [...$receipt, 'status' => 'pending', 'operation_id' => $operation->id];
         } catch (ResourceOperationException $refused) {

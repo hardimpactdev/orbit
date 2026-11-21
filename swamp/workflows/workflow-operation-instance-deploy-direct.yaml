@@ -1786,11 +1786,13 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
-  - name: Hold the seed
-    # Only the proof Project's default, whose seed a seed copy sends (its container intent has `seed_hold`): before any phase, the run
-    # asks the Gateway for the seed hold and waits while a seed copy holds it; the deployment then holds the seed to its end, so no
-    # retake deletes or renames a snapshot that a seed copy pushes (docs/reference/development-containers.md#the-seed-hold). The
-    # Gateway answers 423 after 5 s while it is busy; the call asks again within ProofSeeds::HoldWaitSeconds, which the budget counts.
+  - name: Start the container
+    # The container's one start (`start`) and the read of its workspace (`probe`), before any other change (docs/cli/instance/deploy.mmd).
+    # `checkout_probe` leaves the Project's PHP to `probe`. The probe applies the checkout's rules to the pinned commit: a dirty tree, a
+    # workspace off the branch, a commit off HEAD's first-parent chain or a diverged one refuses; a commit behind HEAD refuses
+    # deployment.commit_behind_checkout, or, for a release or automatic deployment, prints `orbit-checkout=already_newer`, and every later
+    # step skips, so the run holds no seed, takes no seed, pushes no bundle and restarts nothing
+    # (docs/reference/deployments.md#development-defaults). Neither changes the workspace, so a failure here restores nothing.
     labels:
       role: swamp
     writes: true
@@ -1798,7 +1800,40 @@ jobs:
     - step: Write the container intent
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("seed_hold" in inputs.intent.container) || steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("instance-deploy-container-start-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        # The bounds of its phases: start 120, probe 60.
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start,probe -e phases=start,probe -e checkout_probe=true "$ORBIT_ANSIBLE/instance-container.yml"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+          ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
+          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
+          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
+          # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
+          ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
+  - name: Hold the seed
+    # Only the proof Project's default, whose seed a seed copy sends (its container intent has `seed_hold`): after the start and the
+    # probe, and only for a deployment that goes on, the run asks the Gateway for the seed hold and waits while a seed copy holds it; the deployment then holds the seed to its end, so no
+    # retake deletes or renames a snapshot that a seed copy pushes (docs/reference/development-containers.md#the-seed-hold). The
+    # Gateway answers 423 after 5 s while it is busy; the call asks again within ProofSeeds::HoldWaitSeconds, which the budget counts.
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Start the container
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("seed_hold" in inputs.intent.container) || steps.exists(k, steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1810,13 +1845,10 @@ jobs:
           ORBIT_HOLD_URL: ${{ "https://gateway.orbit/api/v1/direct-operations/" + string(inputs.operation_id) + "/seed-hold" }}
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
   - name: Prepare the container
-    # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd): `start`, the one start
-    # of the container; `fetch`, which also decides, only reading, whether the checkout is already past the commit: then it refuses
-    # deployment.commit_behind_checkout, or for a release or automatic deployment prints `orbit-checkout=already_newer`, the later
-    # phases do not run and every later step skips, so the run changes nothing (docs/reference/deployments.md#development-defaults);
-    # then, for a nested-fleet default (only its intent has `fleet`), its one fleet check, `fleet_start`, and the seed of the default as
-    # it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd). None of them changes the workspace, so a failure in
-    # any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
+    # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd), after the start and the
+    # probe, for a deployment that goes on: for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
+    # default as it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd); then `fetch`. None of them changes the
+    # workspace, so a failure in any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
     # the room a refresh needs first (`fleet_room_check`) and refuses instance.container_fleet_no_room or instance.container_fleet_drift;
     # the failed phase names the code. Each phase writes the result file as it ends, as its own play did, so a play that is killed
     # later keeps what the earlier phases did.
@@ -1824,7 +1856,7 @@ jobs:
       role: swamp
     writes: true
     dependsOn:
-    - step: Write the container intent
+    - step: Start the container
       condition:
         type: succeeded
     - step: Hold the seed
@@ -1833,7 +1865,7 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1850,12 +1882,9 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "start,fetch,fleet_start,seed" : "start,fetch" }}'
-          # The sum of the bounds of the phases it runs: start 120, fetch 400, and for a nested fleet the check 400 and the seed 120.
-          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "1040" : "520" }}'
-          # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
-          # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
-          ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "fleet_start,seed,fetch" : "fetch" }}'
+          # The sum of the bounds of the phases it runs: fetch 400, and for a nested fleet the check 400 and the seed 120.
+          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "920" : "400" }}'
           ORBIT_GIT_CREDENTIAL: ${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}
   - name: Check out in the container
     labels:
@@ -1865,7 +1894,7 @@ jobs:
     - step: Prepare the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1891,7 +1920,7 @@ jobs:
     - step: Check out in the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1916,7 +1945,7 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1962,7 +1991,7 @@ jobs:
     - step: Read the steps to skip
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Start the container" in steps && "outputs" in steps["Start the container"] && steps["Start the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2003,7 +2032,7 @@ jobs:
     - step: Finish the container
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2020,7 +2049,7 @@ jobs:
     - step: Restore the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2041,7 +2070,7 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          # The restart is a start of the container, so it delivers the Club key as the `start` phase of "Prepare the container" does.
+          # The restart is a start of the container, so it delivers the Club key as "Start the container" does.
           ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
   - name: Start the restored fleet
     # The restored seed holds the inner fleet stopped; this starts it and waits for readiness, so the default is as it was before the
@@ -2053,7 +2082,7 @@ jobs:
     - step: Start on the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Hold the seed", "Prepare the container"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Hold the seed", "Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2067,6 +2096,9 @@ jobs:
     labels:
       role: swamp
     dependsOn:
+    - step: Start the container
+      condition:
+        type: always
     - step: Prepare the container
       condition:
         type: always

@@ -49,10 +49,13 @@ const merged = ["Prepare the container", "Finish the container"];
 
 Deno.test("a container deployment runs its phases in two steps, each one play of the phases that share their failure handling", () => {
     // One step per failure handling: no step of a single phase stays (docs/cli/instance/deploy.mmd).
-    for (const gone of ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror", "Install the Processes",
+    for (const gone of ["Check the inner fleet", "Keep the current seed", "Fetch into the mirror", "Install the Processes",
         "Refresh the inner fleet", "Take the seed snapshot", "Check the container"]) assert(!names.includes(gone), gone);
-    assertEquals(phases("Prepare the container", container), ["start", "fetch"]);
-    assertEquals(phases("Prepare the container", nested), ["start", "fetch", "fleet_start", "seed"]);
+    assertEquals(phases("Prepare the container", container), ["fetch"]);
+    assertEquals(phases("Prepare the container", nested), ["fleet_start", "seed", "fetch"]);
+    // The start and the probe run first, in a step of their own, which leaves the Project's PHP to the probe.
+    assertEquals(step("Start the container").task.inputs.run,
+        'timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start,probe -e phases=start,probe -e checkout_probe=true "$ORBIT_ANSIBLE/instance-container.yml"');
     assertEquals(phases("Finish the container", container), ["processes", "seed", "check"]);
     assertEquals(phases("Finish the container", nested), ["processes", "fleet_refresh", "seed", "check"]);
     // The same list selects the tags and orders the phases; only the fleet check reads the room a refresh needs.
@@ -60,15 +63,19 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
         'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"');
     assertEquals(step("Finish the container").task.inputs.run,
         'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" "$ORBIT_ANSIBLE/instance-container.yml"');
-    // Each bound is the sum of its phases' former bounds, so a normal default's phases hang no longer than before: start 120 + fetch
-    // 400; processes 120 + seed 120 + check 60; a nested fleet adds the check 400 and the first seed 120, and the refresh 4,200.
-    assertEquals([seconds("Prepare the container", container), seconds("Prepare the container", nested)], ["520", "1040"]);
+    // Each bound is the sum of its phases' bounds: fetch 400; processes 120 + seed 120 + check 60; a nested fleet adds the check 400
+    // and the first seed 120, and the refresh 4,200.
+    assertEquals([seconds("Prepare the container", container), seconds("Prepare the container", nested)], ["400", "920"]);
     assertEquals([seconds("Finish the container", container), seconds("Finish the container", nested)], ["300", "4500"]);
     // The order: start before the fetch, the checkout and the deploy steps between the two, and the check last.
-    assert(names.indexOf("Write the container intent") < names.indexOf("Prepare the container"));
+    assert(names.indexOf("Write the container intent") < names.indexOf("Start the container"));
+    assert(names.indexOf("Start the container") < names.indexOf("Hold the seed"));
+    assert(names.indexOf("Hold the seed") < names.indexOf("Prepare the container"));
     assert(names.indexOf("Prepare the container") < names.indexOf("Check out in the container"));
     assert(names.indexOf("Run dev deploy steps") < names.indexOf("Finish the container"));
-    assertEquals(step("Prepare the container").dependsOn, [{ step: "Write the container intent", condition: { type: "succeeded" } },
+    assertEquals(step("Start the container").dependsOn, [{ step: "Write the container intent", condition: { type: "succeeded" } }]);
+    assertEquals(step("Hold the seed").dependsOn, [{ step: "Start the container", condition: { type: "succeeded" } }]);
+    assertEquals(step("Prepare the container").dependsOn, [{ step: "Start the container", condition: { type: "succeeded" } },
         { step: "Hold the seed", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
     assertEquals(step("Check out in the container").dependsOn, [{ step: "Prepare the container", condition: { type: "succeeded" } }]);
     // With no dev deploy step the forEach is dropped from the graph; the last edge keeps the finish after the skip list then too.
@@ -79,7 +86,8 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     ]);
     // Each secret keeps its one vault expression: the Club key as the restart's start delivers it, the read token, the Processes' files.
     const prepare = step("Prepare the container").task.inputs.env!;
-    assertEquals(prepare.ORBIT_CLUB_KEY, step("Start on the old seed").task.inputs.env!.ORBIT_CLUB_KEY);
+    assertEquals(step("Start the container").task.inputs.env!.ORBIT_CLUB_KEY, step("Start on the old seed").task.inputs.env!.ORBIT_CLUB_KEY);
+    assertEquals(prepare.ORBIT_CLUB_KEY, undefined);
     assertEquals(prepare.ORBIT_GIT_CREDENTIAL, "${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}");
     assertEquals(step("Finish the container").task.inputs.env!.ORBIT_PROCESS_ENVIRONMENTS,
         '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.credential.key) }}');
@@ -109,9 +117,7 @@ Deno.test("the playbook runs the phases of a merged step in order, and the handl
     assertEquals(phase.map((task) => task.name),
         ["Name the running phase", "Run the phase's tasks", "Run the phase's handlers", "Count the phase as passed", "Write the result"]);
     // A fetch that found the checkout already past the commit skips the fleet check and the seed: they neither run nor count.
-    assertEquals(phase[0]["ansible.builtin.set_fact"], { container_phase_running: "{{ container_phase }}",
-        container_phase_runs: "{{ container_phase not in ['fleet_start', 'seed'] or not container_already_newer | default(false) | bool }}" });
-    for (const index of [1, 3, 4]) assertEquals(phase[index].when, "container_phase_runs | bool", String(phase[index].name));
+    assertEquals(phase[0]["ansible.builtin.set_fact"], { container_phase_running: "{{ container_phase }}" });
     assertEquals(phase[2]["ansible.builtin.meta"], "flush_handlers");
     assertEquals(phase[3]["ansible.builtin.set_fact"], { container_phases_passed: "{{ container_phases_passed + [container_phase] }}" });
     assert(!block.block.some((task) => task.name === "Write the result"), "one writer of the success result: the phase's own");
@@ -155,7 +161,7 @@ Deno.test("a nested-fleet deployment that failed from its checkout on restores t
 });
 
 Deno.test("the result step waits for every step that writes the result file", () => {
-    const writers = ["Prepare the container", "Check out in the container", "Run dev deploy steps", "Finish the container", ...restoreSteps];
+    const writers = ["Start the container", "Prepare the container", "Check out in the container", "Run dev deploy steps", "Finish the container", ...restoreSteps];
     assertEquals(step("Read the container result").dependsOn, writers.map((name) => ({ step: name, condition: { type: "always" } })));
 });
 
@@ -188,9 +194,9 @@ Deno.test("two deployments of different defaults on one Node never share a behav
     const render = (text: string, instance: number) =>
         String(cel.evaluate(expression(text), { inputs: { node_id: 9, intent: { instance_id: instance } }, self: { _index: 3 }, run: { id: "run-1" } }));
     const containerSteps = deploy.filter((s) => s.task.behaviorName?.includes("instance-deploy-container"));
-    assertEquals(containerSteps.length, 10);
+    assertEquals(containerSteps.length, 11);
     const scoped = containerSteps.filter((s) => render(s.task.behaviorName!, 2454) !== render(s.task.behaviorName!, 1898)).map((s) => s.name);
-    assertEquals(scoped, ["Prepare the container", "Check out in the container", "Run dev deploy steps", "Finish the container", ...restoreSteps]);
+    assertEquals(scoped, ["Start the container", "Prepare the container", "Check out in the container", "Run dev deploy steps", "Finish the container", ...restoreSteps]);
     assertEquals(render(step("Finish the container").task.behaviorName!, 2454), "instance-deploy-container-finish-9-2454");
     const ssh = step("Run dev deploy steps");
     assertEquals(render(ssh.task.behaviorName!, 2454), "instance-deploy-container-step-9-2454-3");
@@ -199,10 +205,10 @@ Deno.test("two deployments of different defaults on one Node never share a behav
     assertEquals(render(step("Read the container result").task.behaviorName!, 2454), "instance-deploy-container-result-9");
 });
 
-Deno.test("only the proof default holds its seed before any phase, and a busy hold at its bound changes nothing", () => {
+Deno.test("only the proof default holds its seed, after the start and the probe, and a busy hold at its bound changes nothing", () => {
     // docs/reference/development-containers.md#the-seed-hold: the intent's `seed_hold` names the default whose seed a seed copy sends.
     const proof = { ...nested, container: { seed_hold: true } };
-    const written = { "Write the container intent": "succeeded" };
+    const written = { "Write the container intent": "succeeded", "Start the container": "succeeded" };
     assertEquals(skips("Hold the seed", proof, written), false);
     for (const intent of [{ ...container, container: {} }, { ...nested, container: {} }, { deployment: { variant: "development" } }]) {
         assertEquals(skips("Hold the seed", intent, written), true);
@@ -214,33 +220,35 @@ Deno.test("only the proof default holds its seed before any phase, and a busy ho
     assert(hold.env!.ORBIT_HOLD_URL.includes('"/seed-hold"'));
     // The call asks again within ProofSeeds::HoldWaitSeconds (1,800 s), which the deployment's budget counts.
     assert(hold.run!.startsWith("timeout 1810 curl ") && hold.run!.includes("--retry-max-time 1800"));
-    // A hold that stayed busy fails the run before the container starts: no later step runs and no seed is restored.
+    // A hold that stayed busy fails the run before any change after the start: no later step runs and no seed is restored.
     const busy = { ...written, "Hold the seed": "failed" };
     for (const name of ["Prepare the container", "Check out in the container", "Finish the container", ...restoreSteps]) {
         assertEquals(skips(name, proof, busy), true, name);
     }
 });
 
-Deno.test("a fetch that finds the checkout already past the commit ends the run: the checkout and every later step skip, and nothing restores", () => {
-    // The fetch decides it before `fleet_start` and `seed`, so the play changed nothing in the container.
-    const newer = { "Prepare the container": { status: "succeeded", outputs: { stdout: "ok: [node] => {\n    \"msg\": \"orbit-checkout=already_newer\"\n}\n" } } };
-    const moved = { "Prepare the container": { status: "succeeded", outputs: { stdout: "ok: [node]\n" } } };
+Deno.test("a probe that finds the checkout already past the commit ends the run: no seed hold, fleet check, seed, bundle or restart, and nothing restores", () => {
+    // The probe runs right after the start, before any other change, and prints the line only for a release or automatic deployment.
+    const newer = { "Start the container": { status: "succeeded", outputs: { stdout: "ok: [node] => {\n    \"msg\": \"orbit-checkout=already_newer\"\n}\n" } } };
+    const moved = { "Start the container": { status: "succeeded", outputs: { stdout: "ok: [node]\n" } } };
     const evaluate = (name: string, intent: Record<string, unknown>, statuses: Record<string, unknown>) =>
         cel.evaluate(expression(step(name).guard!), {
             inputs: { intent }, self: { step: { inputs: { a: "b" }, name: "migrate" } },
-            steps: { "Write the container intent": { status: "succeeded" }, "Check out in the container": { status: "skipped" },
-                "Read the steps to skip": { status: "skipped" }, ...statuses },
+            steps: { "Write the container intent": { status: "succeeded" }, "Hold the seed": { status: "skipped" }, "Prepare the container": { status: "skipped" },
+                "Check out in the container": { status: "skipped" }, "Read the steps to skip": { status: "skipped" }, ...statuses },
         });
-    const withInputs = { ...nested, deployment: { variant: "container", steps: [{ inputs: { a: "b" } }] } };
-    for (const name of ["Check out in the container", "Read the steps to skip", "Run dev deploy steps", "Finish the container", ...restoreSteps]) {
-        assertEquals(evaluate(name, withInputs, newer), true, name);
+    const withInputs = { ...nested, container: { seed_hold: true }, deployment: { variant: "container", steps: [{ inputs: { a: "b" } }] } };
+    const later = ["Hold the seed", "Prepare the container", "Check out in the container", "Read the steps to skip", "Run dev deploy steps", "Finish the container"];
+    for (const name of [...later, ...restoreSteps]) assertEquals(evaluate(name, withInputs, newer), true, name);
+    for (const name of later) assertEquals(evaluate(name, withInputs, moved), false, name);
+    // A refusal in the probe (an older commit by hand, a dirty tree, a diverged branch) fails the start step: nothing restores or restarts.
+    // The deploy steps depend on a checkout that passed, which skipped.
+    const refused = { "Start the container": { status: "failed" } };
+    for (const name of [...later.filter((name) => name !== "Run dev deploy steps"), ...restoreSteps]) {
+        assertEquals(evaluate(name, withInputs, refused), true, name);
     }
-    for (const name of ["Check out in the container", "Read the steps to skip", "Run dev deploy steps", "Finish the container"]) {
-        assertEquals(evaluate(name, withInputs, moved), false, name);
-    }
-    // A deployment by hand of an older commit fails in the fetch: the Prepare step failed, so nothing restores or restarts.
-    const refused = { "Prepare the container": { status: "failed" } };
-    for (const name of restoreSteps) assertEquals(evaluate(name, withInputs, refused), true, name);
+    // The result file is read whatever happened, so the kept commit reaches the Gateway.
+    assert(step("Read the container result").dependsOn!.some((d) => d.step === "Start the container" && d.condition.type === "always"));
 });
 
 Deno.test("the restart after a restore keeps the failed phase's result and adds the receipt of the order it signed", () => {

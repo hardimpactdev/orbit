@@ -35,7 +35,8 @@ sequenceDiagram
   %%> - refuses admission when capture or source classification fails
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   %%> - the long steps (prepare, checkout, each dev deploy step, finish, the fleet restore) lock a Swamp behavior of this Instance on its Node, so deployments of two defaults on one Node never wait for each other; the Instance lock keeps two deployments of one default apart
-  SW->>N: Prepare the container<br/>Ansible · start · fetch
+  SW->>N: Start the container<br/>Ansible · start · probe
+  SW->>N: Prepare the container<br/>Ansible · fetch
   %%> What it does:
   %%> - one play runs the phases `start` and `fetch`, in this order; a nested-fleet default runs its fleet check and first seed between them: container/fleet-refresh.mmd
   %%> - `start`: starts a stopped (asleep) default container; the start waits only for the units the container's boot starts: FrankenPHP and the enabled Process units; a new or newly running Process is the work of `processes`
@@ -55,7 +56,7 @@ sequenceDiagram
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
-  %%> - a checkout already past the commit never reaches it: the `fetch` of Prepare decides that case first (docs/cli/instance/deploy.mmd)
+  %%> - a checkout already past the commit never reaches it: the `probe` of "Start the container" decides that case first (docs/cli/instance/deploy.mmd)
   %%> - Orbit's Git calls, the repack, the `.env` exclude line and the deploy steps' record run as `agent` (ADR 0268)
   %%> - after the checkout, the default's untracked files that Git does not ignore go, as the workspace's owner with the task check's Git settings, in a task copy's clean rounds; `.env` is excluded first and stays, ignored and tracked files stay; a file it cannot remove does not fail the deployment, but a clean that fails or runs past 60 s does; the result's `workspace_cleaned` names what went, names only
   %%> - after the checkout, a bounded repack in the foreground (`git repack -d --geometric=2`, 30 s): each fetch adds a pack and Orbit's Git calls start no automatic maintenance; it first removes the temporary files of an earlier repack that are an hour old; a repack that fails or times out prints one `orbit-workspace-repack=` line and never fails the deployment

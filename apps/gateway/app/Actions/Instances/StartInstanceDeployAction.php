@@ -14,7 +14,6 @@ use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
-use App\Domain\Instances\Deployment\ReleaseDeployBehind;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
@@ -69,10 +68,6 @@ final readonly class StartInstanceDeployAction
             }
             $this->intent->assertDevelopment($instance);
             InstanceMigration::assertSettled($instance);
-            // A release's commit that the default already moved past ends here, before any write and with no run.
-            if ($release && $commit !== null && ($kept = app(ReleaseDeployBehind::class)->keptCommit($instance, $commit)) !== null) {
-                return $this->keepNewer($instance, $triggeredBy, $requestId, $commit, $kept, $callerNodeId);
-            }
             $configuration = $this->sourceConfiguration($instance);
             $project = $instance->project;
             $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
@@ -161,21 +156,6 @@ final readonly class StartInstanceDeployAction
 
             return $operation;
         });
-    }
-
-    /**
-     * The release's deployment of a commit behind the one the default last deployed: a succeeded no-op that keeps the checkout, its
-     * seed, Processes and PHP selection, and holds nothing. Its result names the kept commit as `commit`, which the release publishes.
-     */
-    private function keepNewer(Instance $instance, string $triggeredBy, ?string $requestId, string $target, string $kept, ?int $callerNodeId): Operation
-    {
-        $input = ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'commit' => $target, 'origin' => ContainerDeployOutcome::ReleaseOrigin,
-            ...($callerNodeId === null ? [] : ['caller_node_id' => $callerNodeId])];
-
-        return $this->operations->record(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, $input,
-            ['outcome' => 'already_newer', 'already_newer' => true, 'commit' => $kept, 'kept_commit' => $kept, 'target_commit' => $target,
-                'message' => 'The Instance is already at a newer commit; the deployment kept it.'],
-            $triggeredBy, $requestId, OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
     }
 
     /** Public pins validate the recorded Project identity before admitting the existing operation. */

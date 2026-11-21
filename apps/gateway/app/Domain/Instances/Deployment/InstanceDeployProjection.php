@@ -126,7 +126,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             }
             $alreadyNewer = $status === 'succeeded' && ($payload['already_newer'] ?? false) === true;
             if ($alreadyNewer) {
-                $facts['already_newer'] = true;
+                $facts = [...$facts, 'already_newer' => true, 'outcome' => ContainerDeployOutcome::AlreadyNewer,
+                    'kept_commit' => $payload['kept_commit'], 'target_commit' => $payload['target_commit'],
+                    'message' => 'The Instance is already at a newer commit; the deployment kept it.'];
             }
             if (isset($payload['workspace_cleaned'])) {
                 $facts['workspace_cleaned'] = $payload['workspace_cleaned'];

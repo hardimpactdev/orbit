@@ -3139,7 +3139,7 @@ The Operation's result says what the start did, never what the Gateway held at a
 
 Right after a boot, the inner Incus can wait behind `network-online.target`, and its client then blocks. So after the write the script touches the inner Incus only when `incus.service` is active and `incus list` answers within 5 seconds; each restart command has 10 seconds. Otherwise it skips the restart and says `changed_serve_pending`. The step never waits on the inner Incus.
 
-The delivery is part of the `start` phase, the first phase of a deployment's step `Prepare the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
+The delivery is part of the `start` phase, the first phase of a deployment's step `Start the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
 
 In Ansible the value is the module stdin of a pipelined task with `no_log`. Without pipelining, or with remote files kept, Ansible writes the module with its arguments to `~/.ansible/tmp` on the Node. So the task forces pipelining and refuses with `instance.nested_club_key_unsafe_transfer` before it reads the value when pipelining is off. A clone gets the value on the SSH stdin of `instance_clone.py club-key`. Both pass it on as the stdin of `incus exec ... sh -c`.
 
@@ -3179,21 +3179,22 @@ After each Gateway release, Orbit deploys each nested-fleet default to the relea
 
 When the run records the new seed of the proof Project's default, the Gateway copies that seed to each other Node that offers proof places ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
 
-When the release commit is behind the commit the default last deployed, its deployment ends at admission as a succeeded no-op with `already_newer`, and no run starts ([Deployments](/reference/deployments#development-defaults)). When the Gateway cannot tell, the deployment runs, and its fetch keeps a checkout already past the release commit as the same no-op before the fleet check and the seed, so neither runs.
+When the default's checkout is already past the release commit, the run's probe ends the deployment right after the start as a succeeded no-op, `already_newer`, before the seed hold, the fleet check and the seed, so none of them runs ([Deployments](/reference/deployments#development-defaults)). The no-op names the real `HEAD` it kept as `kept_commit`.
 
-When the default's seed is the seed of the commit that the no-op names, the release publishes it as its seed and copies it to the Nodes behind it. Any other seed fails the release's seed publication with `instance.release_seed_moved`: a seed of another commit, one that changed after the refresh read it, or a seed off the release commit without `already_newer`.
+When the default's seed is the seed of the `kept_commit`, the release publishes it as its seed and copies it to the Nodes behind it. Any other seed fails the release's seed publication with `instance.release_seed_moved`: a seed of another commit, the release commit's included, or one that changed after the refresh read it. The refresh counts only its own deployments, which their admission's `origin` names, as its attempts and its failures.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
-The container phases of a deployment run in two Ansible steps, each one play that runs its phases in order ([deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/deploy.mmd)). The phases of one step share their failure handling:
+The container phases of a deployment run in three Ansible steps, each one play that runs its phases in order ([deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/deploy.mmd)). The phases of one step share their failure handling:
 
 | Step | Phases of a normal default | Phases of a nested-fleet default | A failure |
 | --- | --- | --- | --- |
-| Prepare the container | `start`, `fetch` | `start`, `fetch`, `fleet_start`, `seed` | restores nothing: the workspace has not changed. A checkout already past the commit ends the run in `fetch` ([Deployments](/reference/deployments#development-defaults)) |
+| Start the container | `start`, `probe` | `start`, `probe` | restores nothing: the workspace has not changed. A checkout already past the commit ends the run here ([Deployments](/reference/deployments#development-defaults)) |
+| Prepare the container | `fetch` | `fleet_start`, `seed`, `fetch` | restores nothing: the workspace has not changed |
 | Check out in the container | `checkout` | `checkout` | restores the old seed of a nested-fleet default |
 | Finish the container | `processes`, `seed`, `check` | `processes`, `fleet_refresh`, `seed`, `check` | restores the old seed of a nested-fleet default |
 
-Each Ansible step costs about 2.5 s to start its play (Python, the address play and SSH), and each Swamp step about 0.8 s more. The two merged steps save six of the nine play starts of a nested-fleet refresh, about 20 s, and three of the six of a normal deployment, about 10 s. The handlers a phase notifies run before the next phase starts, as with separate plays.
+Each Ansible step costs about 2.5 s to start its play (Python, the address play and SSH), and each Swamp step about 0.8 s more. The merged steps save five of the nine play starts of a nested-fleet refresh, about 17 s, and two of the six of a normal deployment, about 7 s. The start and the probe share a step of their own, so a no-op ends after one play. The handlers a phase notifies run before the next phase starts, as with separate plays.
 
 Each phase writes the result file as it ends, as its own play did, with the phases that passed so far as `phases_passed`. So a step killed in a later phase, by its timeout or a lost Node, keeps what the passed phases wrote, such as the Club key's word. A failed phase stops the step. The result file names it as `failed_phase`, and the code is the phase's own refusal or `instance.container_<phase>_failed`. The container counts as started once `start` is among the passed phases; otherwise its power state stays as it was.
 
@@ -3582,7 +3583,8 @@ Each step has a bound, the sum of the bounds of the phases it runs. So a normal 
 
 | Step | Bound | Phases |
 | --- | --- | --- |
-| Prepare the container | 520 s for a normal default, 1,040 s for a nested-fleet default | `start` 120 s, the check (the run's one fleet start) 400 s, the first seed 120 s, `fetch` 400 s |
+| Start the container | 180 s | `start` 120 s, `probe` 60 s |
+| Prepare the container | 400 s for a normal default, 920 s for a nested-fleet default | the check (the run's one fleet start) 400 s, the first seed 120 s, `fetch` 400 s |
 | Finish the container | 300 s for a normal default, 4,500 s for a nested-fleet default | `processes` 120 s, the refresh 4,200 s (with the start of what it stopped for `base`), the seed 120 s, `check` 60 s |
 | Restore the old seed | 150 s | `fleet_restore` |
 | Start on the old seed | 120 s | `start` |
@@ -3747,7 +3749,7 @@ The Gateway admits the start only for an active development clone whose runtime 
 
 The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
 
-The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and `limits.memory.swap` equal to the memory, and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Start the container` does. It keeps `boot.autostart=false` and `limits.memory.swap` equal to the memory, and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
 
 The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
 

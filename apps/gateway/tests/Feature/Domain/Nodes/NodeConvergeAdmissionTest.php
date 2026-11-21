@@ -1157,3 +1157,19 @@ it('still holds the Node for an ended deploy the release did not admit while its
     'cancellation unconfirmed' => [['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'lock_key' => null,
         'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()]]],
 ]);
+
+it('drops a deploy that a release linked before the input named its origin from the Node wait, and keeps its Instance fence', function (): void {
+    prepareReleaseTarget();
+    // Admitted before the upgrade: no `origin`, only the previous release's `default_refresh` row names it. It ended under the fence.
+    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
+    $deploy->update(['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(), 'state' => [ExecutorFence::Issued => true]]);
+    GatewayRelease::query()->create(['sha' => str_repeat('b', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
+        'phases' => ['default_refresh' => ['status' => 'pending', 'defaults' => [99 => ['status' => 'pending', 'operation_id' => $deploy->id]]]]]);
+    $release = releaseWithRow(['status' => 'pending']);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for')
+        ->and($deploy->refresh()->lock_key)->toBe('instance:99')
+        ->and(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'test', null, lockKey: 'instance:99'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+});
