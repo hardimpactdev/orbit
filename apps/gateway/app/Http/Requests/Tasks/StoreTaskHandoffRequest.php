@@ -21,7 +21,8 @@ final class StoreTaskHandoffRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'verdict' => ['required', 'string', 'in:approve,changes'],
+            // Each rule after a type rule stops at its failure: `in` and the enum would cast an object or a list to a string.
+            'verdict' => ['bail', 'required', 'string', 'in:approve,changes'],
             // A JSON list of categories, one for each blocking finding: an integer count is refused. `approve` has none; `changes` has
             // at least one.
             'findings' => ['bail', 'present', 'array', 'list', 'max:100', function (string $attribute, mixed $value, Closure $fail): void {
@@ -32,7 +33,7 @@ final class StoreTaskHandoffRequest extends FormRequest
                     $fail('Changes need at least one blocking finding.');
                 }
             }],
-            'findings.*' => ['required', 'string', Rule::enum(TaskFindingCategory::class)],
+            'findings.*' => ['bail', 'required', 'string', Rule::enum(TaskFindingCategory::class)],
         ];
     }
 
