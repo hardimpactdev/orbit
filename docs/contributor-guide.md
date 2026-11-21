@@ -118,7 +118,7 @@ To run Linux-only Gateway tests from macOS, point `ORBIT_LINUX_TEST_HOST` (optio
 
 ## Dependencies
 
-Dependabot opens one daily multi-ecosystem update PR across Composer, Bun, and full-SHA GitHub Actions pins. Keep Vite+ and its `vite` / `vitest` overrides aligned across `apps/web/package.json`. Run `composer audit:dependencies` (`bin/dependency-audit`) locally; `.github/workflows/dependency-audit.yml` runs nightly.
+Dependabot opens one daily multi-ecosystem update PR across Composer, Bun, and GitHub Actions pinned by full SHA. Keep Vite+ and its `vite` / `vitest` overrides aligned across `apps/web/package.json`. Run `composer audit:dependencies` (`bin/dependency-audit`) locally; `.github/workflows/dependency-audit.yml` runs nightly.
 
 ## Review and merge
 
