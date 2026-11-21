@@ -57,7 +57,7 @@ Until the Gateway pins a delivery with that mode, Nodes still run the executor f
 
 Agent 0.19.0 adds the `instance` family for app-dev Nodes: `instance.clone`, `instance.prepare`, `instance.start` and `instance.fetch_branch`. Agent 0.20.0 adds `instance.checkout` and `instance.t3`. Agent 0.21.0 lets `instance.clone` apply the copy's ufw route rules and `instance.prepare` take its file list as one blob, which the Gateway's engine create needs. Agent 0.22.0 lets `instance.start` run the copy's app-account swap, so a copy of an older default works. Agent 0.23.0 adds `instance.club_key`, `instance.copy_volume`, `instance.spare_volume` and `instance.stop`, and runs the rest of a task copy and a nested-fleet copy: the checkout's clean, the nested start guard, settings merged object by object and the seed's manifest. Its Node actions may name a part of the Node (`<node>:<part>`), so they run side by side.
 
-Agent 0.24.0 adds `instance.fleet_ready`, so a nested-fleet clone's create waits for its inner fleet.
+Agent 0.24.0 adds `instance.fleet_ready`, so a nested-fleet clone's create waits for its inner fleet. Agent 0.25.0 asks again every half second while the Gateway or Reverb is not up yet, so a nested fleet's agents join right after its Reverb starts.
 
 ## What it observes
 
@@ -510,6 +510,8 @@ The agent bounds each step, so a peer that stops answering never holds it.
 
 After a reset, server close, ping timeout, or failed request, the agent reconnects with exponential backoff capped at 30 seconds. During a long Reverb outage each agent therefore asks for discovery once every 15 to 30 seconds. Jitter spreads retries across each delay window, including at the cap. A session that stayed joined for 60 seconds starts the backoff again in the initial 1–2 second window. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
+An agent that has never joined asks again every 0.5 seconds, ±20%, while nothing answered yet: the Gateway or Reverb refuses the connection, has no route, or its proxy answers 502 or 503. A 504 means a slow upstream and takes the backoff. A Node that boots with its Gateway, as a nested fleet does, so joins about half a second after Reverb starts. The fast retries end 60 seconds after the agent started, or after 120 of them; any other failure takes the backoff at once.
+
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
 
 ## Agent secret
@@ -570,7 +572,7 @@ A new member makes every agent on the channel send a complete snapshot. So when 
 
 Every 5 seconds, the subscriber checks the Reverb connection, and every 30 seconds the Node list. It joins new Nodes, leaves removed ones, and reconnects when the Reverb key changes. During a `websocket` move, it keeps one link to each Reverb server that holds clients and uses the link with the newest agent event. Without an active `websocket` role, it checks again every 60 seconds.
 
-When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
+When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. Before its first connection it asks again every 0.5 seconds, ±20%, while Reverb is not up yet, as the agent does, for at most 60 seconds or 120 tries. Within those 60 seconds a first connect has 2 seconds instead of 10. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
 
 Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. The release switch also restarts the running subscriber.
 

@@ -127,7 +127,8 @@ final class StreamWebSocketClient implements WebSocketClient
         }
 
         if (! is_resource($stream)) {
-            throw new WebSocketException("Could not connect to Reverb: {$error} ({$errno}).");
+            // ECONNREFUSED, EHOSTUNREACH and ENETUNREACH: Reverb or its route is not up yet.
+            throw new WebSocketException("Could not connect to Reverb: {$error} ({$errno}).", notUp: in_array($errno, [111, 113, 101], true));
         }
 
         stream_set_timeout($stream, (int) max(1.0, $timeoutSeconds));
@@ -321,7 +322,7 @@ final class StreamWebSocketClient implements WebSocketClient
         if (! str_starts_with($response, 'HTTP/1.1 101')) {
             $status = preg_match('/\AHTTP\/1\.[01] ([0-9]{3})\b/', $response, $matches) === 1 ? (int) $matches[1] : 0;
             $retryAfter = preg_match('/^Retry-After:\s*([0-9]{1,5})\s*$/mi', $response, $matches) === 1 ? (int) $matches[1] : null;
-            throw new WebSocketException('Reverb refused the WebSocket handshake.', $status, retryAfterSeconds: $retryAfter);
+            throw new WebSocketException('Reverb refused the WebSocket handshake.', $status, retryAfterSeconds: $retryAfter, notUp: $status === 502 || $status === 503);
         }
 
         $expected = base64_encode(sha1($key.self::HANDSHAKE_GUID, binary: true));
