@@ -135,7 +135,10 @@ it('deploys a container default as the container variant, whose commands need no
     $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
     $operation = new Operation(['input' => ['deployment' => $snapshot]]);
 
-    expect(array_diff_key($snapshot['container'], ['seed_files' => true]))->toBe(app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()))
+    $intent = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail());
+    expect(array_diff_key($snapshot['container'], ['seed_files' => true, 'services_digest' => true]))->toBe($intent)
+        // The seed records the digest of the services part it holds; a clone with the same digest skips that part.
+        ->and($snapshot['container']['services_digest'])->toBe(InstanceContainer::servicesDigest($intent))
         ->and($snapshot['variant'])->toBe('container')
         ->and($snapshot['needs_vp'])->toBeFalse()
         ->and($snapshot['steps'])->toBe([['name' => 'npm-build', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300,

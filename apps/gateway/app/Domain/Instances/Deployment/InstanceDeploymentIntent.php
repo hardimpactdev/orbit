@@ -24,6 +24,7 @@ use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -72,8 +73,7 @@ final readonly class InstanceDeploymentIntent
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 // A default holds the files every clone of it needs before its seed (InstanceContainer::seedFiles).
-                'container' => $runtime !== null ? [...app(InstanceContainer::class)->intent($instance, $runtime),
-                    ...($instance->name === DefaultInstanceName::Name ? ['seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime)] : [])] : null,
+                'container' => $runtime !== null ? self::container($instance, $runtime) : null,
                 ...($runtime === null ? [] : ExecutorPowerIntent::lifecycle($instance, $runtime)),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];
@@ -230,5 +230,22 @@ final readonly class InstanceDeploymentIntent
         $created = $operation->created_at ?? throw new InvalidArgumentException('An admitted Operation needs a creation time.');
 
         return $created->toImmutable()->utc()->format('YmdHis').'-op-'.sprintf('%020d', $operation->id);
+    }
+
+    /**
+     * The container as the deployment runs it. A default also holds the files every clone of it needs before its seed
+     * (InstanceContainer::seedFiles), and its seed records the digest of the services part it holds (InstanceContainer::servicesDigest).
+     *
+     * @return array<string, mixed>
+     */
+    private static function container(Instance $instance, InstanceRuntime $runtime): array
+    {
+        $container = app(InstanceContainer::class)->intent($instance, $runtime);
+        if ($instance->name !== DefaultInstanceName::Name) {
+            return $container;
+        }
+
+        return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime),
+            'services_digest' => InstanceContainer::servicesDigest($container)];
     }
 }

@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use LogicException;
@@ -19,6 +20,21 @@ use stdClass;
  */
 final readonly class NativeInstanceCompleteInput
 {
+    /**
+     * Whether the completion starts the clone's fleet. A clone of a nested-fleet default starts the fleet it copied; any other clone has
+     * none. One whose fleet starts in the background skips it while that wait runs or proved the fleet ready (InstanceFleetOperation); a
+     * retry after a failed wait starts the fleet itself.
+     */
+    public static function startsFleet(Operation $completion, Instance $instance, InstanceRuntime $runtime): bool
+    {
+        $create = Operation::query()->find(ValidatedData::integer($completion->input['create_operation_id'] ?? null));
+        if (($create?->result['fleet_start'] ?? null) === 'background' && ($runtime->fleet_ready_at !== null || InstanceFleetOperation::open($instance->id))) {
+            return false;
+        }
+
+        return NestedFleetIntent::cloneKeepsFleet($instance, $runtime);
+    }
+
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {
@@ -34,13 +50,8 @@ final readonly class NativeInstanceCompleteInput
         if (! $processes instanceof stdClass) {
             throw new LogicException('The Process files must be one JSON object.');
         }
-        // A clone of a nested-fleet default starts the fleet it copied; any other clone's intent has no `fleet` key. One whose fleet starts
-        // in the background skips it while that wait runs or proved the fleet ready (InstanceFleetOperation); a retry after a failed wait
-        // starts the fleet itself.
-        $create = Operation::query()->find(ValidatedData::integer($input['create_operation_id']));
         $runtime = $instance->runtime()->firstOrFail();
-        $fleet = ($create?->result['fleet_start'] ?? null) === 'background' && ($runtime->fleet_ready_at !== null || InstanceFleetOperation::open($instance->id))
-            ? null : app(NestedFleetIntent::class)->forClone($instance, $runtime);
+        $fleet = self::startsFleet($operation, $instance, $runtime) ? app(NestedFleetIntent::class)->forClone($instance, $runtime) : null;
         // Its end reads this: a completion that started the fleet itself proves it ready (InstanceCompleteProjection).
         app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'fleet_start' => $fleet !== null]]);
 
