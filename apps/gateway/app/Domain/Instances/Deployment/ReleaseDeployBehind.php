@@ -26,10 +26,11 @@ final readonly class ReleaseDeployBehind
             return null;
         }
         try {
-            [$repository, $credentials, $installation] = $this->source->access($instance->project) ?? [null, null, null];
-            if ($repository === null) {
+            $access = $this->source->access($instance->project);
+            if ($access === null) {
                 return null;
             }
+            [$repository, $credentials, $installation] = $access;
             $token = $this->github->repositoryReadToken($credentials, $installation, $repository);
 
             return $this->github->compareCommits($token, $repository, $target, $recorded)->headDescendsFromBase() ? $recorded : null;
