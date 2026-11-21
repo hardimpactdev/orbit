@@ -33,6 +33,7 @@ class FakeServe:
                            for name, at in expires['enrollment'].items()}
         self.started = {}
         self.calls = []
+        self.argvs = []
         self.crash_on = None
         self.lose_reply = None
         self.mint_principal = None
@@ -43,6 +44,7 @@ class FakeServe:
         if argv[0] == 'systemctl':
             slot = argv[2].split('@')[1].split('.')[0]
             return 0, '%d\n' % self.started.get(slot, 0), ''
+        self.argvs.append(argv)
         args = argv[argv.index('/usr/local/bin/swamp') + 1:argv.index('--server')]
         call = ' '.join(args)
         self.calls.append(call)
@@ -116,7 +118,7 @@ class TokenRenewalTest(unittest.TestCase):
             raise Failed(result['msg'])
 
         module = SimpleNamespace(params={
-            'swamp': '/usr/local/bin/swamp', 'server': 'ws://127.0.0.1:9418', 'user': 'orbit',
+            'swamp': '/usr/local/bin/swamp', 'swamp_env': '/usr/local/lib/orbit-swamp/swamp-env', 'server': 'ws://127.0.0.1:9418', 'user': 'orbit',
             'home': str(self.folder / 'home'), 'slots': list(slots),
             'credentials': str(self.folder / 'credentials'), 'state_file': str(self.folder / 'state/state.json'),
             'renew_days': 10, 'grace_hours': 24, 'duration': '30d', 'now': None,
@@ -133,6 +135,15 @@ class TokenRenewalTest(unittest.TestCase):
         """systemd's monotonic start of a slot's worker process, relative to when server.token last changed."""
         changed = time.monotonic() - (time.time() - os.stat(self.folder / 'credentials' / slot / 'server.token').st_mtime)
         self.serve.started[slot] = int((changed + seconds_after_switch) * 1_000_000)
+
+    def test_every_swamp_call_sources_the_credential_env_through_swamp_env_as_the_serve_account(self):
+        self.run_at(0)
+        self.assertTrue(self.serve.argvs)
+        for argv in self.serve.argvs:
+            self.assertEqual(argv[:4], ['runuser', '-u', 'orbit', '--'])
+            at = argv.index('/usr/local/bin/swamp')
+            self.assertEqual(argv[at - 1], '/usr/local/lib/orbit-swamp/swamp-env')
+            self.assertIn('HOME=' + str(self.folder / 'home'), argv[:at])
 
     def test_nothing_is_due_so_nothing_changes(self):
         for row in [*self.serve.access.values(), *self.serve.enrollment.values()]:

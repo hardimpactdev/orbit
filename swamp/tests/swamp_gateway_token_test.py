@@ -13,10 +13,16 @@ TODAY = datetime.datetime.now(datetime.UTC).strftime('%Y%m%d')
 LATER = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 SOON = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
+SWAMP_ENV = ROOT / 'ansible/files/swamp-env.sh'
+CLUB_CANARY = 'CLUB_ENV_CANARY_7731'
+# Like swamp on the Swamp Node, the fake refuses with auth_gate_blocked unless the Swamp Club credential env was sourced.
 # The fake keeps its tokens in a JSON file and answers as swamp 0.x does: `access token list` is {"tokens":[...]}, and
 # `worker token list` is a plain array.
 FAKE = r'''#!/usr/bin/env python3
-import json, sys
+import json, os, sys
+if os.environ.get('SWAMP_API_KEY') != 'fake-club-key':
+    print('{"error":{"code":"auth_gate_blocked"}}', file=sys.stderr)
+    sys.exit(1)
 state_path = sys.argv[0] + '.json'
 state = json.load(open(state_path))
 args = sys.argv[1:sys.argv.index('--server')]
@@ -46,6 +52,8 @@ class GatewayTokenEntrypointTest(unittest.TestCase):
         self.folder = Path(tempfile.mkdtemp())
         (self.folder / 'home/.config/swamp').mkdir(parents=True)
         (self.folder / 'home/.config/swamp/serve-driver-token').write_text('serve-driver-20261121.fake-secret-d\n')
+        (self.folder / 'home/.config/swamp/env.sh').write_text(
+            'echo %s\necho %s >&2\nexport SWAMP_API_KEY=fake-club-key\n' % (CLUB_CANARY, CLUB_CANARY))
         for slot in 'abc':
             (self.folder / 'credentials' / slot).mkdir(parents=True)
             (self.folder / 'credentials' / slot / 'server.token').write_text('swamp-role-209-%s-access.fake-secret-s\n' % slot)
@@ -72,7 +80,8 @@ class GatewayTokenEntrypointTest(unittest.TestCase):
     def entrypoint(self, *args):
         env = {**os.environ, 'ORBIT_SWAMP_TOKEN_USER': subprocess.check_output(['id', '-un'], text=True).strip(),
                'ORBIT_SWAMP_TOKEN_HOME': str(self.folder / 'home'), 'ORBIT_SWAMP_TOKEN_BIN': str(self.bin),
-               'ORBIT_SWAMP_TOKEN_CREDENTIALS': str(self.folder / 'credentials')}
+               'ORBIT_SWAMP_TOKEN_CREDENTIALS': str(self.folder / 'credentials'), 'ORBIT_SWAMP_TOKEN_ENV': str(SWAMP_ENV)}
+        env.pop('SWAMP_API_KEY', None)
         return subprocess.run(['bash', str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=30)
 
     def test_list_parses_both_cli_shapes_and_names_the_held_generations_without_secrets(self):
@@ -85,6 +94,22 @@ class GatewayTokenEntrypointTest(unittest.TestCase):
         self.assertEqual(listed['held']['driver'], 'serve-driver-20261121')
         self.assertEqual(listed['held']['workers'][1], {'slot': 'b', 'access': 'swamp-role-209-b-access', 'enrollment': 'swamp-role-209-b'})
         self.assertNotIn('fake-secret', result.stdout + result.stderr)
+
+    def test_every_swamp_call_sources_the_credential_env_without_printing_it(self):
+        listed = self.entrypoint('list')
+        minted = self.entrypoint('mint', 'run')
+        for result in (listed, minted):
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(CLUB_CANARY, result.stdout + result.stderr)
+            self.assertNotIn('auth_gate_blocked', result.stderr)
+
+    def test_a_missing_credential_env_fails_closed_with_a_clear_message_before_any_swamp_call(self):
+        (self.folder / 'home/.config/swamp/env.sh').unlink()
+        result = self.entrypoint('list')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('swamp.credential_env_missing: %s' % (self.folder / 'home/.config/swamp/env.sh'), result.stderr)
+        self.assertEqual(result.stdout, '')
+        self.assertEqual(self.load()['calls'], [])
 
     def test_list_does_not_invent_state_when_enrollment_state_is_absent(self):
         self.state['enrollment'] = [{'name': 'swamp-role-209-a', 'expiresAt': LATER}]

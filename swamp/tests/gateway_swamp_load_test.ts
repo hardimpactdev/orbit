@@ -442,3 +442,66 @@ Deno.test("another swamp failure prints its stderr without blaming the token", a
         load.stderr,
     );
 });
+
+/** Runs the load with the real swamp-env and a fake swamp that refuses with auth_gate_blocked unless the club env was sourced. */
+async function gatedLoad(credentialEnv: boolean) {
+    const folder = await Deno.makeTempDir();
+    await Deno.mkdir(`${folder}/bin`);
+    await Deno.mkdir(`${folder}/checkout`);
+    await Deno.mkdir(`${folder}/home/.config/swamp`, { recursive: true });
+    if (credentialEnv) {
+        await Deno.writeTextFile(
+            `${folder}/home/.config/swamp/env.sh`,
+            "echo CLUB_ENV_CANARY\nexport SWAMP_API_KEY=fake-club-key\n",
+        );
+    }
+    await Deno.writeTextFile(
+        `${folder}/bin/timeout`,
+        `#!/bin/sh\nshift\nexec "$@"\n`,
+    );
+    await Deno.writeTextFile(
+        `${folder}/bin/swamp`,
+        `#!/bin/sh\nif [ "$SWAMP_API_KEY" != fake-club-key ]; then echo '{"error":{"code":"auth_gate_blocked"}}' >&2; exit 1; fi\necho 'passed the account gate' >&2\nexit 1\n`,
+    );
+    await Deno.chmod(`${folder}/bin/timeout`, 0o755);
+    await Deno.chmod(`${folder}/bin/swamp`, 0o755);
+    const done = await new Deno.Command("sh", {
+        args: [
+            "-c",
+            run.replace(
+                "cd /home/orbit/apps/orbit-monorepo-staging/checkout",
+                `cd ${folder}/checkout`,
+            ).replace("export HOME=/home/orbit ", `export HOME=${folder}/home `)
+                .replace(
+                    "/usr/local/lib/orbit-swamp/swamp-env",
+                    new URL("../ansible/files/swamp-env.sh", import.meta.url)
+                        .pathname,
+                ).replace("/usr/local/bin/swamp", `${folder}/bin/swamp`),
+        ],
+        env: { PATH: `${folder}/bin:/usr/bin:/bin`, RELEASE_SHA: "a", PREVIOUS_SHA: "b" },
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    await Deno.remove(folder, { recursive: true });
+    return {
+        code: done.code,
+        output: new TextDecoder().decode(done.stdout) +
+            new TextDecoder().decode(done.stderr),
+    };
+}
+
+Deno.test("every load swamp call sources the Swamp Club credential env through swamp-env, silently", async () => {
+    const load = await gatedLoad(true);
+    assertEquals(load.code, 1);
+    assertEquals(load.output.includes("swamp serve reload failed with exit 1:\npassed the account gate"), true, load.output);
+    assertEquals(load.output.includes("auth_gate_blocked"), false, load.output);
+    assertEquals(load.output.includes("CLUB_ENV_CANARY"), false, load.output);
+});
+
+Deno.test("a load without the credential env fails closed and names it, not the token", async () => {
+    const load = await gatedLoad(false);
+    assertEquals(load.code, 78);
+    assertEquals(load.output.includes("gateway.release_swamp_auth_gate_blocked:"), true, load.output);
+    assertEquals(load.output.includes("swamp.credential_env_missing:"), true, load.output);
+    assertEquals(load.output.includes("gateway.release_swamp_token_expired"), false, load.output);
+});

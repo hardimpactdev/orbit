@@ -105,6 +105,7 @@ final class SwampRoleUnits
     /**
      * Renews the Swamp Node's serve-driver, worker access and enrollment tokens 10 days before expiry: mint a new generation,
      * switch its file, revoke the old one on a later run. It restarts neither serve nor a worker ({@see renewalService} reconnects).
+     * Each `swamp` call of the playbook runs through `swamp-env`, which sources the serve account's Swamp Club credential env.
      */
     private static function tokenRenewalService(string $user): string
     {

@@ -8,13 +8,15 @@ user=${ORBIT_SWAMP_TOKEN_USER:-orbit}
 home=${ORBIT_SWAMP_TOKEN_HOME:-/home/$user}
 bin=${ORBIT_SWAMP_TOKEN_BIN:-/usr/local/bin/swamp}
 credentials=${ORBIT_SWAMP_TOKEN_CREDENTIALS:-/etc/orbit/swamp-role-worker}
+swamp_env=${ORBIT_SWAMP_TOKEN_ENV:-/usr/local/lib/orbit-swamp/swamp-env}
 if [ "$(id -un)" != "$user" ] && [ "${1:-}" != renew-node ]; then
   exec sudo -n -u "$user" -- "$0" "$@"
 fi
+# swamp-env sources the account's Swamp Club credential env; over SSH a swamp call fails with auth_gate_blocked without it.
 swamp() {
   env HOME="$home" SWAMP_HOME="$home/.swamp" SWAMP_CONFIG_DIR="$home/.config/swamp" \
     SWAMP_API_KEY_FILE="$home/.config/swamp/api-key" SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 \
-    timeout 60 "$bin" "$@" --server ws://127.0.0.1:9418 --token-file "$home/.config/swamp/serve-driver-token" --json
+    "$swamp_env" timeout 60 "$bin" "$@" --server ws://127.0.0.1:9418 --token-file "$home/.config/swamp/serve-driver-token" --json
 }
 # `swamp access token list --json` is {"tokens":[...]}; `swamp worker token list --json` is a plain array.
 access_tokens() {

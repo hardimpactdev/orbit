@@ -167,9 +167,12 @@ jobs:
                 limit=$1
                 shift
                 status=0
-                output=$(timeout "$limit" /usr/local/bin/swamp "$@" 2>"$errors") || status=$?
+                # swamp-env sources the Swamp Club credential env; without it a non-interactive swamp fails with auth_gate_blocked.
+                output=$(timeout "$limit" /usr/local/lib/orbit-swamp/swamp-env /usr/local/bin/swamp "$@" 2>"$errors") || status=$?
                 if [ "$status" -ne 0 ]; then
-                  if grep -qiE 'unauthori[sz]ed|auth rejected|expired|revoked|invalid token|code 400[23]' "$errors"; then
+                  if grep -qE 'auth_gate_blocked|swamp\.credential_env_' "$errors"; then
+                    echo "gateway.release_swamp_auth_gate_blocked: swamp on the Swamp Node has no Swamp Club credential; check /home/orbit/.config/swamp/env.sh" >&2
+                  elif grep -qiE 'unauthori[sz]ed|auth rejected|expired|revoked|invalid token|code 400[23]' "$errors"; then
                     echo "gateway.release_swamp_token_expired: serve-driver token $driver expired or revoked; run orbit-swamp-token-renewal (systemctl start orbit-swamp-token-renewal.service on the Swamp Node)" >&2
                   fi
                   echo "swamp $1 $2 failed with exit $status:" >&2

@@ -25,6 +25,7 @@ description:
     keeps a rerun after a crash from rotating twice. No secret is returned or logged.
 options:
   swamp: {type: path, default: /usr/local/bin/swamp, description: The Swamp CLI.}
+  swamp_env: {type: path, default: /usr/local/lib/orbit-swamp/swamp-env, description: Sources the account's Swamp Club credential env.}
   server: {type: str, default: ws://127.0.0.1:9418, description: The local serve.}
   user: {type: str, required: true, description: The account that owns serve and runs the workers.}
   home: {type: path, required: true, description: That account's home.}
@@ -70,12 +71,13 @@ class Renewal:
 
     # --- boundary -------------------------------------------------------------------------------------------------
     def swamp(self, *args, token_file=None):
-        """Runs one Swamp call as the serve account through serve. A failure quotes only redacted stderr, never stdout."""
+        """Runs one Swamp call as the serve account through serve. A failure quotes only redacted stderr, never stdout. swamp_env
+        sources the account's Swamp Club credential env first; without it a non-interactive call fails with auth_gate_blocked."""
         config = os.path.join(self.p['home'], '.config/swamp')
         argv = ['runuser', '-u', self.p['user'], '--', 'env', 'HOME=' + self.p['home'],
                 'SWAMP_HOME=' + os.path.join(self.p['home'], '.swamp'), 'SWAMP_CONFIG_DIR=' + config,
                 'SWAMP_API_KEY_FILE=' + os.path.join(config, 'api-key'), 'SWAMP_NO_UPDATE_CHECK=1', 'SWAMP_NO_TELEMETRY=1',
-                self.p['swamp'], *args, '--server', self.p['server'], '--token-file', token_file or self.driver, '--json']
+                self.p['swamp_env'], self.p['swamp'], *args, '--server', self.p['server'], '--token-file', token_file or self.driver, '--json']
         code, out, err = self.module.run_command(argv)
         if code != 0:
             self.fail('swamp %s %s %s failed with exit %d: %s' % (args[0], args[1], args[2], code, redact(err.strip()[-2000:])))
@@ -266,6 +268,7 @@ class Renewal:
 def main():
     module = AnsibleModule(argument_spec={
         'swamp': {'type': 'path', 'default': '/usr/local/bin/swamp'},
+        'swamp_env': {'type': 'path', 'default': '/usr/local/lib/orbit-swamp/swamp-env'},
         'server': {'type': 'str', 'default': 'ws://127.0.0.1:9418'},
         'user': {'type': 'str', 'required': True},
         'home': {'type': 'path', 'required': True},
