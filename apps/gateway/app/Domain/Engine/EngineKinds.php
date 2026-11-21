@@ -53,9 +53,13 @@ final readonly class EngineKinds
             return false;
         }
         try {
+            $actions = [];
             foreach ($this->definition($operation->kind)->steps($operation) as $step) {
-                if ($step->node > 0 && ! in_array($step->action, $this->bus->nodeActions($step->node), true)) {
-                    return false;
+                if ($step->node > 0) {
+                    $actions[$step->node] ??= $this->bus->nodeActions($step->node);
+                    if (! in_array($step->action, $actions[$step->node], true)) {
+                        return false;
+                    }
                 }
             }
         } catch (EngineUnsupported) {

@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.spare_volume` and `instance.fleet_ready`. Such a target may also name one part of the Node: `<node>:<part>`, with a part of lowercase letters, digits and `-`. Orders for one target run one at a time. So the parts of one create, and other creates, run side by side. Sleep, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.stop`, `instance.checkout`, `instance.t3` and `instance.names` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.club_key`, `instance.copy_volume`, `instance.spare_volume` and `instance.fleet_ready`. Such a target may also name one part of the Node: `<node>:<part>`, with a part of lowercase letters, digits and `-`. Orders for one target run one at a time. So the parts of one create, and other creates, run side by side. `instance.club_key` also accepts a local Instance id from an older Gateway. Sleep, `instance.prepare`, `instance.start`, `instance.stop`, `instance.checkout`, `instance.t3` and `instance.names` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -182,7 +182,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
-2. reports its primitives, version and clock state to key `n<id>` of the `NODES` bucket, every minute;
+2. reports its primitives, Node-target actions (`node_targets`), version and clock state to key `n<id>` of the `NODES` bucket, every minute;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 
 The Gateway routes a kind by the reported primitives, and Doctor reads the clock state.

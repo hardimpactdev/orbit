@@ -42,7 +42,11 @@ App install/show are state-only. They return the last stored installation observ
 
 ## Instance source credentials
 
-Deploy, automatic deploy, development create, production clone and removal that reads source resolve fresh repository-scoped `Contents: read` credentials before writing a fetch credential. Migration uses the same resolver, then checks the Project's default branch before downtime; `gh_cli` migration keeps its local-copy path and skips this App preflight. An already active create and a removal that needs no source read still need no credential. Credential preparation errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
+Deploy, automatic deploy, development create, production clone and removal that reads source resolve repository-scoped `Contents: read` credentials before writing a fetch credential. The resolver passes the installation id straight into token minting to avoid a second installation lookup.
+
+Swamp runs mint a fresh token per run so a failed vault copy can revoke it safely. Gateway engine `fetch` steps instead reuse the repository's encrypted, scope-verified `contents: read` token in `GitHubTokenCache` for 50 minutes, avoiding GitHub HTTPS stalls on repeated creates. A failed `fetch` step or a refused cached installation clears that cache entry.
+
+Migration uses the same resolver, then checks the Project's default branch before downtime; `gh_cli` migration keeps its local-copy path and skips this App preflight. An already active create and a removal that needs no source read still need no credential. Credential preparation errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
 
 | Code | HTTP status | Meaning |
 | --- | --- | --- |

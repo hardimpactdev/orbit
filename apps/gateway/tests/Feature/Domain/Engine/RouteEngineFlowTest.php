@@ -148,6 +148,11 @@ it('puts step content into the Node\'s content keys and leaves only its hash in 
             return [];
         }
 
+        public function nodeTargetActions(int $node): array
+        {
+            return [];
+        }
+
         public function nodeClock(int $node): ?bool
         {
             return null;

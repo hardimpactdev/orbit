@@ -44,7 +44,7 @@ sequenceDiagram
   %%> The app-user swap runs only on an older seed.
   par after start
     EN->>C: Deliver the Club key<br/>club_key · tmpfs · nested only
-    %%> club_key and checkout lock the same copy, so they run one after the other.
+    %%> Locks its own Node part on agent 0.29.0+ so it runs beside checkout and t3 (copy lock on older agents).
   and
     EN->>C: Start Node services<br/>services
     %%> Later work: today the completion applies them.

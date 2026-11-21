@@ -189,6 +189,30 @@ fn clock_synchronized() -> Option<bool> {
     Some(state != libc::TIME_ERROR && timex.status & libc::STA_UNSYNC == 0)
 }
 
+/// Builds the capability report stored in KV `NODES`: enabled actions, which of them accept `<node>:<part>` targets,
+/// version, and kernel clock synchronization state.
+fn capability_report(settings: &Settings) -> serde_json::Value {
+    let actions: Vec<&str> = orbit_executor_core::action::Action::ALL
+        .into_iter()
+        .filter(|action| settings.enabled.allows(*action))
+        .map(orbit_executor_core::action::Action::name)
+        .collect();
+    let node_targets: Vec<&str> = orbit_executor_core::action::Action::ALL
+        .into_iter()
+        .filter(|action| {
+            settings.enabled.allows(*action)
+                && action.target_kind() == orbit_executor_core::action::TargetKind::Node
+        })
+        .map(orbit_executor_core::action::Action::name)
+        .collect();
+    serde_json::json!({
+        "actions": actions,
+        "node_targets": node_targets,
+        "version": env!("CARGO_PKG_VERSION"),
+        "clock_synchronized": clock_synchronized(),
+    })
+}
+
 /// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
 /// `n<node>`, with its clock's state. The Gateway starts a kind on the state machine only when every Node it touches reported
 /// its primitives.
@@ -197,13 +221,7 @@ async fn report_actions(
     settings: &Settings,
     node: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let actions: Vec<&str> = orbit_executor_core::action::Action::ALL
-        .into_iter()
-        .filter(|action| settings.enabled.allows(*action))
-        .map(orbit_executor_core::action::Action::name)
-        .collect();
-    let body = serde_json::json!({"actions": actions, "version": env!("CARGO_PKG_VERSION"), "clock_synchronized": clock_synchronized()})
-        .to_string();
+    let body = capability_report(settings).to_string();
     context.publish(format!("$KV.NODES.n{node}"), body.into()).await?.await?;
     Ok(())
 }
@@ -442,5 +460,30 @@ mod tests {
     #[test]
     fn slots_stay_between_two_and_eight() {
         assert!((2..=8).contains(&slots()));
+    }
+
+    #[test]
+    fn capability_report_lists_club_key_as_a_node_target_action() {
+        use orbit_executor_core::action::Enabled;
+        use orbit_executor_core::caller::Policy;
+        use orbit_executor_core::order::PinnedKeys;
+
+        // RFC 8032 test vector 1 public key (32 bytes, base64).
+        let pinned = PinnedKeys::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=").expect("valid key");
+        let settings = Settings {
+            policy: Policy::production(None, PathBuf::from("/usr/local/bin/orbit-agent")),
+            keys: pinned,
+            enabled: Enabled::parse("instance").expect("instance family"),
+            node: "7".parse().expect("node"),
+        };
+        let report = capability_report(&settings);
+        let node_targets: Vec<&str> = report["node_targets"]
+            .as_array()
+            .expect("node_targets array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert!(node_targets.contains(&"instance.club_key"));
+        assert!(!node_targets.contains(&"instance.checkout"));
     }
 }

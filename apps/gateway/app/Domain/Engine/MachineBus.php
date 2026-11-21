@@ -30,6 +30,13 @@ interface MachineBus
     /** @return list<string> */
     public function nodeActions(int $node): array;
 
+    /**
+     * Enabled actions on `$node` that accept `<node>:<part>` targets (from the Node's `node_targets` capability report).
+     *
+     * @return list<string>
+     */
+    public function nodeTargetActions(int $node): array;
+
     /** Whether the Node's executor last reported its clock as synchronized; null without a fresh report that says. */
     public function nodeClock(int $node): ?bool;
 }

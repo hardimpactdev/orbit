@@ -56,17 +56,19 @@ The engine runs a container clone's create from its admitted intent (`direct_pro
 | Step | After | Where | What it does |
 | --- | --- | --- | --- |
 | `clone` | | Node | Copies the default's seed with its ACL, NIC, T3 proxy and route rule |
-| `fetch` | | Node | Fetches the branch into the Node's mirror; the Gateway sends the read credential as a blob |
 | `copy_volume` | | Node | Makes a nested-fleet copy's inner volume, from a [spare](/reference/development-containers#spare-volumes) when it can |
+| `fetch` | | Node | Fetches the branch into the Node's mirror; the Gateway sends a cached scope-verified read credential as a blob |
 | `prepare` | `clone` | copy | Writes the files that the [seed manifest](/reference/development-containers#the-seed-manifest) does not show in the seed |
 | `start` | `prepare`, `copy_volume` | copy | Checks that both copies hold the seed's current take, names the volume, guards the network, starts the copy and gives it its names |
-| `club_key` | `start` | copy | Writes a nested-fleet copy's Club key into its `/run` |
+| `club_key` | `start` | Node part (copy on < 0.29.0) | Writes a nested-fleet copy's Club key into its `/run` |
 | `checkout` | `start`, `fetch` | copy | Checks out the branch, cleans a task copy and merges `.env` |
 | `spare` | `start` | Node | Makes the default's next spare volume |
 | `t3` | `checkout` | copy | Starts T3 or the Conn Server and seals its two sessions to the Gateway |
 | `stop` | `clone` | copy | Runs only after a failed step |
 
-Each Node step locks only its own part of the Node, so the Node steps run side by side. Steps on the copy lock the copy: `club_key` and `checkout` run one after the other. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
+Each Node step locks only its own part of the Node, so the Node steps run side by side. `copy_volume` is published before `fetch` so a cold GitHub credential mint never delays volume work. `fetch` reuses the repository's scope-verified read token from `GitHubTokenCache` and clears it if `fetch` fails.
+
+Once the Node's executor reports `instance.club_key` in `node_targets` (agent 0.29.0), `club_key` locks its own Node part `<node>:club-<id>` and runs beside `checkout` and `t3`. Older agents keep the copy lock and run `club_key` sequentially with `checkout`. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
 
 `spare` is optional: the create neither waits for it nor fails by it. `stop` keeps the copy stopped for a retry or a destroy. The [engine chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-engine.mmd) has the graph.
 
@@ -97,7 +99,7 @@ A nested-fleet clone's create does not wait for its [inner fleet](/reference/dev
 
 `instance.fleet` runs only on the engine: it has no Swamp workflow. It follows `instance.create` in `ORBIT_ENGINE_KINDS`. The admission of a destroy or a sleep of the Instance cancels it, and a cancelled run records nothing. A failed wait falls back to `instance.start` on Swamp, once the Instance is active. The [fleet chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/fleet.mmd) has the flow.
 
-An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
+An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, node_targets, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 
 `clock_synchronized` comes from a read-only `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false, because a clock that follows no time source drifts until the executor refuses the Gateway's signed orders.
 
@@ -183,7 +185,7 @@ Publishes wait for JetStream's acknowledgement. An order uses its nonce as `Nats
 - a negative acknowledgement with a one-second delay when the handler threw;
 - a termination for a message it cannot read.
 
-The PHP client answers the server's pings only while it reads. A request connection that sits unused in a long-running process can therefore be closed by the server. `EngineBus::client()` pings a connection that was unused for 10 seconds and replaces it when the ping fails.
+The PHP client answers the server's pings only while it reads. A request connection that sits unused in a long-running process can therefore be closed by the server. `EngineBus::client()` opens request/publish connections with `reconnect: false`, pings a connection that was unused for 10 seconds, and replaces it at once when the ping fails or throws on a closed socket.
 
 ## Authentication
 
