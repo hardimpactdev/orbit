@@ -75,6 +75,10 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
                 app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $status === 'succeeded',
                     ValidatedData::nullableString($data['error_code'] ?? null));
             }
+            // A completion that ran `clone-fleet` waited for Doctor: the fleet is ready, and no longer owed.
+            if ($status === 'succeeded' && ($operation->state['fleet_start'] ?? false) === true) {
+                InstanceFleetOperation::record($instance->id, null);
+            }
 
             return $this->direct->project($operation, $data, $result);
         });

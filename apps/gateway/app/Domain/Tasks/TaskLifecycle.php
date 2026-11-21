@@ -151,8 +151,9 @@ final readonly class TaskLifecycle
 
     /**
      * Whether the copy is ready for its task: the one place that decides it. "Fully set up" is the Instance's `active` state
-     * (InstanceState::Active). A succeeded create leaves a clone `source_resolved`; its `instance.complete` makes it active, a nested copy
-     * with its healthy fleet. OperationStore calls createEnded at the end of both.
+     * (InstanceState::Active). A succeeded create leaves a clone `source_resolved`; its `instance.complete` makes it active. A nested
+     * copy's fleet may still start beside it (InstanceFleetOperation); a proof resets and waits for the fleet itself. OperationStore
+     * calls createEnded at the end of both.
      */
     public static function ready(Operation $operation, Instance $copy): bool
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceCreateEngineFlow;
@@ -230,16 +231,30 @@ it('ends a failed create with the step Swamp names, the step\'s own code and the
         'result' => ['ready' => false, 'instance_id' => 6, 'failed_step' => 'workspace', 'error_code' => 'instance.container_checkout_failed', 'route_publication' => 'deferred']]);
 });
 
-it('ends a create whose fleet was not ready at the fleet, as the completion names it, and says so only for a ready fleet', function (): void {
-    $step = static fn (string $name, string $status, ?string $output = null, ?string $code = null): OperationEngineStep => (new OperationEngineStep)
-        ->forceFill(['name' => $name, 'status' => $status, 'node_id' => 3, 'output' => $output, 'error_code' => $code]);
-    $run = new EngineRun(288, ['clone' => $step('clone', 'done'), 'fleet' => $step('fleet', 'failed', null, 'instance.container_fleet_resume_failed')], 0, null);
+it('starts a nested clone\'s fleet in the background only from a seed with Orbit\'s tunnel unit, and only when the engine runs its wait', function (): void {
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeActions')->andReturnUsing(fn (): array => $this->actions);
+    app()->instance(MachineBus::class, $bus);
+    $this->actions = ['instance.fleet_ready'];
+    config(['orbit.engine.kinds' => ['instance.create']]);
+    $nested = engineCloneOperation(static function (array $input): array {
+        $input['direct_provisioning']['container']['clone']['fleet'] = true;
 
-    expect(InstanceCreateEngineFlow::ended(engineCloneOperation(), $run))->toMatchArray(['status' => 'failed', 'error_code' => 'instance.container_fleet_resume_failed',
-        'failure' => ['failed_step' => 'clone-fleet', 'stderr_recorded' => false]])
-        ->and(InstanceCreateEngineFlow::ended(engineCloneOperation(), $run)['result']['failed_step'])->toBe('fleet')
-        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, ['fleet' => $step('fleet', 'done', '{"fleet":"ready","started":[]}')], 0, null)))->toBeTrue()
-        // A seed without the tunnel's boot unit leaves the fleet to the completion's `clone-fleet`.
-        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, ['fleet' => $step('fleet', 'done', '{"fleet":"seed_without_tunnel"}')], 0, null)))->toBeFalse()
-        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, [], 0, null)))->toBeFalse();
+        return $input;
+    });
+    $background = static fn (Operation $operation, bool $tunnel): bool => (new ReflectionMethod(InstanceCreateEngineFlow::class, 'background'))
+        ->invoke(null, $operation, engineRunWith(['prepare' => json_encode(['changes' => 1, 'manifest' => true, 'fleet_tunnel' => $tunnel])]));
+
+    expect($background($nested, true))->toBeTrue()
+        // A seed taken before Orbit's tunnel unit, or an older agent that does not say: the completion's `clone-fleet` starts the fleet.
+        ->and($background($nested, false))->toBeFalse()
+        ->and((new ReflectionMethod(InstanceCreateEngineFlow::class, 'background'))->invoke(null, $nested, engineRunWith(['prepare' => '{"changes":1}'])))->toBeFalse()
+        // A clone of a default without a fleet has none to start.
+        ->and($background(engineCloneOperation(), true))->toBeFalse();
+
+    $this->actions = [];
+    expect($background($nested, true))->toBeFalse();
+    $this->actions = ['instance.fleet_ready'];
+    config(['orbit.engine.kinds' => []]);
+    expect($background($nested, true))->toBeFalse();
 });

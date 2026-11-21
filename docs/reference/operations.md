@@ -548,7 +548,9 @@ the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websock
 
 ### One operation per target
 
-An operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost run and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no workflow has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time).
+A nested clone's fleet wait, `instance.fleet`, holds no lock. The busy checks of a task cancel, a copy's destroy, a settle pass, a restore, the removal reaper and the idle sleep leave it out. The admission of a destroy or a sleep of its Instance cancels it ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
+
+Any other operation holds its target from the start request to its terminal status. A second start for that target answers `409` with `operation.target_busy`. The hold lasts across a lost run and a resume. A rollback is the one exception: it supersedes a deploy of the Instance that no workflow has started, as [One operation at a time](/reference/deployments#one-operation-at-a-time) describes. The hold does not cover work that is not an operation: while it runs, a deploy or rollback also takes the [Instance's operation lock](/reference/deployments#one-operation-at-a-time).
 
 ### One Route write per Node
 

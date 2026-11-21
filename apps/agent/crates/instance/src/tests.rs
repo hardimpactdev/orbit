@@ -222,7 +222,7 @@ fn a_running_copy_is_left_alone() {
     let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"status": "Running"})))]);
 
     let output: Value = serde_json::from_str(&prepare(&fake, &prepare_input(&json!([]))).expect("prepare")).expect("json");
-    assert_eq!(output, json!({"app_account_current": false, "changes": 0, "manifest": false, "workspace_clean": false}));
+    assert_eq!(output, json!({"app_account_current": false, "changes": 0, "manifest": false, "workspace_clean": false, "fleet_tunnel": false}));
     assert_eq!(fake.calls().len(), 1);
 }
 
@@ -301,7 +301,7 @@ fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() 
     let pushed: Vec<&String> = calls.iter().filter(|call| call.contains("file push") || call.contains("--type=symlink")).collect();
     assert_eq!(pushed.len(), 2, "{pushed:?}");
     assert!(pushed[1].ends_with("instance-12/usr/local/libexec/orbit-app-user"));
-    assert_eq!(output, json!({"changes": 5, "manifest": true, "app_account_current": false, "workspace_clean": true}));
+    assert_eq!(output, json!({"changes": 5, "manifest": true, "app_account_current": false, "workspace_clean": true, "fleet_tunnel": false}));
 }
 
 fn sha256_hex(text: &str) -> String {
@@ -1098,7 +1098,8 @@ fn a_nested_copys_fleet_is_ready_when_doctor_is_healthy_its_agents_are_online_an
     assert_eq!(parsed(&output), json!({"fleet": "ready", "started": []}));
     let calls = fake.calls();
     let exec = "--project orbit-instances-nested exec instance-12 -- ";
-    assert_eq!(calls[2], format!("{exec}/usr/bin/incus admin waitready --timeout 80"));
+    // The fleet starts first: the unit is read only after the nested containers run.
+    assert_eq!(calls[0], format!("{exec}/usr/bin/incus admin waitready --timeout 80"));
     assert!(!calls.iter().any(|call| call.contains("incus start")), "{calls:?}");
     // The proof's own reads, over the tunnel, never through the container's proxy.
     assert!(calls.contains(&format!("{exec}/usr/bin/curl -sSk --noproxy * -m 10 -H Host: gateway.orbit -H Accept: application/json -X POST \
@@ -1135,11 +1136,17 @@ fn a_fleet_that_is_not_ready_in_its_bound_fails_and_names_the_check() {
 }
 
 #[test]
-fn a_copy_of_a_seed_without_the_tunnels_boot_unit_leaves_its_fleet_to_the_completion() {
-    let fake = Fake::new(&[("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Err("disabled"))]);
+fn a_copy_without_the_tunnels_boot_unit_still_starts_its_fleet_and_reads_the_unit_again_before_it_gives_up() {
+    let fake = Fake::new(&[
+        ("incus list --format csv", Ok(json!("nested-app-dev,STOPPED\nnested-app-prod,RUNNING\nnested-gateway,RUNNING\n"))),
+        ("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Err("Error: exec failed")),
+    ]);
 
-    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
-    assert_eq!(fake.calls().len(), 1);
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel", "started": ["nested-app-dev"]}));
+    let calls = fake.calls();
+    assert!(calls.iter().any(|call| call.ends_with("-- /usr/bin/incus start nested-app-dev")), "{calls:?}");
+    // A failed read, such as an `incus exec` right after the start, is read again until its bound.
+    assert!(calls.iter().filter(|call| call.contains("test -L")).count() >= 2, "{calls:?}");
 
     let mut wrong = fleet_input();
     wrong["hub"] = json!("10.45.0.1; reboot");
@@ -1159,13 +1166,14 @@ fn the_fleet_waits_until_the_tunnels_whole_boot_script_ran_before_it_reads_docto
 }
 
 #[test]
-fn a_tunnel_unit_that_failed_at_boot_leaves_the_fleet_to_the_completion_at_once() {
+fn a_tunnel_unit_that_failed_at_boot_is_restarted_once_and_a_second_failure_leaves_the_tunnel_to_the_gateway() {
     let fake = fleet_node_with_tunnel("failed\n", RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
-    let started = std::time::Instant::now();
 
-    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
-    assert!(started.elapsed() < std::time::Duration::from_millis(500));
-    assert!(!fake.calls().iter().any(|call| call.contains("api/v1/doctor")));
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel", "started": []}));
+    let calls = fake.calls();
+    assert_eq!(calls.iter().filter(|call| call.ends_with("/usr/bin/systemctl reset-failed orbit-inner-fleet-tunnel.service")).count(), 1, "{calls:?}");
+    assert_eq!(calls.iter().filter(|call| call.ends_with("/usr/bin/systemctl restart --no-block orbit-inner-fleet-tunnel.service")).count(), 1, "{calls:?}");
+    assert!(!calls.iter().any(|call| call.contains("api/v1/doctor")));
 }
 
 #[test]
@@ -1175,6 +1183,24 @@ fn a_hand_made_tunnel_unit_of_the_same_name_is_not_orbits_tunnel() {
         ("grep -q -F -- # Managed by Orbit: the operator tunnel", Err("")),
     ]);
 
-    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
-    assert_eq!(fake.calls().len(), 2);
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel", "started": ["nested-gateway", "nested-app-dev", "nested-app-prod"]}));
+    assert!(!fake.calls().iter().any(|call| call.contains("ActiveState")));
+}
+
+#[test]
+fn prepare_says_whether_the_seed_holds_orbits_tunnel_boot_unit() {
+    let unit = "file pull instance-12/etc/systemd/system/orbit-inner-fleet-tunnel.service";
+    let manifest = ("file pull instance-12/etc/orbit/seed-manifest.json", Ok(json!({"units": [], "workspace_clean": false})));
+    let read = |status: Value, content: Result<Value, &'static str>| {
+        let fake = Fake::new(&[("query /1.0/instances/instance-12?", Ok(status)), manifest.clone(), (unit, content)]);
+        parsed(&prepare(&fake, &prepare_input(&json!([]))).expect("prepare"))["fleet_tunnel"].clone()
+    };
+    let orbits = Ok(json!("# Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.\n[Unit]\n"));
+
+    assert_eq!(read(stopped(), orbits.clone()), json!(true));
+    // A hand-made unit of the same name, and no unit at all.
+    assert_eq!(read(stopped(), Ok(json!("[Unit]\nDescription=tunnel\n"))), json!(false));
+    assert_eq!(read(stopped(), MISSING), json!(false));
+    // A running copy is a retry: its first boot is over, and the completion starts its fleet.
+    assert_eq!(read(json!({"status": "Running"}), orbits), json!(false));
 }

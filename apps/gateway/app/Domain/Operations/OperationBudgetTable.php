@@ -48,6 +48,8 @@ final class OperationBudgetTable
         // No run yet. Basis: the database fill's 600 s and the nested fleet start's 900 s, with margin for the stage, services, check
         // and the Route beside them (docs/reference/development-containers.md#complete-a-clone). Replace with the 14-day p95.
         'instance.complete' => 1800,
+        // The fleet step's own budget, the readiness bound plus 120 s (InstanceFleetEngineFlow), and the start and the end.
+        'instance.fleet' => 450,
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',
         'instance.unregister' => 'run_budget_seconds',

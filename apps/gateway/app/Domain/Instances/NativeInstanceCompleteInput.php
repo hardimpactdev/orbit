@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -33,11 +34,15 @@ final readonly class NativeInstanceCompleteInput
         if (! $processes instanceof stdClass) {
             throw new LogicException('The Process files must be one JSON object.');
         }
-        // A clone of a nested-fleet default starts the fleet it copied; any other clone's intent has no `fleet` key, and neither has one
-        // whose create made its fleet ready (InstanceCreateEngineFlow `fleet`).
+        // A clone of a nested-fleet default starts the fleet it copied; any other clone's intent has no `fleet` key. One whose fleet starts
+        // in the background skips it while that wait runs or proved the fleet ready (InstanceFleetOperation); a retry after a failed wait
+        // starts the fleet itself.
         $create = Operation::query()->find(ValidatedData::integer($input['create_operation_id']));
-        $fleet = ($create?->result['fleet_ready'] ?? false) === true ? null
-            : app(NestedFleetIntent::class)->forClone($instance, $instance->runtime()->firstOrFail());
+        $runtime = $instance->runtime()->firstOrFail();
+        $fleet = ($create?->result['fleet_start'] ?? null) === 'background' && ($runtime->fleet_ready_at !== null || InstanceFleetOperation::open($instance->id))
+            ? null : app(NestedFleetIntent::class)->forClone($instance, $runtime);
+        // Its end reads this: a completion that started the fleet itself proves it ready (InstanceCompleteProjection).
+        app(OperationStore::class)->change($operation, ['state' => [...($operation->state ?? []), 'fleet_start' => $fleet !== null]]);
 
         // The release scripts beside the Process files, in the completion's one copy, as the create's launch copy holds them (CloneStage).
         $stage = new CloneStage;

@@ -38,6 +38,7 @@ sequenceDiagram
   EN->>C: Write the files<br/>prepare · per copy only
   %%> Needs clone. The seed's manifest names what the seed holds.
   %%> Settings are merged into the seed's own, never replaced.
+  %%> It reports fleet_tunnel: the seed holds Orbit's tunnel boot unit.
   EN->>C: Start the copy<br/>start · guard · names
   %%> Needs prepare and copy_volume. A nested copy starts only when both copies hold the seed's current take.
   %%> The app-user swap runs only on an older seed.
@@ -50,10 +51,6 @@ sequenceDiagram
   and
     EN->>C: Check out the branch<br/>checkout · clean · .env
     %%> Needs fetch too. A task copy cleans only when the seed was not clean.
-  and
-    EN->>N: Wait for the inner fleet<br/>fleet · nested only
-    %%> After club_key, on its own part of the Node: beside checkout and t3. The fleet boots with the copy.
-    %%> Inner Incus, then Doctor healthy, 3 agents online, operator known, read every 250 ms.
   and
     EN->>N: Make a spare volume<br/>spare · nested only
     %%> In the background: the create neither waits for it nor fails by it.
@@ -70,7 +67,7 @@ sequenceDiagram
   alt all steps pass in budget
     C-->>EN: last receipt<br/>sealed sessions
     Note over EN: Open sessions, read baseline<br/>record, admit instance.complete
-    %%> A ready fleet sets fleet_ready: the completion skips clone-fleet.
+    %%> fleet_tunnel sets fleet_start background: admit instance.fleet beside the completion, which skips clone-fleet.
   else a step fails or the budget ends
     C--xEN: failed receipt<br/>step, error_code
     EN->>C: Stop the copy<br/>stop · kept for retry or destroy

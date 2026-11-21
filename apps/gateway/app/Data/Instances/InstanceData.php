@@ -62,6 +62,9 @@ final class InstanceData extends Data
         public ?string $retainedGitAt = null,
         /** @var list<InstanceAttachedTargetData> */
         public array $attachedTargets = [],
+        public ?string $fleetReadyAt = null,
+        public ?string $fleetFailedAt = null,
+        public ?string $fleetErrorCode = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -93,6 +96,9 @@ final class InstanceData extends Data
             checkoutPath: $instance->checkout_path,
             retainedGitPath: $instance->retained_git_path,
             retainedGitAt: $instance->retained_git_at?->toIso8601String(),
+            fleetReadyAt: $instance->runtime?->fleet_ready_at?->toIso8601String(),
+            fleetFailedAt: $instance->runtime?->fleet_failed_at?->toIso8601String(),
+            fleetErrorCode: $instance->runtime?->fleet_error_code,
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             root: $instance->root,
