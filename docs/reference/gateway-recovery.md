@@ -216,8 +216,10 @@ The container workflow is described under [Move the Gateway to release container
 | Migrate | Runs `artisan migrate --force --isolated=1` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
+| Renew Swamp tokens | Runs `gateway:swamp-credentials --release` in the candidate ([Renew the Swamp read and run tokens](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens)). Refuses with `gateway.release_swamp_token_expiring` while a live consumer holds a token that expires within three days. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon. |
+| Revoke replaced tokens | Runs `gateway:swamp-credentials --revoke`, which revokes a replaced Gateway token once no process can hold it. A failure does not fail the release. |
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
@@ -326,6 +328,8 @@ Required checks invoke the Gateway renderer without deployment credentials and v
 Grant rendering stays in the Gateway; no Node script renders or publishes grants.
 
 When the two files differ, the `Check the Ansible collections` step fails. The load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
+
+The load runs under `set -euo pipefail` and keeps the stderr of each `swamp` call. A failed call prints that stderr and its exit code, not a bare `jq` exit. When serve refuses the serve-driver token, the load first prints `gateway.release_swamp_token_expired: serve-driver token … expired or revoked; run orbit-swamp-token-renewal`. Start `orbit-swamp-token-renewal.service` on the Swamp Node ([Swamp token renewal](/reference/node-provisioning#swamp-token-renewal)); an expired serve-driver token cannot mint through serve, so renew it by hand through `swamp access token mint` against the repository, then rerun the release.
 
 The load reads the JSON replies of `swamp serve reload`, `swamp access reload` and `swamp workflow list` with `jq`. The `swamp` role installs `jq` with its packages, so a Node that only the roles provisioned can run the load.
 

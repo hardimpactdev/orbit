@@ -378,3 +378,67 @@ Deno.test("a resumed load checks the exact Gateway target before changing the st
         await Deno.remove(folder, { recursive: true });
     }
 });
+
+/** Runs the load script with a `timeout` stub that fails every swamp call with `stderr`, from a disposable checkout. */
+async function failedLoad(stderr: string) {
+    const folder = await Deno.makeTempDir();
+    await Deno.mkdir(`${folder}/bin`);
+    await Deno.mkdir(`${folder}/checkout`);
+    await Deno.writeTextFile(
+        `${folder}/bin/timeout`,
+        `#!/bin/sh\nprintf '%s\\n' "$FAKE_STDERR" >&2\nexit 1\n`,
+    );
+    await Deno.chmod(`${folder}/bin/timeout`, 0o755);
+    const done = await new Deno.Command("sh", {
+        args: [
+            "-c",
+            run.replace(
+                "cd /home/orbit/apps/orbit-monorepo-staging/checkout",
+                `cd ${folder}/checkout`,
+            ),
+        ],
+        env: {
+            PATH: `${folder}/bin:/usr/bin:/bin`,
+            FAKE_STDERR: stderr,
+            RELEASE_SHA: "a",
+            PREVIOUS_SHA: "b",
+        },
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    await Deno.remove(folder, { recursive: true });
+    return { code: done.code, stderr: new TextDecoder().decode(done.stderr) };
+}
+
+Deno.test("the load runs under pipefail on dash", () => {
+    assertEquals(run.startsWith("set -euo pipefail\n"), true);
+});
+
+Deno.test("a refused serve-driver token names the expired token and its renewal, not a bare jq exit", async () => {
+    const load = await failedLoad(
+        'WebSocket auth rejected: token "serve-driver" expired',
+    );
+    assertEquals(load.code, 1);
+    assertEquals(
+        load.stderr.includes(
+            "gateway.release_swamp_token_expired: serve-driver token /home/orbit/.config/swamp/serve-driver-token expired or revoked; run orbit-swamp-token-renewal",
+        ),
+        true,
+        load.stderr,
+    );
+    assertEquals(load.stderr.includes("swamp serve reload failed with exit 1:"), true);
+    assertEquals(load.stderr.includes('token "serve-driver" expired'), true);
+});
+
+Deno.test("another swamp failure prints its stderr without blaming the token", async () => {
+    const load = await failedLoad("repository lock held by another process");
+    assertEquals(load.code, 1);
+    assertEquals(load.stderr.includes("gateway.release_swamp_token_expired"), false);
+    assertEquals(
+        load.stderr.includes(
+            "swamp serve reload failed with exit 1:\nrepository lock held by another process",
+        ),
+        true,
+        load.stderr,
+    );
+});

@@ -3,6 +3,7 @@ cases = [
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
   "container rollback checks the retained Git object before workflow load",
   "Swamp load requires the bounded DB busy guard, including forced releases",
+  "every release renews Swamp tokens before the load and revokes replaced Gateway tokens only after the handover",
   "the Gateway check reads the root CA under the private certificate folder as root",
   "the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release",
   "the sealed web build precedes clone; sleep can start in parallel with candidate preparation",
@@ -11,7 +12,8 @@ cases = [
   "failure cleanup runs after every handover outcome",
   "failed web installation cannot migrate even when its clone is skipped",
   "cleanup resumes only after scheduler handover or switch-back has ended",
-  "serving reconciliation brackets the retained workflow load with read-only checks",
+  "serving reconciliation renews Swamp tokens before Load (without revoking) and brackets Load with read-only checks",
+  "retained rollback tolerates an older target without swamp-credentials in both container and host routes",
   "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
   "a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it",
 ]
@@ -29,4 +31,7 @@ inputs = [
   "swamp/workflows/workflow-gateway-release-activate.yaml",
   "swamp/workflows/workflow-operation-gateway-release.yaml",
   "swamp/workflows/workflow-operation-gateway-reconcile.yaml",
+  "bin/gateway-release-phase",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-swamp-token-install.py",
 ]

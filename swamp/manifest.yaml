@@ -24,6 +24,7 @@ additionalFiles:
   - ansible/library/orbit_route_site.py
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_schedule_journal.py
+  - ansible/library/orbit_swamp_token_renewal.py
   - ansible/library/orbit_static_php.py
   - ansible/library/orbit_migrate_env.py
   - ansible/tasks/artifact-fetch.yml
@@ -73,6 +74,7 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-ci-start.yml
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
+  - ansible/files/swamp-gateway-token.sh
   - ansible/files/instance-container-wake.sh
   - ansible/files/gateway-release-guest.py
   - ansible/files/gateway-release-infrastructure.py
@@ -277,6 +279,7 @@ additionalFiles:
   - ansible/tasks/node-converge-javascript.yml
   - ansible/tasks/node-converge-deno.yml
   - ansible/swamp-worker-renewal.yml
+  - ansible/swamp-token-renewal.yml
   - ansible/tasks/swamp-worker-renew-slot.yml
   - ansible/tasks/swamp-worker-connections.yml
   - ansible/tasks/swamp-worker-renew-verify.yml

@@ -1,0 +1,11 @@
+file = "swamp/tests/swamp_gateway_token_test.py"
+cost = 2
+inputs = [
+  "swamp/ansible/files/swamp-gateway-token.sh",
+]
+cases = [
+  "test_list_parses_both_cli_shapes_and_names_the_held_generations_without_secrets",
+  "test_mint_names_the_day_and_a_rerun_reveals_the_same_generation",
+  "test_a_revoked_name_of_today_takes_the_next_suffix",
+  "test_revoke_accepts_only_gateway_generations",
+]

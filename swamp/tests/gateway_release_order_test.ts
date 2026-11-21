@@ -49,8 +49,42 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   assert(argv.join(" ").includes("gateway:release:wait-idle"));
   assertEquals(release.find((step) => step.name === "Check the candidate")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
-  assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
+  assertEquals(release.find((step) => step.name === "Renew Swamp tokens")?.dependsOn,
     [{ step: "Check the candidate", condition: { type: "succeeded" } }]);
+  assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
+    [{ step: "Renew Swamp tokens", condition: { type: "succeeded" } }]);
+});
+
+Deno.test("every release renews Swamp tokens before the load and revokes replaced Gateway tokens only after the handover", async () => {
+  const renew = release.find((step) => step.name === "Renew Swamp tokens")!;
+  assertEquals(renew.allowFailure, undefined);
+  assert(renew.task.inputs?.argv?.join(" ").includes("gateway:swamp-credentials --release"));
+  const revoke = release.find((step) => step.name === "Revoke replaced tokens")!;
+  assertEquals(revoke.dependsOn, [{ step: "Hand over the release", condition: { type: "succeeded" } }]);
+  assert(revoke.task.inputs?.argv?.join(" ").includes("gateway:swamp-credentials --revoke"));
+  assertEquals(revoke.task.inputs?.argv?.[6], "swamp-credentials-revoke");
+  // The container route: the production release runs the same phases through its dispatcher, for Gateway releases only.
+  const production = await steps("workflow-production-release");
+  const containerRenew = production.find((step) => step.name === "Renew Swamp tokens")!;
+  assertEquals(containerRenew.dependsOn, [{ step: "Check the candidate", condition: { type: "succeeded" } }]);
+  assertEquals(containerRenew.task.inputs?.argv?.[4], "swamp-credentials");
+  assert(containerRenew.guard?.includes('inputs.kind != "gateway.release"'));
+  assertEquals(production.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
+    [{ step: "Renew Swamp tokens", condition: { type: "succeeded" } }]);
+  const containerRevoke = production.find((step) => step.name === "Revoke replaced tokens")!;
+  assertEquals(containerRevoke.dependsOn, [{ step: "Hand over the release", condition: { type: "succeeded" } }]);
+  assertEquals(containerRevoke.task.inputs?.argv?.[4], "swamp-credentials-revoke");
+  assert(containerRevoke.guard?.includes('inputs.kind != "gateway.release"'));
+  const dispatcher = await Deno.readTextFile(new URL("../../bin/gateway-release-phase", import.meta.url));
+  for (const phase of ["swamp-credentials", "swamp-credentials-revoke"]) {
+    assert(new RegExp(`\\|${phase}\\)`).test(dispatcher), `the installed dispatcher accepts ${phase}`);
+  }
+  const container = await Deno.readTextFile(new URL("../scripts/gateway-release-container.sh", import.meta.url));
+  assert(container.includes("gateway:swamp-credentials --release --no-interaction"));
+  // The guest's env is a read-only projection: the host installs each due token as orbit, then publishes it.
+  assert(container.includes('--mint-for-host="$kind"'));
+  assert(container.includes("runuser -u orbit -- python3 -I -c \"$(src swamp/scripts/gateway-swamp-token-install.py)\""));
+  assert(container.includes("gateway:swamp-credentials --revoke --no-interaction"));
 });
 
 Deno.test("the Gateway check reads the root CA under the private certificate folder as root", () => {
@@ -169,15 +203,118 @@ Deno.test("cleanup resumes only after scheduler handover or switch-back has ende
   assert(cleanup.dependsOn?.some((edge) => edge.step === "Switch back" && edge.condition.type === "always"));
 });
 
-Deno.test("serving reconciliation brackets the retained workflow load with read-only checks", async () => {
+Deno.test("serving reconciliation renews Swamp tokens before Load (without revoking) and brackets Load with read-only checks", async () => {
   const reconcile = await steps("workflow-operation-gateway-reconcile");
-  assertEquals(reconcile.map((step) => step.name), ["Check the serving release", "Reload serving workflows", "Verify the serving release", "Release the serving generation"]);
+  assertEquals(reconcile.map((step) => step.name), [
+    "Check the serving release",
+    "Renew Swamp tokens",
+    "Reload serving workflows",
+    "Verify the serving release",
+    "Release the serving generation",
+  ]);
   assert(reconcile[0].task.inputs?.argv?.includes("reconcile-begin"));
-  assertEquals(reconcile[1].task.workflowIdOrName, "operation-gateway-swamp-load");
+  assert(reconcile[1].task.inputs?.argv?.includes("swamp-credentials"));
   assertEquals(reconcile[1].dependsOn, [{ step: reconcile[0].name, condition: { type: "succeeded" } }]);
+  assertEquals(reconcile[2].task.workflowIdOrName, "operation-gateway-swamp-load");
   assertEquals(reconcile[2].dependsOn, [{ step: reconcile[1].name, condition: { type: "succeeded" } }]);
-  assert(reconcile[2].task.inputs?.argv?.includes("reconcile-verify"));
-  assert(reconcile[3].task.inputs?.argv?.includes("reconcile-end"));
+  assertEquals(reconcile[3].dependsOn, [{ step: reconcile[2].name, condition: { type: "succeeded" } }]);
+  assert(reconcile[3].task.inputs?.argv?.includes("reconcile-verify"));
+  assert(reconcile[4].task.inputs?.argv?.includes("reconcile-end"));
+  assert(reconcile[4].dependsOn?.some((edge) => edge.step === "Renew Swamp tokens" && edge.condition.type === "always"));
+  assertEquals(reconcile.some((step) => step.task.inputs?.argv?.includes("swamp-credentials-revoke")), false);
+});
+
+Deno.test("retained rollback tolerates an older target without swamp-credentials in both container and host routes", async () => {
+  const scratch = await Deno.makeTempDir();
+  try {
+    // 1. Container route: bin/gateway-release-phase skips swamp-credentials and swamp-credentials-revoke when target predates them.
+    const mirror = `${scratch}/shared/orbit.git`;
+    const state = `${scratch}/.orbit`;
+    const libexec = `${scratch}/libexec`;
+    await Deno.mkdir(`${mirror}/swamp/scripts`, { recursive: true });
+    await Deno.mkdir(`${mirror}/swamp/workflows`, { recursive: true });
+    await Deno.mkdir(state, { recursive: true });
+    await Deno.mkdir(libexec, { recursive: true });
+    await Deno.writeTextFile(`${state}/gateway-release.lock`, "");
+    const git = async (...args: string[]) => {
+      const done = await new Deno.Command("git", {
+        args: ["-C", mirror, ...args],
+        env: {
+          GIT_AUTHOR_NAME: "t",
+          GIT_AUTHOR_EMAIL: "t@t",
+          GIT_COMMITTER_NAME: "t",
+          GIT_COMMITTER_EMAIL: "t@t",
+        },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(done.code, 0, new TextDecoder().decode(done.stderr));
+      return new TextDecoder().decode(done.stdout).trim();
+    };
+    await git("init", "--quiet");
+    await Deno.writeTextFile(
+      `${mirror}/swamp/scripts/gateway-release-container.sh`,
+      "# orbit-gateway-recovery-protocol: 4\nexit 64\n",
+    );
+    await Deno.writeTextFile(
+      `${mirror}/swamp/workflows/workflow-production-release-activate.yaml`,
+      "# orbit-gateway-recovery-protocol: 4\n",
+    );
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "older target");
+    const olderSha = await git("rev-parse", "HEAD");
+    const dispatcherSource = (await Deno.readTextFile(new URL("../../bin/gateway-release-phase", import.meta.url)))
+      .replaceAll("/home/orbit", scratch)
+      .replaceAll("/var/lib/orbit", `${scratch}/var`)
+      .replaceAll("/usr/local/libexec", libexec);
+    const dispatcher = `${libexec}/orbit-gateway-release-phase`;
+    await Deno.writeTextFile(dispatcher, dispatcherSource, { mode: 0o700 });
+    for (const phase of ["swamp-credentials", "swamp-credentials-revoke"]) {
+      const done = await new Deno.Command(dispatcher, {
+        args: [phase, olderSha, "99"],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const stderr = new TextDecoder().decode(done.stderr);
+      assertEquals(done.code, 0, stderr);
+      assert(stderr.includes("gateway.swamp_credentials_skipped"), stderr);
+    }
+
+    // 2. Host route: workflow-operation-gateway-release skips when target artisan lacks gateway:swamp-credentials.
+    const fakePhp = `${scratch}/fake-php`;
+    await Deno.writeTextFile(
+      fakePhp,
+      '#!/bin/sh\nif [ "$2" = "list" ]; then printf "migrate\\ngateway:release:wait-idle\\n"; exit 0; fi\necho "Command gateway:swamp-credentials is not defined" >&2; exit 1\n',
+      { mode: 0o700 },
+    );
+    for (const stepName of ["Renew Swamp tokens", "Revoke replaced tokens"]) {
+      const step = release.find((item) => item.name === stepName)!;
+      const argv = step.task.inputs!.argv!;
+      const script = argv[4].replace("/home/orbit/.orbit/gateway-containers.json", `${scratch}/absent-containers.json`);
+      const done = await new Deno.Command("/bin/bash", {
+        args: [
+          "-c",
+          script,
+          "bash",
+          argv[6],
+          olderSha,
+          "99",
+          fakePhp,
+          `${scratch}/artisan`,
+          "gateway:swamp-credentials",
+          stepName === "Renew Swamp tokens" ? "--release" : "--revoke",
+          "--no-interaction",
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const stderr = new TextDecoder().decode(done.stderr);
+      assertEquals(done.code, 0, stderr);
+      assert(stderr.includes("gateway.swamp_credentials_skipped"), stderr);
+    }
+  } finally {
+    await Deno.remove(scratch, { recursive: true });
+  }
 });
 
 Deno.test("Gateway and AppProd share the clone, handover, compensation and readback boundaries", async () => {

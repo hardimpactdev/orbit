@@ -4,34 +4,45 @@ const ALERT_HOURS = 72;
 const SOON_HOURS = 6;
 // Expiry alerts skip credentials that expired over a week ago.
 const STALE_HOURS = -168;
+// orbit-orchestrator-read has no fleet consumer, so nothing renews it: the operator gets ten days' notice instead.
+const NOTICE = { family: "orbit-orchestrator-read", hours: 240 } as const;
+// A renewal mints `<base>-<YYYYMMDD>[-<n>]` (or an earlier `<base>-<UTC stamp>`); the plain base is the first generation.
+const family = (name: string) => name.replace(/-\d{8}(T\d{6}Z)?(-\d+)?$/, "");
 // Keeps one bounded alert list in the step output.
 export const MAXIMUM_ROWS = 200;
-// The Swamp host's own worker pair must always be listed.
-const EXPECTED = [["access", "orbit-node-209-access"], [
-    "enrollment",
-    "orbit-node-209",
-]] as const;
+// Retired per-Node workers (orbit-node-209) are no longer expected.
+const EXPECTED: readonly (readonly [string, string])[] = [];
 
 const Expiry = z.string().nullable();
+const AccessRow = z.object({
+    name: z.string(),
+    principalId: z.string(),
+    state: z.string(),
+    expiresAt: Expiry,
+}).passthrough();
+const EnrollmentRow = z.object({
+    name: z.string(),
+    state: z.string(),
+    expiresAt: Expiry,
+}).passthrough();
 const Lists = {
-    access: z.array(
-        z.object({ name: z.string(), state: z.string(), expiresAt: Expiry })
-            .passthrough(),
-    ),
-    enrollment: z.array(
-        z.object({ name: z.string(), state: z.string(), expiresAt: Expiry })
-            .passthrough(),
-    ),
+    access: z.union([
+        z.array(AccessRow),
+        z.object({ tokens: z.array(AccessRow) }).passthrough(),
+    ]),
+    enrollment: z.array(EnrollmentRow),
 };
 export const ReportArgs = z.object({
     access: z.string(),
     enrollment: z.string(),
     certificate: z.string(),
+    // The token names the Swamp Node's consumers hold, one per line: serve-driver and each worker slot's two files.
+    held: z.string(),
 }).strict();
 const Alert = z.object({
     kind: z.string(),
     name: z.string(),
-    reason: z.enum(["within_72h", "within_6h", "expired", "missing"]),
+    reason: z.enum(["within_10d", "within_72h", "within_6h", "expired", "missing"]),
     expires_at: z.string().nullable(),
     hours_left: z.number().nullable(),
 }).strict();
@@ -55,7 +66,8 @@ function parsed<T>(kind: keyof typeof Lists, stdout: string): T[] {
     }
     const result = Lists[kind].safeParse(value);
     if (!result.success) throw new Error(`${kind} list changed shape`);
-    return result.data as T[];
+    const data = result.data;
+    return (Array.isArray(data) ? data : data.tokens) as T[];
 }
 
 function record(
@@ -87,6 +99,8 @@ function record(
         ? "within_6h"
         : hours <= ALERT_HOURS
         ? "within_72h"
+        : family(name) === NOTICE.family && hours <= NOTICE.hours
+        ? "within_10d"
         : "ok";
     return {
         kind,
@@ -113,14 +127,32 @@ export function report(
 ): z.infer<typeof Report> {
     const listed: Credential[] = [];
     for (const kind of ["access", "enrollment"] as const) {
-        for (
-            const row of parsed<
-                { name: string; state: string; expiresAt: string | null }
-            >(kind, args[kind])
-        ) {
-            if (row.state !== "revoked") {
-                listed.push(record(kind, row.name, row.expiresAt, now));
+        // A superseded generation stays listed until its revoke. It is skipped only when a consumer holds a newer generation of
+        // its family and principal; the Gateway env is not visible here, so its generations all count (the Gateway raises its own assistance).
+        const rows = parsed<
+            {
+                name: string;
+                principalId?: string;
+                state: string;
+                expiresAt: string | null;
             }
+        >(kind, args[kind]).filter((row) => row.state !== "revoked");
+        const byName = new Map(rows.map((row) => [row.name, row]));
+        const held = args.held.split("\n").map((name) => name.trim())
+            .filter((name) => byName.has(name));
+        for (const row of rows) {
+            const superseded = held.some((name) => {
+                const current = byName.get(name)!;
+                return name !== row.name &&
+                    family(name) === family(row.name) &&
+                    (kind !== "access" ||
+                        (typeof current.principalId === "string" &&
+                            current.principalId === row.principalId)) &&
+                    row.expiresAt !== null &&
+                    (current.expiresAt === null ||
+                        current.expiresAt > row.expiresAt);
+            });
+            if (!superseded) listed.push(record(kind, row.name, row.expiresAt, now));
         }
     }
     listed.push(
@@ -144,12 +176,18 @@ export function report(
             item.hours_left === null || item.hours_left > STALE_HOURS
         )
             .filter((item) =>
-                ["within_72h", "within_6h", "expired"].includes(item.class)
+                ["within_10d", "within_72h", "within_6h", "expired"].includes(
+                    item.class,
+                )
             )
             .map((item) => ({
                 kind: item.kind,
                 name: item.name,
-                reason: item.class as "within_72h" | "within_6h" | "expired",
+                reason: item.class as
+                    | "within_10d"
+                    | "within_72h"
+                    | "within_6h"
+                    | "expired",
                 expires_at: item.expires_at,
                 hours_left: item.hours_left,
             })),
@@ -162,7 +200,7 @@ export function report(
 
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.11.13.1",
+    version: "2026.11.21.3",
     resources: {
         credential_report: {
             schema: Report,

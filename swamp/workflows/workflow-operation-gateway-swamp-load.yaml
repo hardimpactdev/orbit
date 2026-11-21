@@ -155,15 +155,39 @@ jobs:
             # Reload workflows, extensions (with their additionalFiles) and grants, then compare served workflows with the
             # target commit.
             run: |
-              set -eu
+              set -euo pipefail
               export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
               export SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
+              driver=/home/orbit/.config/swamp/serve-driver-token
+              errors=$(mktemp)
+              trap 'rm -f "$errors"' EXIT
+              # Runs one swamp call and keeps its stderr. A failed call prints that stderr and its exit, never a bare jq exit 4 on
+              # empty stdout. A refused token names the renewal that replaces it (serve-driver expired on 2026-11-21).
+              swamp_call() {
+                limit=$1
+                shift
+                status=0
+                output=$(timeout "$limit" /usr/local/bin/swamp "$@" 2>"$errors") || status=$?
+                if [ "$status" -ne 0 ]; then
+                  if grep -qiE 'unauthori[sz]ed|auth rejected|expired|revoked|invalid token|code 400[23]' "$errors"; then
+                    echo "gateway.release_swamp_token_expired: serve-driver token $driver expired or revoked; run orbit-swamp-token-renewal (systemctl start orbit-swamp-token-renewal.service on the Swamp Node)" >&2
+                  fi
+                  echo "swamp $1 $2 failed with exit $status:" >&2
+                  cat "$errors" >&2
+                  exit "$status"
+                fi
+                printf '%s\n' "$output"
+              }
+              remote="--server ws://127.0.0.1:9418 --token-file $driver --json"
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
-              timeout 120 /usr/local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
-                --token-file /home/orbit/.config/swamp/serve-driver-token --json \
-                | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
-              timeout 90 /usr/local/bin/swamp access reload --server ws://127.0.0.1:9418 \
-                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -e '.success == true' >/dev/null
+              # shellcheck disable=SC2086
+              reload=$(swamp_call 120 serve reload $remote)
+              printf '%s' "$reload" | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null \
+                || { echo "swamp serve reload reported errors: $reload" >&2; exit 1; }
+              # shellcheck disable=SC2086
+              access=$(swamp_call 90 access reload $remote)
+              printf '%s' "$access" | jq -e '.success == true' >/dev/null \
+                || { echo "swamp access reload reported errors: $access" >&2; exit 1; }
               # The production Swamp Node's own schedules read this checkout. They have no built-in trigger, which every serve
               # would register: only this load sets them, as serve.yaml trigger overrides. A missing or empty file passes on purpose: a
               # rollback runs this load against an older checkout without it. A present file that jq cannot read fails the load.
@@ -171,15 +195,15 @@ jobs:
               entries=$(if [ -s "$schedules" ]; then jq -r 'to_entries[] | "\(.key) \(.value)"' "$schedules"; fi)
               printf '%s\n' "$entries" | while read -r name cron; do
                 [ -n "$name" ] || continue
-                timeout 60 /usr/local/bin/swamp workflow trigger set "$name" --schedule "$cron" --server ws://127.0.0.1:9418 \
-                  --token-file /home/orbit/.config/swamp/serve-driver-token --json </dev/null \
-                  | jq -e --arg name "$name" --arg cron "$cron" '.workflowName == $name and .entry.schedule == $cron' >/dev/null
+                # shellcheck disable=SC2086
+                trigger=$(swamp_call 60 workflow trigger set "$name" --schedule "$cron" $remote </dev/null)
+                printf '%s' "$trigger" | jq -e --arg name "$name" --arg cron "$cron" '.workflowName == $name and .entry.schedule == $cron' >/dev/null
               done
               # Schedules write their own schedule-<uuid> workflows into serve at any time; only the commit's are compared.
               tracked='[.results[] | select(.name | test("^schedule-[0-9a-f-]{36}$") | not) | [.id, .name]] | sort'
-              disk=$(timeout 60 /usr/local/bin/swamp workflow list --repo-dir swamp --json | jq -ec "$tracked")
-              live=$(timeout 60 /usr/local/bin/swamp workflow list --server ws://127.0.0.1:9418 \
-                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -ec "$tracked")
+              disk=$(swamp_call 60 workflow list --repo-dir swamp --json | jq -ec "$tracked")
+              # shellcheck disable=SC2086
+              live=$(swamp_call 60 workflow list $remote | jq -ec "$tracked")
               test "$disk" = "$live"
               jq -cn --arg sha "$RELEASE_SHA" --arg previous "$PREVIOUS_SHA" --argjson workflows "$(printf '%s' "$live" | jq length)" \
                 '{sha: $sha, previous: $previous, workflows: $workflows}'

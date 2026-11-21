@@ -57,7 +57,7 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 
 | Command | Every | Queue | Unique for |
 | --- | --- | --- | --- |
-| `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
+| `gateway:swamp-credentials` | hour | `problems` | 900 seconds |
 | `gateway:release:auto` | 5 minutes | `tasks` | 300 seconds |
 | `conn:threads:read` | minute | `problems` | 120 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
