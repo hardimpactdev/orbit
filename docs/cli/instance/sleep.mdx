@@ -52,7 +52,7 @@ The command uses [signed power routing](/reference/executor#signed-power-deliver
 
 A sleep, the idle sleep included, never waits for or is refused by a role converge on its Node ([Operations](/reference/operations)).
 
-A sleep cancels a nested clone's open fleet wait (`instance.fleet`) and clears its recorded fleet: `fleet_ready_at`, `fleet_failed_at` and `fleet_error_code` describe one boot only ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
+A sleep cancels a nested clone's open fleet wait (`instance.fleet`), but keeps its recorded fleet. A clone whose fleet no start has proved ready still owes it, so its next wake starts the fleet ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
 
 ## Errors
 

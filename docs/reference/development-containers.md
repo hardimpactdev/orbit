@@ -3685,7 +3685,13 @@ A failed fleet does not stop the copy or change its status. No fleet is left uns
 
 The admission of a destroy or a sleep of the Instance cancels its open `instance.fleet`. A cancel wins over what the Node answers: the wait ends `cancelled` and records nothing. No end writes to an Instance that a removal owns or that is gone. The wait holds nothing, so a task cancel, a copy's destroy and a settle pass do not wait for it.
 
-The fleet fields describe the current boot only. The admission of a sleep, a wake, a start or a new create clears them and drops a fallback that waits. A start records its own end. A wake that resumes a frozen copy records none: the fields stay empty until the next start or create.
+The fleet is owed from the admission of `instance.fleet` until a start proves it ready: the runtime keeps `fleet_start_pending`. A ready wait, or a successful `instance.start`, clears it. A failed or cancelled wait leaves it set. A sleep keeps the fleet fields and the debt, because a freeze keeps the boot:
+
+- a wake of a frozen clone that owes its fleet is an `instance.start`, not a resume, so the fleet starts after the wake;
+- a fallback that waits does nothing while the copy sleeps; that start supersedes it;
+- a clone whose completion failed drops its fallback, and the completion's retry runs `clone-fleet` itself, because no wait runs or proved the fleet ready.
+
+The admission of a start or a new create clears the fleet fields and drops a fallback that waits. A start records its own end.
 
 A copy of a seed taken before Orbit's tunnel unit, a clone that Swamp creates, and a create whose Node cannot run `instance.fleet_ready` keep the completion's `clone-fleet`: their create's result has no `fleet_start`.
 

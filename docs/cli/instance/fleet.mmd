@@ -13,6 +13,7 @@ sequenceDiagram
   Note over GW: Admit beside completion<br/>no lock · after the create
   %%> Started by:
   %%> - the create's projection, in the transaction that ends the create, beside `instance.complete`
+  %%> - sets `fleet_start_pending` on the runtime: the fleet is owed until a start proves it ready
   %%> - only when `prepare` reported Orbit's tunnel boot unit in the seed (`fleet_tunnel`, agent 0.26.0) and the Node reports `instance.fleet_ready`; otherwise the completion runs `clone-fleet`
   %%> - it follows `instance.create` in `ORBIT_ENGINE_KINDS`
   %%> On failure:
@@ -37,11 +38,14 @@ sequenceDiagram
     N--xEN: failed receipt<br/>error_code
     Note over GW: Record the failure<br/>fleet_failed_at · error code
     %%> The copy keeps running and its status does not change.
-    %%> Fallback: once the Instance is active and free, the Gateway admits `instance.start`, which checks and resumes the fleet as `clone-fleet` does; the reconciler's pass admits it when the completion still ran.
+    %%> Fallback: once the Instance is active, awake and free, the Gateway admits `instance.start`, which checks and resumes the fleet as `clone-fleet` does; the reconciler's pass admits it when the completion still ran.
+    %%> A failed completion drops the fallback: its retry runs `clone-fleet`, because no wait runs or proved the fleet ready.
     %%> A wait still open after its 450 s budget ends as `operation.timed_out` on the reconciler's pass.
   else a destroy or a sleep is admitted
     Note over GW: Cancel the wait<br/>record nothing
     %%> The admission of `instance.destroy` or `instance.sleep` cancels the open wait, and the engine ends it at its next transition.
     %%> A cancel wins over what the Node answers: the wait ends cancelled and records nothing.
     %%> No end writes to an Instance that a removal owns or that is gone.
+    %%> A sleep keeps the debt: `fleet_start_pending` stays set until a start proves the fleet ready, so the next wake of the frozen clone is an `instance.start`, not a resume.
+    %%> A fallback that waits does nothing while the copy sleeps; the wake's start supersedes it.
   end

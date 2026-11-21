@@ -28,7 +28,9 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceCompleteInput;
+use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -604,7 +606,7 @@ it('ends a cancelled wait as cancelled and records nothing, even when its step f
         ->and([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null]);
 });
 
-it('clears the recorded fleet when the Instance sleeps, wakes, starts or is created again, and drops a waiting fallback', function (string $kind): void {
+it('clears the recorded fleet when the Instance starts or is created again, and drops a waiting fallback', function (string $kind): void {
     $fleet = fleetWait($this);
     fleetReceipt($fleet, ['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']);
     expect(InstanceRuntime::query()->where('instance_id', $fleet->target_id)->value('fleet_error_code'))->toBe('instance.container_fleet_resume_failed');
@@ -613,8 +615,83 @@ it('clears the recorded fleet when the Instance sleeps, wakes, starts or is crea
 
     $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
     expect([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null])
+        // The fleet stays owed until a start proves it ready.
+        ->and($runtime->fleet_start_pending)->toBeTrue()
         ->and($fleet->refresh()->state['fallback'])->toBe('superseded');
 })->with(InstanceFleetOperation::Resets);
+
+/** Sleeps the clone as a freeze does: its sleep is admitted, then ends frozen. */
+function fleetSleep(Operation $fleet): Operation
+{
+    $sleep = app(OperationStore::class)->create(InstanceSleep::Kind, 'instance', $fleet->target_id, $fleet->node_id, ['instance_id' => $fleet->target_id], null, null);
+    $sleep->forceFill(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => ['sleep' => 'frozen']])->save();
+    InstanceRuntime::query()->where('instance_id', $fleet->target_id)->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+
+    return $sleep;
+}
+
+/** The Operation that a wake of the clone admits: a resume, or the start of a fleet that is still owed. */
+function fleetWakeKind(Operation $fleet): string
+{
+    $instance = Instance::query()->findOrFail($fleet->target_id);
+
+    return (new ReflectionMethod(InstanceWake::class, 'admitWake'))->invoke(app(InstanceWake::class), $instance, null, null)->kind;
+}
+
+it('keeps a fleet owed across a sleep during its wait, and the wake starts it instead of resuming it', function (): void {
+    $fleet = fleetWait($this);
+    fleetCompleted($fleet);
+
+    fleetSleep($fleet);
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $fleet->id]);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect($fleet->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($runtime->fleet_start_pending)->toBeTrue()
+        ->and(fleetWakeKind($fleet))->toBe(InstanceStart::Kind);
+});
+
+it('keeps a pending fallback while the clone sleeps, and the wake starts the fleet in its place', function (): void {
+    $fleet = fleetWait($this);
+    fleetReceipt($fleet, ['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']);
+    fleetCompleted($fleet);
+    fleetSleep($fleet);
+
+    // Asleep: the fallback does not wake the copy.
+    app(InstanceFleetOperation::class)->sweep();
+    expect(Operation::query()->where('kind', InstanceStart::Kind)->exists())->toBeFalse()
+        ->and($fleet->refresh()->state['fallback'])->toBe(InstanceFleetOperation::FallbackPending);
+
+    expect(fleetWakeKind($fleet))->toBe(InstanceStart::Kind)
+        ->and($fleet->refresh()->state['fallback'])->toBe('superseded');
+});
+
+it('resumes a clone whose fleet a start proved ready: nothing is owed', function (): void {
+    $fleet = fleetWait($this);
+    fleetReceipt($fleet, ['status' => 'output', 'stdout' => '{"fleet":"ready","started":[]}']);
+    fleetCompleted($fleet);
+    fleetSleep($fleet);
+
+    expect(InstanceRuntime::query()->where('instance_id', $fleet->target_id)->value('fleet_start_pending'))->toBeFalse()
+        ->and(fleetWakeKind($fleet))->toBe(InstanceWake::Kind);
+});
+
+it('drops the fallback of a clone whose completion failed, and the completion\'s retry starts the fleet itself', function (): void {
+    $fleet = fleetWait($this);
+    fleetReceipt($fleet, ['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']);
+    $create = Operation::query()->findOrFail($fleet->input['create_operation_id']);
+    $completion = handoverCompletion($create);
+    $completion->forceFill(['status' => 'running', 'state' => [...($completion->state ?? []), 'swamp_run_id' => 'complete-run']])->save();
+    app(InstanceCompleteProjection::class)->apply($completion->refresh(), ['status' => 'failed', 'run_id' => 'complete-run', 'error_code' => 'instance.create_workspace_failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $create->target_id, 'ready' => false, 'failed_step' => 'workspace', 'error_code' => 'instance.create_workspace_failed']]);
+
+    app(InstanceFleetOperation::class)->sweep();
+
+    expect($fleet->refresh()->state['fallback'])->toBe('dropped')
+        ->and(Operation::query()->where('kind', InstanceStart::Kind)->exists())->toBeFalse()
+        ->and(app(NativeInstanceCompleteInput::class)->input($completion->refresh())['intent'])->toHaveKey('fleet');
+});
 
 it('lets a task cancel, a copy destroy and a settle pass an open fleet wait: it holds nothing', function (): void {
     $fleet = fleetWait($this);

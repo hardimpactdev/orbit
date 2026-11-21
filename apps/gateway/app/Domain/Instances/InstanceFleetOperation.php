@@ -32,7 +32,8 @@ use Throwable;
  * that a removal owns or that is gone.
  *
  * A wait that fails never leaves the fleet to nobody: its fallback, `instance.start`, checks and starts the fleet as Swamp does, once
- * the Instance is active. It runs only on the engine: it has no Swamp workflow, so the reconciler's pass reaches it through {@see sweep()}.
+ * the Instance is active and awake. Until a start proves the fleet ready, the runtime owes it (`fleet_start_pending`): a sleep keeps
+ * that, and the next wake starts the fleet instead of resuming it. It runs only on the engine: it has no Swamp workflow, so the reconciler's pass reaches it through {@see sweep()}.
  */
 final readonly class InstanceFleetOperation implements OperationRecordCoordinator
 {
@@ -45,10 +46,11 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
     public const array Ends = ['instance.destroy', 'instance.sleep'];
 
     /**
-     * The kinds whose admission makes the recorded fleet stale, and a waiting fallback needless: the copy sleeps, wakes or starts, or
-     * its create runs again. Each brings its own fleet start; `instance.start` records its own end.
+     * The kinds whose admission makes the recorded fleet stale, and a waiting fallback needless: the copy starts, or its create runs
+     * again. Each brings its own fleet start, and `instance.start` records its own end. A sleep and a wake keep the record: a freeze
+     * keeps the boot, and a fleet that is still owed (`fleet_start_pending`) makes the wake an `instance.start`.
      */
-    public const array Resets = ['instance.create', 'instance.sleep', 'instance.wake', 'instance.start'];
+    public const array Resets = ['instance.create', 'instance.start'];
 
     /** `state.fallback` of a failed wait whose fleet start waits for the Instance to be active. */
     public const string FallbackPending = 'pending';
@@ -84,8 +86,14 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
     {
         try {
             // An admission the request did not ask for: it takes no idempotency key of the request.
-            $operation = DB::transaction(fn (): Operation => app(OperationIdempotency::class)->suspended(fn (): Operation => $this->operations->create(
-                self::Kind, 'instance', (int) $create->target_id, $create->node_id, self::draft($create)->input, $create->triggered_by, $create->request_id)));
+            $operation = DB::transaction(function () use ($create): Operation {
+                $operation = app(OperationIdempotency::class)->suspended(fn (): Operation => $this->operations->create(
+                    self::Kind, 'instance', (int) $create->target_id, $create->node_id, self::draft($create)->input, $create->triggered_by, $create->request_id));
+                // The fleet is owed until a start proves it ready: a sleep before then makes the next wake start it.
+                InstanceRuntime::query()->where('instance_id', $create->target_id)->update(['fleet_start_pending' => true]);
+
+                return $operation;
+            });
         } catch (Throwable $error) {
             report($error);
             $this->operations->change($create, ['result' => array_diff_key($create->result ?? [], ['fleet_start' => true])]);
@@ -147,15 +155,14 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
                 'failed_step' => $failedStep,
                 'state' => [...($current->state ?? []), ...($failed ? ['fallback' => self::FallbackPending] : [])],
                 'result' => ['instance_id' => $current->target_id, 'fleet' => $status === OperationStatus::Succeeded ? 'ready' : ($code ?? 'cancelled')]]);
+            // Under the wait's lock, so a start admitted after this end clears what it wrote, never the other way round.
+            if ($status !== OperationStatus::Cancelled) {
+                self::record((int) $current->target_id, $failed ? $code : null);
+            }
 
             return $current->refresh();
         });
-        if ($closed === null || $closed->status === OperationStatus::Cancelled) {
-            return;
-        }
-        $failed = $closed->status === OperationStatus::Failed;
-        self::record((int) $closed->target_id, $failed ? $closed->error_code : null);
-        if ($failed) {
+        if ($closed?->status === OperationStatus::Failed) {
             $this->fallback($closed->id);
         }
     }
@@ -170,14 +177,17 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
         if ($operation === null || ($operation->state['fallback'] ?? null) !== self::FallbackPending) {
             return;
         }
-        $instance = Instance::query()->find($operation->target_id);
-        if ($instance === null || $instance->status === InstanceState::Removing) {
+        $instance = Instance::query()->with('runtime')->find($operation->target_id);
+        // Nothing to start once the copy goes, or once its completion failed: the completion's retry starts the fleet itself
+        // (NativeInstanceCompleteInput), and the owed fleet stays owed for the next wake.
+        if ($instance === null || $instance->status === InstanceState::Removing || self::completionFailed($instance)) {
             $this->operations->change($operation, ['state' => [...($operation->state ?? []), 'fallback' => 'dropped']]);
 
             return;
         }
-        if ($instance->status !== InstanceState::Active) {
-            return; // The completion still runs, or failed and waits for its retry.
+        // The completion still runs; or the copy sleeps, and its wake starts the owed fleet (InstanceWake).
+        if ($instance->status !== InstanceState::Active || $instance->runtime?->power_state === InstanceRuntimePowerState::Stopped) {
+            return;
         }
         try {
             $start = app(OperationIdempotency::class)->suspended(fn (): Operation => app(InstanceStart::class)->start($instance, $operation->triggered_by, $operation->request_id));
@@ -236,6 +246,23 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
         }
     }
 
+    /** Whether the Instance has an open fleet wait. */
+    public static function open(int $instanceId): bool
+    {
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instanceId)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists();
+    }
+
+    /** Whether the Instance's latest completion ended without success: it is not active, and no completion is open. */
+    private static function completionFailed(Instance $instance): bool
+    {
+        $completion = Operation::query()->where('kind', 'instance.complete')->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->latest('id')->first();
+
+        return $instance->status !== InstanceState::Active && $completion !== null && $completion->status->terminal()
+            && $completion->status !== OperationStatus::Succeeded;
+    }
+
     /**
      * Records the fleet's end on the Instance's runtime, unless a removal owns the Instance or it is gone: `fleet_ready_at`, or
      * `fleet_failed_at` with the code.
@@ -247,8 +274,9 @@ final readonly class InstanceFleetOperation implements OperationRecordCoordinato
             if ($instance === null || $instance->status === InstanceState::Removing) {
                 return;
             }
+            // Only a ready fleet pays what is owed; a failed one stays owed for the fallback or the next wake.
             $instance->runtime()->first()?->update($failure === null
-                ? ['fleet_ready_at' => now(), 'fleet_failed_at' => null, 'fleet_error_code' => null]
+                ? ['fleet_ready_at' => now(), 'fleet_failed_at' => null, 'fleet_error_code' => null, 'fleet_start_pending' => false]
                 : ['fleet_ready_at' => null, 'fleet_failed_at' => now(), 'fleet_error_code' => $failure]);
         });
     }

@@ -41,6 +41,7 @@ use LogicException;
  * @property Carbon|null $fleet_ready_at
  * @property Carbon|null $fleet_failed_at
  * @property string|null $fleet_error_code
+ * @property bool $fleet_start_pending
  * @property int|null $idmap_size
  * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskKey); null for every other container
  * @property Carbon|null $created_at
@@ -74,6 +75,7 @@ final class InstanceRuntime extends Model
         'fleet_ready_at',
         'fleet_failed_at',
         'fleet_error_code',
+        'fleet_start_pending',
         'idmap_size',
     ];
 
@@ -132,6 +134,7 @@ final class InstanceRuntime extends Model
             'seed_taken_at' => 'datetime',
             'fleet_ready_at' => 'datetime',
             'fleet_failed_at' => 'datetime',
+            'fleet_start_pending' => 'boolean',
         ];
     }
 }
