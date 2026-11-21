@@ -247,21 +247,15 @@ final readonly class ConnTaskPanel
         return ['number' => preg_match('~/pull/(\d+)~', $group->pr_url, $match) === 1 ? (int) $match[1] : null, 'url' => $group->pr_url, 'state' => null];
     }
 
-    /** The provider of the copy instance the thread started on, else the one its model names. */
+    /**
+     * The provider of the copy instance the thread started on (InstanceContainer::instanceProvider), else the one its model names: a
+     * thread with no instance is from before Orbit recorded one, when a copy ran Claude and Codex only.
+     */
     private static function provider(AgentThread $thread): ?string
     {
-        foreach (InstanceContainer::CopyProviders as $provider => $efforts) {
-            foreach ($efforts as $effort) {
-                if ($thread->provider_instance === InstanceContainer::providerInstance($provider, $effort)) {
-                    return $provider;
-                }
-            }
-        }
-
-        return match (true) {
+        return InstanceContainer::instanceProvider($thread->provider_instance) ?? match (true) {
             str_starts_with((string) $thread->model, 'claude-') => 'claude',
             str_starts_with((string) $thread->model, 'gpt-') => 'codex',
-            str_starts_with((string) $thread->model, 'gemini-') => 'antigravity',
             default => null,
         };
     }

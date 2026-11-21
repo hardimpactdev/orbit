@@ -51,6 +51,8 @@
     "an earlier turn passed with its admitted thread ID is found by its title, never by that ID": 12,
     "a turn reads and removes the handoff receipts it left, and returns their text": 9.0,
     "the read-back reads the thread's token use through the helper; a failed read leaves it unknown and fails nothing": 23,
-    "an Antigravity thread starts on the antigravity instance with its model and no options; no catalog lists it": 5.0
+    "a turn admitted before the base model, with none in its intent, starts a Claude, Codex or Antigravity thread on its model": 17.0,
+    "an Antigravity thread starts on its tiered model, which the catalog's base model confirms; a base it does not list is refused": 8.0,
+    "only the Antigravity instance takes a model that differs from its base model, and only as the base and one effort": 4.0
   }
 }

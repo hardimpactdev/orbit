@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Tasks;
 
 /**
- * The copy turn agent a role of a task group resolves to: each value and its source, `group`, `project`, `gateway` or `provider`. A new copy
+ * The copy turn agent a role of a task group resolves to: each value and its source, `group`, `project` or `gateway`. A new copy
  * thread of the role starts with it; a thread keeps the values it started with.
  */
 final readonly class ResolvedTaskAgentResponse

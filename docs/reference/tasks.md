@@ -1318,7 +1318,29 @@ Each role of a copy turn, implementer and reviewer, runs with a provider, a mode
 2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
 3. else the Gateway's setting.
 
-One rule follows for Antigravity alone, because `agy` runs Gemini models only. A resolved model that does not start with `gemini-` becomes `gemini-3.8-flash`. A resolved effort other than `high` becomes `high`. Both then show the source `provider`. So a task that sets only `--implementer-provider=antigravity` runs `gemini-3.8-flash` at `high`, never the Project's Claude model. Claude and Codex values resolve as the chain says.
+A resolved value reaches the provider as resolved: Orbit never replaces a model or an effort. Each provider accepts its own values, which one Gateway list holds (`InstanceContainer`):
+
+| Provider | Models | Efforts |
+| --- | --- | --- |
+| `claude` | Any model T3's catalog offers, such as `claude-opus-5-5` | `low`, `medium`, `high`, `xhigh`, `max` |
+| `codex` | Any model T3's catalog offers or the Codex provider confirms, such as `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `antigravity` | `gemini-4-neon`, `gemini-4-hydrogen` | `low`, `medium`, `high`, `xhigh` |
+| `antigravity` | `gemini-4-carbon`, `gemini-4-argon`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash` | `low`, `medium`, `high` |
+| `antigravity` | `gemini-3.1-pro` | `low`, `high` |
+
+`task:create` checks both roles of the new task, even when it names no agent value. `task:update` checks a role when it sets any of the role's three values. `project:update` checks a Project role the same way, resolved from the Project and the Gateway. Each checks the whole resolved role: its provider, its model and its effort. A Claude or Codex model must be a model name of up to 128 letters, digits, dots, underscores, colons and hyphens.
+
+A role the provider cannot honour is refused with `validation.failed` (422). The error names the field, the value, where the value comes from and what the provider accepts. An unknown provider or effort, or a model that is no model name, gets the same kind of message on its field.
+
+A task that sets only `--implementer-provider=antigravity` while the Project's or the Gateway's model is a Claude model is refused on `implementer_model`: set the model too. `antigravity` with `gemini-3.1-pro` at `medium` is refused on the effort, which offers `low` and `high`. `codex` takes `ultra`, and `claude` refuses it.
+
+`project:update` changes no task: a task its new default leaves unhonoured is refused at its next new thread.
+
+A Project default or a Gateway setting changed later, or a value stored before this rule, can still leave a task's role unhonoured. The turn's admission refuses such a new thread with `tasks.agent_unsupported` (422) and the same message, before Swamp runs and before anything is recorded. Orbit changes no stored value.
+
+An Antigravity thread starts on the tiered model `<model>-<effort>`, such as `gemini-4-neon-medium`: `agy` splits it into the model and its thought level, and sends the level with each request. The thread records the model and the effort as resolved.
+
+An Antigravity thread that started before this rule ran on the model it records. If that model was bare, such as `gemini-4-neon`, `agy` runs the thread at its own default level. A turn that would continue such a thread is refused with `tasks.copy_thread_untiered` (422), and nothing is recorded: start a new thread with `--thread=new`. If the recorded model was already tiered at the recorded effort, such as `gemini-4-neon-high` at `high`, and the model offers that effort, the thread continues on it unchanged. A tier that differs from the recorded effort is refused like a bare model. Orbit rewrites no stored thread.
 
 A copy offers Claude and Codex, and Antigravity only when the settings Orbit wrote at its create hold the `antigravity` instance. The copy's `instance.create` input keeps them. A copy made before Antigravity, or one on stock T3, refuses an Antigravity thread with `tasks.copy_turn_unoffered`, and nothing is recorded. Start the task on a new copy to run Antigravity.
 
@@ -1329,7 +1351,7 @@ A copy offers Claude and Codex, and Antigravity only when the settings Orbit wro
 | `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT` | `medium` |
 | `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | `high` |
 
-The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project`, `gateway` or `provider`.
+The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`.
 
 A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
@@ -1341,8 +1363,8 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
-| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra`; `antigravity` at `high`, on a copy with the Conn Server only | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
-| Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if Orbit cannot resolve the driver or the Codex probe is inconclusive. Nothing is launched |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra`; `antigravity` at `low`, `medium`, `high` or `xhigh`, on a copy with the Conn Server only | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model; for Antigravity, the base model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if Orbit cannot resolve the driver or the Codex probe is inconclusive. Nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
 

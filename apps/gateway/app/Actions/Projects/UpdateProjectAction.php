@@ -31,6 +31,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\Tasks\TaskAgent;
 use App\Models\Instance;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
@@ -58,6 +59,8 @@ final readonly class UpdateProjectAction
         $this->assertNestedFleetChange($project, $data);
         // A container server no container could start is refused before any write (docs/reference/development-containers.md#container-server).
         $data->containerServer?->assertPinned(app(InstanceContainer::class)->folders());
+        // A default its provider cannot honour is refused before any write (docs/reference/tasks.md#copy-turn-agents).
+        TaskAgent::assertProjectHonours((clone $project)->fill($data->taskAgents), $data->taskAgents);
         // A changed source refreshes the facts a development create needs; the read happens before any change commits.
         $facts = app(CaptureProjectSourceFactsAction::class);
         $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(

@@ -125,7 +125,7 @@ return [
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         // The Gateway's agent of a new thread in a task copy, per role: the last fallback after the group and the Project
-        // (TaskAgent). The provider and the effort pick the copy's T3 provider instance.
+        // (TaskAgent). The provider and the effort pick the copy's T3 provider instance; a role its provider cannot honour is refused.
         'copy_agents' => [
             'implementer' => [
                 'provider' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),
@@ -138,9 +138,6 @@ return [
                 'effort' => $copyAgent('ORBIT_TASKS_COPY_REVIEWER_EFFORT', 'high'),
             ],
         ],
-        // Antigravity's own model and effort (TaskAgent): an Antigravity thread takes them in place of a model that is no Gemini model
-        // and an effort Antigravity does not offer.
-        'copy_antigravity' => ['model' => 'gemini-3.8-flash', 'effort' => 'high'],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         // An upper bound on the nested-fleet task copies (docs/cli/task/start.mmd) one Node holds at once, counted at each task start. The

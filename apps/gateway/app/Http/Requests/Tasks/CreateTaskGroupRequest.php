@@ -33,6 +33,12 @@ final class CreateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return TaskAgent::messages();
+    }
+
     /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|NotBlank>> */
     public function rules(): array
     {
