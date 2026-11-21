@@ -345,7 +345,8 @@ def changed_paths(ancestor, head):
 def changed_inputs(base, head):
     """Select head's changes; the checkout must contain both refs and their common ancestry."""
     ancestor = subprocess.check_output(['git', 'merge-base', base, head], text=True, timeout=60).strip()
-    return ancestor, changed_paths(ancestor, head)
+    deleted = set(listed_paths('diff', '--name-only', '--no-renames', '--diff-filter=D', '-z', ancestor, head))
+    return ancestor, without_rootless_deletions(changed_paths(ancestor, head), deleted)
 
 
 def main():
@@ -361,7 +362,6 @@ def main():
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     base, paths = changed_inputs(a.base, a.head)
-    paths = without_rootless_deletions(paths, set(listed_paths('diff', '--name-only', '--no-renames', '--diff-filter=D', '-z', base, a.head)))
     population_changed = False
     registry_checks = registry_check_changes(base, a.head) if registry.metadata_changed(paths) else None
     if registry.metadata_changed(paths):
