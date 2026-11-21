@@ -59,6 +59,9 @@ pub enum Action {
     /// Make the one spare of a default's inner volume from its current seed, beside a create (ADR 0271). Its target is the
     /// Node's part for that default.
     InstanceSpareVolume,
+    /// Wait until a nested-fleet copy's inner fleet runs and is ready, beside its checkout (ADR 0271). Its target is the
+    /// Node's part for that copy.
+    InstanceFleetReady,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -73,7 +76,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -92,6 +95,7 @@ impl Action {
         Self::InstanceCopyVolume,
         Self::InstanceStop,
         Self::InstanceSpareVolume,
+        Self::InstanceFleetReady,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -111,7 +115,8 @@ impl Action {
             | Self::InstanceClubKey
             | Self::InstanceCopyVolume
             | Self::InstanceStop
-            | Self::InstanceSpareVolume => {
+            | Self::InstanceSpareVolume
+            | Self::InstanceFleetReady => {
                 Family::Instance
             }
         }
@@ -128,7 +133,8 @@ impl Action {
             | Self::InstanceClone
             | Self::InstanceFetchBranch
             | Self::InstanceCopyVolume
-            | Self::InstanceSpareVolume => TargetKind::Node,
+            | Self::InstanceSpareVolume
+            | Self::InstanceFleetReady => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -164,6 +170,7 @@ impl Action {
             Self::InstanceCopyVolume => "instance.copy_volume",
             Self::InstanceStop => "instance.stop",
             Self::InstanceSpareVolume => "instance.spare_volume",
+            Self::InstanceFleetReady => "instance.fleet_ready",
         }
     }
 }
@@ -196,6 +203,7 @@ impl FromStr for Action {
             "instance.copy_volume" => Ok(Self::InstanceCopyVolume),
             "instance.stop" => Ok(Self::InstanceStop),
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
+            "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             _ => Err(UnknownActionError),
         }
     }

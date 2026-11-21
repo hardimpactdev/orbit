@@ -7,12 +7,16 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\StepSpec;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\ClonePublication;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
@@ -377,6 +381,33 @@ it('runs a non-PHP clone and a nested-fleet clone from create to active: the Clu
         ->and(array_key_exists('fleet', $complete['intent']))->toBe($nested)
         ->and([$create->refresh()->status, $completion->refresh()->status, $instance->status])
         ->toBe([OperationStatus::Succeeded, OperationStatus::Succeeded, InstanceState::Active]);
+})->with(['non-PHP' => false, 'nested fleet' => true]);
+
+it('waits for a nested clone\'s fleet on the engine beside its checkout, and its completion then skips clone-fleet', function (bool $nested): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node, ProjectType::NodePackage, null, $nested));
+    $flow = app(InstanceCreateEngineFlow::class);
+    $id = $create->target_id;
+
+    $fleet = array_values(array_filter($flow->steps($create), static fn (StepSpec $step): bool => $step->name === 'fleet'));
+
+    if (! $nested) {
+        expect($fleet)->toBe([]);
+
+        return;
+    }
+    // Its own part of the Node: it locks no step of the copy, so the checkout and T3 run beside it.
+    expect([$fleet[0]->action, $fleet[0]->target, $fleet[0]->after])->toBe(['instance.fleet_ready', $node->id.':fleet-'.$id, ['start', 'club_key']])
+        ->and($flow->input($create, 'fleet', new EngineRun($create->id, [], 0, null)))->toBe(['project' => InstancePlacement::NestedProject,
+            'name' => 'instance-'.$id, 'guests' => ['nested-gateway', 'nested-app-dev', 'nested-app-prod'], 'hub' => '10.45.0.1', 'host' => 'gateway.orbit',
+            'nodes' => ['gateway', 'app-dev', 'app-prod'], 'seconds' => 300]);
+
+    // The create's result says the fleet is ready: the completion's intent has no fleet, so Swamp skips `clone-fleet`.
+    $ready = handoverSucceeded($create);
+    $ready['result']['fleet_ready'] = true;
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, $ready);
+
+    expect(app(NativeInstanceCompleteInput::class)->input(handoverCompletion($create))['intent'])->not->toHaveKey('fleet');
 })->with(['non-PHP' => false, 'nested fleet' => true]);
 
 it('resumes a clone whose completion failed: the baseline stays, and the create admits a new completion', function (): void {

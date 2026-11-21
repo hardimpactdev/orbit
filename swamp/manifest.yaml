@@ -115,6 +115,7 @@ additionalFiles:
   - ansible/instance_root_disk.py
   - ansible/instance_seed_files.py
   - ansible/instance_default_clean.py
+  - ansible/instance_fleet_tunnel.py
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/gateway-container-process.yml

@@ -1781,7 +1781,7 @@ Measured on a nested-fleet default on 2026-11-14, before this rule:
 
 After the reclaim, the sleep reads the container's memory counters until anonymous and file memory are both 0, at most 20 times 0.1 s apart. The last read is what stays in RAM; the result reports it. When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
 
-A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
+A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
 A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze closes the swap it opened and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
 
@@ -3661,30 +3661,35 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 
 ### A clone starts its fleet
 
-A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online.
+A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. Its fleet boots with its container: the inner Incus starts at boot and starts the nested containers (`boot.autostart`), and the [tunnel's boot unit](#the-operator-tunnel-at-boot) brings up `wg-nested`.
 
-The step can run for minutes, and Swamp fails a step that waits 60 s for a name another run holds. So the step takes one of 64 names per Node, `ic-clone-fleet-<node>-<instance id % 64>`. Copies started at once get near ids and start their fleets side by side.
+On the [engine](/reference/gateway-engine#instancecreate), the create's step `fleet` (`instance.fleet_ready`) waits for that fleet. It starts after `start` and `club_key`, and runs beside `checkout` and `t3` on its own part of the Node. It waits for the inner Incus, starts a nested container that did not start by itself, then reads readiness every 250 ms for at most 300 s. Readiness is the same check that a proof uses: the nested Gateway's Doctor is healthy over the tunnel, its three agents are online, and it knows the operator with its key. Then the create's result says `fleet_ready: true`, and the completion skips its step `clone-fleet`.
 
-Only then do the workspace phase and T3 run. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step.
+The clone holds the exact seed of its default. The default's deployment checked the rest before its snapshot, so the step checks none of it. That is the fleet rules, the nested hosts' socket groups and pid-file heal, the nested Gateway's SSH pins and Club key link, and the tunnel's boot unit.
 
-The Gateway gives the create intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). Every other create has no `fleet` key and skips the step.
+A failed step fails the create at `fleet` with `instance.container_fleet_resume_failed`. The executor's log names the failed check: `incus`, `running`, `doctor` with what its last poll got, `agents` or `operator`. The copy stops and stays, as after every failed engine step.
 
-The clone's first start drops the copied `orbit-*` boot links, so a tunnel unit in the seed does not start in the clone. The step makes the tunnel.
+The step waits until the unit has run its whole script, resolver included. A copy of a seed taken before Orbit's unit has none to trust: a hand-made unit of the same name lacks Orbit's marker. That copy, and one whose unit failed at boot, answers `seed_without_tunnel` at once, and the completion's `clone-fleet` starts the fleet. A clone that Swamp creates does so too.
 
-A failed step fails the create with `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`. `error.detail` names the failed check, with the Doctor body for a readiness wait. The container is kept, as for every failed clone.
+`clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the tunnel. Then it waits for readiness. The step can run for minutes, and Swamp fails a step that waits 60 s for a name another run holds. So the step takes one of 64 names per Node, `ic-clone-fleet-<node>-<instance id % 64>`. Its failure names `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`, and `error.detail` names the failed check. The container is kept.
 
-A clone keeps the fleet of the seed it copied. A later refresh does not change it.
+The Gateway gives the completion's intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`) and whose create did not make the fleet ready. The create intent's `clone.fleet` says the first, and only then does the engine add its step.
 
-The workspace phase runs after the fleet is ready. When it checks out a branch ahead of the seed's commit, the nested Gateway still runs the seed's schema; the clone migrates nothing.
+A clone keeps the fleet of the seed it copied. A later refresh does not change it. When the checkout moves a branch ahead of the seed's commit, the nested Gateway still runs the seed's schema; the clone migrates nothing.
 
 | Step | Time | Source |
 | --- | --- | --- |
-| ZFS clone of the seed | Under 1 s, measured | The ADR 0250 spike |
-| Create to the copy's start | 14 s, measured | Operation 20109 |
-| Nested containers running after the start, by autostart alone | 34 to 64 s, measured (stopped at 34 s, running at 64 s) | Operation 20109 |
-| Inner Doctor healthy, read inside the nested Gateway | 88 s after admission, measured | Operation 20109, without the fleet step |
-| Fleet start to a healthy Doctor | 31 to 55 s, measured; 54 to 90 s cold, before the fleet rules were in `base` | The first and second inner fleet experiments |
-| Whole create of a nested-fleet clone with the fleet step | Not measured | |
+| Create of a nested-fleet clone on the engine, to T3 | 8 s, measured | Operation 31629 |
+| Its completion with `clone-fleet` | 29 s, measured, of which `clone-fleet` 24 s | Operation 31630 |
+| Container start to a ready fleet, with the tunnel's boot unit | 11 to 15 s, measured: inner Incus 3 s, nested Gateway healthy 7 to 10 s after it | Instance 3899, by hand |
+| `instance.fleet_ready` after the start | 11.0 and 11.7 s, measured | Instance 3899, the executor's own code |
+| Whole create with the step | About 16 s, estimated: the step starts about 2 s after the container | |
+
+#### The operator tunnel at boot
+
+Each start of the fleet, in the [fleet step](#the-fleet-step), writes the tunnel's boot script, `/etc/orbit/wg-nested-up`, and its unit, `orbit-inner-fleet-tunnel.service`, enabled. `instance_fleet_tunnel.py` writes them only when they differ. The script makes `wg-nested` as the start does: its key, the hub as its peer, its address, and the hub's resolver for the fleet's TLDs. So the tunnel comes back at every boot of the container.
+
+The default's seed holds both files. A clone's `prepare` drops the seed's other `orbit-*` boot links, but keeps this one: `instance.prepare` and the seed manifest (`instance_seed_files.py`) both name the unit. So a clone has its tunnel at its first boot.
 
 ### A stopped nested-fleet clone starts
 

@@ -98,6 +98,7 @@ inputs = [
   ".github/workflows/ci.yml",
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/instance_fleet_runtime.py",
+  "swamp/ansible/instance_fleet_tunnel.py",
   "swamp/ansible/files/incus-network-pid-heal.py",
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",

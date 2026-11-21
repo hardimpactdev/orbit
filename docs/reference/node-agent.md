@@ -57,6 +57,8 @@ Until the Gateway pins a delivery with that mode, Nodes still run the executor f
 
 Agent 0.19.0 adds the `instance` family for app-dev Nodes: `instance.clone`, `instance.prepare`, `instance.start` and `instance.fetch_branch`. Agent 0.20.0 adds `instance.checkout` and `instance.t3`. Agent 0.21.0 lets `instance.clone` apply the copy's ufw route rules and `instance.prepare` take its file list as one blob, which the Gateway's engine create needs. Agent 0.22.0 lets `instance.start` run the copy's app-account swap, so a copy of an older default works. Agent 0.23.0 adds `instance.club_key`, `instance.copy_volume`, `instance.spare_volume` and `instance.stop`, and runs the rest of a task copy and a nested-fleet copy: the checkout's clean, the nested start guard, settings merged object by object and the seed's manifest. Its Node actions may name a part of the Node (`<node>:<part>`), so they run side by side.
 
+Agent 0.24.0 adds `instance.fleet_ready`, so a nested-fleet clone's create waits for its inner fleet.
+
 ## What it observes
 
 On a Gateway with release containers, the host watch list omits the Horizon and scheduler units inside the live container. The [Process commands](/reference/processes-and-schedules#operate-a-process) inspect those units in their release.

@@ -229,3 +229,17 @@ it('ends a failed create with the step Swamp names, the step\'s own code and the
         'failure' => ['failed_step' => 'clone-t3', 'stderr_recorded' => false],
         'result' => ['ready' => false, 'instance_id' => 6, 'failed_step' => 'workspace', 'error_code' => 'instance.container_checkout_failed', 'route_publication' => 'deferred']]);
 });
+
+it('ends a create whose fleet was not ready at the fleet, as the completion names it, and says so only for a ready fleet', function (): void {
+    $step = static fn (string $name, string $status, ?string $output = null, ?string $code = null): OperationEngineStep => (new OperationEngineStep)
+        ->forceFill(['name' => $name, 'status' => $status, 'node_id' => 3, 'output' => $output, 'error_code' => $code]);
+    $run = new EngineRun(288, ['clone' => $step('clone', 'done'), 'fleet' => $step('fleet', 'failed', null, 'instance.container_fleet_resume_failed')], 0, null);
+
+    expect(InstanceCreateEngineFlow::ended(engineCloneOperation(), $run))->toMatchArray(['status' => 'failed', 'error_code' => 'instance.container_fleet_resume_failed',
+        'failure' => ['failed_step' => 'clone-fleet', 'stderr_recorded' => false]])
+        ->and(InstanceCreateEngineFlow::ended(engineCloneOperation(), $run)['result']['failed_step'])->toBe('fleet')
+        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, ['fleet' => $step('fleet', 'done', '{"fleet":"ready","started":[]}')], 0, null)))->toBeTrue()
+        // A seed without the tunnel's boot unit leaves the fleet to the completion's `clone-fleet`.
+        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, ['fleet' => $step('fleet', 'done', '{"fleet":"seed_without_tunnel"}')], 0, null)))->toBeFalse()
+        ->and(InstanceCreateEngineFlow::fleetReady(new EngineRun(288, [], 0, null)))->toBeFalse();
+});

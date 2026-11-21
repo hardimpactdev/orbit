@@ -230,7 +230,8 @@ fn a_running_copy_is_left_alone() {
 fn a_stopped_copy_loses_the_seeds_units_and_gets_its_machine_id_and_files() {
     let fake = Fake::new(&[
         ("query /1.0/instances/instance-12?", Ok(stopped())),
-        ("path=/etc/systemd/system/multi-user.target.wants", Ok(json!(["orbit-process-3.service", "ssh.service"]))),
+        // The nested fleet's tunnel boot unit is the seed's, for every copy: it stays.
+        ("path=/etc/systemd/system/multi-user.target.wants", Ok(json!(["orbit-inner-fleet-tunnel.service", "orbit-process-3.service", "ssh.service"]))),
         ("path=/etc/systemd/system/sockets.target.wants", MISSING),
         ("path=/etc/systemd/system/timers.target.wants", MISSING),
         ("path=/etc/systemd/system", Ok(json!(["orbit-process-3.service", "orbit-process-7.service", "orbit-schedule-1.timer", "t3.service"]))),
@@ -270,7 +271,9 @@ fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() 
             "/etc/gitconfig": {"sha256": sha256_hex("[safe]\n"), "uid": 0, "gid": 0, "mode": "0644"}},
         "links": {"/home/agent/.claude/CLAUDE.md": "/home/agent/.config/orbit/agent/AGENTS.md"},
         "folders": {"/home/agent/.config/orbit/agent": {"files": {"AGENTS.md": sha256_hex("# Note\n")}, "skills": true}},
-        "units": ["/etc/systemd/system/multi-user.target.wants/orbit-process-3.service", "/etc/systemd/system/orbit-process-3.service",
+        // A seed taken before the tunnel's boot unit stayed names it: it stays all the same.
+        "units": ["/etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service",
+            "/etc/systemd/system/multi-user.target.wants/orbit-process-3.service", "/etc/systemd/system/orbit-process-3.service",
             "/etc/systemd/system/orbit-process-7.service", "/etc/orbit/processes/3"],
         "workspace_clean": true,
     });
@@ -292,7 +295,7 @@ fn a_seed_with_its_manifest_skips_what_it_holds_and_names_the_units_to_remove() 
     let calls = fake.calls();
     // No folder listing: the manifest names the units, and the copy's own Process 7 stays.
     assert!(!calls.iter().any(|call| call.contains("/files?project=")), "{calls:?}");
-    assert!(calls.iter().any(|call| call.ends_with("file delete instance-12/etc/systemd/system/multi-user.target.wants/orbit-process-3.service")));
+    assert!(calls.iter().any(|call| call == "--project orbit-instances file delete instance-12/etc/systemd/system/multi-user.target.wants/orbit-process-3.service"));
     assert!(calls.iter().any(|call| call.ends_with("file delete --force instance-12/etc/systemd/system/orbit-process-3.service instance-12/etc/orbit/processes/3")));
     // Only the swap file differs from the seed's: it alone is placed, and so the swap runs again.
     let pushed: Vec<&String> = calls.iter().filter(|call| call.contains("file push") || call.contains("--type=symlink")).collect();
@@ -1051,4 +1054,127 @@ fn a_spare_whose_seed_was_retaken_during_its_copy_goes_and_is_never_placed() {
     assert!(calls.iter().any(|call| call.ends_with("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/build-inner-2")));
     assert!(calls.last().expect("calls").ends_with("storage volume delete orbit-instances build-inner-2"));
     assert!(!calls.iter().any(|call| call.contains("storage volume rename")));
+}
+
+fn fleet_input() -> Value {
+    json!({"project": "orbit-instances-nested", "name": "instance-12", "guests": ["nested-gateway", "nested-app-dev", "nested-app-prod"],
+        "hub": "10.45.0.1", "host": "gateway.orbit", "nodes": ["gateway", "app-dev", "app-prod"], "seconds": 1})
+}
+
+const HEALTHY: &str = r#"{"data":{"healthy":true,"nodes":[]}}"#;
+
+fn nodes(online: &[&str], operator: Option<&str>) -> Value {
+    let mut rows: Vec<Value> = ["gateway", "app-dev", "app-prod"]
+        .iter()
+        .map(|name| json!({"name": name, "agent": {"state": if online.contains(name) { "online" } else { "offline" }}}))
+        .collect();
+    rows.push(json!({"name": "operator", "agent": null, "wireguard_public_key": operator}));
+    json!({"data": rows})
+}
+
+fn fleet_node(listed: &str, doctor: Result<Value, &'static str>, read: Value) -> Fake {
+    fleet_node_with_tunnel("active\n", listed, doctor, read)
+}
+
+fn fleet_node_with_tunnel(state: &'static str, listed: &str, doctor: Result<Value, &'static str>, read: Value) -> Fake {
+    Fake::new(&[
+        ("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("grep -q -F -- # Managed by Orbit: the operator tunnel /etc/systemd/system/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("--property ActiveState --value orbit-inner-fleet-tunnel.service", Ok(json!(state))),
+        ("incus list --format csv", Ok(json!(listed))),
+        ("api/v1/doctor", doctor),
+        ("api/v1/nodes", Ok(read)),
+    ])
+}
+
+const RUNNING: &str = "nested-app-dev,RUNNING\nnested-app-prod,RUNNING\nnested-gateway,RUNNING\n";
+
+#[test]
+fn a_nested_copys_fleet_is_ready_when_doctor_is_healthy_its_agents_are_online_and_it_knows_the_operator() {
+    let fake = fleet_node(RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+
+    let output = fleet_ready(&fake, &fleet_input()).expect("ready");
+
+    assert_eq!(parsed(&output), json!({"fleet": "ready", "started": []}));
+    let calls = fake.calls();
+    let exec = "--project orbit-instances-nested exec instance-12 -- ";
+    assert_eq!(calls[2], format!("{exec}/usr/bin/incus admin waitready --timeout 80"));
+    assert!(!calls.iter().any(|call| call.contains("incus start")), "{calls:?}");
+    // The proof's own reads, over the tunnel, never through the container's proxy.
+    assert!(calls.contains(&format!("{exec}/usr/bin/curl -sSk --noproxy * -m 10 -H Host: gateway.orbit -H Accept: application/json -X POST \
+        -H Content-Type: application/json -d {{}} https://10.45.0.1/api/v1/doctor")));
+}
+
+#[test]
+fn a_nested_container_that_did_not_start_by_itself_is_started_with_the_others_in_one_call() {
+    let fake = fleet_node("nested-app-dev,STOPPED\nnested-app-prod,RUNNING\nnested-gateway,STOPPED\n", Ok(json!(HEALTHY)),
+        nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+
+    let output = fleet_ready(&fake, &fleet_input()).expect("ready");
+
+    assert_eq!(parsed(&output), json!({"fleet": "ready", "started": ["nested-gateway", "nested-app-dev"]}));
+    assert!(fake.calls().iter().any(|call| call.ends_with("-- /usr/bin/incus start nested-gateway nested-app-dev")));
+}
+
+#[test]
+fn a_fleet_that_is_not_ready_in_its_bound_fails_and_names_the_check() {
+    let code = |fake: &Fake| fleet_ready(fake, &fleet_input()).map_err(|failure| (failure.code, failure.detail));
+
+    let (unhealthy, detail) = code(&fleet_node(RUNNING, Ok(json!(r#"{"data":{"healthy":false}}"#)), nodes(&[], Some("key=")))).expect_err("doctor");
+    assert_eq!(unhealthy, "instance.container_fleet_resume_failed");
+    assert!(detail.starts_with("Readiness check 'doctor' failed: after 1 s"), "{detail}");
+
+    let (_, silent) = code(&fleet_node(RUNNING, Err("curl: (28) Connection timed out"), nodes(&[], Some("key=")))).expect_err("no answer");
+    assert!(silent.contains("no response: curl: (28)"), "{silent}");
+
+    let (_, offline) = code(&fleet_node(RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-prod"], Some("key=")))).expect_err("agents");
+    assert_eq!(offline, "Readiness check 'agents' failed: the agent of app-dev is not online");
+
+    let (_, operator) = code(&fleet_node(RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], None))).expect_err("operator");
+    assert!(operator.starts_with("Readiness check 'operator' failed"), "{operator}");
+}
+
+#[test]
+fn a_copy_of_a_seed_without_the_tunnels_boot_unit_leaves_its_fleet_to_the_completion() {
+    let fake = Fake::new(&[("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Err("disabled"))]);
+
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
+    assert_eq!(fake.calls().len(), 1);
+
+    let mut wrong = fleet_input();
+    wrong["hub"] = json!("10.45.0.1; reboot");
+    assert_eq!(fleet_ready(&Fake::new(&[]), &wrong).map_err(|failure| failure.code), Err("instance.fleet_ready_input_invalid"));
+}
+
+#[test]
+fn the_fleet_waits_until_the_tunnels_whole_boot_script_ran_before_it_reads_doctor() {
+    // The unit is still running its script: Doctor may answer over the hub's address before the resolver is set.
+    let fake = fleet_node_with_tunnel("activating\n", RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+
+    let failure = fleet_ready(&fake, &fleet_input()).expect_err("not active");
+
+    assert_eq!(failure.code, "instance.container_fleet_resume_failed");
+    assert!(failure.detail.starts_with("Readiness check 'tunnel' failed: after 1 s: orbit-inner-fleet-tunnel.service is activating"), "{}", failure.detail);
+    assert!(!fake.calls().iter().any(|call| call.contains("api/v1/doctor")));
+}
+
+#[test]
+fn a_tunnel_unit_that_failed_at_boot_leaves_the_fleet_to_the_completion_at_once() {
+    let fake = fleet_node_with_tunnel("failed\n", RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+    let started = std::time::Instant::now();
+
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    assert!(!fake.calls().iter().any(|call| call.contains("api/v1/doctor")));
+}
+
+#[test]
+fn a_hand_made_tunnel_unit_of_the_same_name_is_not_orbits_tunnel() {
+    let fake = Fake::new(&[
+        ("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("grep -q -F -- # Managed by Orbit: the operator tunnel", Err("")),
+    ]);
+
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
+    assert_eq!(fake.calls().len(), 2);
 }

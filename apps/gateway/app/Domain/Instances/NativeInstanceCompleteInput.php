@@ -33,8 +33,11 @@ final readonly class NativeInstanceCompleteInput
         if (! $processes instanceof stdClass) {
             throw new LogicException('The Process files must be one JSON object.');
         }
-        // A clone of a nested-fleet default starts the fleet it copied; any other clone's intent has no `fleet` key.
-        $fleet = app(NestedFleetIntent::class)->forClone($instance, $instance->runtime()->firstOrFail());
+        // A clone of a nested-fleet default starts the fleet it copied; any other clone's intent has no `fleet` key, and neither has one
+        // whose create made its fleet ready (InstanceCreateEngineFlow `fleet`).
+        $create = Operation::query()->find(ValidatedData::integer($input['create_operation_id']));
+        $fleet = ($create?->result['fleet_ready'] ?? false) === true ? null
+            : app(NestedFleetIntent::class)->forClone($instance, $instance->runtime()->firstOrFail());
 
         // The release scripts beside the Process files, in the completion's one copy, as the create's launch copy holds them (CloneStage).
         $stage = new CloneStage;

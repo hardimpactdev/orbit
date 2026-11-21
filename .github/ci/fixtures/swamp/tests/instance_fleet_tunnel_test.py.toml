@@ -1,0 +1,14 @@
+order = 1551
+cases = [
+  "test_the_files_are_written_and_the_unit_enabled_once",
+  "test_a_new_hub_key_rewrites_the_script_and_a_disabled_unit_is_enabled_again",
+]
+file = "swamp/tests/instance_fleet_tunnel_test.py"
+cost = 2
+# The operator tunnel's boot files in a nested-fleet Instance container.
+inputs = [
+  "swamp/ansible/instance_fleet_tunnel.py",
+]
+[case_costs]
+"test_the_files_are_written_and_the_unit_enabled_once" = 1
+"test_a_new_hub_key_rewrites_the_script_and_a_disabled_unit_is_enabled_again" = 1

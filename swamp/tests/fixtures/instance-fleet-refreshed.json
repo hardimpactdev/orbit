@@ -10,6 +10,10 @@
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
+      },
+      "tunnelBoot": {
+        "script": "#!/bin/sh\n# Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.\nset -eu\nip link show wg-nested >/dev/null 2>&1 || ip link add wg-nested type wireguard\nwg set wg-nested private-key /etc/wireguard/wg-nested.key listen-port 51821 peer HUBKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= endpoint 10.232.2.11:51820 allowed-ips 10.45.0.0/24 persistent-keepalive 25\nip address replace 10.45.0.10/24 dev wg-nested\nip link set wg-nested up\nresolvectl dns wg-nested 10.45.0.1\nresolvectl domain wg-nested ~nested-dev ~nested-prod\n",
+        "unit": "# Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.\n[Unit]\nDescription=Operator tunnel to this Instance's nested fleet\nAfter=network-online.target systemd-resolved.service\nWants=network-online.target\n[Service]\nType=oneshot\nExecStart=/etc/orbit/wg-nested-up\nRemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n"
       }
     },
     "containers": {

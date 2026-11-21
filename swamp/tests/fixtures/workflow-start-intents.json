@@ -166,6 +166,7 @@
                         "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                         "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
                         "clean_workspace": true,
+                        "fleet": true,
                         "t3": {
                             "port": 3800,
                             "listen": "10.44.0.7",
@@ -663,6 +664,7 @@
                             "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                             "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
                             "clean_workspace": true,
+                            "fleet": true,
                             "t3": {
                                 "port": 3800,
                                 "listen": "10.44.0.7",

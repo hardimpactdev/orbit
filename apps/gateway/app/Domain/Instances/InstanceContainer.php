@@ -537,6 +537,8 @@ final readonly class InstanceContainer
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
             // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
             ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),
+            // A clone of a nested-fleet default starts the fleet it copied: on the engine its create waits for it (InstanceCreateEngineFlow).
+            ...(NestedFleetIntent::cloneKeepsFleet($instance, $runtime) ? ['fleet' => true] : []),
             't3' => ['port' => $runtime->t3_port, 'listen' => ValidatedData::string($node->wireguard_ip), 'device' => self::T3Device,
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,

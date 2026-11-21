@@ -64,6 +64,7 @@ The engine runs a container clone's create from its admitted intent (`direct_pro
 | `checkout` | `start`, `fetch` | copy | Checks out the branch, cleans a task copy and merges `.env` |
 | `spare` | `start` | Node | Makes the default's next spare volume |
 | `t3` | `checkout` | copy | Starts T3 or the Conn Server and seals its two sessions to the Gateway |
+| `fleet` | `start`, `club_key` | Node | Waits until a nested-fleet clone's [inner fleet](/reference/development-containers#a-clone-starts-its-fleet) is ready, beside `checkout` and `t3` |
 | `stop` | `clone` | copy | Runs only after a failed step |
 
 Each Node step locks only its own part of the Node, so the Node steps run side by side. Steps on the copy lock the copy: `club_key` and `checkout` run one after the other. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
@@ -87,7 +88,7 @@ An executor reports its primitives when it connects to the bus, and again every 
 
 Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
-`instance.create` needs agent 0.23.0 on the Node. Every engine create has the `stop` step, and a nested-fleet copy `club_key`, `copy_volume` and `spare`: only an executor of 0.23.0 or newer reports those actions, so a Node with an older one keeps every create on Swamp.
+`instance.create` needs agent 0.23.0 on the Node, and a clone of a nested-fleet default agent 0.24.0. Every engine create has the `stop` step, and a nested-fleet copy `club_key`, `copy_volume` and `spare`: only an executor of 0.23.0 or newer reports those actions, so a Node with an older one keeps every create on Swamp. A clone of a nested-fleet default also has `fleet`, which 0.24.0 adds.
 
 The `files_blob` holds the model environment inline. Each JSON settings file goes with the intent's `key_value` and the placeholder model key ([Antigravity](/reference/development-containers#antigravity)). The prepare step merges it object by object as the other settings writers do. A provider instance of the agent's own stays. A file that holds the key, or the Conn Server's mark of a key it already moved into its store, stays as it is.
 
