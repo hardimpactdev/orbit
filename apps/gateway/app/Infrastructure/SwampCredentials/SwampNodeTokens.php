@@ -6,11 +6,11 @@ namespace App\Infrastructure\SwampCredentials;
 
 use App\Domain\Nodes\SwampNode;
 use App\Domain\SwampCredentials\SwampGatewayToken;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use RuntimeException;
 
