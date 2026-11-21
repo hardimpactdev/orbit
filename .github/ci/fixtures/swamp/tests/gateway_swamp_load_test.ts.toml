@@ -16,6 +16,8 @@ cases = [
   "another swamp failure prints its stderr without blaming the token",
   "every load swamp call sources the Swamp Club credential env through swamp-env, silently",
   "a load without the credential env fails closed and names it, not the token",
+  "a Swamp Node without swamp-env yet runs swamp as before, sourcing the env file itself, and says to converge",
+  "a Swamp Node without swamp-env and without the env file reaches swamp, which names the account gate",
 ]
 file = "swamp/tests/gateway_swamp_load_test.ts"
 host_programs = ["jq"]

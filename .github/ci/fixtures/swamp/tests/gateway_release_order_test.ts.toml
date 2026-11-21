@@ -13,7 +13,7 @@ cases = [
   "failed web installation cannot migrate even when its clone is skipped",
   "cleanup resumes only after scheduler handover or switch-back has ended",
   "serving reconciliation renews Swamp tokens before Load (without revoking) and brackets Load with read-only checks",
-  "retained rollback tolerates an older target without swamp-credentials in both container and host routes",
+  "retained rollback tolerates an older target without swamp-credentials in both container and host routes, and a current host target runs it",
   "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
   "a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it",
 ]

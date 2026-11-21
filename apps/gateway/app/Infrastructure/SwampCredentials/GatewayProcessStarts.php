@@ -7,7 +7,8 @@ namespace App\Infrastructure\SwampCredentials;
 use Illuminate\Support\Facades\Process;
 
 /**
- * When the long-running Gateway processes started: orbit-agent-view, Horizon, the engine and schedule-work. Each keeps the Swamp
+ * When the long-running Gateway processes started: the web workers, orbit-agent-view, Horizon, the schedule, the engine and
+ * schedule-work. Each keeps the Swamp
  * tokens it loaded at start in memory. The command runs where they run, on the host or in the serving release container, so it
  * reads the same systemd in both modes. A process restarted by Reconcile or by a configure reload is not counted: only its main
  * process start is.
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Process;
 class GatewayProcessStarts
 {
     public const array Units = [
+        'orbit-gateway-web.service',
         'orbit-agent-view.service',
         'orbit-gateway-horizon.service',
         'orbit-gateway-schedule.service',

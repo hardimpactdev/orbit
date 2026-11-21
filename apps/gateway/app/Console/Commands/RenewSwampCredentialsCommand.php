@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SwampCredentials\SwampGatewayToken;
 use App\Infrastructure\SwampCredentials\SwampNodeTokens;
+use App\Infrastructure\SwampCredentials\SwampNodeUnconvergedException;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -43,6 +44,15 @@ final class RenewSwampCredentialsCommand extends Command
             $this->info($actions === [] ? 'No Gateway Swamp token change is due.' : ucfirst(implode('; ', $actions)).'.');
 
             return self::SUCCESS;
+        } catch (SwampNodeUnconvergedException $exception) {
+            // The first release after this change can run before the Swamp Node's swamp role converge: a release, its revoke and its
+            // host mint skip with one clear line. The hourly run still fails, so an unconverged Node stays visible.
+            if ($this->option('release') !== true && $this->option('revoke') !== true && ! is_string($this->option('mint-for-host'))) {
+                return $this->failed($exception);
+            }
+            $this->stderr('gateway.swamp_credentials_skipped: '.$exception->getMessage().' Token renewal and the release token gate were skipped.');
+
+            return self::SUCCESS;
         } catch (GatewayReleaseException $exception) {
             // A release holds the lock and renews itself; the next hourly run reads the env again, ten days before expiry.
             if ($exception->errorCode === 'gateway.release_in_progress' && $this->option('release') !== true) {
@@ -57,18 +67,23 @@ final class RenewSwampCredentialsCommand extends Command
         }
     }
 
+    private function stderr(string $message): void
+    {
+        $output = $this->output->getOutput();
+        if ($output instanceof ConsoleOutputInterface) {
+            $output->getErrorOutput()->writeln($message);
+        } else {
+            fwrite(STDERR, $message.PHP_EOL);
+        }
+    }
+
     /** Names the failure by its error code and message; neither carries a token, and --mint-for-host sends errors to stderr only. */
     private function failed(Throwable $exception): int
     {
         $code = $exception instanceof ResourceOperationException ? $exception->errorCode : 'gateway.swamp_credentials_failed';
         $message = $code.': '.$exception->getMessage();
         if (is_string($this->option('mint-for-host'))) {
-            $output = $this->output->getOutput();
-            if ($output instanceof ConsoleOutputInterface) {
-                $output->getErrorOutput()->writeln($message);
-            } else {
-                fwrite(STDERR, $message.PHP_EOL);
-            }
+            $this->stderr($message);
         } else {
             $this->error($message);
         }

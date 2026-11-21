@@ -10,6 +10,7 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use RuntimeException;
 
@@ -110,11 +111,20 @@ class SwampNodeTokens
             knownHostsFile: $this->knownHosts->path(),
             commandTimeout: $timeout,
         ), new RemoteCommand([self::Entrypoint, ...$arguments], timeout: $timeout, maxOutputBytes: 65_536));
+        if (self::unconverged($result)) {
+            throw new SwampNodeUnconvergedException(SwampNodeUnconvergedException::Code.': '.self::Entrypoint.' is missing on the Swamp Node; converge its swamp role.');
+        }
         if (! $result->succeeded()) {
             // stderr names the failure; stdout of a mint may hold a secret and is never quoted.
             throw new RuntimeException($code.($secret ? '' : ': '.substr(trim($result->stderr), -500)));
         }
 
         return $result->stdout;
+    }
+
+    /** The remote shell could not find the entrypoint (exit 127 naming it): the swamp role on the Swamp Node predates the renewal. */
+    public static function unconverged(CommandResult $result): bool
+    {
+        return $result->exitCode === 127 && str_contains($result->stderr, self::Entrypoint);
     }
 }

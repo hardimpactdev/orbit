@@ -161,14 +161,24 @@ jobs:
               driver=/home/orbit/.config/swamp/serve-driver-token
               errors=$(mktemp)
               trap 'rm -f "$errors"' EXIT
+              # swamp-env sources the Swamp Club credential env; without it a non-interactive swamp fails with auth_gate_blocked. The
+              # swamp role installs it. Until the Swamp Node is converged, the load sources the env file itself, as before swamp-env.
+              swamp_env=/usr/local/lib/orbit-swamp/swamp-env
+              if [ ! -x "$swamp_env" ]; then
+                echo "gateway.release_swamp_env_unconverged: $swamp_env is missing; converge the swamp role on the Swamp Node. Running swamp without it." >&2
+                if [ -f "$HOME/.config/swamp/env.sh" ]; then
+                  # shellcheck disable=SC1091
+                  . "$HOME/.config/swamp/env.sh" >/dev/null 2>&1 || true
+                fi
+                swamp_env=env
+              fi
               # Runs one swamp call and keeps its stderr. A failed call prints that stderr and its exit, never a bare jq exit 4 on
               # empty stdout. A refused token names the renewal that replaces it (serve-driver expired on 2026-11-21).
               swamp_call() {
                 limit=$1
                 shift
                 status=0
-                # swamp-env sources the Swamp Club credential env; without it a non-interactive swamp fails with auth_gate_blocked.
-                output=$(timeout "$limit" /usr/local/lib/orbit-swamp/swamp-env /usr/local/bin/swamp "$@" 2>"$errors") || status=$?
+                output=$(timeout "$limit" "$swamp_env" /usr/local/bin/swamp "$@" 2>"$errors") || status=$?
                 if [ "$status" -ne 0 ]; then
                   if grep -qE 'auth_gate_blocked|swamp\.credential_env_' "$errors"; then
                     echo "gateway.release_swamp_auth_gate_blocked: swamp on the Swamp Node has no Swamp Club credential; check /home/orbit/.config/swamp/env.sh" >&2

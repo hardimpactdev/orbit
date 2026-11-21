@@ -224,7 +224,7 @@ Deno.test("serving reconciliation renews Swamp tokens before Load (without revok
   assertEquals(reconcile.some((step) => step.task.inputs?.argv?.includes("swamp-credentials-revoke")), false);
 });
 
-Deno.test("retained rollback tolerates an older target without swamp-credentials in both container and host routes", async () => {
+Deno.test("retained rollback tolerates an older target without swamp-credentials in both container and host routes, and a current host target runs it", async () => {
   const scratch = await Deno.makeTempDir();
   try {
     // 1. Container route: bin/gateway-release-phase skips swamp-credentials and swamp-credentials-revoke when target predates them.
@@ -280,37 +280,32 @@ Deno.test("retained rollback tolerates an older target without swamp-credentials
       assert(stderr.includes("gateway.swamp_credentials_skipped"), stderr);
     }
 
-    // 2. Host route: workflow-operation-gateway-release skips when target artisan lacks gateway:swamp-credentials.
-    const fakePhp = `${scratch}/fake-php`;
-    await Deno.writeTextFile(
-      fakePhp,
-      '#!/bin/sh\nif [ "$2" = "list" ]; then printf "migrate\\ngateway:release:wait-idle\\n"; exit 0; fi\necho "Command gateway:swamp-credentials is not defined" >&2; exit 1\n',
-      { mode: 0o700 },
-    );
-    for (const stepName of ["Renew Swamp tokens", "Revoke replaced tokens"]) {
-      const step = release.find((item) => item.name === stepName)!;
-      const argv = step.task.inputs!.argv!;
-      const script = argv[4].replace("/home/orbit/.orbit/gateway-containers.json", `${scratch}/absent-containers.json`);
-      const done = await new Deno.Command("/bin/bash", {
-        args: [
-          "-c",
-          script,
-          "bash",
-          argv[6],
-          olderSha,
-          "99",
-          fakePhp,
-          `${scratch}/artisan`,
-          "gateway:swamp-credentials",
-          stepName === "Renew Swamp tokens" ? "--release" : "--revoke",
-          "--no-interaction",
-        ],
-        stdout: "piped",
-        stderr: "piped",
-      }).output();
-      const stderr = new TextDecoder().decode(done.stderr);
-      assertEquals(done.code, 0, stderr);
-      assert(stderr.includes("gateway.swamp_credentials_skipped"), stderr);
+    // 2. Host route: the step reads `artisan list --raw` as `php artisan list --raw` prints it, a name and then its description.
+    // A target with gateway:swamp-credentials runs it; an older target skips with one clear line.
+    const fakePhp = (commands: string[]) =>
+      `#!/bin/sh\nif [ "$2" = "list" ]; then printf '%s\\n' ${
+        commands.map((line) => `'${line}'`).join(" ")
+      }; exit 0; fi\necho "ran $*" >&2\nexit 0\n`;
+    const older = ["migrate                                    Run the database migrations", "gateway:release:wait-idle                  Wait until the Gateway is idle"];
+    const current = [...older, "gateway:swamp-credentials                  Renew the Gateway Swamp read and run tokens within ten days of expiry; revoke predecessors no process holds."];
+    for (const [label, commands, runs] of [["older", older, false], ["current", current, true]] as const) {
+      const php = `${scratch}/php-${label}`;
+      await Deno.writeTextFile(php, fakePhp([...commands]), { mode: 0o700 });
+      for (const stepName of ["Renew Swamp tokens", "Revoke replaced tokens"]) {
+        const step = release.find((item) => item.name === stepName)!;
+        const argv = step.task.inputs!.argv!;
+        const script = argv[4].replace("/home/orbit/.orbit/gateway-containers.json", `${scratch}/absent-containers.json`);
+        const option = stepName === "Renew Swamp tokens" ? "--release" : "--revoke";
+        const done = await new Deno.Command("/bin/bash", {
+          args: ["-c", script, "bash", argv[6], olderSha, "99", php, `${scratch}/artisan`, "gateway:swamp-credentials", option, "--no-interaction"],
+          stdout: "piped",
+          stderr: "piped",
+        }).output();
+        const stderr = new TextDecoder().decode(done.stderr);
+        assertEquals(done.code, 0, stderr);
+        assertEquals(stderr.includes("gateway.swamp_credentials_skipped"), !runs, `${label} ${stepName}: ${stderr}`);
+        assertEquals(stderr.includes(`ran ${scratch}/artisan gateway:swamp-credentials ${option} --no-interaction`), runs, `${label} ${stepName}: ${stderr}`);
+      }
     }
   } finally {
     await Deno.remove(scratch, { recursive: true });

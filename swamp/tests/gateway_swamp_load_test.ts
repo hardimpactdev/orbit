@@ -444,7 +444,7 @@ Deno.test("another swamp failure prints its stderr without blaming the token", a
 });
 
 /** Runs the load with the real swamp-env and a fake swamp that refuses with auth_gate_blocked unless the club env was sourced. */
-async function gatedLoad(credentialEnv: boolean) {
+async function gatedLoad(credentialEnv: boolean, converged = true) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/bin`);
     await Deno.mkdir(`${folder}/checkout`);
@@ -474,8 +474,10 @@ async function gatedLoad(credentialEnv: boolean) {
             ).replace("export HOME=/home/orbit ", `export HOME=${folder}/home `)
                 .replace(
                     "/usr/local/lib/orbit-swamp/swamp-env",
-                    new URL("../ansible/files/swamp-env.sh", import.meta.url)
-                        .pathname,
+                    converged
+                        ? new URL("../ansible/files/swamp-env.sh", import.meta.url)
+                            .pathname
+                        : `${folder}/absent-swamp-env`,
                 ).replace("/usr/local/bin/swamp", `${folder}/bin/swamp`),
         ],
         env: { PATH: `${folder}/bin:/usr/bin:/bin`, RELEASE_SHA: "a", PREVIOUS_SHA: "b" },
@@ -504,4 +506,19 @@ Deno.test("a load without the credential env fails closed and names it, not the 
     assertEquals(load.output.includes("gateway.release_swamp_auth_gate_blocked:"), true, load.output);
     assertEquals(load.output.includes("swamp.credential_env_missing:"), true, load.output);
     assertEquals(load.output.includes("gateway.release_swamp_token_expired"), false, load.output);
+});
+
+Deno.test("a Swamp Node without swamp-env yet runs swamp as before, sourcing the env file itself, and says to converge", async () => {
+    const load = await gatedLoad(true, false);
+    assertEquals(load.code, 1);
+    assertEquals(load.output.includes("gateway.release_swamp_env_unconverged:"), true, load.output);
+    assertEquals(load.output.includes("swamp serve reload failed with exit 1:\npassed the account gate"), true, load.output);
+    assertEquals(load.output.includes("CLUB_ENV_CANARY"), false, load.output);
+});
+
+Deno.test("a Swamp Node without swamp-env and without the env file reaches swamp, which names the account gate", async () => {
+    const load = await gatedLoad(false, false);
+    assertEquals(load.code, 1);
+    assertEquals(load.output.includes("gateway.release_swamp_env_unconverged:"), true, load.output);
+    assertEquals(load.output.includes("gateway.release_swamp_auth_gate_blocked:"), true, load.output);
 });

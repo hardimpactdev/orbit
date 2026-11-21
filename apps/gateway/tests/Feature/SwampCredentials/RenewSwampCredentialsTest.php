@@ -13,6 +13,8 @@ use App\Infrastructure\SwampCredentials\GatewayProcessStarts;
 use App\Infrastructure\SwampCredentials\SwampCredentialConfiguration;
 use App\Infrastructure\SwampCredentials\SwampHostTokenInstaller;
 use App\Infrastructure\SwampCredentials\SwampNodeTokens;
+use App\Infrastructure\SwampCredentials\SwampNodeUnconvergedException;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SwampCredentials\SwampTokenReadCheck;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use App\Models\Project;
@@ -48,6 +50,8 @@ final class FakeSwampNodeTokens extends SwampNodeTokens
 
     public ?string $failMintKind = null;
 
+    public bool $unconverged = false;
+
     public int $failListOnCall = 0;
 
     private int $listCalls = 0;
@@ -63,6 +67,9 @@ final class FakeSwampNodeTokens extends SwampNodeTokens
     protected function run(array $arguments, float $timeout, string $code, bool $secret = false): string
     {
         $this->calls[] = implode(' ', $arguments);
+        if ($this->unconverged) {
+            throw new SwampNodeUnconvergedException(SwampNodeUnconvergedException::Code.': '.self::Entrypoint.' is missing on the Swamp Node; converge its swamp role.');
+        }
         if ($arguments[0] === 'list') {
             $this->listCalls++;
             if ($this->failList !== null && ($this->failListOnCall === 0 || $this->listCalls === $this->failListOnCall)) {
@@ -381,7 +388,7 @@ it('checks schedule and non-inactive states in GatewayProcessStarts', function (
         $argv = is_array($process->command) ? $process->command : explode(' ', (string) $process->command);
 
         return in_array('--state=active,activating,deactivating,reloading', $argv, true)
-            && in_array('orbit-gateway-schedule.service', $argv, true);
+            && in_array('orbit-gateway-schedule.service', $argv, true) && in_array('orbit-gateway-web.service', $argv, true);
     });
 
     $listedOutput = "orbit-gateway-horizon.service loaded active running Horizon\norbit-gateway-schedule.service loaded active running Scheduler\n";
@@ -392,6 +399,13 @@ it('checks schedule and non-inactive states in GatewayProcessStarts', function (
     expect((new GatewayProcessStarts)->allStartedAfter($changed))->toBeFalse();
 
     $starts['orbit-gateway-schedule.service'] = $changed + 10;
+    expect((new GatewayProcessStarts)->allStartedAfter($changed))->toBeTrue();
+
+    // The web workers keep the read token in memory too: a reloading web that started before the env change blocks a revoke.
+    $listedOutput .= "orbit-gateway-web.service loaded reloading reload Web\n";
+    $starts['orbit-gateway-web.service'] = $changed - 1;
+    expect((new GatewayProcessStarts)->allStartedAfter($changed))->toBeFalse();
+    $starts['orbit-gateway-web.service'] = $changed + 1;
     expect((new GatewayProcessStarts)->allStartedAfter($changed))->toBeTrue();
 });
 
@@ -504,4 +518,25 @@ it('ends without error when a release holds the release lock, and prints no secr
     });
 
     expect($code)->toBe(0)->and(Artisan::output())->toContain('release lock')->not->toContain('fake-secret');
+});
+
+it('reads exit 127 naming the entrypoint as an unconverged Swamp Node, and nothing else', function (): void {
+    $missing = new CommandResult(127, '', 'bash: line 1: '.SwampNodeTokens::Entrypoint.': No such file or directory', 1, false);
+    $inner = new CommandResult(127, '', 'timeout: failed to run command jq: No such file or directory', 1, false);
+
+    expect(SwampNodeTokens::unconverged($missing))->toBeTrue()
+        ->and(SwampNodeTokens::unconverged($inner))->toBeFalse()
+        ->and(SwampNodeTokens::unconverged(new CommandResult(1, '', SwampNodeTokens::Entrypoint, 1, false)))->toBeFalse();
+});
+
+it('skips a release, its revoke and its host mint with one clear line on an unconverged Swamp Node, but fails the hourly run', function (): void {
+    swampCredentialsEnvironment();
+    $this->node->unconverged = true;
+
+    foreach (['--release', '--revoke', '--mint-for-host=read'] as $option) {
+        expect(Artisan::call('gateway:swamp-credentials '.$option.' --no-interaction'))->toBe(0, $option)
+            ->and(Artisan::output())->not->toContain('fake-secret');
+    }
+    expect(Artisan::call('gateway:swamp-credentials --no-interaction'))->toBe(1)
+        ->and(Artisan::output())->toContain('swamp.gateway_token_entrypoint_missing');
 });
