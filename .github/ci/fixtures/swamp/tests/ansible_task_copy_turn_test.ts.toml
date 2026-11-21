@@ -52,6 +52,8 @@ cost = 1262
 # The handoff receipt case has no hosted receipt: its 20s matches the completed case it extends, over a local 9s run of its two phases (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # Task 6113: the usage read-back case's 40s is its local 23s run of four phases (tools/tests/ci-task-copy-turn-costs.json) plus headroom, until a hosted run.
 # Task 6144: the Antigravity create case's 17s matches the catalog-skip case it mirrors, over a local 5s run of its one phase (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
+# Task 6174: the tiered-model case's 22s is an ESTIMATE of one full phase as the Antigravity create case plus one refused at the model check;
+# the base-model refusal case's 8s covers four phases refused at the intent check, until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
 slices = 36
 inputs = [
