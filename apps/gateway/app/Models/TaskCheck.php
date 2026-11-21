@@ -42,7 +42,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $pr_title the reviewer's pull request title on this check ([The reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text))
  * @property string|null $pr_body the reviewer's pull request body on this check
  * @property int|null $pr_text_operation_id the reviewer turn that sent the title and the body
- * @property array{verdict: string, findings: int}|null $review_receipt the review receipt that a reviewer turn posted on this check ([The review receipt](/reference/tasks#the-review-receipt))
+ * @property array{verdict: string, findings: list<string>}|null $review_receipt the review receipt that a reviewer turn posted on this check ([The review receipt](/reference/tasks#the-review-receipt))
  * @property int|null $review_receipt_operation_id the reviewer turn that posted it
  */
 #[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]

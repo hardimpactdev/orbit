@@ -247,7 +247,7 @@ The reviewer's text names the check that the turn reviews, its commit and the ba
 
 The reviewer also gets the implementer's handoff note in `<handoff_note>`, with two lines that tell it to check each claim. The note is the reply of the latest finished implementer turn on the subtask that did not end in a question, as the Gateway stores it, cut at 16,384 characters with its marker. Without such a reply, the block and its two lines are left out.
 
-The [reviewer rule](#the-reviewer-rule) follows in `<review_rules>`, then the [pull request text](#the-reviewers-pull-request-text) rule word for word, then the turn.
+The [reviewer rule](#the-reviewer-rule) follows in `<review_rules>`. When the check ran the Project's task check, the rules say that Orbit ran it on the commit under review and that the reviewer does not run it again; a Project without a task check gets no such line. In a gated group the [review receipt](#the-review-receipt) rule comes next, with the exact `curl` call and each category with its one-line meaning. Then come the [pull request text](#the-reviewers-pull-request-text) rule word for word and the turn.
 
 The first reviewer turn on a subtask is the first review. Every later one is a re-review. It names its round and the commit that the latest finished reviewer turn on the subtask reviewed. A finished turn ended its Operation as `succeeded` and not in a question. A reviewer turn that failed or was cancelled does not count. A reviewer turn that ended in a question finished no review, so it does not count either: the turn that answers it is still the first review, or the same round. The round is one more than the number of finished reviewer turns.
 
@@ -1214,14 +1214,28 @@ A reviewer turn of a gated group requires the subtask's latest delivery row to b
 A reviewer turn of a gated group posts its review receipt to the Gateway, the way it sends [its pull request text](#the-reviewers-pull-request-text): `POST $ORBIT_COPY_API/handoff` with its copy key. Its prompt shows the exact `curl` call. The body holds no free text, so it needs no redaction:
 
 ```json
-{"verdict": "changes", "findings": 2}
+{"verdict": "changes", "findings": ["regression", "docs"]}
 ```
 
-`verdict` is `approve` or `changes`. `findings` is the number of blocking findings, an integer from 0 to 100: 0 for `approve`, at least 1 for `changes`. `findings` must be a JSON integer: `true`, `"2"` and `2.0` are refused, not coerced. Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts.
+`verdict` is `approve` or `changes`. `findings` is a JSON list with the category of each blocking finding, one entry per finding and in any order, so one category can appear more than once. `approve` has an empty list. `changes` has 1 to 100 entries. The categories are a fixed set:
+
+| Category | The finding |
+| --- | --- |
+| `regression` | An unchanged input behaves differently than on the base. |
+| `destructive` | It deletes, overwrites or stops something it must not. |
+| `failure_state` | A wrong state or result after a failure, an interruption or a rollback. |
+| `race` | The order or the lock between concurrent actions. |
+| `contract` | Two components disagree on the same data or rule. |
+| `validation` | It accepts input it must refuse, or refuses input it must accept. |
+| `outcome_missing` | An outcome or a deliverable of the brief is not met or not proven. |
+| `docs` | Docs, fixtures or generated output are wrong. |
+| `other` | None of the above. |
+
+A category is its exact lower-case name. An integer `findings`, as the receipt held before, is refused, and so is a list entry that is no category: free text, another case, a number, `null`, a list or an object. Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts. Review rows written before the change keep the integer count that their receipt held.
 
 #### The review gate
 
-When a reviewer turn of a gated group ends `done`, the Gateway writes one review row. It is accepted with the posted verdict and number of findings as its receipt, or rejected as `no_receipt` when the turn posted none. A turn that fails writes none. A rejected review counts for no review round: the retry repeats the same round.
+When a reviewer turn of a gated group ends `done`, the Gateway writes one review row. It is accepted with the posted verdict and categories as its receipt, or rejected as `no_receipt` when the turn posted none. A turn that fails writes none. A rejected review counts for no review round: the retry repeats the same round.
 
 A rejected review is sent again: the caller sends the reviewer turn again. The admissions of a gated group read the rows and refuse a skipped gate with `tasks.handoff_required` (409).
 
@@ -1507,7 +1521,7 @@ A re-review checks only these:
 
 It does not review unchanged code again. One exception: harm of the first kind above that it meets in unchanged code is still reported, marked "missed in the first review".
 
-For each blocking finding, the reviewer gives the file and line, the failing case and its consequence, the rule that a fix must satisfy, and every case of that rule it found. Its report ends with one line, exactly `VERDICT: APPROVE` or `VERDICT: CHANGES`. With no blocking finding, the reviewer approves.
+For each blocking finding, the reviewer gives its [category](#the-review-receipt), the file and line, the failing case and its consequence, the rule that a fix must satisfy, and every case of that rule it found. Its report ends with one line, exactly `VERDICT: APPROVE` or `VERDICT: CHANGES`. With no blocking finding, the reviewer approves.
 
 The [pull request text](#the-reviewers-pull-request-text) rule follows it: a reviewer that approves sends the text, one that does not sends nothing. An implementer turn gets neither rule.
 

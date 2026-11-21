@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskFindingCategory;
 use App\Domain\Tasks\TaskHandoffs;
 use App\Domain\Tasks\TaskHandoffType;
 use App\Domain\Tasks\TaskStatus;
@@ -95,7 +96,7 @@ function reviewPosts(int|TaskDoneFixture $instance, array|string $body): TestRes
 /**
  * The turn posts the review receipt REVIEW while it runs, then its run ends in STATE and asked QUESTIONS.
  *
- * @param  array{verdict: string, findings: int}|null  $review
+ * @param  array{verdict: string, findings: list<string>}|null  $review
  * @param  list<array<string, mixed>>  $questions
  */
 function reviewEnded(Operation $turn, string $state, ?array $review = null, array $questions = [], string $status = 'succeeded'): Operation
@@ -121,17 +122,18 @@ function reviewed(TaskDoneFixture $world, ?array $receipt): TaskHandoff
 }
 
 /**
- * The receipt a reviewer posts for VERDICT and FINDINGS, or null where the endpoint would refuse it: the turn then posts nothing.
+ * The receipt a reviewer posts for VERDICT and the categories FINDINGS, or null where the endpoint would refuse it: the turn then posts
+ * nothing.
  *
  * @param  list<string>  $findings
- * @return array{verdict: string, findings: int}|null
+ * @return array{verdict: string, findings: list<string>}|null
  */
 function reviewReceipt(string $verdict, array $findings = []): ?array
 {
-    return ($verdict === 'approve') === ($findings === []) ? ['verdict' => $verdict, 'findings' => count($findings)] : null;
+    return ($verdict === 'approve') === ($findings === []) ? ['verdict' => $verdict, 'findings' => $findings] : null;
 }
 
-it('accepts the review receipt the reviewer posted, with its verdict and number of findings', function (string $verdict, int $findings): void {
+it('accepts the review receipt the reviewer posted, with its verdict and the category of each finding', function (string $verdict, array $findings): void {
     $world = reviewWorld();
 
     $row = reviewed($world, ['verdict' => $verdict, 'findings' => $findings]);
@@ -144,9 +146,11 @@ it('accepts the review receipt the reviewer posted, with its verdict and number 
         ->and($row->receipt)->toBe(['verdict' => $verdict, 'findings' => $findings])
         ->and($world->check->refresh()->review_receipt_operation_id)->toBe($row->operation_id);
 })->with([
-    'approve with no finding' => ['approve', 0],
-    'changes with two findings' => ['changes', 2],
-    'changes with the most findings' => ['changes', 100],
+    'approve with no finding' => ['approve', []],
+    'changes with one finding' => ['changes', ['race']],
+    'changes with a finding of each category, in order' => ['changes', array_column(TaskFindingCategory::cases(), 'value')],
+    'changes with one category twice' => ['changes', ['regression', 'docs', 'regression']],
+    'changes with the most findings' => ['changes', array_fill(0, 100, 'other')],
 ]);
 
 it('rejects a review whose turn posted no receipt, and the turn still succeeds', function (): void {
@@ -162,53 +166,58 @@ it('refuses a receipt that does not fit the schema with validation.failed, and t
     $turn = reviewStart($world, 'reviewer');
 
     reviewPosts($world, $body)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed')->assertJsonValidationErrors([$field], 'error.details');
-    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(202);
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => []])->assertStatus(202);
     reviewEnded($turn, 'done');
 
-    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => 0]);
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => []]);
 })->with([
-    'no verdict' => [['findings' => 0], 'verdict'],
-    'another verdict' => [['verdict' => 'maybe', 'findings' => 0], 'verdict'],
+    'no verdict' => [['findings' => []], 'verdict'],
+    'another verdict' => [['verdict' => 'maybe', 'findings' => []], 'verdict'],
     'no findings' => [['verdict' => 'approve'], 'findings'],
-    'findings that are no integer' => [['verdict' => 'changes', 'findings' => 'two'], 'findings'],
-    'a negative count' => [['verdict' => 'changes', 'findings' => -1], 'findings'],
-    'more than 100 findings' => [['verdict' => 'changes', 'findings' => 101], 'findings'],
-    'approve with a finding' => [['verdict' => 'approve', 'findings' => 1], 'findings'],
-    'changes with no finding' => [['verdict' => 'changes', 'findings' => 0], 'findings'],
-    'a boolean count' => [['verdict' => 'changes', 'findings' => true], 'findings'],
-    'a count as a string' => [['verdict' => 'changes', 'findings' => '2'], 'findings'],
-    'a count as a float' => ['{"verdict":"changes","findings":2.0}', 'findings'],
-    'zero as a string for approve' => [['verdict' => 'approve', 'findings' => '0'], 'findings'],
-    'zero as a float for approve' => ['{"verdict":"approve","findings":0.0}', 'findings'],
+    'null findings' => ['{"verdict":"approve","findings":null}', 'findings'],
+    'an integer count for changes' => [['verdict' => 'changes', 'findings' => 2], 'findings'],
+    'an integer count of zero for approve' => [['verdict' => 'approve', 'findings' => 0], 'findings'],
+    'a category as a bare string' => [['verdict' => 'changes', 'findings' => 'race'], 'findings'],
+    'a boolean' => [['verdict' => 'changes', 'findings' => true], 'findings'],
+    'an object of categories' => ['{"verdict":"changes","findings":{"a":"race"}}', 'findings'],
+    'an unknown category' => [['verdict' => 'changes', 'findings' => ['race', 'style']], 'findings.1'],
+    'a category in another case' => [['verdict' => 'changes', 'findings' => ['Race']], 'findings.0'],
+    'free text as a category' => [['verdict' => 'changes', 'findings' => ['The export drops the header row.']], 'findings.0'],
+    'an integer as a category' => [['verdict' => 'changes', 'findings' => [1]], 'findings.0'],
+    'a null category' => ['{"verdict":"changes","findings":[null]}', 'findings.0'],
+    'a nested list as a category' => [['verdict' => 'changes', 'findings' => [['race']]], 'findings.0'],
+    'an object as a category' => ['{"verdict":"changes","findings":[{"category":"race","note":"free text"}]}', 'findings.0'],
+    'more than 100 findings' => [['verdict' => 'changes', 'findings' => array_fill(0, 101, 'other')], 'findings'],
+    'approve with a finding' => [['verdict' => 'approve', 'findings' => ['race']], 'findings'],
+    'changes with no finding' => [['verdict' => 'changes', 'findings' => []], 'findings'],
 ]);
 
 it('keeps the last valid post when a malformed one is refused', function (array|string $malformed): void {
     $world = reviewWorld();
     $turn = reviewStart($world, 'reviewer');
 
-    reviewPosts($world, ['verdict' => 'changes', 'findings' => 3])->assertStatus(202);
+    reviewPosts($world, ['verdict' => 'changes', 'findings' => ['contract', 'docs', 'contract']])->assertStatus(202);
     reviewPosts($world, $malformed)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
     reviewEnded($turn, 'done');
 
-    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'changes', 'findings' => 3]);
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'changes', 'findings' => ['contract', 'docs', 'contract']]);
 })->with([
-    'a boolean count' => [['verdict' => 'changes', 'findings' => true]],
-    'a count as a string' => [['verdict' => 'changes', 'findings' => '2']],
-    'a count as a float' => ['{"verdict":"changes","findings":2.0}'],
-    'zero as a string for approve' => [['verdict' => 'approve', 'findings' => '0']],
-    'zero as a float for approve' => ['{"verdict":"approve","findings":0.0}'],
+    'an integer count' => [['verdict' => 'changes', 'findings' => 3]],
+    'an unknown category' => [['verdict' => 'changes', 'findings' => ['style']]],
+    'approve with a finding' => [['verdict' => 'approve', 'findings' => ['race']]],
+    'changes with no finding' => [['verdict' => 'changes', 'findings' => []]],
 ]);
 
 it('counts the last post of a turn, and admits a post only during a running reviewer turn', function (): void {
     $world = reviewWorld();
-    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => []])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
 
     $turn = reviewStart($world, 'reviewer');
-    reviewPosts($world, ['verdict' => 'changes', 'findings' => 2])->assertStatus(202)->assertJsonPath('data.operation_id', $turn->id);
-    reviewEnded($turn, 'done', ['verdict' => 'approve', 'findings' => 0]);
+    reviewPosts($world, ['verdict' => 'changes', 'findings' => ['race', 'docs']])->assertStatus(202)->assertJsonPath('data.operation_id', $turn->id);
+    reviewEnded($turn, 'done', ['verdict' => 'approve', 'findings' => []]);
 
-    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => 0]);
-    reviewPosts($world, ['verdict' => 'approve', 'findings' => 0])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'approve', 'findings' => []]);
+    reviewPosts($world, ['verdict' => 'approve', 'findings' => []])->assertStatus(409)->assertJsonPath('error.code', 'tasks.pr_text_not_reviewer_turn');
 });
 
 it('writes an accepted question row that holds the question, for any role, and no row for a failed turn or an ungated group', function (): void {
@@ -224,7 +233,7 @@ it('writes an accepted question row that holds the question, for any role, and n
         ->and($row->receipt)->toBe(['questions' => [$question]]);
 
     // The answer turn continues the reviewer's thread; an implementer that asks leaves a question row too.
-    reviewEnded(reviewStart($world, 'reviewer'), 'done', reviewReceipt('changes', ['The export drops the header row.']));
+    reviewEnded(reviewStart($world, 'reviewer'), 'done', reviewReceipt('changes', ['regression']));
     $implementer = reviewStart($world, 'implementer');
     reviewEnded($implementer, 'asking_for_input', null, [$question]);
     expect(TaskHandoff::query()->where('operation_id', $implementer->id)->sole()->type)->toBe(TaskHandoffType::Question);
@@ -254,7 +263,7 @@ it('refuses an implementer turn after an accepted delivery until an accepted rev
     expect(reviewStart($world, 'implementer'))->toBe('tasks.handoff_required 409');
 
     // An accepted review with changes lets the implementer fix them.
-    reviewed($world, reviewReceipt('changes', ['The export drops the header row.']));
+    reviewed($world, reviewReceipt('changes', ['regression']));
     $fix = reviewStart($world, 'implementer');
     expect($fix)->toBeInstanceOf(Operation::class);
     reviewEnded($fix, 'done');
@@ -308,9 +317,9 @@ it('refuses to complete a subtask or publish unless its latest review is an acce
         ->and($publish())->toBe('tasks.handoff_required 409');
 
     // An accepted review that asks for changes, then an approve whose receipt the gate rejected.
-    reviewed($world, reviewReceipt('changes', ['The export drops the header row.']));
+    reviewed($world, reviewReceipt('changes', ['regression']));
     expect($complete())->toBe('tasks.handoff_required 409');
-    reviewed($world, reviewReceipt('approve', ['The export drops the header row.']));
+    reviewed($world, reviewReceipt('approve', ['regression']));
     expect($complete())->toBe('tasks.handoff_required 409')
         ->and($publish())->toBe('tasks.handoff_required 409');
 
@@ -352,7 +361,7 @@ it('counts only an accepted review for the round of the next review in a gated g
     reviewed($world, null);
     $retry = reviewStart($world, 'reviewer');
     expect($retry->input['turn']['prompt'])->toContain('This is the first review of this subtask');
-    reviewEnded($retry, 'done', reviewReceipt('changes', ['The export drops the header row.']));
+    reviewEnded($retry, 'done', reviewReceipt('changes', ['regression']));
 
     expect(reviewStart($world, 'reviewer')->input['turn']['prompt'])->toContain('This is review round 2 of this subtask');
 });
@@ -363,7 +372,7 @@ it('shows the exact call that posts the review receipt in the prompt of a gated 
     $turn = reviewStart($world, 'reviewer');
 
     $prompt = $turn->input['turn']['prompt'];
-    expect(str_contains($prompt, TaskTurn::ReviewReceiptRule))->toBe($gated)
-        ->and(TaskTurn::ReviewReceiptRule)->toContain('"$ORBIT_COPY_API/handoff"')->toContain('{"verdict": "changes", "findings": 2}')
+    expect(str_contains($prompt, TaskTurn::reviewReceiptRule()))->toBe($gated)
+        ->and(TaskTurn::reviewReceiptRule())->toContain('"$ORBIT_COPY_API/handoff"')->toContain('{"verdict": "changes", "findings": ["regression", "docs"]}')
         ->and(strlen($prompt) < TaskTurnPrompt::Limit)->toBeTrue();
 })->with(['gated' => [true], 'ungated' => [false]]);

@@ -108,6 +108,8 @@ final readonly class TaskTurnPrompt
             review".
             TEXT;
         $report = $first ? "- each outcome or deliverable that is not met, and one line on what you\n  checked and found met;\n" : "- each earlier finding: closed or open;\n";
+        // The handoff check already ran the Project's task check on this commit (docs/reference/tasks.md#run-an-external-turn).
+        $checked = $review->taskCheck ? "Orbit ran the Project's task check on this commit. Do not run it again.\n" : '';
         $rules = <<<TEXT
             <review_rules>
             Scope: the briefs, the deliverables, the diff of {$review->sha} against {$review->base()}, and what
@@ -133,11 +135,11 @@ final readonly class TaskTurnPrompt
 
             {$round}
 
-            For each blocking finding give: the file and line, the failing case and its
-            consequence, the rule that a fix must satisfy, and every case of that rule you
-            found.
+            For each blocking finding give: its category, the file and line, the failing
+            case and its consequence, the rule that a fix must satisfy, and every case of
+            that rule you found.
 
-            Run commands in the foreground and let them finish. Run single test files by
+            {$checked}Run commands in the foreground and let them finish. Run single test files by
             path. Remove what you created outside the checkout: records, processes,
             Instances and temporary files. Never print an environment file, a token, a key
             or a session value.
@@ -151,7 +153,7 @@ final readonly class TaskTurnPrompt
             TEXT;
 
         // A gated group's review counts only with its receipt (docs/reference/tasks.md#the-review-gate).
-        $receipt = ($subtask->parent->handoffs_gated ?? false) ? [TaskTurn::ReviewReceiptRule] : [];
+        $receipt = ($subtask->parent->handoffs_gated ?? false) ? [TaskTurn::reviewReceiptRule()] : [];
 
         return self::limited([
             $opening,
