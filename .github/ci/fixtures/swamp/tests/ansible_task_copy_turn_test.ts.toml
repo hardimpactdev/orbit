@@ -55,7 +55,7 @@ cost = 1262
 # Task 6174: the tiered-model case's 22s is a local 8s run of its two phases, and the base-model refusal case's 8s a local 2s run of its four
 # refused phases (tools/tests/ci-task-copy-turn-costs.json), both with headroom, until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
-slices = 36
+slices = 38
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
