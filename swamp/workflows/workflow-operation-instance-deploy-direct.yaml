@@ -1865,7 +1865,7 @@ jobs:
     - step: Prepare the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1891,7 +1891,7 @@ jobs:
     - step: Check out in the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1916,7 +1916,7 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1962,7 +1962,7 @@ jobs:
     - step: Read the steps to skip
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("Prepare the container" in steps && "outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
