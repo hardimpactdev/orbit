@@ -52,6 +52,47 @@ return [
         'transitional',
     ],
 
+    // AI-style puffery, inflated verbs, and filler phrases rejected in every
+    // maintained page outside docs/decisions.
+    'style_phrases' => [
+        'delve',
+        'tapestry',
+        'game-changer',
+        'paradigm shift',
+        'pivotal',
+        'vibrant',
+        'thriving',
+        'seamless',
+        'seamlessly',
+        'nuanced',
+        'flywheel',
+        'north star',
+        'unlock your potential',
+        'leverage',
+        'leverages',
+        'leveraging',
+        'utilize',
+        'utilizes',
+        'utilizing',
+        'facilitate',
+        'facilitates',
+        'due to the fact that',
+        'at this point in time',
+        "it's worth noting",
+        'it is worth noting',
+        "it's important to note",
+        'it is important to note',
+        'functions as',
+    ],
+
+    // Vague section headings rejected outside docs/decisions.
+    'vague_headings' => [
+        'a closer look',
+        'why it matters',
+        'at a glance',
+        'key takeaways',
+    ],
+
     // Architecture decision records numbered at or above `from_number` must
     // follow .agents/skills/writing-documentation/templates/adr.md and
     // avoid the blocked phrases. Earlier accepted records are immutable and

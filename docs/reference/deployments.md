@@ -14,739 +14,424 @@ covers:
 
 # Instance releases
 
-An [Instance container's default deployment](/reference/development-containers#processes) runs its Project commands as `agent`, the workspace's owner ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)), repairs workspace group permissions and owners before and after those commands, installs its development Processes and takes a new seed. The seed stops and starts every running unit, so each worker runs the new commit.
-
-Checkout development deployment uses one native Swamp root on 209 and official SSH to the app-dev Node. The Gateway captures public intent and names for private execution copies. Fetch, checkout checks, cleanup, checkout, Vite preparation, each Project command and final inspection are separate native steps. The shared terminal reader records the result and history; development steps do not read intent or report progress to the Gateway.
-
-Production deployment uses the same native root on 209 with a release layout and the admitted Project account ([chart](/cli/instance/deploy)). Every Node action is one official `@swamp/ssh` argv or an official `@swamp/cfgmgmt` behavior; no step calls the Gateway, and no polled executor remains. Rollback stays production-only, and development rollback refuses `deployment_config.unavailable` because checkouts have no retained releases.
-
-Swamp runs production commands as the admitted `orbit-app-<ProjectID>` account. It never asks the agent to act.
-
-The production home is planned to go: [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)) runs each release in its own container on the `app-prod` Node.
-
-An AppProd deployment builds in that Instance’s permanent preparation container, then promotes a verified clone. The prior live drains and freezes for rollback. A deploy step is required by default. Set `--required=false` to record its failure and continue. Both step phases run from the repository root. See [production containers](/reference/production-containers).
-
-A Laravel release with `storage` as a shared path gets its `public/storage` link without a `storage:link` step. Process commands and environment values may name a host path only where the container has an exact equivalent; see [Host paths](/reference/production-containers#host-paths).
-
-## The production home
-
-Each production Instance has a home, `/home/<production-user>`, with these paths.
-
-| Path | Purpose |
-| --- | --- |
-| `releases/<name>/` | One retained release: a Git checkout of the deployed branch. |
-| `.env` | The durable environment file. Each release's application directory holds a `.env` link to it. |
-| `env/<directory>/.env` | The durable environment file of another application directory that a [Route with a web root](/reference/routes#web-roots-on-production) serves. Each release links that directory's `.env` to it. |
-| `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
-| `current` | A link to the selected release. It is absent until the first deployment. |
-
-A clone leaves the home prepared, with no `current` link. When a clone seeds SQLite, Orbit registers an owned SQLite connection, attaches it under `DB`, and syncs `DB_DATABASE=<home>/database.sqlite` into the production `.env`. Later releases use the same database. [Cloning](/reference/instance-cloning) describes how to seed the file.
-
-The Gateway records retained releases from terminal deployment results. Cleanup considers only those recorded releases and retains a release when a running process uses it or the process scan fails.
-
-The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
-
-With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing and rollback validation check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
-
-A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. A deployment's activation checks each such web root and its links, adds a missing `.env` link, and grants Caddy access before it switches `current`. A rollback adds a missing `.env` link before it switches `current`; the deployment that prepared the release granted the access. Only active Routes count. An Instance without such a Route uses only its Instance web root.
-
-A new release without such a directory fails at source preparation. Like any other preparation failure, it keeps the earlier selection and leaves the release directory. A rollback to an older release without the directory fails at activation and keeps the earlier selection.
-
-## Shared paths
-
-Production Instances keep shared directories in the Instance home. Before any `before_activation` step, Orbit links each declared path from the new release to `<home>/<path>`. A first deployment creates the persistent directory and seeds it from the directory in the new release. Later deployments keep every file it holds, add the files of the release copy it lacks, and discard the release copy. These operations run as the Instance user. Deploy steps must preserve these links.
-
-Swamp prepares, activates and prunes releases over official SSH from 209. Git and file changes run as the admitted Instance user through sudo. Deployment leaves the root-owned layout marker that a clone writes as it is, and it never calls an agent action.
-
-Laravel app Projects default to `storage`, relative to the application directory. For root `apps/site/public`, the default is `apps/site/storage`, linked to `<home>/apps/site/storage`. Other Project types default to no shared paths.
-
-Use `orbit instance:update ID --shared-paths='["storage","var/uploads"]'` to replace the paths, `--shared-paths='[]'` to disable sharing, or `--shared-paths=null` to restore the default.
-
-Set `shared_paths` with `PATCH /api/v1/instances/{instance}`, for example `{"shared_paths":["storage","var/uploads"]}`. The list replaces the default. `[]` disables shared paths; `null` restores the Project-type default. Instance responses include the effective `shared_paths`. This setting requires access to the Instance's Node and the same operation lock as deployments. It applies to the next deployment and does not move files in the current release.
-
-Paths are relative to the repository root. Use at most 32 distinct, non-overlapping directory paths, each at most 255 bytes. Components use letters, digits, dots, underscores, and hyphens. Absolute paths, `.` and `..` components, hidden top-level paths, and Orbit's `releases`, `current`, `env`, and `database.sqlite` paths are refused. Source and destination ancestors must not be symlinks. Shared paths cannot replace a web root or its ancestors.
-
-### Public storage
-
-When the application's `storage` directory is shared and its web root is `public`, preparation creates `public/storage -> ../storage/app/public` if the link is absent. Do not add an Artisan `storage:link` step for this layout. An existing link is accepted only when it resolves to that application's `storage/app/public`, either inside the release or at the matching persistent path in the Instance home. All other web-root symlinks, broken links, and symlinks within the public storage directory are refused during preparation, activation, and release inspection.
-
-Activation grants Caddy read and directory access to `storage/app/public` and passage through its parents. It does not grant read access to private uploads or logs. Directories in the public storage tree receive default ACLs so new uploads inherit access.
-
-### Replace a hand-made link-storage step
-
-If the Instance already uses `<home>/storage`, leave that directory and its files in place. Confirm that the effective shared paths include `storage`, then remove the `link-storage` step with `DELETE /api/v1/instances/{instance}/deploy-steps/link-storage` before the next deployment. Orbit reuses the existing directory and creates the public storage link. For a nested application, use its matching persistent path.
-
-If files still live only in the selected release, copy them into the matching persistent directory before deploying. Use an application maintenance window when writes can occur during the copy. Automatic seeding uses the new release's source files, not the selected release's runtime data. Orbit does not change existing production files when this setting is saved.
-
-Prune removes the links with their releases and never follows them into the shared directories. A rollback selects older code and leaves shared data unchanged. A release created before shared paths were enabled keeps its original layout; deploy again to create a release with managed links.
-
-## Development defaults
-
-A new `default` Instance on an `app-dev` Node is an [Instance container](/reference/development-containers) that Orbit keeps at the newest commit of the Project's default branch. Existing checkout defaults keep working until they migrate. Other new development Instances clone the container default. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
-
-The [automatic deployment tick](#automatic-deployments) deploys a default each time its default branch has a new commit. Only one deployment runs per Instance, including manual requests.
-
-A deployment runs in the checkout itself, in two phases.
-
-**Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. The fetch runs as the managed user against the Project repository URL; see [credentialed Git](/reference/instance-setup#credentialed-git). Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
-
-The exception is a directory that the old commit has and the new commit removes, such as a package. Git would leave that directory's untracked and ignored files, for example its `node_modules`. Orbit deletes them before the checkout, so a [seed](#seeds) copy finds only directories that the commit has.
-
-- When tracked files have uncommitted changes, Orbit refuses with `deployment.checkout_dirty`, and the checkout stays unchanged.
-- When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
-- When the checkout would overwrite an untracked file, Git refuses it.
-
-**Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
-
-When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.
-
-- The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
-- The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after a backoff and reruns the steps, at most three times.
-
-A failed best-effort step (`required: false`) does not stop the deployment; the later steps run.
-
-A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after a backoff. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
-
-Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
-
-A successful container default create or checkout migration records its completed Route projection with the seed. It needs no separate automatic-policy publication before a manual deployment.
-
-A container default may [sleep](/reference/development-containers#sleep-and-wake). A deployment of a sleeping default resumes or boots its container in its `start` phase, closes the swap the sleep opened, and removes the asleep marker once that phase passed, so the Route serves the app again. The end of the deployment counts as activity: the idle sleep waits a full window before it freezes the default again.
-
-With [signed power delivery](/reference/executor#signed-power-delivery), the start phase resumes a frozen container through the executor. For a stopped container it discards stale power state before booting. Both orders belong to the admitted deployment Operation; Swamp requests the order for the phase just before it hands the order to the relay command on the Node.
-
-If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. A matching succeeded Route receipt clears that mark through the policy projection. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
-
-### Container source facts
-
-Before admitting a manual or automatic deployment of a development default in a container, Orbit refreshes the Project's source facts with the same capture used by `project:update`: PHP version, source classification and environment template. It reads the requested commit. Without `--commit`, it reads the default branch head once and pins the deployment to the returned SHA.
-
-Before the source read, Orbit checks that any [move into a container](/reference/development-containers#migrate-a-checkout-instance) has settled. The source read runs before the admission write transaction. Under admission ownership, Orbit rechecks idempotency, automatic-deploy eligibility and the source configuration before recording the facts, and checks the move again before admitting the deployment. A changed source configuration refuses with `deployment.source_changed` (409). The container intent, including its PHP paths and Process units, is rendered after the facts are recorded; a later branch change cannot substitute another commit. The fetch still checks that the pinned commit is on the branch's first-parent chain.
-
-A failed read refuses admission with `project.source_unavailable` (502), or the source-access error when credentials cannot be obtained. Invalid or unsupported PHP or framework metadata refuses with its classification code (422), such as `app-dev.php_version_unsupported`. A web-serving Project without PHP refuses with `project.source_defaults_incomplete` (422); a missing static PHP build refuses with `instance.host_unavailable` (409). These refusals start no deployment and leave the stored facts unchanged. Orbit never deploys using stale PHP or framework facts after a capture failure. Environment-template merging and invalid-file handling follow the [existing template rules](/domains/applications#how-the-template-changes).
-
-A successful admission updates the Project-wide facts and environment template at once. Failure or cancellation of that deployment does not restore them. New container intents and later rendering of existing container Process units use the current Project PHP version. Running units change only when an operation applies their new configuration.
-
-The seed changes only after a successful deployment and determines the files a clone copies, not its PHP selection: after a failed or cancelled deploy, a clone can copy the older seed while selecting the newer admitted PHP version. Checkout Instances and production deployments do not refresh Project source facts through deployment.
-
-### Seeds
-
-A new development Instance on the same Node starts from the default: Orbit records the default's checkout as its `seed_path` and the default's `seed_commit`, and creates a linked worktree of the default's repository at that commit. [Setup steps](/reference/instance-setup#run-setup) receive the two values as `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and copy dependency folders from the checkout. The checkout can change while they copy, because a deployment can run at the same time. A copied folder is a quick start, not a matching set: setup must still run its locked installs. A default's own setup gets no seed.
-
-A container default's deployment removes the default's untracked files that Git does not ignore after its checkout, and names them in the result as `workspace_cleaned` ([The default keeps a clean tree](/reference/development-containers#the-default-keeps-a-clean-tree)). Before the seed, it places the files that every clone needs and records the [seed manifest](/reference/development-containers#the-seed-manifest).
-
-## Deploy steps
-
-Development deploy steps run at the checkout's repository root, and production deploy steps at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
-
-A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. A Project stores a separate ordered development deploy list, shared by its development deployments and independent of setup and teardown. Storing a step does not start a deployment.
-
-### Development deploy steps
-
-Use `project:dev-deploy-step:list`, `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, and `project:dev-deploy-step:destroy`, with `--project=ID`. The API collection is `/api/v1/projects/{project}/dev-deploy-steps`; GET lists, POST creates, and PATCH or DELETE on `/{name}` changes or removes one step. MCP exposes the same operations.
-
-Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lowercase letters, digits, and hyphens, with a letter or digit at each end, and are at most 63 characters. Commands are nonempty UTF-8 strings of at most 16 KiB without NUL bytes. Timeouts are 1–900 seconds, default 300. `required` is a JSON boolean, default `true`; the CLI accepts `--required=true` or `--required=false`. PATCH accepts any of command, timeout, required, inputs, or placement; omitted fields stay unchanged.
-
-A step may also list `inputs`: at most 16 repository-relative paths of files or folders, such as `composer.json`, `composer.lock` or `apps/web/bun.lock`. Each path is 1–255 characters, does not start with `/`, and has no `..` segment, control character (a NUL byte or a line break among them), line separator or glob character (`*`, `?`, `[`). The paths are unique. Responses return `inputs` as a list, empty when the step has none. On PATCH, a list replaces the inputs, and `null` or `[]` clears them.
-
-A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
-
-Swamp fetches the branch and checks out the commit over pinned official SSH as the admitted Node account. The Project commands run in list order as that account, one SSH command each. Checkout refuses tracked changes and a local branch with commits that the target lacks. The public result reports only the refusal code. The checkout, the cleanup and each command take system `flock` on the checkout directory. A command refuses with `instance.lifecycle_busy` while a setup or teardown command holds that directory.
-
-Development commands are captured as named vault execution copies and delivered on SSH stdin. A command runs with a clean environment: `HOME`, `USER`, `PATH`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, plus `VP_HOME` under a Vite+ runtime. It does not load the checkout's `.env`; the application reads it. Production commands receive the same rendered values as private, quoted exports on SSH stdin. Bash reads the private program with `-s`, suppresses output before parsing its private body and runs the command with empty stdin. No command file is copied to the Node.
-
-At run start the Gateway mints a repository-scoped Contents read token with the GitHub App and writes it into a 0600 credential file for the fetch. The next step removes the file. A public origin, or one without an App installation, fetches anonymously. GitHub CLI source access is refused for this native path. Command output is discarded so application secrets cannot enter native history.
-
-Required steps must pass before Orbit records the commit as deployed. A failed or timed-out best-effort step (`required: false`) does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
-
-In a container deployment, Orbit records the exit code of each best-effort step that ran, never its output. The step prints only its command's exit code, and native run history keeps that line. The Gateway reads it into `best_effort_steps`, one `{name, exit_code}` row per step in list order. A skipped step has no row. `exit_code` is an integer from 0 to 255, and 124 is a timeout. A line that is not such a number gives `null`, and the line itself is not kept. The deployment still passes.
-
-[`instance:deploy`](/cli/instance/deploy) and [`instance:deployment:show`](/cli/instance/deployment-show) warn about each step that did not exit 0, for example `best-effort step tia-warm exited 1`, and the web deployment page lists them as a warning. `operation:show` returns the same rows in the Operation result.
-
-#### Step inputs
-
-A container deployment skips a step with `inputs` when nothing it depends on changed. Orbit compares the Git object ID of each input at the deployed commit, and the step's command, with the values at the step's last successful run in that workspace. When all are the same, the step does not run. A changed input or command, an input that does not exist at the commit, or no recorded successful run runs the step. A step without `inputs` always runs, and a checkout deployment runs every step.
-
-Orbit stores the inputs and sends them, with each step's command digest, to the deployment run. The container deployment's workflow uses them from the release after the one that stores them: a run that started on an older Gateway never meets a workflow that reads a key it lacks.
-
-The record of a step's last successful run is in the workspace, so a clone keeps it with the files the step made. The skip assumes those files stay. To make every step run again in a workspace, remove its `.git/orbit-deploy-steps` folder. Give no inputs to a step whose command builds files from more than its inputs: a Composer project whose `post-install-cmd` builds documentation or API files runs on every deployment.
-
-### Production deploy steps
-
-Production steps belong to an Instance and run before or after activation.
-
-| Field | Contract |
-| --- | --- |
-| `name` | Unique within the Instance. 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. |
-| `phase` | `before_activation` (the default) or `after_activation`. |
-| `command` | Non-empty UTF-8 of at most 16 KiB, without a NUL byte. |
-| `timeout_seconds` | 1 through 900. The default is 300. |
-
-A production step runs over official SSH from 209 through sudo as the admitted Instance owner, at the release's repository root, with a cleared environment and Bash in `-eu` mode. The Gateway renders the admitted environment and passes the private command from the vault on SSH stdin. The command receives empty stdin, and no step file is copied to the Node. The step's output stays on the Node: run history, logs and the result keep none, and a failed step names the step instead of an output tail.
-
-A new step goes to the end of its phase. `before` or `after` places it next to another step of the same phase. The two fields are exclusive. An Instance has at most 32 steps, and their timeouts add up to at most 3,600 seconds. The Gateway refuses a change that breaks a rule and stores nothing.
-
-| Request | Result |
-| --- | --- |
-| `GET /api/v1/instances/{instance}/deploy-steps` | The steps in phase and placement order. |
-| `POST /api/v1/instances/{instance}/deploy-steps` | Creates one step. Requires `name` and `command`. Accepts `phase`, `timeout_seconds`, and `before` or `after`. |
-| `PATCH /api/v1/instances/{instance}/deploy-steps/{name}` | Changes `command`, `phase`, `timeout_seconds`, or the placement. |
-| `DELETE /api/v1/instances/{instance}/deploy-steps/{name}` | Removes the step. The others keep their order. |
-
-The branch lives on the Instance. `PATCH /api/v1/instances/{instance}` with `branch` sets it. Without one, a deployment uses the Instance's selected branch. A Project default change does not change it.
-
-Deploy-step and branch changes need an access grant to the Instance's Node. The Gateway refuses them for an Instance that is not a production Instance with `deployment_config.unavailable` (409). Activity and errors never contain a step command.
-
-### Vite store prerequisite
-
-Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime in the production account’s private Vite+ cache before the application command.
-
-The shared Node manager supplies its standalone CLI. Swamp publishes only that executable to `/opt/orbit/vite-plus/bin/vp`, with mode `0755` and root ownership. A comparison skips an unchanged copy. It copies no manager credentials or private data. The first CLI invocation can bootstrap that cache; Swamp then installs the exact selected runtime versions. Application commands use the private cache.
-
-It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
-
-The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution uses the app-owned private cache. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
-
-A missing runtime or package manager that cannot be installed fails with `deployment.vp_store_failed`, before the build command runs. Invalid or incompatible Project requirements fail with `deployment.vp_requirements_invalid`. The current production release stays selected. Fix connectivity, store ownership, or Project requirements and retry the deploy; no manual runtime installation is required.
-
-## Deploy through the API
-
-Swamp executes each deployment and rollback as an [operation](/reference/operations). The Gateway keeps admission, deploy-step configuration, target exclusion, history and receipts.
-
-| Request | Body | Result |
-| --- | --- | --- |
-| `POST /api/v1/instances/{instance}/deploy` | `{}` or `{"commit":"SHA"}` | `202` with an `instance.deploy` operation. Follow it with `GET /api/v1/operations/{operation}`. |
-| `POST /api/v1/instances/{instance}/deploy/automatic` | `{"commit":"SHA"}` and `Idempotency-Key` | `202` with the automatic `instance.deploy` receipt. Requires Gateway Node access. |
-| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | `202` with an `instance.rollback` operation that selects one retained release. Follow it with `GET /api/v1/operations/{operation}`. |
-| `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. A development default has none. |
-
-### Pinned commits and automatic callers
-
-`instance:deploy --commit=SHA` sends `{"commit":"SHA"}` to the existing deploy endpoint. Omit `commit` to keep the manual branch-head behavior. SHA is exactly 40 or 64 lowercase hexadecimal characters. The Gateway checks Instance eligibility and the Project's recorded repository identity before admission. The queued source-preparation step checks the managed repository binding and requires the commit on the deployment branch's first-parent chain before environment sync, user steps or activation. Invalid membership ends the operation with `deployment.commit_not_on_branch`; a moved head either still contains the pinned commit or fails. It never substitutes the new head. Development defaults use the Project default branch.
-
-`POST /api/v1/instances/{instance}/deploy/automatic` and MCP `instance-deploy-automatic` start the same `instance.deploy` operation with automatic origin. They require a commit, an `Idempotency-Key`, an eligible production Instance with automatic deployment enabled, and Gateway Node access.
-
-This service contract has no CLI command. Swamp invokes it with its Gateway-peer authority; operator deploys use `instance:deploy --commit=SHA` and keep manual identity and pause behavior. The normal deploy endpoint always keeps the authenticated caller's manual identity, including when the caller has Gateway access. Both reject unknown body fields, including `triggered_by`, `automatic` and `caller_node_id`.
-
-Swamp runs as `swamp serve` on Services. Its Gateway calls use Services' existing active WireGuard peer identity, derived from the connection address, with the existing directed Services-to-Gateway access edge. Gateway access is already fleet-wide authority; it also authorizes this automatic command. Access only to a production Node permits manual deploys but does not permit automatic origin. No per-command permission, new bearer token or client-supplied identity is introduced. Establishing that access and starting a Swamp policy workflow are separate operator actions; this contract changes no live configuration.
-
-The automatic receipt stores the authenticated caller Node ID and pinned commit in operation input, the Instance in its target, and the request key and fingerprint in the operation framework. The fingerprint binds caller and command as well as target and input. The same request returns its existing operation even after completion; another caller, command, Instance or commit with the same key returns `operation.idempotency_conflict`. Manual deploys and other operation kinds keep their existing key semantics across callers.
-
-Under the Instance lock, the automatic operation rechecks enablement, manual pause and rolled-away blocks before effects.
-
-A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
-
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and default development checkouts, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts. The policy runs on a Swamp worker on Node 209 and calls the Gateway API directly over HTTPS, trusting the Orbit root CA.
-
-### The deploy operation
-
-The Gateway validates the request and the access grant, checks that the Instance can be deployed, and answers `202`. A refusal uses the normal JSON error envelope: `deployment_config.unavailable` (409) for an Instance that is neither a production Instance nor an active development default, and `operation.target_busy` (409) while another operation holds the Instance.
-
-A production deploy holds the Instance, freezes the full intent and records a running deployment row, which [pauses automatic deployment](#pause) at once. It refuses an Instance without stored environment configuration with `env.configuration_missing` before it records anything.
-
-One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps over official SSH. Its budget is the deploy step timeouts plus 900 seconds. The proof Project's default adds 1,800 seconds, the bound of its wait for [the seed hold](/reference/development-containers#the-seed-hold).
-
-| Step | What it does | Error code |
-| --- | --- | --- |
-| `Write release credential`, `Prepare the release`, `Remove release credential`, `Read the release commit`, `Prepare shared paths`, `Link the release` | Clones the repository into the new release and checks out the frozen commit or branch head. Seeds and links the shared paths and each `.env` | `deployment.source_failed` |
-| `Read first-parent chain`, `Check the branch commit` | A pinned commit only: checks that it is on the branch's first-parent chain | `deployment.commit_not_on_branch` |
-| `Read the key names`, `Check for foreign keys`, `Create the orbit-env group`, `Write .env`, `Set the group orbit-env` | Refuses keys of `<home>/.env` that Orbit does not manage. The Instance account writes the rendered `.env` from the vault with mode 0640; root then runs `chgrp -h orbit-env` | `env.sync_unconfirmed`, `env.sync_would_drop_keys` |
-| `dev-vp-*`, `Read Vite manager home`, `Read Vite manager CLI`, `Publish public Vite CLI`, `Prepare Vite cache` | The shared [Vite+ steps](#vite-store-prerequisite), when a step needs Vite+ | `deployment.vp_requirements_invalid`, `deployment.vp_store_failed` |
-| `Run before steps` | Each `before_activation` step in order; a failed step skips the rest | `deployment.step_failed` |
-| `Grant Caddy access`, `Activate release`, `Swap current` | Grants Caddy access to each served web root, writes `current.next`, and renames it over `current` in one atomic rename | `deployment.selection_invalid` |
-| `Prepare PHP directories`, `Read local PHP tuning`, `Write PHP configuration`, `Write default PHP tuning`, `Test PHP configuration`, `Start PHP runtime`, `Check PHP runtime`, `Refresh PHP cache` | Prepares and verifies the dedicated PHP-FPM service on its first deploy, then reloads it gracefully | `deployment.php_runtime_unconfirmed` |
-| `Install Processes`, `Restart Processes` | Installs the captured Process definitions in the `process.create` shape, then reloads or restarts each running Process with `restart_on_deploy` | `process.install_failed`, `process.restart_failed` |
-| `Run after steps` | Each `after_activation` step in order, over private SSH stdin | `deployment.step_failed` |
-| `Read Schedule group`, `Render Schedules`, `Write Schedule services`, `Install Schedule timers`, `Read Schedule timers`, `Check Schedule timers` | Converges captured Node timers and checks their desired state | `schedule.install_failed` |
-| `Find releases in use`, `Clean up releases` | Removes each release outside the kept three, as [Retained releases](#retained-releases) describes; best effort | none: a failed cleanup is a warning |
-| `Read current back`, `Read deployed commit`, `Check Process state`, `Read container state`, `Check the deployment` | Checks the selected release, commit and Process state | `deployment.selection_invalid`, `process.restart_failed` |
-
-A development default runs its own steps in the same workflow; [Native development deployment](#native-development-deployment) lists them.
-
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. A failed deploy step is named `before_activation.<step>` or `after_activation.<step>`. A container default's step that waited 60 seconds for a Swamp behavior lock that another run held, and so never ran, fails with `instance.deploy_lock_timeout` whatever its step; deploy again. Its long steps lock a behavior of their own Instance, so deployments of two defaults on one Node never wait for each other on them. A production result also counts the failed cleanups in `warnings`.
-
-### Execution copies
-
-A deploy hands its private material to the run as named vault execution copies in `orbit-control-inputs`. A development or container default's deploy writes `development-deploy-operation-<id>-credential`, `-processes` and `-step-<index>` for each admitted step. A production deploy writes `instance-deploy-operation-<id>-credential` and `-step-<index>`. Its Process environments go to `process-parent-operation-<id>-node-<node>-member-<process>` copies. The Gateway resolves their Node only when the run starts, so these copies are not yet deleted.
-
-When the deploy ends, the Gateway deletes the copies named after the deploy alone: after success, failure or cancel, a refused start, a cancel before the run and an unreadable result. A timed-out deploy keeps them while its run may still read them:
-
-- A deploy that holds its Instance keeps them until the shared reader settles it: with Swamp's terminal, or as `unproven` after the 60-minute hold limit.
-- A checkout default's deploy holds nothing. It keeps them until Swamp has confirmed the cancel.
-- When that confirmation never comes, the reconciler stops forwarding the cancel after 60 minutes. The prune command below then counts the run as lost.
-
-A delete that fails leaves the deploy's end as it is and logs `Deploy execution copies could not be deleted`.
-
-`php artisan orbit:instance-deploy-copies-prune` deletes the copies of every ended deploy that are left: the copies of deploys from before this rule, and those of a failed delete. A deploy has ended when its status is terminal. A timed-out deploy has ended only when the rule above releases its copies. Add `--dry-run` to count the deploys and key names first. The command reads no value; a key that is gone counts as deleted.
-
-### The rollback operation
-
-The Gateway validates the request and the access grant, checks that the Instance is a production Instance that retains the release, and answers `202`. It reads the retained releases from the Instance's [deployment history](#retained-releases), not from the Node. Admission holds the Instance, freezes the full intent for the run, and records a running rollback row, which [pauses automatic deployment](#pause) at once. A refusal uses the normal JSON error envelope and changes nothing:
-
-| Code | HTTP | Meaning |
-| --- | --- | --- |
-| `rollback.release_not_retained` | 422 | The Instance's deployment history does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases that history retains |
-| `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
-| `operation.target_busy` | 409 | Another operation holds the Instance |
-
-One native run on Node 209 then runs these steps over official SSH ([chart](/cli/instance/rollback)). Its budget is 900 seconds.
-
-| Step | What it does | Error code |
-| --- | --- | --- |
-| `Activate release` | Links each served application's `.env` in the release, then writes `current.next` with `@swamp/cfgmgmt/link`, owned by the production account. A link into a removed release fails, and `current.next` is not written | `rollback.release_invalid` |
-| `Swap current` | Renames `current.next` over `current` with `mv -fT`, one atomic rename, so `current` always exists and keeps its owner. Skipped when a link failed | `deployment.selection_invalid` |
-| `Refresh PHP cache` | Reloads the dedicated PHP-FPM service gracefully, which also empties its OPcache. Only for an Instance that serves PHP | `deployment.php_runtime_unconfirmed` |
-| `Restart Processes` | Reloads or restarts each running Process with `restart_on_deploy`, captured at admission | `process.restart_failed` |
-| `Read current back` | Reads the live `current` link with `readlink` | `deployment.selection_invalid` |
-| `Check the selection` | Checks that the link read back names the release | `deployment.selection_invalid` |
-
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is the commit its deployment recorded. A failed operation names the step in `failed_step` and its error code in `error_code`. `selected_release` is null when `Activate release` or `Swap current` failed; the Instance then keeps its recorded selection.
+Orbit deploys two kinds of Instances: production Instances on `app-prod` Nodes and `default` development Instances on `app-dev` Nodes.
+
+A production deployment builds the new release in the Instance's off-traffic preparation container, promotes a verified clone to serve traffic, and keeps the previous live release stopped for fast rollback; see [Production containers](/reference/production-containers). A development default deployment updates the Project's default branch in place and takes a fresh seed so new clones and task workspaces start at the latest commit; see [Instance containers](/reference/development-containers).
+
+```bash
+orbit instance:deploy 42
+orbit instance:release:list 42
+orbit instance:rollback 42
+```
 
 ## Deploy
 
-A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
+A deployment reads the Instance's branch, deploy steps, environment, and runtime definitions once at admission, then runs them as a single [Operation](/reference/operations). Orbit runs no migrations, cache clears, dependency installs, asset builds, or custom health checks unless you configure them as deploy steps.
 
-1. **Source preparation.** Swamp clones the branch into a new release as the admitted production user. Then it prepares the shared paths and the release's links.
-2. **Environment sync.** Swamp writes the `.env` the Gateway rendered at admission into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does.
-3. **Before activation.** Swamp runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
-4. **Activation.** Swamp grants Caddy access to the new release and replaces `current` atomically with a link to it.
-5. **PHP refresh.** Swamp reloads the dedicated FPM service gracefully; its new workers start with an empty OPcache.
-6. **Process restart.** Swamp installs captured Process definitions and restarts active Instance Processes that are desired `running` and have `restart_on_deploy: true` (the default). Stopped Processes stay stopped.
-7. **After activation.** Swamp runs each `after_activation` step in order.
-8. **Cleanup.** Swamp removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
+### Production releases
 
-Each Process restart is one native step: `systemctl reload-or-restart` for a systemd Process, `docker restart` for a container. A failure stops the deployment before after-activation steps and cleanup. The new release stays selected.
+Every `app-prod` deployment uses the container release lifecycle described in [Production containers](/reference/production-containers):
 
-Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its Operation result.
+1. **Prepare and build.** Orbit wakes the preparation container, checks out the commit, links [shared paths](#shared-paths), renders `.env`, prepares [Vite+](#vite-store-prerequisite), and runs `before_activation` steps.
+2. **Clone and verify.** Orbit snapshots the finished build, boots a `hot` clone, and verifies readiness on its health path (`/up` for Laravel, `/` otherwise).
+3. **Switch and hand over.** Orbit switches Caddy traffic to the new container and moves timers and active `restart_on_deploy` Processes over, leaving stopped Processes stopped.
+4. **After activation and retire.** Orbit runs `after_activation` steps in the new live container, drains and stops the old live container as `old`, and records release states.
 
-Orbit skips PHP work for an Instance that does not serve PHP. The first deploy prepares its dedicated pool and verifies it before the Gateway records the runtime identity. Later deploys reload the verified pool. Node PHP packages remain part of the Node recipe.
+For Laravel apps with `storage` shared, Orbit links `public/storage` automatically without a `storage:link` step, and maps supported [host paths](/reference/production-containers#host-paths) in `.env`. To keep a Process from restarting on deploy, rollback, or production `env:sync`, pass `--no-restart-on-deploy` to [`process:create` or `process:update`](/cli/process) (or set `restart_on_deploy: false` in the API). For Laravel Horizon managed as an Instance Process, keep the default and remove any hand-made `php artisan horizon:terminate` after-activation step.
 
-To opt out, set `restart_on_deploy: false` in a Process create or update request, or pass `--no-restart-on-deploy` to [`process:create` or `process:update`](/cli/process). This setting applies to production deployments, rollbacks, and a successful explicit production env-sync runtime refresh. For Horizon managed as an Instance Process, keep the default and remove a hand-made `php artisan horizon:terminate` after-activation step with `instance:deploy-step:destroy`. Orbit now restarts that Process before after-activation steps. The normal runtime stop behavior applies.
+### Timeout budgets
 
-Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no deploy steps, Orbit runs only its runtime operations. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
+Each deploy step enforces its own timeout (`timeout_seconds`). A required step that times out stops its process group and skips all remaining steps. The overall Operation also has a run budget:
 
-Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds, the [run budget of an operation](/reference/operations#native-run-budgets). A rollback has a deadline of 900 seconds. When a deadline stops the run, the error code is `operation.timed_out`. When the run ends but its end check was skipped or failed, the operation and its history row record `operation.result_unreadable` at once.
+- **Production release:** `before_activation` allows 2,400s (3,450s with Vite+) plus `timeout_seconds + 20` per step; `after_activation` allows 60s plus `timeout_seconds + 20` per step, plus 7,800s for handover.
+- **Development default:** 900 seconds plus step timeouts, plus 5,590 seconds for nested-fleet defaults and 1,800 seconds for the proof Project's [seed-hold wait](/reference/development-containers#the-seed-hold).
+- **Rollback:** 10,260 seconds for a production container rollback, or 900 seconds for a legacy host rollback.
 
-## Failures
+Each production phase is capped at 90,000 seconds (`deployment.step_budget_exceeded`, 422). When a run exceeds its budget, Orbit records `operation.timed_out`. When a run finishes without a readable end check, Orbit records `operation.result_unreadable`.
 
-The failed boundary decides which release stays selected.
+## Development defaults
 
-| Failed boundary | Selected release |
+A `default` Instance on an `app-dev` Node tracks the Project's default branch (production branch overrides do not apply). New development defaults run in [Instance containers](/reference/development-containers); existing host checkouts continue working until migrated. You can deploy a default manually with `orbit instance:deploy ID`, `POST /api/v1/instances/{instance}/deploy`, or MCP `instance-deploy`, or let the [automatic deployment policy](#automatic-development-defaults) keep it current.
+
+A development deployment runs in two phases:
+
+1. **Source preparation.** Orbit fetches the default branch with [credentialed Git](/reference/instance-setup#credentialed-git) and checks out the target commit.
+2. **Deploy steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order (reported under `before_activation`). There is no activation switch because the workspace serves directly.
+
+On container defaults, source preparation removes untracked non-ignored files (`workspace_cleaned`; [The default keeps a clean tree](/reference/development-containers#the-default-keeps-a-clean-tree)) and records the [seed manifest](/reference/development-containers#the-seed-manifest) before taking the seed.
+
+Source preparation refuses dirty tracked files (`deployment.checkout_dirty`), a local branch with commits missing from the fetched target (`deployment.branch_diverged`), and checkouts that would overwrite an untracked file. Both checkout and steps acquire a `flock` on the checkout directory shared with [setup and teardown steps](/reference/instance-setup); a conflicting lifecycle step fails the deploy with `instance.lifecycle_busy`. Steps must not modify tracked files, or the next deploy will see a dirty checkout.
+
+When every required step passes, Orbit updates the default's `seed_commit` (and takes a new container seed, restarting its running development Processes on the new commit). When a required step fails, later steps do not run, the checkout stays at the new commit without rolling back, and `seed_commit` stays at the last successful commit so the automatic policy retries after backoff.
+
+Additional behavior for container defaults:
+
+- **Sleep and wake:** Deploying a [sleeping default](/reference/development-containers#sleep-and-wake) resumes or boots it and clears the asleep marker. Manual deploys count as activity for idle sleep; automatic deploys do not.
+- **Pending Routes and migrations:** A pending default Route projection refuses deploy admission with `deployment.projection_pending` (409). An unfinished [`instance:migrate`](/cli/instance/migrate) refuses deployment with `instance.lifecycle_busy`.
+- **Removed Processes:** Development Processes removed from the Project are cleaned up during deploy and listed in `processes_removed`.
+- **Nested-fleet defaults:** Verify [fleet rules](/reference/development-containers#fleet-rules) before the first seed (`instance.container_fleet_drift`), receive `nested_fleet_club_key`, and refresh the inner fleet.
+- **Proof Project defaults:** A passed deploy starts asynchronous [CI seed copies](/reference/development-containers#the-seed-on-each-ci-node).
+
+### Container source facts
+
+Before admitting a manual or automatic deployment of a container default, Orbit refreshes the Project's source facts (PHP version, source classification, and environment template) for the requested commit or current default-branch head, and pins the deployment to that SHA. Orbit first checks that any [container migration](/reference/development-containers#migrate-a-checkout-instance) has settled; if the source configuration changes during the read, admission refuses with `deployment.source_changed` (409).
+
+If the source read fails (`project.source_unavailable`, 502), metadata is invalid or unsupported (422, such as `app-dev.php_version_unsupported` or `project.source_defaults_incomplete`), or the required static PHP build is missing (`instance.host_unavailable`, 409), Orbit refuses the deploy and leaves stored facts unchanged. Orbit never deploys a container default using stale source facts.
+
+A successful admission updates Project-wide facts and environment templates immediately (following the [template merge rules](/domains/applications#how-the-template-changes)) and does not revert them if the deploy later fails or is cancelled. The seed itself updates only after the deploy succeeds. Checkout Instances and production deployments do not refresh Project source facts during deploy.
+
+### Seeds
+
+A new development Instance on the same Node starts from the default's `seed_path` and `seed_commit`, creating a linked worktree at that commit. [Setup steps](/reference/instance-setup#run-setup) receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` to copy dependency folders for a faster start, then still run locked installs because a concurrent deploy may update the checkout while they copy. A default Instance's own setup receives no seed.
+
+## Deploy steps
+
+Deploy steps are named shell commands that always run from the repository root, not from a nested application directory. For a web root like `apps/site/public`, write `cd apps/site && php artisan migrate --force`. Storing or editing a step never starts a deployment, and Activity entries and errors never expose step commands.
+
+### Production deploy steps
+
+Each production Instance stores its own ordered deploy steps, grouped into `before_activation` and `after_activation` phases.
+
+| Field | Contract |
 | --- | --- |
-| Source preparation, environment sync, or a `before_activation` step | The earlier release, or none before the first deployment. |
-| Activation | The new release when `Swap current` succeeded, else the release selected before the deployment. |
-| PHP refresh, a Process restart, or an `after_activation` step | The new release. |
+| `name` | Unique within the Instance. 1 to 63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit. |
+| `phase` | `before_activation` (default) or `after_activation`. |
+| `command` | Non-empty UTF-8 string, at most 16 KiB, without NUL bytes. |
+| `timeout_seconds` | Integer from 1 to 900. Default `300`. |
+| `required` | JSON boolean (`--required=true` or `--required=false`). Default `true`. |
 
-Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
+A new step appends to its phase unless `before` or `after` (mutually exclusive) names another step in the same phase. An Instance allows at most 32 steps with a combined timeout of at most 3,600 seconds. Steps run with `bash -eu`, empty stdin, a cleared environment containing the rendered Instance `.env`, and suppressed output so secrets never enter run history. A failed best-effort step (`required: false`) is recorded in `best_effort_steps` and allows the deployment to continue.
 
-Rollback and the release list check that the production home records the Project's `repository_url` in its release layout marker and in the origin of the selected release. When that check fails, the Gateway reads the recorded URLs to name the cause. A deployment clones the Project's current `repository_url` into its new release.
+| Request | Result |
+| --- | --- |
+| `GET /api/v1/instances/{instance}/deploy-steps` | Lists steps in phase and placement order. |
+| `POST /api/v1/instances/{instance}/deploy-steps` | Creates one step (`name` and `command` required; optional `phase`, `timeout_seconds`, `required`, `before`, or `after`). |
+| `PATCH /api/v1/instances/{instance}/deploy-steps/{name}` | Updates `command`, `phase`, `timeout_seconds`, `required`, or placement. |
+| `DELETE /api/v1/instances/{instance}/deploy-steps/{name}` | Removes the step while keeping the order of the rest. |
 
-| Error code | Cause | Recovery |
+The deployment branch is stored on the Instance (`PATCH /api/v1/instances/{instance}` with `branch`) and does not change when the Project's default branch changes. Step and branch changes require an access grant to the Instance's Node and refuse non-production Instances with `deployment_config.unavailable` (409).
+
+### Development deploy steps
+
+A Project stores one shared list of development deploy steps, independent of setup and teardown. Manage them with `project:dev-deploy-step:list`, `create`, `update`, and `destroy` (`--project=ID`), via `/api/v1/projects/{project}/dev-deploy-steps` (`GET`, `POST`, and `PATCH`/`DELETE` on `/{name}`), or through MCP.
+
+Development steps use the same `name`, `command`, `timeout_seconds` (1 to 900, default 300), `required` (default `true`), `before`/`after` placement, and list limits (max 32 steps, max 3,600 seconds total) as production steps. Step names cannot be renamed, and omitted fields on `PATCH` stay unchanged.
+
+A development step may also declare `inputs`: up to 16 unique repository-relative file or folder paths (such as `composer.json` or `apps/web/bun.lock`), each 1 to 255 bytes, without a leading `/`, `..` segment, control character, line separator, or glob character (`*`, `?`, `[`). On `PATCH`, a list replaces `inputs`, and `null` or `[]` clears them.
+
+Development commands run with a clean environment (`HOME`, `USER`, `PATH`, `ORBIT_SEED_PATH`, `ORBIT_SEED_COMMIT`, plus `VP_HOME` under Vite+) and do not load `.env` into the shell; the application reads `.env` itself. Command output is suppressed. For best-effort steps (`required: false`) in a container deploy, Orbit records `{name, exit_code}` in `best_effort_steps` (0 to 255, with `124` for timeout; skipped steps have no row). [`instance:deploy`](/cli/instance/deploy), [`instance:deployment:show`](/cli/instance/deployment-show), and the web UI warn about any non-zero exit code from a best-effort step while still passing the deployment.
+
+#### Step inputs
+
+In a container deployment, Orbit skips a development step with `inputs` when the Git object ID of every input at the deployed commit and the step's command match the step's last successful run in that workspace. Any changed input or command, missing input, or absent record runs the step. Steps without `inputs` always run, and host checkout deployments always run every step.
+
+Orbit stores the last-run record inside the workspace at `.git/orbit-deploy-steps`, so clones inherit it along with built files. Delete `.git/orbit-deploy-steps` to force every step to run on the next deploy. Avoid setting `inputs` on a step whose command generates files from sources outside those inputs (such as a Composer `post-install-cmd` that compiles documentation or API schemas).
+
+### Vite store prerequisite
+
+When a Project declares `vite-plus` and a deploy step runs JavaScript tooling (`npm-build`, or commands using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), Orbit prepares the [Project's Vite+ environment](/reference/tools#project-environments-in-the-vite-store) in the Instance's private cache before the step runs. It verifies pinned runtime versions without running package install scripts as the store owner.
+
+The default JavaScript step runs `vp install --frozen-lockfile` and `vp run build` via `vp env exec` with the recorded Node and package-manager versions; customized commands keep their own flags and scripts. If a runtime cannot be installed, the deploy fails before the build step with `deployment.vp_store_failed`. Invalid or incompatible requirements fail with `deployment.vp_requirements_invalid`.
+
+## Shared paths
+
+Production Instances keep persistent directories across releases (mounted at `/srv/shared` in production containers, or stored under `<home>/<path>` on legacy host homes). Orbit links each shared path from the new release before `before_activation` steps run; deploy steps must preserve these links.
+
+Laravel app Projects default to `storage` relative to the application directory (for example, `apps/site/storage` for root `apps/site/public`). Other Project types default to no shared paths.
+
+```bash
+orbit instance:update 42 --shared-paths='["storage","var/uploads"]'
+orbit instance:update 42 --shared-paths='[]'
+orbit instance:update 42 --shared-paths=null
+```
+
+You can also set `shared_paths` via `PATCH /api/v1/instances/{instance}` (`[]` disables sharing; `null` restores the Project-type default). Changes require Node access and the Instance operation lock, apply on the next deployment, and do not move files in the currently serving release.
+
+Shared path validation rules:
+
+- Paths must be relative to the repository root, at most 32 distinct non-overlapping paths, each at most 255 bytes.
+- Path components may use letters, digits, dots, underscores, and hyphens.
+- Absolute paths, `.` and `..`, hidden top-level paths, and Orbit's reserved names (`releases`, `current`, `env`, `database.sqlite`) are refused.
+- Source and destination ancestors cannot be symlinks, and a shared path cannot replace a web root or its ancestors.
+
+### Public storage
+
+When `storage` is a shared path and the web root is `public`, Orbit automatically creates `public/storage -> ../storage/app/public` if absent. Do not add an Artisan `storage:link` step. On production containers, readiness refuses a candidate with `deployment.not_ready` if `public/storage` is broken or removed by a build step. On legacy host homes, invalid web-root symlinks are refused during preparation and activation, and Caddy receives read access only to `storage/app/public` with default ACLs for new uploads.
+
+### Replace a hand-made link-storage step
+
+If an Instance already keeps its data in `<home>/storage` (or the matching nested path), confirm `storage` is in `shared_paths` and delete the custom step with `DELETE /api/v1/instances/{instance}/deploy-steps/link-storage` before the next deploy. If runtime files still live only inside the current release, copy them into the persistent directory first (using a maintenance window if writes can occur), because automatic seeding copies from the new release's source tree rather than the running release.
+
+## Deploy through the API
+
+Deployments and rollbacks run asynchronously as [Operations](/reference/operations).
+
+| Request | Body | Result |
 | --- | --- | --- |
-| `deployment.repository_rebind_required` | The home records another URL for the same repository, for example the SSH form after the Project moved to HTTPS. | Run `orbit project:update <project> --repository=<url>` with the Project's current URL. It [re-binds the home](/reference/projects#production-instances). |
-| `deployment.repository_mismatch` | The home records another repository. | None in place. The home belongs to another repository. |
-| `deployment.selection_invalid` | Another selection check failed. | Inspect the native selection result and release layout. |
+| `POST /api/v1/instances/{instance}/deploy` | `{}` or `{"commit":"SHA"}` | `202` with an `instance.deploy` Operation. |
+| `POST /api/v1/instances/{instance}/deploy/automatic` | `{"commit":"SHA"}` + `Idempotency-Key` | `202` with an automatic `instance.deploy` Operation (requires Gateway Node access). |
+| `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | `202` with an `instance.rollback` Operation. |
+| `GET /api/v1/instances/{instance}/releases` | none | Returns `releases` and `selected_release` (null on development defaults or before first deploy). |
 
+When an Operation finishes, `result` includes `deployment_id`, `release`, `selected_release`, and `commit` (plus `best_effort_steps` when optional steps ran, and `warnings` on legacy cleanup warnings). A failed Operation names the step in `failed_step` (such as `before_activation.<step>` or `after_activation.<step>`) and the code in `error_code`.
+
+Admission refuses non-deployable Instances with `deployment_config.unavailable` (409), busy Instances with `operation.target_busy` (409), and production Instances lacking stored environment configuration with `env.configuration_missing` (409).
+
+### Pinned commits and automatic callers
+
+`orbit instance:deploy --commit=SHA` sends `{"commit":"SHA"}` (exactly 40 or 64 lowercase hex characters) to the normal deploy endpoint. Orbit validates the Project's recorded repository identity at admission and verifies that the commit lies on the deployment branch's first-parent chain before running steps (`deployment.commit_not_on_branch` otherwise). It never substitutes a newer branch head.
+
+`POST /api/v1/instances/{instance}/deploy/automatic` (MCP `instance-deploy-automatic`) starts the same `instance.deploy` Operation with automatic origin. It has no CLI command and requires Gateway Node access, an eligible Instance, a `commit`, and an `Idempotency-Key`. Both deploy endpoints reject unknown body fields (`triggered_by`, `automatic`, `caller_node_id`).
+
+An automatic idempotency fingerprint binds caller, command, Instance, and commit: replaying the exact request returns the original Operation even after completion, while reusing the key with different inputs returns `operation.idempotency_conflict`. Under the Instance lock, automatic admission rechecks enablement, manual pause (`deployment.paused`), and rollback blocks (`deployment.commit_blocked`).
+
+### Execution copies
+
+Private material for a deploy or production container rollback (credentials, step commands, and rendered `.env`) is written to Operation-scoped vault keys (`production-release-operation-<id>` for production containers; `development-deploy-operation-<id>-*` for development) and deleted automatically when the Operation reaches a terminal state. A timed-out run keeps its copies until it settles or passes the 60-minute hold limit.
+
+Run `php artisan orbit:instance-deploy-copies-prune` (with optional `--dry-run`) on the Gateway to remove any leftover copies from ended deploys or container rollbacks, such as after a transient delete failure.
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The release and its PHP runtime belong to the Instance, so a rollback changes no pool or unit: a graceful reload of the dedicated FPM service lets running requests finish and starts new workers with an empty OPcache.
+Rollback is production-only; development Instances refuse with `deployment_config.unavailable` (409). A rollback switches traffic back to a retained release, refreshes the serving PHP runtime, and restarts active opted-in Processes. It fetches no code, writes no environment changes (other than applying current `.env` to the restarted container), runs no deploy steps, and never alters databases or shared data.
 
-After that reload, a rollback reloads or restarts the same active, opted-in Instance Processes as a deployment. A restart failure fails the rollback at `Restart Processes` and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
+- **Production containers:** `orbit instance:rollback <instance>` (with optional `old` SHA) restarts `old`, checks readiness, switches traffic, and stops the active live release as `old`.
+- **Legacy host homes:** Selects one of the up to three retained releases by updating `current` atomically, reloading PHP-FPM, and restarting opted-in Processes.
+
+Before the first container release confirms, rollback refuses with `deployment.selection_unconfirmed` (409). To roll back further than `old`, deploy an older revision with `orbit instance:deploy --commit=<sha>`.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `rollback.release_not_retained` | 422 | The requested release is not retained (list available releases with [`instance:release:list`](/cli/instance/release-list)). |
+| `deployment.selection_unconfirmed` | 409 | The first production container release has not yet confirmed. |
+| `deployment_config.unavailable` | 409 | The Instance is not a production Instance. |
+| `operation.target_busy` | 409 | Another operation holds the Instance. |
+
+## Failures
+
+The failed boundary determines which release serves afterward. Orbit never undoes the side effects of a deploy step, environment sync, or database migration.
+
+| Failed boundary | Selected release |
+| --- | --- |
+| Preparation, capacity check, source, links, environment sync, `before_activation` step, or container readiness | The earlier live release (or none before the first deploy). |
+| Activation / traffic switch | The new release if the switch succeeded, otherwise the earlier release. |
+| Handover, PHP refresh, Process restart, `after_activation` step, or retire/cleanup | The new release. |
+
+Common deployment error codes and recovery actions:
+
+| Error code | Cause | Recovery |
+| --- | --- | --- |
+| `deployment.repository_rebind_required` | The production home records a different URL for the same repository (for example, SSH after moving to HTTPS). | Run `orbit project:update <project> --repository=<url>` to [re-bind the home](/reference/projects#production-instances). |
+| `deployment.repository_mismatch` | The recorded repository identity does not match the Project origin. | None in place; the target belongs to another repository. |
+| `deployment.identity_invalid` | Active `app-prod` placement, account, or repository identity does not match. | Verify Node role, placement, and Project repository settings. |
+| `deployment.route_unavailable` | The production Instance lacks an active application Route for readiness and traffic switching. | Attach or activate an application Route, then deploy again. |
+| `deployment.selection_invalid` | The live link or read-back does not match the recorded release. | Inspect the live release state on the Node and reconcile. |
+| `deployment.selection_unconfirmed` | The first container release has not confirmed on the Gateway. | Follow recovery in [Production containers](/reference/production-containers#a-checkout-production-instance) and re-run `instance:deploy`. |
+| `deployment.migration_commit_mismatch` | A pinned commit during initial container migration differs from the serving host checkout commit. | Deploy the serving checkout commit first to complete migration, then deploy the new commit. |
+| `deployment.migration_source_unconfirmed` | The legacy host checkout has no confirmed 40-character serving commit. | Deploy or confirm the serving checkout commit before migrating. |
+| `deployment.source_unconfirmed` | The resolved production branch head is not a confirmed 40-character Git SHA. | Check repository access and branch state, then retry. |
+| `deployment.step_budget_exceeded` | Configured deploy steps exceed the 90,000-second phase deadline. | Reduce step timeouts or split work, then retry. |
+| `deployment.projection_pending` | The development default has an unfinished Route projection. | Wait for or run the Route update, then deploy again. |
+| `instance.deploy_lock_timeout` | A container default step waited 60 seconds for a busy lock. | Run the deployment again. |
+
+See [Production containers errors](/reference/production-containers#errors) for container-specific runtime errors (`deployment.host_path_unsupported`, `deployment.node_capacity`, `deployment.not_ready`, `deployment.switch_failed`).
+
+## Retained releases
+
+Release retention depends on whether the Instance runs in production containers or a legacy host home:
+
+- **Production containers:** Orbit retains at most 2 releases (`live` and `old`), listed by [`instance:release:list`](/cli/instance/release-list) as 12-character commit SHAs.
+- **Legacy host homes:** A successful deploy retains at most 3 releases (`current`, the previous selection, and the newest other release). Rollback and failed deploys delete nothing.
+
+On legacy host homes, cleanup never deletes a release still referenced by a running process, and deleting a release removes only its shared-path symlinks without touching persistent data. [Instance removal](/reference/instance-removal) deletes the production account, releases, environment files, and SQLite data; back up needed data first.
 
 ## Automatic deployments
 
-Production policy keeps its own Swamp schedule, `automatic-production-deploy`, at second 30 (`30 * * * * *`) and its own pause. It deploys production Instances only. Container defaults have their own trigger: see [Automatic development defaults](#automatic-development-defaults). The Gateway keeps admission, locks, authorization and history for both. The native end assertion of each policy run fails when the policy records a failure. The Gateway captures the full event receipt from that run in its existing terminal history read, including events from a failed fire; no reporting step prints it.
+Orbit polls branch heads through the Gateway using `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git), with no public GitHub webhook required. The Gateway caches GitHub App installations for up to 60 minutes and encrypted read tokens for up to 50 minutes (dropping the cache on a failed read).
 
-The policy keeps its memory per Instance in Swamp data: `state-<id>` and `development-<id>` on `automatic-production-deploy`. A run writes a record only when it changes. So that Swamp data retention never deletes it, the hourly `automatic-deploy-memory-refresh` schedule (`0 41 * * * *`) writes every record whose latest version is older than 24 hours again, unchanged.
-
-The refresh runs while the production tick is paused, and for Instances with auto-deploy off. It writes only a record whose stored content still equals what it read, so it never creates, revives or rolls back a record. It reads nothing from the Gateway and starts nothing. A failed refresh fails its run. No destroy removes these records, so the memory of a destroyed Instance is kept too; Instance ids are never reused. The Gateway still rechecks the pause and rolled-away blocks under the Instance lock, so the refresh protects policy memory, not admission.
-
-Each policy run reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Both policies use the [Gateway source contracts](#swamp-policy-contracts). The Gateway keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. For an App-covered repository with warm credentials, a quiet read costs one `ls-remote` and no GitHub API call. A failed read drops the cached installation and tokens.
-
-- When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
-- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit. The [origin label](#history) identifies the policy that admitted it.
-- The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
-- Pushes that arrive meanwhile wait for the next active tick. That tick reads the newest head, so intermediate commits coalesce.
-- While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
-- The tick finds the holder with `operation:list`. List rows carry no input, so it reads the holder with `operation:show` to compare its commit.
-
-A head the Gateway cannot read fails the tick for that Instance with `source.head_unavailable`. The other Instances still deploy.
+When the Instance already runs the target commit, the policy does nothing. Otherwise it admits a pinned `instance.deploy` Operation, coalescing intermediate pushes while a deploy runs and skipping busy Instances (`busy`). A branch head that cannot be read fails the tick for that Instance with `source.head_unavailable` while other Instances continue.
 
 ### Automatic development defaults
 
-Each new commit on a Project's default branch deploys the Project's container default once, so it takes a new seed and the next clone or task copy starts at that commit. This is on for every Project by default. The Project field `default_auto_deploy` is the one switch:
+Every new commit on a Project's default branch deploys its container default once so the seed stays current. This is enabled by default and controlled by `default_auto_deploy`:
 
 ```bash
 orbit project:update <project> --default-auto-deploy=false
 ```
 
-`project:show` shows the field. A default deploys automatically only when all of these hold:
+A default deploys automatically only when it is an active `default` container Instance on an active `app-dev` placement, `default_auto_deploy` is on, and the Project has no [nested fleet](/reference/development-containers#nested-fleet). Nested-fleet defaults update through [refresh after a release](/reference/development-containers#refresh-after-a-release) instead (which takes `base` and runs any due disk shrink asynchronously in `orbit-fleet-shrink`).
 
-- It is the Project's `default` Instance, active, on an active `app-dev` placement.
-- It runs in a [container](/reference/development-containers#the-default-instance). A default checkout on a Node never deploys automatically.
-- Its Project has `default_auto_deploy` on.
-- Its Project has no [nested fleet](/reference/development-containers#nested-fleet).
+Every minute, a Gateway precheck compares each eligible Project's default branch head with its default's `seed_commit`. Only defaults behind their branch enter the policy run:
 
-The default of a nested-fleet Project, such as Orbit's own, deploys only through its [refresh after a release](/reference/development-containers#refresh-after-a-release). A commit on its repository does not deploy it.
-
-That refresh never waits for the shrink of the nested root disks. When a shrink is due, the refresh takes `base` of the running fleet and starts the shrink after it, as the unit `orbit-fleet-shrink`, which runs on after the Operation ends. The next refresh retakes `base`, so the seed then holds the small disks ([The inner machines stay small](/reference/development-containers#the-inner-machines-stay-small)).
-
-This is the shared eligibility rule. Discovery, admission and the deploy worker all use it, so a default that stops being eligible stops between two runs. A production Instance never takes this path.
-
-Every minute, a Gateway scheduler job reads each eligible Project's default branch once and compares the head with the default's `seed_commit`, the commit of its newest seed. A default whose seed matches starts no Swamp run. A failed commit does not loop. A default whose last policy result is `commit_failed` for this head starts no run. After a `failed` result for this head, it waits 10 minutes, the policy's first backoff. A manual deploy that ends after that result lifts both holds. Only the defaults behind their branch enter one on-demand Swamp run, `automatic-development-deploy`, with their Instance ids. That run applies the development policy:
-
-- One deploy runs at a time per default. The run reports `deploying` for its own open deploy.
-- Any other open Operation on the default makes the run report `busy`.
-- When the deploy ends, the next run reads the newest head. Commits that arrived meanwhile coalesce into one deploy.
-- A failed deploy backs off: 10 minutes after the first failure and 20 after the second.
-- After three failures, the commit is `commit_failed`, and the policy does not deploy it again. A newer commit deploys at once.
-- A manual [`instance:deploy`](/cli/instance/deploy) resets the count.
-- A passed deploy records `up_to_date` and the new `seed_commit`. The run that settles it goes on to the newest head in the same run.
-
-A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy [waits for the retake](/reference/development-containers#a-retake-keeps-the-seed) and copies the new seed.
-
-A deploy wakes a sleeping default and lets it sleep again: an automatic deploy does not count as activity for the [idle sleep](/reference/development-containers#sleep-and-wake). A manual deploy and a release refresh still count.
-
+- One deploy runs at a time per default (`deploying` for its own open deploy; `busy` for another Operation).
+- Failed or interrupted deploys back off 10 minutes after the first failure and 20 minutes after the second.
+- After three failures, the commit is marked `commit_failed` and skipped until a newer commit lands or a manual `instance:deploy` resets the count.
+- Clones started during a deploy copy the old seed (or wait briefly during a seed retake).
 
 ### Production Instances
 
-Swamp decides when a production Instance deploys after you turn automatic deployment on:
+Enable automatic deployments on a production Instance after at least one manual deployment has succeeded:
 
 ```bash
 orbit instance:auto-deploy:enable <instance>
 ```
 
-The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
+The production policy runs every minute at second 30 (`30 * * * * *`) against the Instance's deployment branch. When the Project defines a `merge_check`, Orbit walks the branch's first-parent history for the newest commit that passed that GitHub Actions check run, descends from the currently deployed commit, and is not blocked. A pending check is rechecked each minute; a failed check is rechecked after at least 5 minutes.
 
-When the Project has a `merge_check`, the tick deploys the newest commit that passed it. It finds that commit the way [automatic Gateway releases](/reference/github-app#find-the-newest-green-commit) do. The commit is on the branch's first-parent history, and a GitHub Actions check run of that name passed on exactly that commit. It strictly descends from the deployed commit and is not blocked. It never deploys a red or pending commit. When the head is red, it can deploy an older green commit behind it.
-
-A pending check that passes is normally selected on the next tick, within one minute. A cached failed check is read again on the first tick at least 5 minutes after the failed read. Admission, the operation queue, and deployment steps add time before the commit is live.
+Without a `merge_check`, every new branch head deploys (`instance:auto-deploy:enable` warns about this). Gating requires the [GitHub App](/reference/github-app); enabling automatic deploys on a Project with `merge_check` that uses GitHub CLI or a non-GitHub origin refuses with `instance.auto_deploy_gate_unreadable`.
 
 | Result | Meaning |
 | --- | --- |
-| `up_to_date` | The Instance runs the head. |
-| `started` | The tick started a deployment of the commit it names. |
-| `deploying` | The tick's deployment has not ended yet. |
-| `gate_pending` | The head's check has not finished, and no older commit is green. The tick reads the check again each minute at second 30. |
-| `gate_failed` | The head's check failed with no older green commit. Recheck on the first tick at least 5 minutes after that read. |
-| `no_green_commit` | No commit may deploy: the head is blocked, or it does not descend from the deployed commit, for example after a force push. |
-| `commit_failed` | The head is blocked, and no gate applies: a development default, or a Project without a `merge_check`. |
-| `busy` | Another operation holds the Instance. |
-| `backing_off` | The commit failed, and its retry is not due yet. |
-| `paused` | A manual deployment or a rollback paused automatic deployment. |
-| `not_deployed` | No deployment of the Instance has succeeded yet. |
-| `failed` | The tick could not read the head or the check, or could not start the deployment. `error_code` names why. |
-
-The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or on the first tick at least 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
-
-Without a `merge_check`, the tick deploys every new head. `instance:auto-deploy:enable` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:auto-deploy:enable` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
+| `up_to_date` | The Instance runs the branch head. |
+| `started` | The policy started a deployment for the named commit. |
+| `deploying` | The policy's deployment is still running. |
+| `gate_pending` | The head's check is still running and no older commit is green. |
+| `gate_failed` | The head's check failed with no older green commit (rechecked after 5 minutes). |
+| `no_green_commit` | No eligible commit can deploy (head is blocked or does not descend from the deployed commit, such as after a force push). |
+| `commit_failed` | The head is blocked with no `merge_check` gate (or on a development default). |
+| `busy` | Another Operation holds the Instance. |
+| `backing_off` | A failed commit is waiting for its retry backoff. |
+| `paused` | A manual deployment or rollback paused automatic deployments. |
+| `not_deployed` | No deployment has succeeded yet; run one manual deploy first. |
+| `failed` | The tick could not read the head/check or start the deploy (`error_code` names why). |
 
 #### Failures of automatic deployments
 
-A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient. The tick retries on the first tick at least 10 minutes after the first failure, then at least 20 minutes after the second failure. After three failed attempts, the commit is blocked.
+Failures before Project deploy steps run (`operation`, `preparation`, or `environment`) are transient: Orbit retries after 10 minutes, then after 20 minutes, and blocks the commit after three attempts. `deployment.node_capacity` retries on the same backoff schedule without counting toward the three-failure block.
 
-These failures are lasting, and the commit is blocked at once:
-
-- A cancelled deployment.
-- A commit that is not on the branch.
-- A home that records another repository.
-- A home that records another URL for the same repository.
-- An Instance that cannot be deployed.
-- A failure in a deploy step or later.
-
-A blocked commit does not deploy automatically again. A new commit deploys at once. Failures before the newest manual deployment do not count.
+Lasting failures block the commit immediately: a cancelled deploy, a commit not on the branch, a repository mismatch or rebind requirement, an undeployable Instance, or any failure in a deploy step or later. A blocked commit never deploys automatically again, while a newer commit deploys immediately. Failures before the newest manual deploy do not count.
 
 #### Pause
 
-A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback writes its history row at admission, so it pauses the Instance before its run starts. The Instance stays paused until you run `orbit instance:auto-deploy:enable` again; a new commit does not resume it.
+Any manual deployment or rollback started after `auto_deploy` was last enabled pauses automatic deployments immediately (whether it succeeds, fails, or is still running). Automatic deployments stay paused across new commits until you run `orbit instance:auto-deploy:enable <instance>` again.
 
-Resuming continues from the commit that is live then. The commit a rollback moved away from is blocked. The tick reads it from the deployment history, so it counts also when you resume or deploy by hand before a tick saw the rollback. The tick also keeps it in `auto_deploy_state.blocked`, so it stays blocked after its rows leave the history.
+Resuming continues from the currently live commit, and any commit rolled away from remains permanently blocked until a newer commit lands on the branch. If a rollback or manual deploy completes between a tick's read and its deploy start, the lock recheck ends the automatic Operation with `deployment.paused` without counting as a commit failure.
 
-A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
+`instance:show` displays the latest policy result, commit, head, and pause state. Notable transitions write an `auto_deploy.<result>` Activity entry, and [release alerts](/reference/gateway-recovery#release-alerts) (`instance:<id>`) notify once per commit on failure, once after a commit or pending head stalls for 30 minutes, and on pause.
 
-A rollback that came after the tick queued the deployment wins while no worker has started the deployment: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once a worker has started it, the rollback is busy.
+### Swamp policy contracts
 
-A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused` and deploys nothing. A first attempt writes no history row. An attempt that a worker resumes after a lost worker ends its row with `deployment.paused`, which does not count as a failure of the commit.
-
-**Visibility.** Each automatic deployment has its operation and its [history row](#history) with the [recorded origin](#history). `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head on the first tick after it waited at least 30 minutes, once per commit, and a pause.
-
-**One deploy per Instance.** Development defaults, production Instances, and manual deployments hold the Instance as [One operation per target](/reference/operations#one-operation-per-target) describes. Instances behind one Route deploy one after another, not together.
-
-## Swamp policy contracts
-
-The Gateway exposes policy evidence to Swamp. Swamp never reads GitHub, the database, or a notifier directly. These contracts require Gateway Node access. Policy starts stay on API/MCP; receipt resolution also has an operator CLI command.
+The policy worker reads GitHub evidence and publishes policy state exclusively through Gateway API endpoints requiring Gateway Node access (never directly from GitHub or the database):
 
 | Request | Evidence or effect |
 | --- | --- |
-| `GET /api/v1/instances/{instance}/deployment-source/head` | A fresh credentialed `head` of the recorded deployment branch. Works without a GitHub gate. |
-| `GET /api/v1/instances/{instance}/deployment-source/commits?base=<sha>` | The current GitHub branch `head` and up to 20 first-parent `commits`, newest first, before `base`. Each has `sha`, `parents`, and `descends_from_deployed`. |
-| `GET /api/v1/instances/{instance}/deployment-source/checks?commit=<sha>` | The Project's configured `gate` and exact latest check `runs`, with name, head SHA, App slug, status, and conclusion. Empty runs never prove success. |
-| `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup, bound to caller, automatic command, Instance, and commit. Returns `request_key`, `found`, `operation`, and retained `deployment`, when available. Conflicting input returns `operation.idempotency_conflict`. |
-| `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
+| `GET /api/v1/instances/{instance}/deployment-source/head` | Fresh credentialed branch `head` (works without a GitHub gate). |
+| `GET /api/v1/instances/{instance}/deployment-source/commits?base=<sha>` | Branch `head` and up to 20 first-parent candidates (from at most 100 reachable commits) with ancestry comparison (`reached_base`, `truncated`). |
+| `GET /api/v1/instances/{instance}/deployment-source/checks?commit=<sha>` | Configured `gate` and latest check runs for the commit (requires GitHub App; returns `instance.auto_deploy_gate_unreadable` or `instance.auto_deploy_gate_unavailable` on error). |
+| `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup bound to caller, command, Instance, and commit. |
+| `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publishes public policy state guarded by `resumed_after`, `last_deployment_id`, and `history_version` (`instance.auto_deploy_observation_changed` on conflict). |
 
-The policy never posts its events. Each fire of `automatic-production-deploy` or the on-demand `automatic-development-deploy` prints the events it raised in its terminal `result` step: the notable Activity entries and the alerts for a failed deploy, a pause and a stalled commit. The Gateway reads that result from the run and records each event once, as an Activity entry or a release alert. A fire whose Instance tick failed still prints its result, with the failure's error code: a policy refusal keeps its own code, and any other error is `automatic.tick_failed`. Its `failures` assert then ends the run failed.
+Instance responses expose `auto_deploy.policy_owner` (`swamp`), `resumed_after`, `blocked`, and `history_version`. Discovery uses `GET /api/v1/instances?auto_deploy=true`, which applies the same eligibility rules as admission (an inactive `app-prod` role refuses with `instance.auto_deploy_role_inactive`). Policy memory records are refreshed hourly (`automatic-deploy-memory-refresh`, `0 41 * * * *`) so retention never drops idle Instance state.
 
-The source listing contains at most 100 reachable commits, and the walk returns at most 20 first-parent candidates. `reached_base` says the walk reached `base`, including when the last candidate names it as its first parent. `truncated` says the candidate bound or a missing parent cut the walk short. Reaching the repository root without `base` returns both flags false. Swamp can fail closed on a truncated walk. Each returned candidate carries an exact ancestry comparison with `base`. The source reads accept full 40- or 64-character commit SHAs.
+#### Clear an unresolved admission hold
 
-The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
+If an automatic admission request loses its response, do not resend `POST .../deploy/automatic` to check its outcome. Instead, disable `auto_deploy` to pause new decisions, inspect the receipt, and resolve the key:
 
-Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:auto-deploy:enable`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, the block list is empty and the history version is null; these reads make no policy-history query. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
+```bash
+orbit instance:auto-deploy:disable <instance>
+orbit instance:deploy:automatic:resolve <instance> <request_key> <commit> --caller-node=<original-node-id>
+```
 
-A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
+The API equivalent is `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-deploy-automatic-resolve`). Omit `--caller-node` to resolve your own Node's key.
 
-### Clear an unresolved admission hold
-
-Pause new decisions with `orbit instance:auto-deploy:disable <instance>`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
-
-Use `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-deploy-automatic-resolve`) with `request_key` and `commit`. By default it resolves the authenticated Node's key. A Node with Gateway access may pass `caller_node_id` to resolve for the original caller. The CLI is `orbit instance:deploy:automatic:resolve <instance> <request_key> <commit> --caller-node=<original-node-id>`; omit the flag for your own key. Activity records the acting Node and the original caller. Admission and resolution serialize under the same Instance database lock.
-
-If admission is absent, this writes a retained cancelled operation with `operation.admission_fenced`, zero attempts, no target lock, and no deployment. Its unique request identity fences a delayed admission: every later POST with that key returns the cancelled receipt. Swamp may resolve its own stale keys automatically. No operator action is needed for normal lost-response recovery. Repeating resolution returns the same receipt. A different caller, Instance, or commit conflicts.
-
-If admission already exists, resolution returns its receipt without cancelling or rewriting it. Follow an active operation until it ends. Swamp clears its intent on the zero-attempt fenced receipt and may use a fresh key on its next tick. Other holds clear only from terminal effect evidence; resolution never starts a replacement deploy.
-
-A terminal worker-lost receipt without effect evidence still needs investigation: stop the old host writer, inspect the live release, then reconcile through a manual deploy or rollback before resuming. Do not clear Swamp storage by hand. After reconciliation, resume with `orbit instance:auto-deploy:enable <instance>`; the rollback block remains. A missing receipt alone never permits resume or a new request key.
-
-To switch policy back:
-
-1. Disable `auto_deploy` on the affected Instances.
-2. Wait until no automatic operation is running or queued.
-3. Revert [orbit#1555](https://github.com/hardimpactdev/orbit/pull/1555) (code-only, no migrations).
-4. Re-enable `auto_deploy` (PHP owns again).
-
-### One policy writer during the trial
-
-Swamp decides production and default development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: enabled active production Instances with active `app-prod` placement, or [eligible container defaults](#automatic-development-defaults). An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
-
- There is no environment flag or runtime switch.
-
-The cutover release removes the PHP production policy loop. The development cutover removes the PHP retry loop; a Gateway scheduler now filters changed defaults before entering Swamp policy. The Gateway selects eligible container defaults from its records, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
-
- Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
-
-Publication updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the Instance DTO used by API, MCP, CLI, and web. The project owner waived the slice 1 shadow phase because Hauzer and Mealou have no users; its 14-day live window starts at this cutover.
-
-Publication uses a short database transaction without the deployment host lock. The history version hashes the stored fields of retained deployment rows, including `caller_node_id`, without events or display names. Adding a deployment or finishing an existing deployment changes it, even when the newest ID stays the same. Renaming or removing a caller Node does not change it. The recorder writes the terminal history and rollback blocks in one transaction, with the Instance row locked and refreshed before changing policy state. It preserves a projection that publication already committed.
-
-It accepts only the cursor and history version Swamp observed, so a later manual action cannot be hidden by a stale publication. Resume admission remains Gateway-owned; Swamp executes deployment effects. Swamp owns selection, retries, gate caches, alert intents, and publication order; it must serialize ticks for each Instance.
-
-Event operations use a separate `instance_policy` target lock. A running deployment does not prevent a stall alert. The delivery step cannot resume after worker loss, because a webhook may already have left the Gateway. Replaying its admission key returns the same operation; it does not deliver twice. Inspect partial notifier receipts and uncertain outcomes instead of creating another event key.
-
-The Gateway derives alert targets and repositories from the Instance. Both policy callers use the same history selectors for the current pause and latest terminal automatic failure after resume, including the required commit for a failure alert. They also use the same notable Activity writer. Callers cannot choose an unrelated notifier target.
+If no admission exists for that key, resolution writes a retained cancelled Operation with `operation.admission_fenced` (zero attempts, no lock, no deployment) that permanently fences any delayed POST with that key. If an admission already exists, resolution returns its receipt unchanged so you can follow it to completion. For a terminal worker-lost receipt without effect evidence, inspect the live release and reconcile with a manual deploy or rollback before re-enabling `auto_deploy`.
 
 ## History
 
-The Gateway records one row for each deployment and each rollback. It writes a deployment's row when a worker first starts it, and a rollback's row at admission. It completes the row when the run ends. It keeps the last 50 rows for each Instance.
-
-Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, and `events`. `events` holds the phase events of the run. The run history keeps no command output; a failed step is named in `failed_step`. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null. A failed deployment of a container default records the commit it was admitted for, so the automatic policy counts its failures per commit.
-
-A container default's deployment writes its row when its run ends. The row takes the Operation's own `started_at` and `finished_at`, and `duration_seconds` is the time between them. Its `events` hold one `phase` event for each admitted [development deploy step](#development-deploy-steps), in order, with the step's name in `step_name`. Its `status` says how the step ended:
-
-| `status` | Meaning |
-| --- | --- |
-| `succeeded` | The step's command passed. |
-| `failed` | The step's command failed. A required step's failure stops the steps after it; a [best-effort](#development-deploy-steps) step's does not, and the deployment still passes. |
-| `timed_out` | A best-effort step's command ran out of time (exit code 124). |
-| `skipped_unchanged` | The run skipped the step because its [inputs](#step-inputs) did not change. |
-| `interrupted` | The step started, and the run ended before it did. |
-| `not_run` | An earlier step stopped the steps, or the run ended before it reached this one. |
-
-When a production `deploy` row ends `succeeded`, the Gateway queues the job that stamps [`deployed_at`](/reference/tasks#deploy-times) on the Project's tasks that the deployed commit carries. It queues the job after the row commits; neither a failed dispatch nor a failed job changes the deployment.
-
-The web, CLI, API, and MCP show the stored origin. Deployment and operation reads expose nullable `caller_node_id` and `caller_node_name` separately from the readable `triggered_by` label. The web and CLI show the current caller Node name. If the Node has been removed, they show “Removed Node” with its retained ID.
-
-Swamp deployment rows copy the authorized Gateway peer's Node ID from the operation when the row starts. The ID is retained if the Node is renamed or removed. `caller_node_name` is the current name, or null if there is no caller or the Node has been removed. Manual deployments and the Gateway development runner have no automatic caller ID. Operations also retain the bound ID in `input.caller_node_id`.
-
-| `triggered_by` | Meaning |
-| --- | --- |
-| `swamp:auto-deploy` | Swamp production or development policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Fenced automatic admission receipts use the same origin. |
-| `orbit:auto-deploy` | The previous PHP automatic runner's label. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
-| A Node name | A manual deployment or rollback by that Node. |
-
-Both automatic labels count as automatic for pause and failure selection. A Swamp deployment never creates a manual-deploy pause. A rollback still pauses automatic deployment regardless of its label. Clients cannot set either automatic label or the caller ID on a deploy request.
+Orbit retains the last 50 deployment and rollback rows per Instance.
 
 | Request | Result |
 | --- | --- |
 | `GET /api/v1/instances/{instance}/deployments` | The Instance's rows, newest first, without `events`. |
-| `GET /api/v1/deployments/{deployment}` | One row with `events`. |
+| `GET /api/v1/deployments/{deployment}` | One row including `events`. |
+
+Each row records `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, `caller_node_name`, `best_effort_steps`, and `events`. Development deployments leave `release` and `selected_release` null. When a production `deploy` succeeds, Orbit queues a job to stamp [`deployed_at`](/reference/tasks#deploy-times) on Tasks included in that commit.
+
+For container default deployments, `events` contains one `phase` entry per admitted development deploy step with its `step_name` and `status`:
+
+| `status` | Meaning |
+| --- | --- |
+| `succeeded` | The step passed. |
+| `failed` | The step failed (stops later steps if required; continues if best-effort). |
+| `timed_out` | A best-effort step timed out (exit code 124). |
+| `skipped_unchanged` | Skipped because its [step inputs](#step-inputs) and command did not change. |
+| `interrupted` | The step started and the run ended before it finished. |
+| `not_run` | An earlier failure or run end prevented the step from starting. |
+
+Deployment origin is recorded in `triggered_by` alongside the retained `caller_node_id` (the web UI and CLI show `Removed Node` with the ID if the caller Node was later deleted):
+
+| `triggered_by` | Meaning |
+| --- | --- |
+| `swamp:auto-deploy` | Automatic production or development policy (includes `caller_node_id`; does not cause a manual-deploy pause). |
+| `orbit:auto-deploy` | Existing rows recorded by the PHP automatic runner (still counts as automatic for pause and failure rules). |
+| A Node name | Manual deployment or rollback by that Node. |
 
 ## One operation at a time
 
-Deployment, rollback, deploy-step changes, and branch changes share the Instance's operation lock with environment operations, Instance removal, and Route changes. A competing request waits or receives a busy error. A deployment or a rollback holds the lock while its job runs; an interrupted job releases it after its running command stops.
+Deployments, rollbacks, deploy-step updates, branch changes, environment operations, Instance removal, and Route changes share the Instance's operation lock. A second deploy or rollback while one is queued or running returns `operation.target_busy` with the active Operation's ID. Instances sharing a Route deploy sequentially rather than in parallel.
 
-A deploy or rollback operation also holds the Instance from its start request to its end. A second start answers `operation.target_busy` with the first operation's ID, also while the first one waits in the queue.
+Rollback is the one exception: a rollback supersedes a queued deploy (manual or automatic) that no worker has claimed yet. In one transaction, Orbit marks the queued deploy `cancelled` (`error_code: operation.superseded`, `cancel_requested: true`) and admits the rollback. If a worker has already started the deploy, the rollback returns `operation.target_busy`; cancel the deploy with [`operation:cancel`](/cli/operation) or wait for it to finish, then retry.
 
-A rollback is the one exception. It wins over a deploy of the Instance that no worker has started, manual or automatic:
+[Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat release, Git, `.env`, web-root, or source checks; deployment and rollback Operations own release validation.
 
-- The deploy ends `cancelled`.
-- The deploy's `error_code` is `operation.superseded`, and its `cancel_requested` is true.
-- The rollback takes the Instance.
+## The production home
 
-A deploy that a worker started keeps the Instance, also while it waits to resume after a lost worker. The rollback then answers `operation.target_busy` with the deploy's ID. Cancel the deploy with [`operation:cancel`](/cli/operation), or wait for it to end. Then start the rollback again.
+Existing host-based production Instances that have not yet migrated to [Production containers](/reference/production-containers) use a release layout under `/home/<production-user>`:
 
-The Gateway cancels the deploy and creates the rollback in one database transaction. When a worker claims the deploy first, the deploy runs, and the rollback is busy. One operation holds the Instance in every case. When the Gateway then cannot queue the rollback's job, the rollback fails with `operation.dispatch_failed`, and the deploy stays cancelled; start the rollback again.
+| Path | Purpose |
+| --- | --- |
+| `releases/<name>/` | Retained Git checkouts of deployed releases. |
+| `.env` | Durable environment file, symlinked from each release's application directory. |
+| `env/<directory>/.env` | Durable environment file for an additional [Route with a web root](/reference/routes#web-roots-on-production), symlinked from that directory in each release. |
+| `database.sqlite` | Optional SQLite database path (created when seeded by [cloning](/reference/instance-cloning), synced into `.env`). |
+| `current` | Symlink to the active release (absent until the first deploy). |
 
-## Inspect release placement with Doctor
-
-Native deployment and rollback own release-layout and selection validation. Their results carry the outcome. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat release, Git, `.env`, web-root or source checks.
-
-## Retained releases
-
-When preparing a candidate, Orbit keeps the selected release's Node and package-manager references, even when its build fails. Retained releases keep those references for rollback too. Release cleanup drops references only for releases it takes out of the retained set; a release kept for running processes keeps its runtimes.
-
-A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance/rollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
-
-The Gateway applies the same rule to the Instance's deployment history to know which releases a home retains: clone selects `initial`, each deployment adds the release it prepared, a successful one keeps those three, and a rollback only moves the selection. Rollback admission refuses any other release. A release that cleanup kept only because a process still used it is not in that set.
-
-The `release-layout` marker is owned by root and records the original layout. Validation authenticates that marker and the selected release without requiring `initial` to remain.
-
-Releases that only stopped Processes used can be removed once they fall outside the retention limit. If a Process opts out, uses a fixed old-release path, or leaves child processes running, it can still use an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process, also beyond the limit. Stop or restart its remaining processes to free it.
-
-A later deployment does not remove such a release, because the deployment history counts only the kept three. Remove it by hand once nothing uses it. When cleanup cannot read where live processes work, it keeps that release and counts a warning.
-
-Cleanup removes only the releases that the deployment history retained before this deployment and that fall outside the kept three. It deletes the release's own files and shared-path links, on one file system. It does not follow those links or delete persistent shared directories in the Instance home. Files in unshared directories go with the release.
-
-[Instance removal](/reference/instance-removal) removes the serving setup, production account, home, and source state. Releases, environment files, and SQLite data in that home are deleted with it. Back up any application data you need before removal.
+For nested web roots such as `apps/site/public`, each release links `apps/site/.env` to `<home>/.env` using a relative symlink (`../../../../.env`) rather than creating a release-root `.env` link. Additional Route web roots link their own `.env` and grant Caddy access before `current` switches; a release missing a required Route directory fails preparation (or activation on rollback) and keeps the previous selection.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
+These reasons explain the design. Check them before proposing a change.
 
 ### A development default is a plain checkout
 
-A default serves development, so it updates in place like any working checkout: fetch, check out, and run the steps. Releases, a `current` link, snapshots, and pruning are what make a production switch atomic and reversible. A development default needs neither, and that machinery cost disk space, broke when a release lost its Git link, and served a stale checkout to Processes and Schedules that ran outside the release. Release layouts stay where something is served to users: the Gateway's own releases and production homes.
-
-A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too, and the automatic deployment tick reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
-
-Seeds name the checkout, not a frozen copy. Setup always runs locked installs after it copies, so a copy taken during a deployment only costs install time. Leases that kept frozen releases alive for other Instances are a rejected alternative: they grew without bound and blocked cleanup.
+A development default updates in place (fetch, checkout, steps) rather than maintaining production release directories and `current` symlinks, which would waste disk space and serve stale paths to development Processes and Schedules. Leaving a failed step checked out lets the next retry repair the workspace without rolling back dependencies, while refusing dirty tracked files protects local edits. Seeds point at the default's workspace instead of holding unbounded frozen copies, because setup always runs locked installs afterward.
 
 ### Orbit owns releases, you own the steps
 
-Release preparation, the switch, and the PHP-FPM refresh are the same for every application, so Orbit does them. The commands before and after the switch differ for each application, so each Instance stores its own. Orbit does not guess steps from the framework.
+Release preparation, switching, and runtime refreshes are identical across applications, so Orbit owns them. Build, migration, and cache commands vary per application, so each Instance or Project defines its own steps without framework guesswork.
 
 ### Deploy a branch, not a commit
 
-A manual deployment means "deploy what the branch holds now". So it takes no commit, and two manual deployments of one branch can produce different code. An automatic deployment is the exception: it deploys the commit that passed the gate, so it pins that commit, and the branch must contain it. Without the pin, a newer, unchecked head could deploy in place of the checked commit.
+A manual deploy means "deploy what the branch holds now", while an automatic deploy pins the exact commit that passed `merge_check` and verifies first-parent membership so a newer unchecked push cannot slip in.
 
 ### Poll, do not wait for a webhook
 
-Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts for production and default development Instances. Automatic Gateway releases retain their separate source reader. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. While the shared producer is active, the polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
-
-Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
+Polling branch heads through the Gateway avoids exposing a public webhook endpoint and secret on a private WireGuard control plane. Caching GitHub App installations and read tokens keeps quiet ticks to a single `git ls-remote` with no GitHub API calls.
 
 ### Pending checks need no deadline
 
-The green-commit walk skips a pending commit and walks back to the newest green commit that descends from the deployed one. So no deployment waits for a check to finish, and a deadline for pending checks was rejected. The stall alert after 30 minutes reports a commit that does not deploy.
+The walk for a green commit skips pending heads and selects the newest green ancestor descending from the deployed commit, so deploys never block on a slow check and the 30-minute stall alert flags stuck commits instead.
 
 ### Only you resume after a pause
 
-A manual deployment or a rollback is a person's decision about what runs. A merge is not a decision to undo it. So a new commit does not resume automatic deployment; only setting `auto_deploy` again does.
+A manual deploy or rollback is an explicit operator decision about what should run. A subsequent Git merge should not silently undo it, so only turning `auto_deploy` back on resumes automatic deployments.
 
-### One native root for every deployment
+### Bounded release retention
 
-Development and production deployment use one native workflow on 209. Manual and automatic runs share it. The Instance lock keeps a second deploy or a rollback from starting while one runs. Rollback has its own native workflow; no polled executor remains.
-
-### Three releases per home
-
-Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first.
-
-A release that a running process uses outranks the limit: deleting it would pull the code, the dependencies, and the configuration cache out from under that process.
+Retaining the previous release (`old` in production containers, or up to three releases on legacy host homes) balances instant rollback against disk usage. On legacy host homes, releases still referenced by a running process outrank the limit so cleanup never pulls code out from under active workers.
 
 ### Rollback selects code only
 
-Older code can need a data recovery that only the application knows. So a rollback switches code and nothing else. Coupling it to a database rollback is a rejected alternative.
+Rolling back data or schema changes requires application-specific recovery that Orbit cannot safely guess. Rollback therefore switches code only and leaves databases and shared paths untouched.
 
 ### A rollback wins over a queued deploy
 
-A rollback undoes a bad release, often while users see errors. A deploy that no worker started has changed nothing yet, so the rollback cancels it instead of waiting behind it. A deploy that runs has already changed the Instance. A rollback that stopped it would leave it at a step boundary, half done. So the rollback refuses, and a person decides whether to cancel the deploy or let it end. The rule is the same for manual and automatic deploys.
+A rollback usually responds to a broken release. Cancelling an unclaimed queued deploy lets the rollback run immediately, while refusing to interrupt an in-flight deploy prevents leaving the Instance half-switched.
 
 ### Steps as named records
 
-Each step has its own create, update, and destroy, so you can change one step without resending the others. A single replace-all document and a repeatable step flag are rejected alternatives. A command with spaces, colons, or quotes breaks a flag separator.
-
-### Clone is the only way in
-
-Every production Instance comes from a clone, and its first deployment builds the release layout. Orbit does not convert a production home that serves code from its checkout.
-
-The production home exists before the first release is selected. Deployment and runtime consumers must not treat that pre-release home as a selected release.
-
-## Runtime composition
-
-The production deploy writes `.env`, reloads PHP-FPM, installs Process definitions through the `process.create` child workflow and restarts Processes inside its one native run. The Gateway captures the owned definitions and projects only their reported outcomes. Schedule definitions install through their own Schedule kinds.
-
-## Served web-root preparation
-
-The owning native Route or deployment DAG prepares served web roots on the admitted Instance Node. Swamp validates the selected release and root directories, links the environment and grants Caddy access before publication. A primary-root Route needs no additional root preparation.
-
-PHP runtime preparation, served web roots and Vite+ environments are steps of their parent DAGs. They have no standalone `instance.prepare_*` kinds, Gateway child executors or execution receipts. Instance create and clone use the same native Vite+ installer as deploy: the admitted platform, architecture and public recipe select the manager, local manifests select exact runtime pins, and protected registry settings stay on the worker.
-
-## Swamp setup and teardown steps
-
-`instance.run_steps` runs every admitted Project setup or teardown list through Swamp, including lists requested by Instance lifecycle parents. The Gateway records the Node, Project, checkout, execution account, ordered command digests and complete timeouts. It validates current target and configuration on reads, and projects bounded outcomes. It keeps no PHP step executor, command budget, execution receipt or completion proof for this kind.
-
-A list admitted before the writer switch can be cancelled through the Operation API when its matching target is its only execution state, it has never been claimed or started, and it has no steps or children. Cancellation releases that queued intent without adopting a writer or reporting execution success. A native start, uncertain state or any prior execution keeps the existing proof-aware cancellation behavior.
-
-When setup, teardown or deploy runs on a development Instance, it uses the configured Node account that owns the checkout. Development Instances have no `orbit-app-<ProjectID>` account.
-
-The Gateway records the placement environment and derives the account and directory from the Instance and Node, rather than caller input. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Setup, teardown and production deploy use direct sudo from the Node-user worker. Development deploy uses pinned official SSH from 209. All check directories and command digests, clear the environment, enforce timeouts and clean up child processes. Development and production deploy suppress command output; setup and teardown return bounded redacted output. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
-
-The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. This setup and teardown path still requires the worker on its admitted Node. Development deploy instead uses the 209 SSH path described below.
-## Native development deployment
-
-Default development checkouts use `operation-instance-deploy-direct`. Every Node action of this kind is one official `@swamp/ssh` command from 209, as the admitted Node account with the stored host keys. The shared Vite+ manager setup uses official cfgmgmt resources and bounded command arguments.
-
-The Gateway freezes the Node placement, repository, branch, and the ordered Project steps with their command digests, timeouts and inputs. It copies the exact commands and the fetch credential to Operation-scoped vault keys before it starts one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
-
-The run has six parts:
-
-- **Fetch.** Write the fetch credential, fetch the branch, and remove the credential.
-- **Checks.** Plain `git` commands check tracked changes and resolve the commit. They prove the commit is on the branch's first-parent chain and check the local branch.
-- **Cleanup plan.** Two `git` commands list the untracked entries and the target's directories. 209 plans the cleanup from them.
-- **Checkout.** Remove the planned stale entries, then check out the commit, each under the checkout lock.
-- **Vite+.** The shared requirement capture and install, the same steps `instance:clone` runs.
-- **Steps.** Each Project command runs in order, then a final check reads the branch and commit.
-
-The Vite+ part runs only when a step needs Vite+. A failed required command skips the later ones. For a best-effort command, the step prints only the command's exit status, so a nonzero status does not fail the deployment.
-
-The shared terminal subscriber reads Swamp's native run data and records the deployment once. The first failed step names the error code, as [Development defaults](#development-defaults) lists. Only a verified native success advances the Instance seed. Development has no result callback, private-material read, token-mint request or Gateway command executor.
-
-A checkout Instance with an unfinished [`instance:migrate`](/cli/instance/migrate) refuses deployment with `instance.lifecycle_busy`. A reserved container row keeps the checkout runtime until the move completes.
-
-A `default` Instance in a container deploys with the variant `container` in the same workflow. Ansible phases start the container, fetch the commit into the Node's mirror and push it in, check it out under the same refusals, take the seed snapshot and check the result. A Process whose development definition the Project removed is removed by the next deployment: its unit goes in the `processes` phase, and a passed run deletes the record and names it in the result's `processes_removed` ([Processes](/reference/development-containers#processes)).
-
-Right after the start, a nested-fleet container gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) into its `/run`; the Operation's result says what that start did in `nested_fleet_club_key`.
-
-When a passed deployment of the proof Project's default records its seed, the Gateway admits a [seed copy](/reference/development-containers#the-seed-on-each-ci-node) to each CI Node that is behind. Nothing in the deployment waits for it.
-
-Before its first seed, a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules). A refusal, `instance.container_fleet_drift`, names each difference in the result's `fleet_drift` and changes nothing. The refresh migrates and restarts the nested Gateway before any Doctor wait, and a passed run ends with the inner fleet running. A failed fleet phase names its failed task and message in `error.detail`: a native step that exits nonzero keeps no output, so the phase writes it into the result file. Each Project command runs in the container as `orbit`, from its vault copy. [The default Instance](/reference/development-containers#the-default-instance) has the details.
-
-When a development deploy runs, it leaves Process definitions, Route publication and PHP configuration with their existing native kinds. A pending default Route projection refuses deploy admission.
-
-### Automatic policy
-
-A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
-
-Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
-
-The Gateway precheck owns development discovery and the seed/head comparison. Swamp owns backoff, retry limits and admission.
-
-An `interrupted` Operation is terminal, like a failed Operation: after its deployment evidence is settled, the policy applies the normal failure backoff before admitting the branch head again. The Gateway precheck keeps its minute cadence independently of the production schedule and its pause. Successful development deployment completion records `up_to_date` when it reaches the last observed head. A matching seed needs no policy observation. A pending admission whose deploy passed is settled by the next run, which then goes on to the newest head in the same run. Discovery uses the Gateway's canonical eligibility, including ambiguous or inactive role placement.
-
-Each native source action and Project command has its own timeout. The Gateway exposes records, selects changed defaults, and projects the public decision. Swamp alone owns development retries and admissions; the Gateway scheduler starts no deployment itself.
-
-Pending default publication uses normal Route update admission before a changed-head deployment. Successful Route completion clears the publication marker for its authoritative development target, including a default whose seed already matches its branch. The policy projection accepts only a successful Operation for that same Route. A matching default starts no repair policy run; an explicit Route update can settle publication without waiting for another merge.
-
-
-## Native production deployment
-
-Production admission captures canonical Project Process definitions in the same transaction as the parent Operation. A refused parent leaves no copied definitions. Public input fixes the Project-owned `orbit-app-<ProjectID>` account, its home, the branch and an optional pinned commit. It also fixes the ordered command digests and timeouts, the shared paths and the served web roots. The `.env` plan holds the key names and the sha256 of the rendered file; the dedicated PHP-FPM configuration and the Vite+ setup complete the intent.
-
-A first deploy writes and validates its dedicated PHP-FPM configuration and starts its unit; later deployments reload it gracefully. Existing local PHP tuning remains intact. The Gateway records the runtime identity only after a compliant native service check. The release name follows from the Operation's creation time and id.
-
-When the run starts, the Gateway copies each deploy step, a repository-scoped read token and the rendered `.env` to Operation-scoped vault keys, and passes every Node action as a public argv list or link. It refuses to start when a step's stored command differs from its admitted digest. The Gateway does not execute a command, look up an account remotely or admit a child Operation.
-
-The shared terminal subscriber reads Swamp's native run data and records the deployment once: its release, selection, commit, failed step and error code, the owned `.env` keys, the selected checkout, verified Vite+ pins and the Process outcomes. A failed deployment keeps the selection the native result shows; the Gateway performs no compensating runtime work.
+Storing each deploy step by name lets you add, update, reorder, or remove one step without resending the full list or wrestling with shell-quoting issues in repeatable CLI flags.
 
 ### Why development has a Gateway precheck
 
-Starting a fleet policy run for unchanged defaults pays Swamp startup and many HTTP requests for no deployment. The Gateway already holds placement and seed commits. It reads only eligible Projects, without refreshing environment templates, and enters the existing policy only for changed defaults. Laravel owns this minute trigger, so adding it needs no serve restart and cannot resume production. A separate Swamp cron would still pay startup on every quiet tick. Push webhooks would require public ingress and a recovery trigger; the Gateway remains private.
+Comparing `seed_commit` against the default branch head in a lightweight minute precheck on the Gateway avoids paying policy-runner startup and API overhead on every quiet minute, entering the policy runner only for defaults that actually have new commits.

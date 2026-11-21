@@ -1,22 +1,24 @@
 ---
-title: Route LAN firewall
-description: Converge shared Node source tuples through official pinned SSH.
+title: "Route LAN firewall"
+description: "How Orbit converges shared Node firewall tuples for Route LAN and public Ingress traffic over pinned SSH."
 ---
 
-The same pinned tuple child also applies the admitted public Ingress TCP80/443 rules, with explicit `source: any`. Its observation and verification distinguish these rules from source-specific LAN rules.
+# Route LAN firewall
 
-Route LAN allows TCP443 from the recorded Router LAN source to the workload Node. The Router still connects to the workload's recorded LAN address. The firewall rule has no destination or Route comment. Route sites already bind both LAN and WireGuard; WireGuard-only control sites keep their Caddy VPN-client guard. A missing configured LAN hop still fails publication without a WireGuard fallback.
+Orbit manages Node firewall rules for Route LAN hops and public Ingress (`80/tcp` and `443/tcp` with `source: any`) as shared `(port, protocol, source)` tuples rather than per-Route rules.
 
-`NativeRouteLanInput::forSites(Node, Collection)` derives unique `(port, protocol, source)` tuples from the complete published or prospective site catalog. `changes(before, desired)` keeps every required tuple present and removes only tuples absent from the desired set. Two Routes sharing a tuple share one allowance. Withdrawal of the first keeps it; withdrawal of the last removes it. Node identity and rule intent remain distinct from execution placement.
+## How shared tuples work
 
-All steps run on Node209 with one target selector. `route-lan-apply` uses official `@swamp/ssh` with the existing identity-file locator and the exact admitted host keys. It observes active UFW state, shapes only the needed tuple commands, applies each tuple in its own native step and observes the result. Pure typed metadata verifies every requested ensure state and each action outcome. No step reads the Gateway. Replacement first ensures the union of old and new tuples, then retires unused tuples after publication and the approved private DNS grace. Restore selects the captured prior set.
+Orbit derives unique `(port, protocol, source)` rules from each Node's complete site catalog:
 
-Official cfgmgmt 2026.10.27.1 was checked: its firewall model cannot accept admitted host keys and defaults to accept-new. Official SSH enforces the pins; the tuple fields and UFW command shape remain the same. There is no custom SSH transport, host-key store or rule engine.
+- **Route LAN:** allows `443/tcp` from the Cluster Router's LAN address to each workload Node without destination IPs or Route comments. A missing LAN hop fails publication without falling back to WireGuard.
+- **Public Ingress:** applies `80/tcp` and `443/tcp` with `source: any`, tracked separately from source-specific LAN rules.
+- **Deduplication:** multiple Routes needing the same tuple share one rule. Removing the last Route using that tuple removes the rule.
 
-The one-time migration that removed the old `orbit:route-<id>-lan` and `orbit:router-lan-*` rules is complete. On 2026-11-02 no Cluster member kept such a rule, so its workflow, script and `route.lan_shape` setting are gone (rule 22). The tuple child never deletes a rule it did not shape.
+## Convergence order
 
-Route creation and target changes use the shared tuple child. They do not add Route-commented rules. Retained offline residue cleanup removes only its captured Route's exact comment; it cannot create or replace old allowances.
+During Route creation, target changes, and Router transitions, Orbit observes live UFW state over pinned SSH. It applies only the needed tuple changes and verifies the resulting rules:
 
-Route parents pass the captured desired tuple plan directly to `route-lan-apply` after withdrawing the Route's host catalogs. The child verifies the final tuples before its parent continues. LAN withdrawal starts no separate Operation and needs no private material or agent action.
-
-The destination audit and Caddy regression results are recorded in `/home/nckrtl/swamp-execution/evidence/route-lan-destination-audit-20261031.md`.
+- **Replacement:** adds the union of old and new tuples first, then removes unused tuples after Caddy publication and the private DNS grace window.
+- **Withdrawal:** removes tuples absent from the desired catalog after withdrawing the Route's Caddy sites. Orbit never deletes firewall rules it did not create.
+- **Restore:** reapplies the captured prior tuple set if a transition fails before cutover.

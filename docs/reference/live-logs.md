@@ -1,6 +1,6 @@
 ---
 title: "Live logs"
-description: "How a viewer tails an Instance, Process or Schedule log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the one-shot reads that use the same path."
+description: "How a viewer tails an Instance or Process log live: opening, renewing, and closing a log stream, the events it receives, the limits, and redaction."
 covers:
   - apps/gateway/app/Domain/Logs/**
   - apps/gateway/app/Actions/Logs/**
@@ -12,246 +12,153 @@ covers:
 
 # Live logs
 
-Schedule follow is disabled in the CLI and API until orbit-agent 0.14.0 is released and pinned. New Schedule leases refuse with `schedule.follow_unavailable`; web viewers use bounded snapshots.
+A live log stream relays new lines from an Instance or Process log to a single viewer over a private Reverb channel. Opening a stream requires the same Node access grant as a one-shot log read. The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs) and [`orbit process:logs`](/cli/process/logs) use live streams.
 
-A live log stream shows new lines of one Instance or Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance, Process, or Schedule.
+Some targets do not support live streams:
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance/logs), [`orbit process:logs`](/cli/process/logs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs`, `GET /api/v1/processes/{process}/logs` and `GET /api/v1/schedules/{schedule}/logs`, open a tail that closes after its first lines.
-
-A [migrated Schedule](/reference/schedules#checkout-migration) supports a bounded one-shot read of its retained Node service entries and later command entries. Its live stream refuses with `schedule.target_unsupported`.
-
-A [container Process](/reference/development-containers#processes) supports a one-shot journal read. Live streams and `process:logs --follow` refuse it with `process.target_unsupported`.
+- **Production Instances:** application logs are SSH-only (`409 logs.live_unavailable`, `reason: "ssh_only"`).
+- **Container Processes:** one-shot journal reads work; live streams refuse with `409 process.target_unsupported`.
+- **Schedules:** Schedule follow is disabled (`409 schedule.follow_unavailable`); migrated container Schedules return `409 schedule.target_unsupported`. Use bounded one-shot snapshots instead.
 
 ## How a stream works
 
-A client follows five steps, and the Gateway and the Node agent do the rest.
+Clients follow five steps to start, renew, and close a log stream:
 
-1. The client connects to Reverb, as [Realtime events](/reference/events#discovery) describes, and reads its `socket_id`.
-2. The client opens a stream with its `socket_id`. The response names a private channel and signs the client's subscription to it.
-3. The client subscribes to the channel with that signature.
-4. When the subscription succeeds, the client renews the stream once. This first renewal starts the stream, so no line arrives before the client listens.
-5. The client receives the first lines and then each new line. It renews the stream every 20 seconds and closes it at the end.
+1. The client connects to Reverb ([Realtime events](/reference/events#discovery)) and reads its `socket_id`.
+2. The client opens a stream with `socket_id`, receiving a private channel name and signed subscription auth.
+3. The client subscribes to that channel with the returned `auth` string.
+4. Once subscribed, the client renews the stream once to start delivery so no lines arrive before the client listens.
+5. The client receives initial and new lines, renews every 20 seconds, and closes the stream at the end.
 
-The Gateway lists the stream for the Node's agent. The agent reads the source, redacts each line, and sends the lines to the Gateway. It sends the first lines as one batch, also when the log is empty, and marks its end with `first_done`, which a [one-shot read](#one-shot-reads-use-the-stream-path) waits for. The Gateway redacts them again and publishes them on the stream's channel. [Node agent](/reference/node-agent#log-tails) describes the agent's part.
+The Node agent reads the source, redacts each line, and pushes batches to the Gateway. The Gateway redacts each batch again against stored environment values and broadcasts it to the viewer's private channel. See [Node agent: Log tails](/reference/node-agent#log-tails).
 
 ## Open a stream
 
-Open a stream through the record whose log you want to follow.
+Open a stream through the Instance, Process, or Schedule whose log you want to follow:
 
 | Method and path | Route name | Access |
 | --- | --- | --- |
-| `POST /api/v1/instances/{instance}/log-streams` | `instance:log-stream:create` | The same as `instance:logs` |
-| `POST /api/v1/processes/{process}/log-streams` | `process:log-stream:create` | The same as `process:logs` |
-| `POST /api/v1/schedules/{schedule}/log-streams` | `schedule:log-stream:create` | The same as `schedule:logs`; the selector is a Schedule UUID. |
+| `POST /api/v1/instances/{instance}/log-streams` | `instance:log-stream:create` | Same as `instance:logs` |
+| `POST /api/v1/processes/{process}/log-streams` | `process:log-stream:create` | Same as `process:logs` |
+| `POST /api/v1/schedules/{schedule}/log-streams` | `schedule:log-stream:create` | Same as `schedule:logs` (UUID selector) |
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `socket_id` | yes | The client's Reverb socket ID, such as `123.456`. |
-| `lines` | no | The number of earlier lines to send first, from 1 through 1,000. The default is 100. |
+| `socket_id` | yes | The client's Reverb socket ID (for example `123.456`). |
+| `lines` | no | Initial lines to send first, 1 through 1,000 (default 100). |
 
-The response has status 201:
-
-```json
-{
-  "data": {
-    "id": "3f9c2a6b0d1e4f5a8b7c6d5e4f3a2b1c",
-    "channel": "private-log-stream.3f9c2a6b0d1e4f5a8b7c6d5e4f3a2b1c",
-    "auth": "<reverb-app-key>:<signature>",
-    "lines": 100,
-    "lease_seconds": 60,
-    "renew_seconds": 20
-  },
-  "meta": { "request_id": "..." }
-}
-```
-
-The stream ID is a random 128-bit value, and the Gateway never lists it. `auth` is valid only for the `socket_id` in the request. Subscribe with it as the Pusher `auth` value. The browser auth endpoint, `POST /api/v1/broadcasting/auth`, refuses every `private-log-stream.*` channel.
+A `201` response returns `{ id, channel, auth, lines, lease_seconds, renew_seconds }`, where `id` is a random 128-bit value, `channel` is `private-log-stream.<id>`, `lease_seconds` is `60`, and `renew_seconds` is `20`. `POST /api/v1/broadcasting/auth` refuses all `private-log-stream.*` channels; use the `auth` returned at creation.
 
 ## Renew and close
 
-A stream lives for 60 seconds after it opens or after its last renewal.
+A stream lives for 60 seconds after creation or its last renewal.
 
 | Method and path | Route name | Result |
 | --- | --- | --- |
-| `PUT /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
-| `DELETE /api/v1/instances/{instance}/log-streams/{stream}` | `instance:log-stream:destroy` | Closes the stream at once. |
-| `PUT /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
-| `DELETE /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:destroy` | Closes the stream at once. |
-| `PUT /api/v1/schedules/{schedule}/log-streams/{stream}` | `schedule:log-stream:renew` | Extends the lease and activates it on the first renewal. |
-| `DELETE /api/v1/schedules/{schedule}/log-streams/{stream}` | `schedule:log-stream:destroy` | Closes the stream at once. |
+| `PUT /api/v1/{instances,processes,schedules}/{id}/log-streams/{stream}` | `*:log-stream:renew` | Extends the lease by 60 seconds and starts the stream on first renewal. Returns `{ id, lease_seconds }`. |
+| `DELETE /api/v1/{instances,processes,schedules}/{id}/log-streams/{stream}` | `*:log-stream:destroy` | Closes the stream immediately. Returns `{ id, closed: true }`. |
 
-Each call checks the access grant again. Only the Node that opened a stream can renew or close it, and only through the record it was opened for. A renewal returns `{ id, lease_seconds }`, and a close returns `{ id, closed: true }`. Renewals do not record Activity.
-
-Every 5 seconds the Gateway ends each stream whose lease ended, with `expired`, and each stream whose opening Node lost its access grant to the serving Node, with `revoked`.
+Only the Node that opened a stream can renew or close it, and every call rechecks the Node access grant. Renewals do not record Activity. Every 5 seconds, the Gateway closes expired streams (`expired`) and streams whose opener lost Node access (`revoked`).
 
 ## Receive events
 
-The Gateway publishes two server events on `private-log-stream.{stream}`, with the envelope of [Realtime events](/reference/events#envelope). `id` is the stream ID. A client ignores every `client-*` event on the channel.
+The Gateway publishes two events on `private-log-stream.{stream}` using the [Realtime events envelope](/reference/events#envelope) (`id` is the stream ID; ignore any `client-*` events):
 
 | Type | When | Data |
 | --- | --- | --- |
-| `log.lines` | The first lines, and then new lines, at most every 250 milliseconds | `{ sequence, lines, dropped, skipped }` |
-| `log.ended` | The stream closed | `{ reason }` |
+| `log.lines` | Initial lines and subsequent batches (at most every 250 ms) | `{ sequence, lines, dropped, skipped }` |
+| `log.ended` | Stream closed | `{ reason }` |
 
-| Field | Contract |
-| --- | --- |
-| `sequence` | Increases by one with every `log.lines` event of the stream, from 1. After a failed relay run, the Gateway can send a part again with the same `sequence`; ignore a `sequence` you already have. |
-| `lines` | Redacted log lines, oldest first, without line endings. |
-| `dropped` | Lines dropped by a rate limit since the previous event. Show it as `[orbit] 120 lines dropped`. |
-| `skipped` | Bytes the agent skipped because a file source fell more than 4 MiB behind. Show it as `[orbit] 5.0 MiB skipped`. |
-| `reason` | `closed`, `expired`, `revoked`, `agent_left`, `source_unavailable`, or `relay_behind`. |
+- `sequence` starts at 1 and increments by 1 per event (ignore duplicates after a retried relay).
+- `lines` contains redacted lines without trailing newlines, oldest first.
+- `dropped` counts lines dropped by rate limits since the last event (render as `[orbit] N lines dropped`).
+- `skipped` counts bytes skipped when a file source falls more than 4 MiB behind (render as `[orbit] X MiB skipped`).
 
-| Reason | Meaning | Client action |
+| End `reason` | Meaning | Client action |
 | --- | --- | --- |
-| `closed` | The client closed the stream. | None. |
-| `expired` | The lease ended without a renewal. | Open a new stream to keep watching. |
-| `revoked` | The opening Node lost its access grant to the serving Node. | Stop. |
-| `agent_left` | The Node's agent left its log channel, for example because it stopped, or it had no stream list for 60 seconds. | A follow opens a new stream after 30 seconds. |
-| `source_unavailable` | The agent could not open or keep reading the source. | Stop. |
-| `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | A follow opens a new stream after 30 seconds. |
+| `closed` | Client closed the stream. | None. |
+| `expired` | Lease expired without renewal. | Open a new stream to continue. |
+| `revoked` | Opener lost access to the serving Node. | Stop. |
+| `agent_left` | Serving agent disconnected or missed stream list updates for 60 seconds. | Retry after 30 seconds. |
+| `source_unavailable` | Agent could not open or continue reading the source. | Stop. |
+| `relay_behind` | Gateway relay fell behind and dropped queued lines. | Retry after 30 seconds. |
 
 ## Sources
 
-Each record has one source, the same one that its one-shot read uses.
+Each record maps to one log source on its serving Node:
 
-| Record | Source | Lines |
+| Record | Source | Format |
 | --- | --- | --- |
-| Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
-| systemd Process | The journal entries that `journalctl --unit orbit-process-{id}-{name}.service` selects: the unit's own entries, systemd's messages about the unit, messages that root services log about it, and its core dumps | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
-| Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
-| Schedule | The journal entries that `journalctl --unit orbit-schedule-{id}.service` selects, printed as for a systemd Process. Agent 0.14.0 snapshots use this source; Schedule follow stays disabled | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
+| Development Instance | `storage/logs/laravel.log` in the [application directory](/reference/instance-logs#know-which-file-the-gateway-reads), or newest `laravel-*.log` | File lines (follows daily rotation and truncation) |
+| systemd Process | `journalctl --unit orbit-process-{id}-{name}.service --output short-iso --utc` | `2026-09-25T10:15:02+00:00 host name[pid]: message` |
+| Docker Process | Container `orbit-process-{id}-{name}` stdout and stderr | Container output lines |
 
-The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
-
-The agent follows a systemd Process with `journalctl --unit {unit} --output short-iso --utc`, which the one-shot read of a Process also uses. Agent 0.14.0 uses the same format for Schedule snapshots, reversing whole entries while keeping continuation lines in order. The current frozen Agent predates this fix, so Schedule follow stays disabled until the fixed release is pinned. Process snapshots and live streams therefore select and print the same entries. `journalctl` is part of systemd on every supported Ubuntu Node. When it is missing, or it stops while the agent follows, the stream ends with `source_unavailable`.
-
-The agent first reads the cursor of the unit's newest entry. It reads the first lines from that entry backwards and then follows from the next entry, so an entry written in between is sent exactly once.
-
-The agent makes at most 256 KiB of lines from one journal entry, one stream's queue, and keeps at most 512 KiB of one printed line, so a huge message cannot exhaust its memory. A longer entry ends with the line `[orbit] message cut at 256 KiB`. A single line longer than 256 KiB is cut there too, before a character rather than inside one. The one-shot read cuts each entry with the same code, so a follow can switch between the reads at any entry without a gap.
-
-A one-shot read returns the first lines of the tail, at most 256 KiB, and the agent cuts each journal entry at 256 KiB before that limit, so a huge entry does not hide the older entries. The first lines of a Docker Process hold both streams in one, in the order the container wrote them.
-
-The agent refuses a log file that `root` owns, a link at `storage/logs` or at the log file, and a container without the labels `orbit.managed=true` and `orbit.process.id={id}`. The stream then ends with `source_unavailable`.
+The agent reads the newest journal cursor first, fetches the initial lines backward, and follows forward so entries written in between are delivered once. Single journal entries are capped at 256 KiB (`[orbit] message cut at 256 KiB`). The agent refuses root-owned log files, symlinks at `storage/logs` or the log file, and containers lacking `orbit.managed=true` and `orbit.process.id={id}` (ending with `source_unavailable`).
 
 ## Limits
 
-The agent and the Gateway bound every stream, so a busy log cannot exhaust either of them.
+The Node agent and Gateway enforce these bounds on every stream:
 
 | Limit | Value |
 | --- | --- |
-| Open streams | 16 for each serving Node |
-| First lines | `lines`, at most 256 KiB. They do not count against the rates below. |
-| Line length | 8 KiB; a longer line is cut and ends with `[truncated]` |
-| Events | At most one `log.lines` event every 250 milliseconds from the agent, split into events that fit a Reverb request of 10,000 bytes |
-| Rate from the agent | 32 KiB per second for each stream, with a 256 KiB burst, and 256 KiB per second for each Node |
-| Rate from the Gateway | 64 KiB per second for each stream, with a 256 KiB burst |
-| Waiting lines in the Gateway | 1 MiB for each stream and 16 MiB in all, and at most five failed relay runs in a row |
+| Open streams | 16 per serving Node |
+| Initial batch | Requested `lines`, capped at 256 KiB |
+| Line length | 8 KiB UTF-8 bytes (longer lines end with `[truncated]`) |
+| Batch interval | At most one `log.lines` event every 250 ms, split to fit Reverb's 10,000-byte request cap |
+| Agent rate | 32 KiB/s per stream (256 KiB burst); 256 KiB/s per Node |
+| Gateway rate | 64 KiB/s per stream (256 KiB burst) |
+| Gateway buffer | 1 MiB per stream, 16 MiB total, at most 5 consecutive relay failures before `relay_behind` (then ignored for 120 seconds) |
 | Lease | 60 seconds, renewed every 20 seconds |
-
-The 8 KiB counts the line's UTF-8 bytes, so a line of accented letters, CJK characters, or emoji keeps its full length: the Gateway sends Reverb each character as UTF-8, not as an escape. A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
-
-Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. For the next 120 seconds the Gateway ignores every event for that stream. A flood therefore cannot grow the agent's or the Gateway's memory.
 
 ## Redaction
 
-The agent redacts each line before it leaves the Node. The Gateway redacts it again before it publishes it. The Gateway replaces the whole range that overlapping or adjacent known values cover with one marker, so no remainder of either value stays. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
+Both the Node agent and the Gateway redact lines before delivery, collapsing overlapping or adjacent matches into one `[REDACTED]` marker ([text-redaction failures](/cli/activity#text-redaction-failures)):
 
-| Where | What is replaced with `[REDACTED]` |
-| --- | --- |
-| Agent and Gateway | PEM blocks, credentials in URLs such as `https://user:pass@host`, `Authorization` and `Proxy-Authorization` header values, `Bearer` tokens, and the value after a secret-named key, such as `API_KEY=...`, `"password": "..."`, or `db_password: ...` |
-| Gateway | Each stored environment value of the Instance (also for its Schedules), or each environment value of a Docker Process, of eight characters or more, except the values of setting keys |
+- **Agent and Gateway:** PEM blocks (spanning lines from `BEGIN` through `END`), credentials in URLs, `Authorization` and `Proxy-Authorization` headers, `Bearer` tokens, and values after secret-named keys (`API_KEY`, `password`, `db_password`, and similar).
+- **Gateway:** stored Instance or Docker Process environment values of 8 characters or more, except the exact non-secret setting keys: `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `APP_FAKER_LOCALE`, `APP_TIMEZONE`, `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE`, `BCRYPT_ROUNDS`, `LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`, `LOG_DEPRECATIONS_CHANNEL`, `DB_CONNECTION`, `DB_PORT`, `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE`, `CACHE_DRIVER`, `MAIL_MAILER`, `MAIL_PORT`, and `MAIL_ENCRYPTION`.
 
-The setting keys are exactly `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `APP_FALLBACK_LOCALE`, `APP_FAKER_LOCALE`, `APP_TIMEZONE`, `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE`, `BCRYPT_ROUNDS`, `LOG_CHANNEL`, `LOG_STACK`, `LOG_LEVEL`, `LOG_DEPRECATIONS_CHANNEL`, `DB_CONNECTION`, `DB_PORT`, `SESSION_DRIVER`, `SESSION_LIFETIME`, `SESSION_ENCRYPT`, `BROADCAST_CONNECTION`, `FILESYSTEM_DISK`, `QUEUE_CONNECTION`, `CACHE_STORE`, `CACHE_DRIVER`, `MAIL_MAILER`, `MAIL_PORT`, and `MAIL_ENCRYPTION`. Their values, such as `production`, would otherwise hide ordinary words in the log. The list names each key in full, so a secret under a similar key, such as `LOG_SLACK_WEBHOOK_URL`, stays redacted. Hosts and URLs, such as `APP_URL` and `DB_HOST`, stay redacted too.
-
-A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line. When no `END` line arrives, the rest of the stream stays hidden. The agent keeps only the open-block state, without buffering the key body.
-
-Redaction is a safety net. It misses a secret with no recognizable shape or key name, and a secret split across lines or encoded. It keeps an environment value shorter than eight characters or stored under a setting key. It also misses personal data, such as email addresses and customer records in exception messages. Access to the serving Node decides who may read a log.
-
-The `websocket` role Node sees every log line in plain text, because TLS ends there. Orbit trusts that Node as part of the realtime layer, as it does for every other realtime message.
-
-The CLI redacts credential-shaped text again before it prints a line. It writes every redaction as `[redacted]` in lower case, also a value that the agent or the Gateway already replaced with `[REDACTED]`. `API_KEY=[REDACTED]` therefore shows as `API_KEY=[redacted]`.
+The CLI runs a final redaction pass and renders markers in lowercase (`[redacted]`). Redaction is defense-in-depth and does not catch arbitrary personal data or encoded secrets; Node access grants control who may read logs. The `websocket` Node terminates TLS for Reverb and is trusted as part of the realtime layer.
 
 ## When the live path is not available
 
-The Gateway refuses to open a stream with `logs.live_unavailable` (409) when it cannot serve one. `error.details.reason` says why.
+When a live stream cannot open, the Gateway returns `409 logs.live_unavailable` with `error.details.reason`:
 
 | Reason | Meaning |
 | --- | --- |
+| `ssh_only` | Production Instance application logs are read over SSH only. |
 | `realtime_not_configured` | No `websocket` role is active. |
-| `subscriber_down` | The agent view subscriber is not running or not connected. |
-| `agent_unavailable` | The Gateway has no fresh [view](/reference/node-agent#freshness) of the serving Node, for example because its agent is stopped. |
-| `agent_not_joined` | The Node has a fresh agent view, but the agent has not joined its log channel yet, for example while it reconnects during a `websocket` move. |
+| `subscriber_down` | The Gateway's agent view subscriber is not connected. |
+| `agent_unavailable` | No fresh [agent view](/reference/node-agent#freshness) for the serving Node. |
+| `agent_not_joined` | The agent has not joined its log channel yet. |
 
-The one-shot read is refused with the same code and reason, because it uses the same path. The CLI prints the error and exits with status 1. The web app pane shows the reason.
-
-Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, and the ends `agent_left` and `relay_behind`. For these, a follow and a web app pane try to open a stream again every 30 seconds. `realtime_not_configured` and `source_unavailable` end them.
+For transient reasons (`subscriber_down`, `agent_unavailable`, `agent_not_joined`, `logs.stream_limit`, `agent_left`, `relay_behind`), CLI `--follow` and web panes retry every 30 seconds.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, or `lines` is outside 1 through 1,000. |
-| `logs.live_unavailable` | 409 | The live path is not available. See the reasons above. |
-| `logs.stream_limit` | 429 | The serving Node already has 16 open streams. |
-| `logs.stream_not_found` | 404 | The stream does not exist, has ended, belongs to another record, or was opened by another Node. |
-| `node_access.required` | 403 | The caller has no access grant to the serving Node. |
+| `node_access.required` | 403 | Caller lacks access to the serving Node. |
+| `logs.stream_not_found` | 404 | Stream does not exist, ended, or belongs to another record or opener. |
+| `logs.live_unavailable` | 409 | Live path unavailable (see reasons above). |
+| `process.target_unsupported` | 409 | Container Processes do not support live streams. |
+| `schedule.follow_unavailable` | 409 | Schedule live follow is disabled. |
+| `schedule.state_invalid` | 409 | Schedule is not active. |
+| `schedule.target_unsupported` | 409 | Migrated Schedules do not support live streams. |
+| `validation.failed` | 422 | Invalid `socket_id` or `lines` outside 1 through 1,000. |
+| `logs.stream_limit` | 429 | Serving Node already has 16 open streams. |
 
 ## Stream tests
 
-The agent's Laravel controller integration reads real log files, checks redaction, and ends the stream when a link replaces the source. It waits for each expected frame with a bounded Tokio timeout, using the paused clock to advance polling and flush intervals without waiting for wall time.
-
-Journal fixture tests flush until the expected output arrives within a bounded Tokio timeout instead of sleeping for startup. To check silence, they send a barrier through the follower's real stdout pipe and the line sink. Receiving it proves that earlier records were consumed; unexpected lines or an early stream end still fail the test. Process cleanup checks wait until the child has been reaped. Large-entry fixtures build their text without wide `awk` formatting, which exceeds the default buffer on some Nodes.
-
-Both real-journal tests keep their real observation intervals because they have no fixture barrier. The test that follows a real unit remains ignored by default. [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent) lists the agent test commands.
+Agent stream tests cover real log files, redaction, symlink replacement, and journal fixture followers using a paused Tokio clock for polling and flush intervals, with bounded timeouts and stdout barriers for silence checks. Two tests that read the real journal keep real observation intervals (the live unit test is ignored by default). See [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent) for test commands.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
 ### The Gateway relays every line
 
-The agent sends lines only to the Gateway, on a channel that only the agent and the Gateway join. The Gateway checks each batch against its open streams, redacts it again with the stored environment values, and publishes it to one viewer. If the agent published to viewer channels itself, it would learn viewer channels and need the environment values on the Node, and revocation would depend on every agent. That alternative is rejected.
+Routing lines from the agent through the Gateway keeps viewer channel names and stored environment values off workload Nodes and lets the Gateway enforce access revocation centrally. Using a private per-viewer channel (`private-log-stream.<id>`) avoids leaking logs across viewers on shared Node channels.
 
-### A private channel for each viewer
+### Observer runs read-only commands only
 
-Every browser with Gateway access joins `presence-node.{id}`, so log lines never go there. One shared log channel for each Node is also rejected, because a viewer of one Instance would receive the logs of every other Instance on that Node.
+The Node agent reads log files directly and invokes only read-only `journalctl` with fixed arguments for systemd units, never running `tail` or mutating the host.
 
-### The agent reads only what the Gateway lists
+### Stream state in cache and bounded relay
 
-A `log-streams.changed` event carries no data. It only prompts the agent to fetch its list over HTTPS. So a forged or lost event cannot start a read, and the agent never acts on the content of a channel message.
-
-### The observer runs no program that changes the Node
-
-The observer is visibility-only. The only program it runs is read-only `journalctl`, with fixed arguments, to follow a systemd Process. Changes to a Node run in the agent's [command mode](/reference/node-agent#commands), which only SSH or the Gateway starts. `journalctl` changes nothing on the Node. The live stream and the one-shot read share one command and one output, so their lines match on every systemd version.
-
-Reading the journal through `libsystemd` is not possible, because the agent is a static musl binary and cannot load it. An earlier agent read the journal files with its own reader. It was rejected, because it had to follow the file format, its compression, and file rotation, and it still printed some rare entries differently from `journalctl`. The agent reads Instance log files itself and never starts `tail`.
-
-### Production Instances read through a read-only group
-
-Decided by the orchestrator, for Nick's review (2026-11-06). A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root and the production homes it binds back read-only for `.env` key names. The unit joins one more group, `orbit-logs`, which `agent.configure` creates before it writes the unit.
-
-A deploy gives that group a read ACL, with a default ACL for new files, on the shared `storage/logs` directory of the application in the production home, and traverse on the directories above it. The release's `storage` is a link to that shared directory, so one grant covers every release. The agent reads the log file itself and starts no program.
-
-Widening the read to the whole home is rejected, because production `.env` files that their owner left readable would be exposed. Changing the production apps to log elsewhere is rejected, because it changes what runs in production.
-
-A production Instance created after the agent's last converge is read once the next converge binds its home. The group is one for the Node, so the agent refuses a link at `storage/logs` or at the file, and it reads only the path the Gateway derives. Production log lines pass through Reverb on the `websocket` Node; the agent redacts credential-shaped text, and the Gateway redacts the stored environment values before it answers.
-
-### One-shot reads use the stream path
-
-A one-shot read opens a tail for the Gateway itself, with the line count of the request and no viewer channel. The Gateway starts the tail at once, takes the first batch the agent sends, and closes the tail, also when it waited 5 seconds in vain. The agent sends its first lines as one batch even when the batch is empty, so a missing file or an empty journal is an empty log and not a timeout. The batch holds at most the requested lines and 256 KiB, and the response sets `truncated` when either limit left out older lines.
-
-The tail holds one of the Node's 16 stream slots while it waits, so a refusal can be `logs.stream_limit`. The agent needs no command for these reads, and the one-shot and the follow select the same lines.
-
-### Stream state in a cache, not SQLite
-
-Each viewer renews every 20 seconds. Writing those renewals to the central SQLite database would load it for no lasting value. So streams live in the agent view's file cache and rebuild when a viewer renews.
-
-### Relay outside the socket loop
-
-The subscriber's socket loop only records what arrives. A child process does every database read and broadcast, so a slow Reverb or database never stalls the agent view for other Nodes. Serving the tail as server-sent events from the Gateway is rejected too, because each stream would hold a PHP-FPM worker.
-
-### End a stream instead of dropping old lines
-
-When the relay falls behind, it ends the stream with `relay_behind`. The viewer then falls back to SSH reads, which show the current tail. Dropping the oldest lines silently is rejected, because the viewer would miss lines without knowing it.
-
-Schedule viewer leases use `/api/v1/schedules/{schedule}/log-streams` and the `schedule:log-stream:{create,renew,destroy}` transport names. The Schedule ID stays a UUID. Orbit resolves only its `orbit-schedule-{uuid}.service` journal source. The same access, lease, redaction, reconnect, and loss rules apply. These transport endpoints are excluded from MCP.
-
-`realtime:logs --follow` subscribes to Gateway events instead of file logs. It retains the `{type,id,at,data}` envelope. Bare `realtime:logs` refuses because realtime has no event history.
+Keeping 20-second lease renewals in cache avoids unnecessary SQLite writes, and running Reverb broadcasts outside the subscriber socket loop prevents a slow viewer or Reverb outage from stalling other Nodes. When the relay falls behind, ending the stream with `relay_behind` makes gaps explicit instead of silently dropping lines.

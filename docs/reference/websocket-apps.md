@@ -14,56 +14,52 @@ covers:
 
 # Reverb apps
 
-The [`websocket` role](/solutions/realtime-reverb) runs one Reverb server at `wss://reverb.orbit`. That server serves several Reverb apps. The Gateway publishes its own events with the app named `gateway`. Every other Project gets an app of its own.
+The [`websocket` role](/solutions/realtime-reverb) runs one Reverb server at `wss://reverb.orbit` that serves multiple Reverb apps. The Gateway publishes its own realtime events through the reserved `gateway` app, and every other Project gets an app of its own.
 
 ## An app
 
-An app has a unique `name`, an `app_id`, a `key`, and a `secret`. The Gateway generates the three values. It stores the secret encrypted and never returns it.
+An app has a unique `name`, an `app_id`, a `key`, and a `secret`. The Gateway generates those three values, stores the secret encrypted, and never returns it. `app_id` is Reverb's own identifier and does not match an Orbit Project or Instance ID.
 
-`app_id` is Reverb's own identifier. It does not name an Orbit Project or Instance.
+Reverb isolates each app's channels. Clients connect with an app's public key and see only that app's channels, and Reverb verifies every publish request against the secret of the app in the request path.
 
-Reverb keeps each app's channels apart. A client connects with an app's key and sees only that app's channels. Reverb checks each publish request against the secret of the app in the request path. So an app's credentials cannot publish on another app's channels.
-
-The role's first converge creates the `gateway` app. That app's secret never leaves the Gateway: you cannot add it to an Instance or destroy it. Apps outlive the role. Removing or moving the role keeps every app and its keys.
+The role's first converge creates the `gateway` app. Its secret never leaves the Gateway, and you cannot attach it to an Instance or destroy it. Apps outlive the role: removing or moving the `websocket` role keeps every app and its credentials intact.
 
 ## Create an app
 
-Create an app for each Project that publishes realtime events.
+Create an app for each Project that publishes realtime events:
 
 ```bash
 orbit websocket:app:create hauzer
 ```
 
-The name is a lowercase slug of at most 63 characters. `gateway` and a taken name are refused with `validation.failed`. The Gateway saves a new registry revision. Each Reverb process pulls the full snapshot on its own 30-second reconciliation and adds the app without restarting. A starting process must fetch a fresh snapshot before accepting connections.
+The name is a lowercase slug of at most 63 characters. `gateway` and existing names return `validation.failed`. The registry allows up to 10,000 apps (`websocket.app_limit`, 409).
 
-`websocket:app:list` lists the apps by name. `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids`, the Instances that hold the app. Neither returns the secret.
+`websocket:app:list` lists apps by name, and `websocket:app:show <name>` shows one app. Both return `id`, `name`, `app_id`, `key`, and `instance_ids` without the secret.
 
-A role failure keeps the saved app and its operation. App creation does not converge the role, restart Reverb, or publish private DNS. If delivery fails, keep the operation id and use `websocket:operation:show` or `websocket:sync` after recovery. Repeating the request with the same idempotency key returns the same app and operation. A pending unrelated app keeps the Gateway app available on processes that already serve it.
+App creation saves a new registry revision and returns an [Operation](/reference/operations) with HTTP 202. It does not converge the role, restart Reverb, or change private DNS. Each Reverb process fetches the new snapshot on its 30-second reconciliation loop and activates the app without restarting. Repeating the request with the same `--idempotency-key` returns the same app and Operation; reusing a key with different input returns `websocket.idempotency_conflict` (409).
 
 ## Destroy an app
 
-Destroy an app when no Instance uses it any more.
+Destroy an app when no Instance uses it:
 
 ```bash
 orbit websocket:app:destroy hauzer
 ```
 
-The Gateway deletes the app and publishes a new registry revision. Each process stops accepting the app and closes only its sockets with code 4001. It refuses the `gateway` app with `websocket.app_reserved` (409). It refuses an app that an Instance still holds with `websocket.app_in_use` (409). Remove the app from each Instance first.
+The Gateway deletes the app, saves a new registry revision, and returns an Operation (202). Each Reverb process stops accepting the app and closes only that app's sockets with code `4001`.
 
-The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket/app-destroy).
-
-A saved change stays pending until every serving process confirms it. The API records a normal Operation and returns HTTP 202 without waiting for process reports. Reverb applies the revision through its existing periodic reconciliation. The CLI follows the Operation without restarting Reverb.
+The `gateway` app returns `websocket.app_reserved` (409). An app still attached to an Instance returns `websocket.app_in_use` (409); remove it from every Instance first. The CLI prompts for confirmation unless `--force` is passed; see [`websocket:app:destroy`](/cli/websocket/app-destroy).
 
 ## Add an app on an Instance
 
-Add an app to give an Instance its credentials, then synchronize the Instance's `.env`.
+Attach an app to write its credentials into the Instance's [stored environment](/reference/environment-variables), then synchronize `.env`:
 
 ```bash
 orbit instance:websocket:add hauzer --instance=<instance>
 orbit env:sync --instance=<instance>
 ```
 
-`PUT /api/v1/instances/{instance}/websocket-apps/{name}` writes the app into the Instance's [stored environment](/reference/environment-variables). `{instance}` is an Instance ID or an exact Route domain. The route needs an access grant to the Instance's Node. The keys are the names Laravel's own `reverb` broadcast connection reads:
+`PUT /api/v1/instances/{instance}/websocket-apps/{name}` accepts an Instance ID or exact Route domain and requires an access grant to the Instance's Node. It writes the keys Laravel's `reverb` broadcast connection reads:
 
 | Key | Value |
 | --- | --- |
@@ -71,190 +67,145 @@ orbit env:sync --instance=<instance>
 | `REVERB_APP_ID` | The app's `app_id` |
 | `REVERB_APP_KEY` | The app's `key` |
 | `REVERB_APP_SECRET` | The app's `secret` |
-| `REVERB_HOST` | `reverb.orbit` |
-| `REVERB_PORT` | `8443`, the [Instance listener](#reach-from-a-container). A public attachment writes `443` |
+| `REVERB_HOST` | `reverb.orbit` (or the public Route domain with `--public`) |
+| `REVERB_PORT` | `8443` for private attachments, or `443` for public attachments |
 | `REVERB_SCHEME` | `https` |
 
-An Instance holds at most one app. A second add replaces the first app's values. The result names the Instance, the app, the keys, whether stored configuration changed, and the key count. It never holds a value. So the secret reaches the app without passing through a terminal or a chat.
+An Instance holds at most one app; a second add replaces the first app's keys. The response reports the Instance, app, key names, whether configuration changed, and the key count, never the secret value.
 
-`DELETE /api/v1/instances/{instance}/websocket-apps/{name}` removes the attachment and the seven keys. Other keys stay. An app that the Instance does not hold returns `websocket.attachment_missing` (404).
+`DELETE /api/v1/instances/{instance}/websocket-apps/{name}` (`instance:websocket:remove <app> --instance=<instance>`) removes the attachment and all seven keys, leaving other keys untouched (`websocket.attachment_missing`, 404, if not attached).
 
-The CLI command is `instance:websocket:remove <app> --instance=<instance>`. It asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode.
-
-Add and remove change the stored environment. A public attachment also rebuilds the existing Route’s Caddy sites. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys of a candidate that holds an app. Add an app to the production Instance.
-
-`reverb.orbit` is a private name. Only machines on the WireGuard network reach it.
+Add and remove update stored configuration only; run [`env:sync`](/reference/environment-variables#synchronize) to write `.env`. Public attachments also rebuild the Route's Caddy configuration. A production [clone](/reference/environment-variables#laravel-mode) does not copy the seven keys from a candidate that holds an app; attach an app to the production Instance directly. `reverb.orbit` is a private name reachable only over WireGuard.
 
 ## Reach from a container
 
-A [container Instance](/reference/development-containers) that holds a private app reaches exactly that app's endpoint: `reverb.orbit` on port 8443. It reaches nothing else on the websocket Node.
+A [container Instance](/reference/development-containers) with a private Reverb app reaches only `reverb.orbit` on port `8443` and nothing else on the websocket Node.
 
 ### Two listeners
 
-The websocket Node serves `reverb.orbit` on two listeners. Port 443 is shared with the Node's other private sites, such as `analytics.orbit`. The Gateway, task VMs and browsers use it. Caddy routes that listener by Host, whatever the SNI. So an exact path to port 443 would also reach the other sites.
+The websocket Node serves `reverb.orbit` on two listeners:
 
-Port 8443 is a listener of its own. It binds only the `reverb.orbit` site, so a request there with another Host or SNI finds no site. `/internal` stays Gateway-only on both listeners. The rule `orbit:wireguard-members` already admits port 8443 from every WireGuard member, so the Node gets no new firewall rule.
+- Port `443` is shared with other private sites on the Node (such as `analytics.orbit`) for the Gateway, task VMs, and browsers.
+- Port `8443` binds only `reverb.orbit`, so requests with another Host or SNI find no site. `/internal` stays Gateway-only on both listeners, and `orbit:wireguard-members` already admits port `8443` across WireGuard.
 
 ### Keys and path
 
-A private attachment writes `REVERB_PORT=8443`, for a checkout and a container alike. A checkout Instance that still has `443` from an earlier attachment keeps working, because port 443 still serves the app. To move it to `8443`, run `instance:websocket:add` with the same app again: it stores `8443`. Then run `env:sync`.
+Private attachments write `REVERB_PORT=8443` for both checkout and container Instances. An existing checkout still using `443` keeps working, and reattaching the same app switches it to `8443`.
 
-The app is one target of the container's [access plan](/reference/development-containers#private-names-of-the-access-plan). The plan holds the exact NIC ACL rule, route allowance and bridge endpoint to the address of `reverb.orbit` on port 8443. It also writes the name into the container's hosts file. The migrate's env check reads the same plan. It admits `REVERB_HOST=reverb.orbit` with `REVERB_PORT=8443`, and it still refuses port 443. A container on the websocket Node itself gets no target: its traffic arrives from the bridge address, which the listener refuses, so the check refuses the move too.
-
-The publisher verifies the Orbit CA certificate of `reverb.orbit`. Verification stays on.
-
-When the container runs, `env:sync` writes the seven keys and reconciles the path. After a remove, the next `env:sync` withdraws the ACL rule, the firewall rule and the hosts line. The keys stay in the file, because `env:sync` on a container removes no key. `reverb.orbit` also stays in the container's `NO_PROXY` until the container is created again; with no hosts line and no rule, it reaches nothing.
+The container's [access plan](/reference/development-containers#private-names-of-the-access-plan) adds the NIC ACL rule, firewall rule, and hosts entry for `reverb.orbit:8443` and keeps Orbit CA verification enabled. Containers on the websocket Node itself cannot use this path because the listener refuses traffic from the local bridge address. Running `env:sync` reconciles the path; after removing the app, the next `env:sync` withdraws the ACL, firewall rule, and hosts line.
 
 ## Publish on the existing public app Route
 
-Use `orbit instance:websocket:add mealou-prod --instance=72 --public`, then `orbit env:sync --instance=72`. This creates no Route or DNS record. The existing Ingress listener, Let's Encrypt certificate, and firewall rules stay in use. Caddy proxies the selected app's Pusher paths to `https://reverb.orbit:443` over WireGuard with Orbit CA and hostname verification. All other traffic keeps its application handler.
+To expose an app's WebSocket endpoint on its existing public app Route, pass `--public` and synchronize `.env`:
 
-The attachment stores the existing public app Route ID and projects its domain into `REVERB_HOST`, with `REVERB_PORT=443` and `REVERB_SCHEME=https`. Reattaching the same app without `--public` preserves that choice. Credential rotation preserves it too. Detach and reattach without `--public` to select the private endpoint. API callers can send `{"public": false}` to select it directly; omitted `public` preserves a same-app selection.
+```bash
+orbit instance:websocket:add myapp-prod --instance=<instance> --public
+orbit env:sync --instance=<instance>
+```
 
-If a replacement also targets the Instance, attachment selects the app Route without a web root with the lowest ID and checks its public eligibility. A shared Route cannot select different Reverb apps. Replacing an Instance’s own app is allowed if no other Instance selects the previous app. Attachment refuses an unfinished Route transition. Remove the selecting attachments before changing the Route domain, publication, or target set.
+This creates no new Route, DNS record, certificate, or firewall rule. Caddy proxies only the attached app's Pusher paths to `https://reverb.orbit:443` over WireGuard with Orbit CA verification, while all other traffic stays on the application handler.
 
-Caddy admits only `GET /app/<attached-key>` WebSocket upgrades and the attached app ID's known Pusher API paths and methods with its `auth_key`. Caddy compares the decoded, uncleaned path with case-sensitive matchers, so dot segments, repeated slashes, and case changes cannot select another app. API requests must have exactly one `auth_key` value. Reverb verifies the API signatures. Other `/app`, `/app/*`, `/apps`, and `/apps/*` requests receive 404. `/internal/*` follows the application handler and never reaches Reverb. Paths and query strings stay unchanged.
+The attachment records the public app Route ID and sets `REVERB_HOST` to that Route's domain with `REVERB_PORT=443` and `REVERB_SCHEME=https`. Reattaching the same app without `--public` or rotating its secret preserves the public choice. Pass `{"public": false}` in the API, or detach and reattach without `--public`, to return to the private endpoint.
 
-The socket matcher supports HTTP/1.1 upgrades. Caddy 2.11.7 does not advertise HTTP/2 extended CONNECT; recheck this matcher if a Caddy upgrade enables RFC 8441.
+When multiple Routes target the Instance, Orbit selects the lowest-ID app Route without a web root and verifies public eligibility. A shared Route cannot serve two different Reverb apps, and attachment refuses an unfinished Route transition. Remove selecting attachments before changing a Route's domain, publication, or targets.
 
-The registry permits any origin to subscribe to public channels with the public key. Channel authorization remains on the application `/broadcasting/auth` endpoint; an app key is public and does not authorize private subscriptions.
+Caddy admits only `GET /app/<attached-key>` HTTP/1.1 WebSocket upgrades and the attached app ID's Pusher API paths with a single matching `auth_key` query parameter. Path matching is case-sensitive on the decoded, uncleaned path, so dot segments, repeated slashes, or case variants cannot select another app. Other `/app`, `/app/*`, `/apps`, and `/apps/*` requests return 404, and `/internal/*` stays on the application handler.
 
-Public attachment checks the current production Laravel route list for `/app` and `/apps` collisions, including case variants and parameters anywhere in the first segment that may cover those prefixes. The agent command `instance.inspect-laravel-routes` reads the list as the production user and returns only whether a route collides; application output never leaves the Node. The root Laravel fallback is allowed; Caddy reserves the Pusher prefixes before it. Doctor repeats the check to find collisions introduced by later deployments. A failed inspection refuses attachment.
+Before publishing, Orbit inspects the Instance's production Laravel route list (with a 60-second timeout; failure returns `websocket.route_inspection_failed`, 409) to check for `/app` or `/apps` collisions, including case variants and first-segment parameters. The root Laravel fallback is allowed because Caddy reserves Pusher prefixes ahead of it. Doctor repeats this check to catch collisions added by later deployments.
 
-Attachment and detachment commit stored intent before building Caddy. On build failure, retry public attachment to publish. To repair a withdrawal, run `orbit node:converge <node> --force` on every affected serving Node. A plain converge compares code digests and can skip a changed attachment. Synchronize the environment after attachment or rotation. Route inspection and publication run synchronously under the projection lock. A slow or unreachable target can delay other projection work; retry after it finishes.
+Attachment and detachment commit stored intent before rebuilding Caddy. If Caddy fails to build during attachment, retry the command; if withdrawal fails to build, run `orbit node:converge <node> --force` on each affected serving Node.
 
 ### Website build and protection
 
-For the website build, set:
+Configure frontend builds with the public Route domain and public key (never `REVERB_APP_SECRET`):
 
 ```dotenv
-VITE_REVERB_HOST=mealou.app
+VITE_REVERB_HOST=example.com
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
-VITE_REVERB_APP_KEY=<mealou-prod public key>
+VITE_REVERB_APP_KEY=<app-public-key>
 ```
 
-Never expose `REVERB_APP_SECRET`. `env:sync` does not rebuild JavaScript: rebuild and deploy assets with these values. Permit `wss://mealou.app` in CSP `connect-src`. Update native clients that embed the private endpoint.
+`env:sync` does not rebuild JavaScript; rebuild and deploy assets with these values, allow `wss://<domain>` in CSP `connect-src`, and update native clients. Orbit's Caddy configuration adds no WebSocket rate limiter; Reverb defaults to 10,000-byte request and message limits. Channel authorization remains on your application's `/broadcasting/auth` endpoint.
 
-Stock Orbit Caddy has no request-rate limiter. This publication adds no handshake, per-IP, or HTTP API throttling. The registry supplies no connection cap or message-rate policy. Reverb's request and message size defaults are 10,000 bytes. Payload caps are not rate protection.
-
-From outside WireGuard, open `wss://mealou.app/app/<public-key>?protocol=7&client=js&version=8.4.0&flash=false` with a real WebSocket client. Require valid public TLS and a `pusher:connection_established` frame. Verify another app's key and app ID fail. Subscribe with the application's normal authenticated client, trigger an approved broadcast, and require immediate receipt. The handshake alone does not prove delivery.
-
-### Production rollout: Mealou, then Hauzer
-
-Run these steps only after the Gateway and CLI versions containing public attachment are installed. Use the existing public app Routes. No DNS, Route creation, certificate, or firewall step is needed. The app-prod origin at `85.9.211.193` already serves `mealou.app` with valid public TLS; public DNS can remain behind its current proxy.
-
-For Mealou (Instance 72):
-
-1. Read `orbit websocket:app:show mealou-prod` and keep its public `key` for the client test. Do not rotate credentials for this rollout. Confirm the registry operation is applied on Services.
-2. Run `orbit instance:websocket:add mealou-prod --instance=72 --public`. This inspects the current Laravel routes, stores the existing Route selection, and rebuilds its serving Caddy sites.
-3. Run `orbit env:sync --instance=72`. Verify effective values `REVERB_HOST=mealou.app`, `REVERB_PORT=443`, and `REVERB_SCHEME=https`. Restart publishers that retain old configuration.
-4. Rebuild and deploy website assets with the four Vite values above. Permit `wss://mealou.app` in CSP. Point the iPhone build at `mealou.app:443` over TLS.
-5. On a machine outside WireGuard, run `websocat 'wss://mealou.app/app/<mealou-prod-key>?protocol=7&client=js&version=8.4.0&flash=false'`. Require trusted TLS, HTTP 101, and `pusher:connection_established`. Send `{"event":"pusher:subscribe","data":{"channel":"orbit-rollout-72"}}` and require `pusher_internal:subscription_succeeded`.
-6. Publish the test event below from Instance 72's current application directory as its production user. Use its selected PHP binary. Require external receipt of `orbit.rollout` with the same nonce.
-7. Verify another app's key and ID receive 404. Check normal pages and `/broadcasting/auth`. Trigger an ordinary update on the signed-in phone over Wi-Fi and 5G. Require immediate receipt after reconnect.
-
-A changed production sync refreshes the existing config cache and FPM opcache. It restarts running Processes that opt into deploy restarts. The test publisher uses the application's existing Reverb credentials without printing them. It exercises the signed HTTP publish through `/apps/<mealou-app-id>/events` and delivery through the public socket:
-
-```bash
-php8.5 -r 'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $app->make("broadcast")->connection("reverb")->broadcast(["orbit-rollout-72"], "orbit.rollout", ["nonce" => "mealou-public-route-check"]);'
-```
-
-For Hauzer (Instance 71), repeat after Mealou passes: run `orbit instance:websocket:add hauzer-prod --instance=71 --public`, then `orbit env:sync --instance=71`. Use `hauzer.app`, the `hauzer-prod` public key, `orbit-rollout-71`, and a distinct nonce for the same external handshake and broadcast test. Build its website with `VITE_REVERB_HOST=hauzer.app`, `VITE_REVERB_PORT=443`, `VITE_REVERB_SCHEME=https`, and its own `VITE_REVERB_APP_KEY`.
-
-To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succeeds, then reattach without `--public` and sync the environment. This restores the private endpoint; public phone clients cannot use that endpoint. A failed withdrawal build needs `orbit node:converge <node> --force` on each affected serving Node because the attachment intent has already been removed.
+Verify external delivery from outside WireGuard by opening `wss://<domain>/app/<public-key>?protocol=7&client=js&version=8.4.0&flash=false`, confirming trusted TLS and a `pusher:connection_established` frame, verifying another app's key returns 404, and broadcasting an authenticated event.
 
 ## The Reverb server
 
-[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
+[orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) integrates Reverb with Orbit's Gateway registry using stock Pusher protocol handling and no static app list. Each Gateway release pins an immutable `orbit-reverb` commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php` (no environment override).
 
-The Gateway pins a Reverb commit that starts with the registry URL, process ID and registry token. Notification hints are optional; role add supplies no notification token. Native role add writes the protected environment through cfgmgmt, publishes the release link, then starts Reverb once through its systemd restart method. It checks the local listener before publishing the site.
-
-The Gateway owns the encrypted app secrets and a versioned registry. After commit, each process fetches the full snapshot through its existing 30-second reconciliation check. A process report confirms application. The Gateway closes waiting Operations from fresh reports without a Swamp run or Reverb restart.
-
-Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
-
-A running process keeps its last applied state when the Gateway is unavailable. This preserves other apps' connections, but removed credentials can remain usable until communication returns. A new process waits for a fresh snapshot before opening its listener.
+Each Reverb process registers a fresh boot identity before loading the registry snapshot from the Gateway, then polls every 30 seconds and reports the revision it applied. A running process keeps serving its last applied snapshot during a Gateway outage so active apps stay online, while a new process waits for a fresh snapshot before opening its listener.
 
 ### Remove a dead websocket Node
 
-Use `orbit node:remove <node> --offline --force` only after confirming the machine is dead or isolated from clients. Orbit checks reachability before abandoning its roles. For an unreachable Node, this confirmation withdraws every runtime on that Node from apply confirmation and revokes its registry access. `orbit node:role:remove <node> websocket --offline --force` also withdraws its runtimes. An ordinary online role removal withdraws only the process it stopped.
-
-The offline path cannot stop a process on the machine. Do not bring the abandoned machine back into service without reconverging it; it may still hold old app secrets. A live Node does not take the offline abandonment path.
+Use `orbit node:remove <node> --offline --force` or `orbit node:role:remove <node> websocket --offline --force` only after confirming the machine is dead or isolated from clients. Orbit checks reachability first; for an unreachable Node, offline abandonment withdraws its runtimes from apply confirmation and revokes their registry access. Do not bring an abandoned machine back into service without reconverging it, as it may still hold old secrets.
 
 ### Rotate an app secret
 
-Rotation keeps the app key, generates a fresh secret, and advances its credential generation. It updates attached Instances' stored environment in the same transaction. Each process closes that app's existing sockets with code 4201 when it applies the revision. Other apps stay connected.
-
-Environment synchronization and application reload remain separate operations. The rotating app can have a short interruption while its publisher or private-channel authorization adopts the new secret. Revocation does not wait for an offline Instance.
+`websocket:app:rotate` keeps the app key, generates a new secret, increments the credential generation, and updates attached Instances' stored environments in the same transaction. Each Reverb process closes that app's existing sockets with code `4201` when it applies the revision while other apps stay connected. Run `env:sync` on attached Instances to apply the new secret to `.env`.
 
 ### Server upgrades
 
-Changes to PHP code still require a process restart. Announce a reconnect window for the initial migration and server upgrades. A replacement process with a drain period is separate work. Routine app additions, removals, and rotations do not converge the role.
+Code changes to `orbit-reverb` require a process restart; plan a short reconnect window for server upgrades. Routine app additions, removals, and rotations do not restart Reverb.
 
-The agent's `websocket.converge-runtime` builds, checks, and activates a release, and `websocket.remove-runtime` removes it. After a successful server activation, the agent keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
+During convergence, the agent stages a new release, activates it, waits up to 30 seconds for the local listener to open after loading a fresh snapshot, and prunes releases older than the active release and its immediate predecessor. A timeout fails with `websocket.runtime_convergence_failed` and leaves staged releases intact.
 
-The unit `orbit-websocket.service` starts after `network-online.target`, `wg-quick@orbit.service` and `orbit-gateway-dns.service`, and waits for the Gateway API before Reverb starts. The two units route `.orbit` names to the private DNS: wg-quick's `PostUp` on a peer Node, `orbit-gateway-dns` on the Gateway host. Without that order the first lookup of `gateway.orbit` can fail, and curl keeps a failed lookup for 30 seconds, so every retry in that time fails too.
-
-Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. Nothing changes on a Node until a converge writes the unit, and a running Reverb keeps running until its next restart.
-
-## Deploy and recover
-
-Merge the managed orbit-reverb server first, then pin its squash-merge commit from main in the Gateway release and deploy that Gateway. Do not converge any websocket role between the server merge and the Gateway deployment: the older Gateway still installs server main. On that Gateway, app create and app destroy also converge the role, so pause those commands until the new Gateway deploys.
-
-Each Gateway release pins an immutable orbit-reverb commit at `orbit.websocket.ref` in `apps/gateway/config/orbit.php`. This value has no environment override. Deploy the Gateway schema and control API, then converge the role in an announced reconnect window to install its pinned server and provision restricted process credentials. Confirm a fresh process report and Gateway realtime before closing the window.
-
-Run `orbit node:role:add <node> websocket --converge-existing` only for server or role changes. App sync uses the registry API and does not restart the unit. After a rollback between pinned Gateway releases, converge the websocket role in an announced reconnect window to install the matching server commit. A Gateway rollback only switches Gateway code; it does not change the running Reverb process. Once the managed orbit-reverb server is on main, rollback to a Gateway release before this one is unsupported. Roll forward instead.
-
-After restoring the Gateway database, restart every Reverb process in a reconnect window so it registers a new boot and loads a fresh snapshot. A changed registry epoch, a lower revision, or different contents at the same revision makes a running process exit with failure; systemd restarts it. An unchanged revision can return HTTP 304, so automatic detection does not replace the required restart after a restore. Recovery does not fall back to a static app list.
-
-## Why it works this way
-
-These reasons explain the design. Check them before you propose a change.
-
-### One server, one app per Project
-
-Reverb already keeps apps apart by key and secret. One server per Project would add Processes, ports, and certificates for the same isolation. Sharing the Gateway's app was rejected, because a Project could then publish on the Gateway's channels.
-
-### One durable registry with stock protocol handling
-
-The Gateway is the credential authority. A full snapshot gives cold starts and reconciliation the same path. Periodic reconciliation applies each saved revision without a second queue or registry store. Registry Operations can take one reconciliation interval before the process reports application.
-
-An SSH-delivered file would reuse existing transport but add per-Node secret copies and delivery state. A Redis snapshot would add a second durable credential authority. The integration uses Reverb's provider, route, and event extension points. It keeps stock Pusher behavior and makes no vendor patch.
-
-### Availability during an outage
-
-A running process keeps serving its last applied snapshot so a Gateway outage does not drop every app. Status reports expose pending revocations. A cold start requires fresh state to avoid restoring deleted apps or revoked secrets from disk.
-
-### An app is an attachment, like a database
-
-An Instance gets an app the way it gets a [Database connection](/reference/database-connections#add-a-connection-on-an-instance): a record on the Gateway, written into stored configuration, synchronized by `env:sync`. The attachment record lets destroy refuse an app that an Instance still holds.
-
-
-### Confirmation and recovery
-
-Operation status is `pending`, `applied`, or `superseded`. A later revision can confirm a change only if it preserves that change's app identity and, for rotation, its credential generation. Create followed by deletion therefore supersedes the create result.
-
-The Gateway blocks Node deletion while a required Reverb process remains. A failed heartbeat does not withdraw required apply membership. After 60 seconds without a serving report, the Gateway excludes the endpoint from realtime config, auth, and broadcasting until a fresh serving report arrives. Verified shutdown of the default service withdraws only its own process slot.
-
-Package convergence builds a separate release before stopping the service. A preparation failure preserves the running release. An activation failure requires forward recovery with a compatible package; Orbit does not automatically restart a static registry containing potentially revoked credentials.
-
-The first release provisions one process per Node. Multiple workers on one Node need separate callback routes and service provisioning before production use. Two-process tests cover apply confirmation and stock Redis broadcasting.
-
-### Reverb shares the application domain
-
-The public app Route already owns DNS, TLS, and firewall publication. Reserving its Pusher prefixes avoids another hostname. The attachment stores its Route selection so rotation cannot reset the host to the private endpoint. Reverb accepts configured keys independently of HTTP Host, so Caddy checks the selected key and app ID before proxying. Route collision inspection makes the reserved paths explicit.
-
-## Operation execution
-
-Registry writes store their change and a normal Operation, then return HTTP 202. Release the Gateway, CLI and PHP SDK together: mutation responses put the Operation in `data` and have no top-level `operation` field. Reverb's existing 30-second registry reconciliation applies the saved revision; registry writes do not restart a process. The Gateway closes each task from the current boot reports, as [Registry confirmation](#registry-confirmation) describes.
-
-A missing, stale, or replaced process keeps the Operation pending. If a later registry change supersedes the result before completion, the Operation fails with `websocket.registry_superseded`. Cancelling keeps the committed registry intent. The dedicated registry operation URL remains a read of the saved revision and current reports.
-
-Sync observes the current revision under its own `websocket_sync` identity, so a pending mutation does not block it. Each request records an independent task without a Gateway target hold, and separate syncs do not supersede each other.
+`orbit-websocket.service` starts after `network-online.target`, `wg-quick@orbit.service`, and `orbit-gateway-dns.service`, and its `ExecStartPre` retries `https://gateway.orbit/up` up to 30 times (one second apart) so Reverb loads its initial registry immediately after fleet boots instead of waiting 30 seconds for the next reconcile.
 
 ## Registry confirmation
 
-`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate` start no Swamp run (R1): nothing has to change on a Node. The Gateway saves the registry revision, records the task and returns HTTP 202; the CLI and web follow that Operation. Reverb pulls the registry on its own 30-second reconciliation and reports the revision each process applied, with its boot identity. Confirmation does not restart Reverb or change applications, and credentials never enter the task.
+`websocket.sync`, `websocket.app_create`, `websocket.app_destroy`, and `websocket.app_rotate` save a registry revision, record an Operation, and return HTTP 202 without restarting Reverb. Each serving Reverb process pulls the snapshot on its 30-second reconciliation loop and reports its applied revision and boot identity.
 
-Each report closes waiting tasks at once. A task succeeds with `backend: applied` when every current required Reverb boot serves its revision or a later one. A superseded change fails with `websocket.registry_superseded`. A task that is still pending after five minutes fails with `websocket.registry_pending`, for example when a process stopped reporting. A Gateway job checks for such tasks every minute. The registry stays as saved; run the command again after the fix. Cancelling a waiting task ends it at once and keeps the committed registry intent.
+- A task succeeds once every required Reverb boot serves its revision or a later one (within a 15-second report freshness window).
+- A later change that supersedes the app identity or credential generation before confirmation fails the Operation with `websocket.registry_superseded`.
+- A task still pending after five minutes fails with `websocket.registry_pending`; the saved registry stays intact, so run `websocket:sync` after fixing the process.
+- Cancelling a waiting Operation ends tracking immediately while keeping the committed registry intent.
+- After 60 seconds without a serving report, the Gateway excludes that endpoint from realtime config, auth, and broadcasting until a fresh report arrives.
+
+`websocket:sync` observes the current revision independently and never blocks or supersedes app mutations.
+
+## Deploy and recover
+
+Run `orbit node:role:add <node> websocket --converge-existing` only for server or role upgrades, inside an announced reconnect window, and confirm a fresh process report and Gateway realtime before closing the window. After rolling back between pinned Gateway releases, converge the websocket role again so the running Reverb server matches the Gateway's pinned commit.
+
+After restoring the Gateway database, restart every Reverb process so it registers a new boot and loads a fresh snapshot. A changed registry epoch, lower revision, or mismatched digest forces a running process to exit so systemd restarts it, but an unchanged revision can return HTTP 304, so always restart manually after a restore.
+
+## Errors
+
+Reverb app endpoints and Operations return these error codes:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `websocket.app_limit` | 409 | The registry has reached its 10,000-app limit. |
+| `websocket.app_reserved` | 409 | Attempted to attach or destroy the reserved `gateway` app. |
+| `websocket.app_in_use` | 409 | An Instance still holds the app. |
+| `websocket.attachment_missing` | 404 | The Instance does not hold the named app. |
+| `websocket.attachments_changed` | 409 | Instance attachments changed concurrently; retry. |
+| `websocket.idempotency_conflict` | 409 | The idempotency key was reused with different parameters. |
+| `websocket.gateway_missing` | 409 | The Gateway Node record is missing. |
+| `websocket.route_inspection_failed` | 409 | Laravel route collision inspection failed or timed out after 60 seconds. |
+| `websocket.registry_superseded` | Operation | A later registry revision replaced this change before confirmation. |
+| `websocket.registry_pending` | Operation | Required Reverb processes did not confirm the revision within five minutes. |
+| `websocket.runtime_convergence_failed` | Operation | Reverb did not open its local listener within 30 seconds during role convergence. |
+
+## Why it works this way
+
+### One server, one app per Project
+
+Reverb isolates channels by key and secret. Running one server avoids extra Processes, ports, and certificates while keeping Projects separate from the Gateway's own channels.
+
+### One durable registry with stock protocol handling
+
+Making the Gateway the single credential authority and having Reverb pull full snapshots keeps cold starts and live updates on one code path, without per-Node secret files, a second registry store, or vendor patches to Reverb.
+
+### Availability during an outage
+
+Letting running processes serve their last applied snapshot keeps active apps online if the Gateway restarts, while requiring a fresh snapshot on cold start prevents deleted apps or revoked secrets from returning.
+
+### An app is an attachment, like a database
+
+Storing attachments on the Gateway and projecting keys through `env:sync` keeps secrets off terminals and lets `websocket:app:destroy` refuse apps that an Instance still uses.
+
+### Reverb shares the application domain
+
+Reusing the existing public app Route avoids extra hostnames, DNS records, and TLS certificates. Because Reverb accepts any configured app key regardless of `Host`, Caddy enforces the exact attached key and app ID before proxying, and route inspection prevents collisions with Laravel routes.
