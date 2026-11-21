@@ -642,7 +642,7 @@ Each agent:
 | `subtask_ids` | The subtask it worked on, `[id]`, or `[]` when it has none. A thread of a task with no subtask has `[]`. |
 | `current` | True when it is its subtask's implementer, the implementer of a task with no subtask, or the task's reviewer now. |
 | `attempt` | 1 for the first started thread of its role on its subtask, or on the task with no subtask, 2 for the one that replaced it, and so on. |
-| `provider` | `claude`, `codex` or `antigravity`: from the T3 provider instance it started on, else from its model's name (`claude-`, `gpt-`, `gemini-`). Null when neither says. |
+| `provider` | `claude`, `codex` or `antigravity`: from the T3 provider instance it started on, else, for a thread from before Orbit recorded the instance, from its model's name (`claude-`, `gpt-`). Null when neither says. |
 | `model`, `effort` | As the thread started. |
 | `state` | `idle`, `working`, `asking_for_input`, `done`, `failed`, or null before its first observation. |
 | `needs_input` | True when it holds questions and its state is `asking_for_input`. |

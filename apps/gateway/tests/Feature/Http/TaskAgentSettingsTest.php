@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -125,20 +126,65 @@ describe('the copy turn agent of a task group', function (): void {
         expect($this->project->refresh()->only(['task_reviewer_provider', 'task_reviewer_effort']))->toBe(['task_reviewer_provider' => 'codex', 'task_reviewer_effort' => 'high']);
     });
 
-    it('takes Antigravity for either role on a task and as the Project\'s default, resolving its own model over the Project\'s Claude model', function (): void {
-        $this->project->update(['task_implementer_model' => 'claude-sonnet-5-5']);
-
+    it('takes Antigravity for either role on a task and as the Project\'s default with a model and effort it offers, and stores them as set', function (): void {
         $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'implementer_provider' => 'antigravity',
-            'reviewer_provider' => 'antigravity', 'reviewer_effort' => 'high'])->assertCreated()
-            ->assertJsonPath('data.implementer_provider', 'antigravity')
+            'implementer_model' => 'gemini-4-neon', 'implementer_effort' => 'medium', 'reviewer_provider' => 'claude', 'reviewer_model' => 'claude-opus-5-5',
+            'reviewer_effort' => 'high'])->assertCreated()
             ->assertJsonPath('data.resolved_agents.implementer', ['provider' => ['value' => 'antigravity', 'source' => 'group'],
-                'model' => ['value' => 'gemini-3.8-flash', 'source' => 'provider'], 'effort' => ['value' => 'high', 'source' => 'provider']])
+                'model' => ['value' => 'gemini-4-neon', 'source' => 'group'], 'effort' => ['value' => 'medium', 'source' => 'group']])
             ->assertJsonPath('data.resolved_agents.reviewer.effort', ['value' => 'high', 'source' => 'group']);
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
-        $this->patchJson('/api/v1/tasks/'.$group->id, ['reviewer_provider' => 'antigravity'])->assertOk()
-            ->assertJsonPath('data.resolved_agents.reviewer.model', ['value' => 'gemini-3.8-flash', 'source' => 'provider']);
-        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_implementer_provider' => 'antigravity', 'task_reviewer_provider' => 'antigravity'])
-            ->assertOk()->assertJsonPath('data.task_implementer_provider', 'antigravity');
+        $this->patchJson('/api/v1/tasks/'.$group->id, ['reviewer_provider' => 'antigravity', 'reviewer_model' => 'gemini-4-hydrogen', 'reviewer_effort' => 'xhigh'])->assertOk()
+            ->assertJsonPath('data.resolved_agents.reviewer.model', ['value' => 'gemini-4-hydrogen', 'source' => 'group']);
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_implementer_provider' => 'antigravity', 'task_implementer_model' => 'gemini-3.1-pro',
+            'task_implementer_effort' => 'low'])->assertOk()->assertJsonPath('data.task_implementer_effort', 'low');
+        expect($this->project->refresh()->only(['task_implementer_provider', 'task_implementer_model', 'task_implementer_effort']))
+            ->toBe(['task_implementer_provider' => 'antigravity', 'task_implementer_model' => 'gemini-3.1-pro', 'task_implementer_effort' => 'low']);
+    });
+
+    it('refuses on task:create, task:update and project:update a role whose resolved provider, model and effort the provider cannot honour, naming the field, value and what it accepts', function (array $project, array $body, string $field, string $message): void {
+        $this->project->update($project);
+        $prefixed = static fn (array $values): array => array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($values)), $values);
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', ...$body])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonPath('error.details.'.$field.'.0', $message);
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+        $this->patchJson('/api/v1/tasks/'.$group->id, $body)->assertUnprocessable()->assertJsonPath('error.details.'.$field.'.0', $message);
+        expect($group->refresh()->only(array_keys(TaskAgent::groupColumns($body))))->each->toBeNull();
+        // The Project's own default resolves from the Project and the Gateway: its message names the Project where the group's names the group.
+        $this->patchJson('/api/v1/projects/'.$this->project->id, $prefixed($body))->assertUnprocessable()
+            ->assertJsonPath('error.details.task_'.$field.'.0', str_replace('(from the group)', '(from the Project)', $message));
+        expect($this->project->refresh()->only(array_keys($prefixed($body))))
+            ->toBe(array_merge(array_fill_keys(array_keys($prefixed($body)), null), array_intersect_key($project, $prefixed($body))));
+    })->with([
+        'Antigravity alone over the Project\'s Claude model' => [['task_implementer_model' => 'claude-opus-5-5'], ['implementer_provider' => 'antigravity'], 'implementer_model',
+            'The implementer model claude-opus-5-5 (from the Project) is no Antigravity model; antigravity accepts gemini-4-neon, gemini-4-hydrogen, gemini-4-carbon, '
+            .'gemini-4-argon, gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro. Set the implementer model.'],
+        'an Antigravity model at an effort it lacks' => [[], ['reviewer_provider' => 'antigravity', 'reviewer_model' => 'gemini-3.1-pro', 'reviewer_effort' => 'medium'], 'reviewer_effort',
+            'The reviewer effort medium (from the group) is not offered for gemini-3.1-pro on antigravity; it accepts low, high.'],
+        'Claude at Codex\'s ultra' => [[], ['implementer_provider' => 'claude', 'implementer_effort' => 'ultra'], 'implementer_effort',
+            'The implementer effort ultra (from the group) is no claude effort; claude accepts low, medium, high, xhigh, max.'],
+        'an Antigravity model at a level only another model has' => [[], ['reviewer_provider' => 'antigravity', 'reviewer_model' => 'gemini-4-carbon', 'reviewer_effort' => 'xhigh'], 'reviewer_effort',
+            'The reviewer effort xhigh (from the group) is not offered for gemini-4-carbon on antigravity; it accepts low, medium, high.'],
+    ]);
+
+    // The body is the SDK fixture `tasks/task-create/agent-refused`, which the CLI renders.
+    it('names the refused field and what Antigravity accepts in the task:create refusal the CLI shows', function (): void {
+        $body = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'implementer_provider' => 'antigravity'])
+            ->assertUnprocessable()->json();
+
+        $recorded = ['schema' => 1, 'request' => 'Orbit\\Sdk\\Requests\\Tasks\\CreateTaskRequest', 'route' => 'POST /api/v1/tasks', 'status' => 422, 'body' => $body];
+        $path = base_path('../../packages/php-sdk/fixtures/tasks/task-create/agent-refused.json');
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            file_put_contents($path, json_encode($recorded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+        expect($recorded)->toBe(json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR));
+    });
+
+    it('takes Codex at ultra, which Claude refuses', function (): void {
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'reviewer_provider' => 'codex', 'reviewer_model' => 'gpt-6.1-sol',
+            'reviewer_effort' => 'ultra'])->assertCreated()->assertJsonPath('data.resolved_agents.reviewer.effort', ['value' => 'ultra', 'source' => 'group']);
+        $this->patchJson('/api/v1/projects/'.$this->project->id, ['task_reviewer_provider' => 'codex', 'task_reviewer_effort' => 'ultra'])->assertOk();
     });
 
     it('changes and clears a role\'s values with task:update until the role\'s first thread, then refuses them with tasks.agent_settings_locked', function (): void {

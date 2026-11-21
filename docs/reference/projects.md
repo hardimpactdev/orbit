@@ -80,7 +80,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
-| `task_implementer_provider`, `task_implementer_model`, `task_implementer_effort` | The default implementer agent of the Project's [task copies](/reference/tasks#copy-turn-agents): `claude`, `codex` or `antigravity`. A task that names its own value keeps it. Null takes the Gateway's |
+| `task_implementer_provider`, `task_implementer_model`, `task_implementer_effort` | The default implementer agent of the Project's [task copies](/reference/tasks#copy-turn-agents): `claude`, `codex` or `antigravity`, with a model and effort it accepts. A task that names its own value keeps it. Null takes the Gateway's |
 | `task_reviewer_provider`, `task_reviewer_model`, `task_reviewer_effort` | The same for the reviewer |
 | `task_pr_mode` | The [mode](/reference/tasks#task-group-modes) of the Project's task copy groups that set none: `review_before_pr` or `pr_when_done`. Null takes the Gateway's `ORBIT_TASKS_PR_MODE` |
 

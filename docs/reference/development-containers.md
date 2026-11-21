@@ -2429,7 +2429,7 @@ In T3 0.1.7, interrupting a Claude question with a `live` response capability ca
 
 ### Turn model and effort
 
-A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`, or `antigravity`, which runs `gemini-3.8-flash` unless a Gemini model is set for it. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer. A Project can set `codex`, for example for its reviewer with `gpt-6.1-sol` at `high`, or `antigravity` with one of its Gemini models and an effort that model offers, such as `gemini-4-neon` at `medium`. Codex reaches the model router through the copy's `/home/agent/.codex/config.toml`, with the same model key as Claude Code: no other credential enters the container.
 
 Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one instance per provider and effort:
 
@@ -2437,7 +2437,7 @@ Stock T3's CLI takes no effort, but T3's settings can hold several provider inst
 | --- | --- | --- |
 | `claude` | `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh`, `claudeMax`, driver `claudeAgent` | `CLAUDE_CODE_EFFORT_LEVEL` in the instance's environment |
 | `codex` | `codexLow`, `codexMedium`, `codexHigh`, `codexXhigh`, `codexMax`, `codexUltra`, driver `codex` | The thread's `reasoningEffort` model option |
-| `antigravity` | `antigravity`, driver `antigravity`, on the Conn Server only | None: the one effort is `high` |
+| `antigravity` | `antigravity`, driver `antigravity`, on the Conn Server only | The tiered model `<model>-<effort>`, such as `gemini-4-neon-medium` |
 
 A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options. Its first turn uses `t3 thread send`, as a continued turn does. Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`) and checks the model against T3's cached model catalog. When that catalog does not confirm a Codex model, Orbit asks the copy's Codex provider to verify the exact slug before starting the thread. A turn's result names the provider instance, the model and the effort the thread started with. See [copy turn agents](/reference/tasks#copy-turn-agents).
 
@@ -2447,9 +2447,15 @@ Codex takes no effort from its instance. T3 0.1.7 sends Codex, on every turn, th
 
 This was verified with T3 0.1.7 and Codex 0.167.0: `gpt-6.1-sol` ran at `high`, in full access (approval `never`, sandbox `danger-full-access`), and T3's cached catalog lists `gpt-6.1-sol` for the `codex` driver. Codex leaves variables whose name holds `KEY` out of its shell commands, so the reviewer's pull request text rule sources `model.env` first. A newer version may change any of this.
 
-Antigravity has one instance, the Conn Server's `antigravity` instance that every Conn container gets. Conn Server 0.3.0 gives its Antigravity models no effort option, so the thread carries no model options. `agy` 1.5.4 has an `--effort` flag, but Conn passes none. The model router maps a base name such as `gemini-3.8-flash` to its high tier, so Orbit offers `high` alone. A copy whose create settings hold no Antigravity instance refuses a new Antigravity thread with `tasks.copy_turn_unoffered`.
+Antigravity has one instance, the Conn Server's `antigravity` instance that every Conn container gets. Its effort travels in the model: a new thread starts on the tiered model `<model>-<effort>`, and carries no model options.
 
-The Conn Server keeps no `model-manifest.json`, and it lists Antigravity's models only after a first session, so the turn skips the model check for Antigravity as for Claude. This was verified with Conn Server 0.3.0 and `agy` 1.5.4: the thread started on the `antigravity` instance, and `agy` switched its session to Gemini 3.8 Flash.
+The Conn Server's antigravity driver sets no thought level itself, but passes a tiered model of a listed family to `agy` through the session's `model` option. `agy` splits it: `gemini-4-neon-medium` becomes model `gemini-4-neon` at thought level `medium`, and its request to `GOOGLE_GEMINI_BASE_URL` is `/v1beta/models/gemini-4-neon:streamGenerateContent` with `thinkingLevel` `MEDIUM`. The base model alone would run at `agy`'s default, `LOW`.
+
+`agy` refuses a pair a model does not offer, such as `gemini-3.1-pro-medium`, with `Unknown model ID`, so Orbit refuses it first ([copy turn agents](/reference/tasks#copy-turn-agents)). The model router keeps a supported thinking level of the request. This was verified with `agy` 1.5.4 and 1.5.13 against a recorded Gemini endpoint, and with the model router's CLIProxyAPI 8.0.80 source.
+
+The task, the Project, the thread and the turn's result keep the model and the effort apart, as set: `gemini-4-neon` and `medium`. A copy whose create settings hold no Antigravity instance refuses a new Antigravity thread with `tasks.copy_turn_unoffered`.
+
+The turn's model check reads an Antigravity thread's base model: the catalog lists `gemini-4-neon`, not `gemini-4-neon-medium`. Only the `antigravity` instance may start on a model other than its base, and only on the base and one tier. The Conn Server keeps no `model-manifest.json`, and it lists Antigravity's models only after a first session, so without a catalog the turn skips the model check for Antigravity as for Claude.
 
 A continued thread stays on its instance and keeps its options, so it keeps its model and effort. A copy made before these instances existed refuses new threads, and a copy made before the Codex instances cannot run a new Codex thread; cancel it and start the task again on a new copy.
 ### Gaps of the CLI path

@@ -23,6 +23,8 @@ cases = [
   "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout",
   "without T3's cached catalog the check is skipped and the turn runs",
   "an Antigravity thread starts on the antigravity instance with its model and no options; no catalog lists it",
+  "an Antigravity thread starts on its tiered model, which the catalog's base model confirms; a base it does not list is refused",
+  "only the Antigravity instance takes a model that differs from its base model, and only as the base and one tier",
   "a continued thread keeps its model: the catalog is not read",
   "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check",
   "the start evidence keeps stderr only when the start failed, and only its last 4096 characters",

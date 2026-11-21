@@ -37,10 +37,10 @@ final class UpdateProjectCommand extends GatewayCommand
         {--default-auto-deploy= : Whether each new commit of the default branch deploys the container default (true or false)}
         {--merge-check= : The check that must pass on a head before Orbit merges it, such as "Required checks"}
         {--clear-merge-check : Remove the merge check}
-        {--task-implementer-provider= : Default implementer provider of task copies: claude, codex, or antigravity}
+        {--task-implementer-provider= : Default implementer provider of task copies, such as claude; the Gateway refuses a provider, model and effort it cannot run together}
         {--task-implementer-model= : Default implementer model of task copies, such as claude-opus-5-5}
-        {--task-implementer-effort= : Default implementer effort: low, medium, high, xhigh, or max; codex adds ultra, antigravity takes high only}
-        {--task-reviewer-provider= : Default reviewer provider of task copies: claude, codex, or antigravity}
+        {--task-implementer-effort= : Default implementer effort, such as high; each provider and Antigravity model takes its own efforts}
+        {--task-reviewer-provider= : Default reviewer provider of task copies}
         {--task-reviewer-model= : Default reviewer model of task copies}
         {--task-reviewer-effort= : Default reviewer effort}
         {--clear-task-implementer-agent : Clear the implementer defaults, so the Gateway defaults apply}

@@ -132,11 +132,13 @@ final readonly class TaskTurn
             $review = TaskTurnReview::of($group, $task, $check, $owner);
         }
         $provider = null;
+        $model = null;
         $options = [];
         $copyRuntime = $instance->runtime()->firstOrFail();
         if ($thread === null) {
             $agent = TaskAgent::forNewThread($group, $role, $copyRuntime);
             $provider = $agent['instance'];
+            $model = $agent['t3_model'];
             $options = $agent['options'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
@@ -163,8 +165,11 @@ final readonly class TaskTurn
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => $copyRuntime->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
+            'turn' => ['t3' => $copyRuntime->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider,
+                // A new thread's model as T3 takes it, Antigravity's tiered with its effort (InstanceContainer::providerModel), and the
+                // role's model the thread records, which T3's catalog lists; and its model options: T3 runs its every turn with them
+                // (InstanceContainer::providerOptions).
+                'model' => $model ?? $thread->model, 'base_model' => $thread->model,
                 'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
                 // The thread as T3 is to know it, and the turn's own message ID, fixed before any send (docs/reference/development-containers.md#stable-ids).
                 't3_thread_id' => $thread->external_id, 'admission' => self::admission($thread), 'message_id' => (string) Str::uuid(),

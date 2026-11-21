@@ -110,11 +110,23 @@ final readonly class InstanceContainer
     public const array CodexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
     /**
-     * Antigravity's one effort in a task copy (docs/reference/development-containers.md#turn-model-and-effort). The Conn Server's
-     * antigravity driver gives its models no effort option, and the model router runs a base Gemini name such as `gemini-3.8-flash`
-     * at its high tier, so the one instance self::AntigravityInstance runs at `high`.
+     * The Antigravity models of a task copy and the efforts `agy` offers each (docs/reference/development-containers.md#turn-model-and-effort).
+     * The one instance self::AntigravityInstance runs them all: a thread starts on the tiered model `<model>-<effort>`, which `agy`
+     * splits into the model and its thought level (self::providerModel). `agy` refuses any other pair.
      */
-    public const array AntigravityEfforts = ['high'];
+    public const array AntigravityModels = [
+        'gemini-4-neon' => ['low', 'medium', 'high', 'xhigh'],
+        'gemini-4-hydrogen' => ['low', 'medium', 'high', 'xhigh'],
+        'gemini-4-carbon' => ['low', 'medium', 'high'],
+        'gemini-4-argon' => ['low', 'medium', 'high'],
+        'gemini-3.8-flash' => ['low', 'medium', 'high'],
+        'gemini-3.7-flash' => ['low', 'medium', 'high'],
+        'gemini-3.6-flash' => ['low', 'medium', 'high'],
+        'gemini-3.1-pro' => ['low', 'high'],
+    ];
+
+    /** Every effort of an Antigravity model (self::AntigravityModels). */
+    public const array AntigravityEfforts = ['low', 'medium', 'high', 'xhigh'];
 
     /** The Conn Server's one Antigravity provider instance (self::antigravityInstance). */
     public const string AntigravityInstance = 'antigravity';
@@ -678,11 +690,34 @@ final readonly class InstanceContainer
         return $provider === 'antigravity' ? self::AntigravityInstance : $provider.ucfirst($effort);
     }
 
+    /** The provider of a task copy's T3 provider instance (self::providerInstance), or null for an instance no provider has. */
+    public static function instanceProvider(?string $instance): ?string
+    {
+        foreach (self::CopyProviders as $provider => $efforts) {
+            foreach ($efforts as $effort) {
+                if ($instance === self::providerInstance($provider, $effort)) {
+                    return $provider;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The model a new thread of the provider and effort starts on in the copy's T3: the model itself, and for Antigravity the tiered
+     * model `<model>-<effort>`, such as `gemini-4-neon-medium`, which `agy` sends as `gemini-4-neon` at thought level `medium`.
+     */
+    public static function providerModel(string $provider, string $model, string $effort): string
+    {
+        return $provider === 'antigravity' ? $model.'-'.$effort : $model;
+    }
+
     /**
      * The model options a new thread of the provider and effort starts with. T3 0.1.7 sends Codex the effort of the thread's
      * `reasoningEffort` option on every turn and none otherwise, whatever Codex's own configuration says, so a Codex thread carries it.
      * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort. An Antigravity thread carries none
-     * either: the Conn Server's antigravity driver offers no model option.
+     * either: its tiered model names its effort (self::providerModel).
      *
      * @return list<array{id: string, value: string}>
      */

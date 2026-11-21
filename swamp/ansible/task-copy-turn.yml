@@ -53,6 +53,12 @@
           - intent.turn.thread | default('') in ['new', 'continue']
           - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
           - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          # The role's model, which T3's catalog lists: the model itself, or under the one Antigravity instance the base of its tiered
+          # model `<model>-<effort>` (InstanceContainer::providerModel).
+          - intent.turn.thread != 'new' or intent.turn.base_model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          - >-
+            intent.turn.thread != 'new' or intent.turn.model == intent.turn.base_model
+            or (intent.turn.provider == 'antigravity' and intent.turn.model is match('^' ~ (intent.turn.base_model | regex_escape) ~ '-[a-z]+$'))
           # A new thread's model options (InstanceContainer::providerOptions): T3 runs its every turn with them.
           - intent.turn.thread != 'new' or (intent.turn.options is defined and intent.turn.options is sequence and intent.turn.options is not string)
           - intent.turn.thread != 'new' or intent.turn.options | rejectattr('id', 'match', '^[A-Za-z][A-Za-z0-9]{0,63}$') | list | length == 0
@@ -82,13 +88,15 @@
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
     # Stock T3 leaves model validation to the run. Check its cached catalog first, then ask the Codex provider when its catalog
-    # does not confirm the slug. Do this before any checkout or launch.
+    # does not confirm the slug. Do this before any checkout or launch. An Antigravity thread's tiered model is checked by its base:
+    # the catalog lists `gemini-4-neon`, and `agy` takes `gemini-4-neon-medium`. Any other driver's model is checked as it is sent.
     - name: Check the new thread's model
       when: intent.turn.thread == 'new'
       vars:
+        listed_model: "{{ intent.turn.base_model if model_driver | default(none) == 'antigravity' else intent.turn.model }}"
         catalog_match: >-
           {{ model_entries is not none
-             and intent.turn.model in (model_entries | map(attribute='slug') | list
+             and listed_model in (model_entries | map(attribute='slug') | list
                  + (model_entries | map(attribute='aliases', default=[]) | flatten)) }}
         driver_known: "{{ model_driver | default(none) in ['claudeAgent', 'codex', 'antigravity'] }}"
         codex_model: "{{ model_driver | default(none) == 'codex' }}"

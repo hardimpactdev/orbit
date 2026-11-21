@@ -17,6 +17,8 @@ The `database-server-update` fixtures replay [`database:server:update --require-
 
 The `tasks/task-turn/consult-refused` and `model-refused` fixtures record the answer to a turn with the removed role `consult` or a `model`: HTTP 422 `validation.failed` on that field. An older CLI that still sends either replays them as a clear error.
 
+The `tasks/task-create/agent-refused` fixture records the refusal of a task that sets only `implementer_provider` `antigravity` while the Gateway's Claude model resolves: HTTP 422 `validation.failed` on `implementer_model`, with the models Antigravity accepts. The CLI shows it as the Gateway's error.
+
 The `operations/operation-show/overdue` fixture records a timed-out Operation of `tasks.check` with `overdue_since` and its existing cancel request. The CLI replays that deadline audit in human and JSON output. It is reporting only; cancellation timing is unchanged.
 
 The `operations/operation-show/fleet-reboot-unreachable` fixture records a failed Node with its redacted SSH diagnostic, a later halted Node and an unvisited Node. The `fleet-reboot-interrupted` fixture records unknown Node outcomes when the root delivered no Node report. The CLI replays both in human and JSON output. [Fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) owns those outcomes.
