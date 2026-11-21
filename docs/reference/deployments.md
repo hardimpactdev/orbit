@@ -101,6 +101,7 @@ A container default's checkout can already be at a newer commit of the branch, s
 - A deployment that a release refresh or the automatic policy admitted succeeds as a no-op.
 - That no-op keeps the checkout and takes no new seed. No step runs and no Process restarts.
 - Its `result` holds `already_newer: true`. Its `commit` is the newer commit that the checkout keeps.
+- The release that admitted it counts the kept seed as current and publishes it to the CI Nodes, because it descends from the release commit ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
 - A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing.
 - A branch that diverged from the target stays refused with `deployment.branch_diverged`.
 

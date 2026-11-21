@@ -3161,6 +3161,8 @@ After each Gateway release, Orbit deploys each nested-fleet default to the relea
 
 When the run records the new seed of the proof Project's default, the Gateway copies that seed to each other Node that offers proof places ([The seed on each CI Node](#the-seed-on-each-ci-node)). The copies run after the refresh, and nothing in the release waits for them.
 
+When the default's checkout is already past the release commit, its deployment keeps the checkout and its seed as a no-op with `already_newer` ([Deployments](/reference/deployments#development-defaults)). That seed descends from the release commit, so the release publishes it as its seed and copies it to the Nodes behind it. A seed that changed after the refresh read it fails the release's seed publication with `instance.release_seed_moved`, as does a seed off the release commit without `already_newer`.
+
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
 The container phases of a deployment run in two Ansible steps, each one play that runs its phases in order ([deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/deploy.mmd)). The phases of one step share their failure handling:
