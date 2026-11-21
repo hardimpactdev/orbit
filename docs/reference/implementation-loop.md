@@ -2,7 +2,7 @@
 title: "Feature delivery"
 description: "How a change reaches main: review evidence, CI, local checks, worktrees, and the merge queue."
 covers:
-  - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
+  - apps/docs/app/{Documentation/{AdrLifecycle,DocsImpact}.php,Librarian/**}
   - bin/{review-check,task-check,test,ci-build-plan,ci-units,ci-delivery,ci-queue,ci-tree-receipt,ci-proof-eligibility,ci-proof-run,ci-proof-manual,ci-cache-ref,ci-runner-prerequisites,check-processes,php-build,swamp-shape-gate}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,tools/pest_runtime.py,bin/pest-plain,swamp/tests/_support/slice.ts}"
