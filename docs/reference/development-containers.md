@@ -3798,10 +3798,10 @@ A nested container has no devices to manage. udev, its trigger and the ext4 scru
 
 Until Reverb answers, the agents ask again every half second, and so does the subscriber that keeps the Gateway's view of them ([Node agent](/reference/node-agent)).
 
-| Measured in Instance 3901, from the copy's start to a healthy Doctor | Time |
+| Measured in Instance 3904, from the copy's start to a healthy Doctor | Time |
 | --- | --- |
-| Before, with udev masked by hand | 10.8 to 13.7 s |
-| With all three | 9.1 to 9.8 s in 3 of 6 boots; 12.7 to 15.5 s in the other 3, where the one traced lost 5 s before the subscriber connected |
+| A fresh clone of the seed, before | 10.8, 12.4 and 14.1 s |
+| With all three | 9.5 to 10.4 s in 6 of 6 boots |
 
 ### The fleet step
 
