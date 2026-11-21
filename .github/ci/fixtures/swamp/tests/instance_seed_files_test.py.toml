@@ -2,10 +2,11 @@ order = 1534
 cases = [
   "test_each_item_lands_as_prepare_places_it_and_the_manifest_records_its_state",
   "test_an_nss_entry_is_appended_once_and_the_manifest_keeps_the_stores_lines",
+  "test_a_clone_keeps_the_operator_tunnels_boot_unit_and_loses_the_defaults_other_orbit_units",
   "test_the_bundle_records_each_certificate_by_the_digest_of_its_body",
 ]
 file = "swamp/tests/instance_seed_files_test.py"
-cost = 3
+cost = 4
 # The default's clone files and its seed's manifest.
 inputs = [
   "swamp/ansible/instance_seed_files.py",
@@ -13,4 +14,5 @@ inputs = [
 [case_costs]
 "test_each_item_lands_as_prepare_places_it_and_the_manifest_records_its_state" = 1
 "test_an_nss_entry_is_appended_once_and_the_manifest_keeps_the_stores_lines" = 1
+"test_a_clone_keeps_the_operator_tunnels_boot_unit_and_loses_the_defaults_other_orbit_units" = 1
 "test_the_bundle_records_each_certificate_by_the_digest_of_its_body" = 1

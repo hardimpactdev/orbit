@@ -62,6 +62,9 @@
     # The transient timer that thaws a fleet frozen for `base` when the refresh's controller is lost (instance-fleet-refresh.yml).
     fleet_thaw_unit: orbit-fleet-thaw
     fleet_tunnel: wg-nested
+    # The tunnel's boot script and unit (instance_fleet_tunnel.py); the executor names the unit too (fleet.rs `TUNNEL_UNIT`).
+    fleet_tunnel_boot: /etc/orbit/wg-nested-up
+    fleet_tunnel_unit_name: orbit-inner-fleet-tunnel.service
     # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
     fleet_network: oe-nested
     fleet_tunnel_port: "51821"

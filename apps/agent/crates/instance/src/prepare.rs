@@ -182,7 +182,10 @@ fn remove(files: &Files<'_, impl System>, input: &PrepareInput, listed: &[Value]
     let (mut links, mut rest) = (Vec::new(), Vec::new());
     for path in listed.iter().filter_map(Value::as_str) {
         let (folder, name) = path.rsplit_once('/').unwrap_or_default();
-        let own = input.units.iter().any(|unit| unit == name) || (folder == "/etc/orbit/processes" && input.process_ids.iter().any(|id| id == name));
+        // The operator tunnel's boot unit is the seed's, for every copy: it stays (instance.fleet_ready).
+        let own = input.units.iter().any(|unit| unit == name)
+            || (folder == "/etc/orbit/processes" && input.process_ids.iter().any(|id| id == name))
+            || name == crate::fleet::TUNNEL_UNIT;
         if own || !path.starts_with("/etc/") || path.contains("..") {
             continue;
         }
@@ -355,7 +358,7 @@ fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Fa
         for item in listed {
             let service = item.ends_with(".service");
             let goes = match index {
-                0 => item.starts_with("orbit-") && service,
+                0 => item.starts_with("orbit-") && service && item != crate::fleet::TUNNEL_UNIT,
                 1 => {
                     (item.starts_with("orbit-process-") && service && !units.contains(item.as_str()))
                         || (item.starts_with("orbit-schedule-") && (service || item.ends_with(".timer")))

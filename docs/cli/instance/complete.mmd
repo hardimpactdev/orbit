@@ -48,9 +48,10 @@ sequenceDiagram
       %%> On failure:
       %%> - `failed_step: database`
     end
-    opt a nested-fleet clone
+    opt a nested-fleet clone whose create did not make its fleet ready
       SW->>N: Start the fleet<br/>clone-fleet · Ansible
       %%> What it does:
+      %%> - runs only when the create's result has no `fleet_ready`: a Swamp create, or a seed without the tunnel's boot unit
       %%> - starts the nested containers and waits for Doctor and the three agents
       %%> - runs under `ic-clone-fleet-<node>-<instance id % 64>`, one of 64 names per Node; copies started at once start their fleets side by side, because Swamp fails a step that waits 60 s for a name another run holds
       %%> On failure:

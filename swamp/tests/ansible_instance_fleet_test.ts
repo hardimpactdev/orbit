@@ -116,6 +116,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
   Deno.copyFileSync(new URL("instance_fleet_shrink.py", root), `${folder}/instance_fleet_shrink.py`);
   Deno.copyFileSync(new URL("instance_fleet_runtime.py", root), `${folder}/instance_fleet_runtime.py`);
+  Deno.copyFileSync(new URL("instance_fleet_tunnel.py", root), `${folder}/instance_fleet_tunnel.py`);
   Deno.mkdirSync(`${folder}/files`);
   Deno.copyFileSync(new URL("files/incus-network-pid-heal.py", root), `${folder}/files/incus-network-pid-heal.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
@@ -278,6 +279,8 @@ const knownHostsList = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/g
 const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
 /** Before base, the stopped nested containers lose the inner Incus's network pid files (instance_fleet_runtime.py). */
 const runtimeCall = (stopped: string[]) => `python3 -I -c <instance_fleet_runtime.py> /var/lib/incus/storage-pools ${stopped.join(" ")}`;
+/** The tunnel's boot script and unit, written only when they differ (instance_fleet_tunnel.py). */
+const tunnelBoot = "python3 -I -c <instance_fleet_tunnel.py> boot /etc/orbit/wg-nested-up /etc/systemd/system/orbit-inner-fleet-tunnel.service";
 const startCalls = [
   "incus list --format csv --columns ns",
   ...names.map((name) => `incus start ${name}`),
@@ -298,6 +301,7 @@ const startCalls = [
   "resolvectl dns wg-nested 10.45.0.1",
   "resolvectl domain wg-nested",
   "resolvectl domain wg-nested ~nested-dev ~nested-prod",
+  tunnelBoot,
 ];
 /** A start reads the fleet's DNS on `wg-nested` and sets only what differs. */
 const tunnelDnsReads = ["resolvectl dns wg-nested", "resolvectl domain wg-nested"];
@@ -576,7 +580,7 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
       assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", ...instanceHostReads, knownHostsList, knownHostsSync, "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
-        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, ...reachCalls]);
+        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, tunnelBoot, ...reachCalls]);
     } finally {
       f.cleanup();
     }
@@ -786,6 +790,7 @@ Deno.test({
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
         ...tunnelDnsReads,
+        tunnelBoot,
         ...reachCalls,
         ...readyCalls,
         // The pinned shape tools in the outer container, after base: the seed after this phase holds them.
@@ -963,6 +968,7 @@ Deno.test({
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
         ...tunnelDnsReads,
+        tunnelBoot,
         ...reachCalls,
         // base may hold an older schema than the checkout: the reset waits for the state mounts (no Club key here, so no Swamp state)
         // and migrates forward; nothing was due here, so no restart.
@@ -1110,7 +1116,11 @@ Deno.test({
       return containers;
     };
     const f = fixture(currentFleet("Running"), { club: true });
-    f.change((state) => state.tunnel = structuredClone(tunnelUp));
+    // A current container also holds the tunnel's boot files, as a refreshed one does.
+    f.change((state) => {
+      state.tunnel = structuredClone(tunnelUp);
+      state.outer.tunnelBoot = structuredClone(refreshedBoundary.state.outer.tunnelBoot);
+    });
     try {
       const check = f.run("check");
       assert(check.ok, check.output);

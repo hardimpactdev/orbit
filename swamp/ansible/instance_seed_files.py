@@ -23,9 +23,12 @@ MANIFEST = "/etc/orbit/seed-manifest.json"
 # The agent folder's owner: root, so the agent reads it and writes nothing in it.
 FOLDER_OWNER = (0, 0)
 AGENT_IGNORE = "/home/agent/.config/git/ignore"
+# The nested fleet's operator tunnel at each boot (tasks/instance-fleet-start.yml); the executor names it too (fleet.rs `TUNNEL_UNIT`).
+FLEET_TUNNEL_UNIT = "orbit-inner-fleet-tunnel.service"
 # The folders and rules of instance.prepare's purge, with no unit of the clone's own.
 PURGE = [
-    ("/etc/systemd/system/multi-user.target.wants", lambda n: n.startswith("orbit-") and n.endswith(".service")),
+    # The operator tunnel's boot unit stays in every clone (instance.fleet_ready).
+    ("/etc/systemd/system/multi-user.target.wants", lambda n: n.startswith("orbit-") and n.endswith(".service") and n != FLEET_TUNNEL_UNIT),
     ("/etc/systemd/system", lambda n: (n.startswith("orbit-process-") and n.endswith(".service"))
      or (n.startswith("orbit-schedule-") and n.endswith((".service", ".timer"))) or n.startswith("orbit-node-service-")),
     ("/etc/orbit/processes", lambda n: True),

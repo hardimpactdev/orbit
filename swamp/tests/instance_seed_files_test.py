@@ -65,6 +65,12 @@ class SeedFilesTest(unittest.TestCase):
         self.assertEqual(Path(store).read_text(), 'library=/opt/p11-kit-trust.so\nname=Orbit\n')
         self.assertEqual(seed.record([item], '')['nss'][store], {'lines': ['library=/opt/p11-kit-trust.so', 'name=Orbit'], 'version': '1.0'})
 
+    def test_a_clone_keeps_the_operator_tunnels_boot_unit_and_loses_the_defaults_other_orbit_units(self):
+        goes = dict(seed.PURGE)['/etc/systemd/system/multi-user.target.wants']
+
+        self.assertTrue(goes('orbit-process-3.service'))
+        self.assertFalse(goes('orbit-inner-fleet-tunnel.service'))
+
     def test_the_bundle_records_each_certificate_by_the_digest_of_its_body(self):
         pem = '-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----\n'
 
