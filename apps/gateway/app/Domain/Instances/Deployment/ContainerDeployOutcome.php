@@ -69,7 +69,7 @@ final readonly class ContainerDeployOutcome
         }
 
         return GatewayRelease::query()->latest('id')->limit(self::LinkedReleases)->get()
-            ->contains(static fn (GatewayRelease $release): bool => (int) data_get($release->phases, 'default_refresh.defaults.'.$operation->target_id.'.operation_id') === $operation->id);
+            ->contains(static fn (GatewayRelease $release): bool => data_get($release->phases, 'default_refresh.defaults.'.$operation->target_id.'.operation_id') === $operation->id);
     }
 
     /**

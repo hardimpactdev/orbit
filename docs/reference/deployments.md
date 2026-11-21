@@ -106,7 +106,9 @@ A container default's checkout can already be at a newer commit of the branch th
 
 `HEAD` itself, a newer target and a target that the workspace lacks go on as a normal deployment. For an older target, the deployment's origin decides. Its admission records the origin: the release's refresh or the automatic policy. A caller's name is no origin.
 
-- **Release or automatic.** A deployment that a release refresh or the automatic policy admitted succeeds as a no-op. It keeps the checkout and takes no new seed. Nothing restarts, and no seed hold, fleet check, PHP change, bundle, checkout, deploy step or Process runs. Its `result` holds `outcome: already_newer`, `kept_commit` (the real `HEAD` that the probe read), `target_commit` and `commit`, the kept commit. Its deployment-history row records the kept commit as well.
+- **Release or automatic.** A deployment that a release refresh or the automatic policy admitted succeeds as a no-op. It keeps the checkout and takes no new seed.
+- **Nothing runs after the probe.** No unit restarts. No seed hold, fleet check, PHP change, bundle, checkout, deploy step or Process runs.
+- **The result.** Its `result` holds `outcome: already_newer`, `target_commit`, and `kept_commit`, the real `HEAD` that the probe read. Its `commit` and its deployment-history row name the kept commit.
 - **By hand.** A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing; nothing is restored. Its detail says that the requested commit is older than the checkout `HEAD` and names both commits.
 
 A release publishes the seed of a no-op only when that seed is the seed of the `kept_commit`. Any other seed has moved, the release commit's seed included ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
