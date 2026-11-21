@@ -467,11 +467,7 @@
         "apps/gateway"
       ],
       "jsPaths": [],
-      "policy": {
-        "apps/gateway": {
-          "minimumReleaseAgeDays": 7
-        }
-      }
+      "policy": {}
     },
     "check": "composer check",
     "defaultBranch": "main"

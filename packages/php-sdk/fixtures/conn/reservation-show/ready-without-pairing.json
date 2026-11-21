@@ -1,0 +1,22 @@
+{
+  "route": "GET /api/v1/conn/reservations/{reservation}",
+  "status": 200,
+  "body": {
+    "data": {
+      "id": "01960d34-6b20-7331-a8f7-64e3e37c2d01",
+      "project_id": 3,
+      "instance_id": 42,
+      "state": "ready",
+      "expires_at": "2026-11-21T16:10:00+00:00",
+      "create_operation_id": 120,
+      "environment_id": "env-42",
+      "finalize_operation_id": null,
+      "destroy_operation_id": null,
+      "error_code": null,
+      "pairing": null
+    },
+    "meta": {
+      "request_id": "req-reservation-ready-no-pairing"
+    }
+  }
+}

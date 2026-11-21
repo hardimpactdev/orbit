@@ -516,5 +516,5 @@ inputs = ["swamp/**"]
 default = ["swamp-shape"]
 
 [roots."."]
-inputs = [".editorconfig", ".gitattributes", ".gitignore", ".mcp.json", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
+inputs = [".editorconfig", ".gitattributes", ".gitignore", ".mcp.json", ".node-version", "composer.json", "composer.lock", "LICENSE", "*.md", "*.mdx", "*.mmd"]
 default = []

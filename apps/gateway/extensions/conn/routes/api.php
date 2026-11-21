@@ -19,6 +19,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnRealtimeController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnReservationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnSessionsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnTasksController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
@@ -67,6 +68,12 @@ Route::middleware([
         Route::get('projects/{project}/instances/check', [ConnProjectsController::class, 'checkInstanceName'])
             ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('project')->name('conn:instance:name:check');
         Route::post('projects/{project}/instances', [ConnProjectsController::class, 'createInstance'])->whereNumber('project')->name('conn:instance:create');
+        // Reserved clones (/reference/conn#reserve-a-clone): made when a new thread opens, named when its user submits.
+        Route::post('projects/{project}/reservations', [ConnReservationsController::class, 'store'])->whereNumber('project')->name('conn:reservation:create');
+        Route::get('reservations/{reservation}', [ConnReservationsController::class, 'show'])->whereUuid('reservation')
+            ->withoutMiddleware(RecordCommandActivity::class)->name('conn:reservation:show');
+        Route::delete('reservations/{reservation}', [ConnReservationsController::class, 'destroy'])->whereUuid('reservation')->name('conn:reservation:release');
+        Route::post('reservations/{reservation}/finalize', [ConnReservationsController::class, 'finalize'])->whereUuid('reservation')->name('conn:reservation:finalize');
         Route::get('instances/{instance_id}/work', [ConnInstancesController::class, 'work'])
             ->withoutMiddleware(RecordCommandActivity::class)->whereNumber('instance_id')->name('conn:instance:work');
         Route::post('instances/{instance_id}/destroy', [ConnInstancesController::class, 'destroy'])->whereNumber('instance_id')->name('conn:instance:destroy');

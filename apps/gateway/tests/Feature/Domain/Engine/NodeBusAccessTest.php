@@ -9,6 +9,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
+use Basis\Nats\NKeys\Base32;
 use Basis\Nats\NKeys\SecretKey;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -138,14 +139,10 @@ it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, a
     @unlink($manifest);
 });
 
-it('makes only seeds the NATS client reads back, also when the last byte would be zero', function (): void {
-    // The client's Base32 decoder strips a seed's last byte, the CRC high byte, when it is zero: one seed in 256.
-    for ($i = 0; $i < 2000; $i++) {
-        expect(strlen(SecretKey::fromSeed(NatsCredentials::newSeed())->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
-    }
-    $account = 'SAAAOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOB6O4U';
+it('reads back a seed whose last byte, the CRC high byte, is zero', function (): void {
+    // The case of basis-company/nats.php#148, whose Base32 decoder dropped trailing zero bytes before 1.2.8.
+    $seed = 'SUANHX7HCQRNFZF74KIQOS6AS7WMUG6O3EZLRAJSQ2QM4EUANLQRL24XAA';
 
-    // `node-228`'s first derivation ends in a zero byte, so it takes the next round; `gateway`'s first round keeps its key.
-    expect(strlen(SecretKey::fromSeed(NatsCredentials::userSeed($account, 'node-228'))->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES)
-        ->and(NatsCredentials::publicKey(NatsCredentials::userSeed($account, 'gateway')))->toBe('UCM7UXV5YX3VUSJY35QZRAJ4BJV7DRMF7EQOHUGGX2SHGOPGBVSAIQVC');
+    expect(bin2hex((new Base32)->decode($seed)))->toBe('9500d3dfe71422d2e4bfe291074bc097ecca1bced932b8813286a0ce12806ae115eb9700')
+        ->and(strlen(SecretKey::fromSeed($seed)->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
 });

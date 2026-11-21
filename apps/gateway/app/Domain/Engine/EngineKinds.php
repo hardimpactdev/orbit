@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Firewall\FirewallEngineFlow;
+use App\Domain\Instances\InstanceCompleteEngineFlow;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
@@ -26,11 +28,13 @@ final readonly class EngineKinds
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
+        'instance.complete' => InstanceCompleteEngineFlow::class,
         'instance.fleet' => InstanceFleetEngineFlow::class,
+        'instance.finalize' => InstanceFinalizeEngineFlow::class,
     ];
 
     /** A kind that runs only on the engine, as part of another kind's flow: it is on whenever that kind is. */
-    private const array Follows = ['instance.fleet' => 'instance.create'];
+    private const array Follows = ['instance.fleet' => 'instance.create', 'instance.complete' => 'instance.create', 'instance.finalize' => 'instance.create'];
 
     public function __construct(private MachineBus $bus) {}
 
@@ -49,9 +53,13 @@ final readonly class EngineKinds
             return false;
         }
         try {
+            $actions = [];
             foreach ($this->definition($operation->kind)->steps($operation) as $step) {
-                if ($step->node > 0 && ! in_array($step->action, $this->bus->nodeActions($step->node), true)) {
-                    return false;
+                if ($step->node > 0) {
+                    $actions[$step->node] ??= $this->bus->nodeActions($step->node);
+                    if (! in_array($step->action, $actions[$step->node], true)) {
+                        return false;
+                    }
                 }
             }
         } catch (EngineUnsupported) {

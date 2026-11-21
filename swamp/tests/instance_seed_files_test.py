@@ -1,11 +1,16 @@
 """The default's clone files and its seed's manifest (swamp/ansible/instance_seed_files.py): each item lands as the executor's
 instance.prepare places it, and the manifest records what a clone's prepare compares, so a seed whose files a clone renders the same
 way is skipped item by item."""
+import contextlib
 import hashlib
+import io
+import json
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +54,19 @@ class SeedFilesTest(unittest.TestCase):
         self.assertEqual(manifest['folders'][self.path('agent')],
                          {'files': {'AGENTS.md': digest('# Note\n'), '.skills/one/SKILL.md': digest('skill\n')}, 'skills': True})
         self.assertEqual(manifest['links'], {self.path('home/.claude/CLAUDE.md'): self.path('agent/AGENTS.md')})
+
+    def test_the_manifest_records_the_services_digest_the_default_holds(self):
+        manifest_path = self.path('etc/orbit/seed-manifest.json')
+        stdin = io.StringIO(json.dumps({'items': [], 'ca': '', 'workspace': self.root, 'services_digest': 'd' * 64}))
+        # Root owns the manifest in the default; the test user writes it as its own.
+        write = seed.write
+        own = mock.patch.object(seed, 'write', lambda path, data, _uid, _gid, mode: write(path, data, UID, GID, mode))
+        with own, mock.patch.object(seed, 'MANIFEST', manifest_path), mock.patch.object(seed, 'units', lambda: []), \
+                mock.patch.object(sys, 'stdin', stdin), mock.patch.object(sys, 'argv', ['seed']), contextlib.redirect_stdout(io.StringIO()):
+            seed.main()
+
+        # A clone's prepare reports it, and the Gateway skips the clone's services part when its own digest is the same.
+        self.assertEqual(json.loads(Path(manifest_path).read_text())['services_digest'], 'd' * 64)
 
     def test_an_nss_entry_is_appended_once_and_the_manifest_keeps_the_stores_lines(self):
         home = self.path('home')

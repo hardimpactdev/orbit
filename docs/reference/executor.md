@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.spare_volume` and `instance.fleet_ready`. Such a target may also name one part of the Node: `<node>:<part>`, with a part of lowercase letters, digits and `-`. Orders for one target run one at a time. So the parts of one create, and other creates, run side by side. Sleep, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.stop`, `instance.checkout` and `instance.t3` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.fetch_branch`, `instance.club_key`, `instance.copy_volume`, `instance.spare_volume` and `instance.fleet_ready`. Such a target may also name one part of the Node: `<node>:<part>`, with a part of lowercase letters, digits and `-`. Orders for one target run one at a time. So the parts of one create, and other creates, run side by side. `instance.club_key` also accepts a local Instance id from an older Gateway. Sleep, `instance.prepare`, `instance.start`, `instance.stop`, `instance.checkout`, `instance.t3` and `instance.names` targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -182,7 +182,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
-2. reports its primitives, version and clock state to key `n<id>` of the `NODES` bucket, every minute;
+2. reports its primitives, Node-target actions (`node_targets`), version and clock state to key `n<id>` of the `NODES` bucket, every minute;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 
 The Gateway routes a kind by the reported primitives, and Doctor reads the clock state.
@@ -275,6 +275,16 @@ Then it reads the unit and its link as files, again every second for up to 30 s:
 
 A unit that failed is reset and restarted once (`systemctl reset-failed`, then `restart --no-block`). A copy whose tunnel unit is missing, lacks Orbit's marker, or failed again answers `{"fleet": "seed_without_tunnel", "started"}`, and the Gateway starts the fleet as Swamp does. Else it answers `{"fleet": "ready", "started"}`, with the nested containers it started. Codes: `instance.fleet_ready_input_invalid`, `instance.container_fleet_resume_failed`. The log names the failed check.
 
+#### instance.names
+
+`instance.names` targets a [reserved clone](/reference/conn#reserve-a-clone) that runs, when its user submits. It moves the workspace's branch first:
+
+- `rename` renames the draft branch to the final branch with `git branch -m`. A copy that already holds the final branch stays as it is.
+- `switch` checks out the selected branch from a bundle of the Node's mirror, as `instance.checkout` does.
+- After a `switch`, the branch holds the commit the fetch brought, and the checkout mark records that commit.
+
+Then it writes the hostname, the `127.0.1.1` line of `/etc/hosts`, `/etc/machine-info` and `/etc/orbit/instance`, as the start and the prepare write them. Last, it sends `SIGHUP` to T3's main process and polls its label every 50 ms for up to 2 s. A Conn Server that supports live reload updates its label and `/etc/orbit/instance` without dropping connections (`reloaded: true`). When an older server exits on `SIGHUP` or keeps its old label past the reload window, `instance.names` falls back to `systemctl restart` and polls for up to `label_seconds` (`reloaded: false`). It answers `{"branch", "commit", "restart_ms", "reloaded"}`. Codes: `instance.names_input_invalid`, `instance.container_checkout_failed` for a branch that cannot move, `instance.names_failed`.
+
 #### instance.prepare
 
 `instance.prepare` targets the copy. It places a stopped copy's files before its first start. A running copy is left alone.
@@ -290,7 +300,7 @@ First the seed's Orbit Process, Schedule and Node service units that are not the
 
 The seed's manifest, `/etc/orbit/seed-manifest.json` ([The seed manifest](/reference/development-containers#the-seed-manifest)), is read once first. An item the seed holds as rendered is not placed, and the manifest's unit list replaces the folder listings.
 
-The list may come as one blob, `files_blob`, with each file's content inline. It answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel"}`: whether the manifest was there, whether the seed's swap ran with this create's swap file (`app_account`), whether its tree was clean, and whether the stopped copy holds Orbit's tunnel boot unit with Orbit's marker (`fleet_tunnel`). A running copy answers `false`: its first boot is over. The Gateway starts a nested-fleet clone's fleet in the background only when `fleet_tunnel` is true. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
+The list may come as one blob, `files_blob`, with each file's content inline. It answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel", "services_digest"}`: whether the manifest was there, whether the seed's swap ran with this create's swap file (`app_account`), whether its tree was clean, and whether the stopped copy holds Orbit's tunnel boot unit with Orbit's marker (`fleet_tunnel`). `services_digest` is the seed manifest's digest of the services part, or null; the Gateway compares it with the clone's own ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)). A running copy answers `false`: its first boot is over. The Gateway starts a nested-fleet clone's fleet in the background only when `fleet_tunnel` is true. Codes: `instance.prepare_input_invalid`, `instance.clone_t3_files_refused`, `instance.clone_trust_unavailable`, `instance.clone_trust_bundle_refused`, `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`, `instance.agent_folder_refused`, `schedule.container_clone_cleanup_failed`, `instance.prepare_failed`.
 
 #### JSON settings
 
@@ -371,7 +381,7 @@ The tokens leave only sealed to the Gateway's key, `seal_to` in the signed input
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`, `instance.checkout`, `instance.t3`, `instance.club_key`, `instance.copy_volume`, `instance.stop`, `instance.spare_volume`, `instance.fleet_ready`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`, `instance.clone`, `instance.prepare`, `instance.start`, `instance.fetch_branch`, `instance.checkout`, `instance.t3`, `instance.club_key`, `instance.copy_volume`, `instance.stop`, `instance.spare_volume`, `instance.fleet_ready`, `instance.names`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 

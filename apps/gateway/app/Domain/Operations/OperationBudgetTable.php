@@ -50,6 +50,8 @@ final class OperationBudgetTable
         'instance.complete' => 1800,
         // The fleet step's own budget, the readiness bound plus 120 s (InstanceFleetEngineFlow), and the start and the end.
         'instance.fleet' => 450,
+        // A reserved clone's finalize: the fetch's 200 s, the names step's T3 label wait and restart, and the start and the end.
+        'instance.finalize' => 420,
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',
         'instance.unregister' => 'run_budget_seconds',

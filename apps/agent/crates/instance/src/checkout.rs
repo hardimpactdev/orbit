@@ -60,14 +60,16 @@ pub fn checkout(system: &impl System, input: &Value) -> Result<String, Failure> 
     let rendered = system.blob(&input.environment.blob.sha256).map_err(|detail| Failure::new("instance.checkout_content_missing", detail))?;
     let incus = Incus { system, code: "instance.container_checkout_failed" };
     let files = Files { incus: &incus, project: &input.project, name: &input.name };
-    identity(&incus, &input)?;
+    let copy = Workspace { project: &input.project, name: &input.name, instance_id: input.instance_id, root: &input.workspace, group: input.group };
+    identity(&incus, &copy)?;
     let mark: Value = files.pull(MARK)?.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null);
     // A checkout done for this Instance reports the commit it checked out, so a retry never reports a later one.
     let mut commit = mark.get("commit").and_then(Value::as_str).unwrap_or_default().to_owned();
     let mut cleaned = None;
     if mark.get("instance_id").and_then(Value::as_u64) != Some(input.instance_id) {
         commit.clone_from(&input.expected_commit);
-        branch(system, &incus, &files, &input)?;
+        let target = Target { branch: &input.branch, fetched: &input.branch, expected_commit: &input.expected_commit, mirror: input.mirror.as_deref() };
+        branch(system, &incus, &files, &copy, &target)?;
         if input.clean {
             // The `.env` is excluded first, so the clean keeps the default's file for the merge below.
             exclude(&files, &input)?;
@@ -111,58 +113,76 @@ fn check(input: &CheckoutInput) -> Result<(), String> {
     Ok(())
 }
 
+/// The copy's workspace, as its writer reaches it.
+pub(crate) struct Workspace<'a> {
+    pub(crate) project: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) instance_id: u64,
+    pub(crate) root: &'a str,
+    pub(crate) group: u32,
+}
+
+/// The branch the workspace must hold: `branch` at `expected_commit`, started from the mirror's `fetched` branch when a mirror holds
+/// it, else from the expected commit itself.
+pub(crate) struct Target<'a> {
+    pub(crate) branch: &'a str,
+    pub(crate) fetched: &'a str,
+    pub(crate) expected_commit: &'a str,
+    pub(crate) mirror: Option<&'a str>,
+}
+
 /// The branch at the expected commit in the copy's workspace.
-fn branch(system: &impl System, incus: &Incus<'_, impl System>, files: &Files<'_, impl System>, input: &CheckoutInput) -> Result<(), Failure> {
-    let current = git(incus, input, &["symbolic-ref", "--quiet", "--short", "HEAD"]).unwrap_or_default();
-    let head = git(incus, input, &["rev-parse", "HEAD"])?;
-    if current.trim() != input.branch || head.trim() != input.expected_commit {
-        let remote = format!("refs/remotes/origin/{}", input.branch);
-        let start = if let Some(mirror) = &input.mirror {
-            let bundle = format!("/tmp/orbit-workspace-{}.bundle", input.instance_id);
-            let local = system.path(&format!("{mirror}.workspace-{}.bundle", input.instance_id));
+pub(crate) fn branch(system: &impl System, incus: &Incus<'_, impl System>, files: &Files<'_, impl System>, copy: &Workspace<'_>, target: &Target<'_>) -> Result<(), Failure> {
+    let current = git(incus, copy, &["symbolic-ref", "--quiet", "--short", "HEAD"]).unwrap_or_default();
+    let head = git(incus, copy, &["rev-parse", "HEAD"])?;
+    if current.trim() != target.branch || head.trim() != target.expected_commit {
+        let remote = format!("refs/remotes/origin/{}", target.fetched);
+        let start = if let Some(mirror) = target.mirror {
+            let bundle = format!("/tmp/orbit-workspace-{}.bundle", copy.instance_id);
+            let local = system.path(&format!("{mirror}.workspace-{}.bundle", copy.instance_id));
             let made = system
                 .run(60, &[GIT.to_owned(), "-C".to_owned(), system.path(mirror).display().to_string(), "bundle".to_owned(), "create".to_owned(), "--quiet".to_owned(),
-                    local.display().to_string(), format!("refs/heads/{}", input.branch)], None)
+                    local.display().to_string(), format!("refs/heads/{}", target.fetched)], None)
                 .map_err(|detail| Failure::new("instance.container_checkout_failed", format!("bundle: {detail}")));
             let pushed = made.and_then(|_| std::fs::read(&local).map_err(|error| Failure::new("instance.container_checkout_failed", error.to_string())));
             let _ = std::fs::remove_file(&local);
-            files.push(&bundle, AGENT, input.group, "0640", &pushed?, Folders::Present)?;
-            let fetched = git(incus, input, &["fetch", "--quiet", &bundle, &format!("+refs/heads/{}:{remote}", input.branch)]);
-            let _ = incus.change(&["--project", &input.project, "file", "delete", &format!("{}{bundle}", input.name)]);
+            files.push(&bundle, AGENT, copy.group, "0640", &pushed?, Folders::Present)?;
+            let fetched = git(incus, copy, &["fetch", "--quiet", &bundle, &format!("+refs/heads/{}:{remote}", target.fetched)]);
+            let _ = incus.change(&["--project", copy.project, "file", "delete", &format!("{}{bundle}", copy.name)]);
             fetched?;
             remote
         } else {
-            input.expected_commit.clone()
+            target.expected_commit.to_owned()
         };
-        git(incus, input, &["checkout", "--quiet", "-B", &input.branch, &start])?;
+        git(incus, copy, &["checkout", "--quiet", "-B", target.branch, &start])?;
     }
-    let now = git(incus, input, &["symbolic-ref", "--short", "HEAD"])?;
-    let commit = git(incus, input, &["rev-parse", "HEAD"])?;
-    if now.trim() != input.branch || commit.trim() != input.expected_commit {
+    let now = git(incus, copy, &["symbolic-ref", "--short", "HEAD"])?;
+    let commit = git(incus, copy, &["rev-parse", "HEAD"])?;
+    if now.trim() != target.branch || commit.trim() != target.expected_commit {
         return Err(Failure::new("instance.container_checkout_failed", format!("the workspace holds {} at {}", now.trim(), commit.trim())));
     }
     Ok(())
 }
 
 /// The writer's Git identity: the workspace is its one safe directory, and a name and an e-mail when it has none.
-fn identity(incus: &Incus<'_, impl System>, input: &CheckoutInput) -> Result<(), Failure> {
-    let safe = git(incus, input, &["config", "--global", "--get-all", "safe.directory"]).unwrap_or_default();
-    if safe.lines().collect::<Vec<_>>() != [input.workspace.as_str()] {
-        git(incus, input, &["config", "--global", "--replace-all", "safe.directory", &input.workspace])?;
+fn identity(incus: &Incus<'_, impl System>, copy: &Workspace<'_>) -> Result<(), Failure> {
+    let safe = git(incus, copy, &["config", "--global", "--get-all", "safe.directory"]).unwrap_or_default();
+    if safe.lines().collect::<Vec<_>>() != [copy.root] {
+        git(incus, copy, &["config", "--global", "--replace-all", "safe.directory", copy.root])?;
     }
     for (key, value) in [("user.name", "Orbit Agent"), ("user.email", "agent@orbit.local")] {
-        if git(incus, input, &["config", "--global", "--get", key]).is_err() {
-            git(incus, input, &["config", "--global", key, value])?;
+        if git(incus, copy, &["config", "--global", "--get", key]).is_err() {
+            git(incus, copy, &["config", "--global", key, value])?;
         }
     }
     Ok(())
 }
 
 /// Git in the copy's workspace as its writer, with no hooks and no file system monitor.
-fn git(incus: &Incus<'_, impl System>, input: &CheckoutInput, args: &[&str]) -> Result<String, Failure> {
-    let (writer, group) = (AGENT.to_string(), input.group.to_string());
+pub(crate) fn git(incus: &Incus<'_, impl System>, copy: &Workspace<'_>, args: &[&str]) -> Result<String, Failure> {
+    let (writer, group) = (AGENT.to_string(), copy.group.to_string());
     let mut command: Vec<String> = [
-        "--project", &input.project, "exec", &input.name, "--user", &writer, "--group", &group, "--cwd", &input.workspace, "--env", "HOME=/home/agent", "--",
+        "--project", copy.project, "exec", copy.name, "--user", &writer, "--group", &group, "--cwd", copy.root, "--env", "HOME=/home/agent", "--",
         GIT, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
     ]
     .iter()

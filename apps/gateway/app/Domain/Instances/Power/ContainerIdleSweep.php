@@ -237,6 +237,7 @@ final readonly class ContainerIdleSweep
             // A release refresh resumes a sleeping default: it gets a full window before the next freeze.
             $recent($evidence->lastDeployAt) => 'deployed_recently',
             ! $evidence->t3Server => null,
+            $t3 !== null && $t3->held !== null => $t3->held,
             $t3 === null || ! $t3->readable => 't3_unreadable',
             $t3->turnRuns => 't3_turn_running',
             $recent($t3->lastActivityUnix) => 't3_active',

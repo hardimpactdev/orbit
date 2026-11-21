@@ -1213,6 +1213,7 @@ Every clone of a default needs the same files: the boot and trust files, Codex's
 | `bundles`, `nss` | The trust bundle's certificates by digest, the NSS store's lines and the trust module's version |
 | `units` | The default's Orbit units that no clone keeps |
 | `workspace_clean` | Whether a task copy's clean would find nothing in the tree, checked right before the snapshot with the Processes stopped |
+| `services_digest` | The digest of the services part the default holds ([A completion with nothing left](#a-completion-with-nothing-left)) |
 
 A clone's prepare reads the manifest once. It writes only the items that differ from it, removes the units it names, and skips the app-account swap when the seed's swap ran with the same file. A task copy skips its clean when the tree was clean and its checkout keeps the seed's commit. A seed without the manifest, taken before it, gets every file as before. Only a clone's own files stay per copy: its identity, model key, settings with providers, proxy bypass and Instance file.
 
@@ -1618,6 +1619,22 @@ The phase runs the `services` part of the workspace phase: PHP settings, file ri
 
 Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published. An address the create published stays up and answers 502 until a retry or `instance:destroy`, which withdraws it; a retry that succeeds keeps it as it is. The run keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
 
+#### A completion with nothing left
+
+The default's seed holds most of a clone's services part: PHP's runtime settings and CLI file, root's workspace pass and the swap. So a clone with no Process, unit or web config of its own often has nothing left for `clone-services`. The completion then runs on the [engine](/reference/gateway-engine#instancecomplete) with no step. It ends at once, without a Swamp run, and the clone goes `active` right after its create.
+
+The default's deployment records the digest of the services part in the seed manifest, as `services_digest` (`InstanceContainer::servicesDigest`). The digest covers the guest program that writes the part and the PHP settings it writes. So a new guest program, or other PHP settings, make every older seed's digest stale.
+
+The create's `prepare` reports the seed's digest. The create's result then says `services: seed` when all of these hold:
+
+- the seed's digest is the clone's own;
+- the clone has no Process, unit or web config;
+- its checkout kept the seed's commit, so root's workspace pass has nothing to give.
+
+The completion runs on the engine only after `services: seed`. It also needs no database, no Valkey user, no Route to publish and no fleet to start. Any other completion runs on Swamp as described above.
+
+In one measured completion of an Orbit clone, `clone-services` took 5.2 s, of which the work in the copy was about 1.6 s and changed nothing. The rest was the Swamp run, SSH and staging.
+
 A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
 The create's terminal projection admits the first completion. A completion that ends moves a [task copy](/reference/tasks#task-copy) on: `active` makes its task run. A failure keeps the copy, and its task stays `reserved` and asks for assistance with the retry.
@@ -1838,6 +1855,7 @@ An Instance sleeps only when no row of this table keeps it awake. The sweep chec
 | `http_active` | Its Route's access log changed within the window. |
 | `woke_recently` | A wake of it ended within the window; for a nested-fleet clone, also the [start](#a-stopped-nested-fleet-clone-starts) a wake takes. |
 | `deployed_recently` | A deployment of it ended within the window. A release refresh resumes a nested-fleet default; it gets a full window before the next freeze. An [automatic deployment](/reference/deployments#automatic-development-defaults) does not count. |
+| `conn_reservation` | A [Conn reservation](/reference/conn#reserve-a-clone) holds it: its user still types the first message. |
 | `t3_unreadable` | Its T3 server cannot be read. |
 | `t3_turn_running` | A turn runs, or a run waits for a delegated thread or a background task. |
 | `t3_active` | Its newest user message, turn end, or request that waits for the user is within the window. |

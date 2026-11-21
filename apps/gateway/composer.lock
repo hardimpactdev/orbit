@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "afe470277fdcdbaefecc812d7114c367",
+    "content-hash": "639ca9485f0d96f2bbc1119953bea07b",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -159,16 +159,16 @@
         },
         {
             "name": "basis-company/nats",
-            "version": "1.2.6",
+            "version": "1.2.8",
             "source": {
                 "type": "git",
                 "url": "https://github.com/basis-company/nats.php.git",
-                "reference": "52002aa9e5ee99bb761539df318dbe5a50fdf81c"
+                "reference": "d5dd03905ae044f6f7c903bfb8dd48cf8943d748"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/basis-company/nats.php/zipball/52002aa9e5ee99bb761539df318dbe5a50fdf81c",
-                "reference": "52002aa9e5ee99bb761539df318dbe5a50fdf81c",
+                "url": "https://api.github.com/repos/basis-company/nats.php/zipball/d5dd03905ae044f6f7c903bfb8dd48cf8943d748",
+                "reference": "d5dd03905ae044f6f7c903bfb8dd48cf8943d748",
                 "shasum": ""
             },
             "require": {
@@ -225,9 +225,9 @@
             ],
             "support": {
                 "issues": "https://github.com/basis-company/nats.php/issues",
-                "source": "https://github.com/basis-company/nats.php/tree/1.2.6"
+                "source": "https://github.com/basis-company/nats.php/tree/1.2.8"
             },
-            "time": "2026-11-09T08:30:48+00:00"
+            "time": "2026-11-21T14:06:40+00:00"
         },
         {
             "name": "brick/math",
@@ -9147,82 +9147,6 @@
                 "source": "https://github.com/laravel/roster"
             },
             "time": "2026-07-18T17:53:15+00:00"
-        },
-        {
-            "name": "laravel/vet",
-            "version": "v0.2.1",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/laravel/vet.git",
-                "reference": "7b10fd2beecf9f386c92731729c9f33a152b213b"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/laravel/vet/zipball/7b10fd2beecf9f386c92731729c9f33a152b213b",
-                "reference": "7b10fd2beecf9f386c92731729c9f33a152b213b",
-                "shasum": ""
-            },
-            "require": {
-                "composer-plugin-api": "^2.0",
-                "ext-dom": "*",
-                "ext-mbstring": "*",
-                "ext-openssl": "*",
-                "ext-phar": "*",
-                "ext-tokenizer": "*",
-                "ext-zip": "*",
-                "php": "^8.4"
-            },
-            "require-dev": {
-                "guzzlehttp/guzzle": "^7.15.5|^8.0",
-                "laravel-zero/foundation": "^13.25",
-                "laravel-zero/framework": "^13.0",
-                "laravel/pint": "^1.32.1",
-                "mockery/mockery": "^1.6.15",
-                "pestphp/pest": "^5.2.1",
-                "pestphp/pest-plugin-phpstan": "^5.2.1",
-                "pestphp/pest-plugin-rector": "^5.0.4",
-                "phpstan/phpstan": "^2.2.16",
-                "rector/rector": "^2.6.7"
-            },
-            "bin": [
-                "builds/vet"
-            ],
-            "type": "composer-plugin",
-            "extra": {
-                "class": "Laravel\\Vet\\Composer\\Plugin"
-            },
-            "autoload": {
-                "psr-4": {
-                    "App\\": "app/",
-                    "Laravel\\Vet\\Composer\\": "src/Composer/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Nuno Maduro",
-                    "email": "enunomaduro@gmail.com"
-                }
-            ],
-            "description": "A dependency audit trust file for PHP.",
-            "keywords": [
-                "Audit",
-                "cli",
-                "composer",
-                "console",
-                "dev",
-                "php",
-                "security",
-                "supply chain"
-            ],
-            "support": {
-                "issues": "https://github.com/laravel/vet/issues",
-                "source": "https://github.com/laravel/vet/tree/v0.2.1"
-            },
-            "time": "2026-09-27T14:39:48+00:00"
         },
         {
             "name": "mockery/mockery",

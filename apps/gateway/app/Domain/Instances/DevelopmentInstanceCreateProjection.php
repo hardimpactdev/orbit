@@ -191,7 +191,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             }
             $ended = $operation->status->terminal();
             $operation = $this->direct->project($operation, $data, $result);
-            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id'])) {
+            // A reserved clone's completion follows its finalize, which gives it the name its database and Route take.
+            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id']) && ($operation->input['completion_deferred'] ?? false) !== true) {
                 // A Conn launch admits its own completion under the parent cancel fence.
                 // The ordinary create ends and hands its hold to completion here.
                 // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
