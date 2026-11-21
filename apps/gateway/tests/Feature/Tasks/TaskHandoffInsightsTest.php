@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskFindingCategory;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHandoffType;
 use App\Domain\Tasks\TaskInsights;
@@ -61,28 +62,28 @@ function handoff(Task $subtask, TaskHandoffType $type, ?array $receipt, string $
 
 /**
  * Two gated groups that ended, one that is not gated, and one gated group still running, whose handoffs do not count.
- * Expected: 12 handoffs over 3 subtasks; first reviews `changes` with 2 findings and `approve` with 0; 2 questions over 2 gated tasks;
+ * Expected: 12 handoffs over 3 subtasks; first reviews `changes` with a race and a contract finding, and `approve` with none; 2 questions over 2 gated tasks;
  * one delivery rejected for each of no_receipt, failed_part and claim_disproved; part lint 5 runs, 1 failure, 46 seconds and
  * part tests 4 runs (a skip that never started is none), 1 failure, 120 seconds; one ended task whose rejected delivery no accepted delivery follows.
  */
 function handoffFixture(): void
 {
-    $receipt = static fn (string $verdict, int $findings): array => ['verdict' => $verdict, 'findings' => $findings];
+    $receipt = static fn (string $verdict, array $findings): array => ['verdict' => $verdict, 'findings' => $findings];
     $delivery = ['commit' => str_repeat('b', 40), 'tree' => str_repeat('4', 40), 'parts' => [['name' => 'lint', 'result' => 'passed', 'seconds' => 1]]];
 
     $resolved = handoffGroup(TaskGroupStatus::Completed, true);
     $first = handoffSubtask($resolved, 1);
     handoff($first, TaskHandoffType::Delivery, null, 'no_receipt', handoffCheck($first, null));
     handoff($first, TaskHandoffType::Delivery, $delivery, check: handoffCheck($first, [['lint', 'passed', 10], ['tests', 'passed', 30]]));
-    handoff($first, TaskHandoffType::Review, $receipt('changes', 2));
+    handoff($first, TaskHandoffType::Review, $receipt('changes', ['race', 'contract']));
     handoff($first, TaskHandoffType::Delivery, $delivery, check: handoffCheck($first, [['lint', 'passed', 12], ['tests', 'passed', 34]]));
-    handoff($first, TaskHandoffType::Review, $receipt('approve', 0));
+    handoff($first, TaskHandoffType::Review, $receipt('approve', []));
     $second = handoffSubtask($resolved, 2);
     handoff($second, TaskHandoffType::Question, ['questions' => [['question' => 'Which path?']]]);
     handoff($second, TaskHandoffType::Delivery, $delivery, 'failed_part', handoffCheck($second, [['lint', 'passed', 8], ['tests', 'FAILED', 20.5]]));
     handoff($second, TaskHandoffType::Delivery, $delivery, check: handoffCheck($second, [['lint', 'passed', 10], ['tests', 'passed', 35.5]]));
     handoff($second, TaskHandoffType::Review, null, 'no_receipt');
-    handoff($second, TaskHandoffType::Review, $receipt('approve', 0));
+    handoff($second, TaskHandoffType::Review, $receipt('approve', []));
 
     $unresolved = handoffGroup(TaskGroupStatus::Failed, true);
     $third = handoffSubtask($unresolved, 1);
@@ -94,6 +95,15 @@ function handoffFixture(): void
     handoff($running, TaskHandoffType::Delivery, null, 'no_receipt');
 }
 
+/** @return array<string, int> each finding category at 0, in key order */
+function noFindings(): array
+{
+    $categories = array_fill_keys(array_map(static fn (TaskFindingCategory $category): string => $category->value, TaskFindingCategory::cases()), 0);
+    ksort($categories);
+
+    return $categories;
+}
+
 /** @return array<string, mixed> */
 function expectedHandoffs(): array
 {
@@ -102,6 +112,7 @@ function expectedHandoffs(): array
         'handoffs_per_subtask' => 4.0,
         'first_review_approval' => 0.5,
         'findings_per_first_review' => 1.0,
+        'findings_by_category' => [...noFindings(), 'contract' => 1, 'race' => 1],
         'questions_per_task' => 1.0,
         'rejected_deliveries' => ['check_failed' => 0, 'claim_disproved' => 1, 'failed_part' => 1, 'no_receipt' => 1, 'other_commit' => 0],
         'check_parts' => [
@@ -120,7 +131,7 @@ it('reads each handoff number from the handoff rows of the gated tasks that ende
     expect($report['current']['tasks'])->toBe(3)
         ->and($report['current']['handoffs'])->toEqual(expectedHandoffs())
         ->and($report['previous']['handoffs'])->toEqual([...expectedHandoffs(), 'tasks' => 0, 'handoffs_per_subtask' => null, 'first_review_approval' => null,
-            'findings_per_first_review' => null, 'questions_per_task' => null, 'check_parts' => [], 'unresolved_tasks' => 0,
+            'findings_per_first_review' => null, 'findings_by_category' => noFindings(), 'questions_per_task' => null, 'check_parts' => [], 'unresolved_tasks' => 0,
             'rejected_deliveries' => array_map(static fn (): int => 0, expectedHandoffs()['rejected_deliveries'])]);
 });
 
@@ -174,4 +185,48 @@ it('divides by every unit of work of the gated tasks and counts each question of
 
     expect($handoffs['handoffs_per_subtask'])->toEqual(1 / 3)
         ->and($handoffs['questions_per_task'])->toEqual(1.0);
+});
+
+it('counts the category of each finding of every accepted review, and an older integer receipt only as its count', function (): void {
+    $group = handoffGroup(TaskGroupStatus::Completed, true);
+    $categorised = handoffSubtask($group, 1);
+    handoff($categorised, TaskHandoffType::Review, ['verdict' => 'changes', 'findings' => ['race', 'race', 'docs']]);
+    handoff($categorised, TaskHandoffType::Review, null, 'no_receipt');
+    handoff($categorised, TaskHandoffType::Review, ['verdict' => 'changes', 'findings' => ['regression']]);
+    handoff($categorised, TaskHandoffType::Review, ['verdict' => 'approve', 'findings' => []]);
+    // A receipt stored before the categories holds the number of blocking findings.
+    $counted = handoffSubtask($group, 2);
+    handoff($counted, TaskHandoffType::Review, ['verdict' => 'changes', 'findings' => 3]);
+    handoff($counted, TaskHandoffType::Review, ['verdict' => 'approve', 'findings' => 0]);
+    // The findings of a task without the gates do not count.
+    handoff(handoffSubtask(handoffGroup(TaskGroupStatus::Completed, false), 1), TaskHandoffType::Review, ['verdict' => 'changes', 'findings' => ['destructive']]);
+    $expected = ['first_review_approval' => 0.0, 'findings_per_first_review' => 3.0,
+        'findings_by_category' => [...noFindings(), 'docs' => 1, 'race' => 2, 'regression' => 1]];
+
+    $handoffs = app(TaskInsights::class)->report('30d', null, CarbonImmutable::now())->toArray()['current']['handoffs'];
+
+    expect(array_intersect_key($handoffs, $expected))->toEqual($expected)
+        ->and(array_keys($handoffs['findings_by_category']))->toBe(array_keys(noFindings()));
+
+    app(TaskInsightTotals::class)->refresh(CarbonImmutable::now());
+
+    expect(array_intersect_key($this->getJson('/api/v1/task-insights?period=30d')->assertOk()->json('data.current.handoffs'), $expected))->toEqual($expected);
+});
+
+it('leaves a cancelled task out of the unresolved tasks', function (): void {
+    $delivery = ['commit' => str_repeat('b', 40), 'tree' => str_repeat('4', 40), 'parts' => [['name' => 'lint', 'result' => 'passed', 'seconds' => 1]]];
+    foreach ([TaskGroupStatus::Cancelled, TaskGroupStatus::Failed] as $status) {
+        $subtask = handoffSubtask(handoffGroup($status, true), 1);
+        handoff($subtask, TaskHandoffType::Delivery, $delivery, 'claim_disproved', handoffCheck($subtask, [['lint', 'FAILED', 6]]));
+    }
+
+    $handoffs = app(TaskInsights::class)->report('30d', null, CarbonImmutable::now())->toArray()['current']['handoffs'];
+
+    expect($handoffs['tasks'])->toBe(2)
+        ->and($handoffs['rejected_deliveries']['claim_disproved'])->toBe(2)
+        ->and($handoffs['unresolved_tasks'])->toBe(1);
+
+    app(TaskInsightTotals::class)->refresh(CarbonImmutable::now());
+
+    expect($this->getJson('/api/v1/task-insights?period=30d')->assertOk()->json('data.current.handoffs.unresolved_tasks'))->toBe(1);
 });

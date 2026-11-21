@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 /**
  * What a reviewer turn's prompt names beyond the briefs (docs/reference/tasks.md#run-an-external-turn): the check it reviews, that
  * check's commit, the base it compared against and each deliverable's outcome, the review round with the commit the last finished
- * review judged, and the implementer's handoff note.
+ * review judged, the implementer's handoff note, and whether the check ran the Project's task check.
  */
 final readonly class TaskTurnReview
 {
@@ -25,6 +25,7 @@ final readonly class TaskTurnReview
      *                               changes are never the subtask's (docs/reference/tasks.md#the-handoff-check-merges-main-first)
      * @param  array<string, string>  $results  each deliverable's outcome in the check, by its id
      * @param  string|null  $previous  the commit of the latest finished reviewer turn on the subtask; null on the first review
+     * @param  bool  $taskCheck  the check ran the Project's task check on the commit: false for a Project without one
      */
     public function __construct(
         public int $check,
@@ -35,6 +36,7 @@ final readonly class TaskTurnReview
         public ?string $previous,
         public array $results,
         public ?string $note,
+        public bool $taskCheck,
     ) {}
 
     /**
@@ -65,7 +67,7 @@ final readonly class TaskTurnReview
             ? $owner->result['default_commit'] : null;
 
         return new self($check->id, (string) $check->commit_sha, $start, $merged, $reviews->count() + 1, is_string($previous) ? $previous : null,
-            $results, is_string($note) && $note !== '' ? $note : null);
+            $results, is_string($note) && $note !== '' ? $note : null, is_string($owner->input['command'] ?? null) && $owner->input['command'] !== '');
     }
 
     /** The base as the prompt names it: the start, or the tree of the start with the default head merged in, as the check built it. */

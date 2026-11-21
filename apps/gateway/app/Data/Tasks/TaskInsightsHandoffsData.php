@@ -13,6 +13,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class TaskInsightsHandoffsData extends Data
 {
     /**
+     * @param  array<string, int>  $findingsByCategory  the blocking findings of every accepted review row by category, zeros included
      * @param  array<string, int>  $rejectedDeliveries  each rejection reason of a delivery, zeros included
      * @param  list<TaskInsightsCheckPartData>  $checkParts  by name
      */
@@ -21,10 +22,11 @@ final class TaskInsightsHandoffsData extends Data
         public ?float $handoffsPerSubtask,
         public ?float $firstReviewApproval,
         public ?float $findingsPerFirstReview,
+        public array $findingsByCategory,
         public ?float $questionsPerTask,
         public array $rejectedDeliveries,
         public array $checkParts,
-        /** Ended tasks with a rejected handoff that no later accepted handoff of its subtask and type follows; it must be 0. */
+        /** Ended tasks, cancelled ones left out, with a rejected handoff that no later accepted handoff of its subtask and type follows; it must be 0. */
         public int $unresolvedTasks,
     ) {}
 }
