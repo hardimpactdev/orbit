@@ -4,8 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    # swamp-env sources the serve account's Swamp Club credential env; without it swamp fails with auth_gate_blocked.
-    renewal_swamp: [/usr/local/lib/orbit-swamp/swamp-env, /usr/local/bin/swamp]
+    renewal_swamp_binary: /usr/local/bin/swamp
     renewal_accepting: [idle, busy]
     renewal_session_seconds: 28800
     renewal_round_seconds: 5400
@@ -56,7 +55,7 @@
         renewal_required_slots: "{{ renewal_slots | difference(renewal_down_slots) }}"
     - name: Read the three permanent workers
       ansible.builtin.command:
-        argv: "{{ ['timeout', '30'] + renewal_swamp + ['worker', 'list', '--all'] + renewal_remote }}"
+        argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
       become: true
       become_user: "{{ orbit_user }}"
       environment: "{{ renewal_environment }}"

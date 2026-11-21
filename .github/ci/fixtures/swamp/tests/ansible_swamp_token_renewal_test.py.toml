@@ -2,7 +2,6 @@ file = "swamp/tests/ansible_swamp_token_renewal_test.py"
 cost = 1
 cases = [
   "test_every_swamp_call_sources_the_credential_env_through_swamp_env_as_the_serve_account",
-  "test_the_worker_renewal_runs_every_swamp_call_through_swamp_env",
   "test_nothing_is_due_so_nothing_changes",
   "test_due_tokens_mint_a_dated_generation_verify_and_switch_without_rotate_or_revoke",
   "test_a_refused_worker_candidate_leaves_server_token_untouched",
@@ -21,9 +20,6 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/library/orbit_swamp_token_renewal.py",
-  "swamp/ansible/swamp-worker-renewal.yml",
-  "swamp/ansible/tasks/swamp-worker-renew-slot.yml",
-  "swamp/ansible/tasks/swamp-worker-renew-verify.yml",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",

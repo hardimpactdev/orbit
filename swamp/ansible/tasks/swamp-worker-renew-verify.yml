@@ -1,7 +1,7 @@
 ---
 - name: Probe the live connected worker
   ansible.builtin.command:
-    argv: "{{ ['timeout', '125'] + renewal_swamp + ['worker', 'verify', renewal_verify_name] + renewal_remote }}"
+    argv: "{{ ['timeout', '125', renewal_swamp_binary, 'worker', 'verify', renewal_verify_name] + renewal_remote }}"
   become: true
   become_user: "{{ orbit_user }}"
   environment: "{{ renewal_environment }}"

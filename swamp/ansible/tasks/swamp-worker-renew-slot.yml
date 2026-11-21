@@ -30,7 +30,7 @@
   when: renewal_peer.activeDispatchIds | length < renewal_peer.capacity | int
 - name: Refresh the pool after the live probes
   ansible.builtin.command:
-    argv: "{{ ['timeout', '30'] + renewal_swamp + ['worker', 'list', '--all'] + renewal_remote }}"
+    argv: "{{ ['timeout', '30', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
   become: true
   become_user: "{{ orbit_user }}"
   environment: "{{ renewal_environment }}"
@@ -85,7 +85,7 @@
     state: restarted
 - name: Wait for a different accepting instance
   ansible.builtin.command:
-    argv: "{{ ['timeout', '3'] + renewal_swamp + ['worker', 'list', '--all'] + renewal_remote }}"
+    argv: "{{ ['timeout', '3', renewal_swamp_binary, 'worker', 'list', '--all'] + renewal_remote }}"
   become: true
   become_user: "{{ orbit_user }}"
   environment: "{{ renewal_environment }}"

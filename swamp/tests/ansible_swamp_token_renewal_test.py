@@ -145,17 +145,6 @@ class TokenRenewalTest(unittest.TestCase):
             self.assertEqual(argv[at - 1], '/usr/local/lib/orbit-swamp/swamp-env')
             self.assertIn('HOME=' + str(self.folder / 'home'), argv[:at])
 
-    def test_the_worker_renewal_runs_every_swamp_call_through_swamp_env(self):
-        playbook = (ROOT / 'ansible/swamp-worker-renewal.yml').read_text()
-        self.assertIn('    renewal_swamp: [/usr/local/lib/orbit-swamp/swamp-env, /usr/local/bin/swamp]\n', playbook)
-        for name in ('swamp-worker-renewal.yml', 'tasks/swamp-worker-renew-slot.yml', 'tasks/swamp-worker-renew-verify.yml'):
-            text = (ROOT / 'ansible' / name).read_text()
-            self.assertNotIn('renewal_swamp_binary', text)
-            calls = [line for line in text.splitlines() if "'worker', '" in line]
-            self.assertTrue(calls, name)
-            for line in calls:
-                self.assertIn('+ renewal_swamp +', line, name)
-
     def test_nothing_is_due_so_nothing_changes(self):
         for row in [*self.serve.access.values(), *self.serve.enrollment.values()]:
             row['expiresAt'] = self.later

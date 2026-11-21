@@ -263,8 +263,7 @@ class Fixture {
           renewal_capacity: 4,
           ansible_become: false,
           ansible_python_interpreter: "{{ ansible_playbook_python }}",
-          // The fake stands in for swamp-env + swamp; swamp_env_test.py proves the wrapper.
-          renewal_swamp: [`${this.root}/swamp`],
+          renewal_swamp_binary: `${this.root}/swamp`,
           ...extraVars,
         }),
       ],
