@@ -3,17 +3,13 @@
 # rescue and the result name the phase that runs now, the handlers of one phase run before the next phase starts, and each phase writes
 # the result file as it ends, as each did at the end of a play of its own. A play that is killed later (its step's timeout, a lost
 # Node) keeps what the phases before passed: the Club key's word and the passed phases.
+# A deployment whose fetch found the checkout already past the commit (`container_already_newer`) changes nothing more: its fleet
+# check and its seed neither run nor count as passed. The loop of phases includes this file for every phase first, so each phase
+# decides here, as it starts.
 - name: Name the running phase
   tags: [always]
   ansible.builtin.set_fact:
     container_phase_running: "{{ container_phase }}"
-
-# A deployment whose fetch found the checkout already past the commit (`container_already_newer`) changes nothing more: its fleet
-# check and its seed neither run nor count as passed. The loop of phases includes this file for every phase first, so each phase
-# decides here, as it starts.
-- name: Name whether the phase runs
-  tags: [always]
-  ansible.builtin.set_fact:
     container_phase_runs: "{{ container_phase not in ['fleet_start', 'seed'] or not container_already_newer | default(false) | bool }}"
 
 # Select the phase by tags before evaluating task conditions. Unrelated phases never enter the task queue.

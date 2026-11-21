@@ -108,7 +108,10 @@ Deno.test("the playbook runs the phases of a merged step in order, and the handl
     // Each phase writes the result as it ends, with the phases that passed, so a play killed in a later phase keeps them.
     assertEquals(phase.map((task) => task.name),
         ["Name the running phase", "Run the phase's tasks", "Run the phase's handlers", "Count the phase as passed", "Write the result"]);
-    assertEquals(phase[0]["ansible.builtin.set_fact"], { container_phase_running: "{{ container_phase }}" });
+    // A fetch that found the checkout already past the commit skips the fleet check and the seed: they neither run nor count.
+    assertEquals(phase[0]["ansible.builtin.set_fact"], { container_phase_running: "{{ container_phase }}",
+        container_phase_runs: "{{ container_phase not in ['fleet_start', 'seed'] or not container_already_newer | default(false) | bool }}" });
+    for (const index of [1, 3, 4]) assertEquals(phase[index].when, "container_phase_runs | bool", String(phase[index].name));
     assertEquals(phase[2]["ansible.builtin.meta"], "flush_handlers");
     assertEquals(phase[3]["ansible.builtin.set_fact"], { container_phases_passed: "{{ container_phases_passed + [container_phase] }}" });
     assert(!block.block.some((task) => task.name === "Write the result"), "one writer of the success result: the phase's own");
