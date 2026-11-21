@@ -34,6 +34,8 @@ class FakeServe:
         self.started = {}
         self.calls = []
         self.argvs = []
+        # swamp 20261114 lists access tokens as a plain array; 'envelope' is the older {"tokens": [...]}.
+        self.shape = 'array'
         self.crash_on = None
         self.lose_reply = None
         self.mint_principal = None
@@ -64,7 +66,9 @@ class FakeServe:
     def answer(self, args):
         match args:
             case ['access', 'token', 'list']:
-                return 0, json.dumps({'tokens': list(self.access.values())}), ''
+                rows = list(self.access.values())
+                listed = rows if self.shape == 'array' else {'tokens': rows} if self.shape == 'envelope' else {'rows': rows}
+                return 0, json.dumps(listed), ''
             case ['access', 'token', 'mint', name, '--principal', principal, '--duration', '30d']:
                 self.access[name] = {'name': name, 'principalId': self.mint_principal or principal, 'state': 'active',
                                      'expiresAt': (START + datetime.timedelta(days=30)).isoformat()}
@@ -144,6 +148,16 @@ class TokenRenewalTest(unittest.TestCase):
             at = argv.index('/usr/local/bin/swamp')
             self.assertEqual(argv[at - 1], '/usr/local/lib/orbit-swamp/swamp-env')
             self.assertIn('HOME=' + str(self.folder / 'home'), argv[:at])
+
+    def test_the_older_tokens_envelope_renews_like_the_plain_array(self):
+        self.serve.shape = 'envelope'
+        self.assertEqual(self.run_at(0)[0], 'minted serve-driver-' + TODAY)
+
+    def test_an_unknown_token_list_shape_fails_closed_and_changes_no_file(self):
+        self.serve.shape = 'unknown'
+        with self.assertRaisesRegex(Failed, 'token list of an unknown shape'):
+            self.run_at(0)
+        self.assertEqual(self.read('home/.config/swamp/serve-driver-token'), 'serve-driver.fake-secret-old')
 
     def test_nothing_is_due_so_nothing_changes(self):
         for row in [*self.serve.access.values(), *self.serve.enrollment.values()]:

@@ -78,13 +78,17 @@ Deno.test("retired orbit-node-209 pair is not reported missing when absent", () 
     assertEquals(report(lists([], []), NOW).alerts, []);
 });
 
-Deno.test("local --repo-dir access list recorded fixture (envelope shape) is parsed cleanly", async () => {
+// Recorded from swamp 20261114.210101.0-sha.537e03d1 on Node 209: `access token list --json` is a plain array.
+for (const shape of ["plain array", "tokens envelope"] as const) {
+Deno.test(`local --repo-dir access list recorded fixture (${shape}) is parsed cleanly`, async () => {
     const fixture = await Deno.readTextFile(
         new URL("fixtures/access-token-list-local.json", import.meta.url),
     );
     const result = report(
         {
-            access: fixture,
+            access: shape === "plain array"
+                ? fixture
+                : JSON.stringify({ tokens: JSON.parse(fixture) }),
             enrollment: JSON.stringify([enrollment("swamp-role-209-a", 500)]),
             certificate,
             held: "serve-driver-20261121\nswamp-role-209-a-access-20261121\n",
@@ -93,6 +97,7 @@ Deno.test("local --repo-dir access list recorded fixture (envelope shape) is par
     );
     assertEquals(result.alerts, []);
 });
+}
 
 Deno.test("a changed native shape or certificate fails the run", () => {
     assertThrows(

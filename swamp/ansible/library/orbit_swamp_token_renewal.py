@@ -131,9 +131,13 @@ class Renewal:
             self.fail('%s does not contain a delimited <name>.<secret> token' % path)
         return name
 
-    @staticmethod
-    def rows(listed):
-        return listed['tokens'] if isinstance(listed, dict) else listed
+    def rows(self, listed):
+        """A token list is a plain array (swamp 20261114); an older {"tokens": [...]} envelope is accepted. Anything else fails."""
+        if isinstance(listed, dict) and list(listed) == ['tokens']:
+            listed = listed['tokens']
+        if not isinstance(listed, list) or not all(isinstance(row, dict) and isinstance(row.get('name'), str) for row in listed):
+            self.fail('swamp returned a token list of an unknown shape')
+        return listed
 
     def access_tokens(self):
         """Every listed access token by name, revoked ones included, so a revoked dated name is never reused."""

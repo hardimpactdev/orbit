@@ -1,22 +1,20 @@
-{
-  "tokens": [
-    {
-      "name": "serve-driver-20261121",
-      "principalId": "user:nckrtl",
-      "principalEmail": "user:nckrtl",
-      "state": "active",
-      "effectiveState": "active",
-      "createdAt": "2026-11-21T07:00:00.000Z",
-      "expiresAt": "2026-12-21T07:00:00.000Z"
-    },
-    {
-      "name": "swamp-role-209-a-access-20261121",
-      "principalId": "worker:orbit-node-209",
-      "principalEmail": "worker:orbit-node-209",
-      "state": "active",
-      "effectiveState": "active",
-      "createdAt": "2026-11-21T07:00:00.000Z",
-      "expiresAt": "2026-12-21T07:00:00.000Z"
-    }
-  ]
-}
+[
+  {
+    "name": "serve-driver-20261121",
+    "state": "active",
+    "effectiveState": "active",
+    "principalId": "user:nckrtl",
+    "principalEmail": "user:nckrtl",
+    "createdAt": "2026-11-21T07:00:00.000Z",
+    "expiresAt": "2026-12-21T07:00:00.000Z"
+  },
+  {
+    "name": "swamp-role-209-a-access-20261121",
+    "state": "active",
+    "effectiveState": "active",
+    "principalId": "worker:orbit-node-209",
+    "principalEmail": "worker:orbit-node-209",
+    "createdAt": "2026-11-21T07:00:00.000Z",
+    "expiresAt": "2026-12-21T07:00:00.000Z"
+  }
+]

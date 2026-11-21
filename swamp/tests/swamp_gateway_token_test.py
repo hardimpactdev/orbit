@@ -16,8 +16,8 @@ SOON = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=2)).strfti
 SWAMP_ENV = ROOT / 'ansible/files/swamp-env.sh'
 CLUB_CANARY = 'CLUB_ENV_CANARY_7731'
 # Like swamp on the Swamp Node, the fake refuses with auth_gate_blocked unless the Swamp Club credential env was sourced.
-# The fake keeps its tokens in a JSON file and answers as swamp 0.x does: `access token list` is {"tokens":[...]}, and
-# `worker token list` is a plain array.
+# The fake keeps its tokens in a JSON file and answers as swamp 20261114 on Node 209 does: `access token list` and
+# `worker token list` are plain arrays. `shape` swaps in the older {"tokens":[...]} envelope or an unknown shape.
 FAKE = r'''#!/usr/bin/env python3
 import json, os, sys
 if os.environ.get('SWAMP_API_KEY') != 'fake-club-key':
@@ -29,7 +29,8 @@ args = sys.argv[1:sys.argv.index('--server')]
 state['calls'].append(' '.join(args))
 out = {}
 if args[:3] == ['access', 'token', 'list']:
-    out = {'tokens': state['access']}
+    shape = state.get('shape', 'array')
+    out = state['access'] if shape == 'array' else {'tokens': state['access']} if shape == 'envelope' else {'rows': state['access']}
 elif args[:3] == ['worker', 'token', 'list']:
     out = state['enrollment']
 elif args[:3] == ['access', 'token', 'mint']:
@@ -62,9 +63,11 @@ class GatewayTokenEntrypointTest(unittest.TestCase):
         self.bin.write_text(FAKE)
         self.bin.chmod(0o755)
         self.state = {'later': LATER, 'calls': [], 'access': [
-            {'name': 'orbit-gateway-read-20261121', 'principalId': 'user:orbit-gateway-read', 'expiresAt': SOON,
-             'state': 'active', 'effectiveState': 'active'},
-            {'name': 'serve-driver-20261121', 'principalId': 'user:nckrtl', 'expiresAt': LATER, 'state': 'active'},
+            {'name': 'orbit-gateway-read-20261121', 'state': 'active', 'effectiveState': 'active',
+             'principalId': 'user:orbit-gateway-read', 'principalEmail': 'user:orbit-gateway-read',
+             'createdAt': '2026-11-21T07:00:00.000Z', 'expiresAt': SOON},
+            {'name': 'serve-driver-20261121', 'state': 'active', 'effectiveState': 'active', 'principalId': 'user:nckrtl',
+             'principalEmail': 'user:nckrtl', 'createdAt': '2026-11-21T07:00:00.000Z', 'expiresAt': LATER},
         ], 'enrollment': [{'name': 'swamp-role-209-a', 'expiresAt': LATER, 'state': 'enrolled'}]}
         self.save()
 
@@ -110,6 +113,25 @@ class GatewayTokenEntrypointTest(unittest.TestCase):
         self.assertIn('swamp.credential_env_missing: %s' % (self.folder / 'home/.config/swamp/env.sh'), result.stderr)
         self.assertEqual(result.stdout, '')
         self.assertEqual(self.load()['calls'], [])
+
+    def test_list_reads_the_plain_array_of_swamp_20261114_and_the_older_envelope_and_refuses_another_shape(self):
+        listed = {}
+        for shape in ('array', 'envelope'):
+            self.state['shape'] = shape
+            self.save()
+            result = self.entrypoint('list')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            listed[shape] = json.loads(result.stdout)['access']
+        self.assertEqual(listed['array'], listed['envelope'])
+        self.assertEqual(listed['array'][0], {'name': 'orbit-gateway-read-20261121', 'principal': 'user:orbit-gateway-read',
+                                              'expiresAt': SOON, 'state': 'active'})
+        self.state['shape'] = 'unknown'
+        self.save()
+        refused = self.entrypoint('list')
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(refused.stdout, '')
+        self.assertIn('unknown shape', refused.stderr)
+        self.assertNotIn('fake-secret', refused.stdout + refused.stderr)
 
     def test_list_does_not_invent_state_when_enrollment_state_is_absent(self):
         self.state['enrollment'] = [{'name': 'swamp-role-209-a', 'expiresAt': LATER}]

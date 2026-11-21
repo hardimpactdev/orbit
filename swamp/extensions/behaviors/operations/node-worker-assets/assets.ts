@@ -26,6 +26,7 @@ const EnrollmentRow = z.object({
     expiresAt: Expiry,
 }).passthrough();
 const Lists = {
+    // swamp 20261114 lists access tokens as a plain array; an older {"tokens": [...]} envelope is accepted too.
     access: z.union([
         z.array(AccessRow),
         z.object({ tokens: z.array(AccessRow) }).passthrough(),

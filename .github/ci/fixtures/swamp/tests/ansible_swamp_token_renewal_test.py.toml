@@ -2,6 +2,8 @@ file = "swamp/tests/ansible_swamp_token_renewal_test.py"
 cost = 1
 cases = [
   "test_every_swamp_call_sources_the_credential_env_through_swamp_env_as_the_serve_account",
+  "test_the_older_tokens_envelope_renews_like_the_plain_array",
+  "test_an_unknown_token_list_shape_fails_closed_and_changes_no_file",
   "test_nothing_is_due_so_nothing_changes",
   "test_due_tokens_mint_a_dated_generation_verify_and_switch_without_rotate_or_revoke",
   "test_a_refused_worker_candidate_leaves_server_token_untouched",

@@ -18,9 +18,12 @@ swamp() {
     SWAMP_API_KEY_FILE="$home/.config/swamp/api-key" SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 \
     "$swamp_env" timeout 60 "$bin" "$@" --server ws://127.0.0.1:9418 --token-file "$home/.config/swamp/serve-driver-token" --json
 }
-# `swamp access token list --json` is {"tokens":[...]}; `swamp worker token list --json` is a plain array.
+# `swamp access token list --json` and `swamp worker token list --json` are plain arrays (swamp 20261114, Node 209); an older
+# {"tokens":[...]} envelope is accepted too. Any other shape fails closed.
 access_tokens() {
-  swamp access token list | jq -c '[.tokens[] | {name, principal: .principalId, expiresAt, state: (.effectiveState // .state)}]'
+  swamp access token list | jq -c '(if type == "array" then . elif type == "object" and (.tokens | type) == "array" then .tokens
+    else error("swamp access token list returned an unknown shape") end)
+    | [.[] | {name, principal: .principalId, expiresAt, state: (.effectiveState // .state)}]'
 }
 held() {
   # Strictly parse `<name>.<secret>` from a token file; an undelimited or malformed value returns empty, never the raw secret.
