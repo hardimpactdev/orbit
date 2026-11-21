@@ -96,9 +96,11 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
-A container default's checkout can already be at a newer commit of the branch than the pinned target, as when a deployment by hand moved the default on before a release's refresh ran. One probe decides it, in the run's first step, "Start the container", right after the container's start. It runs before the seed hold, the fleet check, the seed, the Project's PHP, the bundle, any unit restart and any deploy-step record. It changes only the Node's mirror of the branch, which it fetches as the fetch does. The probe applies the fetch's rule and then the checkout's rules in the checkout's order, to the workspace's real `HEAD`:
+A container default's checkout can already be at a newer commit of the branch than the pinned target, as when a deployment by hand moved the default on before a release's refresh ran. One probe decides it, in the run's first step, "Start the container", right after the container's start. It runs before the seed hold, the fleet check, the seed, the Project's PHP, the bundle, any unit restart and any deploy-step record.
 
-1. A target off the fetched branch's first-parent chain refuses with `deployment.commit_not_on_branch`, as the fetch does. This holds even when the workspace's own history has the target behind `HEAD`.
+The probe changes only the Node's mirror of the branch, which it fetches as the fetch does. It applies the fetch's rule and then the checkout's rules in the checkout's order, to the workspace's real `HEAD`:
+
+1. A target off the fetched branch's first-parent chain refuses with `deployment.commit_not_on_branch`. The workspace's own history does not decide this rule.
 2. Tracked changes refuse with `deployment.checkout_dirty`.
 3. A workspace off the default branch refuses with `deployment.branch_diverged`.
 4. A target that `HEAD` reaches only through a merge's second parent refuses with `deployment.commit_not_on_branch`.
