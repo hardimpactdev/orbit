@@ -8,6 +8,7 @@ covers:
   - swamp/ansible/conn-*.yml
   - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/database/migrations/2027_03_22_000001_let_a_reserved_clone_take_its_name.php
   - apps/gateway/database/migrations/*_conn_*.php
 ---
 
@@ -829,6 +830,61 @@ A cancelled clone create keeps the clone for its owner. The Instance stays `rese
 
 A cancelled completion keeps the clone `source_resolved`, its container running and its thread usable. Its own `withdraw-route` step takes back an address that it published. Retry it with `POST /instances/{id}/complete`, or remove the clone. A database fill that already runs is not cut: the cancel waits until the fill has ended, with the two exceptions in [Remove a clone whose completion runs](#remove-a-clone-whose-completion-runs).
 
+## Reserve a clone
+
+A device reserves a clone when its user opens a new thread, before the user names it. The copy, its start, its Conn Server and a nested fleet run while the user types. When the user submits, the device gives the clone its name and branch, and the agent starts at once. The [finalize chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/finalize.mmd) has the steps.
+
+`POST /projects/{id}/reservations` with `{}` admits a clone's `instance.create` under a draft name, `draft-<8 hex>`. Its branch is the draft name at the seed's commit. Its completion waits for the finalize, because a database, a Route and `.env` take the clone's name. The Project checks are those of a Conn create. It answers 202 with a new reservation, or 200 with the caller's open reservation of that Project, kept alive.
+
+A reservation answers these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The reservation's UUID |
+| `project_id`, `instance_id` | The Project and the reserved clone |
+| `state` | `preparing`, `ready`, `finalizing`, `finalized`, `failed`, `expired` or `released` |
+| `expires_at` | When an open reservation expires |
+| `create_operation_id`, `finalize_operation_id`, `destroy_operation_id` | The clone's create, its finalize, and the destroy of a released or expired one |
+| `environment_id` | The clone's T3 server, from `ready` on: the device pairs with it while its user types |
+| `pairing` | One-time `IssuedConnPairingData` (`{"pairing", "pairing_url"}`), minted in the background after `ready` and handed out once on `GET /reservations/{id}` with `Cache-Control: no-store`, or `null` while preparing, still minting or already read |
+| `error_code` | Why a `failed` reservation failed |
+
+Rules:
+
+- One open reservation per device, profile and Project. A device holds at most three; a fourth releases the oldest and destroys its clone.
+- A reservation expires ten minutes after it was made or last read. The reconciler's pass then destroys its clone, as `instance:destroy` does with a running completion. That also cancels the clone's open [fleet wait](/reference/development-containers#a-clone-starts-its-fleet).
+- While it is open, the [idle sleep](/reference/development-containers#sleep-and-wake) keeps the clone awake, with reason `conn_reservation`.
+- `GET /environments` names the server's open reservation in `reservation_id`. A device hides such a server from its threads until the finalize.
+- Only the device and profile that reserved it read, release or finalize it; any other device or profile gets 404.
+
+Once a reserved clone is `ready`, a background job admits `conn.pairing_create` for the reserving device and profile so `ready` never waits on pairing. The next `GET /reservations/{id}` after the link is minted returns `pairing` once with `Cache-Control: no-store`, capped to the reservation's `expires_at`, and clears the stored credential. While the clone is `preparing`, while the link still mints, or after it was read, released or expired, `pairing` is `null` and the device falls back to explicit pairing.
+
+A Project whose clones get an owned database, a Valkey user or a Route is refused with `reservation.unsupported` (409), with `details.reason` `database`, `valkey` or `route`. Their create names them by the Instance name, so a draft name would stay. The device then creates the clone on submit, as before.
+
+`POST /reservations/{id}/finalize` takes the same body as a Conn create, `{"name"}` and an optional `branch`, and an `Idempotency-Key`. It requires `state: ready`. It admits [`instance.finalize`](/reference/gateway-engine#instancefinalize), which holds the Instance lock:
+
+1. Admission renames the Instance at once, so the name is held. The name and branch checks are a Conn create's.
+2. Without a `branch`, the copy's draft branch takes the name.
+3. With a `branch`, the Node's mirror fetches it first and the workspace switches to it at the fetched commit.
+4. The executor's `instance.names` writes the copy's names: the hostname, `/etc/hosts`, `/etc/machine-info` and `/etc/orbit/instance`.
+5. It sends `SIGHUP` to T3 for a live reload without dropping connections. An older server that does not reload in place falls back to a restart. T3 keeps its environment id, sessions and pairings.
+6. The Gateway records the branch and the server's label, then admits the clone's completion.
+
+The refusals:
+
+| Code | Status | When |
+| --- | --- | --- |
+| `reservation.not_ready` | 409 | The create still runs; `details.create_operation_id` names it |
+| `reservation.failed` | 409 | The reserved create failed; create the clone on submit |
+| `reservation.finalized` | 409 | The reservation took its name already; `details.operation_id` names the finalize |
+| `reservation.expired` | 410 | The reservation expired or was released |
+| `instance.name_taken` | 409 | Another Instance holds the name |
+| `instance.finalize_unavailable` | 409 | The clone is not a reserved clone whose create succeeded |
+
+A branch refusal is a Conn create's: `branch.in_use`, `branch.not_found`, `branch.exists` or `source.head_unavailable`. The model is not part of the finalize: the device sends it with the first message.
+
+In copy 3728's nested fleet, a reservation was `ready` 7 s after it was made. Its finalize took 0.79 s, of which the T3 restart took 0.26 s. The completion with nothing left took 16 ms, so the clone was `active` about 1 s after the submit. An expired reservation's destroy took 16 s.
+
 ## Durable launches (v1)
 
 **Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only.
@@ -1548,6 +1604,10 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
 | `POST /instances/{id}/complete` | no body; `Idempotency-Key` | Operation (202) |
 | `POST /launches` | [Launch request](#admit-and-replay) and `Idempotency-Key` | [Launch snapshot](#launch-snapshot) (202) |
+| `POST /projects/{id}/reservations` | `{}` | [reservation](#reserve-a-clone) (202 new, 200 the open one) |
+| `GET /reservations/{id}` | — | reservation; keeps it alive |
+| `DELETE /reservations/{id}` | — | reservation, `released` (202) |
+| `POST /reservations/{id}/finalize` | `{"name": "fix-login"}`, optional `branch`, and `Idempotency-Key` | Operation `instance.finalize` (202) |
 | `GET /launches` | — | List of launch snapshots, newest first |
 | `GET /launches/{operation_id}` | — | Launch snapshot |
 | `POST /launches/{operation_id}/cancel` | No fields | Launch snapshot (202) |

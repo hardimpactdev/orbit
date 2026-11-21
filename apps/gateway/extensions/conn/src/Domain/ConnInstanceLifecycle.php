@@ -83,6 +83,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         return ConnEnvironment::query()->where('instance_id', $instance->id)->exists();
     }
 
+    /** The clone's T3 server keeps its id, sessions and pairings; only its label follows the new name. */
+    public function projectRename(Instance $instance, string $label): void
+    {
+        ConnEnvironment::query()->where('instance_id', $instance->id)->update(['label' => $label]);
+    }
+
     public function projectCreate(Instance $instance, array $server): void
     {
         $id = ValidatedData::string($server['environment_id']);
@@ -105,8 +111,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         }
         $environment->forceFill(['instance_id' => $instance->id])->save();
         // The creating profile's Nodes get their held sessions now, so their first attach is one read.
+        // A reserved clone also mints its one-time pairing link in the background so it never slows `ready`.
         if ($this->extensions->enabled('conn')) {
-            DB::afterCommit(fn () => app(ConnHeldSessions::class)->preMint($instance, $environment));
+            DB::afterCommit(static function () use ($instance, $environment): void {
+                app(ConnHeldSessions::class)->preMint($instance, $environment);
+                app(ConnReservations::class)->schedulePairing($instance, $environment);
+            });
         }
         if ($replaced) {
             DB::afterCommit(function () use ($environment, $instance): void {

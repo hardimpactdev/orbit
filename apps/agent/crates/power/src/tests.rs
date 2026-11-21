@@ -280,7 +280,8 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::InstanceCopyVolume
             | orbit_executor_core::action::Action::InstanceStop
             | orbit_executor_core::action::Action::InstanceSpareVolume
-            | orbit_executor_core::action::Action::InstanceFleetReady => {
+            | orbit_executor_core::action::Action::InstanceFleetReady
+            | orbit_executor_core::action::Action::InstanceNames => {
                 panic!("power actions only")
             }
         }

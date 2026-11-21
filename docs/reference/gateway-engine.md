@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCompleteEngineFlow,InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCompleteEngineFlow,InstanceCreateEngineFlow,InstanceFinalize,InstanceFinalizeEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -84,6 +84,12 @@ A default's own create stays on Swamp.
 ### instance.complete
 
 A clone's completion runs on the engine only when nothing is left on its Node ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)): the create said `services: seed`, and there is no database, Valkey user, Route publication or fleet start. It then has no step: its start ends it at once, and its projection makes the clone `active`. Any other completion starts on Swamp. It follows `instance.create` in `ORBIT_ENGINE_KINDS`.
+
+### instance.finalize
+
+A [reserved clone's](/reference/conn#reserve-a-clone) finalize gives it its name and branch. Its admission renames the Instance under the Instance lock. The engine then runs `fetch` (`instance.fetch_branch`, only for a selected branch) and `names` (`instance.names`, agent 0.28.0 or newer), which moves the branch, writes the copy's names and reloads T3 via `SIGHUP` (falling back to a restart for older servers) until it shows its new label. Its end records the branch and the server's label, lets go of the lock, and admits the clone's completion.
+
+It runs only on the engine and follows `instance.create` in `ORBIT_ENGINE_KINDS`. Its budget is 420 seconds. The reconciler's pass starts a finalize whose start was lost, nudges a stalled one, and ends one past its budget as `operation.timed_out`, which lets go of the Instance lock.
 
 ### instance.fleet
 

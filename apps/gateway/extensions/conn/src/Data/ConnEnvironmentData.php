@@ -34,9 +34,11 @@ final class ConnEnvironmentData extends Data
         public ?string $powerState,
         public ?string $renewalErrorCode,
         public ?string $renewalCheckedAt,
+        public ?string $reservationId = null,
     ) {}
 
-    public static function fromModel(ConnEnvironment $environment): self
+    /** `$reservationId`: the server's open reservation, which a list reads for all its rows at once. */
+    public static function fromModel(ConnEnvironment $environment, ?string $reservationId = null): self
     {
         $environment->loadMissing(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
 
@@ -63,6 +65,8 @@ final class ConnEnvironmentData extends Data
             // The last renewal of a container server's Gateway session: null after a success, else its code.
             renewalErrorCode: $environment->renewal_error_code,
             renewalCheckedAt: $environment->renewal_checked_at?->toIso8601String(),
+            // A reserved clone's server, until its finalize: a device hides it from its threads (/reference/conn#reserve-a-clone).
+            reservationId: $reservationId,
         );
     }
 }

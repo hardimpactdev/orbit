@@ -30,6 +30,13 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
+    public function projectRename(Instance $instance, string $label): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectRename($instance, $label);
+        }
+    }
+
     public function projectDestroy(Instance $instance): void
     {
         foreach ($this->contributions as $contribution) {

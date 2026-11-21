@@ -17,10 +17,13 @@ final readonly class CreateInstanceData
         public ?string $branch,
         public ?string $databaseServer = null,
         public ?InstanceBranchSelection $branchSelection = null,
+        /** A reserved clone: its owner admits the completion after it gives the clone its final name (docs/reference/conn.md#reserve-a-clone). */
+        public bool $completionDeferred = false,
     ) {}
 
     public function withName(string $name): self
     {
-        return new self($this->projectId, $this->nodeId, $name, $this->root, $this->domain, $this->branch, $this->databaseServer, $this->branchSelection);
+        return new self($this->projectId, $this->nodeId, $name, $this->root, $this->domain, $this->branch, $this->databaseServer, $this->branchSelection,
+            $this->completionDeferred);
     }
 }
