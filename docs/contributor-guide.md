@@ -4,9 +4,9 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - "{.agents/skills/reviewing-pull-requests/references/test-*.md,.agents/swamp-upstream/**,tools/test_ci_swamp_skills.py}"
-  - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
+  - "{composer.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
-  - "{apps/*,packages/php-sdk}/{composer,vet}.json"
+  - "{apps/*,packages/php-sdk}/composer.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/Support/TestToolchain.php}
   - apps/docs/**
@@ -278,22 +278,15 @@ The CLI keeps one counted `ignoreErrors` entry for a Larastan finding on an inhe
 
 ## Dependencies
 
-Manual updates take only releases that are at least three days old:
-
-- Composer: the `laravel/vet` plugin skips releases younger than `minimum-release-age` days, as each project's `vet.json` sets.
-- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 259200 seconds in `apps/web` and `apps/desktop`.
-
-The wait applies only when Composer or Bun resolves a version. `composer install` and `bun install --frozen-lockfile` install the locked versions. Vet keeps no trust entries, so it prints a notice on each install.
-
 Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
 When updating Vite+ in web, keep the `vite` alias on the same Vite+ core version. Match the `vitest` override and web's Playwright browser provider to the Vitest version in `vite-plus/dist/versions.js`. Remove overrides for Vitest packages absent from the new runner.
 
 Dependabot holds routine `vite-plus` version updates in web until it can move the core alias and runner overrides with them. Update that set together manually. Security updates remain enabled and must satisfy the same version alignment.
 
-Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
+Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group so one daily pull request bundles routine updates. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
 
-When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.
+When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review.
 
 If an advisory has no fix, do not hide it. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
 
@@ -486,8 +479,6 @@ The lint command reads the repository only, with no network, external service, o
 ### Audits stay outside the gate
 
 Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and an advisory fix pull request ships the fix.
-
-Vet runs without a trust baseline. A baseline makes each routine update a manual approval, and the release age already holds back a compromised release while it is found and pulled.
 
 ### A generated context index
 
