@@ -10,7 +10,6 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
-use App\Domain\Instances\Deployment\ContainerDeployPriorConfig;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
@@ -97,13 +96,10 @@ final readonly class StartInstanceDeployAction
             }
             // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
-            $prior = null;
             if ($container) {
                 $this->intent->assertDevelopment($instance);
                 $facts = app(CaptureProjectSourceFactsAction::class);
                 $project = $instance->project;
-                // What the target commit's facts replace, which a run that ends at the start's probe puts back.
-                $prior = ContainerDeployPriorConfig::capture($instance);
                 if ($read['facts']['source_profile_error'] !== null) {
                     throw new ResourceOperationException($read['facts']['source_profile_error'], 'The deployed source metadata is invalid or unsupported for a development Instance.', 422);
                 }
@@ -132,9 +128,6 @@ final readonly class StartInstanceDeployAction
                     // The proof default first waits for its seed hold (docs/reference/development-containers.md#the-seed-hold).
                     + (is_array($deployment['container'] ?? null) && ($deployment['container']['seed_hold'] ?? false) === true ? ProofSeeds::HoldWaitSeconds : 0),
                 ...($commit === null ? [] : ['commit' => $commit])];
-            if ($prior !== null) {
-                $input['prior_config'] = $prior;
-            }
             if ($development) {
                 $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);
                 $input['github'] = ['$secret' => 'github.installation', 'id' => $instance->node_id];

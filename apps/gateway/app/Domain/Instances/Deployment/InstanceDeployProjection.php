@@ -183,10 +183,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
                     ...$status === 'succeeded' && ! $alreadyNewer ? ['seed_commit' => $facts['commit'], 'seed_taken_at' => now()] : []]);
-                // A run that ended at the start's probe kept the checkout, so the configuration its admission replaced comes back.
-                if (ContainerDeployPriorConfig::endedAtProbe($status, $alreadyNewer, $facts['failed_step'], ValidatedData::nullableString($data['error_code'] ?? null))) {
-                    ContainerDeployPriorConfig::restore($locked, $instance);
-                } else {
+                if (! $alreadyNewer) {
                     app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
                         $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null),
                         inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));

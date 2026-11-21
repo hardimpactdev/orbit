@@ -46,7 +46,6 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
-use App\Models\ProjectEnvironmentTemplate;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -1602,78 +1601,4 @@ it('fails a deployment by hand of an older commit in its fetch with deployment.c
         ->and($operation->error_code)->toBe('deployment.commit_behind_checkout')
         ->and($operation->lock_key)->toBeNull()
         ->and(json_encode($operation->toArray(), JSON_THROW_ON_ERROR))->toContain('is older than the checkout HEAD');
-});
-
-/**
- * A default whose Project, template and Processes are those of commit C, and whose next admitted commit brings PHP 8.5, a changed
- * `worker` and a new `queue` Process. Returns what a restore must give back: the Project's facts, the template's reference and every
- * Process row.
- *
- * @return array{0: Instance, 1: Closure(): array<string, mixed>}
- */
-function priorConfigDefault(): array
-{
-    $instance = deployDefaultWithProcesses();
-    $seen = str_repeat('c', 40);
-    $instance->project->update(['type' => ProjectType::LaravelApp, 'php_version' => '8.4', 'is_laravel' => true, 'source_profile_error' => null]);
-    ProjectEnvironmentTemplate::query()->create(['project_id' => $instance->project_id, 'source_path' => '.env.example', 'source_commit' => $seen,
-        'source_blob' => str_repeat('d', 40), 'checked_head' => $seen,
-        'entries' => [['key' => 'APP_NAME', 'value' => 'deployed', 'example' => 'deployed', 'removed' => false]]]);
-    ProcessDefinition::query()->where('name', 'worker')->update(['spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'worker-v2.js'], 'restart_policy' => 'always']]);
-    ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'queue', 'environments' => ['development'],
-        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/env', 'node', 'queue.js'], 'restart_policy' => 'always']]);
-    $state = static fn (): array => ['project' => $instance->project->refresh()->only(['php_version', 'is_laravel', 'source_profile_error']),
-        'template' => ProjectEnvironmentTemplate::query()->where('project_id', $instance->project_id)->firstOrFail()
-            ->only(['source_path', 'source_commit', 'source_blob', 'checked_head', 'entries']),
-        'processes' => Process::query()->where('owner_id', $instance->id)->orderBy('id')->get()->map(static fn (Process $process): array => $process->getRawOriginal())->all()];
-
-    return [$instance, $state];
-}
-
-/** Admits a real deployment of the older commit A with PHP 8.5 and ends its run with `$file` from `$step`. */
-function priorConfigRun(Instance $instance, bool $release, string $status, array $file, ?string $step): Operation
-{
-    $older = str_repeat('a', 40);
-    test()->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($older, '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}', true));
-    $operation = app(StartInstanceDeployAction::class)->execute($instance, $release ? NestedFleetRefresh::Trigger : 'manual', null, $older, release: $release);
-    $operation->update(['status' => OperationStatus::Running, 'state' => [...$operation->state ?? [], 'swamp_run_id' => 'run-1']]);
-    app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
-        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]],
-            'summary' => ['failed_steps' => $step === null ? [] : [$step]]]]);
-
-    return $operation->refresh();
-}
-
-it('puts back the configuration its admission replaced when the probe ends the run, so it matches the kept checkout', function (bool $release, string $status, array $file, ?string $step, ?string $code): void {
-    Queue::fake();
-    [$instance, $state] = priorConfigDefault();
-    $before = $state();
-
-    $operation = priorConfigRun($instance, $release, $status, $file, $step);
-
-    expect($operation->input['prior_config']['template'])->not->toHaveKey('entries')
-        ->and($operation->status->value)->toBe($status)
-        ->and($operation->error_code)->toBe($code)
-        ->and($operation->lock_key)->toBeNull()
-        ->and($state())->toBe($before);
-})->with([
-    'a release deployment kept a newer checkout' => [true, 'succeeded', ['commit' => str_repeat('b', 40), 'outcome' => 'already_newer',
-        'kept_commit' => str_repeat('b', 40), 'target_commit' => str_repeat('a', 40), 'phases_passed' => ['start', 'probe']], null, null],
-    'a deployment by hand of an older commit refused' => [false, 'failed', ['error_code' => 'deployment.commit_behind_checkout',
-        'failed_phase' => 'probe', 'phases_passed' => ['start']], 'Start the container', 'deployment.commit_behind_checkout'],
-]);
-
-it('keeps the target commit\'s configuration after a deployment that passed', function (): void {
-    Queue::fake();
-    [$instance, $state] = priorConfigDefault();
-    $before = $state();
-
-    $operation = priorConfigRun($instance, false, 'succeeded', ['commit' => str_repeat('a', 40)], null);
-
-    $after = $state();
-    expect($operation->status)->toBe(OperationStatus::Succeeded)
-        ->and($after['project']['php_version'])->toBe('8.5')
-        ->and($after['template']['source_commit'])->toBe(str_repeat('a', 40))
-        ->and(array_column($after['processes'], 'name'))->toBe([...array_column($before['processes'], 'name'), 'queue'])
-        ->and($after['processes'])->not->toBe($before['processes']);
 });
