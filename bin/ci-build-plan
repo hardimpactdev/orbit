@@ -244,6 +244,13 @@ def check_table():
     return table, checks, roots
 
 
+def without_rootless_deletions(paths, deleted):
+    """A deleted file under no source root left nothing to build or check, so it needs no root of its own."""
+    _, _, roots = check_table()
+    return [path for path in paths
+            if path not in deleted or any(matches(path, rules) for _, rules, _ in roots)]
+
+
 def check_source_roots(paths):
     _, _, roots = check_table()
     for path in paths:
@@ -354,6 +361,7 @@ def main():
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     base, paths = changed_inputs(a.base, a.head)
+    paths = without_rootless_deletions(paths, set(listed_paths('diff', '--name-only', '--no-renames', '--diff-filter=D', '-z', base, a.head)))
     population_changed = False
     registry_checks = registry_check_changes(base, a.head) if registry.metadata_changed(paths) else None
     if registry.metadata_changed(paths):
