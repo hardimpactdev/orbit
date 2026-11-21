@@ -18,7 +18,9 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\NestedFleetLayout;
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -1102,24 +1104,56 @@ it('never refuses or holds power work for an automatic role converge, waiting or
         ->and(fn () => $admit('instance.deploy', 102))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
 })->with(['instance.wake', 'instance.sleep', 'instance.start']);
 
-it('never keeps a release row waiting for an ended deploy that only the executor fence keeps, and still waits for one that runs', function (): void {
+it('never keeps a release row waiting for a deploy the release admitted once it ended, and drops it from waiting_for', function (string $end): void {
     prepareReleaseTarget();
-    // As Operation 31729: a release-triggered deploy signed a power order and ended interrupted with executor.result_unknown; the
-    // fence keeps its Instance lock until the receipt comes (ADR 0266, R2).
-    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'release', null, lockKey: 'instance:99');
+    // As Operation 31729: the release's own refresh admitted the deploy (its input's `origin`).
+    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, ['origin' => ContainerDeployOutcome::ReleaseOrigin],
+        NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
 
     expect($fleet->execute($release))->toBe(15)
         ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$deploy->id]);
-    $deploy->update(['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(),
-        'state' => [ExecutorFence::Issued => true]]);
-    expect(ExecutorFence::holds($deploy->refresh()))->toBeTrue()->and($deploy->lock_key)->toBe('instance:99');
+    $deploy->update(match ($end) {
+        // The fence keeps the Instance lock of a signed order without its receipt (ADR 0266, R2).
+        'interrupted under the fence' => ['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(),
+            'state' => [ExecutorFence::Issued => true]],
+        // Expired before it had a Swamp run, its cancellation still forwarding.
+        'timed out before its run' => ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null,
+            'state' => ['native_cancel_requested_at' => now()->toISOString()]],
+        // Expired during its run, its cancellation still forwarding.
+        'timed out awaiting its cancellation' => ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null,
+            'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()]],
+        'succeeded' => ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null],
+        'failed' => ['status' => OperationStatus::Failed, 'error_code' => 'deployment.branch_diverged', 'finished_at' => now(), 'lock_key' => null],
+        'cancelled' => ['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'lock_key' => null],
+    });
 
     expect($fleet->execute($release))->toBe(10);
-    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for')
-        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
-    // The fence still holds the Instance: new work on it is refused.
-    expect(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'test', null, lockKey: 'instance:99'))
-        ->toThrow(ResourceOperationException::class);
-});
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for');
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+
+    // A wait that ended without this pass's converge, such as one an operator ran by hand, leaves no stale ID behind either.
+    $phases = $release->phases;
+    $phases['fleet']['nodes'][$this->node->id]['waiting_for'] = [$deploy->id];
+    $release->update(['phases' => $phases]);
+    $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $this->node->forceFill(['release_inputs' => [...$this->node->fresh()->release_inputs, 'roles' => []]])->save();
+    expect($fleet->execute($release))->toBeNull();
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'current'])->not->toHaveKey('waiting_for');
+})->with(['interrupted under the fence', 'timed out before its run', 'timed out awaiting its cancellation', 'succeeded', 'failed', 'cancelled']);
+
+it('still holds the Node for an ended deploy the release did not admit while its result is unknown', function (array $deploy): void {
+    prepareReleaseTarget();
+    // A deploy by hand, even from a caller named `release`: its admission recorded no release origin.
+    $held = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
+    $held->update(['status' => OperationStatus::Interrupted, 'finished_at' => now(), ...$deploy]);
+    $release = releaseWithRow(['status' => 'pending']);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$held->id]);
+})->with([
+    'fenced' => [['error_code' => 'executor.result_unknown', 'state' => [ExecutorFence::Issued => true]]],
+    'cancellation unconfirmed' => [['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'lock_key' => null,
+        'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()]]],
+]);

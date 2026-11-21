@@ -96,14 +96,17 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
-A container default's checkout can already be at a newer commit of the branch, so the target commit is an ancestor of its `HEAD`. What the deployment does then depends on its origin:
+A container default's checkout can already be at a newer commit of the branch, so the target commit is an ancestor of its `HEAD`. The run's fetch decides this by reading the workspace and the Node's mirror, after the container's start and before any fleet check, seed or checkout. What the deployment does then depends on its origin, which its admission records: the release's refresh or the automatic policy. A caller's name is no origin.
 
 - A deployment that a release refresh or the automatic policy admitted succeeds as a no-op.
-- That no-op keeps the checkout and takes no new seed. No step runs and no Process restarts.
+- That no-op keeps the checkout and takes no new seed. No unit stops or restarts.
+- The fleet check, the checkout, the deploy steps and the Processes do not run.
 - Its `result` holds `already_newer: true`. Its `commit` is the newer commit that the checkout keeps.
-- The release that admitted it counts the kept seed as current and publishes it to the CI Nodes, because it descends from the release commit ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
-- A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing.
-- A branch that diverged from the target stays refused with `deployment.branch_diverged`.
+- The release that admitted it publishes the kept seed to the CI Nodes. It must be the seed of the kept commit ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
+- A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing; nothing is restored. Its detail says that the requested commit is older than the checkout `HEAD` and names both commits.
+- A branch that diverged from the target stays refused with `deployment.branch_diverged` at the checkout.
+
+A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)).
 
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 

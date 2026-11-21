@@ -655,7 +655,7 @@ Deno.test({
       assertEquals(f.result(), { error_code: "deployment.commit_not_on_branch", failed_phase: "fetch", phases_passed: ["start"] });
 
       // Tracked changes in the workspace refuse the checkout and stay.
-      f.container.commit = first;
+      f.container.commit = second;
       f.write();
       assert(f.run("fetch").ok);
       Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`, "<?php echo 3;\n");
@@ -665,35 +665,49 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`), "<?php echo 3;\n");
       f.workspace("checkout", "--", "index.php");
 
-      // An older commit of the branch, which the checkout is already past: a deployment by hand refuses it by its own code.
-      const refetch = f.run("fetch");
-      assert(refetch.ok, refetch.output);
-      const behind = f.run("checkout");
+      // An older commit of the branch, which the checkout is already past: the fetch decides it, only reading, before any phase
+      // changes the container. A deployment by hand refuses it by its own code and says why.
+      f.container.commit = first;
+      f.write();
+      const snapshots = f.state().containers["instance-7"].snapshots;
+      const behind = f.phases(["start", "fetch", "seed"]);
       assert(!behind.ok);
-      assertEquals(f.result(), { error_code: "deployment.commit_behind_checkout" });
+      assertEquals(f.result(), { error_code: "deployment.commit_behind_checkout", failed_phase: "fetch", phases_passed: ["start"],
+        detail: `The requested commit ${first} is older than the checkout HEAD ${second} of main; deploy the newer commit instead.` });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
 
-      // A deployment that a release admitted (as Operation 31729) keeps the newer checkout: it passes, changes nothing, cleans
-      // nothing, and names the checkout's commit with `already_newer`. The workflow reads the line and skips every later phase.
+      // A deployment that a release admitted (as Operation 31729) keeps the newer checkout: the play passes, its seed does not run,
+      // it changes and cleans nothing, and names the checkout's commit with `already_newer`. The workflow reads the line and skips
+      // every later step.
       Object.assign(f.container, { keep_newer: true });
       f.write();
       Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`, "kept\n");
-      assert(f.run("fetch").ok);
-      const kept = f.run("checkout");
+      const kept = f.phases(["start", "fetch", "seed"]);
       assert(kept.ok, kept.output);
       assertStringIncludes(kept.output, "orbit-checkout=already_newer");
-      assertEquals(f.result(), { commit: second, already_newer: true });
+      assertEquals(f.result(), { commit: second, already_newer: true, phases_passed: ["start", "fetch"] });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(f.state().containers["instance-7"].snapshots, snapshots);
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`), "kept\n");
       Deno.removeSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`);
+
+      // A branch that moved away from HEAD is no older commit: even a release deployment refuses it as diverged at the checkout.
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const local = f.workspace("rev-parse", "HEAD");
+      assert(f.run("fetch").ok);
+      const diverged = f.run("checkout");
+      assert(!diverged.ok);
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      assertEquals(f.workspace("rev-parse", "HEAD"), local);
+      f.workspace("reset", "--quiet", "--hard", second);
 
       // The newest commit still fast-forwards a release deployment as before, with no `already_newer`.
       f.container.commit = second;
       f.write();
-      assert(f.run("fetch").ok);
-      const same = f.run("checkout");
+      const same = f.run("fetch");
       assert(same.ok, same.output);
       assert(!same.output.includes("orbit-checkout=already_newer"));
+      assert(f.run("checkout").ok);
       assertEquals((f.result() as Record<string, unknown>).already_newer, undefined);
     } finally {
       f.cleanup();

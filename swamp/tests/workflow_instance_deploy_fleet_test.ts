@@ -52,7 +52,7 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     for (const gone of ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror", "Install the Processes",
         "Refresh the inner fleet", "Take the seed snapshot", "Check the container"]) assert(!names.includes(gone), gone);
     assertEquals(phases("Prepare the container", container), ["start", "fetch"]);
-    assertEquals(phases("Prepare the container", nested), ["start", "fleet_start", "seed", "fetch"]);
+    assertEquals(phases("Prepare the container", nested), ["start", "fetch", "fleet_start", "seed"]);
     assertEquals(phases("Finish the container", container), ["processes", "seed", "check"]);
     assertEquals(phases("Finish the container", nested), ["processes", "fleet_refresh", "seed", "check"]);
     // The same list selects the tags and orders the phases; only the fleet check reads the room a refresh needs.
@@ -218,22 +218,26 @@ Deno.test("only the proof default holds its seed before any phase, and a busy ho
     }
 });
 
-Deno.test("a checkout already past the commit ends the run: the deploy steps, the Processes, the seed and the check skip, and nothing restores", () => {
-    const newer = { "Check out in the container": { status: "succeeded", outputs: { stdout: "ok: [node] => {\n    \"msg\": \"orbit-checkout=already_newer\"\n}\n" } } };
-    const moved = { "Check out in the container": { status: "succeeded", outputs: { stdout: "ok: [node]\n" } } };
+Deno.test("a fetch that finds the checkout already past the commit ends the run: the checkout and every later step skip, and nothing restores", () => {
+    // The fetch decides it before `fleet_start` and `seed`, so the play changed nothing in the container.
+    const newer = { "Prepare the container": { status: "succeeded", outputs: { stdout: "ok: [node] => {\n    \"msg\": \"orbit-checkout=already_newer\"\n}\n" } } };
+    const moved = { "Prepare the container": { status: "succeeded", outputs: { stdout: "ok: [node]\n" } } };
     const evaluate = (name: string, intent: Record<string, unknown>, statuses: Record<string, unknown>) =>
         cel.evaluate(expression(step(name).guard!), {
             inputs: { intent }, self: { step: { inputs: { a: "b" }, name: "migrate" } },
-            steps: { "Write the container intent": { status: "succeeded" }, "Prepare the container": { status: "succeeded" },
+            steps: { "Write the container intent": { status: "succeeded" }, "Check out in the container": { status: "skipped" },
                 "Read the steps to skip": { status: "skipped" }, ...statuses },
         });
     const withInputs = { ...nested, deployment: { variant: "container", steps: [{ inputs: { a: "b" } }] } };
-    for (const name of ["Read the steps to skip", "Run dev deploy steps", "Finish the container", ...restoreSteps]) {
+    for (const name of ["Check out in the container", "Read the steps to skip", "Run dev deploy steps", "Finish the container", ...restoreSteps]) {
         assertEquals(evaluate(name, withInputs, newer), true, name);
     }
-    for (const name of ["Read the steps to skip", "Run dev deploy steps", "Finish the container"]) {
+    for (const name of ["Check out in the container", "Read the steps to skip", "Run dev deploy steps", "Finish the container"]) {
         assertEquals(evaluate(name, withInputs, moved), false, name);
     }
+    // A deployment by hand of an older commit fails in the fetch: the Prepare step failed, so nothing restores or restarts.
+    const refused = { "Prepare the container": { status: "failed" } };
+    for (const name of restoreSteps) assertEquals(evaluate(name, withInputs, refused), true, name);
 });
 
 Deno.test("the restart after a restore keeps the failed phase's result and adds the receipt of the order it signed", () => {
@@ -251,14 +255,16 @@ Deno.test("the restart after a restore keeps the failed phase's result and adds 
         Deno.writeTextFileSync(`${folder}/venv/bin/ansible-playbook`,
             `#!/bin/sh\nprintf '%s' '${JSON.stringify({ commit: "c".repeat(40), executor: receipt })}' > "$ORBIT_RUN/result.json"\n`);
         Deno.chmodSync(`${folder}/venv/bin/ansible-playbook`, 0o755);
-        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.commit_behind_checkout" }));
+        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.branch_diverged" }));
         const run = step("Start on the old seed").task.inputs.run!.replaceAll("/opt/orbit/ansible/venv", `${folder}/venv`);
         const done = new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder, ORBIT_ANSIBLE: folder } }).outputSync();
         assert(done.success, new TextDecoder().decode(done.stderr));
-        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/result.json`)), { error_code: "deployment.commit_behind_checkout", executor: receipt });
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/result.json`)), { error_code: "deployment.branch_diverged", executor: receipt });
+        // A failed "Start the restored fleet" starts its failure from failed.json, which keeps the receipt too.
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/failed.json`)), { error_code: "deployment.branch_diverged", executor: receipt });
         // A failed run that has a receipt of its own keeps it.
         const first = { ...receipt, action: "wake" };
-        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.commit_behind_checkout", executor: first }));
+        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.branch_diverged", executor: first }));
         assert(new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder, ORBIT_ANSIBLE: folder } }).outputSync().success);
         assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/result.json`)).executor, first);
     } finally {

@@ -1454,21 +1454,28 @@ it('reads what a deployment\'s checkout removed from the default\'s tree, names 
         ->and($run(['removed_count' => 1, 'removed' => [['nested']]]))->not->toHaveKey('workspace_cleaned');
 });
 
-it('lets only a release or automatic deployment keep a checkout already past its commit', function (?string $trigger, bool $keeps): void {
+it('lets only a deployment the release or the automatic policy admitted keep a checkout already past its commit, by its admission', function (string $admission, ?string $origin): void {
+    Queue::fake();
     deployVault();
     $instance = deployDefault(container: true);
-    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
-        'status' => OperationStatus::Running, 'triggered_by' => $trigger, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
-            'commit' => str_repeat('a', 40), 'platform' => 'linux', 'architecture' => 'x86_64',
-            'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, false)], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
+    $commit = str_repeat('a', 40);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit));
+    app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
 
-    $container = ValidatedData::object(ValidatedData::object(app(DevelopmentDeployInput::class)->workflowInput($operation)['intent'])['container']);
-    expect(($container['keep_newer'] ?? false) === true)->toBe($keeps);
+    $deploy = app(StartInstanceDeployAction::class);
+    $operation = match ($admission) {
+        'the release refresh' => $deploy->execute($instance, NestedFleetRefresh::Trigger, null, $commit, release: true),
+        'the automatic policy' => $deploy->automatic($instance, $instance->node, null, $commit),
+        // The manual endpoint names its calling Node, here one named `release`: a name is no origin.
+        'a Node named release by hand' => $deploy->execute($instance, NestedFleetRefresh::Trigger, null, $commit),
+    };
+
+    expect($operation->input['origin'] ?? null)->toBe($origin)
+        ->and(ContainerDeployOutcome::keepsNewer($operation))->toBe($origin !== null);
 })->with([
-    'the release refresh' => [NestedFleetRefresh::Trigger, true],
-    'the automatic policy' => ['swamp:auto-deploy', true],
-    'a deployment by hand' => ['cli', false],
-    'no origin' => [null, false],
+    'the release refresh' => ['the release refresh', ContainerDeployOutcome::ReleaseOrigin],
+    'the automatic policy' => ['the automatic policy', ContainerDeployOutcome::AutomaticOrigin],
+    'a Node named release by hand' => ['a Node named release by hand', null],
 ]);
 
 it('ends a release deployment whose checkout is already past the commit as a no-op that keeps the seed and the Processes', function (): void {
@@ -1481,7 +1488,8 @@ it('ends a release deployment whose checkout is already past the commit as a no-
     $instance->runtime()->update(['seed_commit' => $newer, 'seed_taken_at' => $taken, 'power_state' => InstanceRuntimePowerState::Running]);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
         'status' => OperationStatus::Running, 'triggered_by' => NestedFleetRefresh::Trigger, 'lock_key' => 'instance:'.$instance->id,
-        'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'commit' => $release], 'state' => ['swamp_run_id' => 'run-1']]);
+        'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance), 'commit' => $release, 'origin' => ContainerDeployOutcome::ReleaseOrigin],
+        'state' => ['swamp_run_id' => 'run-1']]);
 
     // As Operation 31729: a deployment by hand moved the checkout to a newer commit before the release's refresh ran. The checkout
     // phase keeps it and every later phase skips.
@@ -1499,19 +1507,25 @@ it('ends a release deployment whose checkout is already past the commit as a no-
         ->and($runtime->seed_taken_at?->toIso8601String())->toBe($taken->toIso8601String())
         ->and(app(NestedFleetRefresh::class)->advance($release)['defaults'][$instance->id])
         ->toMatchArray(['status' => 'current', 'already_newer' => true, 'commit' => $newer, 'operation_id' => $operation->id]);
+
+    // A seed of another commit than the one the no-op named has moved: the refresh publishes nothing.
+    $instance->runtime()->update(['seed_commit' => str_repeat('c', 40)]);
+    expect(app(NestedFleetRefresh::class)->advance($release)['defaults'][$instance->id])
+        ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved']);
 });
 
-it('fails a deployment by hand of an older commit with deployment.commit_behind_checkout and the receipt of its restart, never executor.result_unknown', function (): void {
+it('ends a failed checkout with its own code and the receipt of its restart, never executor.result_unknown, and frees the Instance', function (?string $trigger, string $code): void {
     $instance = deployDefault(container: true);
     config(['orbit.executor.power_enabled' => true]);
     $instance->runtime()->update(['power_state' => 'running']);
     $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
-        'status' => OperationStatus::Running, 'triggered_by' => 'cli', 'lock_key' => 'instance:'.$instance->id, 'input' => ['deployment' => $intent],
+        'status' => OperationStatus::Running, 'triggered_by' => $trigger, 'lock_key' => 'instance:'.$instance->id,
+        'input' => ['deployment' => $intent, ...($trigger === null ? [] : ['origin' => ContainerDeployOutcome::ReleaseOrigin])],
         'state' => ['swamp_run_id' => 'run-1', 'executor_order_issued' => true]]);
     // The restart after the restore of the old seed signed a discard order before its boot; "Start on the old seed" adds its receipt
     // to the failed checkout's result.
-    $file = ['error_code' => 'deployment.commit_behind_checkout', 'executor' => ['status' => 'done', 'operation' => (string) $operation->id,
+    $file = ['error_code' => $code, 'executor' => ['status' => 'done', 'operation' => (string) $operation->id,
         'action' => 'discard', 'target' => (string) $instance->id, 'delivery' => 'swamp']];
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
@@ -1521,7 +1535,33 @@ it('fails a deployment by hand of an older commit with deployment.commit_behind_
 
     $operation->refresh();
     expect($operation->status)->toBe(OperationStatus::Failed)
-        ->and($operation->error_code)->toBe('deployment.commit_behind_checkout')
+        ->and($operation->error_code)->toBe($code)
         ->and($operation->lock_key)->toBeNull()
         ->and($operation->executor_result)->not->toBeNull();
+    // The Instance is free: a later deployment, such as the next release's refresh, is admitted, never operation.target_busy.
+    expect(app(OperationStore::class)->create('instance.deploy', 'instance', $instance->id, $instance->node_id, [], 'test', null,
+        lockKey: 'instance:'.$instance->id)->status)->toBe(OperationStatus::Queued);
+})->with([
+    'a diverged branch of a release deployment' => [NestedFleetRefresh::Trigger, 'deployment.branch_diverged'],
+    'tracked changes of a deployment by hand' => [null, 'deployment.checkout_dirty'],
+]);
+
+it('fails a deployment by hand of an older commit in its fetch with deployment.commit_behind_checkout and says why', function (): void {
+    $instance = deployDefault(container: true);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'cli', 'lock_key' => 'instance:'.$instance->id,
+        'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+    $why = 'The requested commit '.str_repeat('a', 40).' is older than the checkout HEAD '.str_repeat('b', 40).' of main; deploy the newer commit instead.';
+    $file = ['error_code' => 'deployment.commit_behind_checkout', 'detail' => $why, 'failed_phase' => 'fetch', 'phases_passed' => ['start']];
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'failure' => ['failed_step' => 'Prepare the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]],
+            'summary' => ['failed_steps' => ['Prepare the container']]]]);
+
+    $operation->refresh();
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('deployment.commit_behind_checkout')
+        ->and($operation->lock_key)->toBeNull()
+        ->and(json_encode($operation->toArray(), JSON_THROW_ON_ERROR))->toContain('is older than the checkout HEAD');
 });

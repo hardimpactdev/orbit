@@ -1811,9 +1811,12 @@ jobs:
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
   - name: Prepare the container
     # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd): `start`, the one start
-    # of the container; for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
-    # default as it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd); then `fetch`. None of them changes the
-    # workspace, so a failure in any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
+    # of the container; `fetch`, which also decides, only reading, whether the checkout is already past the commit: then it refuses
+    # deployment.commit_behind_checkout, or for a release or automatic deployment prints `orbit-checkout=already_newer`, the later
+    # phases do not run and every later step skips, so the run changes nothing (docs/reference/deployments.md#development-defaults);
+    # then, for a nested-fleet default (only its intent has `fleet`), its one fleet check, `fleet_start`, and the seed of the default as
+    # it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd). None of them changes the workspace, so a failure in
+    # any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
     # the room a refresh needs first (`fleet_room_check`) and refuses instance.container_fleet_no_room or instance.container_fleet_drift;
     # the failed phase names the code. Each phase writes the result file as it ends, as its own play did, so a play that is killed
     # later keeps what the earlier phases did.
@@ -1847,7 +1850,7 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "start,fleet_start,seed,fetch" : "start,fetch" }}'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "start,fetch,fleet_start,seed" : "start,fetch" }}'
           # The sum of the bounds of the phases it runs: start 120, fetch 400, and for a nested fleet the check 400 and the seed 120.
           ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "1040" : "520" }}'
           # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
@@ -1862,7 +1865,7 @@ jobs:
     - step: Prepare the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1888,7 +1891,7 @@ jobs:
     - step: Check out in the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Check out in the container"] && steps["Check out in the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -1913,7 +1916,7 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("outputs" in steps["Check out in the container"] && steps["Check out in the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1959,7 +1962,7 @@ jobs:
     - step: Read the steps to skip
       condition:
         type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Check out in the container"] && steps["Check out in the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") || ("outputs" in steps["Prepare the container"] && steps["Prepare the container"].outputs.stdout.contains("orbit-checkout=already_newer")) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2026,8 +2029,9 @@ jobs:
       inputs:
         # The failed run's result stays the run's result. The restart boots the stopped container, and with signed power it may sign
         # an order of this Operation: the order's receipt joins that result when the failed run had none, so the Gateway reads the
-        # receipt and the failure's own code instead of ending the Operation without a known executor result (ADR 0266, R2).
-        run: 'k="$ORBIT_RUN/failed.json"; timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ -e "$k" ]; then timeout 5 /opt/orbit/ansible/venv/bin/python -I -c ''import json,sys; r=sys.argv[1]; f=json.load(open(r+"/failed.json")); n=json.load(open(r+"/result.json")); f.update({} if "executor" in f else {x: n[x] for x in ("executor", "wake") if x in n}); json.dump(f, open(r+"/result.json", "w"))'' "$ORBIT_RUN" || cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
+        # receipt and the failure's own code instead of ending the Operation without a known executor result (ADR 0266, R2). It joins
+        # failed.json too, so a failed "Start the restored fleet", whose failure starts from failed.json, keeps it.
+        run: 'k="$ORBIT_RUN/failed.json"; timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ -e "$k" ]; then timeout 5 /opt/orbit/ansible/venv/bin/python -I -c ''import json,sys; r=sys.argv[1]; f=json.load(open(r+"/failed.json")); n=json.load(open(r+"/result.json")); f.update({} if "executor" in f else {x: n[x] for x in ("executor", "wake") if x in n}); [json.dump(f, open(r+"/"+x, "w")) for x in ("failed.json", "result.json")]'' "$ORBIT_RUN" || cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}

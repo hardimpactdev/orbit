@@ -878,6 +878,59 @@
       ansible.builtin.set_fact:
         container_commit: "{{ container.commit if container.commit is not none else container_chain.stdout_lines[0] }}"
 
+# A default's checkout is already past the commit when the commit is an older commit of the branch that the workspace's HEAD holds: HEAD
+# is on the branch, in the mirror's branch, and the commit is an ancestor of HEAD. The fetch decides it before any phase changes the
+# container (`fleet_start` and `seed` come after it), and only reads. A deployment that a release or the automatic policy admitted
+# (`keep_newer`) ends here as a no-op that keeps the checkout and names it `already_newer`; the workflow reads the line and skips every
+# later step. Any other refuses deployment.commit_behind_checkout and says why (docs/reference/deployments.md#development-defaults).
+- name: Read whether the checkout is already past the commit
+  tags: [fetch]
+  when: phase == 'fetch' and container.name is defined and container.commit is not none
+  block:
+    - name: Read the workspace's branch and HEAD
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [symbolic-ref, --quiet, --short, HEAD]
+        - [rev-parse, --verify, --quiet, HEAD]
+      register: workspace_head
+      changed_when: false
+      failed_when: false
+    - name: Read whether the mirror's branch holds HEAD past the commit
+      when: >-
+        workspace_head.results[0].stdout | default('') | trim == container.branch
+        and workspace_head.results[1].stdout | default('') | trim is match('^[0-9a-f]{40}$')
+        and workspace_head.results[1].stdout | trim != container_commit
+      ansible.builtin.command: { argv: "{{ mirror_git + item }}" }
+      loop:
+        - [merge-base, --is-ancestor, "{{ container_commit }}", "{{ workspace_head.results[1].stdout | trim }}"]
+        - [merge-base, --is-ancestor, "{{ workspace_head.results[1].stdout | trim }}", "refs/heads/{{ container.branch }}"]
+      register: workspace_newer
+      changed_when: false
+      failed_when: false
+    - name: Name a checkout that is already past the commit
+      ansible.builtin.set_fact:
+        container_already_newer: >-
+          {{ workspace_newer is not skipped and workspace_newer.results | map(attribute='rc') | list == [0, 0] }}
+    - name: Say why an older commit is refused
+      when: container_already_newer | bool and not container.keep_newer | default(false) | bool
+      ansible.builtin.set_fact:
+        checkout_refusal_detail:
+          detail: >-
+            The requested commit {{ container_commit }} is older than the checkout HEAD {{ workspace_head.results[1].stdout | trim }}
+            of {{ container.branch }}; deploy the newer commit instead.
+    - name: Refuse an older commit by hand
+      ansible.builtin.assert:
+        that: not container_already_newer | bool or container.keep_newer | default(false) | bool
+        fail_msg: deployment.commit_behind_checkout
+        quiet: true
+    - name: Keep the newer checkout
+      when: container_already_newer | bool
+      ansible.builtin.set_fact:
+        container_commit: "{{ workspace_head.results[1].stdout | trim }}"
+    - name: Report the newer checkout
+      when: container_already_newer | bool
+      ansible.builtin.debug: { msg: "orbit-checkout=already_newer" }
+
 # The first build brings the branch in only when the workspace is not at the mirror's commit yet, so a rerun changes nothing.
 - name: Read the workspace and the mirror
   tags: [workspace]
@@ -1079,47 +1132,14 @@
       register: workspace_ancestor
       changed_when: false
       failed_when: workspace_ancestor.rc not in [0, 1]
-    # The checkout is already past the commit when the commit is an older commit of the branch that HEAD holds: HEAD is on the branch
-    # and on the fetched branch, and the commit is an ancestor of HEAD. A deployment that a release admitted (`keep_newer`) ends there,
-    # as a no-op that keeps the checkout and names it `already_newer`; any other refuses deployment.commit_behind_checkout.
-    - name: Read whether the checkout is already past the commit
-      when: workspace_ancestor.rc == 1 and workspace_state.results[1].stdout | trim == container.branch
-      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
-      loop:
-        - [merge-base, --is-ancestor, "{{ target }}", HEAD]
-        - [merge-base, --is-ancestor, HEAD, "refs/remotes/origin/{{ container.branch }}"]
-        - [rev-parse, --verify, HEAD]
-      register: workspace_newer
-      changed_when: false
-      failed_when: workspace_newer.rc not in [0, 1]
-    - name: Name a checkout that is already past the commit
-      ansible.builtin.set_fact:
-        workspace_already_newer: >-
-          {{ workspace_newer is not skipped and workspace_newer.results[0].rc == 0 and workspace_newer.results[1].rc == 0 }}
-    - name: Refuse an older commit by hand
-      ansible.builtin.assert:
-        that: not workspace_already_newer | bool or container.keep_newer | default(false) | bool
-        fail_msg: deployment.commit_behind_checkout
-        quiet: true
     - name: Refuse a diverged branch
-      when: not workspace_already_newer | bool
       ansible.builtin.assert:
         that:
           - workspace_state.results[1].stdout | trim == container.branch
           - workspace_ancestor.rc == 0
         fail_msg: deployment.branch_diverged
         quiet: true
-    # The workflow reads this line and skips the deploy steps, the Processes, the seed and the check (docs/cli/instance/deploy.mmd).
-    - name: Keep the newer checkout
-      when: workspace_already_newer | bool
-      ansible.builtin.set_fact:
-        container_commit: "{{ workspace_newer.results[2].stdout | trim }}"
-        container_already_newer: true
-    - name: Report the newer checkout
-      when: workspace_already_newer | bool
-      ansible.builtin.debug: { msg: "orbit-checkout=already_newer" }
     - name: Check out the commit
-      when: not workspace_already_newer | bool
       ansible.builtin.command: { argv: "{{ in_workspace + ['checkout', '--quiet', '-B', container.branch, target] }}" }
       changed_when: true
     # Each fetch of a bundle adds one pack, and Orbit's Git calls start no automatic maintenance, so a workspace that only deployments
@@ -1166,7 +1186,7 @@
 # the seed's manifest says the tree is not clean, and a task copy's own clean runs. A clean that fails or runs past its 60 s fails it.
 - name: Remove the untracked files of the default
   tags: [checkout]
-  when: phase == 'checkout' and container.name is defined and not container_already_newer | default(false) | bool
+  when: phase == 'checkout' and container.name is defined
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '60'] + as_owner + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_default_clean.py'),

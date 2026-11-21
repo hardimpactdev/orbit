@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Logs\LogRedactor;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Operation;
@@ -34,10 +33,22 @@ final readonly class ContainerDeployOutcome
     /** The step that prints, as `,<name>,<name>,`, the steps whose inputs the checkout found unchanged. */
     public const string SkipStep = 'Read the steps to skip';
 
+    /** The input's `origin` of a deployment that the release's nested-fleet refresh admitted. */
+    public const string ReleaseOrigin = 'release';
+
+    /** The input's `origin` of a deployment that the automatic policy admitted. */
+    public const string AutomaticOrigin = 'automatic';
+
     /** Whether a deployment keeps a checkout that is already past its commit: one that a release or the automatic policy admitted. */
     public static function keepsNewer(Operation $operation): bool
     {
-        return in_array($operation->triggered_by, [NestedFleetRefresh::Trigger, ...AutomaticDeployHistory::Triggers], true);
+        return in_array(ValidatedData::object($operation->input ?? [])['origin'] ?? null, [self::ReleaseOrigin, self::AutomaticOrigin], true);
+    }
+
+    /** Whether the release's nested-fleet refresh admitted this deployment, by its admission's own word. */
+    public static function releaseAdmitted(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.deploy' && (ValidatedData::object($operation->input ?? [])['origin'] ?? null) === self::ReleaseOrigin;
     }
 
     /**

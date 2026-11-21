@@ -56,7 +56,7 @@ final readonly class NestedFleetRefresh
         foreach ($this->defaults() as $instance) {
             $label = $instance->project->slug.'/'.$instance->name.' on '.$instance->node->name;
             try {
-                $results[$label] = 'operation:'.$this->deploy->pinned($instance, self::Trigger, null, $commit)->id;
+                $results[$label] = 'operation:'.$this->deploy->pinned($instance, self::Trigger, null, $commit, release: true)->id;
             } catch (ResourceOperationException $refused) {
                 $results[$label] = $refused->errorCode;
             } catch (Throwable $failed) {
@@ -130,7 +130,9 @@ final readonly class NestedFleetRefresh
         }
         if ($last !== null) {
             // The default's checkout was already past the release commit: the deployment kept it and its seed as they were.
-            if ($last->status === OperationStatus::Succeeded && ($last->result['already_newer'] ?? false) === true && $runtime?->seed_taken_at !== null) {
+            // Only the seed of the commit that the no-op named publishes; any other seed has moved.
+            if ($last->status === OperationStatus::Succeeded && ($last->result['already_newer'] ?? false) === true && $runtime?->seed_taken_at !== null
+                && is_string($last->result['commit'] ?? null) && $runtime->seed_commit === $last->result['commit']) {
                 return ['status' => 'current', 'already_newer' => true, 'commit' => $runtime->seed_commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
                     'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
             }
@@ -149,7 +151,7 @@ final readonly class NestedFleetRefresh
             return $previous;
         }
         try {
-            $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit);
+            $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit, release: true);
 
             return [...$receipt, 'status' => 'pending', 'operation_id' => $operation->id];
         } catch (ResourceOperationException $refused) {
