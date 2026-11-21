@@ -179,7 +179,7 @@ The PHP client answers the server's pings only while it reads. A request connect
 
 A Node holds no bus credential. The bus admits a Node by its WireGuard address, the same rule the Gateway API applies to a Node's requests.
 
-The Gateway environment holds one nkey account seed, `ORBIT_NATS_SEED`. `orbit:engine-keys` prints a new one as an environment line. The PHP NATS client cannot read a seed whose last byte, the CRC high byte, is zero, so `NatsCredentials` never makes one: a new seed is drawn again, and a derived seed takes the next round. A Gateway without `ORBIT_NATS_SEED` runs no `nats-server`, opens no port 4222 and gives no Node a bus address.
+The Gateway environment holds one nkey account seed, `ORBIT_NATS_SEED`. `orbit:engine-keys` prints a new one as an environment line. A Gateway without `ORBIT_NATS_SEED` runs no `nats-server`, opens no port 4222 and gives no Node a bus address.
 
 `nats.conf` holds only public keys:
 
