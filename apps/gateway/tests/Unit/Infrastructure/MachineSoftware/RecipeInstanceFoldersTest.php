@@ -49,8 +49,8 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
-    expect($recipe->instances->agent['conn-server']->version)->toBe('0.3.0')
-        ->and($recipe->instances->agent['conn-server']->artifact->digest)->toBe('d20bc9c4b77e056611c356e3ffeb8b5227850127019df176bc421ad8d9cb2eaf')
+    expect($recipe->instances->agent['conn-server']->version)->toBe('0.4.1')
+        ->and($recipe->instances->agent['conn-server']->artifact->digest)->toBe('4099c36edef0e667ebeaaa124502cf86e3e60bbcd9b32ac526e7039d6c696984')
         ->and($parts['chrome-headless-shell'])->toBe([
             'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
             'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
