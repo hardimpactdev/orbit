@@ -1231,7 +1231,9 @@ A reviewer turn of a gated group posts its review receipt to the Gateway, the wa
 | `docs` | Docs, fixtures or generated output are wrong. |
 | `other` | None of the above. |
 
-A category is its exact lower-case name. An integer `findings`, as the receipt held before, is refused, and so is a list entry that is no category: free text, another case, a number, `null`, a list or an object. Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts. Review rows written before the change keep the integer count that their receipt held.
+A category is its exact lower-case name. An integer `findings`, as the receipt held before, is refused, and so is a list entry that is no category: free text, another case, a number, `null`, a list or an object.
+
+Any other body answers `validation.failed` (422), the last accepted post stays, and the reviewer can post again. The Gateway admits a post only during a running reviewer turn on a checked commit, with the admission and the error codes of the pull request text. It records the receipt on the turn's check with the turn; the last post of a turn counts. Review rows written before the change keep the integer count that their receipt held.
 
 #### The review gate
 

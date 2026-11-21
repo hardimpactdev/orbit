@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Tasks;
 
 use App\Domain\Tasks\TaskFindingCategory;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -35,9 +36,6 @@ final class StoreTaskHandoffRequest extends FormRequest
     /** @return list<TaskFindingCategory> the category of each blocking finding, in the order the reviewer posted them */
     public function findings(): array
     {
-        /** @var list<string> $findings */
-        $findings = $this->validated('findings');
-
-        return array_map(TaskFindingCategory::from(...), $findings);
+        return array_map(TaskFindingCategory::from(...), ValidatedData::stringList($this->validated('findings')));
     }
 }
