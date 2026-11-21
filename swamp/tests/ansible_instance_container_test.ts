@@ -220,7 +220,7 @@ function fixture() {
     phases(list: string[], extra: Record<string, string> = {}) {
       return this.run(list.join(","), extra, ["-e", `phases=${list.join(",")}`]);
     },
-    /** "Start the container": the start and the probe in one play, which leaves the Project's PHP to the probe. */
+    /** "Start the container": the start and the probe in one play, which leaves the Project's PHP to the `php` phase. */
     probe() {
       return this.run("start,probe", {}, ["-e", "phases=start,probe", "-e", "checkout_probe=true"]);
     },
@@ -714,31 +714,48 @@ Deno.test({
       f.workspace("checkout", "--", "index.php");
       untouched();
 
-      // A commit that HEAD reaches only through a merge's second parent is not on the branch's first-parent chain.
-      f.workspace("checkout", "--quiet", "-b", "side", first);
-      f.workspace("commit", "--quiet", "--allow-empty", "-m", "side");
-      const side = f.workspace("rev-parse", "HEAD");
-      f.workspace("checkout", "--quiet", "main");
+      // A commit off the updated source branch's first-parent chain refuses as the fetch does, before the probe reads HEAD: a side
+      // commit that the branch never merged, and one that the branch reaches only through a merge's second parent, even when the
+      // workspace's own first-parent chain holds it behind HEAD.
+      git(f.source, "checkout", "--quiet", "-b", "side", second);
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "side");
+      const side = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "checkout", "--quiet", "main");
       f.container.commit = side;
       f.write();
-      // A side commit that the branch never merged is diverged.
-      assert(!f.probe().ok);
-      assertEquals(f.result().error_code, "deployment.branch_diverged");
-      f.workspace("merge", "--quiet", "--no-ff", "-m", "merge side", "side");
-      const merge = f.workspace("rev-parse", "HEAD");
       assert(!f.probe().ok);
       assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
-      assertEquals(f.workspace("rev-parse", "HEAD"), merge);
-      f.workspace("reset", "--quiet", "--hard", second);
-      f.workspace("branch", "--quiet", "-D", "side");
+      git(f.source, "merge", "--quiet", "--no-ff", "-m", "merge side", "side");
+      f.workspace("fetch", "--quiet", f.source, side);
+      f.workspace("reset", "--quiet", "--hard", side);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const ahead = f.workspace("rev-parse", "HEAD");
+      const secondParent = f.probe();
+      assert(!secondParent.ok, secondParent.output);
+      assert(!secondParent.output.includes("orbit-checkout=already_newer"));
+      assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
+      assertEquals(f.workspace("rev-parse", "HEAD"), ahead);
+      git(f.source, "reset", "--quiet", "--hard", second);
+      git(f.source, "branch", "--quiet", "-D", "side");
 
-      // The checkout's commit itself is the normal deployment: the probe passes with no line, and only then applies the intent's PHP.
+      // A commit of the branch that HEAD has diverged from refuses as diverged, for a release deployment too.
+      f.workspace("reset", "--quiet", "--hard", first);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
       f.container.commit = second;
       f.write();
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.branch_diverged");
+      f.workspace("reset", "--quiet", "--hard", second);
+      untouched();
+
+      // The checkout's commit itself is the normal deployment: the probe passes with no line and leaves the live PHP as it is; only the
+      // `php` phase after the seed hold applies the intent's PHP.
       const current = f.probe();
       assert(current.ok, current.output);
       assert(!current.output.includes("orbit-checkout=already_newer"));
       assertEquals(f.result(), { commit: null, phases_passed: ["start", "probe"] });
+      untouched();
+      assert(f.run("php").ok);
       assertThrows(() => Deno.readLinkSync(phpLink));
       Object.assign(f.container, { php: "/opt/orbit-runtime/current/php/8.5/bin/php", php_cli_ini: "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n" });
       f.write();

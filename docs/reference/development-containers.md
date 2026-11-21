@@ -3192,7 +3192,7 @@ The container phases of a deployment run in three Ansible steps, each one play t
 | Step | Phases of a normal default | Phases of a nested-fleet default | A failure |
 | --- | --- | --- | --- |
 | Start the container | `start`, `probe` | `start`, `probe` | restores nothing: the workspace has not changed. A checkout already past the commit ends the run here ([Deployments](/reference/deployments#development-defaults)) |
-| Prepare the container | `fetch` | `fleet_start`, `seed`, `fetch` | restores nothing: the workspace has not changed |
+| Prepare the container | `php`, `fetch` | `php`, `fleet_start`, `seed`, `fetch` | restores nothing: the workspace has not changed |
 | Check out in the container | `checkout` | `checkout` | restores the old seed of a nested-fleet default |
 | Finish the container | `processes`, `seed`, `check` | `processes`, `fleet_refresh`, `seed`, `check` | restores the old seed of a nested-fleet default |
 

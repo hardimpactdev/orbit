@@ -96,13 +96,14 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
-A container default's checkout can already be at a newer commit of the branch than the pinned target, as when a deployment by hand moved the default on before a release's refresh ran. One read-only probe decides it, in the run's first step, "Start the container", right after the container's start. It runs before the seed hold, the fleet check, the seed, the Project's PHP, the bundle, any unit restart and any deploy-step record. The probe applies the checkout's rules in the checkout's order, to the workspace's real `HEAD`:
+A container default's checkout can already be at a newer commit of the branch than the pinned target, as when a deployment by hand moved the default on before a release's refresh ran. One probe decides it, in the run's first step, "Start the container", right after the container's start. It runs before the seed hold, the fleet check, the seed, the Project's PHP, the bundle, any unit restart and any deploy-step record. It changes only the Node's mirror of the branch, which it fetches as the fetch does. The probe applies the fetch's rule and then the checkout's rules in the checkout's order, to the workspace's real `HEAD`:
 
-1. Tracked changes refuse with `deployment.checkout_dirty`.
-2. A workspace off the default branch refuses with `deployment.branch_diverged`.
-3. A target that `HEAD` reaches only through a merge's second parent refuses with `deployment.commit_not_on_branch`.
-4. A target that is neither behind nor ahead of `HEAD` refuses with `deployment.branch_diverged`.
-5. A target on `HEAD`'s first-parent chain, behind `HEAD`, is older than the checkout.
+1. A target off the fetched branch's first-parent chain refuses with `deployment.commit_not_on_branch`, as the fetch does. This holds even when the workspace's own history has the target behind `HEAD`.
+2. Tracked changes refuse with `deployment.checkout_dirty`.
+3. A workspace off the default branch refuses with `deployment.branch_diverged`.
+4. A target that `HEAD` reaches only through a merge's second parent refuses with `deployment.commit_not_on_branch`.
+5. A target that is neither behind nor ahead of `HEAD` refuses with `deployment.branch_diverged`.
+6. A target on `HEAD`'s first-parent chain, behind `HEAD`, is older than the checkout.
 
 `HEAD` itself, a newer target and a target that the workspace lacks go on as a normal deployment. For an older target, the deployment's origin decides. Its admission records the origin: the release's refresh or the automatic policy. A caller's name is no origin.
 
@@ -115,7 +116,9 @@ A release publishes the seed of a no-op only when that seed is the seed of the `
 
 The admission still records the target commit's source facts, Process definitions, PHP selection and `.env` template before the run, as for every deployment, and it can refuse on them first, such as with `app-dev.php_version_unsupported`. A no-op does not undo them.
 
-A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin`, or, for a deployment admitted before the input named one, by the Operation ID its `default_refresh` row stored. An unknown executor result still holds the Instance itself.
+**Known limit.** A release deploy that ends `already_newer` can leave the Project's recorded source facts (PHP selection, `.env` template reference, Process definitions) at the older target commit until the next real deploy.
+
+A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin` alone. A deployment admitted before the input named one gets it from an upgrade, which writes `origin` onto each deployment that a release's `default_refresh` row names, so its dispatch keeps a newer checkout too. An unknown executor result still holds the Instance itself, and the release's refresh of that default ends with `instance.refresh_fenced` ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
 
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 

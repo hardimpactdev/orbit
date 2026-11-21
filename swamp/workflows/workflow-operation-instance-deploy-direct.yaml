@@ -1788,7 +1788,8 @@ jobs:
         path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
   - name: Start the container
     # The container's one start (`start`) and the read of its workspace (`probe`), before any other change (docs/cli/instance/deploy.mmd).
-    # `checkout_probe` leaves the Project's PHP to `probe`. The probe applies the checkout's rules to the pinned commit: a dirty tree, a
+    # `checkout_probe` leaves the Project's PHP to the `php` phase of "Prepare the container", after the seed hold. The probe fetches the
+    # branch into the Node's mirror and applies the fetch's and the checkout's rules to the pinned commit: a commit off the branch, a dirty tree, a
     # workspace off the branch, a commit off HEAD's first-parent chain or a diverged one refuses; a commit behind HEAD refuses
     # deployment.commit_behind_checkout, or, for a release or automatic deployment, prints `orbit-checkout=already_newer`, and every later
     # step skips, so the run holds no seed, takes no seed, pushes no bundle and restarts nothing
@@ -1807,8 +1808,8 @@ jobs:
       behaviorName: ${{ ("instance-deploy-container-start-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
-        # The bounds of its phases: start 120, probe 60.
-        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start,probe -e phases=start,probe -e checkout_probe=true "$ORBIT_ANSIBLE/instance-container.yml"
+        # The bounds of its phases: start 120, and probe 460, whose fetch of the branch into the Node's mirror takes up to 400.
+        run: timeout 580 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start,probe -e phases=start,probe -e checkout_probe=true "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
@@ -1821,6 +1822,8 @@ jobs:
           # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
           # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
           ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
+          # The probe fetches the branch, as the fetch does, to apply the branch rule to a pinned commit.
+          ORBIT_GIT_CREDENTIAL: ${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}
   - name: Hold the seed
     # Only the proof Project's default, whose seed a seed copy sends (its container intent has `seed_hold`): after the start and the
     # probe, and only for a deployment that goes on, the run asks the Gateway for the seed hold and waits while a seed copy holds it; the deployment then holds the seed to its end, so no
@@ -1846,7 +1849,8 @@ jobs:
           ORBIT_HOLD_REQUEST: '${{ "{\"run_id\":\"" + run.id + "\"}" }}'
   - name: Prepare the container
     # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd), after the start and the
-    # probe, for a deployment that goes on: for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
+    # probe, for a deployment that goes on: `php`, the Project's PHP link and settings and any unit restart they need, the change that the
+    # start of a deployment leaves to this step, after the seed hold; for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
     # default as it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd); then `fetch`. None of them changes the
     # workspace, so a failure in any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
     # the room a refresh needs first (`fleet_room_check`) and refuses instance.container_fleet_no_room or instance.container_fleet_drift;
@@ -1882,9 +1886,9 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "fleet_start,seed,fetch" : "fetch" }}'
-          # The sum of the bounds of the phases it runs: fetch 400, and for a nested fleet the check 400 and the seed 120.
-          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "920" : "400" }}'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "php,fleet_start,seed,fetch" : "php,fetch" }}'
+          # The sum of the bounds of the phases it runs: php 60, fetch 400, and for a nested fleet the check 400 and the seed 120.
+          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "980" : "460" }}'
           ORBIT_GIT_CREDENTIAL: ${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}
   - name: Check out in the container
     labels:

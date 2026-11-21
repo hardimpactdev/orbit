@@ -1603,18 +1603,18 @@ it('ends a failed checkout with its own code and the receipt of its restart, nev
     'tracked changes of a deployment by hand' => [null, 'deployment.checkout_dirty'],
 ]);
 
-it('fails a deployment by hand of an older commit in its fetch with deployment.commit_behind_checkout and says why', function (): void {
+it('fails a deployment by hand of an older commit in its probe with deployment.commit_behind_checkout and says why', function (): void {
     $instance = deployDefault(container: true);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
         'status' => OperationStatus::Running, 'triggered_by' => 'cli', 'lock_key' => 'instance:'.$instance->id,
         'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
     $why = 'The requested commit '.str_repeat('a', 40).' is older than the checkout HEAD '.str_repeat('b', 40).' of main; deploy the newer commit instead.';
-    $file = ['error_code' => 'deployment.commit_behind_checkout', 'detail' => $why, 'failed_phase' => 'fetch', 'phases_passed' => ['start']];
+    $file = ['error_code' => 'deployment.commit_behind_checkout', 'detail' => $why, 'failed_phase' => 'probe', 'phases_passed' => ['start']];
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'failure' => ['failed_step' => 'Prepare the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'failure' => ['failed_step' => 'Start the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
         'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]],
-            'summary' => ['failed_steps' => ['Prepare the container']]]]);
+            'summary' => ['failed_steps' => ['Start the container']]]]);
 
     $operation->refresh();
     expect($operation->status)->toBe(OperationStatus::Failed)
