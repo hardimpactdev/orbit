@@ -3788,6 +3788,21 @@ A stopped clone uses no memory, only the disk it changed.
 
 Gap: which refusal comes first on a full Node for nested-fleet clones, and its error code. Both come with the task places.
 
+#### The fleet boots fast
+
+The fleet rules also hold what makes a fleet ready soon after its start. Each takes effect at the next boot, so the seed carries it into every clone.
+
+The nested Gateway is the fleet's WireGuard hub. A nested Node that boots first sends its handshake to a hub that does not listen yet. The kernel then sends the next handshake only 5 seconds later. So each nested Node listens on port 51820, and the hub's `wg-quick@orbit` drop-in runs `/usr/local/lib/orbit/nested-handshake.sh`. The script finds each Node's peer by its WireGuard address. It sets the Node's address on the inner bridge and a keepalive, so the hub sends its handshake at once.
+
+A nested container has no devices to manage. udev, its trigger and the ext4 scrub reaper each get a drop-in with `ConditionVirtualization=!container`. A nested container then skips them, as a mask would. The trigger alone took about a second of each boot.
+
+Until Reverb answers, the agents ask again every half second, and so does the subscriber that keeps the Gateway's view of them ([Node agent](/reference/node-agent)).
+
+| Measured in Instance 3901, from the copy's start to a healthy Doctor | Time |
+| --- | --- |
+| Before, with udev masked by hand | 10.8 to 13.7 s |
+| With all three | 9.1 to 9.8 s in 3 of 6 boots; 12.7 to 15.5 s in the other 3, where the one traced lost 5 s before the subscriber connected |
+
 ### The fleet step
 
 Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). The proof of a task copy calls the reset through the tag `fleet_reset` ([Reset](#reset)). No flow calls the rules alone yet.

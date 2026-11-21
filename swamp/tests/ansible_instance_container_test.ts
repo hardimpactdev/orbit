@@ -3538,7 +3538,7 @@ Deno.test({
 /** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent). */
 const fleetIntent = () => ({
   guests: { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" },
-  layout: { gateway: { address: "10.232.2.11", memory: "4GiB" }, "app-dev": { address: "10.232.2.12", memory: "5GiB" }, "app-prod": { address: "10.232.2.13", memory: "2GiB" } },
+  layout: { gateway: { address: "10.232.2.11", wireguard: "10.45.0.1", memory: "4GiB" }, "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2", memory: "5GiB" }, "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3", memory: "2GiB" } },
   host: false,
   operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
   checkout: { path: "/home/orbit/orbit" },

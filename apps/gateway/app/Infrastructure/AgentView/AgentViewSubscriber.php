@@ -75,6 +75,12 @@ final class AgentViewSubscriber
 
     public const int ConnectTimeoutSeconds = 10;
 
+    /**
+     * A link that never connected gets a short connect limit: a Reverb that is still starting may accept the connection and not answer
+     * it, and the next try, half a second later, finds it ready (EarlyRetrySeconds).
+     */
+    public const int FirstConnectTimeoutSeconds = 2;
+
     /** The old server of a move gets a short connect limit, so an unreachable Node never stalls the serving link. */
     public const int OldServerConnectTimeoutSeconds = 2;
 
@@ -83,6 +89,19 @@ final class AgentViewSubscriber
     public const int UsageSeconds = 15;
 
     private const float MaxBackoffSeconds = 30.0;
+
+    /**
+     * While Reverb has not started yet, as when the subscriber boots with it in a nested fleet, a link that never connected
+     * asks again this often, so it connects right after Reverb starts instead of seconds later. Only within the first
+     * EarlyRetryWindowSeconds of the subscriber, and at most EarlyRetryLimit times; the backoff then runs.
+     */
+    public const float EarlyRetrySeconds = 0.5;
+
+    public const float EarlyRetryWindowSeconds = 60.0;
+
+    public const int EarlyRetryLimit = 120;
+
+    private ?float $startedAt = null;
 
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
 
@@ -161,6 +180,7 @@ final class AgentViewSubscriber
      */
     public function run(Closure $stopping): string
     {
+        $this->startedAt = $this->now();
         $startCommit = ($this->commit)();
         $this->nextCommitCheckAt = $this->now() + self::CommitCheckSeconds;
 
@@ -388,17 +408,18 @@ final class AgentViewSubscriber
                 serverName: WebSocketHostname::Value,
                 path: '/app/'.rawurlencode($credentials->appKey).'?protocol=7&client=orbit-gateway&version=1.0&flash=false',
                 caPath: $this->caPath,
-            ), $this->isServingLink($link) ? self::ConnectTimeoutSeconds : self::OldServerConnectTimeoutSeconds);
+            ), $this->connectTimeout($link));
             $socketId = $this->awaitConnectionEstablished($link);
         } catch (Throwable $exception) {
             $link->socket->close();
             $this->log->warning('The agent view subscriber could not connect to Reverb.', ['address' => $link->address, 'error' => $exception->getMessage()]);
-            $this->scheduleReconnect($link);
+            $this->scheduleReconnect($link, $exception instanceof WebSocketException && $exception->notUp);
 
             return;
         }
 
         $link->socketId = $socketId;
+        $link->everConnected = true;
         $link->connection = $connection;
         $link->backoff = 0.0;
         $link->lastMessageAt = $this->now();
@@ -421,7 +442,7 @@ final class AgentViewSubscriber
 
     private function awaitConnectionEstablished(AgentViewLink $link): string
     {
-        $deadline = $this->now() + ($this->isServingLink($link) ? self::ConnectTimeoutSeconds : self::OldServerConnectTimeoutSeconds);
+        $deadline = $this->now() + $this->connectTimeout($link);
 
         while ($link->socket->isConnected() && $this->now() < $deadline) {
             foreach ($link->socket->receive(self::ReceiveWaitSeconds) as $message) {
@@ -438,7 +459,8 @@ final class AgentViewSubscriber
             }
         }
 
-        throw new WebSocketException('Reverb did not establish the connection.');
+        // A Reverb that never answered a first connect is still starting: the next try comes half a second later.
+        throw new WebSocketException('Reverb did not establish the connection.', notUp: ! $link->everConnected);
     }
 
     /** Joins every managed Node's channel on every live link, and leaves removed ones. */
@@ -907,8 +929,25 @@ final class AgentViewSubscriber
         }
     }
 
-    private function scheduleReconnect(AgentViewLink $link): void
+    private function connectTimeout(AgentViewLink $link): int
     {
+        if (! $this->isServingLink($link)) {
+            return self::OldServerConnectTimeoutSeconds;
+        }
+
+        return $link->everConnected ? self::ConnectTimeoutSeconds : self::FirstConnectTimeoutSeconds;
+    }
+
+    private function scheduleReconnect(AgentViewLink $link, bool $notUp = false): void
+    {
+        $this->startedAt ??= $this->now();
+        if ($notUp && ! $link->everConnected && $this->now() - $this->startedAt < self::EarlyRetryWindowSeconds
+            && $link->earlyRetries < self::EarlyRetryLimit) {
+            $link->earlyRetries++;
+            $link->nextConnectAt = $this->now() + self::EarlyRetrySeconds;
+
+            return;
+        }
         $link->backoff = $link->backoff === 0.0 ? 1.0 : min(self::MaxBackoffSeconds, $link->backoff * 2);
         $jitter = $link->backoff * (mt_rand(0, 250) / 1000);
         $link->nextConnectAt = $this->now() + $link->backoff + $jitter;

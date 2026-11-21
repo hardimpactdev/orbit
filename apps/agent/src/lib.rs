@@ -64,6 +64,11 @@ pub const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10)
 pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// A session that stayed joined this long starts the backoff again.
 pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(60);
+/// While the Gateway or Reverb has not started yet, the agent asks again this often, so it joins right after they start.
+pub const EARLY_RETRY: std::time::Duration = std::time::Duration::from_millis(500);
+/// The early retries end this long after the agent started, or after `EARLY_RETRY_LIMIT` of them; then the backoff runs.
+pub const EARLY_RETRY_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+pub const EARLY_RETRY_LIMIT: u32 = 120;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -429,6 +434,42 @@ pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u3
     }
 }
 
+/// Whether a connection failed before the Gateway or Reverb itself answered: nothing listens there yet (refused), there is
+/// no route to it yet (unreachable), or the proxy in front of it answers that it is not up (502, 503 or 504). A failure
+/// after it answered, such as another HTTP error, a refused join or a closed socket, is not one.
+pub fn refused_before_answer(error: &(dyn std::error::Error + 'static)) -> bool {
+    use std::io::ErrorKind;
+    let unanswered = |io: &std::io::Error| matches!(io.kind(), ErrorKind::ConnectionRefused | ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable);
+    let starting = |status: u16| matches!(status, 502..=504);
+    // The cause may sit anywhere down the chain: an HTTP client and the WebSocket connect each wrap it.
+    let mut current = Some(error);
+    while let Some(link) = current {
+        let io = link.downcast_ref::<std::io::Error>().or_else(|| match link.downcast_ref::<tokio_tungstenite::tungstenite::Error>() {
+            Some(tokio_tungstenite::tungstenite::Error::Io(io)) => Some(io),
+            _ => None,
+        });
+        if io.is_some_and(unanswered) {
+            return true;
+        }
+        if let Some(tokio_tungstenite::tungstenite::Error::Http(response)) = link.downcast_ref::<tokio_tungstenite::tungstenite::Error>() {
+            return starting(response.status().as_u16());
+        }
+        if let Some(status) = link.downcast_ref::<reqwest::Error>().and_then(reqwest::Error::status) {
+            return starting(status.as_u16());
+        }
+        current = link.source();
+    }
+    false
+}
+
+/// The wait before the next connection, or None for the backoff of `retry_delay`. An agent that never joined asks again
+/// every `EARLY_RETRY` while its connections fail before any server answered, within the first `EARLY_RETRY_WINDOW` of
+/// the process and at most `EARLY_RETRY_LIMIT` times: a Node that boots with its Gateway, as a nested fleet does, then
+/// joins about half a second after Reverb starts instead of seconds later.
+pub fn early_retry(ever_joined: bool, refused: bool, running_for: std::time::Duration, early_retries: u32) -> Option<std::time::Duration> {
+    (!ever_joined && refused && running_for < EARLY_RETRY_WINDOW && early_retries < EARLY_RETRY_LIMIT).then_some(EARLY_RETRY)
+}
+
 /// The systemd unit the Gateway installs. The agent runs only inside it.
 pub const SERVICE_UNIT: &str = "orbit-agent.service";
 
@@ -712,6 +753,53 @@ mod tests {
             retry_delay(next_attempt(attempt, Some(HEALTHY_SESSION)))
                 < std::time::Duration::from_secs(3)
         );
+    }
+    #[test]
+    fn an_agent_that_never_joined_asks_again_every_half_second_while_nothing_answers() {
+        let second = std::time::Duration::from_secs(1);
+        assert_eq!(early_retry(false, true, second, 0), Some(EARLY_RETRY));
+        assert_eq!(early_retry(false, true, EARLY_RETRY_WINDOW - second, EARLY_RETRY_LIMIT - 1), Some(EARLY_RETRY));
+        // A server that answered, an agent that joined once, the end of the window or of the count: the backoff runs.
+        assert_eq!(early_retry(false, false, second, 0), None);
+        assert_eq!(early_retry(true, true, second, 0), None);
+        assert_eq!(early_retry(false, true, EARLY_RETRY_WINDOW, 0), None);
+        assert_eq!(early_retry(false, true, second, EARLY_RETRY_LIMIT), None);
+    }
+    #[test]
+    fn only_a_connection_that_nothing_answered_counts_as_refused() {
+        let refused = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+        let unreachable = std::io::Error::from(std::io::ErrorKind::HostUnreachable);
+        assert!(refused_before_answer(&refused));
+        assert!(refused_before_answer(&unreachable));
+        // As the WebSocket connect and an HTTP client wrap it, the cause is found down the chain.
+        assert!(refused_before_answer(&tokio_tungstenite::tungstenite::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))));
+        let wrapped: Box<dyn std::error::Error + Send + Sync> = Box::new(std::io::Error::other(Wrapped(refused)));
+        assert!(refused_before_answer(wrapped.as_ref()));
+        // The proxy in front of Reverb answers that Reverb is not up yet.
+        let starting = |status: u16| {
+            let response = tokio_tungstenite::tungstenite::http::Response::builder().status(status).body(None).expect("response");
+            refused_before_answer(&tokio_tungstenite::tungstenite::Error::Http(response))
+        };
+        assert!(starting(502) && starting(503) && starting(504));
+        assert!(!starting(401) && !starting(500));
+        // An answer: a reset after accept, a timeout, another HTTP status or a refused join.
+        assert!(!refused_before_answer(&std::io::Error::from(std::io::ErrorKind::ConnectionReset)));
+        assert!(!refused_before_answer(&std::io::Error::from(std::io::ErrorKind::TimedOut)));
+        assert!(!refused_before_answer(&tokio_tungstenite::tungstenite::Error::ConnectionClosed));
+        let answered: Box<dyn std::error::Error + Send + Sync> = "Gateway answered 502".into();
+        assert!(!refused_before_answer(answered.as_ref()));
+    }
+    #[derive(Debug)]
+    struct Wrapped(std::io::Error);
+    impl std::fmt::Display for Wrapped {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "connect failed")
+        }
+    }
+    impl std::error::Error for Wrapped {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
     }
     #[test]
     fn retry_jitter_remains_bounded_and_spread_at_the_cap() {

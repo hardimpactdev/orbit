@@ -243,6 +243,8 @@ async fn reconnect_loop(
     ) -> Result<(), Box<dyn Error + Send + Sync>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut attempt = 0;
+    let started = Instant::now();
+    let (mut ever_joined, mut early) = (false, 0);
     loop {
         if *shutdown.borrow() {
             return Ok(());
@@ -252,10 +254,20 @@ async fn reconnect_loop(
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("orbit-agent: realtime connection ended: {error}");
-                attempt = next_attempt(attempt, joined_at.map(|joined| joined.elapsed()));
+                ever_joined |= joined_at.is_some();
+                let wait = match orbit_agent::early_retry(ever_joined, orbit_agent::refused_before_answer(error.as_ref()), started.elapsed(), early) {
+                    Some(wait) => {
+                        early += 1;
+                        wait
+                    }
+                    None => {
+                        attempt = next_attempt(attempt, joined_at.map(|joined| joined.elapsed()));
+                        retry_delay(attempt)
+                    }
+                };
                 tokio::select! {
                     _ = shutdown.changed() => return Ok(()),
-                    _ = tokio::time::sleep(retry_delay(attempt)) => {},
+                    _ = tokio::time::sleep(wait) => {},
                 }
             }
         }
