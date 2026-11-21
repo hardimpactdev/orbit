@@ -9,6 +9,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
+use Basis\Nats\NKeys\Base32;
 use Basis\Nats\NKeys\SecretKey;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -140,8 +141,8 @@ it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, a
 
 it('reads back a seed whose last byte, the CRC high byte, is zero', function (): void {
     // The case of basis-company/nats.php#148, whose Base32 decoder dropped trailing zero bytes before 1.2.8.
-    $seed = SecretKey::fromSeed('SUANHX7HCQRNFZF74KIQOS6AS7WMUG6O3EZLRAJSQ2QM4EUANLQRL24XAA');
+    $seed = 'SUANHX7HCQRNFZF74KIQOS6AS7WMUG6O3EZLRAJSQ2QM4EUANLQRL24XAA';
 
-    expect(bin2hex($seed->raw ?? ''))->toBe('9500d3dfe71422d2e4bfe291074bc097ecca1bced932b8813286a0ce12806ae115eb9700')
-        ->and(strlen($seed->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
+    expect(bin2hex((new Base32)->decode($seed)))->toBe('9500d3dfe71422d2e4bfe291074bc097ecca1bced932b8813286a0ce12806ae115eb9700')
+        ->and(strlen(SecretKey::fromSeed($seed)->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
 });
