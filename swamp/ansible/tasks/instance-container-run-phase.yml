@@ -36,7 +36,8 @@
           (mail_result if mail_result is defined else
           (process_result if process_result is defined else
            (node_runtime_result if node_runtime_result is defined and container_phase in ['node-store', 'node-runtime']
-            else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
+            else {'commit': container_commit | default(none)}
+                 | combine({'already_newer': true} if container_already_newer | default(false) else {}))))) | combine(club_key_carried)
          | combine(wake_result | default({})) | combine(fleet_refresh_carried)
          | combine(executor_carried) | combine(workspace_clean_carried | default({}))
          | combine({'phases_passed': container_phases_passed} if phases is defined else {}) | to_json }}

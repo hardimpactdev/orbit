@@ -217,3 +217,51 @@ Deno.test("only the proof default holds its seed before any phase, and a busy ho
         assertEquals(skips(name, proof, busy), true, name);
     }
 });
+
+Deno.test("a checkout already past the commit ends the run: the deploy steps, the Processes, the seed and the check skip, and nothing restores", () => {
+    const newer = { "Check out in the container": { status: "succeeded", outputs: { stdout: "ok: [node] => {\n    \"msg\": \"orbit-checkout=already_newer\"\n}\n" } } };
+    const moved = { "Check out in the container": { status: "succeeded", outputs: { stdout: "ok: [node]\n" } } };
+    const evaluate = (name: string, intent: Record<string, unknown>, statuses: Record<string, unknown>) =>
+        cel.evaluate(expression(step(name).guard!), {
+            inputs: { intent }, self: { step: { inputs: { a: "b" }, name: "migrate" } },
+            steps: { "Write the container intent": { status: "succeeded" }, "Prepare the container": { status: "succeeded" },
+                "Read the steps to skip": { status: "skipped" }, ...statuses },
+        });
+    const withInputs = { ...nested, deployment: { variant: "container", steps: [{ inputs: { a: "b" } }] } };
+    for (const name of ["Read the steps to skip", "Run dev deploy steps", "Finish the container", ...restoreSteps]) {
+        assertEquals(evaluate(name, withInputs, newer), true, name);
+    }
+    for (const name of ["Read the steps to skip", "Run dev deploy steps", "Finish the container"]) {
+        assertEquals(evaluate(name, withInputs, moved), false, name);
+    }
+});
+
+Deno.test("the restart after a restore keeps the failed phase's result and adds the receipt of the order it signed", () => {
+    // As Operation 31729: the default ran, so only the restart signed an order. Without its receipt the Gateway ended the
+    // Operation with executor.result_unknown and kept its lock (ADR 0266, R2).
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.mkdirSync(`${folder}/bin`);
+        Deno.mkdirSync(`${folder}/venv/bin`, { recursive: true });
+        Deno.symlinkSync(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout.length
+            ? new TextDecoder().decode(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout).trim() : "/usr/bin/python3",
+            `${folder}/venv/bin/python`);
+        const receipt = { status: "done", operation: "31729", action: "discard", target: "2454", delivery: "swamp" };
+        // The restart's play writes its own result, with the receipt.
+        Deno.writeTextFileSync(`${folder}/venv/bin/ansible-playbook`,
+            `#!/bin/sh\nprintf '%s' '${JSON.stringify({ commit: "c".repeat(40), executor: receipt })}' > "$ORBIT_RUN/result.json"\n`);
+        Deno.chmodSync(`${folder}/venv/bin/ansible-playbook`, 0o755);
+        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.commit_behind_checkout" }));
+        const run = step("Start on the old seed").task.inputs.run!.replaceAll("/opt/orbit/ansible/venv", `${folder}/venv`);
+        const done = new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder, ORBIT_ANSIBLE: folder } }).outputSync();
+        assert(done.success, new TextDecoder().decode(done.stderr));
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/result.json`)), { error_code: "deployment.commit_behind_checkout", executor: receipt });
+        // A failed run that has a receipt of its own keeps it.
+        const first = { ...receipt, action: "wake" };
+        Deno.writeTextFileSync(`${folder}/failed.json`, JSON.stringify({ error_code: "deployment.commit_behind_checkout", executor: first }));
+        assert(new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder, ORBIT_ANSIBLE: folder } }).outputSync().success);
+        assertEquals(JSON.parse(Deno.readTextFileSync(`${folder}/result.json`)).executor, first);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});

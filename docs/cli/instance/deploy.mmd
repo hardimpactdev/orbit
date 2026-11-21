@@ -132,6 +132,7 @@ sequenceDiagram
     SW->>N: Check out in the container<br/>Ansible · tags checkout
     %%> What it does:
     %%> - refuses tracked changes with `deployment.checkout_dirty` and a branch the commit does not fast-forward with `deployment.branch_diverged`
+    %%> - a checkout already past the commit (the commit is an ancestor of HEAD): a deployment by hand refuses `deployment.commit_behind_checkout`; a release or automatic one (intent `keep_newer`) keeps it, prints `orbit-checkout=already_newer`, and every later step skips, so the run passes with `already_newer` and no new seed
     Note over SW: Read the steps to skip<br/>run folder
     %%> What it does:
     %%> - reads the steps the checkout found unchanged; only a deployment with a step that has `inputs` runs it
@@ -158,6 +159,7 @@ sequenceDiagram
       SW->>N: Start the restored fleet<br/>Ansible · tags fleet_resume
       %%> What it does:
       %%> - puts the default back on its newest seed and starts it, inner fleet included; the failed phase's result stays the run's result
+      %%> - with signed power the restart signs a discard order of the Operation before it boots; its receipt joins the failed result when that result has none, so the Gateway ends the run with the failure's own code instead of `executor.result_unknown` (ADR 0266, R2)
       %%> - admits absent build rules in that restored fleet, as Prepare did, without writing a map; conflicting maps still refuse, and the next deployment installs missing rules
     end
     Note over SW: Read the container result<br/>result file

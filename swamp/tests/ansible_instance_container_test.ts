@@ -665,13 +665,36 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`), "<?php echo 3;\n");
       f.workspace("checkout", "--", "index.php");
 
-      // An older commit does not fast-forward the branch.
+      // An older commit of the branch, which the checkout is already past: a deployment by hand refuses it by its own code.
       const refetch = f.run("fetch");
       assert(refetch.ok, refetch.output);
-      const diverged = f.run("checkout");
-      assert(!diverged.ok);
-      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      const behind = f.run("checkout");
+      assert(!behind.ok);
+      assertEquals(f.result(), { error_code: "deployment.commit_behind_checkout" });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
+
+      // A deployment that a release admitted (as Operation 31729) keeps the newer checkout: it passes, changes nothing, cleans
+      // nothing, and names the checkout's commit with `already_newer`. The workflow reads the line and skips every later phase.
+      Object.assign(f.container, { keep_newer: true });
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`, "kept\n");
+      assert(f.run("fetch").ok);
+      const kept = f.run("checkout");
+      assert(kept.ok, kept.output);
+      assertStringIncludes(kept.output, "orbit-checkout=already_newer");
+      assertEquals(f.result(), { commit: second, already_newer: true });
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`), "kept\n");
+      Deno.removeSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`);
+
+      // The newest commit still fast-forwards a release deployment as before, with no `already_newer`.
+      f.container.commit = second;
+      f.write();
+      assert(f.run("fetch").ok);
+      const same = f.run("checkout");
+      assert(same.ok, same.output);
+      assert(!same.output.includes("orbit-checkout=already_newer"));
+      assertEquals((f.result() as Record<string, unknown>).already_newer, undefined);
     } finally {
       f.cleanup();
     }

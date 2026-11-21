@@ -96,6 +96,14 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
+A container default's checkout can already be at a newer commit of the branch, so the target commit is an ancestor of its `HEAD`. What the deployment does then depends on its origin:
+
+- A deployment that a release refresh or the automatic policy admitted succeeds as a no-op.
+- That no-op keeps the checkout and takes no new seed. No step runs and no Process restarts.
+- Its `result` holds `already_newer: true`. Its `commit` is the newer commit that the checkout keeps.
+- A deployment by hand refuses with `deployment.commit_behind_checkout` and changes nothing.
+- A branch that diverged from the target stays refused with `deployment.branch_diverged`.
+
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 
 When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.

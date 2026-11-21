@@ -129,6 +129,11 @@ final readonly class NestedFleetRefresh
                 'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
         }
         if ($last !== null) {
+            // The default's checkout was already past the release commit: the deployment kept it and its seed as they were.
+            if ($last->status === OperationStatus::Succeeded && ($last->result['already_newer'] ?? false) === true && $runtime?->seed_taken_at !== null) {
+                return ['status' => 'current', 'already_newer' => true, 'commit' => $runtime->seed_commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
+                    'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
+            }
             if ($last->status === OperationStatus::Succeeded) {
                 return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
             }

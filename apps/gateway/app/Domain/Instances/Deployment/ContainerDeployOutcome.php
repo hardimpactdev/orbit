@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Logs\LogRedactor;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /**
@@ -31,6 +33,12 @@ final readonly class ContainerDeployOutcome
 
     /** The step that prints, as `,<name>,<name>,`, the steps whose inputs the checkout found unchanged. */
     public const string SkipStep = 'Read the steps to skip';
+
+    /** Whether a deployment keeps a checkout that is already past its commit: one that a release or the automatic policy admitted. */
+    public static function keepsNewer(Operation $operation): bool
+    {
+        return in_array($operation->triggered_by, [NestedFleetRefresh::Trigger, ...AutomaticDeployHistory::Triggers], true);
+    }
 
     /**
      * @param  array<string, mixed>  $data
@@ -69,6 +77,10 @@ final readonly class ContainerDeployOutcome
         $status = ValidatedData::nullableString($data['status'] ?? null);
         if ($status === 'succeeded') {
             $payload['commit'] = is_string($file['commit'] ?? null) ? $file['commit'] : null;
+            // The checkout was already past the commit: the run kept it as it was and changed nothing, so `commit` is the checkout's.
+            if (($file['already_newer'] ?? null) === true) {
+                $payload['already_newer'] = true;
+            }
         } elseif ($status === 'failed') {
             $step = $failed[0] ?? 'native_execution';
             $payload['failed_step'] = $step;

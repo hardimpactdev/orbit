@@ -1263,7 +1263,7 @@ A proof copy's runtime still names the default as its clone source, so the defau
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `www-data` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment take `seed-<commit>` with the units stopped. Older seeds go, except the proof default's [base](#a-retake-keeps-the-seed). The runtime row records the commit |
-| Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does |
+| Deployment | The variant `container` starts a stopped container and fetches the commit on the Node. It refuses `deployment.checkout_dirty`, `deployment.commit_not_on_branch` and `deployment.branch_diverged` as a checkout does. [Development defaults](/reference/deployments#development-defaults) covers a checkout already past the commit |
 | Processes | The Project's development Process definitions run as `orbit-*` units in the container. [Processes](#processes) has the details |
 
 #### The `.env` stays out of Git

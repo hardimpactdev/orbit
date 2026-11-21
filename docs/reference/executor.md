@@ -523,6 +523,8 @@ The deadline case covers a publish that threw, an order with no `accepted` line 
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
 
+The lock that an Operation ending with `executor.result_unknown` keeps holds its Instance, not its Node. Like a wake or a sleep, it makes no Node work wait, so a release's role converge never lists it in `waiting_for`.
+
 One receipt continues in Swamp: a wake that fails with `instance.container_stopped`. The Operation starts its Swamp wake run, which boots the container; a nested default still requires deployment. The run's phase requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal returns the first result for the same Operation and action, so it does not act again.
 
 Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting later result.

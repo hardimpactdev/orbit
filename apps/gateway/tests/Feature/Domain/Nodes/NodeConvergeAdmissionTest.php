@@ -30,6 +30,7 @@ use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\NodeWorkAdmission;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -1100,3 +1101,25 @@ it('never refuses or holds power work for an automatic role converge, waiting or
         ->and($admit($kind, 101)->status)->toBe(OperationStatus::Queued)
         ->and(fn () => $admit('instance.deploy', 102))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
 })->with(['instance.wake', 'instance.sleep', 'instance.start']);
+
+it('never keeps a release row waiting for an ended deploy that only the executor fence keeps, and still waits for one that runs', function (): void {
+    prepareReleaseTarget();
+    // As Operation 31729: a release-triggered deploy signed a power order and ended interrupted with executor.result_unknown; the
+    // fence keeps its Instance lock until the receipt comes (ADR 0266, R2).
+    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'release', null, lockKey: 'instance:99');
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$deploy->id]);
+    $deploy->update(['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(),
+        'state' => [ExecutorFence::Issued => true]]);
+    expect(ExecutorFence::holds($deploy->refresh()))->toBeTrue()->and($deploy->lock_key)->toBe('instance:99');
+
+    expect($fleet->execute($release))->toBe(10);
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for')
+        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
+    // The fence still holds the Instance: new work on it is refused.
+    expect(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'test', null, lockKey: 'instance:99'))
+        ->toThrow(ResourceOperationException::class);
+});
