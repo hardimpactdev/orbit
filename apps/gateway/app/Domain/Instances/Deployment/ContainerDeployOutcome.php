@@ -6,7 +6,6 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Logs\LogRedactor;
 use App\Infrastructure\Swamp\NativeStepFailure;
-use App\Models\GatewayRelease;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -43,9 +42,6 @@ final readonly class ContainerDeployOutcome
     /** The input's `origin` of a deployment that the release's nested-fleet refresh admitted. */
     public const string ReleaseOrigin = 'release';
 
-    /** The releases whose stored refresh links still name a deployment that may hold a lock. */
-    private const int LinkedReleases = 20;
-
     /** The input's `origin` of a deployment that the automatic policy admitted. */
     public const string AutomaticOrigin = 'automatic';
 
@@ -56,20 +52,13 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
-     * Whether the release's nested-fleet refresh admitted this deployment: by its admission's own `origin`, or, for one admitted before
-     * the input named it, by the Operation ID that a release's `default_refresh` stored for the default. Never by `triggered_by`.
+     * Whether the release's nested-fleet refresh admitted this deployment, by its admission's own `origin`, never by `triggered_by`. A
+     * deployment that a release linked before the input named it carries the `origin` that migration 2027_03_23_000000 wrote.
      */
     public static function releaseAdmitted(Operation $operation): bool
     {
-        if ($operation->kind !== 'instance.deploy') {
-            return false;
-        }
-        if ((ValidatedData::object($operation->input ?? [])['origin'] ?? null) === self::ReleaseOrigin) {
-            return true;
-        }
-
-        return GatewayRelease::query()->latest('id')->limit(self::LinkedReleases)->get()
-            ->contains(static fn (GatewayRelease $release): bool => data_get($release->phases, 'default_refresh.defaults.'.$operation->target_id.'.operation_id') === $operation->id);
+        return $operation->kind === 'instance.deploy'
+            && (ValidatedData::object($operation->input ?? [])['origin'] ?? null) === self::ReleaseOrigin;
     }
 
     /**

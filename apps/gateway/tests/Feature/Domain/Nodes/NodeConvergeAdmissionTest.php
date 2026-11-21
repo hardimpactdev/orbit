@@ -1160,13 +1160,21 @@ it('still holds the Node for an ended deploy the release did not admit while its
 
 it('drops a deploy that a release linked before the input named its origin from the Node wait, and keeps its Instance fence', function (): void {
     prepareReleaseTarget();
-    // Admitted before the upgrade: no `origin`, only the previous release's `default_refresh` row names it. It ended under the fence.
+    // Admitted before the upgrade: no `origin`, only an old release's `default_refresh` row names it. It ended under the fence.
     $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
     $deploy->update(['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(), 'state' => [ExecutorFence::Issued => true]]);
     GatewayRelease::query()->create(['sha' => str_repeat('b', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
         'phases' => ['default_refresh' => ['status' => 'pending', 'defaults' => [99 => ['status' => 'pending', 'operation_id' => $deploy->id]]]]]);
+    // Many releases followed it: the owner it names never expires.
+    foreach (range(1, 25) as $newer) {
+        GatewayRelease::query()->create(['sha' => str_pad((string) $newer, 40, 'c'), 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0, 'phases' => []]);
+    }
+    (require database_path('migrations/2027_03_23_000000_mark_release_linked_deploys.php'))->up();
     $release = releaseWithRow(['status' => 'pending']);
 
+    // Its dispatch keeps a newer checkout, by the same owner that admission reads.
+    expect(ContainerDeployOutcome::releaseAdmitted($deploy->refresh()))->toBeTrue()
+        ->and(ContainerDeployOutcome::keepsNewer($deploy))->toBeTrue();
     expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10)
         ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for')
         ->and($deploy->refresh()->lock_key)->toBe('instance:99')

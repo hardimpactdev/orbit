@@ -112,13 +112,10 @@ final readonly class NestedFleetRefresh
      */
     private function advanceDefault(Instance $instance, string $commit, array $previous): array
     {
-        // The release's own attempts, by the admission's record (`origin`, or the Operation this row stored before the input named
-        // it), never by `triggered_by`, which any caller names.
-        $linked = is_int($previous['operation_id'] ?? null) ? $previous['operation_id'] : null;
+        // The release's own attempts, by the admission's `origin`, never by `triggered_by`, which any caller names.
         $attempts = Operation::query()->where('kind', OperationKinds::InstanceDeploy)
             ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)->where('input->commit', $commit)
-            ->where(static fn ($query) => $query->where('input->origin', ContainerDeployOutcome::ReleaseOrigin)
-                ->when($linked !== null, static fn ($query) => $query->orWhere('id', $linked)))
+            ->where('input->origin', ContainerDeployOutcome::ReleaseOrigin)
             ->latest('id')->limit(self::Attempts)->get();
         $last = $attempts->first();
         $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
@@ -126,8 +123,13 @@ final readonly class NestedFleetRefresh
         if ($failures > 0) {
             $receipt['admission_failures'] = $failures;
         }
-        if ($last !== null && (! $last->status->terminal() || $last->lock_key !== null)) {
+        if ($last !== null && ! $last->status->terminal()) {
             return ['status' => 'pending', ...$receipt];
+        }
+        if ($last !== null && $last->lock_key !== null) {
+            // An ended run whose result is unknown keeps its Instance fence (docs/reference/executor.md): the refresh ends here, naming the
+            // Operation, and neither retries through the fence nor releases it, so the release cycle goes on.
+            return ['status' => 'failed', 'error_code' => 'instance.refresh_fenced', ...$receipt];
         }
         $runtime = $instance->runtime;
         if ($last !== null && $last->status === OperationStatus::Succeeded && ($last->result['outcome'] ?? null) === ContainerDeployOutcome::AlreadyNewer) {

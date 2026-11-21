@@ -22,6 +22,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Instances\NestedFleetRefresh;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -1339,6 +1340,25 @@ it('resumes a pinned default refresh from the Operation and records the fresh se
     $current = app(NestedFleetRefresh::class)->advance($commit);
     expect($current['status'])->toBe('current')
         ->and($current['defaults'][$instance->id])->toMatchArray(['status' => 'current', 'operation_id' => $operation->id, 'commit' => $commit])
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+});
+
+it('ends a refresh whose deployment ended under its Instance fence as instance.refresh_fenced, and keeps the fence', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $commit = str_repeat('a', 40);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit));
+    $refresh = app(NestedFleetRefresh::class);
+    $first = $refresh->advance($commit);
+    $operation = Operation::query()->where('kind', 'instance.deploy')->sole();
+    // The run's result is unknown: it ended interrupted and keeps the Instance lock (ADR 0266, R2).
+    $operation->update(['status' => 'interrupted', 'error_code' => 'executor.result_unknown', 'finished_at' => now(), 'state' => [ExecutorFence::Issued => true]]);
+    $this->travel(1)->day();
+
+    expect($refresh->advance($commit, $first))->toBe(['status' => 'failed', 'defaults' => [$instance->id => [
+        'status' => 'failed', 'error_code' => 'instance.refresh_fenced', 'operation_id' => $operation->id]]])
+        ->and($operation->refresh()->lock_key)->toBe('instance:'.$instance->id)
         ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
 });
 
