@@ -243,9 +243,9 @@ Deno.test("the restart after a restore keeps the failed phase's result and adds 
     try {
         Deno.mkdirSync(`${folder}/bin`);
         Deno.mkdirSync(`${folder}/venv/bin`, { recursive: true });
-        Deno.symlinkSync(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout.length
-            ? new TextDecoder().decode(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout).trim() : "/usr/bin/python3",
-            `${folder}/venv/bin/python`);
+        // The worker's Ansible venv Python stands in as this machine's python3.
+        const python = new TextDecoder().decode(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout).trim();
+        Deno.symlinkSync(python, `${folder}/venv/bin/python`);
         const receipt = { status: "done", operation: "31729", action: "discard", target: "2454", delivery: "swamp" };
         // The restart's play writes its own result, with the receipt.
         Deno.writeTextFileSync(`${folder}/venv/bin/ansible-playbook`,

@@ -10,6 +10,8 @@ cases = [
   "after a restore the restored fleet is started and waited for, and the first failure stays the run's result",
   "two deployments of different defaults on one Node never share a behavior lock for a long step",
   "only the proof default holds its seed before any phase, and a busy hold at its bound changes nothing",
+  "a checkout already past the commit ends the run: the deploy steps, the Processes, the seed and the check skip, and nothing restores",
+  "the restart after a restore keeps the failed phase's result and adds the receipt of the order it signed",
 ]
 file = "swamp/tests/workflow_instance_deploy_fleet_test.ts"
 cost = 1
