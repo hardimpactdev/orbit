@@ -18,19 +18,22 @@
     - {src: swamp-token-renewal.yml, dest: token-renewal.yml}
     - {src: library/orbit_swamp_token_renewal.py, dest: library/orbit_swamp_token_renewal.py}
   loop_control: {label: "{{ item.dest }}"}
-# The token renewal, the Gateway token entrypoint and the Load step run swamp through swamp-env, which sources the account's Swamp
-# Club credential env.
-- name: Install the Gateway token entrypoint and the Swamp credential env wrapper
+- name: Install the Gateway token entrypoint
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/files/{{ item.src }}"
-    dest: "/usr/local/lib/orbit-swamp/{{ item.dest }}"
+    src: "{{ playbook_dir }}/files/swamp-gateway-token.sh"
+    dest: /usr/local/lib/orbit-swamp/gateway-token
     owner: root
     group: root
     mode: '0755'
-  loop:
-    - {src: swamp-gateway-token.sh, dest: gateway-token}
-    - {src: swamp-env.sh, dest: swamp-env}
-  loop_control: {label: "{{ item.dest }}"}
+# The token renewal, the Gateway token entrypoint and the Load step run swamp through swamp-env, which sources the account's Swamp
+# Club credential env.
+- name: Install the Swamp credential env wrapper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/swamp-env.sh"
+    dest: /usr/local/lib/orbit-swamp/swamp-env
+    owner: root
+    group: root
+    mode: '0755'
 - name: Write worker renewal units
   ansible.builtin.copy:
     dest: "/etc/systemd/system/{{ item.name }}"

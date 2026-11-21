@@ -74,7 +74,9 @@ esac
 `,
     );
     await Deno.chmod(`${folder}/swamp`, 0o755);
+    // The fake swamp needs no Swamp Club credential env; gateway_swamp_load_test.ts proves swamp-env.
     const script = load
+        .replaceAll("/usr/local/lib/orbit-swamp/swamp-env ", "")
         .replaceAll("/usr/local/bin/swamp", `${folder}/swamp`)
         .replace(
             "cd /home/orbit/apps/orbit-monorepo-staging/checkout",
