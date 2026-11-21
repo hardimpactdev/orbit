@@ -1073,8 +1073,14 @@ fn nodes(online: &[&str], operator: Option<&str>) -> Value {
 }
 
 fn fleet_node(listed: &str, doctor: Result<Value, &'static str>, read: Value) -> Fake {
+    fleet_node_with_tunnel("active\n", listed, doctor, read)
+}
+
+fn fleet_node_with_tunnel(state: &'static str, listed: &str, doctor: Result<Value, &'static str>, read: Value) -> Fake {
     Fake::new(&[
         ("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("grep -q -F -- # Managed by Orbit: the operator tunnel /etc/systemd/system/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("--property ActiveState --value orbit-inner-fleet-tunnel.service", Ok(json!(state))),
         ("incus list --format csv", Ok(json!(listed))),
         ("api/v1/doctor", doctor),
         ("api/v1/nodes", Ok(read)),
@@ -1092,10 +1098,10 @@ fn a_nested_copys_fleet_is_ready_when_doctor_is_healthy_its_agents_are_online_an
     assert_eq!(parsed(&output), json!({"fleet": "ready", "started": []}));
     let calls = fake.calls();
     let exec = "--project orbit-instances-nested exec instance-12 -- ";
-    assert_eq!(calls[1], format!("{exec}/usr/bin/incus admin waitready --timeout 80"));
+    assert_eq!(calls[2], format!("{exec}/usr/bin/incus admin waitready --timeout 80"));
     assert!(!calls.iter().any(|call| call.contains("incus start")), "{calls:?}");
     // The proof's own reads, over the tunnel, never through the container's proxy.
-    assert!(calls.contains(&format!("{exec}/usr/bin/curl -sSk --noproxy * -m 2 -H Host: gateway.orbit -H Accept: application/json -X POST \
+    assert!(calls.contains(&format!("{exec}/usr/bin/curl -sSk --noproxy * -m 10 -H Host: gateway.orbit -H Accept: application/json -X POST \
         -H Content-Type: application/json -d {{}} https://10.45.0.1/api/v1/doctor")));
 }
 
@@ -1138,4 +1144,37 @@ fn a_copy_of_a_seed_without_the_tunnels_boot_unit_leaves_its_fleet_to_the_comple
     let mut wrong = fleet_input();
     wrong["hub"] = json!("10.45.0.1; reboot");
     assert_eq!(fleet_ready(&Fake::new(&[]), &wrong).map_err(|failure| failure.code), Err("instance.fleet_ready_input_invalid"));
+}
+
+#[test]
+fn the_fleet_waits_until_the_tunnels_whole_boot_script_ran_before_it_reads_doctor() {
+    // The unit is still running its script: Doctor may answer over the hub's address before the resolver is set.
+    let fake = fleet_node_with_tunnel("activating\n", RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+
+    let failure = fleet_ready(&fake, &fleet_input()).expect_err("not active");
+
+    assert_eq!(failure.code, "instance.container_fleet_resume_failed");
+    assert!(failure.detail.starts_with("Readiness check 'tunnel' failed: after 1 s: orbit-inner-fleet-tunnel.service is activating"), "{}", failure.detail);
+    assert!(!fake.calls().iter().any(|call| call.contains("api/v1/doctor")));
+}
+
+#[test]
+fn a_tunnel_unit_that_failed_at_boot_leaves_the_fleet_to_the_completion_at_once() {
+    let fake = fleet_node_with_tunnel("failed\n", RUNNING, Ok(json!(HEALTHY)), nodes(&["gateway", "app-dev", "app-prod"], Some("key=")));
+    let started = std::time::Instant::now();
+
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    assert!(!fake.calls().iter().any(|call| call.contains("api/v1/doctor")));
+}
+
+#[test]
+fn a_hand_made_tunnel_unit_of_the_same_name_is_not_orbits_tunnel() {
+    let fake = Fake::new(&[
+        ("test -L /etc/systemd/system/multi-user.target.wants/orbit-inner-fleet-tunnel.service", Ok(json!(""))),
+        ("grep -q -F -- # Managed by Orbit: the operator tunnel", Err("")),
+    ]);
+
+    assert_eq!(parsed(&fleet_ready(&fake, &fleet_input()).expect("skipped")), json!({"fleet": "seed_without_tunnel"}));
+    assert_eq!(fake.calls().len(), 2);
 }

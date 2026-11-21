@@ -269,9 +269,11 @@ It reads the seed's take before it copies and keeps it as the volume's descripti
 
 #### instance.fleet_ready
 
-`instance.fleet_ready` targets the Node's part for one copy of a nested-fleet default, so it runs beside the copy's own steps. It waits for the copy's inner fleet, as Swamp's `clone-fleet` does ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)). It waits for the inner Incus and starts a nested container that is stopped, all in one call. Then it reads readiness every 250 ms until the bound, `seconds`: the nested Gateway's Doctor over the operator tunnel, the agents of `nodes`, and the operator with its key. Each command runs in the copy with `incus exec`, with its own time limit.
+`instance.fleet_ready` targets the Node's part for one copy of a nested-fleet default, so it runs beside the copy's own steps. It waits for the copy's inner fleet, as Swamp's `clone-fleet` does ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)). It waits for the inner Incus and starts a nested container that is stopped, all in one call.
 
-A copy without the tunnel's boot unit answers `{"fleet": "seed_without_tunnel"}` and changes nothing. Else it answers `{"fleet": "ready", "started"}`, with the nested containers it started. Codes: `instance.fleet_ready_input_invalid`, `instance.container_fleet_resume_failed`. The log names the failed check.
+Then it reads every 250 ms: the tunnel's boot unit is active, then the nested Gateway's Doctor over the tunnel, the agents of `nodes`, and the operator with its key. One deadline, `seconds` from the step's start, bounds it all. Each command runs in the copy with `incus exec`, with its own time limit or what is left of the deadline.
+
+A copy whose tunnel unit is missing, lacks Orbit's marker, or failed at boot answers `{"fleet": "seed_without_tunnel"}` and changes nothing. Else it answers `{"fleet": "ready", "started"}`, with the nested containers it started. Codes: `instance.fleet_ready_input_invalid`, `instance.container_fleet_resume_failed`. The log names the failed check.
 
 #### instance.prepare
 

@@ -3669,7 +3669,7 @@ The clone holds the exact seed of its default. The default's deployment checked 
 
 A failed step fails the create at `fleet` with `instance.container_fleet_resume_failed`. The executor's log names the failed check: `incus`, `running`, `doctor` with what its last poll got, `agents` or `operator`. The copy stops and stays, as after every failed engine step.
 
-A copy of a seed taken before the tunnel's boot unit has no tunnel at its start. Its step answers `seed_without_tunnel` at once, and the completion's `clone-fleet` starts the fleet. A clone that Swamp creates does so too.
+The step waits until the unit has run its whole script, resolver included. A copy of a seed taken before Orbit's unit has none to trust: a hand-made unit of the same name lacks Orbit's marker. That copy, and one whose unit failed at boot, answers `seed_without_tunnel` at once, and the completion's `clone-fleet` starts the fleet. A clone that Swamp creates does so too.
 
 `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the tunnel. Then it waits for readiness. The step can run for minutes, and Swamp fails a step that waits 60 s for a name another run holds. So the step takes one of 64 names per Node, `ic-clone-fleet-<node>-<instance id % 64>`. Its failure names `instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`, and `error.detail` names the failed check. The container is kept.
 
