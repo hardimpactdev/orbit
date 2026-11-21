@@ -859,6 +859,11 @@ contexts:
   instance-destroy-inner-snapshots:
     destroy_inner_snapshots:
       stdout: '[{"name":"inner-7/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-7/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  instance-destroy-spares:
+    container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
+    destroy_spares:
+      stdout:
+        sample: incus-volumes-spares.json
   instance-destroy-zfs-datasets:
     container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
     refused_container: true
@@ -1659,6 +1664,11 @@ cases:
   field: loop
   context: instance-destroy-inner-snapshots
   expected: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+- file: instance-container-destroy.yml
+  task: Delete the spares and the spare builder of the inner volume
+  field: loop
+  context: instance-destroy-spares
+  expected: [build-inner-7, spare-inner-7-3f9c2a7d41b0, spare-inner-7-seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
 - file: instance-container-destroy.yml
   task: Name the datasets Incus expects
   field: ansible.builtin.set_fact.destroy_datasets
