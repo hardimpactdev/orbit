@@ -79,18 +79,27 @@ function reviewStart(TaskDoneFixture $world, string $role): Operation|string
  * The reviewer posts BODY from copy INSTANCE, as its prompt shows: with the copy key its model environment carries, from its own Node. A
  * string BODY is sent as the raw JSON text, so a float such as `2.0` reaches the Gateway as written.
  *
+ * A request that is no JSON body sends FORM fields as a form, and QUERY as the query string.
+ *
  * @param  array<string, mixed>|string  $body
+ * @param  array<string, mixed>  $query
+ * @param  array<string, mixed>|null  $form
  */
-function reviewPosts(int|TaskDoneFixture $instance, array|string $body): TestResponse
+function reviewPosts(int|TaskDoneFixture $instance, array|string $body, array $query = [], ?array $form = null): TestResponse
 {
     $instance = Instance::query()->with('node')->findOrFail($instance instanceof TaskDoneFixture ? $instance->instance->id : $instance);
     $environment = app(InstanceContainer::class)->modelEnvironment(InstanceRuntime::query()->where('instance_id', $instance->id)->sole(), 'placeholder');
     preg_match('/^ORBIT_COPY_KEY=([0-9a-f]{64})$/m', $environment, $match);
 
     $caller = test()->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])->withToken($match[1] ?? '');
+    $uri = '/api/v1/copy/handoff'.($query === [] ? '' : '?'.http_build_query($query));
+    $server = ['HTTP_ACCEPT' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer '.($match[1] ?? '')];
+    if ($form !== null) {
+        return $caller->call('POST', $uri, $form, [], [], [...$server, 'CONTENT_TYPE' => 'application/x-www-form-urlencoded']);
+    }
 
-    return is_string($body) ? $caller->call('POST', '/api/v1/copy/handoff', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer '.($match[1] ?? '')], $body)
-        : $caller->postJson('/api/v1/copy/handoff', $body);
+    return is_string($body) ? $caller->call('POST', $uri, [], [], [], [...$server, 'CONTENT_TYPE' => 'application/json'], $body)
+        : $caller->postJson($uri, $body);
 }
 
 /**
@@ -206,6 +215,30 @@ it('keeps the last valid post when a malformed one is refused', function (array|
     'an unknown category' => [['verdict' => 'changes', 'findings' => ['style']]],
     'approve with a finding' => [['verdict' => 'approve', 'findings' => ['race']]],
     'changes with no finding' => [['verdict' => 'changes', 'findings' => []]],
+]);
+
+it('refuses a receipt that is not exactly the two fields of the JSON body as sent, and keeps the last valid post', function (string $body, array $query, ?array $form): void {
+    $world = reviewWorld();
+    $turn = reviewStart($world, 'reviewer');
+
+    reviewPosts($world, ['verdict' => 'changes', 'findings' => ['contract', 'docs', 'contract']])->assertStatus(202);
+    reviewPosts($world, $body, $query, $form)->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+    reviewEnded($turn, 'done');
+
+    expect(TaskHandoff::query()->where('operation_id', $turn->id)->sole()->receipt)->toBe(['verdict' => 'changes', 'findings' => ['contract', 'docs', 'contract']]);
+})->with([
+    'an empty object as the findings of an approve' => ['{"verdict":"approve","findings":{}}', [], null],
+    'an object with list keys as the findings' => ['{"verdict":"changes","findings":{"0":"race","1":"docs"}}', [], null],
+    'a padded verdict' => ['{"verdict":" approve ","findings":[]}', [], null],
+    'a padded category' => ['{"verdict":"changes","findings":[" race "]}', [], null],
+    'an empty category' => ['{"verdict":"changes","findings":[""]}', [], null],
+    'an extra free-text note' => ['{"verdict":"changes","findings":["race"],"note":"The export drops the header row."}', [], null],
+    'a key twice' => ['{"verdict":"changes","findings":["race"],"findings":["docs"]}', [], null],
+    'form fields' => ['', [], ['verdict' => 'changes', 'findings' => ['race']]],
+    'a partial body completed by the query' => ['{"verdict":"changes"}', ['findings' => ['race']], null],
+    'an empty body with the query holding both fields' => ['', ['verdict' => 'changes', 'findings' => ['race']], null],
+    'a malformed body with the query holding both fields' => ['{"verdict":', ['verdict' => 'changes', 'findings' => ['race']], null],
+    'a JSON list as the body' => ['["changes",["race"]]', [], null],
 ]);
 
 it('counts the last post of a turn, and admits a post only during a running reviewer turn', function (): void {
