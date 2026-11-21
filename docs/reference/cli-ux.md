@@ -10,197 +10,70 @@ covers:
 
 # CLI design standard
 
-This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. A command's page and its cases file (`swamp/proof/<family>/<command>.cases.yaml`) state which requirements it meets and how a proof observes them. This standard alone does not make a command compliant.
-
-## Scope and authority
-
-The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.
-
-Command names follow the [CLI command vocabulary](/reference/cli-command-vocabulary). Product boundaries stay in their owning references. A rendering change does not introduce a target fallback, a permission, a new transport, or a new public option.
+This standard defines how commands in `apps/cli` collect input, request consent, and render output. Command names follow the [CLI command vocabulary](/reference/cli-command-vocabulary), and console helper details live in `apps/cli/app/Support/Console/README.md`.
 
 ## Input and output modes
 
-Input mode determines whether prompts are available. Output mode determines how results are presented.
+Input mode controls prompting; output mode controls rendering:
 
 | Invocation | Input mode | Output |
 | --- | --- | --- |
-| Interactive terminal without a machine-output option | Interactive | Human |
-| Noninteractive input or an explicit no-interaction option | Noninteractive | Human unless a machine mode is selected |
-| JSON mode in any terminal context | Noninteractive | The command's existing JSON contract |
-| A documented machine stream mode | Noninteractive | The command's existing frame contract |
+| Interactive terminal without machine-output flag | Interactive | Human |
+| Noninteractive stdin or `--no-interaction` | Noninteractive | Human (unless machine flag passed) |
+| `--json` in any context | Noninteractive | Command's JSON contract |
+| Documented stream mode | Noninteractive | Command's frame contract |
 
-Machine output contains no prompt, human heading, progress animation, or ANSI escape sequence. A command that already uses JSON lines keeps that contract. A final JSON command does not gain progress frames merely because it can take time. Human and machine output describe the same result, subject to documented redaction and human-only display limits.
+Rules for every mode:
 
-Public product commands that return data support `--json`. Their existing final-response or streaming schema governs that mode. Framework and internal commands retain their separately documented output contracts.
-
-Resolve and validate required fields before mutations. Validate a supplied value when it is read, and validate a prompted value when the user submits it. If a prompted value is invalid, ask again without an arbitrary retry cap. Stop on cancellation or end of input, using the command's failure status, before mutation begins.
-
-In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the Project default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
-
-An argument or option that names a Node, Project or other record takes its numeric ID, as the API and the MCP tools do. A prompt for such an input selects from a list and passes the ID.
+- Machine output contains no prompts, headings, spinners, or ANSI escapes.
+- Public data commands support `--json`, and commands that return a final JSON document never emit progress frames.
+- Arguments and options that identify records take numeric IDs (matching the API and MCP); interactive prompts present a list and submit the ID.
+- Validate required inputs before mutating. Re-prompt on invalid interactive input; fail immediately with the documented error code in noninteractive or machine mode.
 
 ## Prompt selection
 
-Choose a prompt by the values the command admits.
+Use Laravel Prompts primitives (never raw Symfony Console question/table helpers):
 
-| Input | Primitive |
+| Input type | Primitive |
 | --- | --- |
-| Open value such as a new name, path, or hostname | Text |
-| Open multiline value admitted by the command | Textarea |
-| Secret input | Password with input echo disabled |
-| Boolean choice | Confirmation |
-| One value from a small closed scalar enum | Select |
-| Several values from a small closed scalar enum | Multiselect |
-| One choice from a dynamic searchable set | Search |
-| Several choices from a dynamic searchable set | Multisearch |
-| Open value with optional suggestions | Suggest |
-| One existing registry entity shown in several columns | Interactive data list |
+| Open single-line value | Text |
+| Open multiline value | Textarea (`Enter` newline, `Ctrl+D` submit) |
+| Secret | Password (echo disabled; stdin only in noninteractive mode, never argv) |
+| Boolean | Confirmation |
+| Closed scalar enum (single / multiple) | Select / Multiselect |
+| Dynamic searchable set (single / multiple) | Search / Multisearch (read-only callbacks) |
+| Open value with suggestions | Suggest |
+| Existing registry entity (multi-column) | Interactive data list (with `Press / to search` hint) |
 
-In a textarea, Enter adds a line and Ctrl+D submits the value. Ctrl+C cancels. Outside a textarea, Ctrl+D cancels rather than accepting a default. A closed input stream always cancels.
-
-Use Laravel Prompts for prompts and tables. An interactive data list means its columnar datatable primitive, with stable selector keys, row highlighting, keyboard selection, and a `Press / to search` hint. Display columns never become identity. A grouped property display is not an interactive data list. Do not substitute the console framework's question or table helpers for these primitives.
-
-Use a finite selector for an existing registry entity; an open text or numeric prompt must not replace it. Select and multiselect defaults belong to the admitted choices. Suggest accepts a valid value outside its suggestions. Multi-value prompts use the command's documented multi-value argument or option in noninteractive mode. An empty candidate set produces an explicit empty result or selection failure; it never invents a default target.
-
-Search callbacks are read-only. A noninteractive caller supplies the same value through the documented argument or option. A secret is the exception: it never travels in argv, so a noninteractive caller pipes it on standard input, and a terminal asks for it with a hidden prompt. Input secrets are not echoed or logged.
-
-Only an explicit current credential-delivery contract may return secret values. Verify those commands with disposable credentials and keep raw artifacts private; remove credentials from shared report excerpts.
+`Ctrl+C` always cancels; outside a textarea, `Ctrl+D` or EOF cancels rather than accepting a default. Never fall back to free-text ID entry for an existing registry entity, and never invent a default when the candidate set is empty.
 
 ## Consent
 
-Resolve the subject before asking for destructive consent. State the target and the effect in the prompt. Wrap the full question at narrow widths; never truncate the target or effect to fit a confirmation label. Destructive confirmations and source-ownership transfers default to No. Declining or cancelling begins no mutation.
+Resolve the target before asking for destructive consent, state both target and effect without truncating, and default destructive confirmations and ownership transfers to **No**.
 
-Keep an existing option that already supplies explicit consent. When a destructive command has no independent consent option, use `--yes` for automated consent and a default-No prompt for interactive consent. Noninteractive and machine modes require that explicit consent option; they never imply consent.
-
-A force option may permit a separate destructive override, such as discarding source changes; preserve that meaning and do not reinterpret it as generic confirmation. That override still requires independent consent. A command may offer a dry run only when it defines a preview without side effects. Command-specific contracts state the consent option, refusal and cancellation failures, and the independent override conditions.
+- Preserve existing explicit consent flags; otherwise use `--yes` for noninteractive consent and a default-No prompt interactively.
+- Noninteractive and machine modes require the explicit consent flag and never imply consent.
+- Keep `--force` strictly for its documented override (for example, discarding local changes), never as generic confirmation.
 
 ## Results
 
-Select the display from the task the user is performing.
+Match output layout to the user's task:
 
-| Result | Display |
-| --- | --- |
-| Comparable read-only records | Table |
-| Row selection with a documented follow-up | Interactive data list |
-| Grouped read-only items with several properties | Property list |
-| One entity | Detail tree |
-| Multi-step or slow structured operation | Progress tree |
-| Short wait without meaningful substeps | Spinner |
-| Line-oriented logs or another continuous text output | The stream itself |
-
-Human output names a related record by its name or slug, such as the Project `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
-
-A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. An empty list says so in one line, such as `No firewall rules.`. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
-
-A list is ordered by what the reader needs, and human and JSON output use the same order. Where order carries meaning, such as firewall rules where the first match wins, show that order; otherwise sort by a stable key such as the name.
-
-A skipped action, such as a repeat of a request that is already applied, succeeds. Human and JSON output carry a short explanation and a stable reason code, for example `firewall.rule_exists`; the same code is not an error here although it refuses a request elsewhere. Partial state converges and is not reported as already applied, so verify the state before reporting a skip.
-
-When a human field represents a user and host together, display `user@host`; retain separate machine fields. Display a top-level domain with its leading dot. These formatting rules do not change accepted selectors or serialized values.
-
-Do not dump nested JSON into human output as a replacement for a documented renderer. Avoid introductory lines that repeat the table or tree heading. Errors identify the failed field or operation in clear prose, preserve request correlation where provided, and give recovery guidance only when it is valid for the current product.
-
-## Detail tree
-
-A detail tree uses the following shape, with one empty terminal line before and after it.
-
-```text
-
-┌  Resource: example
-│
-├  Name     example
-│
-├  Status   ready
-│
-└  Owner    —
-
-```
-
-The title uses the singular human entity label and its selector. Align property values, use title-case labels, and separate properties with a blank continuation row. The last property uses the closing connector and has no continuation row after it. Dim the connectors when decoration is enabled; keep the title, labels, and values at normal intensity. Each value is one concise summary that may wrap within the tree at narrow widths; lists use comma-separated values. Do not add nested section headings or a `Showing ...` introduction. A command may add a separate related-record table when its contract calls for one.
-
-Property values wrap at spaces. Only a word longer than the line breaks by width.
-
-Optional feature properties follow the command's contract, not a second machine schema. Keep this distinction in the response fixtures and expected CLI output.
-
-## Progress and liveness
-
-Show feedback before slow work starts. A human command that can take longer than one second uses a progress tree, except when its primary output is a log stream or its current contract defines a bespoke panel. A spinner serves a sub-second wait or an inner wait whose surrounding tree already supplies the context.
-
-After input resolution and consent, render the applicable progress structure before mutation. Show the known steps; reveal conditional steps only when their branch is selected. A fast read may render its result directly. A read that can wait on slow external work needs waiting feedback, even though it does not mutate state.
-
-| State | Glyph | Treatment |
-| --- | --- | --- |
-| Waiting | ○ | Dim glyph and label |
-| Running | Alternating ○ and ◉ | Cyan glyph; full-strength label |
-| Success | ● | Green glyph; full-strength label and result |
-| Failure | ● | Red glyph; full-strength label and red failure message |
-| Warning or skipped | ● | Orange glyph; full-strength label; dim secondary explanation |
-
-Active indicators alternate about every 300 milliseconds and continue while a request blocks or between stream events. The pending footer is dim `Working...`. Active and completed labels are never dim. A terminal success footer names the outcome at full strength; a failure footer is red. Final footers are never dim. Plain output retains a readable outcome without color or cursor movement.
-
-The tree has one title, a blank continuation row, one row for each known step with continuation rows between them, and a closing footer. Initial steps are waiting. Only admitted active work animates. Shared renderers own glyphs, color, spacing, repainting, and terminal cleanup so command families do not develop separate visual conventions.
-
-Use operator-facing labels. Where steps have distinct states, use imperative, active, and completed forms such as Resolve resource, Resolving resource, and Resolved resource. Do not expose storage mechanics as progress labels.
-
-Progress reflects evidence. Running work does not return to waiting, and terminal work does not become active again. Do not mark work active before it is admitted for execution. Stop sequential work at a failure. For one opaque request, show an indeterminate operation instead of inventing completed internal phases. Percentages require real completed and total units. A completed transport exchange does not by itself establish a successful product result.
-
-Logs are their own output and do not need an enclosing progress tree. A bespoke panel may reuse the same state vocabulary when its current command requires a panel; it must not invent new backend progress or product operations.
-
-## Failures and process status
-
-A successful command returns zero. A handled command failure returns the current command's nonzero status; success-with-warning is successful only when the command contract defines that outcome. Keep parser usage errors distinct from handled product failures. Do not introduce new numeric error classes or rename stable error codes as a rendering change.
-
-A JSON failure is one `error` envelope with `code`, `message`, optional `details`, and `request_id`. The `details` keep only bounded values from the Gateway, listed with each error on the page that owns it; command output and other unbounded values drop. A Gateway consent refusal that ends a noninteractive or JSON run keeps its details too, such as `field: force` and `reason: destructive_consent_required`. Human output prints each kept detail as a `field: value` line after the message, except details the message already names. Human failures also print the stable envelope code as `Code: <code>`, so an operator can identify the same refusal without switching to JSON.
-
-Preserve each command's documented stdout and stderr channels. Machine output must remain parseable on its result channel, including failures and stream termination. Human diagnostics and progress must not leak into that channel. Check the two streams separately with redirection; a combined PTY transcript cannot prove channel placement.
-
-Partial work reports the verified outcome and remaining failure. A request that fails after mutation must not claim rollback unless rollback was verified. Offer a next command only when the current product supports that recovery. Prompt cancellation before mutation and interruption after work starts are distinct cases; the latter requires checking actual resulting state.
-
-## Terminal behavior
-
-Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Handle interruption while an HTTP response is pending, without waiting for the remote operation to finish. SIGINT and SIGTERM remain cancellation (exit 128 plus the signal) even when a request-ID or transport layer wraps the throw. A client interruption does not establish that the server stopped or rolled back. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
-
-The [console notes](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/app/Support/Console/README.md) cover panel wrapping, character widths, nested progress and the shared helpers.
-
-When stdin is a pipe, measure the selected output's terminal. Plain output may write one complete waiting line before admitted slow work, followed by its settled outcome. A forced color option cannot turn a pipe into a terminal.
-
-Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
-
-An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.
-
-## Canonical renderings
-
-The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands do not follow this standard yet. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering. When a change adds a response field or reworks a shared renderer, re-record every expected output it reaches in the same change, so no contract test stays stale.
-
-| Display | Canonical command | Expected output |
-| --- | --- | --- |
-| Table | `node:list` | [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.human.txt) |
-| Detail tree | `node:show` | [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-show/default.human.txt) |
-| Native enrollment progress | `node:add` | [created.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/created.human.txt) |
-| Failure after progress | `node:add` | [tld-required.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.human.txt) |
-| JSON result | `node:list` | [default.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.json) |
-| JSON failure envelope | `node:add` | [tld-required.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.json) |
-
-Streams have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until a command with one has a recording. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
-
-## Command reference
-
-Every visible product command has its own page, `docs/cli/<family>/<command>.mdx`, titled `orbit <command>`. The page names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
-
-`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no page or its page misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
+- **Lists:** Laravel Prompts table (falling back to wrapped blocks on narrow terminals).
+- **Single records:** Indented detail tree.
+- **Long-running Operations:** Progress tree using `○` (pending), `◉` (running), and `●` (done/failed).
+- **Failures:** Human output prints the message, error code (for Gateway error envelopes), details, and `request_id`; JSON mode returns the standard error envelope (`error.code`, `message`, `details`, `request_id`).
+- **Streams & signals:** Structured data goes to stdout, diagnostics to stderr, and `SIGINT`/`SIGTERM` exit with `128 + signal`.
 
 ## Verification
 
-Each supported public command has a cases file with its applicable rules, contract-backed exceptions, and the observations a proof must make; see [verifying commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md). Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. The `project:document` and `project:document-storage` commands belong to the `documents` extension, and the `vault` commands to the `vault` extension. Account separately for internal commands that share input or output infrastructure.
+Canonical human renderings live under `apps/cli/tests/Expected/` (for example, `nodes/node-list/default.human.txt`, `nodes/node-show/default.human.txt`, `nodes/node-add/created.human.txt`, and `nodes/node-add/tld-required.human.txt`) and are checked by `apps/cli/tests/Feature/CommandSurfaceTest.php`.
 
-Check success, empty results, invalid and missing input, cancellation, consent, warnings, partial results, and failures wherever the command supports them. Check human, JSON, streaming, noninteractive, piped, and decorated paths that exist for that command. Expected command failures are successful verification only when a verifier asserts the exact intended result and absence of forbidden side effects.
+Run the CLI contract checker from the repository root:
 
-### Recording
-
-Automated text assertions establish content. Terminal evidence establishes interactive selection, repainting, cadence, wrapping, and liveness. Record timestamped raw PTY output, decoded chunks, reconstructed frames, terminal size, terminal settings, candidate and launcher identity, exit status, first-output delay, and idle gaps. Verify real frame transitions rather than the presence of two glyphs in a transcript.
-
-Use disposable fixtures for mutations. Exercise the real candidate in the assigned runtime and keep evidence tied to that candidate. A recording is stale after a fix changes the behavior it records. Do not declare a command compliant until every applicable check is supported by inspected evidence.
-
-Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed. For an Agent pin change, replay the Gateway status and Fleet rollout contracts so JSON and human output name the same released version. Self-update names only the CLI release.
-
-A regression check for a recovered UX requirement demonstrates both an accepted and a rejected case. Check observable behavior rather than similarity of wording or implementation style. For example, a state analyzer accepts a running row that reaches a terminal state and rejects the same row returning to waiting. Apply each check only to the surface it covers.
+```bash
+bin/cli-contract --changed           # check fixtures for changed commands
+bin/cli-contract --preview <fixture> # preview a rendered fixture
+bin/cli-contract --coverage          # check fixture coverage
+ORBIT_EXPECTED=update bin/cli-contract <fixture>
+```
