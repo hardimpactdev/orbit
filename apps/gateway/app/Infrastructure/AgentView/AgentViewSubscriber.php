@@ -76,8 +76,9 @@ final class AgentViewSubscriber
     public const int ConnectTimeoutSeconds = 10;
 
     /**
-     * A link that never connected gets a short connect limit: a Reverb that is still starting may accept the connection and not answer
-     * it, and the next try, half a second later, finds it ready (EarlyRetrySeconds).
+     * A link that never connected gets a short connect limit within the early retries: a Reverb that is still starting may accept the
+     * connection and not answer it, and the next try, half a second later, finds it ready (EarlyRetrySeconds). After that window the
+     * full limit applies, so a Reverb that is only slow to answer still gets a connection.
      */
     public const int FirstConnectTimeoutSeconds = 2;
 
@@ -935,7 +936,10 @@ final class AgentViewSubscriber
             return self::OldServerConnectTimeoutSeconds;
         }
 
-        return $link->everConnected ? self::ConnectTimeoutSeconds : self::FirstConnectTimeoutSeconds;
+        $this->startedAt ??= $this->now();
+        $early = ! $link->everConnected && $this->now() - $this->startedAt < self::EarlyRetryWindowSeconds;
+
+        return $early ? self::FirstConnectTimeoutSeconds : self::ConnectTimeoutSeconds;
     }
 
     private function scheduleReconnect(AgentViewLink $link, bool $notUp = false): void
@@ -944,7 +948,8 @@ final class AgentViewSubscriber
         if ($notUp && ! $link->everConnected && $this->now() - $this->startedAt < self::EarlyRetryWindowSeconds
             && $link->earlyRetries < self::EarlyRetryLimit) {
             $link->earlyRetries++;
-            $link->nextConnectAt = $this->now() + self::EarlyRetrySeconds;
+            // ±20%, so links that boot together do not ask a slow Reverb in step.
+            $link->nextConnectAt = $this->now() + self::EarlyRetrySeconds * (mt_rand(800, 1200) / 1000);
 
             return;
         }

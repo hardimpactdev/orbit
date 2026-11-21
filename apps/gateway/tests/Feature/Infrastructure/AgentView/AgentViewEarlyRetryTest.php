@@ -88,13 +88,16 @@ function earlyRetryConnects(WebSocketException $failure, float $seconds): array
 }
 
 it('asks again every half second while the proxy says Reverb is not up yet', function (): void {
-    $connects = earlyRetryConnects(new WebSocketException('Reverb refused the WebSocket handshake.', 502, notUp: true), 2.0);
+    $connects = earlyRetryConnects(new WebSocketException('Reverb refused the WebSocket handshake.', 502, notUp: true), 3.0);
+    $gaps = array_map(static fn (float $at, float $next): float => round($next - $at, 1), array_slice($connects, 0, -1), array_slice($connects, 1));
 
-    expect($connects)->toBe([0.0, 0.5, 1.0, 1.5, 2.0]);
+    // Every half second, ±20%, measured by passes 100 ms apart.
+    expect(count($connects))->toBeGreaterThanOrEqual(5)
+        ->and(array_filter($gaps, static fn (float $gap): bool => $gap < 0.4 || $gap > 0.7))->toBe([]);
 });
 
 it('asks again every half second while nothing listens yet', function (): void {
-    expect(count(earlyRetryConnects(new WebSocketException('Could not connect to Reverb: Connection refused (111).', notUp: true), 2.0)))->toBe(5);
+    expect(count(earlyRetryConnects(new WebSocketException('Could not connect to Reverb: Connection refused (111).', notUp: true), 2.0)))->toBeGreaterThanOrEqual(4);
 });
 
 it('backs off as before when Reverb answered, such as a refused handshake', function (): void {
@@ -105,7 +108,7 @@ it('backs off as before when Reverb answered, such as a refused handshake', func
         ->and(($connects[1] ?? 99.0) - $connects[0])->toBeGreaterThanOrEqual(1.0);
 });
 
-it('gives a link that never connected a short connect limit, and one that connected the full one', function (): void {
+it('gives a link that never connected a short connect limit only within the early retries', function (): void {
     expect(AgentViewSubscriber::FirstConnectTimeoutSeconds)->toBeLessThan(AgentViewSubscriber::ConnectTimeoutSeconds);
     $timeouts = [];
     $socket = new class($timeouts) implements WebSocketClient
@@ -136,10 +139,15 @@ it('gives a link that never connected a short connect limit, and one that connec
     };
     $subscriber = new AgentViewSubscriber(socket: $socket, credentials: app(WebSocketCredentialManager::class),
         view: new CacheAgentStateView(Cache::store('array')), signer: app(PresenceChannelSigner::class), log: new NullLogger,
-        caPath: __FILE__, commit: static fn (): ?string => null, clock: static fn (): float => 1000.0, sleep: static function (float $seconds): void {},
-        sockets: static fn (): WebSocketClient => $socket);
+        caPath: __FILE__, commit: static fn (): ?string => null, clock: static function () use (&$now): float {
+            return $now;
+        }, sleep: static function (float $seconds): void {}, sockets: static fn (): WebSocketClient => $socket);
+    $now = 1000.0;
 
     $subscriber->pass();
+    // A Reverb that is only slow to answer, past the early retries, gets the full limit again.
+    $now += AgentViewSubscriber::EarlyRetryWindowSeconds + 1;
+    $subscriber->pass();
 
-    expect($timeouts)->toBe([(float) AgentViewSubscriber::FirstConnectTimeoutSeconds]);
+    expect($timeouts)->toBe([(float) AgentViewSubscriber::FirstConnectTimeoutSeconds, (float) AgentViewSubscriber::ConnectTimeoutSeconds]);
 });

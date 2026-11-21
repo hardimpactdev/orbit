@@ -1237,6 +1237,33 @@ mod protocol_tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn the_loop_asks_again_every_half_second_until_the_first_join_and_then_backs_off() {
+        let (_keep, mut shutdown) = watch::channel(false);
+        let refused = || -> Box<dyn Error + Send + Sync> { Box::new(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)) };
+        let mut at: Vec<Instant> = Vec::new();
+        reconnect_loop(&mut shutdown, async |_shutdown, joined_at| {
+            at.push(Instant::now());
+            match at.len() {
+                // Nothing answers yet: the early retries.
+                1..=3 => Err(refused()),
+                // Joined, then lost: from now on the backoff, though nothing answers again.
+                4 => {
+                    *joined_at = Some(Instant::now());
+                    Err(refused())
+                }
+                5 => Err(refused()),
+                _ => Ok(()),
+            }
+        })
+        .await
+        .unwrap();
+        let gaps: Vec<u128> = at.windows(2).map(|pair| pair[1].duration_since(pair[0]).as_millis()).collect();
+        assert!(gaps[..3].iter().all(|gap| (400..=600).contains(gap)), "{gaps:?}");
+        // The early retries did not count as attempts: the first backoff waits 1 to 2 s, the next 2 to 4 s.
+        assert!((1000..=2000).contains(&gaps[3]), "{gaps:?}");
+        assert!((2000..=4000).contains(&gaps[4]), "{gaps:?}");
+    }
+    #[tokio::test(start_paused = true)]
     async fn reset_reconnects_reauthenticates_and_resubscribes() {
         assert_recovers(Failure::Reset).await;
     }

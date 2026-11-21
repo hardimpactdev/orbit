@@ -64,7 +64,7 @@ pub const PONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10)
 pub const JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// A session that stayed joined this long starts the backoff again.
 pub const HEALTHY_SESSION: std::time::Duration = std::time::Duration::from_secs(60);
-/// While the Gateway or Reverb has not started yet, the agent asks again this often, so it joins right after they start.
+/// While the Gateway or Reverb has not started yet, the agent asks again this often, ±20%, so it joins right after they start.
 pub const EARLY_RETRY: std::time::Duration = std::time::Duration::from_millis(500);
 /// The early retries end this long after the agent started, or after `EARLY_RETRY_LIMIT` of them; then the backoff runs.
 pub const EARLY_RETRY_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
@@ -435,12 +435,13 @@ pub fn next_attempt(attempt: u32, joined_for: Option<std::time::Duration>) -> u3
 }
 
 /// Whether a connection failed before the Gateway or Reverb itself answered: nothing listens there yet (refused), there is
-/// no route to it yet (unreachable), or the proxy in front of it answers that it is not up (502, 503 or 504). A failure
-/// after it answered, such as another HTTP error, a refused join or a closed socket, is not one.
+/// no route to it yet (unreachable), or the proxy in front of it answers that it is not up (502 or 503). A failure after it
+/// answered, such as another HTTP error, a refused join or a closed socket, is not one. A 504 means a slow upstream, not a
+/// missing one: it takes the backoff.
 pub fn refused_before_answer(error: &(dyn std::error::Error + 'static)) -> bool {
     use std::io::ErrorKind;
     let unanswered = |io: &std::io::Error| matches!(io.kind(), ErrorKind::ConnectionRefused | ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable);
-    let starting = |status: u16| matches!(status, 502..=504);
+    let starting = |status: u16| matches!(status, 502 | 503);
     // The cause may sit anywhere down the chain: an HTTP client and the WebSocket connect each wrap it.
     let mut current = Some(error);
     while let Some(link) = current {
@@ -467,7 +468,14 @@ pub fn refused_before_answer(error: &(dyn std::error::Error + 'static)) -> bool 
 /// the process and at most `EARLY_RETRY_LIMIT` times: a Node that boots with its Gateway, as a nested fleet does, then
 /// joins about half a second after Reverb starts instead of seconds later.
 pub fn early_retry(ever_joined: bool, refused: bool, running_for: std::time::Duration, early_retries: u32) -> Option<std::time::Duration> {
-    (!ever_joined && refused && running_for < EARLY_RETRY_WINDOW && early_retries < EARLY_RETRY_LIMIT).then_some(EARLY_RETRY)
+    early_retry_with(ever_joined, refused, running_for, early_retries, &mut rand::thread_rng())
+}
+
+fn early_retry_with(ever_joined: bool, refused: bool, running_for: std::time::Duration, early_retries: u32, rng: &mut impl Rng) -> Option<std::time::Duration> {
+    // ±20%, so a fleet of agents that boots together does not ask a slow Gateway in step.
+    let base = u64::try_from(EARLY_RETRY.as_millis()).unwrap_or(500);
+    (!ever_joined && refused && running_for < EARLY_RETRY_WINDOW && early_retries < EARLY_RETRY_LIMIT)
+        .then(|| std::time::Duration::from_millis(rng.gen_range(base * 4 / 5..=base * 6 / 5)))
 }
 
 /// The systemd unit the Gateway installs. The agent runs only inside it.
@@ -757,8 +765,14 @@ mod tests {
     #[test]
     fn an_agent_that_never_joined_asks_again_every_half_second_while_nothing_answers() {
         let second = std::time::Duration::from_secs(1);
-        assert_eq!(early_retry(false, true, second, 0), Some(EARLY_RETRY));
-        assert_eq!(early_retry(false, true, EARLY_RETRY_WINDOW - second, EARLY_RETRY_LIMIT - 1), Some(EARLY_RETRY));
+        let around = |wait: Option<std::time::Duration>| wait.is_some_and(|wait| (400..=600).contains(&wait.as_millis()));
+        assert!(around(early_retry(false, true, second, 0)));
+        assert!(around(early_retry(false, true, EARLY_RETRY_WINDOW - second, EARLY_RETRY_LIMIT - 1)));
+        // The jitter spreads the retries of agents that boot together.
+        use rand::{rngs::StdRng, SeedableRng};
+        let mut rng = StdRng::seed_from_u64(7);
+        let waits: std::collections::BTreeSet<u128> = (0..20).filter_map(|_| early_retry_with(false, true, second, 0, &mut rng)).map(|wait| wait.as_millis()).collect();
+        assert!(waits.len() > 5 && waits.iter().all(|wait| (400..=600).contains(wait)));
         // A server that answered, an agent that joined once, the end of the window or of the count: the backoff runs.
         assert_eq!(early_retry(false, false, second, 0), None);
         assert_eq!(early_retry(true, true, second, 0), None);
@@ -780,8 +794,9 @@ mod tests {
             let response = tokio_tungstenite::tungstenite::http::Response::builder().status(status).body(None).expect("response");
             refused_before_answer(&tokio_tungstenite::tungstenite::Error::Http(response))
         };
-        assert!(starting(502) && starting(503) && starting(504));
-        assert!(!starting(401) && !starting(500));
+        assert!(starting(502) && starting(503));
+        // A 504 is a slow upstream, not a missing one.
+        assert!(!starting(504) && !starting(401) && !starting(500));
         // An answer: a reset after accept, a timeout, another HTTP status or a refused join.
         assert!(!refused_before_answer(&std::io::Error::from(std::io::ErrorKind::ConnectionReset)));
         assert!(!refused_before_answer(&std::io::Error::from(std::io::ErrorKind::TimedOut)));
