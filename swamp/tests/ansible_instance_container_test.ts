@@ -18,7 +18,9 @@ import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 // Chromium's trust adds six tasks: the folder gathers its one Debian package part (the trust module), the image checks the module's
 // library (one exec) and writes agent's NSS store (one exec and one push), and the container step keeps its list of containers
 // without the store for the Operation result; the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 69, tasks: 192, digest: "c05e054ea8ee3804fc633a38ddd2f3987a81b116b6550cc1f8f347aac4991200"};
+// The runtime folder's temporary btrfstune wrapper adds six tasks: the folder writes its own programs, and the converge writes incusd's
+// PATH drop-in and its file and restarts incusd when they changed; the Incus calls stay the same.
+const MAIN_NORMAL_HOST = {calls: 69, tasks: 198, digest: "f86b9234aef1e5e73ba32f183f77667d2edf514652397747fdd857397bbe8a4c"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
