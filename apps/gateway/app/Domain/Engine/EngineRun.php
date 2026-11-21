@@ -30,11 +30,11 @@ final readonly class EngineRun
         return ($this->steps[$step] ?? null)?->output;
     }
 
-    /** The first failed step, in declaration order. */
+    /** The first failed step, in declaration order; a failure step's own failure never names the run's. */
     public function failed(): ?OperationEngineStep
     {
         foreach ($this->steps as $step) {
-            if ($step->status === 'failed') {
+            if ($step->status === 'failed' && ! $step->on_failure && ! $step->optional) {
                 return $step;
             }
         }
@@ -44,7 +44,7 @@ final readonly class EngineRun
 
     public function succeeded(): bool
     {
-        return array_all($this->steps, static fn (OperationEngineStep $step): bool => $step->status === 'done');
+        return array_all($this->steps, static fn (OperationEngineStep $step): bool => $step->on_failure || $step->optional || $step->status === 'done');
     }
 
     /** The changes all desired-state steps made, from their receipts. */

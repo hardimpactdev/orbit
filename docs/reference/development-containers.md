@@ -1203,6 +1203,25 @@ The same 120 seconds also cover a restart of the Node's Incus. When a read befor
 
 Then, however the wait ended, the copy decides from one more read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
 
+#### The seed manifest
+
+Every clone of a default needs the same files: the boot and trust files, Codex's settings for the Node, T3's drop-ins for the Conn Server, the agent folder with the Project's instructions and its links. So the default holds them before its seed. Right before the snapshot, its seed phase writes them as the container intent's `seed_files` names them, and records `/etc/orbit/seed-manifest.json`:
+
+| Entry | What it holds |
+| --- | --- |
+| `files`, `links`, `folders` | Each file's SHA-256, owner and mode, each link's target, each folder's files |
+| `bundles`, `nss` | The trust bundle's certificates by digest, the NSS store's lines and the trust module's version |
+| `units` | The default's Orbit units that no clone keeps |
+| `workspace_clean` | Whether a task copy's clean would find nothing in the tree, checked right before the snapshot with the Processes stopped |
+
+A clone's prepare reads the manifest once. It writes only the items that differ from it, removes the units it names, and skips the app-account swap when the seed's swap ran with the same file. A task copy skips its clean when the tree was clean and its checkout keeps the seed's commit. A seed without the manifest, taken before it, gets every file as before. Only a clone's own files stay per copy: its identity, model key, settings with providers, proxy bypass and Instance file.
+
+#### The default keeps a clean tree
+
+A deployment's checkout removes the default's untracked files that Git does not ignore, before the deploy steps and the seed. It runs as the workspace's owner with the task check's Git settings, in the rounds of a task copy's clean. `.env` is excluded first and stays; ignored files and tracked files stay. A file it cannot remove does not fail the deployment; a clean that fails or runs past 60 seconds does.
+
+The deployment's result names what went as `workspace_cleaned`: `removed_count`, the first 20 `removed` names and `left_count` for what stayed. So a file that an earlier commit tracked, or that a removed `.gitignore` ignored, does not reach every seed.
+
 #### The seed hold
 
 The seed of the proof Project's default has one hold, `instance_seed:<default id>`, so its lifecycle is serial. A [seed copy](#the-seed-on-each-ci-node) takes the hold as its Operation lock when it is admitted and keeps it to its end, so no retake deletes or renames a snapshot that it pushes.
@@ -1274,6 +1293,8 @@ The same goes for a local package kept as its own repository in the checkout, an
 A path that the default excluded in its own `.git/info/exclude`, or under an untracked `.gitignore` that ignores itself, is ignored, so it stays in the copy. It never reaches a commit, but the check sees it, and a new file under such a pattern stays out of the commit too.
 
 The create's result names what went, as `workspace_cleaned`: `reset_count` and `removed_count`, and the first 20 names of each kind (`reset`, `removed`; a folder ends in `/`). Names only. The clean ends before the T3 registration, before the create ends and before the copy is `active`. So no turn and no check, the baseline included, sees the default's work. A retry of the checkout after the mark does not clean again: the work in the copy after its first checkout stays. A retry before the mark cleans again and names only what that run removed.
+
+On the [engine](/reference/gateway-engine#instancecreate), a task copy skips the clean when the [seed manifest](#the-seed-manifest) says the tree was clean and its checkout keeps the seed's commit; its result then has no `workspace_cleaned`.
 
 The Gateway marks a task copy in the clone intent with `container.clone.clean_workspace`. Every other clone, from Conn or `instance:create`, has no mark and keeps the default's tree, its modified and untracked files included.
 
@@ -2711,6 +2732,22 @@ So the host branch sets `volmode=dev` on the `custom` dataset. The clone inherit
 After the volume copy, the clone sets the volume's `size` to the intent's size, `container.inner_volume.size`, before the container copy. A volume copied from a snapshot takes the snapshot's Incus config, and a snapshot that a [seed copy](#how-the-seed-moves) moved to a CI Node records `size: 0`.
 
 Incus 7.0.2 writes the `size` of each snapshot that it sends from the size of the snapshot's block device, and it writes 0 for a volume with a file system. Incus cannot change a snapshot's config, so the seed copy cannot correct it. The ZFS volume keeps the full size, so the set changes only the record. The [start guard](#the-container) still requires that exact size.
+
+#### Spare volumes
+
+On ZFS, `incus storage volume copy` of the inner volume takes about 11 seconds, most of an Orbit task copy's create. On the engine the volume has its own step, `copy_volume`, beside the container copy. It copies only the admitted seed, as the nested copy's container copy does; a seed that a deployment replaced refuses with `instance.default_seed_moved`.
+
+It first looks for the default's spare made from the same snapshot take, `spare-<default's volume>-<take>`, and takes it by `incus storage volume rename`, which takes milliseconds. The take names the volume snapshot's name and creation time, so a retake at the same commit is another take and its old spare is never used. Incus renames a volume or refuses, so two creates never take one spare; the one refused copies. Spares of any other take go.
+
+A deployment can retake the seed at the same commit while the two copies run side by side. So `clone` and `copy_volume` each read the container seed's creation time, its take, before they copy, and answer it as `seed_taken_at`. The container copy keeps it in `/etc/orbit/seed-take`, and the volume in its description, so a retry reads it back. Before it changes anything, `start` reads the take again, unless the copy ran before. Unless all three match, the create fails with `instance.default_seed_moved` and the copy stays stopped. A retry copies again a container that never started.
+
+A background step after the start, `spare`, makes the next spare from the admitted seed when none of its take exists: under the default's one builder name, `build-<default's volume>`, renamed into place when complete, so no create takes a half-copied spare. A builder that an interrupted run left goes first, and a builder whose snapshot was retaken during the copy goes too. The create neither waits for it nor fails by it. One spare per default at a time. A destroy of the default deletes its spares and its builder with its inner volume.
+
+#### The btrfstune wrapper
+
+After a volume copy Incus gives the copy's btrfs a new UUID with `btrfstune -f -u`, which rewrites all its metadata: 4.3 seconds for an inner volume. `btrfstune -f -m` changes only the metadata UUID, in about 50 ms, as LXD does ([canonical/lxd#15947](https://github.com/canonical/lxd/pull/15947)).
+
+So the [runtime folder](#shared-folders-per-node)'s `bin` holds a temporary `btrfstune`: exactly `-f -u <device>` becomes `-f -m <device>`, and every other call passes to `/usr/bin/btrfstune` unchanged. An `incus.service` drop-in puts that `bin` first on incusd's `PATH` (its `orbit-runtime-path.env`, read after `/etc/environment` and `/etc/default/incus`), on every Instance host. Incus's own start script still puts `/opt/incus/bin` before it. Remove the wrapper and the drop-in once Nodes run an Incus release with [lxc/incus#4435](https://github.com/lxc/incus/pull/4435).
 
 On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
 

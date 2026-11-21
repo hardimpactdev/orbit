@@ -219,6 +219,25 @@
                 task_base_instance: "{{ container.mirror | basename | regex_replace('[.]git$', '') }}"
             - name: Remove the Node task base scratch
               ansible.builtin.file: { path: "{{ base_node }}", state: absent }
+            # A default's spares and its spare builder go with its inner volume (docs/reference/development-containers.md#spare-volumes).
+            - name: Read the custom volumes beside the inner volume
+              when: container.inner_volume is defined
+              ansible.builtin.command:
+                argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}/volumes?project={{ container.project }}&recursion=1"]
+                stdin: ""
+              register: destroy_spares
+              changed_when: false
+            - name: Delete the spares and the spare builder of the inner volume
+              when: container.inner_volume is defined
+              ansible.builtin.command:
+                argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, item] }}"
+                stdin: ""
+              vars:
+                spare_pattern: "^(spare-{{ container.inner_volume | regex_escape }}-(seed-)?[0-9a-f]+|build-{{ container.inner_volume | regex_escape }})$"
+              loop: >-
+                {{ destroy_spares.stdout | from_json | selectattr('type', 'equalto', 'custom') | map(attribute='name')
+                   | select('match', spare_pattern) | list }}
+              changed_when: true
             - name: Read the remaining containers
               ansible.builtin.command: { argv: "{{ incus + ['list', '--format=json'] }}", stdin: "" }
               register: destroy_remaining

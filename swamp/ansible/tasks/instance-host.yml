@@ -164,6 +164,39 @@
   vars:
     folder: "{{ instances.folders[folder_name] }}"
 
+# Incus finds its helper programs on its PATH, and the runtime folder's `bin` comes first there: it holds the temporary `btrfstune`
+# wrapper (InstanceFolderPlan::Btrfstune; remove both once Incus uses `btrfstune -m`, lxc/incus#4435). The PATH is Orbit's own file
+# beside the drop-in, read by its `EnvironmentFile=`: systemd reads it after the unit's `/etc/environment` and `/etc/default/incus`, and the
+# later file wins. A restart of incusd keeps the containers running.
+- name: Put the runtime folder first on incusd's PATH
+  block:
+    - name: Create the Incus unit drop-in folder
+      ansible.builtin.file: { path: /etc/systemd/system/incus.service.d, state: directory, owner: root, group: root, mode: "0755" }
+    # Beside the drop-in, where systemd reads only `.conf` files as drop-ins.
+    - name: Write incusd's PATH
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/incus.service.d/orbit-runtime-path.env
+        content: |
+          PATH={{ instances.folders.runtime.path }}/current/bin:/opt/incus/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        owner: root
+        group: root
+        mode: "0644"
+      register: incus_path_file
+    - name: Read incusd's PATH file through a drop-in
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/incus.service.d/70-orbit-runtime-path.conf
+        content: |
+          # Managed by Orbit. Temporary, for the runtime folder's btrfstune wrapper (lxc/incus#4435).
+          [Service]
+          EnvironmentFile=/etc/systemd/system/incus.service.d/orbit-runtime-path.env
+        owner: root
+        group: root
+        mode: "0644"
+      register: incus_path_dropin
+    - name: Restart incusd with its PATH
+      when: incus_path_file.changed or incus_path_dropin.changed
+      ansible.builtin.systemd_service: { name: incus.service, state: restarted, daemon_reload: true }
+
 # The project lets containers mount host folders read-only and idmapped (unshifted on an Instance fleet Node), and publish T3
 # with a proxy device. Every container gets an isolated ID map and a default-reject NIC policy; each Instance's target paths
 # come with its create flow. Incus refuses

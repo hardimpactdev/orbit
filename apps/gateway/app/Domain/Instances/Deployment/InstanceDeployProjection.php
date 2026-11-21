@@ -124,6 +124,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if (isset($payload['fleet_refresh'])) {
                 $facts['fleet_refresh'] = $payload['fleet_refresh'];
             }
+            if (isset($payload['workspace_cleaned'])) {
+                $facts['workspace_cleaned'] = $payload['workspace_cleaned'];
+            }
             $receipt = ExecutorPowerIntent::lifecycleReceipt($locked, $payload['executor'] ?? null);
             if ($status !== 'running') {
                 $ownError = is_string($data['error_code'] ?? null) ? $data['error_code'] : (is_string($payload['error_code'] ?? null) ? $payload['error_code'] : null);

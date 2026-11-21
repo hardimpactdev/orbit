@@ -57,6 +57,7 @@ impl Run for Families {
         }
         self.0.target_exists(target.as_str())
     }
+    #[expect(clippy::too_many_lines, reason = "one arm per executor action")]
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
@@ -158,7 +159,8 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
-            Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3 => instance(order),
+            Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
+            | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume => instance(order),
         }
     }
 }
@@ -316,7 +318,11 @@ fn instance(order: &VerifiedOrder) -> Outcome {
         Action::InstanceFetchBranch => orbit_executor_instance::fetch_branch(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstanceCheckout => orbit_executor_instance::checkout(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstanceT3 => orbit_executor_instance::t3(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
-        Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        Action::InstanceClubKey => orbit_executor_instance::club_key(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceCopyVolume => orbit_executor_instance::copy_volume(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceStop => orbit_executor_instance::stop(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+        Action::InstanceSpareVolume => orbit_executor_instance::spare_volume(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         _ => orbit_executor_instance::start(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {

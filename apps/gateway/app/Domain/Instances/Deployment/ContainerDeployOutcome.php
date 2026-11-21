@@ -52,6 +52,11 @@ final readonly class ContainerDeployOutcome
             $payload['executor'] = $file['executor'];
             $payload['wake'] = ($file['wake'] ?? null) === 'started' ? 'started' : null;
         }
+        // What the checkout removed from a default's tree, names only (docs/reference/development-containers.md#the-default-keeps-a-clean-tree).
+        $cleaned = self::workspaceCleaned($file['workspace_cleaned'] ?? null);
+        if ($cleaned !== null) {
+            $payload['workspace_cleaned'] = $cleaned;
+        }
         $bestEffort = self::bestEffortSteps($steps, $admittedSteps);
         if ($bestEffort !== []) {
             $payload['best_effort_steps'] = $bestEffort;
@@ -175,6 +180,24 @@ final readonly class ContainerDeployOutcome
         ksort($items);
 
         return $items;
+    }
+
+    /**
+     * The checkout's clean of a default as it printed it, or null for any other shape: `removed_count`, the first 20 `removed` names and
+     * `left_count` when a file stayed.
+     *
+     * @return array{removed_count: int, removed: list<string>, left_count?: int}|null
+     */
+    private static function workspaceCleaned(mixed $raw): ?array
+    {
+        if (! is_array($raw) || ! is_int($raw['removed_count'] ?? null) || $raw['removed_count'] < 0 || ! is_array($raw['removed'] ?? null)
+            || ! array_is_list($raw['removed']) || count($raw['removed']) > 20 || array_filter($raw['removed'], static fn (mixed $name): bool => ! is_string($name)) !== []
+            || (array_key_exists('left_count', $raw) && (! is_int($raw['left_count']) || $raw['left_count'] < 1))) {
+            return null;
+        }
+
+        return ['removed_count' => $raw['removed_count'], 'removed' => array_map(static fn (string $name): string => mb_strcut($name, 0, 255, 'UTF-8'), $raw['removed']),
+            ...(isset($raw['left_count']) ? ['left_count' => $raw['left_count']] : [])];
     }
 
     /** A best-effort step's one output line, its command's exit code: an integer from 0 to 255, or null for anything else. */

@@ -18,6 +18,16 @@ use App\Models\Node;
 final readonly class InstanceFolderPlan
 {
     /**
+     * Temporary: Incus re-tunes a copied btrfs filesystem with `btrfstune -f -u`, which rewrites all its metadata (4.3 s for a
+     * nested fleet's inner volume); `-f -m` changes only the metadata UUID (about 50 ms), as LXD does (canonical/lxd#15947). The
+     * runtime folder's `bin` comes first in the Node's incusd PATH, so this wrapper turns exactly that call into `-m` and passes every
+     * other call through. Remove it once Nodes run an Incus release that uses `-m` (https://github.com/lxc/incus/pull/4435).
+     */
+    public const string Btrfstune = "#!/bin/sh\n# Managed by Orbit. Temporary: remove once Incus uses btrfstune -m (lxc/incus#4435).\n"
+        ."if [ \"$#\" -eq 3 ] && [ \"$1\" = -f ] && [ \"$2\" = -u ]; then\n  exec /usr/bin/btrfstune -f -m \"$3\"\nfi\n"
+        ."exec /usr/bin/btrfstune \"$@\"\n";
+
+    /**
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
@@ -29,7 +39,7 @@ final readonly class InstanceFolderPlan
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $runtime = [...$runtime, ...$mount];
+        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune], ...$mount];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];

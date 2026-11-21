@@ -80,6 +80,16 @@
         {%- endfor -%}
         {{ links }}
       loop_control: { label: "{{ item.program }}" }
+    # The folder's own small programs, such as the runtime folder's temporary `btrfstune` wrapper (InstanceFolderPlan::Btrfstune).
+    - name: Write the folder's own programs
+      ansible.builtin.copy:
+        dest: "{{ folder_parts }}/bin/{{ item.key }}"
+        content: "{{ item.value }}"
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ (folder.scripts | default({})) | dict2items }}"
+      loop_control: { label: "{{ item.key }}" }
     - name: Read the linked programs
       ansible.builtin.stat: { path: "{{ folder_parts }}/bin/{{ item }}", follow: true, get_checksum: false, get_mime: false }
       loop: "{{ folder.parts | map(attribute='bin') | map('list') | flatten }}"

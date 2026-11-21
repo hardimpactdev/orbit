@@ -53,19 +53,29 @@ A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a producti
 
 The engine runs a container clone's create from its admitted intent (`direct_provisioning.container`). Its steps are the executor's `instance` family ([Executor: The instance family](/reference/executor#the-instance-family)):
 
-1. `clone`, on the Node: the copy of the default's seed, with its ACL, NIC, T3 proxy and route rule.
-2. `fetch`, on the Node, beside `clone`: the branch into the Node's mirror. The Gateway mints the read credential and sends it as a blob.
-3. `prepare`, on the copy: its files before the first start. The list goes as one blob, because an order holds at most 4 KB.
-4. `start`, on the copy: the network guard, the start and the copy's names.
-5. `checkout`, on the copy: the branch, and the `.env` merged from the default's and the Gateway's render.
-6. `t3`, on the copy: T3 running, its project, and its two sessions sealed to the Gateway's key.
+| Step | After | Where | What it does |
+| --- | --- | --- | --- |
+| `clone` | | Node | Copies the default's seed with its ACL, NIC, T3 proxy and route rule |
+| `fetch` | | Node | Fetches the branch into the Node's mirror; the Gateway sends the read credential as a blob |
+| `copy_volume` | | Node | Makes a nested-fleet copy's inner volume, from a [spare](/reference/development-containers#spare-volumes) when it can |
+| `prepare` | `clone` | copy | Writes the files that the [seed manifest](/reference/development-containers#the-seed-manifest) does not show in the seed |
+| `start` | `prepare`, `copy_volume` | copy | Checks that both copies hold the seed's current take, names the volume, guards the network, starts the copy and gives it its names |
+| `club_key` | `start` | copy | Writes a nested-fleet copy's Club key into its `/run` |
+| `checkout` | `start`, `fetch` | copy | Checks out the branch, cleans a task copy and merges `.env` |
+| `spare` | `start` | Node | Makes the default's next spare volume |
+| `t3` | `checkout` | copy | Starts T3 or the Conn Server and seals its two sessions to the Gateway |
+| `stop` | `clone` | copy | Runs only after a failed step |
 
-The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. The completion runs on Swamp, as before.
+Each Node step locks only its own part of the Node, so the Node steps run side by side. Steps on the copy lock the copy: `club_key` and `checkout` run one after the other. `prepare` sends its list as one blob, because an order holds at most 4 KB, and merges settings into the seed's own. `start` runs the app-account swap only when the seed ran another swap file. A task copy's `checkout` skips its clean when the seed's tree was clean at its commit.
+
+`spare` is optional: the create neither waits for it nor fails by it. `stop` keeps the copy stopped for a retry or a destroy. The [engine chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-engine.mmd) has the graph.
+
+The Gateway opens the sealed sessions and gives its own to the create's projection. No vault holds it. The create leaves its address to its completion. Its result says `route_publication: deferred`, with the reason `engine_completion`. It also names what a task copy's clean removed (`workspace_cleaned`). For a nested-fleet copy it names what the Club key step did, as the Swamp result does. A failed `club_key` or `checkout` step fails the create at `workspace` with its own code, such as `instance.nested_club_key_not_tmpfs`. A failed create's result says `route_publication: deferred` too. The completion runs on Swamp, as before.
 
 Some clones start on Swamp:
 
-- a nested-fleet default's copy, a task copy or a branch selection;
-- a clone with attached Node services, Processes or a CI hold;
+- a branch selection;
+- a clone with attached Node services or a CI hold;
 - an already active create;
 - a clone with a firewall row other than a TCP route allow.
 
@@ -77,9 +87,9 @@ An executor reports its primitives when it connects to the bus, and again every 
 
 Today `app-dev` Nodes enable the `firewall`, `route` and `instance` families, `vpn` Nodes the `dns` family and the Gateway's Node the `proof` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0, `dns` from 0.18.0 and `instance` from 0.19.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
-`instance.create` needs agent 0.22.0 on the Node: an older executor reports the same `instance` actions but refuses the start's `app_account`, so the create fails instead of running wrong. Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until the pinned delivery is 0.22.0 or newer.
+`instance.create` needs agent 0.23.0 on the Node. Every engine create has the `stop` step, and a nested-fleet copy `club_key`, `copy_volume` and `spare`: only an executor of 0.23.0 or newer reports those actions, so a Node with an older one keeps every create on Swamp.
 
-The `files_blob` holds the model environment inline. The Gateway also puts the placeholder model key into the JSON settings there, in place of the intent's `key_value` ([Antigravity](/reference/development-containers#antigravity)). The agent's prepare step still replaces each top-level settings key whole. That drops a provider instance of the agent's own, and it rewrites a key that the Conn Server already moved into its store. So `instance.create` also stays out of `ORBIT_ENGINE_KINDS` until prepare merges as the other settings writers do.
+The `files_blob` holds the model environment inline. Each JSON settings file goes with the intent's `key_value` and the placeholder model key ([Antigravity](/reference/development-containers#antigravity)). The prepare step merges it object by object as the other settings writers do. A provider instance of the agent's own stays. A file that holds the key, or the Conn Server's mark of a key it already moved into its store, stays as it is.
 
 ## Steps and transitions
 
@@ -88,9 +98,11 @@ The `files_blob` holds the model environment inline. The Gateway also puts the p
 - a pending step whose `after` steps are done is sent;
 - a sent step past its deadline is sent again with a new order;
 - a sent step past its budget fails with `engine.step_budget_exceeded`;
-- the Operation fails as soon as one step failed;
-- the Operation succeeds once all steps are done;
+- after a step failed, the Operation sends only its failure steps, and fails once they ended;
+- the Operation succeeds once all its steps are done, its optional steps aside;
 - the Operation ends as cancelled at the first transition after a cancel request.
+
+A failure step (`on_failure`) runs only after another step failed. It is sent when its `after` steps are done, and skipped when they are not. An optional step (`optional`) runs as any step, but the Operation neither waits for it nor fails by it.
 
 The steps' real result beats a cancel: when every step already ended, their result counts.
 
