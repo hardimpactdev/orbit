@@ -76,7 +76,7 @@ Self-hosted runners live in the shared `self-hosted, hardimpact, orbit-shard` po
 
 ### Self-hosted fixture shards
 
-Selected Swamp shape fixtures run in `merge_group` and task-handoff pushes on the self-hosted shard pool (two workers per shard). Budget limits in `.github/ci/checks.toml` target a 5-minute PR wall time: `shard_seconds = 150`, `shard_deadline_seconds = 210`, `shard_ceiling_seconds = 240`, `unit_ceiling_seconds = 180`, `runner_shards = 20`, `pr_shards = 20`, `self_hosted_shards = 10`, `slowest_runner_factor = 1.15`. Run `bin/ci-units cuts` to inspect shard packing; jobs track elapsed time via `ORBIT_JOB_STARTED_AT`.
+Selected Swamp shape fixtures run in `merge_group` and task-handoff pushes on the self-hosted shard pool (two workers per shard). Budget limits in `.github/ci/checks.toml` target a 5-minute PR wall time: `shard_seconds = 150`, `shard_deadline_seconds = 210`, `shard_ceiling_seconds = 240`, `unit_ceiling_seconds = 180`, `runner_shards = 21`, `pr_shards = 20`, `self_hosted_shards = 10`, `slowest_runner_factor = 1.15`. Run `bin/ci-units cuts` to inspect shard packing; jobs track elapsed time via `ORBIT_JOB_STARTED_AT`.
 
 When a task for container hosts changes persistent fixture state, regenerate saved boundaries with `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` (`--check` to verify without writing).
 

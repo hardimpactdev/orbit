@@ -164,6 +164,18 @@ Each Project has one default container Instance per `app-dev` Node, built from s
 
 Every passing default deploy snapshots `next-<commit>` and atomically promotes it to `seed-<commit>` (retaining `base-<commit>` for nested fleets) so in-flight clones never see a half-written seed.
 
+#### The default keeps a clean tree
+
+Before deploy steps and the seed snapshot, a default deployment removes untracked non-ignored files (keeping `.env` and tracked/ignored files) and records `workspace_cleaned` (`removed_count`, first 20 `removed` names, `left_count`).
+
+#### The seed manifest
+
+Right before snapshotting `seed-<commit>`, the default writes shared clone files (`seed_files`) and records `/etc/orbit/seed-manifest.json` (`files`, `links`, `folders`, `bundles`, `nss`, `units`, `workspace_clean`). Clone preparation reads the manifest and writes only what differs; task copies skip workspace cleaning when `workspace_clean` is true and the commit matches the seed.
+
+#### Spare volumes
+
+Nested-fleet defaults keep a spare inner volume ready so `instance.create` can claim it via `copy_volume` while `spare` prepares the next one in parallel.
+
 #### The seed hold
 
 `instance_seed:<default-id>` serializes default seed retakes against CI seed copies (`instance.seed_copy`) without blocking ordinary clone reads.
@@ -190,7 +202,11 @@ Each clone attached to a Valkey Database server receives its own scoped ACL user
 
 ### Complete a clone
 
-`instance.complete` finishes database fills, Route publication (if deferred), and nested-fleet startup, then transitions the clone from `source_resolved` to `active`.
+`instance.complete` finishes database fills and Route publication (if deferred), then transitions the clone from `source_resolved` to `active`.
+
+### A clone starts its fleet
+
+Nested-fleet clones start their inner fleet and operator tunnel at boot in parallel with `instance.complete` via the lockless [`instance.fleet`](/reference/gateway-engine#instancefleet) Operation, recording `fleet_ready_at`, `fleet_failed_at`, and `fleet_error_code` on the Instance. Destroying or sleeping the clone cancels an open `instance.fleet` wait.
 
 ### Workspace work state
 

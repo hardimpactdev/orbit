@@ -21,6 +21,11 @@ final class AgentViewLink
 
     public float $backoff = 0.0;
 
+    /** Whether the link ever connected, and how many early retries it took before (AgentViewSubscriber::EarlyRetrySeconds). */
+    public bool $everConnected = false;
+
+    public int $earlyRetries = 0;
+
     public float $nextConnectAt = 0.0;
 
     public float $lastMessageAt = 0.0;

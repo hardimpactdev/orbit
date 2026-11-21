@@ -243,6 +243,8 @@ async fn reconnect_loop(
     ) -> Result<(), Box<dyn Error + Send + Sync>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut attempt = 0;
+    let started = Instant::now();
+    let (mut ever_joined, mut early) = (false, 0);
     loop {
         if *shutdown.borrow() {
             return Ok(());
@@ -252,10 +254,20 @@ async fn reconnect_loop(
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("orbit-agent: realtime connection ended: {error}");
-                attempt = next_attempt(attempt, joined_at.map(|joined| joined.elapsed()));
+                ever_joined |= joined_at.is_some();
+                let wait = match orbit_agent::early_retry(ever_joined, orbit_agent::refused_before_answer(error.as_ref()), started.elapsed(), early) {
+                    Some(wait) => {
+                        early += 1;
+                        wait
+                    }
+                    None => {
+                        attempt = next_attempt(attempt, joined_at.map(|joined| joined.elapsed()));
+                        retry_delay(attempt)
+                    }
+                };
                 tokio::select! {
                     _ = shutdown.changed() => return Ok(()),
-                    _ = tokio::time::sleep(retry_delay(attempt)) => {},
+                    _ = tokio::time::sleep(wait) => {},
                 }
             }
         }
@@ -1224,6 +1236,33 @@ mod protocol_tests {
         runnable.abort();
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn the_loop_asks_again_every_half_second_until_the_first_join_and_then_backs_off() {
+        let (_keep, mut shutdown) = watch::channel(false);
+        let refused = || -> Box<dyn Error + Send + Sync> { Box::new(std::io::Error::from(std::io::ErrorKind::ConnectionRefused)) };
+        let mut at: Vec<Instant> = Vec::new();
+        reconnect_loop(&mut shutdown, async |_shutdown, joined_at| {
+            at.push(Instant::now());
+            match at.len() {
+                // Nothing answers yet: the early retries.
+                1..=3 => Err(refused()),
+                // Joined, then lost: from now on the backoff, though nothing answers again.
+                4 => {
+                    *joined_at = Some(Instant::now());
+                    Err(refused())
+                }
+                5 => Err(refused()),
+                _ => Ok(()),
+            }
+        })
+        .await
+        .unwrap();
+        let gaps: Vec<u128> = at.windows(2).map(|pair| pair[1].duration_since(pair[0]).as_millis()).collect();
+        assert!(gaps[..3].iter().all(|gap| (400..=600).contains(gap)), "{gaps:?}");
+        // The early retries did not count as attempts: the first backoff waits 1 to 2 s, the next 2 to 4 s.
+        assert!((1000..=2000).contains(&gaps[3]), "{gaps:?}");
+        assert!((2000..=4000).contains(&gaps[4]), "{gaps:?}");
+    }
     #[tokio::test(start_paused = true)]
     async fn reset_reconnects_reauthenticates_and_resubscribes() {
         assert_recovers(Failure::Reset).await;

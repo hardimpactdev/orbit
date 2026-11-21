@@ -16,7 +16,7 @@ covers:
 
 A Schedule runs one command on a recurring calendar for a Node or an Instance. By default, Orbit stores each Schedule as a cron-triggered workflow (`schedule-<uuid>`) that executes the command on the target Node over SSH without installing unit files on the Node. Schedules that use a systemd calendar expression (such as per-minute production schedulers) run as [Node timers](#node-timers) instead.
 
-[`schedule`](/cli/schedule) lists the CLI commands, and [Processes and schedules](/reference/processes-and-schedules) covers Project Schedule definitions. macOS Nodes are not valid Schedule targets (`schedule.platform_unsupported`, 422). Orbit Schedules are separate from the Gateway's own internal scheduled maintenance; see [Gateway queue: Scheduled work](/reference/gateway-queue#scheduled-work).
+[`schedule`](/cli/schedule) lists the CLI commands, and [Processes and schedules](/reference/processes-and-schedules) covers Project Schedule definitions. macOS Nodes are not valid Schedule targets (`schedule.platform_unsupported`, 422). Orbit Schedules are separate from the Gateway's internal scheduled maintenance (such as daily `process:artifacts:check-latest` for [Process upgrades](/reference/processes-and-schedules#upgrade-a-process)); see [Gateway queue: Scheduled work](/reference/gateway-queue#scheduled-work).
 
 ## Fields
 

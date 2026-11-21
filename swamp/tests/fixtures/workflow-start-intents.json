@@ -166,6 +166,7 @@
                         "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                         "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
                         "clean_workspace": true,
+                        "fleet": true,
                         "t3": {
                             "port": 3800,
                             "listen": "10.44.0.7",
@@ -663,6 +664,7 @@
                             "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
                             "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
                             "clean_workspace": true,
+                            "fleet": true,
                             "t3": {
                                 "port": 3800,
                                 "listen": "10.44.0.7",
@@ -945,14 +947,17 @@
                         "layout": {
                             "gateway": {
                                 "address": "10.232.2.11",
+                                "wireguard": "10.45.0.1",
                                 "memory": "4GiB"
                             },
                             "app-dev": {
                                 "address": "10.232.2.12",
+                                "wireguard": "10.45.0.2",
                                 "memory": "5GiB"
                             },
                             "app-prod": {
                                 "address": "10.232.2.13",
+                                "wireguard": "10.45.0.3",
                                 "memory": "2GiB"
                             }
                         },

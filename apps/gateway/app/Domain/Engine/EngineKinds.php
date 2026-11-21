@@ -6,6 +6,7 @@ namespace App\Domain\Engine;
 
 use App\Domain\Firewall\FirewallEngineFlow;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -25,7 +26,11 @@ final readonly class EngineKinds
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
+        'instance.fleet' => InstanceFleetEngineFlow::class,
     ];
+
+    /** A kind that runs only on the engine, as part of another kind's flow: it is on whenever that kind is. */
+    private const array Follows = ['instance.fleet' => 'instance.create'];
 
     public function __construct(private MachineBus $bus) {}
 
@@ -40,7 +45,7 @@ final readonly class EngineKinds
     public function routes(Operation $operation): bool
     {
         $enabled = config('orbit.engine.kinds');
-        if (! isset(self::Definitions[$operation->kind]) || ! is_array($enabled) || ! in_array($operation->kind, $enabled, true)) {
+        if (! isset(self::Definitions[$operation->kind]) || ! is_array($enabled) || ! in_array(self::Follows[$operation->kind] ?? $operation->kind, $enabled, true)) {
             return false;
         }
         try {

@@ -64,6 +64,7 @@ final readonly class UpdateTaskGroupAction
             if ($data->agents !== []) {
                 TaskAgent::assertChangeable($locked, $data->agents);
                 $locked->fill(TaskAgent::groupColumns($data->agents));
+                TaskAgent::assertGroupHonours($locked, $data->agents);
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;

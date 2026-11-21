@@ -99,7 +99,7 @@ final readonly class NestedFleetClubKey
      * long-running queue worker loaded when it booted. So a placed or changed key takes effect at the next start, with no reload.
      * A Gateway with no shared env file has no value.
      */
-    private static function value(): ?string
+    public static function value(): ?string
     {
         if (! is_file(app(GatewayReleaseLayout::class)->environmentPath())) {
             return null;

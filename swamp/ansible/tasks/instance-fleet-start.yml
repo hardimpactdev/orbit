@@ -212,6 +212,41 @@
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['resolvectl', 'domain', fleet_tunnel] + fleet_domains }}" }
   changed_when: true
 
+# The same tunnel at each boot (docs/reference/development-containers.md#the-operator-tunnel-at-boot): a boot unit in the Instance
+# container, which the default's seed holds and each clone keeps. So a clone's create only waits for its fleet (instance.fleet_ready).
+# instance_fleet_tunnel.py writes the script and the unit only when they differ, and enables the unit.
+- name: Keep the operator tunnel at each boot
+  vars:
+    fleet_tunnel_script: |
+      #!/bin/sh
+      # Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.
+      set -eu
+      ip link show {{ fleet_tunnel }} >/dev/null 2>&1 || ip link add {{ fleet_tunnel }} type wireguard
+      wg set {{ fleet_tunnel }} private-key {{ fleet_operator_key }} listen-port {{ fleet_tunnel_port }} peer {{ fleet_hub_key.stdout | trim }} endpoint {{ intent.fleet.layout.gateway.address }}:{{ fleet_hub_port }} allowed-ips {{ intent.fleet.operator.network }} persistent-keepalive 25
+      ip address replace {{ intent.fleet.operator.address }}/{{ intent.fleet.operator.network.split('/')[1] }} dev {{ fleet_tunnel }}
+      ip link set {{ fleet_tunnel }} up
+      resolvectl dns {{ fleet_tunnel }} {{ intent.fleet.operator.hub }}
+      resolvectl domain {{ fleet_tunnel }} {{ (['~'] | product(intent.fleet.operator.domains) | map('join') | list) | join(' ') }}
+    fleet_tunnel_unit: |
+      # Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.
+      [Unit]
+      Description=Operator tunnel to this Instance's nested fleet
+      After=network-online.target systemd-resolved.service
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      ExecStart={{ fleet_tunnel_boot }}
+      RemainAfterExit=yes
+      [Install]
+      WantedBy=multi-user.target
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_outer + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_tunnel.py'), 'boot',
+          fleet_tunnel_boot, '/etc/systemd/system/' ~ fleet_tunnel_unit_name] }}
+    stdin: "{{ {'script': fleet_tunnel_script, 'unit': fleet_tunnel_unit} | to_json }}"
+  register: fleet_tunnel_boot_write
+  changed_when: (fleet_tunnel_boot_write.stdout | from_json).changed
+
 # Only the start of a stopped nested-fleet clone writes the copy's proxy bypass and restarts T3 (instance-fleet-proxy.yml).
 - name: Keep the inner fleet off the egress proxy in a started copy
   when: fleet_proxy_restart_t3 | default(false) | bool

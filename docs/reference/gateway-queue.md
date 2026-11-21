@@ -57,6 +57,7 @@ When the queue is configured, the scheduler dispatches these commands as unique 
 | `queue:prune-failed` | daily | `tasks` | 3,600 seconds |
 | `activitylog:clean` | daily | `tasks` | 3,600 seconds |
 | `queue:prune-batches` | daily | `problems` | 3,600 seconds |
+| `process:artifacts:check-latest` | daily | `tasks` | 3,600 seconds |
 | `task:pr-gate`, `task:pr-when-done`, `task:merge-round`, `task:copy-settle`, `task:insights-refresh` | periodic (Tasks enabled) | `tasks` | per command |
 
 Each queued command runs in its own PHP process and logs a non-zero exit as an error. `conn:threads:read` runs only while Conn and `ORBIT_CONN_THREAD_INDEX_POLL` are enabled. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` enforce the [disk retention](/reference/gateway-recovery#disk-retention) windows.

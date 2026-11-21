@@ -39,7 +39,7 @@ final readonly class Engine
             foreach ($specs as $spec) {
                 OperationEngineStep::query()->firstOrCreate(['operation_id' => $operation->id, 'name' => $spec->name], [
                     'node_id' => $spec->node, 'action' => $spec->action, 'target' => $spec->target, 'after' => $spec->after,
-                    'budget_ms' => $spec->budgetMs, 'resend_ms' => $spec->resendMs,
+                    'budget_ms' => $spec->budgetMs, 'resend_ms' => $spec->resendMs, 'on_failure' => $spec->onFailure, 'optional' => $spec->optional,
                 ]);
             }
             $state = $operation->refresh()->state ?? [];
@@ -199,13 +199,24 @@ final readonly class Engine
             }
             $now = self::nowMs();
             $steps = self::steps($operationId, lock: true);
+            $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             foreach ($steps as $step) {
                 if ($step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
                     $step->update(['status' => 'failed', 'done_ms' => $now, 'error_code' => 'engine.step_budget_exceeded']);
+                }
+            }
+            $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
+            $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
+            foreach ($steps as $step) {
+                if ($step->on_failure !== $failed) {
+                    continue; // A failed run sends no more of its own steps; a run without a failure none of its failure steps.
+                }
+                if ($step->on_failure && $step->status === 'pending' && ! array_all($step->after, $done)) {
+                    $step->update(['status' => 'skipped', 'done_ms' => $now]);
 
                     continue;
                 }
-                $ready = $step->status === 'pending' && array_all($step->after, static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done');
+                $ready = $step->status === 'pending' && array_all($step->after, $done);
                 $overdue = $deadline && $step->status === 'sent' && $step->node_id > 0 && $now >= ($step->resend_at_ms ?? PHP_INT_MAX);
                 if (! $ready && ! $overdue) {
                     continue;
@@ -214,11 +225,13 @@ final readonly class Engine
                     'resend_at_ms' => $now + $step->resend_ms]);
                 $step->node_id === 0 ? $locals[] = $step->name : $sends[] = $step->name;
             }
-            $statuses = array_map(static fn (OperationEngineStep $step): string => $step->status, $steps);
-            // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result.
+            $rescued = array_all(array_filter($steps, static fn (OperationEngineStep $step): bool => $step->on_failure),
+                static fn (OperationEngineStep $step): bool => in_array($step->status, ['done', 'failed', 'skipped'], true));
+            // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result. A failed run
+            // ends once its failure steps ended.
             $end = match (true) {
-                in_array('failed', $statuses, true) => 'failed',
-                array_all($statuses, static fn (string $status): bool => $status === 'done') => 'succeeded',
+                $failed => $rescued ? 'failed' : null,
+                array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
                 $operation->cancel_requested_at !== null => 'cancelled',
                 default => null,
             };

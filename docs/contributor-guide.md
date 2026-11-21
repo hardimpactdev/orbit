@@ -72,7 +72,7 @@ composer docs-build
 composer docs-lint
 ```
 
-Generated artifacts stay ignored by Git (`docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, `docs/flows-data.js`). `bin/build-api` regenerates the OpenAPI spec and MCP tool manifest; `bin/docs-merge-check` verifies navigation and generated-file merges; CI publishes the built docs to the `docs-site` branch.
+Generated artifacts stay ignored by Git (`docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, `docs/flows-data.js`). `composer docs-lint` enforces structure, links, and prose style (`orbit.docs_prose_style` rejects em dashes, filler phrases, and vague headings). `bin/build-api` regenerates the OpenAPI spec and MCP tool manifest; `bin/docs-merge-check` verifies navigation and generated-file merges; CI publishes the built docs to the `docs-site` branch.
 
 ### Parallel command families
 

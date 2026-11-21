@@ -27,7 +27,14 @@ struct PrepareInput {
     /// The same list as a blob: a clone's files are kilobytes, and an order holds at most 4 KB.
     #[serde(default)]
     files_blob: Option<crate::BlobRef>,
+    /// The app-account swap file: when the seed holds it as this create renders it, the seed's own swap already ran.
+    #[serde(default)]
+    app_account: Option<String>,
 }
+
+/// What the default's seed holds (`swamp/ansible/instance_seed_files.py`): the state of the files every clone needs, the default's
+/// Orbit units that no clone keeps, and whether its workspace is clean. Absent in a seed taken before it.
+const MANIFEST: &str = "/etc/orbit/seed-manifest.json";
 
 /// One thing to place in the copy.
 #[derive(Debug, Deserialize)]
@@ -47,8 +54,19 @@ enum Item {
         #[serde(default)]
         parents: bool,
     },
-    /// A JSON file merged over the copy's own: its other keys stay.
-    Json { path: String, uid: u32, gid: u32, mode: String, json: Value },
+    /// A JSON file merged over the copy's own, object by object: an entry Orbit does not name, such as a provider instance
+    /// of the agent's own, stays. Each string equal to `key_value` holds the placeholder model `key`.
+    Json {
+        path: String,
+        uid: u32,
+        gid: u32,
+        mode: String,
+        json: Value,
+        #[serde(default)]
+        key_value: Option<String>,
+        #[serde(default)]
+        key: Option<String>,
+    },
     /// A symbolic link, replaced when it exists. With an owner, missing folders above it are made for that user first.
     Link {
         path: String,
@@ -99,7 +117,12 @@ struct Owner {
 }
 
 /// Places a stopped copy's files: the seed's Orbit units that are not the copy's go, the machine id is the copy's own, then
-/// each item in order. A running copy is left alone: its first boot is over. Answers how many changes it made.
+/// each item in order. A running copy is left alone: its first boot is over. The seed's manifest, read once, names the units to
+/// remove and what the seed already holds: an item the seed holds as rendered is not placed again.
+/// Answers `{"changes", "manifest", "app_account_current", "workspace_clean", "fleet_tunnel"}`: whether the seed's manifest was
+/// there, whether its app-account swap ran with this create's swap file, whether its workspace was clean, and whether it holds
+/// Orbit's operator tunnel boot unit, so a nested fleet's copy has its tunnel at every boot (`instance.fleet_ready`). A running copy
+/// answers `false` for the unit: its first boot is over.
 ///
 /// # Errors
 ///
@@ -107,7 +130,7 @@ struct Owner {
 /// `instance.clone_browser_trust_refused`, `instance.clone_browser_trust_mismatch`, `instance.clone_files_refused`,
 /// `instance.agent_folder_refused`,
 /// `schedule.container_clone_cleanup_failed` or `instance.prepare_failed`.
-pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
+pub fn prepare(system: &impl System, input: &Value) -> Result<String, Failure> {
     let mut input: PrepareInput =
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.prepare_input_invalid", error.to_string()))?;
     if let Some(blob) = input.files_blob.take() {
@@ -122,21 +145,113 @@ pub fn prepare(system: &impl System, input: &Value) -> Result<u32, Failure> {
     let copy = incus
         .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
         .ok_or_else(|| Failure::new("instance.prepare_failed", "the copy does not exist"))?;
-    if copy.get("status").and_then(Value::as_str) != Some("Stopped") {
-        return Ok(0);
-    }
     let files = Files { incus: &incus, project: &input.project, name: &input.name };
-    let mut changes = purge(&files, &input)?;
+    let answer = |changes: u32, manifest: Option<&Value>, swapped: bool, tunnel: bool| {
+        let clean = manifest.and_then(|manifest| manifest.get("workspace_clean")).and_then(Value::as_bool).unwrap_or(false);
+        serde_json::json!({"changes": changes, "manifest": manifest.is_some(), "app_account_current": swapped, "workspace_clean": clean,
+            "fleet_tunnel": tunnel})
+        .to_string()
+    };
+    if copy.get("status").and_then(Value::as_str) != Some("Stopped") {
+        return Ok(answer(0, None, false, false));
+    }
+    let manifest: Option<Value> = files.pull(MANIFEST)?.and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let mut changes = match manifest.as_ref().and_then(|manifest| manifest.get("units")).and_then(Value::as_array) {
+        Some(listed) => remove(&files, &input, listed)?,
+        None => purge(&files, &input)?,
+    };
     let uuid = copy.pointer("/config/volatile.uuid").and_then(Value::as_str).unwrap_or_default().replace('-', "");
     if uuid.len() != 32 {
         return Err(Failure::new("instance.prepare_failed", "the copy has no volatile.uuid"));
     }
     files.push("/etc/machine-id", 0, 0, "0444", format!("{uuid}\n").as_bytes(), Folders::Present)?;
     changes += 1;
+    let mut swapped = manifest.is_some();
     for item in &input.files {
+        if manifest.as_ref().is_some_and(|manifest| held(system, manifest, item)) {
+            continue;
+        }
+        if let (Item::File { path, .. }, Some(swap)) = (item, &input.app_account) {
+            // The seed's swap ran with another file: this create's swap runs once more.
+            swapped &= path != swap;
+        }
         changes += place(system, &files, item)?;
     }
-    Ok(changes)
+    Ok(answer(changes, manifest.as_ref(), swapped && input.app_account.is_some(), fleet_tunnel(&files)?))
+}
+
+/// Whether the copy holds Orbit's operator tunnel boot unit: the unit with Orbit's marker, which Orbit writes enabled and the purge
+/// keeps. A hand-made unit of the same name, and a seed taken before the unit, has none. `instance.fleet_ready` checks its link.
+fn fleet_tunnel(files: &Files<'_, impl System>) -> Result<bool, Failure> {
+    let content = files.pull(&format!("/etc/systemd/system/{}", crate::fleet::TUNNEL_UNIT))?;
+    Ok(content.is_some_and(|bytes| String::from_utf8_lossy(&bytes).starts_with(crate::fleet::MARKER)))
+}
+
+/// The seed's Orbit units that the manifest names, less the copy's own.
+#[expect(clippy::case_sensitive_file_extension_comparisons, reason = "systemd folder names are lowercase")]
+fn remove(files: &Files<'_, impl System>, input: &PrepareInput, listed: &[Value]) -> Result<u32, Failure> {
+    let (mut links, mut rest) = (Vec::new(), Vec::new());
+    for path in listed.iter().filter_map(Value::as_str) {
+        let (folder, name) = path.rsplit_once('/').unwrap_or_default();
+        // The operator tunnel's boot unit is the seed's, for every copy: it stays (instance.fleet_ready).
+        let own = input.units.iter().any(|unit| unit == name)
+            || (folder == "/etc/orbit/processes" && input.process_ids.iter().any(|id| id == name))
+            || name == crate::fleet::TUNNEL_UNIT;
+        if own || !path.starts_with("/etc/") || path.contains("..") {
+            continue;
+        }
+        let target = format!("{}{path}", input.name);
+        if folder.ends_with(".wants") { links.push(target) } else { rest.push(target) }
+    }
+    let count = u32::try_from(links.len() + rest.len()).unwrap_or(u32::MAX);
+    if !links.is_empty() {
+        files.incus.change(&[&["--project", input.project.as_str(), "file", "delete"][..], &links.iter().map(String::as_str).collect::<Vec<_>>()].concat())?;
+    }
+    if !rest.is_empty() {
+        files.incus.change(&[&["--project", input.project.as_str(), "file", "delete", "--force"][..], &rest.iter().map(String::as_str).collect::<Vec<_>>()].concat())?;
+    }
+    Ok(count)
+}
+
+/// Whether the seed holds an item as this create renders it, by the manifest alone.
+fn held(system: &impl System, manifest: &Value, item: &Item) -> bool {
+    let file = |path: &str, bytes: &[u8], uid: u32, gid: u32, mode: &str| {
+        manifest.pointer(&format!("/files/{}", pointer(path)))
+            == Some(&serde_json::json!({"sha256": crate::sha256(bytes), "uid": uid, "gid": gid, "mode": four(mode)}))
+    };
+    let link = |path: &str, target: &str| manifest.pointer(&format!("/links/{}", pointer(path))).and_then(Value::as_str) == Some(target);
+    match item {
+        Item::File { path, uid, gid, mode, content: Some(content), .. } => file(path, content.as_bytes(), *uid, *gid, mode),
+        Item::File { path, uid, gid, mode, blob: Some(blob), .. } => system.blob(&blob.blob.sha256).is_ok_and(|bytes| file(path, &bytes, *uid, *gid, mode)),
+        Item::Link { path, target, .. } => link(path, target),
+        Item::Folder { path, files } => {
+            let Some(held) = manifest.pointer(&format!("/folders/{}", pointer(path))) else { return false };
+            let wanted: Option<serde_json::Map<String, Value>> =
+                files.iter().map(|entry| entry.content.as_ref().map(|content| (entry.path.clone(), Value::String(crate::sha256(content.as_bytes()))))).collect();
+            held.get("skills") == Some(&Value::Bool(true)) && wanted.is_some_and(|wanted| held.get("files") == Some(&Value::Object(wanted)))
+        }
+        Item::Trust { source, path, hash_directory, uid, gid, mode } => {
+            let Ok(content) = system.read(source) else { return false };
+            let Some(hash) = subject_hash(system, &content) else { return false };
+            let named = format!("{hash_directory}/{}.pem", path.rsplit('/').next().unwrap_or_default().trim_end_matches(".crt"));
+            let bodies: BTreeSet<String> = certificates(&String::from_utf8_lossy(&content)).iter().map(|body| crate::sha256(body.as_bytes())).collect();
+            let bundle = manifest.pointer(&format!("/bundles/{}", pointer(&format!("{hash_directory}/ca-certificates.crt")))).and_then(Value::as_array);
+            file(path, &content, *uid, *gid, mode)
+                && link(&named, path)
+                && link(&format!("{hash_directory}/{hash}.0"), &named)
+                && bundle.is_some_and(|held| bodies.iter().all(|body| held.iter().any(|value| value.as_str() == Some(body.as_str()))))
+        }
+        Item::Nss { path, entry, version, .. } => manifest.pointer(&format!("/nss/{}", pointer(path))).is_some_and(|held| {
+            held.get("version").and_then(Value::as_str) == Some(version.as_str())
+                && held.get("lines").and_then(Value::as_array).is_some_and(|lines| lines.iter().any(|line| line.as_str() == entry.lines().next()))
+        }),
+        _ => false,
+    }
+}
+
+/// A path as one JSON pointer token.
+fn pointer(path: &str) -> String {
+    path.replace('~', "~0").replace('/', "~1")
 }
 
 fn check(input: &PrepareInput) -> Result<(), String> {
@@ -190,6 +305,46 @@ fn check(input: &PrepareInput) -> Result<(), String> {
     Ok(())
 }
 
+/// What the Conn Server leaves in its settings file in place of a secret it moved into its own store.
+const IMPORTED_SECRET: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+/// Orbit's settings over the held ones, object by object; Orbit's value wins at each leaf and list.
+fn deep_merge(held: &Value, orbit: &Value) -> Value {
+    match (held, orbit) {
+        (Value::Object(held), Value::Object(orbit)) => {
+            let mut merged = held.clone();
+            for (name, value) in orbit {
+                let next = deep_merge(held.get(name).unwrap_or(&Value::Null), value);
+                merged.insert(name.clone(), next);
+            }
+            Value::Object(merged)
+        }
+        _ => orbit.clone(),
+    }
+}
+
+/// The settings with each string equal to `value` replaced by `key` (or removed as a match when `key` is None).
+fn with_model_key(settings: &Value, value: Option<&str>, key: Option<&str>) -> Value {
+    match settings {
+        Value::Object(map) => Value::Object(map.iter().map(|(name, item)| (name.clone(), with_model_key(item, value, key))).collect()),
+        Value::Array(items) => Value::Array(items.iter().map(|item| with_model_key(item, value, key)).collect()),
+        Value::String(text) if value == Some(text.as_str()) => key.map_or(Value::Null, |key| Value::String(key.to_owned())),
+        other => other.clone(),
+    }
+}
+
+/// The settings to write, or None when the held ones already hold Orbit's: with the model key where Orbit holds `value`, or
+/// with the Conn Server's mark of a key it already moved into its store (`instance_clone.py` `merged_settings`). Orbit's
+/// settings that need the key, with no key, refuse.
+fn merged_settings(held: &Value, orbit: &Value, value: Option<&str>, key: Option<&str>) -> Result<Option<Value>, ()> {
+    if value.is_some() && with_model_key(orbit, value, None) != *orbit && key.is_none_or(str::is_empty) {
+        return Err(());
+    }
+    let merged = deep_merge(held, &with_model_key(orbit, value, key));
+    let moved = deep_merge(held, &with_model_key(orbit, value, Some(IMPORTED_SECRET)));
+    Ok((*held != merged && *held != moved).then_some(merged))
+}
+
 /// The seed's Orbit units, links and Schedule files that are not the copy's own.
 #[expect(clippy::case_sensitive_file_extension_comparisons, reason = "systemd unit and Schedule file names are lowercase")]
 fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Failure> {
@@ -214,7 +369,7 @@ fn purge(files: &Files<'_, impl System>, input: &PrepareInput) -> Result<u32, Fa
         for item in listed {
             let service = item.ends_with(".service");
             let goes = match index {
-                0 => item.starts_with("orbit-") && service,
+                0 => item.starts_with("orbit-") && service && item != crate::fleet::TUNNEL_UNIT,
                 1 => {
                     (item.starts_with("orbit-process-") && service && !units.contains(item.as_str()))
                         || (item.starts_with("orbit-schedule-") && (service || item.ends_with(".timer")))
@@ -256,19 +411,21 @@ fn place(system: &impl System, files: &Files<'_, impl System>, item: &Item) -> R
             files.push(path, *uid, *gid, mode, &bytes, if *parents { Folders::Present } else { Folders::Root })?;
             Ok(made + 1)
         }
-        Item::Json { path, uid, gid, mode, json } => {
+        Item::Json { path, uid, gid, mode, json, key_value, key } => {
             let held = files.read(path, "instance.clone_files_refused")?;
-            let mut merged = held.as_ref().and_then(|held| serde_json::from_slice::<Value>(&held.content).ok()).unwrap_or_else(|| serde_json::json!({}));
-            let before = merged.clone();
-            if let (Some(object), Some(over)) = (merged.as_object_mut(), json.as_object()) {
-                object.extend(over.iter().map(|(key, value)| (key.clone(), value.clone())));
-            }
+            let old = match &held {
+                Some(held) => serde_json::from_slice::<Value>(&held.content).map_err(|error| Failure::new("instance.prepare_failed", format!("{path}: {error}")))?,
+                None => serde_json::json!({}),
+            };
+            let merged = merged_settings(&old, json, key_value.as_deref(), key.as_deref()).map_err(|()| Failure::new("instance.clone_t3_files_refused", path.clone()))?;
             let owned = held.as_ref().is_some_and(|held| (held.uid, held.gid) == (*uid, *gid) && held.mode == four(mode));
-            if held.is_some() && merged == before && owned {
+            // A file that already holds Orbit's settings with the owner and mode stays as it is.
+            if held.is_some() && merged.is_none() && owned {
                 return Ok(0);
             }
             let made = files.parents(path, *uid, *gid)?;
-            files.push(path, *uid, *gid, mode, format!("{merged}\n").as_bytes(), Folders::Present)?;
+            let text = format!("{}\n", merged.unwrap_or(old));
+            files.push(path, *uid, *gid, mode, text.as_bytes(), Folders::Present)?;
             Ok(made + 1)
         }
         Item::Link { path, target, owner } => {

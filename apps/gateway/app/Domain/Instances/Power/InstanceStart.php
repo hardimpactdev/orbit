@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Power;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceFleetOperation;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Instances\NestedFleetIntent;
@@ -106,9 +107,15 @@ final readonly class InstanceStart implements DirectOperationProjection
             ...(is_int($phase['fleet_seconds'] ?? null) || is_float($phase['fleet_seconds'] ?? null) ? ['fleet_seconds' => $phase['fleet_seconds']] : [])];
 
         return DB::transaction(function () use ($operation, $data, $errorCode, $result, $succeeded): Operation {
+            $ended = $operation->status->terminal();
             $operation = app(DirectOperation::class)->project($operation, [...$data, 'error_code' => $errorCode], $result);
             if ($succeeded && $operation->status === OperationStatus::Succeeded) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => InstanceRuntimePowerState::Running]);
+            }
+            // The start waits for Doctor, so its end is the fleet's: the Instance shows it, as after a create's fleet wait.
+            if (! $ended && in_array($operation->status, [OperationStatus::Succeeded, OperationStatus::Failed], true)) {
+                InstanceFleetOperation::record((int) $operation->target_id, $operation->status === OperationStatus::Succeeded ? null
+                    : ($operation->error_code ?? 'instance.container_fleet_resume_failed'));
             }
 
             return $operation;

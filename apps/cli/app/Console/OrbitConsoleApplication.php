@@ -19,7 +19,7 @@ final class OrbitConsoleApplication extends Application
 
     public function doRun(InputInterface $input, OutputInterface $output): int
     {
-        if (in_array($input->getFirstArgument(), ['project:document:read', 'project:document:download', 'project:document:restore-version'], true)) {
+        if (in_array($input->getFirstArgument(), ['project:document:read', 'project:document:download', 'project:document:restore-version', 'process:artifact:set'], true)) {
             $input = new DocumentVersionInput($input);
         }
 

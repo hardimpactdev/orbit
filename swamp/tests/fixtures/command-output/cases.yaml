@@ -859,6 +859,11 @@ contexts:
   instance-destroy-inner-snapshots:
     destroy_inner_snapshots:
       stdout: '[{"name":"inner-7/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-7/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  instance-destroy-spares:
+    container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
+    destroy_spares:
+      stdout:
+        sample: incus-volumes-spares.json
   instance-destroy-zfs-datasets:
     container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
     refused_container: true
@@ -1058,6 +1063,13 @@ contexts:
           parent: orbitinst0
           security.acls: ' orbitinst0-egress , instance-8 '
     item: {key: inherited, value: *inherited_nic}
+  # `systemctl show --property=ActiveState --property=NRestarts` read twice, 10 s apart, by the verify of process:upgrade.
+  process-upgrade-steady:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+  process-upgrade-restarted:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=3]}
   moved-process-ready:
     moved_process_ready:
       rc: 0
@@ -1505,6 +1517,16 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-steady
+  expected: true
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-restarted
+  expected: false
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
   field: vars.guest_result
@@ -1659,6 +1681,11 @@ cases:
   field: loop
   context: instance-destroy-inner-snapshots
   expected: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+- file: instance-container-destroy.yml
+  task: Delete the spares and the spare builder of the inner volume
+  field: loop
+  context: instance-destroy-spares
+  expected: [build-inner-7, spare-inner-7-3f9c2a7d41b0, spare-inner-7-seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
 - file: instance-container-destroy.yml
   task: Name the datasets Incus expects
   field: ansible.builtin.set_fact.destroy_datasets
@@ -3112,6 +3139,18 @@ cases:
     libc6:i386: [2.42-0ubuntu2]
     tzdata: [2025b]
 non_command_output:
+- file: operation-process-upgrade.yml
+  task: Refuse a layout without a relative current link to a release
+  field: ansible.builtin.assert.that[4]
+  reason: Matches the target of the `current` link that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Write the installed release
+  field: ansible.builtin.copy.content
+  reason: Strips `releases/` and a trailing slash from the `current` link target that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Keep the previous release
+  field: vars.upgrade_versions
+  reason: Keeps the release folder paths that the find module listed and whose names are versions; it parses no command output.
 - file: tasks/instance-container-phase.yml
   task: Merge Orbit's changed JSON settings
   field: vars.model_key
@@ -3230,47 +3269,55 @@ non_command_output:
   reason: Validates the admitted model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[8]
-  reason: Validates the admitted option ids of a new thread's model options, not command output.
+  field: ansible.builtin.assert.that[7]
+  reason: Validates the admitted base model of a new thread, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[9]
-  reason: Validates the admitted option values of a new thread's model options, not command output.
+  field: ansible.builtin.assert.that[8]
+  reason: Compares the admitted model with its admitted base model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[10]
-  reason: Validates the admitted reviewer candidate commit, not command output.
+  reason: Validates the admitted option ids of a new thread's model options, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[11]
+  reason: Validates the admitted option values of a new thread's model options, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[12]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[13]
   reason: Validates the admitted thread title, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[16]
+  field: ansible.builtin.assert.that[18]
   reason: Validates the admitted titles of the earlier turns to settle, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[17]
+  field: ansible.builtin.assert.that[19]
   reason: Validates the admitted task branches of the earlier reviewer turns to settle, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[22]
+  field: ansible.builtin.assert.that[24]
   reason: Validates each earlier turn's admitted thread ID, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[23]
+  field: ansible.builtin.assert.that[25]
   reason: Validates each earlier turn's admitted run ID, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[24]
+  field: ansible.builtin.assert.that[26]
   reason: Validates the admitted owner run of the answered requests, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[25]
+  field: ansible.builtin.assert.that[27]
   reason: Validates each earlier turn's admitted owner run of its answered requests, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[26]
+  field: ansible.builtin.assert.that[28]
   reason: Validates the turn's admitted thread ID, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal

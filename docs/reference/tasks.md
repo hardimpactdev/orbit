@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens,2027_03_18_000000_rerecord_task_insights_with_handoffs}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals,2027_03_13_000000_repair_watched_pr_state_of_completed_groups,2027_03_15_000000_rerecord_task_insights_with_unknown_tokens,2027_03_18_000000_rerecord_task_insights_with_handoffs,2027_03_20_000000_rerecord_task_insights_with_finding_categories}.php"
 ---
 
 # Tasks
@@ -112,7 +112,15 @@ Swamp workflows own turn execution, check execution, retries, and publication; t
 
 ### Copy turn agents
 
-Turn agent selection resolves `group` -> `project` -> `gateway` settings (defaulting to `claude`, `claude-opus-5-5`, and `medium`/`high` effort; Antigravity overrides use `gemini-3.8-flash` / `high`).
+Turn agent selection resolves `task` -> `project` -> `gateway` settings (`ORBIT_TASKS_COPY_*`, defaulting to `claude` and `claude-opus-5-5`). Supported providers and efforts are:
+
+| Provider | Models | Efforts |
+| --- | --- | --- |
+| `claude` | T3 catalog models (such as `claude-opus-5-5`) | `low`, `medium`, `high`, `xhigh`, `max` |
+| `codex` | T3 catalog or probed Codex models (such as `gpt-6.1-sol`) | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `antigravity` | `gemini-4-neon`, `gemini-4-hydrogen` (`low`–`xhigh`); `gemini-4-carbon`, `gemini-4-argon`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash` (`low`–`high`); `gemini-3.1-pro` (`low`, `high`) | Per model (Conn Server copies only) |
+
+Admission validates provider and effort (`422 tasks.copy_turn_unoffered`), and turn start verifies the model against T3's `model-manifest.json` or Codex probe (`tasks.copy_turn_model_unoffered`, `tasks.copy_turn_model_unverified`).
 
 ### Drivers
 
@@ -212,7 +220,7 @@ The delivery gate verifies a passing check on the delivered candidate commit bef
 
 ### The review receipt
 
-Reviewers submit a structured review receipt (`approved` or `changes_requested` with findings) bound to the reviewed commit.
+Reviewers submit a structured review receipt (`approved` or `changes_requested`) bound to the reviewed commit, recording blocking findings by category (`regression`, `destructive`, `failure_state`, `race`, `contract`, `validation`, `outcome_missing`, `docs`, `other`).
 
 ### The review gate
 
@@ -310,7 +318,7 @@ Assistance comments at the parent group level stay on the task group independent
 
 ### Task insights
 
-`GET /api/v1/task-insights` and Prometheus scrape `GET /api/v1/metrics/task-insights` (refreshed by `task:insights-refresh`) report throughput, cycle times, handoff counts, and token usage.
+`GET /api/v1/task-insights` and Prometheus scrape `GET /api/v1/metrics/task-insights` (refreshed by `task:insights-refresh`) report throughput, cycle times, handoff counts, `findings_per_first_review`, `findings_by_category`, `unresolved_tasks`, and token usage.
 
 ### Lifecycle times
 

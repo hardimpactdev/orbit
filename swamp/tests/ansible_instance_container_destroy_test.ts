@@ -307,7 +307,11 @@ Deno.test({
                     "instance-7": { status: "Running", snapshots: ["seed-1"], added: { "inner-pool": { type: "disk", settings: ["pool=orbit-instances", "source=inner-7", "path=/srv/inner-pool"] } } },
                     "instance-8": { status: "Running", added: { "inner-pool": { type: "disk", settings: ["pool=orbit-instances", "source=inner-8", "path=/srv/inner-pool"] } } },
                 },
-                volumes: { "inner-7": inner("inner-7"), "inner-8": inner("inner-8") },
+                // instance-7 is a default: its spares go with it, in the current format and in the earlier one, and its builder.
+                // The spare of another default whose name starts the same stays.
+                volumes: { "inner-7": inner("inner-7"), "inner-8": inner("inner-8"), "spare-inner-7-0123456789ab": inner("spare-inner-7-0123456789ab"),
+                    "spare-inner-7-seed-1": inner("spare-inner-7-seed-1"), "build-inner-7": inner("build-inner-7"),
+                    "spare-inner-70-0123456789ab": inner("spare-inner-70-0123456789ab") },
                 "network-acls": [{ name: "instance-7", egress: [] }],
             }));
             const intent = (destroy: Record<string, unknown>) => Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -330,7 +334,7 @@ Deno.test({
             let done = run();
             assert(done.ok, done.output);
             assertEquals(Object.keys(state().containers), ["instance-8"]);
-            assertEquals(Object.keys(state().volumes), ["inner-8"]);
+            assertEquals(Object.keys(state().volumes), ["inner-8", "spare-inner-70-0123456789ab"]);
             assertEquals(state().discarded, [7]);
             const order = calls().map((call) => call.join(" "));
             const deleted = order.findIndex((call) => call === "--project orbit-instances-nested delete --force instance-7");
@@ -349,7 +353,7 @@ Deno.test({
             intent({ instance_id: 8, name: "instance-8", acl: "instance-8", firewall_prefix: "orbit:instance-8-" });
             done = run();
             assert(done.ok, done.output);
-            assertEquals(Object.keys(state().volumes), ["inner-8"]);
+            assertEquals(Object.keys(state().volumes), ["inner-8", "spare-inner-70-0123456789ab"]);
             assert(!calls().some((call) => call.includes("volume") || call.join(" ").includes("/volumes/custom/")), JSON.stringify(calls()));
         } finally {
             Deno.removeSync(folder, { recursive: true });

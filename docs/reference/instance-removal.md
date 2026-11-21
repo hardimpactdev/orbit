@@ -46,8 +46,10 @@ Removal follows the [`instance:destroy` chart](/cli/instance/destroy):
 1. **Schedules and work checks:** Admission removes Schedule triggers. For non-forced host checkouts, Orbit fetches origin and refuses dirty or unpushed work (ignoring Orbit-rendered `.env` and `.env.testing`). `gh_cli` Projects require `--force` on host checkouts.
 2. **Route withdrawal:** Orbit withdraws the Route (including a sole `pending` or `failed` Route) without a DNS grace wait and releases the Route publication hold as soon as withdrawal succeeds (`route_withdrawn_at`).
 3. **Processes and teardown:** Stops and removes Instance Processes, then runs Project teardown steps on host checkouts (skipped for containers).
-4. **Containers and databases:** Container removals force-stop the container, drop owned databases and Valkey users, remove SQLite files, and delete the container and volume.
-5. **Cleanup and verification:** Orbit removes hibernation, mail, executor, and Conn records, detaches tasks or CI places, verifies deletion, and removes the Instance records.
+4. **Containers and databases:** Force-stops the container, drops owned databases and Valkey users, deletes SQLite files, and deletes the container and inner volume.
+5. **Cleanup and verification:** Removes hibernation, mail, executor, and Conn records, detaches tasks or CI places, verifies deletion, and deletes the Instance rows.
+
+Default removals also delete [spare inner volumes](/reference/development-containers#spare-volumes) and `build-<volume>` builders. An open `instance.fleet` wait never blocks destroy or the reaper and is cancelled on admission.
 
 A database held open by an external client fails with `database.in_use`, `database.server_admin_failed`, or `database.destroy_incomplete` without disconnecting the client.
 

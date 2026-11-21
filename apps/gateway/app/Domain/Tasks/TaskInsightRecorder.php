@@ -56,6 +56,10 @@ final readonly class TaskInsightRecorder
         foreach (ValidatedData::object($row['causes'] ?? []) as $cause => $count) {
             $causes[$cause] = ValidatedData::integer($count);
         }
+        $findings = [];
+        foreach (ValidatedData::object($row['review_findings'] ?? []) as $category => $count) {
+            $findings[$category] = ValidatedData::integer($count);
+        }
         $rejected = [];
         foreach (ValidatedData::object($row['rejected_deliveries'] ?? []) as $reason => $count) {
             $rejected[$reason] = ValidatedData::integer($count);
@@ -89,7 +93,7 @@ final readonly class TaskInsightRecorder
             'questions' => $int('questions'), 'causes' => $causes,
             'gated' => ($row['gated'] ?? null) === true, 'handoffs' => $int('handoffs'), 'subtasks' => $int('subtasks'),
             'reviewed_subtasks' => $int('reviewed_subtasks'), 'first_review_approved' => $int('first_review_approved'),
-            'first_review_findings' => $int('first_review_findings'), 'handoff_questions' => $int('handoff_questions'),
+            'first_review_findings' => $int('first_review_findings'), 'review_findings' => $findings, 'handoff_questions' => $int('handoff_questions'),
             'rejected_deliveries' => $rejected, 'check_parts' => $parts, 'unresolved' => ($row['unresolved'] ?? null) === true,
         ];
     }

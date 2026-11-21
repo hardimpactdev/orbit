@@ -28,6 +28,7 @@ use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\NodeFact;
+use App\Models\ProcessArtifact;
 use Carbon\CarbonImmutable;
 use UnexpectedValueException;
 
@@ -233,10 +234,15 @@ final readonly class FactDoctor
 
     private function processFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
-        if (! $check->managed || $check->agent === null || $check->node->platform !== 'linux') {
+        if (! $check->managed) {
             return $check->report();
         }
-        foreach ($this->runtime->execute($check->node)['processes'] as $process) {
+        $processes = $this->runtime->execute($check->node)['processes'];
+        $this->processUpdates($check, $processes);
+        if ($check->agent === null || $check->node->platform !== 'linux') {
+            return $check->report();
+        }
+        foreach ($processes as $process) {
             $check->read($process['id'], ['process.runtime_missing', 'process.crash_loop', 'process.state_mismatch'], function () use ($check, $process): void {
                 $units = $check->fact(NodeFactKind::Units);
                 $systemd = $process['runtime'] === 'systemd';
@@ -274,6 +280,30 @@ final readonly class FactDoctor
         }
 
         return $check->report();
+    }
+
+    /**
+     * The daily release check's stored answer against the installed version; informational and without Node contact
+     * (docs/reference/processes-and-schedules.md#upgrade-a-process).
+     *
+     * @param  list<array{id: int, name: string}>  $processes
+     */
+    private function processUpdates(DoctorFamilyInspection $check, array $processes): void
+    {
+        if ($processes === []) {
+            return;
+        }
+        $names = array_column($processes, 'name', 'id');
+        $artifacts = ProcessArtifact::query()->whereIn('process_id', array_keys($names))->get(['process_id', 'version', 'latest_version'])->keyBy('process_id');
+        // Every Process is observed, so a finding retires once its artifact is gone or its version is unknown.
+        foreach ($names as $id => $name) {
+            $artifact = $artifacts->get($id);
+            if ($artifact?->version !== null && $artifact->latest_version !== null && version_compare($artifact->latest_version, $artifact->version, '>')) {
+                $check->issue('process.update_available', $id, $name, 'A newer upstream release of the Process is available.',
+                    $artifact->latest_version, $artifact->version, DoctorIssueKind::Informational);
+            }
+            $check->observed($id, 'process.update_available');
+        }
     }
 
     private function firewallFamily(DoctorFamilyInspection $check): DoctorFamilyReportData

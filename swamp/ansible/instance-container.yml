@@ -75,6 +75,12 @@
            if intent.fleet is defined and club_key_result_file is file
               and (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh | default(none) is mapping
          else {} }}
+    # What a deployment's checkout removed from the default's tree (instance_default_clean.py): names only, kept by each later phase.
+    workspace_clean_carried: >-
+      {{ {'workspace_cleaned': default_clean.stdout | from_json} if default_clean.stdout is defined
+         else {'workspace_cleaned': (lookup('ansible.builtin.file', club_key_result_file) | from_json).workspace_cleaned}
+           if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).workspace_cleaned | default(none) is mapping
+         else {} }}
     executor_carried: >-
       {{ {} if not intent.signed_power | default(false) | bool
          else {'executor': executor_receipt, 'wake': wake_result.wake | default(none)} if executor_receipt is defined
@@ -112,7 +118,7 @@
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
                   | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
-                  | combine(executor_carried)
+                  | combine(executor_carried) | combine(workspace_clean_carried | default({}))
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
                             if phases is defined else {}))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"

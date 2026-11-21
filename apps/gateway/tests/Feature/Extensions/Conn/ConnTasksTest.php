@@ -191,7 +191,7 @@ describe('conn:task:show', function (): void {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-17 12:00:00'));
         $second->update(['status' => TaskStatus::Running, 'started_at' => now()->subMinutes(3)]);
         panelEnvironment($group, 'env-detail');
-        $earlier = panelThread($group, $first, 'implementer', 'orbit:first-1', ['provider_instance' => 'antigravity', 'model' => 'gemini-3.8-flash', 'effort' => 'high',
+        $earlier = panelThread($group, $first, 'implementer', 'orbit:first-1', ['provider_instance' => 'antigravity', 'model' => 'gemini-4-neon', 'effort' => 'medium',
             'state' => 'failed', 'tokens' => 100, 'created_at' => now()->subMinutes(9), 'observed_at' => now()->subMinutes(8)]);
         $replaced = panelThread($group, $first, 'implementer', 'orbit:first-2', ['provider_instance' => 'codexHigh', 'model' => 'gpt-6.1-sol', 'effort' => 'high',
             'state' => 'done', 'tokens' => 200, 'created_at' => now()->subMinutes(8)]);
@@ -221,7 +221,7 @@ describe('conn:task:show', function (): void {
             ])
             ->and($task['agents'])->toBe([
                 ['id' => $earlier->id, 'role' => 'implementer', 'subtask_ids' => [$first->id], 'current' => false, 'attempt' => 1, 'provider' => 'antigravity',
-                    'model' => 'gemini-3.8-flash', 'effort' => 'high', 'state' => 'failed', 'needs_input' => false,
+                    'model' => 'gemini-4-neon', 'effort' => 'medium', 'state' => 'failed', 'needs_input' => false,
                     'created_at' => '2026-11-17T11:51:00+00:00', 'observed_at' => '2026-11-17T11:52:00+00:00', 'conn' => ['environment_id' => 'env-detail', 'thread_id' => 'orbit:first-1']],
                 ['id' => $replaced->id, 'role' => 'implementer', 'subtask_ids' => [$first->id], 'current' => true, 'attempt' => 2, 'provider' => 'codex',
                     'model' => 'gpt-6.1-sol', 'effort' => 'high', 'state' => 'done', 'needs_input' => false,

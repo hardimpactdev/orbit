@@ -29,6 +29,12 @@ final class UpdateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return TaskAgent::messages();
+    }
+
     /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|In|ProhibitedIf|NotBlank>> */
     public function rules(): array
     {

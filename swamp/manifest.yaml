@@ -113,6 +113,9 @@ additionalFiles:
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
   - ansible/instance_root_disk.py
+  - ansible/instance_seed_files.py
+  - ansible/instance_default_clean.py
+  - ansible/instance_fleet_tunnel.py
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/gateway-container-process.yml
@@ -227,6 +230,8 @@ additionalFiles:
   - ansible/instance-mail-update.yml
   - ansible/instance-container-power.yml
   - ansible/conn-environment-restart.yml
+  - ansible/operation-process-upgrade.yml
+  - ansible/tasks/process-upgrade-verify.yml
   - ansible/conn-launch.yml
   - ansible/templates/t3-service-processes.j2
   - ansible/tasks/instance-container-power.yml

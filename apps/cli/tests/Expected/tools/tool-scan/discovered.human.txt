@@ -11,11 +11,10 @@ Node #2 observed at 2026-04-26T11:59:00+00:00.
  │ MANAGER   │ SCAN STATE       │
  ├───────────┼──────────────────┤
  │ brew      │ complete         │
- │ brew-cask │ unsupported      │
+ │ brew-cask │ complete         │
  │ vp        │ complete         │
  │ apt       │ not observed yet │
  └───────────┴──────────────────┘
-brew-cask is unsupported, so its package list is not an inventory.
 apt is not observed yet, so its package list is not an inventory.
  ┌─────────┬─────────────────┬─────────┬──────────────┬────────────┬─────────┬─────────────┬────────────────────┐
  │ MANAGER │ PACKAGE         │ KIND    │ VERSION      │ DEPENDENCY │ TOOL ID │ ADOPTION    │ BLOCK              │

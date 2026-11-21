@@ -10,6 +10,7 @@ use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
@@ -32,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property-read Instance|Node $owner
+ * @property-read ?ProcessArtifact $artifact
  */
 final class Process extends Model
 {
@@ -92,6 +94,16 @@ final class Process extends Model
     public function owner(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * The release artifact of a systemd Process (docs/reference/processes-and-schedules.md#upgrade-a-process).
+     *
+     * @return HasOne<ProcessArtifact, $this>
+     */
+    public function artifact(): HasOne
+    {
+        return $this->hasOne(ProcessArtifact::class);
     }
 
     /** @return array<string, string> */

@@ -55,8 +55,10 @@ A `default` Instance on an `app-dev` Node tracks the Project's default branch (p
 
 A development deployment runs in two phases:
 
-1. **Source preparation.** Orbit fetches the default branch with [credentialed Git](/reference/instance-setup#credentialed-git) and checks out the target commit, keeping untracked and ignored files outside removed directories.
+1. **Source preparation.** Orbit fetches the default branch with [credentialed Git](/reference/instance-setup#credentialed-git) and checks out the target commit.
 2. **Deploy steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order (reported under `before_activation`). There is no activation switch because the workspace serves directly.
+
+On container defaults, source preparation removes untracked non-ignored files (`workspace_cleaned`; [The default keeps a clean tree](/reference/development-containers#the-default-keeps-a-clean-tree)) and records the [seed manifest](/reference/development-containers#the-seed-manifest) before taking the seed.
 
 Source preparation refuses dirty tracked files (`deployment.checkout_dirty`), a local branch with commits missing from the fetched target (`deployment.branch_diverged`), and checkouts that would overwrite an untracked file. Both checkout and steps acquire a `flock` on the checkout directory shared with [setup and teardown steps](/reference/instance-setup); a conflicting lifecycle step fails the deploy with `instance.lifecycle_busy`. Steps must not modify tracked files, or the next deploy will see a dirty checkout.
 

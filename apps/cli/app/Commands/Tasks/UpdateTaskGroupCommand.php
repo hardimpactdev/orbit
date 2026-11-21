@@ -30,10 +30,10 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--deliverables= : JSON file replacing the deliverables of a subtask, or of a task with no subtask}
         {--work-status= : Subtask status for the work of a task with no subtask, such as completed}
         {--reason= : Why a correction after a failed check replaces the deliverables of a started subtask in a task copy}
-        {--implementer-provider= : Implementer provider in a task copy: claude, codex, or antigravity}
+        {--implementer-provider= : Implementer provider in a task copy, such as claude; the Gateway refuses a provider, model and effort it cannot run together}
         {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
-        {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max; codex adds ultra, antigravity takes high only}
-        {--reviewer-provider= : Reviewer provider in a task copy: claude, codex, or antigravity}
+        {--implementer-effort= : Implementer effort in a task copy, such as high; each provider and Antigravity model takes its own efforts}
+        {--reviewer-provider= : Reviewer provider in a task copy}
         {--reviewer-model= : Reviewer model in a task copy}
         {--reviewer-effort= : Reviewer effort in a task copy}
         {--clear-implementer-agent : Clear the implementer provider, model and effort, so the Project or Gateway defaults apply}

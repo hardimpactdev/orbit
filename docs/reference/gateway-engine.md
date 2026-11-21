@@ -2,9 +2,9 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/InstanceCreateEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
-  - apps/gateway/database/migrations/2027_03_10_000000_create_operation_engine_steps_table.php
+  - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
   - swamp/ansible/tasks/gateway-nats.yml
 ---
@@ -30,7 +30,8 @@ Otherwise the Operation runs on its Swamp workflow. The table below lists the ki
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
-| `instance.create` | `clone`, `fetch`, `prepare`, `start`, `checkout`, `t3` | `instance.clone`, `instance.fetch_branch`, `instance.prepare`, `instance.start`, `instance.checkout`, `instance.t3` |
+| `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
+| `instance.fleet` | `fleet_ready` | `instance.fleet_ready` |
 
 ### route.create
 
@@ -48,20 +49,26 @@ Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`,
 
 ### instance.create
 
-The engine runs container clone creation from its admitted `direct_provisioning.container` intent using the executor's [instance family](/reference/executor#the-instance-family). Its steps run in this order:
+The engine runs container clone creation (including task copies, Conn clones, Processes, and nested-fleet clones) from its admitted `direct_provisioning.container` intent using the executor's [instance family](/reference/executor#the-instance-family). Its steps run in this order:
 
-1. `clone`: Copies the default's seed snapshot with its ACL, NIC, T3 proxy, and route rules.
-2. `fetch`: Runs beside `clone` to fetch the branch into the Node's mirror using a short-lived read credential blob.
-3. `prepare`: Places the stopped copy's files before first boot, delivered as a single blob.
-4. `start`: Checks the network guard, starts the copy, and configures its hostnames.
-5. `checkout`: Checks out the branch and merges `.env` from the seed and the Gateway's render.
-6. `t3`: Starts T3, registers the project, and returns two sessions sealed to the Gateway's key.
+| Step | After | What it does |
+| --- | --- | --- |
+| `clone` | | Copies the default's seed snapshot with its ACL, NIC, T3 proxy, and route rules. |
+| `fetch` | | Fetches the branch into the Node's mirror using a short-lived read credential blob. |
+| `copy_volume` | | Creates the inner volume for a nested-fleet copy, taking a [spare volume](/reference/development-containers#spare-volumes) when available. |
+| `prepare` | `clone` | Writes only the files that differ from the [seed manifest](/reference/development-containers#the-seed-manifest), delivered as one blob. |
+| `start` | `prepare`, `copy_volume` | Verifies both copies match the seed, attaches the volume, checks the network guard, starts the copy, and sets hostnames. |
+| `club_key` | `start` | Writes the Club key for a nested-fleet copy into `/run`. |
+| `checkout` | `start`, `fetch` | Checks out the branch, cleans a task copy when needed, and merges `.env`. |
+| `spare` | `start` | Prepares the default's next spare inner volume in parallel. |
+| `t3` | `checkout` | Starts T3 or the Conn Server and returns two sessions sealed to the Gateway's key. |
+| `stop` | `clone` | Failure step that runs only when an earlier step fails. |
 
-The Gateway unseals the sessions and passes its own to the create projection without using a vault. The create records `route_publication: deferred` with reason `engine_completion`, leaving Route publication to `instance.complete` on Swamp.
+The Gateway unseals the sessions without using a vault and records `route_publication: deferred` (`engine_completion`), leaving Route publication to `instance.complete` on Swamp.
 
-Default Instance creates stay on Swamp, along with clones that use nested-fleet defaults, task copies, branch selections, attached Node services, Processes, CI holds, already-active creates, or non-TCP firewall rules.
+### instance.fleet
 
-Keep `instance.create` out of `ORBIT_ENGINE_KINDS` until `instance.prepare` merges JSON settings keys instead of replacing top-level keys whole. Replacing top-level keys drops agent-owned provider instances and rewrites keys already moved into the Conn Server store.
+`instance.fleet` waits for the inner fleet of a nested-fleet clone (`instance.fleet_ready`) in the background alongside `instance.complete`, updating `fleet_ready_at`, `fleet_failed_at`, and `fleet_error_code` on the Instance without holding an Operation lock ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
 
 ### Capability reporting
 

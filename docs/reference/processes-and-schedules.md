@@ -4,12 +4,12 @@ description: "How Orbit runs Processes for an Instance or a Node, and how a Proj
 covers:
   - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/Domain/{Processes/**,Instances/InstanceNodeService*.php}
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table,2027_03_19_000000_create_process_artifacts}.php
   - apps/gateway/{app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver,ContainerProcessInspection}.php,resources/processes/container-process-read.py}
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
-  - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
+  - apps/gateway/app/Models/{Process,ProcessArtifact,ProcessDefinition,ScheduleDefinition}.php
 ---
 
 # Processes and schedules
@@ -118,6 +118,19 @@ Container defaults skip the `vite` preset (and deployments remove any earlier on
 ## Operate a Process
 
 Process create, update, start, stop, restart, and destroy return an [Operation](/reference/operations) with HTTP 202. On a non-container executor Node, `start` and `restart` execute synchronously and return HTTP 200 with Process data so an operator can recover executor services directly; `update`, `create`, `stop`, and `destroy` always return HTTP 202. Pass `--idempotency-key` to replay an admitted Operation safely.
+
+## Upgrade a Process
+
+A systemd Process running a downloaded GitHub release can carry a release artifact ([ADR 0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version)). Configure it with [`process:artifact:set`](/cli/process/artifact-set) (or remove it with [`process:artifact:unset`](/cli/process/artifact-unset)) and upgrade on demand with [`process:upgrade`](/cli/process/upgrade). Orbit checks GitHub daily via `process:artifacts:check-latest` (`latest_version`, `latest_checked_at`) and never upgrades a Process automatically.
+
+| Field | Meaning |
+| --- | --- |
+| `source`, `repository` | `github_release` and `OWNER/REPO`. |
+| `asset`, `binary` | Asset filename pattern containing `{version}`, and executable path inside the archive. |
+| `checksums`, `version_args` | Optional checksum asset (defaults to GitHub's SHA-256 digest) and version-check arguments. |
+| `version`, `previous_version`, `sha256` | Installed version (without leading `v`), retained previous version, and installed asset SHA-256. |
+
+The Process executable must run `<folder>/current/<binary>` with releases stored under `<folder>/releases/<version>/` and no other Process on the Node sharing `<folder>`.
 
 | Request | Result |
 | --- | --- |

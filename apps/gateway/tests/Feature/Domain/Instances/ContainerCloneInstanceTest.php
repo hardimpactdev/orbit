@@ -1986,10 +1986,6 @@ describe('the server a container records', function (): void {
             ->and(collect($intent['clone']['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true,
                 'providerInstances' => ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
                     'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => InstanceContainer::ModelKeyValue]]]])
-            // The engine's writer gets the key with the settings: it goes in place of the value, and nowhere else.
-            ->and(InstanceContainer::withModelKey(collect($intent['clone']['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'], 'k'))
-            ->toBe(['linkedEnvironmentsEnabled' => true, 'providerInstances' => ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
-                'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => 'k']]]])
             ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 

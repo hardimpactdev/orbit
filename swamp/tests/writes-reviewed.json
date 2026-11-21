@@ -416,6 +416,12 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-process-upgrade": {
+   "Read the installed release": "read-only",
+   "Verify it runs": "read-only",
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-conn-environment-restart": {
    "result": "read-only",
    "cleanup": "idempotent"
@@ -588,7 +594,8 @@
    "Read installed package": "unreviewed",
    "Read macOS version": "unreviewed",
    "Read manager version": "unreviewed",
-   "Read the key fingerprint": "read-only"
+   "Read the key fingerprint": "read-only",
+   "Refresh the cask metadata": "idempotent"
   },
   "operation-vault-sync": {
    "Read private inventory": "unreviewed",

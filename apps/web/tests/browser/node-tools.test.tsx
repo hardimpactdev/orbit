@@ -296,10 +296,8 @@ it("shows a node with no tools and an empty completed scan", async () => {
     await expect.element(pane("Tools")).toMatchTextContent("No registered tools.");
     await expect
         .element(page.getByTestId("node-tools-scan-states"))
-        .toMatchTextContent("brew-cask is unsupported, so its package list is not an inventory.");
-    await expect
-        .element(page.getByTestId("node-tools-scan-states"))
         .toMatchTextContent("vp is not observed yet, so its package list is not an inventory.");
+    await expect.element(page.getByTestId("node-tools-scan-states")).not.toMatchTextContent("brew-cask");
     await expect
         .element(pane("Detected packages"))
         .toMatchTextContent("No packages in the completed scans.");

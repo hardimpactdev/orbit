@@ -1,0 +1,88 @@
+sequenceDiagram
+  %% Target design: ADR 0273 U3 (process.restart shape: 209, @swamp/ssh, full intent as inputs).
+  %% status: draft
+  %% command: process:upgrade
+  %% kind: process.upgrade
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane GH icon=globe pill=releases tone=gray
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant GH as GitHub<br/>release API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: process:upgrade 103 8.0.80
+  %%> Command:
+  %%> - `orbit process:upgrade 103 8.0.80`
+  %%> - syntax: `process:upgrade <process> <version> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the numeric Process ID and the upstream version; a leading `v` is dropped
+  Note over GW: Check the Process<br/>artifact · desired running · lock
+  %%> Requirements:
+  %%> - the Process has a release artifact, else `process.artifact_missing`
+  %%> - its desired state is running, else `process.not_running`
+  %%> - no other Operation holds it, else `operation.target_busy`
+  GW->>GH: Resolve the release<br/>tag v8.0.80 or 8.0.80
+  %%> What it does:
+  %%> - finds exactly one asset that matches the pattern and takes its SHA-256 from the checksum asset or the asset digest
+  %%> On failure:
+  %%> - `process.version_unknown` (422); nothing changes
+  GH-->>GW: asset URL + SHA-256
+  alt version already recorded
+    GW-->>CLI: 202 Accepted<br/>task succeeded · unchanged
+    %%> Result:
+    %%> - the task succeeds at once with outcome `unchanged`; no run starts
+  else new version
+    GW->>SW: Start run, full intent<br/>operation-process-upgrade
+    %%> Inputs:
+    %%> - the unit name, folder, binary, version, asset URL, SHA-256 and version arguments
+    %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5140
+    SW->>N: Read the installed release
+    %%> What it does:
+    %%> - `current` must be a relative link to `releases/<version>`; that version is `before`
+    %%> On failure:
+    %%> - `process.artifact_layout_invalid`, before any change
+    SW->>N: Download the release
+    %%> What it does:
+    %%> - downloads into a staging folder under `releases/` and checks the SHA-256
+    SW->>N: Unpack the release
+    %%> What it does:
+    %%> - renames the staging folder to `releases/<VERSION>`; a checked existing copy is reused
+    SW->>N: Check the binary
+    %%> What it does:
+    %%> - with version arguments, requires the version in the new binary's output
+    %%> On failure before the switch:
+    %%> - `process.upgrade_failed`; the running release is untouched
+    SW->>N: Switch current
+    %%> What it does:
+    %%> - renames a new relative link over `current` in one step
+    SW->>N: Restart the Process
+    SW->>N: Verify it runs
+    %%> What it does:
+    %%> - the unit is active, and still active with the same restart count 10 seconds later
+    alt it runs
+      SW->>N: Keep the previous release
+      %%> What it does:
+      %%> - keeps `current` and `before`, removes the other release folders
+      SW-->>GW: Run succeeded<br/>before, after, pruned
+      Note over GW: Record the version<br/>task succeeded · upgraded
+      %%> Result:
+      %%> - the artifact records `version`, `previous_version` and `sha256`
+    else switch, restart or verify fails
+      SW->>N: Switch back<br/>restart · verify
+      %%> What it does:
+      %%> - points `current` at `before` again, restarts the unit and verifies it
+      SW--xGW: Run failed<br/>process.upgrade_rolled_back
+      Note over GW: Keep the old version<br/>task failed · rolled_back
+      %%> Result:
+      %%> - nothing is pruned; when the switch back fails too, the code is `process.rollback_failed` and the Process shows failed
+    end
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5140
+    GW-->>CLI: status + result
+  end

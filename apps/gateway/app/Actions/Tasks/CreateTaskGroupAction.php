@@ -57,6 +57,7 @@ final readonly class CreateTaskGroupAction
             'current_recipe' => $data->currentRecipe,
             ...TaskAgent::groupColumns($data->agents),
         ]);
+        TaskAgent::assertGroupHonours($group);
         // The task VM columns are not null, and a release before the copy turn agent reads them: each holds the model its role
         // resolves to now. A copy turn never reads them.
         $group->implementer_model = TaskAgent::resolve($group, TaskThreadRole::Implementer)['model']['value'];

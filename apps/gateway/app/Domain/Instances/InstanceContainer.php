@@ -110,11 +110,20 @@ final readonly class InstanceContainer
     public const array CodexEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
     /**
-     * Antigravity's one effort in a task copy (docs/reference/development-containers.md#turn-model-and-effort). The Conn Server's
-     * antigravity driver gives its models no effort option, and the model router runs a base Gemini name such as `gemini-3.8-flash`
-     * at its high tier, so the one instance self::AntigravityInstance runs at `high`.
+     * The Antigravity models of a task copy and the efforts `agy` offers each (docs/reference/development-containers.md#turn-model-and-effort).
+     * The one instance self::AntigravityInstance runs them all: a thread starts on the tiered model `<model>-<effort>`, which `agy`
+     * splits into the model and its thought level (self::providerModel). `agy` refuses any other pair.
      */
-    public const array AntigravityEfforts = ['high'];
+    public const array AntigravityModels = [
+        'gemini-4-neon' => ['low', 'medium', 'high', 'xhigh'],
+        'gemini-4-hydrogen' => ['low', 'medium', 'high', 'xhigh'],
+        'gemini-4-carbon' => ['low', 'medium', 'high'],
+        'gemini-4-argon' => ['low', 'medium', 'high'],
+        'gemini-3.8-flash' => ['low', 'medium', 'high'],
+        'gemini-3.7-flash' => ['low', 'medium', 'high'],
+        'gemini-3.6-flash' => ['low', 'medium', 'high'],
+        'gemini-3.1-pro' => ['low', 'high'],
+    ];
 
     /** The Conn Server's one Antigravity provider instance (self::antigravityInstance). */
     public const string AntigravityInstance = 'antigravity';
@@ -122,8 +131,23 @@ final readonly class InstanceContainer
     /**
      * What a task copy's T3 can offer: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold
      * them. A copy offers the providers its runtime records (self::offered).
+     *
+     * @return array{claude: list<string>, codex: list<string>, antigravity: list<string>}
      */
-    public const array CopyProviders = ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::AntigravityEfforts];
+    public static function copyProviders(): array
+    {
+        return ['claude' => self::ClaudeEfforts, 'codex' => self::CodexEfforts, 'antigravity' => self::antigravityEfforts()];
+    }
+
+    /**
+     * Every effort of an Antigravity model (self::AntigravityModels), in the order the models list them.
+     *
+     * @return list<string>
+     */
+    public static function antigravityEfforts(): array
+    {
+        return array_values(array_unique(array_merge(...array_values(self::AntigravityModels))));
+    }
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
@@ -523,9 +547,7 @@ final readonly class InstanceContainer
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
         $note = InstanceHostIntent::AgentFolder.'/current/notes/'.InstanceNotes::for($project->type).'.md';
-        $codex = "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\n"
-            ."base_url = \"http://{$gateway}:".InstanceHostIntent::ModelForwarderPort."/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\n"
-            ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
+        $codex = self::codexConfig($gateway);
         $providers = [...($instance->task_workspace_owner_id === null ? [] : [...self::claudeInstances(), ...self::codexInstances()]),
             ...($runtime->server() === ContainerServer::Conn ? self::antigravityInstance() : [])];
 
@@ -539,6 +561,8 @@ final readonly class InstanceContainer
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
             // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
             ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),
+            // A clone of a nested-fleet default starts the fleet it copied: on the engine its create waits for it (InstanceCreateEngineFlow).
+            ...(NestedFleetIntent::cloneKeepsFleet($instance, $runtime) ? ['fleet' => true] : []),
             't3' => ['port' => $runtime->t3_port, 'listen' => ValidatedData::string($node->wireguard_ip), 'device' => self::T3Device,
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
@@ -582,6 +606,59 @@ final readonly class InstanceContainer
         ];
     }
 
+    /** Codex's settings in a container with a T3: the Node's model forwarder as its one provider, and the workspace trusted. */
+    private static function codexConfig(string $gateway): string
+    {
+        $workspace = InstanceHostIntent::Workspace;
+
+        return "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\n"
+            ."base_url = \"http://{$gateway}:".InstanceHostIntent::ModelForwarderPort."/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\n"
+            ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
+    }
+
+    /**
+     * The files that every clone of this default gets, in the items of the executor's `instance.prepare`: the boot and trust files,
+     * Codex's settings for the default's Node, T3's drop-ins for the Conn Server (a task copy's server), the agent folder with the
+     * Project's instructions, and its links. The default's seed phase places them before the seed and records the seed's manifest, so
+     * a clone places only what differs (swamp/ansible/instance_seed_files.py). Per-copy files stay with the clone: its identity, model
+     * key, settings with providers, proxy bypass and Instance file.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function seedFiles(Instance $default, InstanceRuntime $runtime): array
+    {
+        $folders = $this->folders();
+        $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
+        $agent = InstanceHostIntent::AgentUid;
+        $items = [];
+        foreach (self::bootFiles($folders) as $file) {
+            $items[] = match (true) {
+                isset($file['source']) => ['trust' => array_intersect_key($file, array_flip(['source', 'path', 'hash_directory', 'uid', 'gid', 'mode']))],
+                isset($file['entry']) => ['nss' => array_intersect_key($file, array_flip(['home', 'directories', 'path', 'entry', 'uid', 'gid', 'mode',
+                    'directory_mode', 'library', 'version']))],
+                default => ['file' => ['path' => $file['path'], 'uid' => $file['uid'], 'gid' => $file['gid'], 'mode' => $file['mode'], 'content' => $file['content']]],
+            };
+        }
+        $items[] = ['file' => ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => self::codexConfig($gateway),
+            'parents' => true]];
+        $conn = (new InstanceRuntime)->forceFill(['container_server' => ContainerServer::Conn]);
+        foreach (self::t3DropIns($conn, $folders) as $file) {
+            $items[] = ['file' => ['path' => $file['path'], 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'], 'content' => $file['content'], 'parents' => true]];
+        }
+        // Instructions that cannot be read leave the folder to each clone, whose create reads and checks them again.
+        try {
+            $instructions = app(InstanceAgentInstructions::class);
+            $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
+            $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
+        } catch (ResourceOperationException) {
+        }
+        foreach (InstanceAgentInstructions::links() as $link) {
+            $items[] = ['link' => [...$link, 'owner' => ['uid' => $agent, 'gid' => $agent]]];
+        }
+
+        return $items;
+    }
+
     /**
      * The root-owned drop-ins of T3's unit in a container with a T3: no default dependencies, and the runtime's recorded server
      * (docs/reference/development-containers.md#container-server). A clone's create writes them before its first start; the Node
@@ -613,7 +690,7 @@ final readonly class InstanceContainer
         $settings = collect(is_array($files) ? $files : [])->first(static fn (mixed $file): bool => is_array($file) && ($file['path'] ?? null) === self::T3Settings);
         $antigravity = is_array($settings) && is_array(Arr::get($settings, 'json.providerInstances.'.self::AntigravityInstance));
 
-        return array_diff_key(self::CopyProviders, $antigravity ? [] : ['antigravity' => true]);
+        return array_diff_key(self::copyProviders(), $antigravity ? [] : ['antigravity' => true]);
     }
 
     /**
@@ -625,11 +702,34 @@ final readonly class InstanceContainer
         return $provider === 'antigravity' ? self::AntigravityInstance : $provider.ucfirst($effort);
     }
 
+    /** The provider of a task copy's T3 provider instance (self::providerInstance), or null for an instance no provider has. */
+    public static function instanceProvider(?string $instance): ?string
+    {
+        foreach (self::copyProviders() as $provider => $efforts) {
+            foreach ($efforts as $effort) {
+                if ($instance === self::providerInstance($provider, $effort)) {
+                    return $provider;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The model a new thread of the provider and effort starts on in the copy's T3: the model itself, and for Antigravity the tiered
+     * model `<model>-<effort>`, such as `gemini-4-neon-medium`, which `agy` sends as `gemini-4-neon` at thought level `medium`.
+     */
+    public static function providerModel(string $provider, string $model, string $effort): string
+    {
+        return $provider === 'antigravity' ? $model.'-'.$effort : $model;
+    }
+
     /**
      * The model options a new thread of the provider and effort starts with. T3 0.1.7 sends Codex the effort of the thread's
      * `reasoningEffort` option on every turn and none otherwise, whatever Codex's own configuration says, so a Codex thread carries it.
      * A Claude thread carries none: its instance's `CLAUDE_CODE_EFFORT_LEVEL` sets its effort. An Antigravity thread carries none
-     * either: the Conn Server's antigravity driver offers no model option.
+     * either: its tiered model names its effort (self::providerModel).
      *
      * @return list<array{id: string, value: string}>
      */
@@ -661,18 +761,6 @@ final readonly class InstanceContainer
     {
         return array_combine(array_map(static fn (string $effort): string => self::providerInstance('codex', $effort), self::CodexEfforts),
             array_map(static fn (string $effort): array => ['driver' => 'codex', 'displayName' => 'Codex, '.$effort.' effort'], self::CodexEfforts));
-    }
-
-    /**
-     * JSON settings with the placeholder model key in place of each self::ModelKeyValue, for a writer that gets the key with them.
-     *
-     * @param  array<array-key, mixed>  $settings
-     * @return array<array-key, mixed>
-     */
-    public static function withModelKey(array $settings, string $key): array
-    {
-        return array_map(static fn (mixed $value): mixed => is_array($value) ? self::withModelKey($value, $key)
-            : ($value === self::ModelKeyValue ? $key : $value), $settings);
     }
 
     /**

@@ -1,26 +1,26 @@
 {
-  "commit": "491d20c0063d26ee3acfb96032a5712caabec741",
-  "version": "0.22.0",
+  "commit": "ad451c11cf251550bb13c5d6ebd2031224b419bc",
+  "version": "0.25.0",
   "artifacts": {
     "linux-x86_64": {
       "path": "orbit-agent-linux-x86_64",
-      "sha256": "0e7b7a746cd9b3edbc7a379786025c804679adf99632246cd3584ced53b78ce9",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10887.0/orbit-agent-linux-x86_64"
+      "sha256": "ddbebf8f4841a31fa6f6c0b62377375b7ce93d8b748e2a23c0ba157dfacf68f6",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10898.0/orbit-agent-linux-x86_64"
     },
     "executor-linux-x86_64": {
       "path": "orbit-executor-linux-x86_64",
-      "sha256": "7853ff4cd3e79115b3e009a64202056ed792e16c0772b94bbe565a8d7e2e223a",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10887.0/orbit-executor-linux-x86_64"
+      "sha256": "5b48040afda89c2f05d023820f6e36daa3b917695b6a5b53ff7ee063d2f66661",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10898.0/orbit-executor-linux-x86_64"
     },
     "macos-aarch64": {
       "path": "orbit-agent-macos-aarch64",
-      "sha256": "6b8386e09eba33bdda2d0ba2b974e24c885c157a9c356c8068bf771a6aeda69b",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10887.0/orbit-agent-macos-aarch64"
+      "sha256": "85a635c594ba9a5d820c8ffd4522d5dbb5d01855147273a25f5584c3f463a87a",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10898.0/orbit-agent-macos-aarch64"
     },
     "macos-x86_64": {
       "path": "orbit-agent-macos-x86_64",
-      "sha256": "0efc0f0251196be0d9ac9c54a7bd55b4b4e5934dc91480c3246a35c9b60f9ce2",
-      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10887.0/orbit-agent-macos-x86_64"
+      "sha256": "6efeea7ae5b6a7cd0cbaefe450186ba29e1152bb0ce4b5ef5ec58933778be037",
+      "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.10898.0/orbit-agent-macos-x86_64"
     }
   }
 }

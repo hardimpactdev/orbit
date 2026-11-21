@@ -36,7 +36,7 @@ final class TaskController extends Controller
 
     public function handoff(StoreTaskHandoffRequest $request, RecordTaskReviewReceiptAction $action): JsonResponse
     {
-        $check = $action->execute(self::copy($request), $request->string('verdict')->toString(), $request->integer('findings'));
+        $check = $action->execute(self::copy($request), $request->verdict(), $request->findings());
 
         return $this->respond($request, ['state' => 'recorded', 'check_id' => $check->id, 'operation_id' => $check->review_receipt_operation_id], 202);
     }

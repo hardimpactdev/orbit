@@ -135,7 +135,7 @@ it('deploys a container default as the container variant, whose commands need no
     $snapshot = app(InstanceDeploymentIntent::class)->snapshot($instance);
     $operation = new Operation(['input' => ['deployment' => $snapshot]]);
 
-    expect($snapshot['container'])->toBe(app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()))
+    expect(array_diff_key($snapshot['container'], ['seed_files' => true]))->toBe(app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()))
         ->and($snapshot['variant'])->toBe('container')
         ->and($snapshot['needs_vp'])->toBeFalse()
         ->and($snapshot['steps'])->toBe([['name' => 'npm-build', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300,
@@ -1118,8 +1118,9 @@ it('gives only a nested-fleet default on a switched-on Node the fleet of its dep
     if ($fleet) {
         expect($snapshot['fleet'])->toBe([
             'guests' => ['gateway' => 'nested-gateway', 'app-dev' => 'nested-app-dev', 'app-prod' => 'nested-app-prod'],
-            'layout' => ['gateway' => ['address' => '10.232.2.11', 'memory' => '4GiB'], 'app-dev' => ['address' => '10.232.2.12', 'memory' => '5GiB'],
-                'app-prod' => ['address' => '10.232.2.13', 'memory' => '2GiB']],
+            'layout' => ['gateway' => ['address' => '10.232.2.11', 'wireguard' => '10.45.0.1', 'memory' => '4GiB'],
+                'app-dev' => ['address' => '10.232.2.12', 'wireguard' => '10.45.0.2', 'memory' => '5GiB'],
+                'app-prod' => ['address' => '10.232.2.13', 'wireguard' => '10.45.0.3', 'memory' => '2GiB']],
             'host' => true,
             'operator' => ['address' => '10.45.0.10', 'hub' => '10.45.0.1', 'network' => '10.45.0.0/24', 'domains' => ['nested-dev', 'nested-prod']],
             'checkout' => ['path' => '/home/orbit/orbit'],
@@ -1426,4 +1427,29 @@ it('admits and reads nothing while the nested-fleet refresh is off, and admits o
     config(['instances.nested_fleet_refresh' => true]);
     $this->artisan('instances:refresh-nested-fleets', ['--commit' => str_repeat('a', 40)])->assertExitCode(0);
     expect(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+});
+
+it('gives a default\'s deployment the files every clone of it needs, and none that is a copy\'s own', function (): void {
+    $instance = deployDefault(container: true);
+    $files = app(InstanceDeploymentIntent::class)->snapshot($instance)['container']['seed_files'];
+    $paths = array_map(static fn (array $item): string => array_values($item)[0]['path'], $files);
+    $kinds = array_count_values(array_map(static fn (array $item): string => array_key_first($item), $files));
+
+    expect($paths)->toContain('/usr/local/libexec/orbit-app-user', '/home/agent/.codex/config.toml', InstanceContainer::T3BootDropIn, InstanceContainer::ServerDropIn,
+        '/home/agent/.config/orbit/agent', '/home/agent/.claude/CLAUDE.md')
+        ->and($paths)->not->toContain('/etc/machine-info', InstanceContainer::ModelEnvironment, InstanceContainer::InstanceFile)
+        ->and($kinds)->toMatchArray(['trust' => 1, 'nss' => 1, 'folder' => 1, 'link' => 4])
+        // A task copy runs the Conn Server: the seed holds its drop-in.
+        ->and(collect($files)->firstWhere('file.path', InstanceContainer::ServerDropIn)['file']['content'])->toContain('conn-server serve');
+});
+
+it('reads what a deployment\'s checkout removed from the default\'s tree, names only', function (): void {
+    $run = static fn (array $cleaned): array => ContainerDeployOutcome::from(['status' => 'succeeded', 'result' => [
+        'steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => str_repeat('b', 40), 'workspace_cleaned' => $cleaned])]],
+        'summary' => ['failed_steps' => []]]])[1];
+
+    expect($run(['removed_count' => 2, 'removed' => ['leftover.txt', 'stale/']])['workspace_cleaned'])->toBe(['removed_count' => 2, 'removed' => ['leftover.txt', 'stale/']])
+        ->and($run(['removed_count' => 0, 'removed' => [], 'left_count' => 1])['workspace_cleaned'])->toBe(['removed_count' => 0, 'removed' => [], 'left_count' => 1])
+        ->and($run(['removed_count' => 'x', 'removed' => []]))->not->toHaveKey('workspace_cleaned')
+        ->and($run(['removed_count' => 1, 'removed' => [['nested']]]))->not->toHaveKey('workspace_cleaned');
 });

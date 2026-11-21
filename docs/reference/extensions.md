@@ -68,6 +68,7 @@ Core calls extensions exclusively through these typed interfaces:
 
 | Interface | Caller | Purpose |
 | --- | --- | --- |
+| `App\Domain\Processes\Artifacts\ProcessArtifactPreset` | [`process:artifact:set --preset`](/cli/process/artifact-set) ([Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process)) | `name()` and `fields()` |
 | `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | Lock and remove extension resources before deleting a Project. |
 | `App\Domain\Projects\ProjectAgentInstructionSource` | Container clone create, `project:show` | Supply Project agent instructions (`documents` returns none when off). |
 | `App\Domain\GatewayReleases\GatewayReleaseCleanup` | `gateway:release:cleanup` | Reconcile and resume extension cleanup after release switch. |

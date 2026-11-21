@@ -3,7 +3,7 @@ import { safeVersion, type ToolInput, ToolRefusal } from "./contract.ts";
 const Row = z.record(z.string(), z.unknown());
 const sha = (v: unknown) => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const prefixKinds =
-    "binary manpage bash_completion fish_completion zsh_completion generate_completions_from_executable"
+    "binary command_wrapper manpage bash_completion fish_completion zsh_completion generate_completions_from_executable"
         .split(" ");
 const homeKinds =
     "font colorpicker dictionary internet_plugin prefpane qlplugin mdimporter screen_saver service audio_unit_plugin vst_plugin vst3_plugin"
@@ -57,6 +57,12 @@ function caskArtifactBlock(
         p.length > 0 && !p.includes("..") && !/[\x00-\x1f\x7f]/.test(p) &&
         (!p.includes("/") ||
             bases.some((b) => p === b || p.startsWith(b + "/")));
+    // A command wrapper puts a command on the prefix's PATH, so it may not land in the home.
+    const prefixPath = (p: string) =>
+        userPath(p) &&
+        ["$HOMEBREW_PREFIX", z.string().parse(facts.prefix)].some((b) =>
+            p === b || p.startsWith(b + "/")
+        );
     let installs = 0, authorization = false;
     for (const artifact of z.array(Row).parse(value.artifacts)) {
         for (const [kind, item] of Object.entries(artifact)) {
@@ -112,13 +118,36 @@ function caskArtifactBlock(
             }
             if (
                 privilegedKinds.includes(kind) ||
-                !z.array(z.string()).parse(paths).every(userPath)
+                !z.array(z.string()).parse(paths).every(
+                    kind === "command_wrapper" ? prefixPath : userPath,
+                )
             ) authorization = true;
         }
     }
     if (!removal && !installs) return "unsupported_artifact";
     if (authorization) return "authorization_required";
     return null;
+}
+/**
+ * Linux `brew info --json=v2 --cask` prints the record already resolved for x86_64 Linux, with no `variations` and
+ * usually no `supported_platforms`. It ships a Linux build unless it needs macOS or another CPU, or lists platforms
+ * without this tag.
+ */
+function linuxBuild(value: Record<string, unknown>, tag: string): boolean {
+    const needs = Row.safeParse(value.depends_on ?? {});
+    if (!needs.success) return false;
+    if (value.supported_platforms !== undefined) {
+        const platforms = z.array(z.string()).safeParse(
+            value.supported_platforms,
+        );
+        if (!platforms.success || !platforms.data.includes(tag)) return false;
+    }
+    if (Object.keys(needs.data).some((k) => k.includes("macos"))) return false;
+    if (needs.data.arch === undefined) return true;
+    const arch = z.array(z.object({ type: z.string(), bits: z.number() }))
+        .safeParse(needs.data.arch);
+    return arch.success &&
+        arch.data.some((a) => a.type === "intel" && a.bits === 64);
 }
 export function homebrewRemovalBlock(
     input: BrewInput,
@@ -178,6 +207,9 @@ export function homebrewBlock(
         typeof value.url !== "string" || !/^https:\/\/\S+$/.test(value.url)
     ) return "unsupported_source";
     if (z.boolean().parse(value.disabled)) return "unsupported_artifact";
+    if (input.platform === "linux" && !linuxBuild(value, tag)) {
+        return "unsupported_artifact";
+    }
     const block = caskArtifactBlock(value, facts);
     if (block) return block;
     if (!sha(value.sha256)) return "checksum_unavailable";

@@ -58,13 +58,26 @@ const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile, [docke
 const gitFiles = { "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n" };
 /** Every file the fleet rules own in each nested container: the egress files, the size files, then the Git file. */
 const owned = { ...egress, ...sizeFiles, ...gitFiles };
+/** The hub starts the WireGuard handshake with each nested Node, which listens on the fleet's port (development-containers.md#the-fleet-boots-fast). */
+const handshakeScript = "#!/bin/sh\n# Managed by Orbit: the hub starts the handshake with each nested Node as soon as its WireGuard is up.\n" +
+  "peer() { wg show orbit allowed-ips | awk -v ip=\"$1\" '{for (i = 2; i <= NF; i++) if ($i == ip) print $1}'; }\n" +
+  "key=$(peer 10.45.0.2/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.12:51820 persistent-keepalive 25\n" +
+  "key=$(peer 10.45.0.3/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.13:51820 persistent-keepalive 25\nexit 0\n";
+const handshakeDropIn = "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf";
+const hubHandshake = { "/usr/local/lib/orbit/nested-handshake.sh": handshakeScript,
+  [handshakeDropIn]: "# Managed by Orbit: the hub starts the handshake with each nested Node.\n[Service]\nExecStartPost=/bin/sh /usr/local/lib/orbit/nested-handshake.sh\n" };
+const nodeHandshake = { [handshakeDropIn]: "# Managed by Orbit: a fixed port, so the hub starts the handshake.\n[Service]\nExecStartPost=/usr/bin/wg set orbit listen-port 51820\n" };
+/** A nested container skips udev, its trigger and the ext4 scrub reaper, as a mask would. */
+const bootFiles = Object.fromEntries(["systemd-udev-trigger.service", "systemd-udevd.service", "systemd-udevd-control.socket", "systemd-udevd-kernel.socket",
+  "e2scrub_reap.service"].map((unit) => [`/etc/systemd/system/${unit}.d/zz-orbit-nested.conf`,
+  "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"]));
 /** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
 const marker = "/etc/orbit/instance-fleet";
 const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
 /** nested-app-dev is an Instance host (development-containers.md#instance-host-in-the-fleet): its nesting keys. */
 const instanceHostKeys = { "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true" };
-/** The files each container owns: the egress and size files and the Git file. The container branch writes nested-app-dev's Incus drop-in. */
-const ownedBy = (_name: string) => owned;
+/** The files each container owns: the egress, size and Git files, the handshake files and the boot files. */
+const ownedBy = (name: string) => ({ ...owned, ...(name === "nested-gateway" ? hubHandshake : nodeHandshake), ...bootFiles });
 /** The memory rule of each nested container (NestedFleetIntent::Memory): app-dev hosts Instances, app-prod serves none. */
 const memory: Record<string, string> = { "nested-gateway": "4GiB", "nested-app-dev": "5GiB", "nested-app-prod": "2GiB" };
 /** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
@@ -116,6 +129,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
   Deno.copyFileSync(new URL("instance_fleet_shrink.py", root), `${folder}/instance_fleet_shrink.py`);
   Deno.copyFileSync(new URL("instance_fleet_runtime.py", root), `${folder}/instance_fleet_runtime.py`);
+  Deno.copyFileSync(new URL("instance_fleet_tunnel.py", root), `${folder}/instance_fleet_tunnel.py`);
   Deno.mkdirSync(`${folder}/files`);
   Deno.copyFileSync(new URL("files/incus-network-pid-heal.py", root), `${folder}/files/incus-network-pid-heal.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
@@ -278,6 +292,8 @@ const knownHostsList = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/g
 const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
 /** Before base, the stopped nested containers lose the inner Incus's network pid files (instance_fleet_runtime.py). */
 const runtimeCall = (stopped: string[]) => `python3 -I -c <instance_fleet_runtime.py> /var/lib/incus/storage-pools ${stopped.join(" ")}`;
+/** The tunnel's boot script and unit, written only when they differ (instance_fleet_tunnel.py). */
+const tunnelBoot = "python3 -I -c <instance_fleet_tunnel.py> boot /etc/orbit/wg-nested-up /etc/systemd/system/orbit-inner-fleet-tunnel.service";
 const startCalls = [
   "incus list --format csv --columns ns",
   ...names.map((name) => `incus start ${name}`),
@@ -298,6 +314,7 @@ const startCalls = [
   "resolvectl dns wg-nested 10.45.0.1",
   "resolvectl domain wg-nested",
   "resolvectl domain wg-nested ~nested-dev ~nested-prod",
+  tunnelBoot,
 ];
 /** A start reads the fleet's DNS on `wg-nested` and sets only what differs. */
 const tunnelDnsReads = ["resolvectl dns wg-nested", "resolvectl domain wg-nested"];
@@ -576,7 +593,7 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0);
       assertEquals(f.calls(), [...startReads, "incus list --format csv --columns ns", ...instanceHostReads, knownHostsList, knownHostsSync, "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key", "test -s /etc/wireguard/wg-nested.key",
-        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, ...reachCalls]);
+        "incus exec nested-gateway -- wg show orbit public-key", "wg show wg-nested", "ip -j addr show dev wg-nested", ...tunnelDnsReads, tunnelBoot, ...reachCalls]);
     } finally {
       f.cleanup();
     }
@@ -786,6 +803,7 @@ Deno.test({
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
         ...tunnelDnsReads,
+        tunnelBoot,
         ...reachCalls,
         ...readyCalls,
         // The pinned shape tools in the outer container, after base: the seed after this phase holds them.
@@ -963,6 +981,7 @@ Deno.test({
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
         ...tunnelDnsReads,
+        tunnelBoot,
         ...reachCalls,
         // base may hold an older schema than the checkout: the reset waits for the state mounts (no Club key here, so no Swamp state)
         // and migrates forward; nothing was due here, so no restart.
@@ -1110,7 +1129,11 @@ Deno.test({
       return containers;
     };
     const f = fixture(currentFleet("Running"), { club: true });
-    f.change((state) => state.tunnel = structuredClone(tunnelUp));
+    // A current container also holds the tunnel's boot files, as a refreshed one does.
+    f.change((state) => {
+      state.tunnel = structuredClone(tunnelUp);
+      state.outer.tunnelBoot = structuredClone(refreshedBoundary.state.outer.tunnelBoot);
+    });
     try {
       const check = f.run("check");
       assert(check.ok, check.output);
