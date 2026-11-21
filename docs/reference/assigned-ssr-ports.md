@@ -8,51 +8,49 @@ covers:
 
 # Assigned SSR ports
 
-Several development Instances can run an Inertia server-side rendering (SSR) server on one Node. Inertia's default port is `13714`, and many applications pin one fixed port. Two task workspaces on one Node then share one SSR server, and one workspace renders the other's HTML. Orbit gives each development Instance its own SSR port on its Node and hands it to the application through the environment.
+Multiple development Instances on one Node can run an Inertia server-side rendering (SSR) server at the same time. Inertia defaults to port `13714`, so pinning a fixed port makes two workspaces share one SSR server and render each other's HTML. Orbit assigns each development Instance its own `ssr_port` and passes it through the environment.
 
 ## Assignment
 
-Orbit assigns `ssr_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process.
+Orbit assigns `ssr_port` when creating or registering a development Instance (production Instances receive none). Assignment stores a preference and creates no Process.
 
-When this Instance already has a recorded port on the Node, Orbit keeps it. Otherwise the search starts at `13714` and moves up to `65535`. It skips:
+If the Instance already has a recorded port on the Node, Orbit keeps it; otherwise it searches upward from `13714` through `65535` under the Node's operation lock, skipping:
 
-- SSR ports that other Instances on the Node hold,
-- [Vite ports](/reference/assigned-vite-ports) assigned on the Node,
-- ports that any TCP socket on the Node uses, over IPv4 or IPv6, except in `TIME_WAIT`,
-- the common service ports that the Vite search also skips.
+- SSR ports held by other Instances on the Node.
+- [Vite ports](/reference/assigned-vite-ports) assigned on the Node.
+- Ports bound by any IPv4 or IPv6 TCP socket on the Node (except `TIME_WAIT`).
+- The same common service ports skipped by Vite port assignment.
 
-Orbit never stops or kills a listener that holds a port. It picks another port. Two Nodes can use the same port. The database keeps each port unique per Node. The search runs under the Node's operation lock and fails when no port is left.
-
-`instance:show`, the API, and the SDK return `ssr_port`. The assignment is a stored preference, not an open socket. It survives hibernation, Process replacement, and reboots. Removal releases it with the Instance. A [transfer](/reference/instance-transfer) assigns a port on the destination and releases the source port after cleanup. Instances created before Orbit assigned SSR ports have none until they are created again.
+Orbit never kills an existing listener; it skips occupied ports. `instance:show`, the API, and the SDK return `ssr_port`. The assignment survives hibernation, Process replacement, and reboots. Removal releases it with the Instance. A [transfer](/reference/instance-transfer) assigns a new port on the destination and releases the source port after cleanup. An Instance without an assigned `ssr_port` receives one when recreated.
 
 ## Application setup
 
-Every Process of a development Instance with an `ssr_port` gets these variables. The [Project check](/reference/tasks#project-check), its setup steps, and command deliverables get them too. Instances without an `ssr_port` get none, and Orbit then keeps any value that a Process stores itself.
+Every Process of a development Instance with an `ssr_port` receives these variables (as do [Project checks](/reference/tasks#project-check), setup steps, and command deliverables). When an Instance has no `ssr_port`, Orbit leaves any Process-defined values untouched.
 
 | Variable | Value |
 | --- | --- |
 | `ORBIT_SSR_PORT` | The assigned port. |
 | `INERTIA_SSR_URL` | `http://127.0.0.1:<ssr_port>` |
 
-An application that runs in Orbit task workspaces must read these variables and must not pin a port:
+Applications running in Orbit workspaces should read these variables rather than pinning a port:
 
-- **SSR build.** Do not bake a fixed port into the SSR bundle at build time.
-- **SSR server.** Read `process.env.ORBIT_SSR_PORT` at startup and listen on that port.
-- **Laravel.** Set `ssr.url` in `config/inertia.php` from `env('INERTIA_SSR_URL', 'http://127.0.0.1:13714')`.
-- **Browser and SSR tests.** Test runners, such as a `BrowserTestRunner::ssrPort()` helper, start and reach SSR at `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`.
+- **SSR build:** do not bake a fixed port into the SSR bundle at build time.
+- **SSR server:** read `process.env.ORBIT_SSR_PORT` at startup.
+- **Laravel:** configure `ssr.url` in `config/inertia.php` with `env('INERTIA_SSR_URL', 'http://127.0.0.1:13714')`.
+- **Browser and SSR tests:** point test runners at `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`.
 
-Keep `13714` only as the fallback when the variables are absent, such as on a laptop outside Orbit. An application that hard-pins a port still collides with another workspace on a shared Node. Its browser and SSR checks can then hydrate against another workspace's server.
+Keep `13714` only as the fallback when the variables are unset (such as on a local laptop).
 
 ## Why it works this way
 
 ### Mirror the Vite port
 
-The Vite port already solves the same problem: a stored port, unique per Node, chosen after a live socket check. The SSR port uses the same rules and the same Node socket probe, so operators learn one model.
+Using the same stored-port model and live socket probe as [Assigned Vite ports](/reference/assigned-vite-ports) gives operators one predictable pattern.
 
 ### Environment, not discovery
 
-Orbit cannot see which port an SSR bundle bakes in. The application owns its SSR server, so Orbit hands it a port and documents the contract. Orbit does not add an SSR Process preset, and it does not rewrite application configuration.
+Because Orbit cannot inspect what port an SSR bundle hardcodes, handing the port through standard environment variables lets each application own its SSR server without a custom preset.
 
 ### Never take a port back
 
-Another workspace or a process outside Orbit may hold `13714` or a later port. Stopping it could break that work. Orbit skips the port instead.
+Skipping occupied ports avoids disrupting another workspace or external process already listening on `13714`.

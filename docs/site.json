@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Orbit",
-  "description": "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it.",
+  "description": "Self-hosted platform for developing, running, and maintaining software on your own machines with coding agents and Conn.",
   "colors": {
     "primary": "#20231f",
     "light": "#f4f2ec",

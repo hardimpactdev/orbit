@@ -10,378 +10,109 @@ covers:
 
 # GitHub App
 
-A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it, and, for a [review-and-merge](/reference/tasks#review-and-merge) Project, reviews and merges pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
-
-The [Conn branch list](/reference/conn#threads-in-an-orbit-project) reads remote heads with the Project's existing source access. Its optional GitHub PR projection uses a separate repository `pull_requests: read` installation token, or the configured GitHub CLI credential. It reads open PRs once per repository, across bounded pages; no token is returned or logged. Conn reuses the installation facts for both reads; each credentialed read has its own ten-second budget. Other credential readers retain their timeouts.
+Each Gateway reads private `github.com` repositories through its own GitHub App, and [Tasks](/reference/tasks) publishes, reviews, and merges pull requests through it. Public repositories need no App, and Projects whose owner does not install the App can use [the Gateway's GitHub CLI](#read-through-the-github-cli) (`source_access: gh_cli`) instead.
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has seven permissions: `Actions: write`, `Administration: read`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
-
-A task push token carries `Workflows: write`, so a task can change `.github/workflows/`. An installation that has not accepted that permission refuses such a push, and the task reason names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
-
-The App is public on GitHub, so any GitHub account can install it. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
-
-The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
-
-## Execution boundary
-
-GitHub App registration and installation refresh run as Gateway jobs on its existing `operations` queue. The Gateway validates the browser state, records the Operation, exchanges the manifest code, keeps the encrypted App key, and reads App metadata. Instance and Project dependency pages read published Swamp resources; they do not start scans or inspect Nodes.
-
-### Registration and metadata
-
-The manifest callback admits one `github.app_register` Operation and returns HTTP 202. The code can be used once and stays encrypted in the Gateway. The queued Gateway job exchanges it with GitHub and writes the returned App key directly to the encrypted `GitHubAppStore`. No code, App key, or App JWT enters a Swamp workflow, vault, input, resource, result, or log. Replaying the browser callback cannot admit another exchange. The public Operation result contains only `registered: true`.
-
-`POST /api/v1/github/app/sync` admits `github.app_sync` and returns HTTP 202 with the existing Operation response. Its Gateway job signs an App JWT that expires after nine minutes, lists installations, and stores only the public observation. The JWT never leaves the Gateway except in the authenticated request to GitHub. A workflow that needs App metadata receives it as public run inputs captured by the Gateway.
-
-Steps may call only the existing installation-token POST, with a numeric admitted Operation and its fixed repository scope. App registration and sync add no Swamp-to-Gateway primitive, endpoint, permission, generic private-material field, or secret-output path.
-
-The App key and JWT grant App-level authority. An installation token carries narrower repository permissions. Keeping App-level work in the Gateway preserves that distinction and lets native workflows use only the scoped installation-token primitive.
-
-App install/show are state-only. They return the last stored installation observation with `installations_status` (`unknown`, `current`, or `stale`) and `observed_at`. An empty list with `unknown` is not evidence of no installations. Observations become stale after five minutes. While registration is admitted and credentials are not stored, show returns `status: pending`. No HTTP request polls or waits for execution. Destroy removes only local App state; GitHub still requires the owner to delete its registration in the browser.
-
-## Instance source credentials
-
-Deploy, automatic deploy, development create, production clone and removal that reads source resolve fresh repository-scoped `Contents: read` credentials before writing a fetch credential. Migration uses the same resolver, then checks the Project's default branch before downtime; `gh_cli` migration keeps its local-copy path and skips this App preflight. An already active create and a removal that needs no source read still need no credential. Credential preparation errors fail the admitted Operation before its native run starts; no empty credential is written for an inaccessible private repository.
-
-| Code | HTTP status | Meaning |
-| --- | --- | --- |
-| `source.github_app_denied` | 403 | The message names the App and repository. Install the App or add the repository. Git authentication refusal during migration carries the same message. |
-| `source.github_unavailable` | 502 | GitHub failed or timed out while resolving the credential. This does not establish that the App lacks access. |
-| `deployment.source_access_unsupported` | 409 | Development deployment requires `github_app`; migration still accepts `gh_cli` without the App preflight. |
-| `source.read_timed_out` | Operation error | Migration could not reach the source in 30 s. The checkout keeps serving. |
-| `source.head_unavailable` | Operation error | Migration could not read the Project's default branch; its message distinguishes a missing ref from a network failure. The checkout keeps serving. |
-
-GitHub's repository-installation 404 does not distinguish a missing installation from an excluded repository. A missing installation permits anonymous access only when GitHub confirms the repository is public. This preserves public sources outside the App's installation accounts. Automatic deployment records a credential failure as terminal; it does not repeatedly admit the same failed deployment as a transient start failure.
-
-## Services dependency credentials
-
-Only the configured Services peer can call `POST /api/v1/projects/{project}/dependency-read-token` with `{}`. It also needs Gateway access. The Gateway resolves the Project repository and its existing GitHub App installation, then returns one fresh repository-scoped installation token with `contents: read` and `pull_requests: read`, plus GitHub's implicit metadata read. Other source-access modes and hosts are refused. There is no CLI-login or anonymous fallback.
-
-The response is `{data: {project_id, repository, clone_url, token, expires_at}}`. Repository identity is canonical lowercase `github.com/owner/repo`; the clone URL is HTTPS. The Gateway validates the returned scope and expiry, at most one hour plus five seconds of clock skew, and bounds installation lookup plus minting to five seconds. This one synchronous reply uses `Cache-Control: no-store`; it creates no Activity or Operation and never puts the token in Project data, logs or exception context.
-
-### Enable during deployment
-
-The route ships disabled. The orchestrator applies this setting after deploying Gateway and before deploying Services:
-
-1. Run `orbit node:show 17 --json` and verify that it is the active Services Node with the expected WireGuard identity.
-2. On Gateway as `orbit`, disable shell tracing and back up `/home/orbit/shared/gateway.env` with mode `0600`. Keep its contents out of logs and Git:
-
-   ```bash
-   set +x
-   umask 077
-   gateway_env_backup="/home/orbit/shared/gateway.env.before-dependency-read-token.$(date -u +%Y%m%dT%H%M%SZ)"
-   install -m 0600 /home/orbit/shared/gateway.env "$gateway_env_backup"
-   ```
-
-3. Set or replace the single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry in `/home/orbit/shared/gateway.env`. Preserve its owner and mode `0600` and every other setting.
-4. As `orbit`, run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`. Follow [Apply an env change](/reference/gateway-recovery#apply-an-env-change); never run `config:cache` in a release.
-5. From Services through the orchestrator's existing access path, check the live route without printing or saving the token:
-
-   ```bash
-   set +x
-   set -o pipefail
-   curl --fail --silent --show-error --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \
-     -H 'Content-Type: application/json' -d '{}' \
-     https://gateway.orbit/api/v1/projects/20/dependency-read-token | \
-     python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert d["project_id"]==20 and d["token"]; print("Dependency token route live:",d["repository"],d["expires_at"])'
-   ```
-
-This supplies `dependency_detection.services_node_id`; absent, empty or invalid configuration refuses every caller. Peer identity uses the actual WireGuard remote address, not a caller-supplied Node ID or forwarded header. It trusts processes on Services, not one Unix user. Merging the feature changes no live setting.
-
-Deploy the Gateway first, configure its Services identity, then deploy Swamp. Swamp keeps each token in memory for one scan or PR refresh. It passes the token only to trusted Git/GIT_ASKPASS and gh child processes, never package tools or repository scripts, and discards it afterward. Services needs no standing GitHub secret. The deployment proof scans Project 20/main and reads back exact Swamp index/report versions; sources must succeed and `batch_pr` must be `open` or `absent` before the dependency reader cutover.
-
-Fixed error codes are `dependency_token.forbidden` (403), `project.not_found` (404), `dependency_token.repository_unavailable` (422), `dependency_token.refused` (403), and `dependency_token.unavailable` (503). Upstream bodies never become API error text.
-
-## Read CI artifacts
-
-The [web build of a Gateway release](/reference/gateway-recovery#web-build) reads CI artifacts. It uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
-
-[Check fixups](/reference/tasks) also use the repository-scoped Actions read token to read failed job logs. Log storage receives no GitHub Authorization header. The shared commit-check read uses it to identify superseded workflow suites.
-
-The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) instead receives SHA-bound Git refs through the Gateway mirror. Its repository read uses `Contents: read`, not the Actions API. Only the successful main CI publisher needs `Contents: write`; the workspace receives cache objects without a GitHub token.
-
-## Register and install
-
-Run [`orbit github:app:install`](/cli/github/app-install) from a machine whose browser can reach the Gateway's private HTTPS address.
-
-| Run | The command |
-| --- | --- |
-| First run on a Gateway | Registers the App on GitHub, then opens the install page. |
-| Each next run | Opens the install page for another account or organization. |
-
-Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration.
-
-The callback accepts a registration once. The Gateway exchanges the code with GitHub for the App ID, slug and private key, stores the key encrypted, and answers with the registered App. A refused exchange returns `github.registration_failed`; run `github:app:install` again. A registration expires after one hour. The App key never leaves the Gateway, and neither step starts an Operation or a Swamp run.
-
-On the install page, choose the account or organization and all or selected repositories. Run `github:app:sync` after changing installations: the Gateway lists them on GitHub at once and stores the observation. Install and show read the last observation and report its age.
-
-## Read branch protection
-
-The App manifest declares `administration: read`. When a Project enables [review and merge](/reference/projects#review-and-merge), the Gateway mints a token with only that permission to read classic branch protection. Rulesets use a separate `metadata: read` token. Installations must accept the read permission before enabling the flow. The App never requests Administration write, which permits repository deletion. Runner registration for user-owned repositories needs its own decision; GitHub offers no narrower runner permission there.
-
-## How Orbit reads a repository
-
-The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, and the published-commit check before a development checkout is removed. For a task workspace, the Gateway fetches in its own mirror before each agent turn; see [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
-
-Each Project has a `source_access` setting. This section describes `github_app`, the default. [Read through the GitHub CLI](#read-through-the-github-cli) describes `gh_cli`.
-
-For each read of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token with `contents: read` for that one repository. The token expires after one hour. Native Node commands accept only an optional GitHub token, never a caller-defined environment map. The agent constructs the fixed `GIT_CONFIG_*` authentication settings for that one Git process. The token never appears in the origin URL, the command arguments, `.git/config`, or a file on the Node. The transport marks token-bearing input so it cannot be sent to a task VM. Excluded task-workspace operations retain their existing credential transport until their own migration.
-
-Token-bearing Git on a Node runs as the Node's managed user. [The checkout cannot inherit the token](#the-checkout-cannot-inherit-the-token) explains which checkout programs it turns off.
-
-Every repository read disables hooks with `core.hooksPath=/dev/null` and clears `core.fsmonitor`, `core.alternateRefsCommand`, `core.sshCommand`, `core.askPass`, `core.gitProxy`, `credential.helper`, and `uploadpack.packObjectsHook`. Direct token-bearing Git uses the same overrides. Clone uses `--no-checkout`; clone, fetch, and push do not check out file contents.
-
-| Repository | Orbit reads it |
-| --- | --- |
-| On `github.com`, covered by an installation | Over HTTPS with a token. An origin such as `git@github.com:owner/name` is read through its HTTPS form. The stored origin stays as it is. |
-| On `github.com`, not covered | Without a credential. A public repository works, and a private repository fails. |
-| On another host | Without a credential. A private repository needs an SSH key that you place on the Node. |
-
-When the Gateway cannot resolve the default branch of a `github.com` repository, `project.default_branch_unavailable` names a missing installation and the `gh_cli` setting as possible fixes.
-
-The Gateway needs outbound HTTPS to `api.github.com` for every read of a covered repository. When GitHub does not answer, Orbit reads without a credential, so a public repository still works.
-
-## Read through the GitHub CLI
-
-A Project with `source_access: gh_cli` is read with the GitHub CLI login of the Gateway's `orbit` user. Orbit never asks the App for that Project. Use it for a private `github.com` repository whose owner does not install the App.
-
-```bash
-orbit project:update 14 --source-access=gh_cli --default-branch=main
-```
-
-### Prepare the Gateway
-
-Install `gh` on the Gateway host and log in as the `orbit` user:
-
-```bash
-sudo -u orbit -H gh auth login --hostname github.com
-sudo -u orbit -H gh auth status
-```
-
-Nodes need no GitHub CLI and no login. So a `gh_cli` Instance moves to any Node, as any other Instance does.
-
-Orbit accepts any login and does not check its scopes. A usual `gh auth login` gives a token that reaches every repository of the account, with write access, until you revoke it. A [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with only `Contents: read` limits that reach. Pass it with `gh auth login --with-token`.
-
-### How a read works
-
-For each read, the Gateway runs `gh auth token --hostname github.com` as `orbit`. It hands the token to `git` in the same way as an App token, for the same reads: through `GIT_CONFIG_*` variables of one command, on the Gateway or on a Node through the script on standard input. An SSH-form origin is read through its HTTPS form, and the stored origin stays as it is.
-
-A command that carries a token sets `core.hooksPath` to `/dev/null`, `core.fsmonitor` to `false`, `credential.helper` empty, `http.followRedirects` to `false`, and `protocol.ext.allow` to `never`. It fetches from the Project repository URL with explicit refspecs. [Credentialed Git](/reference/instance-setup#credentialed-git) describes the steps.
-
-The Gateway stores no token. No API response, Activity, Doctor result, origin URL, command argument, `.git/config`, or file on a Node contains it.
-
-### Limits and failures
-
-`gh_cli` needs a `github.com` repository URL. For another host, validation fails on `source_access`. The same check runs when an update changes the URL.
-
-A read never falls back to the App or to a read without a credential. When `gh` is missing, the request fails with `github.cli_unauthenticated`. It fails the same way when `orbit` has no login for `github.com`.
-
-A read that the login cannot complete keeps its own code, such as `project.default_branch_unavailable`. The message names the GitHub CLI login.
-
-A change of `source_access` alone touches no checkout. The Gateway first resolves the remote default branch with the new setting. When that read fails, nothing changes.
-
-Tasks publish only through the App. Creating a task for a `gh_cli` Project fails with `tasks.github_app_required`. A task that exists when its Project changes to `gh_cli` fails to publish and asks for assistance.
-
-## How Orbit publishes a task pull request
-
-A task copy never holds a GitHub credential, neither a token nor a deploy key. The App serves every step that needs GitHub. Each step gets its own token when it runs.
-
-- **Nothing stays in the copy.** The copy receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
-- **Publish and pull request.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
-- **No admission token.** Admission mints no token for a later step. An installation token lives one hour.
-
-The clone credential (`purpose: clone`) and the setup's dependency token of a task VM start are removed with the task VMs ([old paths](/reference/old-paths#the-pi-task-loop)): an old `tasks.provision` run gets no token.
-
-The publish token has `contents: write` and `pull_requests: write` for the Project repository, and no `workflows` permission: GitHub refuses its push of a change under `.github/workflows/`, and the publish refuses such a change first ([the copy check](/reference/tasks#the-copy-check)). Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
-
-A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
-
-It reads the check runs of the head commit with the `checks: read` token. After reading them, the shared read lists workflow runs with the existing `actions: read` token. For each workflow, event, and branch, it keeps the newest run's suite and removes older suites and their jobs. A failed job's log uses the same Actions token, as [Fix a settling pull request](/reference/tasks#execution-ownership) describes. The settling watch shares these runs for 60 seconds.
-
-The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this snapshot and conclusion classification inside `tasks.check`; it adds no second GitHub reader. Its persisted evidence uses the existing `GitHubCheckRun::toArray()` records with bounded, redacted text, not raw logs. The operation pins the required check name and branch before push and reads only its recorded commit. Pending, missing or unreadable evidence keeps it waiting; infrastructure/configuration evidence does not silently become a failed-code charge. The orchestrator owns assistance, time budgets and cancellation. This prerequisite does not open external review-and-merge admission or change token permissions.
-
-After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
-
-Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
-
-GitHub refuses a token that asks for a permission the installation has not accepted, with 422 and the message "The permissions requested are not granted to this installation." The assistance reason quotes that message. The account owner accepts the permissions in the installation settings on GitHub.
-
-For an external group, [`tasks.publish`](/reference/tasks#publish-an-external-group) uses the same Gateway push and token. Its optional pull request step looks for an open pull request before creating one or updating its title and body. It requests no reviewers.
-
-For an external group, the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) read the pull request, its checks and its reviews with read-only tokens (`pull_requests: read`, `checks: read`). The read includes the draft flag and the author login. Each step then mints one write token for the one repository: `pull_requests: write` for the ready step, and `contents: write` with `pull_requests: write` for the merge step. The Gateway stores the token in the vault. Swamp calls GitHub with it and revokes it at the end of the run. The merge step gets a fresh token because an approval can take longer than the hour that a token lives.
-
-## How Orbit watches a task pull request
-
-Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#execution-ownership) describes conflicts, failed checks, and trusted requested changes.
-
-The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. The check run list follows every page, up to 1,000 runs. A longer list, or one that changes between pages, leaves the health unread for that tick.
-
-### Read review records
-
-Review reads use the App on the Gateway only. The review list is `GET /repos/{owner}/{repo}/pulls/{number}/reviews`. Findings come from `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}` and `/reviews/{review_id}/comments`. Review lists follow at most 10 pages of 100 records; inline comments from the selected review use at most 5 pages of 100 records. Pagination is accepted only for the expected repository and endpoint on `api.github.com`. A next-page link after the last allowed page is overflow. Invalid records, incomplete pagination, permission failures, and transport failures are unreadable, never a partial successful selection. Review/comment URLs are provenance, not URLs that Orbit fetches.
-
-A cached snapshot lives at most 60 seconds and is scoped to repository, PR, head, and trust configuration. Before consuming a request, the watcher performs uncached reads of the PR, the complete review list, and selected findings. The [Tasks contract](/reference/tasks#execution-ownership) bounds the complete packet at 64 KiB and defines edit/head races, durable deduplication, retries, and assistance. Review failure does not turn CI green, change consumption, or disable existing CI/conflict repair. A token is never cached with review data, put in a brief, or passed to an agent.
-
-Review consumption reads review decisions; it never submits, edits, dismisses, or requests one. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Outside a review-and-merge Project, Orbit does not merge. [How Orbit reviews and merges a pull request](#how-orbit-reviews-and-merges-a-pull-request) covers that Project. The [task PR gate](/reference/tasks#ready-and-merge-a-task-pull-request) requires approval and checks on the exact head.
-
-### Watch open subtasks' branch pull requests
-
-While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, or `{owner}:{pr_branch}` for an [incoming pull request](/reference/tasks#execution-ownership), at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
-
-The Gateway resolves the repository's installation id, caches it, and reuses that id for later lists of the same repository. The cached id is not a column on the task. When GitHub refuses the token for that id, the Gateway drops the cached id, resolves the installation again, and retries the list once. A second failure leaves the list unreadable. [Watch the branch while subtasks are open](/reference/tasks#watch-the-branch-while-subtasks-are-open) describes which pull request is stored and what a merged or closed result does.
-
-## How Orbit reviews and merges a pull request
-
-Swamp reviews and merges: the [ready and merge steps](/reference/tasks#ready-and-merge-a-task-pull-request) use the write tokens described above. The Gateway reads the merge check with the two calls below, each with its own token.
-
-| Call | Endpoint | Token |
-| --- | --- | --- |
-| Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs`, every page | `checks: read` |
-| Identify superseded suites | `GET /repos/{owner}/{repo}/actions/runs?head_sha={sha}`, one page of 100 per shared commit-check snapshot | `actions: read` |
-
-The read of the workflow runs uses the App's existing `Actions: read`. The flow needs no new App permission, no maintainer credential, and no webhook.
-
-## How the fleet reboot re-runs a lost CI job
-
-The [fleet reboot](/reference/gateway-recovery#ci-jobs-lost-at-the-freeze) re-runs a job that a self-hosted runner lost when the drain stopped it. After the Node's reboot, Swamp asks the Gateway for one token per repository with only `actions: write`, from the App's existing `Actions: write`. It lists runs and jobs, calls `POST /repos/{owner}/{repo}/actions/runs/{id}/rerun-failed-jobs` once per run attempt, and revokes the tokens at the end. The App gets no runner administration ([ADR 0223](/decisions/0223-run-one-gate-from-handoff-to-merge)).
-
-An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
-
-## How the runner view reads CI jobs
-
-The [CI runner view](/reference/ci-runner-view) reads the self-hosted jobs of the last 48 hours. For each repository it reads, the Gateway asks for one token with only `actions: read`, from the App's existing `Actions: read`. Once an hour it also asks for one token with only `contents: read`, from the App's existing `Contents: write`, to read the workflow files.
-
-| Call | Endpoint | Token |
-| --- | --- | --- |
-| List the workflows | `GET /repos/{owner}/{repo}/actions/workflows`, pages of 100 | `actions: read` |
-| Read a workflow file | `GET /repos/{owner}/{repo}/contents/{path}` | `contents: read` |
-| List the runs of a workflow in the window | `GET /repos/{owner}/{repo}/actions/workflows/{id}/runs?created={from}..{to}`, pages of 100 | `actions: read` |
-| List the jobs of a run | `GET /repos/{owner}/{repo}/actions/runs/{id}/jobs?filter=latest`, pages of 100 | `actions: read` |
-
-Each job names the runner that took it. The view reads no runner list, for the organization or a repository, so the App needs no new permission.
-
-## Find the newest green commit
-
-The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks every five minutes while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 5 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `hardimpactdev/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
-
-A commit qualifies when all of these hold.
-
-- At least one check run has exactly the required name.
-- Every such run has `head_sha` equal to the commit.
-- Every such run has completed with conclusion `success`. Any other state or conclusion fails this rule, including a queued or running run.
-- Every such run was created by GitHub Actions (`app.slug` is `github-actions`). Another App with `checks: write` could create a run with the same name. Its run never makes a commit green, and it disqualifies the commit.
-- The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
-- The `Gateway release inputs` check also passes those name, SHA, completion, and App rules.
-- On main, the `Gateway release inputs` check runs for every commit, because a Gateway release also loads Swamp.
-- The commit has not failed a release.
-
-The check name, SHA, completion, and App rules also apply to the [task merge gate](/reference/tasks#execution-ownership). The release reader counts every returned run of the required name.
-
-A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
-
-The Gateway walks the branch from its head along first parents, newest first. It stops at the deployed commit. A commit of a merged side branch is never a candidate, even when its pull request checks passed. The first qualifying commit within the 20 candidates wins, so a newer commit whose checks still run does not hold back an older green one.
-
-A deployed commit is required. Without one, descent cannot be proven, so there is no answer. The first release of a target is deployed by hand.
-
-The deployed commit does not need to be among the listed commits. When it is older than the commits page or the 20 candidates, the walk still examines the newest candidates, and the compare proves descent for the first green one. When no candidate descends from the deployed commit, for example after a force push removed it from the branch, there is no answer. That lasts until an operator releases a commit of the branch, or the branch merges the deployed commit.
-
-GitHub runs CI only for the head of a push. A commit that was pushed together with a newer one has no `Required checks` run, so it never qualifies; the newer commit covers it. The same holds for a commit whose waiting CI run a newer push replaced. A `Required checks` run can also succeed while GitHub reports its workflow run as cancelled, when the cancellation came after the job finished. The check run decides.
-
-One answer costs these reads:
-
-| Read | Token | Bound |
-| --- | --- | --- |
-| `GET /repos/{owner}/{repo}/installation` | App JWT | Once |
-| `GET /repos/{owner}/{repo}/commits?sha=refs/heads/{branch}` | `contents: read` | One page of 100 commits |
-| `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}` | `checks: read`, minted only when a candidate needs it | Every page, at most 1,000 runs, for at most 20 candidates |
-| `GET /repos/{owner}/{repo}/compare/{deployed}...{sha}` | `contents: read` | Once, for the first green candidate |
-
-Each answer also mints one `contents: read` token, and one `checks: read` token when a candidate needs it. No new App permission is needed. When the deployed commit is the branch head, the answer needs only the installation, one token, and the commit list.
-
-The Swamp [automatic deployment policy](/reference/deployments#automatic-deployments) asks the same question for a production Instance through Gateway evidence reads, with the Project's `merge_check` as the required check. It asks only when the branch head changed, while the head's check is unfinished, or 5 minutes after it failed. The same walk reports the state of the head's own check, so the tick tells a pending check from a failed one without another read.
-
-The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
-
-## What the App does not cover
-
-Git commands that you run by hand in a development checkout use your own credentials. Nodes have no Orbit credential helper or GitHub CLI login.
-
-A task agent runs on its own [task VM](/reference/compute-drivers#task-vms), which holds no GitHub token. The agent never fetches or pushes. The Gateway fetches and pushes in its own mirror of the Project, moves Git objects to and from the VM over SSH, and refuses to send a token there. See [Git on a task VM](/reference/compute-drivers#git-on-a-task-vm).
-
-`git checkout` and the approval commit do not carry the token. On a development checkout, the managed user runs Orbit's own checkouts, at create, on a branch switch, and when a development default deploys. In a task workspace, the VM's user `orbit` runs them, and the VM holds no token.
-
-Fetch, `git clone --no-checkout`, and `ls-remote` do not check out file contents. A token-bearing fetch on a development checkout reads that checkout's `.git/config`, which any program running as the managed user can write, and overrides every setting there that could run a command or change the transport; see [credentialed Git](/reference/instance-setup#credentialed-git). Privileged removal deletes the tree as the managed user and runs no checkout program.
-
-Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
-
-## Errors
-
-The `github` commands return these codes. Reads of a `gh_cli` Project return `github.cli_unauthenticated`.
-
-| Error code | Meaning |
-| --- | --- |
-| `github.app_missing` | The Gateway has no GitHub App. Run `github:app:install`. |
-| `github.registration_invalid` | The redirect does not match a registration that this Gateway started, or the registration expired. Run `github:app:install` again. |
-| `github.registration_failed` | GitHub refused to exchange the one-time code. |
-| `github.unavailable` | The Gateway could not reach `api.github.com`, or GitHub refused the App credential. |
-| `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. Finish the installation in the browser and check with `github:app:show`. |
-| `github.cli_unauthenticated` | A read of a `gh_cli` Project found no `gh` on the Gateway, or no `github.com` login for the `orbit` user. Run `gh auth login` as `orbit`. |
-
-A read that fails for a repository reason keeps its own error code, such as `project.default_branch_unavailable`.
-
-## Recover and remove
-
-A Gateway restored from its backup keeps the App, because the backup holds the database and the encryption key. [Gateway recovery](/reference/gateway-recovery) describes that backup. A new Gateway without the backup has no private key, and GitHub never shows a key again. Run `github:app:install` on the new Gateway to register a new App, install it on each account again, and delete the old App on GitHub.
-
-[`orbit github:app:destroy`](/cli/github/app-destroy) deletes the stored App ID, slug, and private key. Orbit then reads every repository without a credential and cannot publish task pull requests. GitHub has no API that deletes an App registration, so the command prints the GitHub page where you delete it.
-
-## Why it works this way
-
-These reasons explain the design. Check them before you propose a change.
-
-### One App per Gateway
-
-A shared Orbit App would need a central token service that holds its private key. Every clone would then depend on that service, the service could read every user's private repositories, and each Gateway would have to prove which installations are its own. One registration per Gateway costs one browser confirmation, once.
-
-### A token for each operation
-
-The Gateway starts every repository read and push itself, so it can create a token at the moment of use. A Swamp run that writes to GitHub gets one scoped token in the vault when its run starts and revokes it when the run ends; no step asks the Gateway for another. A token stored on a Node, or refreshed there on a schedule, would rest on every Node and need recovery when it goes stale. A leaked token reads one repository for at most one hour.
-
-### The checkout cannot inherit the token
-
-The token is in the environment of one `git` process, running as the managed user. A program named by the checkout, including a hook or `fsmonitor`, would be a child of that process and would see the token. So token-bearing Git turns off hooks, `fsmonitor`, every credential helper, and the alternate-refs command, allows only HTTPS, and fetches from the explicit Project repository URL. It still reads the checkout's `.git/config`, which setup steps, development Processes, and agents running as the managed user can write, so those command-line settings are what keep the token in Git.
-
-Task agents work only in task VMs, and a VM receives no token outside the setup steps: the Gateway [fetches and pushes in its own mirror](/reference/compute-drivers#git-on-a-task-vm).
-
-The node agent reads Git with libgit2, which starts no checkout program. A credential helper on the Node was rejected because it remains callable by any program after the command ends. The token stays in one command's environment.
-
-### No personal access token and no deploy keys
-
-A personal access token acts as the operator, lasts for months, and would rest on every Node. The [GitHub CLI setting](#the-gateway-github-cli-for-projects-without-the-app) accepts the first two costs for the Projects that choose it, and keeps the token on the Gateway. A deploy key needs repository administration rights to install, one key per repository and Node, and gives no single place to grant or revoke access.
-
-### The Gateway GitHub CLI for Projects without the App
-
-An organization can refuse to install a third-party App. Its operators already have a GitHub CLI login. One login on the Gateway serves every Node, because the Gateway already sends a token with each read. The token rests only on the Gateway, which already holds the App's private key and SSH access to every Node. A Node sees the token only while a read runs there, so whoever controls that Node can copy it. That person already controls the Node, so this adds no new boundary.
-
-A login on each Node was rejected. Every Node needs its own login, and moving an Instance needs one on the target. A credential helper that runs `gh` in each command was rejected, because production clones run as the Instance user, which has no login. Storing the token in Orbit was rejected, because the GitHub CLI already stores and refreshes it. A fallback to the App or to no credential was rejected, because the error then points at the wrong cause. Publishing task pull requests through the GitHub CLI is not built yet.
-
-### Review reads do not need review authority
-
-The existing App grant can mint a token narrowed to `pull_requests: read`. Feedback needs no new App permission, maintainer credential, or public webhook. Numeric account trust and once-only repair belong to the [Tasks contract](/reference/tasks#execution-ownership); the App merely supplies complete bounded source records. A write-scoped publishing token is not needed for review retrieval.
-
-### One App reviews and merges
-
-The App already publishes Orbit's task pull requests, so it reviews and merges with the grants it holds. The maintainer's GitHub CLI profile was rejected for this: it is a personal identity with admin bypass, so a merge through it skips the ruleset. The App is bound to the ruleset like any other actor. A second App with only review rights was rejected: it would add a registration, a private key, and an installation for each account, and it still could not approve Orbit's own pull requests.
-
-### Keep the tokens of scheduled reads
-
-Swamp reads production branch heads and gates through Gateway source contracts. The shared native automatic-deploy producer reads development-default heads every minute while enabled and unpaused; the [independent development tick was reverted](/reference/deployments#automatic-development-defaults). It keeps a repository's installation id for an hour and its `contents: read` and `checks: read` tokens for 50 minutes, encrypted with the application key in the Gateway cache. A token lives one hour, so a cached token never expires in use. A failed read drops the repository's entries, and the next read mints them again. Every other read still creates its token at the moment of use.
+A Gateway owns at most one public GitHub App with a private key stored encrypted in Gateway settings (never exposed in responses, Activity, or Doctor). The manifest requests seven permissions:
+
+- `actions: read`
+- `administration: read`
+- `checks: read`
+- `contents: write`
+- `metadata: read`
+- `pull_requests: write`
+- `workflows: write`
+
+Every operation mints a short-lived (1-hour) installation token narrowed to only the permissions and single repository it needs.
 
 ### No webhooks
 
-The Gateway is private, so GitHub cannot reach it. It lists installations and pull request state when it needs them.
+The App registers no webhooks and cannot modify repository settings. Orbit polls GitHub APIs on demand or on bounded schedules, so the Gateway never needs a public webhook endpoint.
 
-### Cache the installation for the branch list
+## Register and install
 
-The Gateway is private, so GitHub cannot push a merge event to it. Swamp owns task PR polling and lifecycle decisions. Gateway read primitives cache the installation identity and renew a refused token.
+Run [`orbit github:app:install`](/cli/github/app-install) from a machine whose browser can reach the Gateway over WireGuard.
+
+- **First run:** serves the GitHub App manifest registration page and handles `GET /api/v1/github/app/callback` synchronously to store credentials.
+- **Subsequent runs:** opens GitHub's installation page to add accounts or repositories.
+- **Sync installations:** `POST /api/v1/github/app/sync` (`orbit github:app:sync`) lists installations synchronously and refreshes stored metadata.
+- **Remove:** [`orbit github:app:destroy`](/cli/github/app-destroy) deletes local App credentials and prints the GitHub deletion URL.
+
+Neither registration nor sync creates an Operation. Callback exchanges expire after 1 hour (`github.registration_invalid`, 422, or `github.registration_failed`, 502). Sync signs a 9-minute App JWT, lists up to 10 pages of 100 installations, and updates `installations_status` (`unknown`, `current`, or `stale` after 5 minutes; `github.app_missing`, 404, or `github.unavailable`, 503).
+
+## Instance source credentials
+
+Deploy, automatic deploy, development create, production clone, and source-reading removals mint a repository-scoped `contents: read` token before fetching (missing installations fall back to anonymous access only when GitHub confirms the repository is public).
+
+| Code | HTTP / Scope | Meaning |
+| --- | --- | --- |
+| `source.github_app_denied` | 403 | App is not installed on or lacks access to the repository. |
+| `source.github_unavailable` | 502 | GitHub failed or timed out while resolving credentials. |
+| `deployment.source_access_unsupported` | 409 | Development deployment requires `github_app` (migration still accepts `gh_cli`). |
+| `source.read_timed_out`, `source.head_unavailable` | Operation | Migration could not reach source (30s timeout) or read the default branch. |
+
+## Services dependency credentials
+
+When `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` is set, that Services Node can call `POST /api/v1/projects/{project}/dependency-read-token` with `{}` over WireGuard. It receives a 1-hour `contents: read` and `pull_requests: read` token (`Cache-Control: no-store`, 5-second timeout, no CLI fallback). Error codes are `dependency_token.forbidden` (403), `project.not_found` (404), `dependency_token.repository_unavailable` (422), `dependency_token.refused` (403), and `dependency_token.unavailable` (503).
+
+## How Orbit reads a repository
+
+For `source_access: github_app` (the default), Orbit mints a 1-hour `contents: read` token for covered `github.com` repositories and passes it via `GIT_CONFIG_*` environment variables for that single `git` command (never in origin URLs, argv, `.git/config`, or files on disk). SSH-form `github.com` URLs are fetched over HTTPS while preserving the stored origin.
+
+### The checkout cannot inherit the token
+
+Every token-bearing `git` process runs with `core.hooksPath=/dev/null`, empty `credential.helper`, `core.fsmonitor=false`, `core.alternateRefsCommand`, `core.sshCommand`, `core.askPass`, `core.gitProxy`, and `uploadpack.packObjectsHook` cleared, `http.followRedirects=false`, and `protocol.ext.allow=never`. Clones use `--no-checkout` so untrusted checkout files or hooks never execute while the token is in the environment.
+
+Other specialized read paths reuse the same App permissions:
+
+- **CI artifacts & failed job logs:** `actions: read` (used by Gateway [web builds](/reference/gateway-recovery#web-build), check fixups, and the [CI runner view](/reference/ci-runner-view)).
+- **Branch protection & rulesets:** `administration: read` and `metadata: read`.
+- **Conn PR projection:** `pull_requests: read` (10-second budget per read).
+
+## Read through the GitHub CLI
+
+For private `github.com` repositories where the App cannot be installed, set `orbit project:update <id> --source-access=gh_cli` and log in once as `orbit` on the Gateway host (`sudo -u orbit -H gh auth login --hostname github.com`, ideally with a fine-grained `Contents: read` token via `--with-token`). Nodes need no `gh` binary or login.
+
+For each read, the Gateway runs `gh auth token --hostname github.com` and injects the token with the same `GIT_CONFIG_*` isolation as App tokens without storing it. Missing logins return `github.cli_unauthenticated` without falling back. Tasks cannot publish on `gh_cli` Projects (`tasks.github_app_required`).
+
+## How Orbit publishes a task pull request
+
+Task copies hold no GitHub credentials. When publishing, Orbit mints a scoped `contents: write` and `pull_requests: write` token (adding `workflows: write` where permitted). It pushes `<commit_sha>:refs/heads/task-{id}` (or `task-{id}-handoff` with `--force-with-lease`), opens or updates the PR, requests configured reviewers from `ORBIT_TASKS_REVIEW_REQUEST_LOGINS`, and revokes the token when the run ends.
+
+Settling watches poll PR status, check runs (`checks: read`, up to 1,000 runs), workflow suites (`actions: read`), and trusted reviews (`pull_requests: read`, up to 10 review pages and 5 comment pages, 64 KiB cap).
+
+## How Orbit reviews and merges a pull request
+
+For review-and-merge Projects, ready and merge steps first read PR state, checks (`checks: read`), and workflow suites (`actions: read`). They then mint a short-lived `pull_requests: write` (ready) or `contents: write` plus `pull_requests: write` (merge) token and revoke it afterward. Merging as the App triggers `push` workflows on the default branch, unlike `GITHUB_TOKEN`, and remains bound by repository rulesets.
+
+## Find the newest green commit
+
+Automatic Gateway releases and production automatic deployments walk up to 20 first-parent commits on the target branch (stopping at the currently deployed commit) and pick the newest commit where:
+
+- Every required check run (`Required checks` plus `Gateway release inputs` for the Gateway, or the Project's `merge_check`) exists with matching `head_sha`, `conclusion: success`, and `app.slug: github-actions`.
+- GitHub's compare API reports the commit strictly `ahead` of the deployed commit (preventing downgrades or diverged history).
+- The commit has not failed a release.
+
+Reads fail closed on missing Apps, refused tokens, incomplete pagination, or malformed responses.
+
+## What the App does not cover
+
+Manual `git` commands in development checkouts use your own credentials. Task workspaces never hold a GitHub token; the Gateway fetches in its own mirror before each turn and transfers Git objects without credentials.
+
+## Errors
+
+GitHub App endpoints return these error codes:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `github.app_missing` | 404 | No GitHub App is registered on this Gateway. |
+| `github.registration_invalid` | 422 | Callback state is invalid or registration expired (1 hour). |
+| `github.registration_failed` | 502 | GitHub refused the manifest code exchange. |
+| `github.unavailable` | 503 | GitHub API unreachable or App credential rejected. |
+| `github.installation_pending` | CLI | Timed out waiting for installation confirmation. |
+| `github.cli_unauthenticated` | 422 | `gh` missing or not logged in as `orbit` for `gh_cli` Project. |
+
+## Why it works this way
+
+One App per Gateway avoids a central multi-tenant token service and needs only a single browser confirmation. Minting 1-hour, single-repository, minimum-permission tokens on demand keeps standing secrets off workload Nodes and bounds blast radius, while using the App rather than a personal token for merges keeps merges subject to branch rulesets and triggers downstream `push` workflows.

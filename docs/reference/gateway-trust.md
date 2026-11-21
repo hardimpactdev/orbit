@@ -12,56 +12,36 @@ covers:
 
 # Gateway trust
 
-The CLI reaches the Gateway over HTTPS. The Gateway certificate chains to the Orbit root certificate authority (CA). The CLI pins that root certificate on each Gateway profile and installs it in the operating-system trust store. The [`gateway`](/cli/gateway) commands run these steps.
+The CLI reaches the Gateway over HTTPS using a certificate signed by the Orbit root certificate authority (CA). The CLI pins that root certificate per Gateway profile and installs it into the operating-system trust store. [`gateway`](/cli/gateway) lists the commands.
 
 ## Profiles
 
-The CLI keeps its profiles in `$ORBIT_HOME/config.json`. `ORBIT_HOME` defaults to `$HOME/.orbit`. The file holds the active profile name and one entry per profile with its `url` and `ca_path`. The CLI writes the file with mode `0600` under a lock. It refuses a `config.json` that is a symlink, belongs to another user, or has group or other permission bits, with `gateway.config_not_private`.
+Profiles live in `$ORBIT_HOME/config.json` (`ORBIT_HOME` defaults to `$HOME/.orbit`, capped at 1 MiB). The file stores the active profile name plus each profile's `url`, `ca_path`, and optional `realtime_url` (`wss://` origin, max 2,048 chars) and `realtime_key` (`[A-Za-z0-9._-]{1,128}`).
 
-A profile name has 1 to 63 characters: lowercase letters, digits, `.`, `_`, and `-`, starting with a letter or digit. A profile URL is an HTTPS origin without a user, password, path, query, or fragment.
+The CLI writes `config.json` under a lock with mode `0600` and refuses any symlink, foreign owner, or group/other permission bits (`gateway.config_not_private`). Profile names are 1–63 lowercase letters, digits, `.`, `_`, or `-` starting with a letter or digit; profile URLs are HTTPS origins without credentials, path, query, or fragment.
 
-The first profile that `gateway:add` saves becomes the active profile. Later profiles become active only with `--use` or `gateway:use`.
-
-The pinned certificate lives in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/`, where `<slug>` comes from the profile name and `<hash>` is the first 12 characters of the name's SHA-256. The directories have mode `0700`, and the certificate file has mode `0600`.
+The first profile added becomes active automatically; later profiles activate only with `--use` or `gateway:use`. Pinned certificates live in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/<sha256>.pem` (`<slug>` up to 48 chars, `<hash>` first 12 hex chars of the name's SHA-256; directories `0700`, files `0600`).
 
 ## Trust sequence
 
-`gateway:add` and `gateway:trust` run the same steps.
+`gateway:add` and `gateway:trust` run five steps:
 
-1. **Bootstrap fetch.** The CLI calls `GET /api/v1/ca/root` without certificate verification and without following redirects. The Gateway answers this endpoint for any caller. The CLI checks that the certificate matches the SHA-256 fingerprint in the response.
-2. **Pin check.** `gateway:add --ca` compares the certificate with the given file. For an existing profile name, `gateway:add` checks the profile pin as `gateway:trust` does. A mismatched pin fails with `gateway.ca_changed`. Pass `--accept-ca-change` to accept the changed certificate.
-3. **Pinned verification.** The CLI stores the certificate privately. It repeats the request with that certificate as the only trust root. A different certificate fails with `gateway.ca_verification_failed`.
-4. **Operating-system trust.** The CLI checks the trust store. It installs a missing certificate and checks the trust store again.
-5. **Profile save.** `gateway:add` saves the profile. `gateway:trust` saves the pin under the [profile guard](#profile-guard).
+1. **Bootstrap fetch:** calls `GET /api/v1/ca/root` without TLS verification and checks the SHA-256 fingerprint (`ca.unavailable`, 503).
+2. **Pin check:** compares against `--ca` or the saved pin. Mismatches fail with `gateway.ca_changed` without `--accept-ca-change`.
+3. **Pinned verification:** saves the certificate privately and repeats the request verified against that root (`gateway.ca_verification_failed`).
+4. **OS trust store:** installs the certificate into the macOS System keychain or `/usr/local/share/ca-certificates/` with `update-ca-certificates`.
+5. **Profile save:** `gateway:add` writes the profile; `gateway:trust` updates the pin under the [profile guard](#profile-guard).
 
-On macOS, the install runs `sudo security add-trusted-cert` into the System keychain. On Linux, it runs `sudo install` and `sudo update-ca-certificates`.
-
-JSON output of both commands returns the certificate fingerprint, the certificate path, the trust status (`trusted` or `already_trusted`), and the Gateway request ID. No output holds certificate material.
+JSON responses omit certificate material: `gateway:add --json` returns `{ name, url, ca_path, realtime_url, realtime_key, active, trust_status, sha256, request_id }`, and `gateway:trust --json` returns `{ gateway, status, sha256, ca_path, request_id }`. Additional error codes: `gateway.ca_unavailable`, `gateway.ca_fetch_failed`, `gateway.ca_invalid`, `gateway.ca_pin_invalid`, `gateway.ca_store_failed`, `gateway.ca_install_failed`, and `gateway.ca_response_invalid`.
 
 ## Profile guard
 
-`gateway:trust` saves the pin only when the profile still has the name and URL that the command started with, and its pin is still the old path or the new one. The CLI checks this under the configuration lock. A switch of the active profile does not block the save.
-
-When another command changed the profile first, `gateway:trust` keeps that change and fails with `gateway.ca_profile_update_failed`. The certificate is then already in the operating-system trust store, because the two stores are separate. Check which profile is active, and run `gateway:trust` again for the profile you want.
+`gateway:trust` writes the updated pin under the config lock only if the profile's name, URL, and prior pin path still match. If another command modified the profile concurrently, it fails with `gateway.ca_profile_update_failed` while keeping the other change (the OS trust store entry remains installed).
 
 ## Removal
 
-`gateway:remove` deletes the profile entry and its pinned certificate file. It does not change the operating-system trust store.
+`gateway:remove` deletes the profile entry and its private pinned certificate without touching the OS trust store. Removing the active profile requires `--force` (`gateway.profile_active` otherwise), and non-interactive calls require `--yes` (`input.confirmation_required`).
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### Fetch without verification, then verify with the pin
-
-A new operator machine has no Orbit root certificate, so the first request cannot verify the Gateway. The CLI checks the fingerprint in the response and then repeats the request with the fetched certificate as the only root. A certificate that changes between the two requests fails, and nothing reaches the trust store.
-
-The operator of a nested task fleet pins its Gateway's root certificate from a file, with `gateway:add --ca`, so its first request already verifies. That Gateway recorded the operator Node at bootstrap (`orbit:bootstrap --operator-ip`).
-
-### A changed certificate needs an explicit flag
-
-A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. Both `gateway:trust` and `gateway:add` with an existing profile name refuse it with `gateway.ca_changed` until the operator checks the fingerprint and passes `--accept-ca-change`.
-
-### Removal leaves the trust store alone
-
-Several profiles can share one Orbit root certificate, and other programs can rely on it. So `gateway:remove` deletes only what the CLI owns: the profile and its private copy of the certificate.
+Fetching unverified once, checking the fingerprint or `--ca` pin, and immediately verifying a second request against that pinned root prevents a changing or intercepted certificate from entering the OS trust store. Requiring `--accept-ca-change` catches unexpected CA replacements, and leaving the OS trust store untouched on `gateway:remove` protects other profiles or local tools sharing the same root CA.

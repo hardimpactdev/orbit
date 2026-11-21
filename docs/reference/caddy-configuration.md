@@ -13,37 +13,22 @@ covers:
 
 # Caddy configuration
 
-For a Laravel root of `apps/site/public`, Caddy serves that nested web root, not the application directory or repository root. Development access grants validate `apps/site/public/storage` against `apps/site/storage/app/public`, using the shared [application directory](/reference/projects#application-directory). They grant access to the paths that serving needs without making `.git` public. Root `public` keeps Laravel's storage link at `public/storage` in the repository root.
-
-Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway renders that whole file for one Node from its database. Native publication runs through Swamp on the 209 worker, using official SSH to the target Node. Role publication uses the same validation-before-publication rule. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway renders the complete file from committed database state and publishes it over pinned SSH with validation before replacement. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs the pinned Caddy package (floor `2.9.0`).
 
 ## Native publication
 
-The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway releases do not converge Caddy sites; [node converge](/cli/node/converge) publishes the Gateway Node's sites as for any Node.
+Native publication writes a temporary candidate file (`.orbit-candidate-*`) in `/etc/caddy/` with `root:caddy` ownership and mode `0640`, validates it with `caddy validate` as the `caddy` user, atomically renames it over `/etc/caddy/Caddyfile` (`mv -Tf`), and reloads Caddy.
 
-Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode, before content is written. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits renaming that same candidate inode over the live file, then reload. No owner or mode repair happens on the live path after publication. Route TLS probes still follow reload.
+- If validation fails, the candidate is removed, `/etc/caddy/Caddyfile` stays byte-identical, and reload is skipped.
+- If reload fails, the validated file remains on disk and retrying completes activation.
+- Route withdrawal and container clone publication hold a per-Node lock, verify the composed-from checksum, and update only the Route's own site groups ([coordinate publication](/reference/routes#coordinate-publication)).
+- Replacement manages Unix owner, group, and mode only; operator-added ACLs or extended attributes are not preserved.
 
-Withdrawal also checks its composed-from checksum and holds a Node lock through validation, rename and reload. See [coordinate publication](/reference/routes#coordinate-publication) for its refusal codes, lock bounds and the writers covered by this guard.
-
-A withdrawal removes the Route's own site groups whatever their bytes, because an older build may have rendered them in another form and a Node converge does not rewrite them. It keeps global options it does not change as the Node holds them, and refuses only a change to a site that is not the Route's own. A container clone's create publishes its site under the same lock: it puts only the Route's own groups into the live file and validates before the rename ([publish a development site](/reference/routes#publish-a-development-site)).
-
-### Failed publication
-
-Validation failure removes the attempt's candidate, keeps the live file byte-identical and skips reload. A failed reload leaves the validated new file on disk and records the failure; a retry completes activation. Candidates use attempt-specific names, so one attempt never removes another's file. A killed process can leave a harmless restricted candidate; normal failure cleanup removes it.
-
-### Shared writers
-
-The managed metadata contract is the Unix owner, group and mode. Replacement does not retain operator-added ACLs or extended attributes; Orbit makes no claim that those survive publication.
-
-This rule covers Route site and Ingress publication, withdrawal, all native Caddy deltas used by migration and Router changes, manual builds and Node converge. The bootstrap Swamp front also validates before publication. Exporter and role publication already use Ansible's validate-before-copy behavior. Separate AI router services validate their own files before copying; they do not write the Node's live Caddyfile. Certificate publication changes certificate files and links, without writing the live Caddyfile. These paths retain their existing ownership, modes and reload behavior.
-
-The render rules below apply to native publication too. The version layout, address preflight, publication lock, backups, unchanged-file skip, and recovery behavior described for the retained Gateway builder apply only to that builder. They are not guarantees of `route.caddy_converge`.
+Manual builds run via `php artisan orbit:caddy-build <node> [--dry-run] [--diff]` on the Gateway host (`route.caddy_converge`). `--dry-run` prints the rendered Caddyfile without mutating the Node, and `--diff` compares it against the live file via `caddy.read-live`. Gateway releases switch code without converging Caddy sites; [`node:converge`](/cli/node/converge) publishes the Gateway Node's sites like any other Node.
 
 ## Published layout
 
-After [Gateway container preparation](/reference/gateway-recovery#move-the-gateway-to-release-containers), the Gateway site imports the selected handlers. A switch changes the active upstream and reloads host Caddy. TLS, WireGuard peer checks and the other sites stay on the Node.
-
-The retained Gateway builder writes one file, `/etc/caddy/orbit-versions/<version>/Caddyfile`, and points `/etc/caddy/Caddyfile` at it. The file starts with an Orbit marker line and Orbit's global options block. Then it lists every site of every role on that Node:
+Every managed Caddyfile begins with `# Managed by Orbit: Node Caddy build`, Orbit's fixed global options block, and then each site block on that Node:
 
 ```caddy
 # Managed by Orbit: Node Caddy build
@@ -54,295 +39,68 @@ The retained Gateway builder writes one file, `/etc/caddy/orbit-versions/<versio
         per_host
     }
 }
-
-# orbit: app-dev app-instance-12
-https://e2e-dev.test {
-    bind 10.44.0.3
-    ...
-}
-
-# orbit: websocket reverb.orbit
-reverb.orbit {
-    bind 10.44.0.3
-    @orbit_outside not remote_ip 10.44.0.0/24
-    abort @orbit_outside
-    ...
-}
-
-# orbit: websocket reverb.orbit:8443
-reverb.orbit:8443 {
-    bind 10.44.0.3
-    @orbit_outside not remote_ip 10.44.0.0/24
-    abort @orbit_outside
-    ...
-}
 ```
 
-The global options block is the same on every Node. Nothing else on a Node can add global options.
-
-| Option | Effect |
+| Global option | Effect |
 | --- | --- |
-| `auto_https disable_certs` | Caddy keeps its HTTP-to-HTTPS redirects but obtains no certificate on its own. Only a public Ingress site opts back in. See [public Ingress certificates](#public-ingress-certificates). |
-| `order abort first` | `abort` runs before every other handler, so the client guard of a site runs first. See [listener addresses](#listener-addresses). |
-| `metrics { per_host }` | Caddy counts requests, errors, and durations per hostname on every Node. `curl http://localhost:2019/metrics` on the Node shows them. Prometheus scrapes them only on Ingress, as [service metrics](/reference/service-metrics#caddy-traffic) describes. |
+| `auto_https disable_certs` | Keeps HTTP-to-HTTPS redirects while disabling automatic public ACME certs except on public Ingress sites. |
+| `order abort first` | Runs client-range `abort` guards before every other handler. |
+| `metrics { per_host }` | Collects per-hostname HTTP metrics on every Node (scraped on selected `ingress` Nodes; see [Service metrics](/reference/service-metrics#caddy-traffic)). |
 
-A version holds only its `Caddyfile`. It imports nothing. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest.
-
-Before freezing an Instance with a Route, the [executor](/reference/executor#signed-power-delivery) checks Caddy's loaded `/config/` for the asleep marker rule. The request uses the loopback admin address and sends its full authority, including port `2019`. Caddy rejects a portless `Host` on that listener, even when the connection comes from loopback.
+On container Gateways, the Gateway site imports the active release's handlers so release switches update only the upstream and reload host Caddy. Before freezing an Instance with a Route, the [executor](/reference/executor#signed-power-delivery) queries Caddy's loopback admin API (`127.0.0.1:2019/config/`, sending the full `Host` with port `2019`) to confirm the asleep marker rule.
 
 ## Node Caddy build
 
-The Gateway renders the sites from committed database state only, so the same state always gives the same file. Each core site source declares its render order: Gateway web, Metrics, service metrics, Routes, WebSocket, then analytics. Family providers register their own sources; provider discovery does not change the rendered order. Extension sources declare their own order and render after core sites. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a record that the build reads.
-
-A role's sites render while the role is provisioning or active, and after a failed convergence, because they can already be live. They stop rendering when the role's removal starts.
-
-The `websocket`, `analytics`, AI router, and Metrics sites also wait for their certificate. The Gateway records when the role's certificate step has placed the certificate on the Node. It forgets the record at the removal that withdraws the site. A build during a role's first convergence or relocation therefore leaves that site out instead of failing for every site on the Node.
+The Gateway renders sites deterministically from committed database state in fixed order: Gateway web, Metrics, service metrics, Routes, WebSocket, analytics, and then extension [`ContributedCaddySiteSource`](/reference/extensions#plug-in-points) sources (such as AI router). Role sites render while active, provisioning, or failed, and stop rendering once role removal starts; `websocket`, `analytics`, `metrics`, and AI router sites wait until their certificate record is present.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Vite, and hibernation wake sites | Workload and Router Nodes | The WireGuard address, and the LAN address when the Node has one |
-| Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0`, the WireGuard address, and the LAN address when the Node has one |
-| `gateway.orbit` | The Node with the `gateway` role | The WireGuard address |
-| `metrics.orbit` | The Node with the `gateway` role, while a Metrics role renders | The WireGuard address |
-| Service metrics scrape site on port 9103 | A selected Ingress Node | The WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The Node that runs the role or collector | The WireGuard address |
-| `reverb.orbit` on port 8443, the only site on that port, for [container Instances](/reference/websocket-apps#reach-from-a-container) | The Node that runs the `websocket` role | The WireGuard address |
-| A container clone's own sites on 443 and 444 | The clone's Node | The Instance bridge's gateway address |
+| `app-dev` / `app-prod` workloads, Routers, custom proxies, analytics tracking, Vite, wake | Workload and Router Nodes | WireGuard IP, plus LAN IP when present |
+| Public Ingress sites | Cluster Ingress Node | `0.0.0.0`, WireGuard IP, plus LAN IP when present |
+| `gateway.orbit`, `metrics.orbit` | `gateway` Node | WireGuard IP |
+| Service metrics scrape (`:9103`) | Selected `ingress` Node | WireGuard IP |
+| `reverb.orbit`, `reverb.orbit:8443`, `analytics.orbit`, `collector.ai-router.orbit` | Role or collector Node | WireGuard IP |
+| Container clone own sites (`:443`, `:444`) | Clone's Node | Instance bridge gateway IP |
 
-An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites must not use a core source name, such as `gateway`, and its certificate record must not use a core slug. The contribution's test pins those identities; the build does not reject them at runtime. The AI router collector site comes from such a source.
-
-A Node gets at most one site for each domain, port, and listener. When a Route's current placement and its transition placement render the same site on one Node, the build keeps the current one. Any other duplicate fails the build and names both sites.
-
-### Move the websocket site
-
-When `websocket` moves to another Node, the old Node keeps `reverb.orbit` until three things are true: the new Node's build is live, private DNS answers with the new Node, and cached answers can have expired. That wait is the 31-second [withdrawal grace period](/reference/routes#withdrawal-grace-period) that Route moves use. Then the move withdraws the site and the certificate on the old Node. Private DNS names the new Node only after its build is live, so a client never reaches a Node that does not serve the site yet.
-
-The two Reverb servers share nothing. From the moment the new Node's build is live until the old Node's withdrawal build is done, the Gateway sends every broadcast to both servers, and its agent view subscriber keeps a link to each. A send to the old server gets 0.3 seconds to connect and 0.5 seconds in total. After a failed send, the Gateway skips the old server for 30 seconds. The withdrawal build reloads Caddy on the old Node, which closes its Reverb connections. Clients reconnect through private DNS, which already names the new Node.
-
-When the withdrawal build fails, or the old Reverb does not stop, or the new Node's convergence fails, the command fails and names `orbit node:role:relocate NEW websocket --from OLD --force`. That command needs the old Node reachable. The Gateway serves both servers until it finishes the move.
+For nested Laravel [application directories](/reference/projects#application-directory) (such as `apps/site/public`), Caddy serves the nested web root and validates `storage` symlinks without exposing `.git`. A Node allows at most one site per domain, port, and listener; duplicate sites fail render before touching the Node.
 
 ### Listener addresses
 
-Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. A public Ingress site also binds the WireGuard and LAN addresses, because a Router forwards to those addresses and public traffic can arrive on the LAN address behind NAT. Router and workload sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
-
-A container clone's private Route also has a development site on port 444 of the WireGuard address only, with the WireGuard-only client guards. The Node's nftables table sends WireGuard connections on free ports from 1024 to it; see [Agent development servers](/reference/development-containers#agent-development-servers).
-
-The same Route also has two own sites on the Instance bridge's gateway address: the Route's site on 443 and the development site on 444. Each admits only the clone's own bridge address, so a sibling container gets no answer. They are separate blocks from the WireGuard and LAN sites, which stay as they were; see [the own site from inside](/reference/development-containers#the-own-site-from-inside).
-
-The build's address check (`caddy.check-addresses`) leaves out the bridge's gateway address. That check catches a wrong stored WireGuard or LAN address; the bridge address is Orbit's own, and the converge makes it. Every Node allows a [non-local bind](/reference/node-provisioning#kernel-policy), so Caddy loads a bind to it while the bridge is down. So a down bridge fails no build for the Node: the own sites only serve nothing until the bridge is back.
-
-A Node that is the Router, the Ingress, and `app-prod` serves its private sites on the WireGuard and LAN addresses, and only its public sites on every address:
-
-```caddy
-https://shop.test {
-    bind 10.44.0.3 192.168.1.3
-    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24
-    abort @orbit_outside
-    # Router site of a private Route
-}
-
-shop.example.com {
-    bind 0.0.0.0 10.44.0.3 192.168.1.3
-    tls force_automate
-    # public Ingress site
-}
-```
-
-Every site that is not public aborts a client outside the ranges it admits, right after its `bind` line.
+Only public Ingress sites bind `0.0.0.0` (plus WireGuard and LAN). All private sites bind only explicit WireGuard, LAN, or container bridge addresses and apply an `abort` client guard right after `bind`:
 
 | Site | Admitted clients |
 | --- | --- |
-| `gateway.orbit`, `metrics.orbit`, the service metrics scrape site, `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The VPN subnet |
-| Router and workload sites on an Ingress Node | Private and shared address space (`private_ranges` and `100.64.0.0/10`) and the VPN subnet |
-| Router and workload sites on any other Node, and public Ingress sites | Every client |
-| A container clone's own sites on the bridge's gateway address | The clone's own bridge address |
+| `gateway.orbit`, `metrics.orbit`, service metrics, `reverb.orbit`, `analytics.orbit`, `collector.ai-router.orbit` | VPN subnet only |
+| Router and workload sites on an `ingress` Node | `private_ranges`, `100.64.0.0/10`, and VPN subnet |
+| Router and workload sites on non-`ingress` Nodes, and public Ingress sites | Any client (firewall enforces access) |
+| Container clone own sites on the bridge gateway | That clone's bridge IP only |
 
-The guard closes two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can reach it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can also send public traffic to the LAN address of an Ingress Node.
+Every managed Linux Node allows non-local binds ([kernel policy](/reference/node-provisioning#kernel-policy)), so container bridge sites load cleanly even while the bridge is down. Give Nodes with a stored LAN IP a static address or DHCP reservation so `caddy.check-addresses` never fails on a drifted IP.
 
-The TLS handshake completes before the abort, and Caddy shares its certificate cache across listeners. A client that names a private hostname on the public listener therefore completes TLS with that site's certificate. Then it gets Caddy's empty `200` response, because no private site is on that listener.
+### Certificates and role transitions
 
-No site refuses a client by the reserved range `10.44.0.128/25` any more. The task VM guard, an `@orbit_task_vms remote_ip` matcher and its `abort` after each `bind` line, is removed with the task VM settings ([old paths](/reference/old-paths#task-vm-settings)). The next build of each Node drops those two lines from every route block it rendered them in, and changes nothing else in the block. The WireGuard address allocator still keeps the range: it never hands an address of it to a Node.
+Certificate publication runs before Caddy publication when adding a site, and certificate removal runs after withdrawal (`app-dev.certificate_in_use` blocks removing a certificate still referenced by a site). `caddy.install-certificate` and `caddy.remove-certificate` manage `/etc/caddy/orbit-<scope>-cert-current` (`root:caddy`, directory `0750`, files `0640`) atomically under `/run/lock/orbit/caddy.lock` (30-second wait).
 
-Caddy cannot start with a missing listen address. The retained Gateway builder first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
-
-```text
-The build binds 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.
-```
-
-The `websocket` role runs the read-only `caddy.check-addresses` command before it changes anything on the Node. `caddy:build --dry-run --diff` reads only the live file through `caddy.read-live`; it does not expand imports. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
-
-### When a build runs
-
-A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, `analytics`, and `swamp` all do this. No publisher requests a build inside a database transaction.
-
-A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
-
-The shared `caddy.install-certificate` and `caddy.remove-certificate` commands own role and extension certificate directories named `/etc/caddy/orbit-<scope>-cert-current`. They refuse other paths, symlinks, unexpected files, and incorrect ownership or permissions. Each directory contains one matching PEM certificate and private key pair, owned by `root:caddy`, with directory mode `0750` and file mode `0640`.
-
-Publication validates the key match before it changes the live pair, then swaps the complete directory atomically under the Caddy publication lock. The same lock covers reload and rollback. Matching bytes cause no reload, and an inactive Caddy service stays inactive. A failed reload restores the previous directory and reloads the prior certificate; failed recovery has its own refusal and retains the prior pair. Removal accepts only an owned pair or an absent directory, and runs after the Gateway withdraws its site.
-
-[Gateway releases](/reference/gateway-recovery#release-as-a-swamp-run) switch the code and web build without converging Caddy sites.
-
-Certificate input or staging failures report `gateway.certificate_install_failed`. An invalid certificate, key, or CA reports `gateway.certificate_invalid`. Publication failures report `gateway.certificate_publish_failed`; activation or recovery failures report `gateway.caddy_start_failed`, with the native refusal retained in the operation output.
-
-The Gateway refuses to remove a certificate that a site in its stored state still renders on the Node. A Route certificate removal then fails with `app-dev.certificate_in_use`, names the blocking site's domain, and keeps the certificate, so the command can be retried.
-
-The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which calls `caddy.order-after-vpn` through `AgentCommandRunner`, and then builds the Node. The agent publishes the fixed systemd drop-in as root. An unchanged drop-in with an active Caddy service needs no reload or restart; an inactive service is restarted. Unsafe paths fail before mutation. A failed activation restores the prior drop-in and service state, and reports a failed recovery explicitly.
-
-The retained Gateway builder runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
-
-### How a build is pushed
-
-The retained Gateway builder still calls `caddy.publish`, which the current agent contract does not contain, through `AgentCommandRunner`. This path cannot publish with the current agent contract. The following describes that old path, not native publication: it sends the rendered configuration, its digest, and its listen addresses to the agent. The Rust agent owns validation, backups, publication, reload, and pruning. The runner selects local execution on the Gateway and pinned SSH on other Nodes. The mutation runs in its own systemd service, outside the Gateway service's filesystem sandbox. The agent runs these stages:
-
-| Stage | Work |
-| --- | --- |
-| `lock` | Takes `/run/lock/orbit/caddy.lock`, after the path checks below. |
-| `release` | Checks that the packaged `/usr/bin/caddy` is at least the release floor, 2.9.0. |
-| `addresses` | Checks that every specific address the file binds exists on the Node. |
-| — | Stops without a change when `/etc/caddy/Caddyfile` already points at an unchanged copy of this version. |
-| `write` | Writes `/etc/caddy/orbit-versions/<version>/Caddyfile`. |
-| `validate` | Runs `caddy validate` on the new file as the `caddy` user, so log files that it creates stay writable by the service. |
-| `backup` | Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes. |
-| `swap` | Points `/etc/caddy/Caddyfile` at the new version. |
-| `reload` | Enables and reloads the `caddy` service. |
-| — | Keeps the live version and the nine newest others, and removes older versions. |
-
-Every build and every certificate step that reloads Caddy holds `/run/lock/orbit/caddy.lock`. A second holder waits up to 30 seconds and then fails without a change. Before the agent takes the lock, it checks the lock path:
-
-| Path | Requirement |
-| --- | --- |
-| `/run/lock/orbit` | A real directory, not a symlink, owned by `root:root` with mode `0700`. Orbit creates it when it is missing. |
-| `/run/lock/orbit/caddy.lock` | A regular file, not a symlink, owned by `root:root`. Orbit sets mode `0600` after it opens the file. |
-
-A failed check stops the build before any change. `/run/lock` is a tmpfs, so the lock and its directory come back after a reboot.
+When relocating `websocket`, the old Node keeps serving `reverb.orbit` (with dual broadcasts from the Gateway) until the new Node is live, private DNS points to it, and the 31-second [withdrawal grace period](/reference/routes#withdrawal-grace-period) passes.
 
 ### When Caddy is absent
 
-A Node without `/usr/bin/caddy` and without a running `caddy` service serves nothing. The retained Gateway builder then reports `unchanged` at stage `release` in two cases: the render has no site, or no Caddy role on the Node (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`) is active or converging. In every other case a missing Caddy fails the build at stage `release`. A running `caddy` service keeps serving the configuration it loaded, so a missing binary alone never skips the build.
-
-On that skip, the live `/etc/caddy/Caddyfile` can name sites and certificates that the render does not have. So when the bytes behind the live path are not the render, the build moves the live path into `/etc/caddy/orbit-backups/<UTC timestamp>/`. A symlink moves as a symlink, and a regular file moves as a file. A later `systemctl start caddy` then cannot load a removed certificate. The build does not validate, start, or reload Caddy, and it deletes nothing. A live file whose bytes are the render stays in place. When the build cannot move the live path, it fails at stage `release` and leaves the path in place.
-
-The next convergence of a Caddy role on the Node installs Caddy and builds the Node. That build validates the new file before the live path points at it.
+Caddy roles are `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp`. On a Node without `/usr/bin/caddy` and without a running `caddy` service, a build skips cleanly when no site renders or no Caddy role is active or converging, moving any stale `/etc/caddy/Caddyfile` aside into `/etc/caddy/orbit-backups/<UTC timestamp>/` so a later start cannot fail on removed certificates.
 
 ### When a build fails
 
-The retained Gateway builder does not publish a new file when validation fails. Native publication writes before validation and leaves the new file on failure, as [native publication](#native-publication) describes. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
-
-In the agent publication path described above, a failed reload leaves Caddy on the configuration it already runs. The agent points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
-
-One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
-
-The command that requested the build fails with its own error code:
-
-| Publisher | Error code |
-| --- | --- |
-| Route publication, including a public Ingress site, and the `app-dev` role | `app-dev.caddy_config_failed` |
-| `app-prod` role | `app-prod.caddy_config_failed` |
-| `router` role | `router.caddy_config_failed` |
-| `ingress` role | `ingress.caddy_config_failed` |
-| `websocket` role | `websocket.caddy_publication_failed` |
-| `analytics` role | `analytics.caddy_publication_failed` |
-| AI router collector | `ai_router.caddy_publication_failed` |
-| Metrics and service metrics | `metrics.caddy_publication_failed` |
-
-A role convergence fails with `node_role.convergence_failed`, and a role removal fails with `node_role.remove_failed`. The error response carries the step's own code as `details.error_code` next to `details.step`, and `orbit node:role:list` shows it. For example, an `ingress` removal that stops in the build has `details.step` `remove:caddy-config` and `details.error_code` `ingress.caddy_config_failed`. A package or prerequisite step keeps its own code, such as `ingress.prerequisite_failed`.
-
-The error message and the `node`, `stage`, and `message` fields of the error details name the Node, the failed stage, and Caddy's message. Each message is at most 2,000 bytes of UTF-8, and `…` marks a cut. The CLI prints the details with `--json`:
-
-```text
-The Caddy build for Node [app-prod] failed at stage [validate]: Error: loading certificates: open /etc/caddy/orbit-websocket-cert-current/reverb.pem: no such file or directory
-```
-
-On the Node, the failed stage is one of the stages in [How a build is pushed](#how-a-build-is-pushed). On the Gateway, it is `render` before the Gateway contacts the Node, `connect` when the Gateway cannot reach the Node or the Node has no WireGuard address, and `read-live` when `--diff` cannot read the live file.
+Because each Node has one Caddyfile, a broken site (such as a missing certificate) blocks Caddy updates on that Node until fixed. Failures carry the publisher's error code (`app-dev.caddy_config_failed`, `app-prod.caddy_config_failed`, `router.caddy_config_failed`, `ingress.caddy_config_failed`, `websocket.caddy_publication_failed`, `analytics.caddy_publication_failed`, `ai_router.caddy_publication_failed`, or `metrics.caddy_publication_failed`) with up to 2,000 bytes of Caddy's message. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks Caddy service liveness; use `orbit:caddy-build <node> --dry-run --diff` to inspect configuration drift.
 
 ## Public Ingress certificates
 
-A public Ingress site gets its certificate from Let's Encrypt, not from Orbit. Its site block carries `tls force_automate`:
-
-```caddy
-shop.example.com {
-    bind 0.0.0.0 10.44.0.3
-    tls force_automate
-    reverse_proxy https://10.44.0.20 {
-        # Router forwarding settings
-    }
-}
-```
-
-`force_automate` makes Caddy manage the certificate for that hostname, although the global block disables certificate management. Caddy uses its default issuers, Let's Encrypt first, and renews the certificate on its own. Let's Encrypt validates the hostname on port 80 or 443, so the hostname's public DNS must point at the Ingress Node. Orbit opens both ports on the Ingress firewall while the Cluster has a live public Route.
-
-Private sites never carry `force_automate`. They pin their Orbit CA files, so Caddy never asks a public CA for a private hostname, even when a pinned certificate does not match its site. `force_automate` needs Caddy 2.9.0 or newer, which is the release floor.
-
-Native Route publication validates the public TLS configuration. Converge the public Route to build the Ingress Node again.
-
-## Build a Node by hand
-
-On the Gateway machine, an operator can build one Node, or render it and compare the render with the Node's live configuration:
-
-```bash
-php artisan orbit:caddy-build NODE
-php artisan orbit:caddy-build NODE --dry-run
-php artisan orbit:caddy-build NODE --dry-run --diff
-```
-
-| Option | Result |
-| --- | --- |
-| None | Submits `route.caddy_converge` with the complete public render to Swamp and prints its Operation ID. The Operation records native completion. |
-| `--dry-run` | Prints the rendered Caddyfile and changes nothing. |
-| `--diff` | With `--dry-run`, reads the live `/etc/caddy/Caddyfile` and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. |
-
-A failed render or native admission exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address. The output names hostnames and certificate paths. Orbit's Caddy sites hold no secrets.
-
-Repeating any command that publishes one of a Node's sites, such as `orbit node:role:add NODE app-dev --converge`, also builds the Node again.
+Public Ingress sites add `tls force_automate` so Caddy manages Let's Encrypt certificates automatically despite the global `auto_https disable_certs` option. Point public DNS at the Ingress Node; Orbit opens TCP ports `80` and `443` while the Cluster has an active public Route. Private sites never use `force_automate` and always pin Orbit CA files.
 
 ## Replaced configuration
 
-The retained Gateway builder replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`, after the new version passes validation:
-
-| Live `/etc/caddy/Caddyfile` | Backup |
-| --- | --- |
-| The unmodified package default | None |
-| Any other regular file | The file |
-| A symlink outside `/etc/caddy/orbit-versions` | The file it points at |
-| A build's version whose file differs from its digest | The whole version directory, also when the build prunes it |
-
-Sites in a replaced file stop serving after that build. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup. Remove it by hand when you do not need it.
-
-## Check a Node with Doctor
-
-The native Caddy publication validates its candidate before selecting it. Use the publication result or the read-only Caddy build diff for configuration comparison. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks role-service liveness, not rendered Caddy content, certificate files or PHP pools.
+Orbit replaces any unmanaged `/etc/caddy/Caddyfile` rather than adopting it, backing up non-default files to `/etc/caddy/orbit-backups/<UTC timestamp>/`. Move hand-placed sites into Orbit as [custom proxy Routes](/reference/routes#custom-proxy-routes) before running a build.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### One build per Node, from stored state
-
-One deterministic render per Node makes the Caddy configuration reproducible from the database. The native publisher can validate it, and Gateway recovery can restore it. Nothing on the Node is an input, so no hand-placed site, stale site, or foreign global option survives a build, and no publisher decides Node-wide facts, such as listener addresses, from partial knowledge. The cost is that one broken site blocks every change on its Node.
-
-Rejected alternatives: per-role fragments under a shared lock, a `fragments` directory that only the build writes, adopting a foreign Caddyfile as a carried fragment, rendering on the Node, and a build queue.
-
 ### Orbit owns the global options
 
-The global options decide certificate automation for every site on a Node. An operator option such as `auto_https off`, `local_certs`, or an ACME issuer would contradict Orbit's certificate model, and Caddy has no safe merge for repeated options. So a setting that must apply Node-wide needs an Orbit change.
-
-### Certificate automation per public site
-
-`auto_https disable_certs` stops Caddy from asking a public CA for a private hostname when a pinned certificate does not match. But it disables management for every site on the server, public sites included. `tls force_automate` opts only public Ingress sites back in. Rejected alternatives: remove `disable_certs`, name an ACME issuer per site (an issuer does not make Caddy manage the name), list public hostnames in the global block (per-Route data in a static block), and let Orbit run ACME itself.
-
-### HTTP metrics on every Node
-
-Caddy allows one global block, and service metrics needs the `metrics` option. Putting it in Orbit's shared block keeps the block the same on every Node. The measured cost is about 3 microseconds of CPU per request, a small fraction of a PHP request. A per-Node block that depends on service metrics state is the rejected alternative.
-
-### Private sites off the public listener
-
-A private Router or workload site on `0.0.0.0` would answer its hostname on the public address of an Ingress Node. Binding private sites to the WireGuard and LAN addresses separates them by listener. The client guard covers the paths that a listener alone leaves open. Limiting the Ingress firewall to public addresses is rejected, because Orbit does not know those addresses. A firewall deny for the WireGuard address on other interfaces is rejected, because UFW rules have no guaranteed order. For the same reason `ingress` never shares a Node with `gateway`: the Gateway stays private.
-
-### Set a stale Caddyfile aside when Caddy is absent
-
-The absent-Caddy skip lets a removal finish on a Node without Caddy. Leaving the live file in place would make the next `systemctl start caddy` fail on a removed certificate. Writing the render without `caddy validate` would start an unvalidated file. Deleting the file would lose the only copy of a hand-placed configuration. Moving it into the backup directory avoids all three.
-
-### A pinned Caddy package and a release floor
-
-The Ubuntu archive ships Caddy 2.6.2, which lacks directives that Orbit renders, such as `log_skip` and `tls force_automate`. Orbit installs the Caddy project's own `.deb` from a pinned GitHub release instead. The floor fails convergence early with a clear error instead of a failed publication later. Rejected alternatives: render only what 2.6.2 understands, render one directive set per Caddy version, and the Caddy apt source on Cloudsmith, which [failed four times](/reference/node-provisioning#caddy-from-its-github-release-not-its-apt-source). That source did not bring security updates on its own either, because `unattended-upgrades` installs only from Ubuntu origins by default. A Caddy security release reaches the fleet when Orbit raises the floor.
+Rendering one deterministic Caddyfile per Node from committed database state keeps builds reproducible and prevents hand-placed global options (`auto_https off`, `local_certs`, custom ACME issuers) from breaking Orbit's private-vs-public certificate model. Enabling `metrics { per_host }` globally costs microseconds per request while keeping one global block across every Node, and pinning Caddy (`>= 2.9.0`) from GitHub releases guarantees directives such as `log_skip` and `tls force_automate`.

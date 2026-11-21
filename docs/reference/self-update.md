@@ -14,299 +14,95 @@ covers:
 
 # Orbit self-update
 
-`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch). The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) publishes the CLI and observer separately; an operator runs `self-update` on a Mac.
-
-[`node:converge`](/cli/node/converge) is a separate managed-state repair. Its agent phase installs the admitted agent pin and installs the packaged CLI only for a recorded `ci-runner` role that is not removing. Other Nodes have the managed CLI removed. Later phases repair the selected software, role configuration, Tools and network. `self-update` retains its CLI-only delivery path.
-
-Nodes with a [fleet reboot hold](/reference/gateway-recovery#fleet-reboot) still receive observer updates and, when eligible as CI runners, CLI updates.
+`orbit self-update` updates the local `orbit` binary to the CLI release matching the active Gateway's commit. It never touches `orbit-agent` (managed Nodes receive the Gateway's pinned agent via [install on mismatch](/reference/node-agent#install-on-mismatch) and [fleet rollout](/reference/gateway-recovery#fleet-rollout)).
 
 ## Desired fleet state
 
-Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it.
-
-The full converge the release pass runs for changed host inputs leaves the CLI to this delivery: it never selects, checks or removes the CLI. A rollout run that fails before it reaches any Node settles as failed and leaves every Node pending, so the next admission tries them again.
-
-The desired fleet state names what every machine should run for the Gateway's commit. After verification, the active Gateway release applies changed role inputs through the [fleet rollout](/reference/gateway-recovery#fleet-rollout). `self-update` only replaces the CLI.
+The Gateway exposes the target CLI and agent binaries for its deployed commit as **desired fleet state**:
 
 | Field | Contents |
 | --- | --- |
-| `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
-| `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
-| `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, the delivery `commit`, and its Linux x86_64 asset. `self-update` does not read it. |
+| `commit` | Full SHA of the Gateway's commit, or `null` for non-commit versions. |
+| `cli` | [CLI release](/reference/cli-binaries#release-contract-for-clients) metadata: `status`, `reason`, `version`, `tag`, `commit`, `checksums_url`, and platform `assets` (`linux-x86_64`, `macos-arm64`). |
+| `agent` | Pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version`, `commit`, and platform `assets` (`linux-x86_64`, `executor-linux-x86_64`, `macos-aarch64`, `macos-x86_64`). `self-update` ignores this field. |
 
-Each asset has `platform` (`linux-x86_64` or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
-
-```json
-{
-  "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
-  "cli": {
-    "status": "available",
-    "reason": null,
-    "version": "0.4681.0",
-    "tag": "cli-v0.4681.0",
-    "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
-    "checksums_url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
-    "assets": [
-      {
-        "platform": "linux-x86_64",
-        "name": "orbit-0.4681.0-linux-x86_64",
-        "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64",
-        "sha256": "79d7424eeafdc38c773b8f0a7d1b67b21e38e6abb6b458f3e42b89e2cde7a0ce"
-      }
-    ]
-  },
-  "agent": {
-    "version": "0.5.0",
-    "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
-    "assets": [
-      {
-        "platform": "linux-x86_64",
-        "name": "orbit-agent-linux-x86_64",
-        "url": "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.4681.0/orbit-agent-linux-x86_64",
-        "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
-      }
-    ]
-  }
-}
-```
-
-The example shows one asset of each list. The Gateway returns Linux x86_64 and macOS arm64 CLI assets and Linux x86_64 and both macOS agent architectures.
+Each asset carries `platform`, `name`, HTTPS `url`, and lowercase hex `sha256`.
 
 ### Where it is served
 
-`GET /api/v1/gateway/desired-fleet-state` returns the state to any active WireGuard peer: a managed Node or an operator machine. It needs no [Node access](/cli/node/access-add), because every managed Node reads it to update itself. Any other caller gets `peer.identity_unknown` (HTTP 403). The MCP tool is `gateway-desired-fleet-state`.
-
-`gateway:status` returns the same object as `desired_fleet_state` to an active WireGuard peer, from the cache only. It is null until the state is resolved, and always null for any other caller. `gateway:status` still needs no WireGuard identity, and it never waits for Git or GitHub, because release verification calls it.
+`GET /api/v1/gateway/desired-fleet-state` (MCP `gateway-desired-fleet-state`) is open to every active WireGuard peer without requiring a Node access grant (`peer.identity_unknown`, 403, for non-peers). `gateway:status` also returns the cached `desired_fleet_state` to active peers without waiting on Git or GitHub.
 
 ### How the Gateway resolves it
 
-The Gateway builds the state from its own commit, its Git history, GitHub, and its code.
-
-1. The commit is the Gateway version: `APP_VERSION`, or the commit of the Gateway release. A version such as `dev` is not a commit.
-2. The Gateway's own Git checkout counts the commit with `git rev-list --count`. That count `N` names the release `cli-v0.N.0`. A shallow clone has no valid count.
-3. GitHub confirms the release. The tag must point at the commit. The release must be published with every binary and `SHA256SUMS`.
-4. The release's `provenance.sigstore.json` must [verify](/reference/gateway-recovery#release-provenance) for the exact `SHA256SUMS` the Gateway downloaded.
-5. Each CLI asset's `sha256` is its line in that `SHA256SUMS`. Each binary must have one line.
-6. The agent part comes from the pin in the Gateway code.
-
-The Gateway asks GitHub with a read-only token of its [GitHub App](/reference/github-app) when the App is installed on the repository, and anonymously otherwise. `ORBIT_CLI_RELEASE_REPOSITORY` in the Gateway `.env` names another repository; the default is `https://github.com/hardimpactdev/orbit`.
-
-### CLI release status
-
-When automatic Gateway releases are enabled and unpaused, the Gateway checks for green commits every five minutes. Gateway and CLI releases run independently, so a Gateway release can precede its CLI release. None of these states is an error.
+The Gateway resolves desired state from its deployed commit (`APP_VERSION`) and counts commits via `git rev-list --count` to derive `cli-v0.N.0`. It confirms the GitHub release and tag (using the [GitHub App](/reference/github-app) token when installed, or anonymously; `ORBIT_CLI_RELEASE_REPOSITORY` overrides the default repo). It then verifies `provenance.sigstore.json` offline ([Release provenance](/reference/gateway-recovery#release-provenance)), reads digests from `SHA256SUMS`, and attaches the pinned agent manifest.
 
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
-| `available` | null | Every field is set. `cli.commit` is the Gateway's commit. |
-| `available` | `release_missing`, `release_mismatch`, or `release_incomplete` | A [fallback](#fallback-to-an-ancestor-release): every field is set, `cli.commit` is an ancestor's, and `reason` says why the commit's own release was not used. The PHP SDK keeps this `reason`. |
-| `pending` | `release_missing` | The version, tag, and commit are set, but the release is not published yet. Check again in a few minutes. |
-| `unavailable` | `gateway_commit_unknown` | The Gateway version is not a commit its Git history knows. |
-| `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |
-| `unavailable` | `release_mismatch` | The tag points at another commit. |
-| `unavailable` | `release_incomplete` | The release lacks a binary, or `SHA256SUMS` lacks a valid line. |
-| `unavailable` | `release_unverified` | The release has no provenance bundle, or the bundle does not verify. A published release never changes, and no fallback stands in for it. |
-| `unavailable` | `provenance_unconfigured` | The Gateway cannot check provenance: its trust root or release repository setting is unusable ([Release provenance](/reference/gateway-recovery#release-provenance)). |
-| `unavailable` | `github_unavailable` | GitHub did not answer or refused the request, for example at its rate limit. |
+| `available` | `null` | Release for the Gateway's exact commit is verified and ready. |
+| `available` | `release_missing`, `release_mismatch`, `release_incomplete` | [Fallback ancestor release](#fallback-to-an-ancestor-release); `reason` explains why the commit's own release was not used. |
+| `pending` | `release_missing` | Release is not published yet; retry in a few minutes. |
+| `unavailable` | `gateway_commit_unknown`, `history_unavailable`, `release_mismatch`, `release_incomplete`, `release_unverified`, `provenance_unconfigured`, `github_unavailable` | Release cannot be resolved or verified (no fallback stands in for `release_unverified`). |
 
-An available release is kept for its commit for 30 days, because a published release never changes. A fallback is checked against the commit's own release every 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds, or for 5 minutes after a fallback search found nothing. Only the desired-fleet-state endpoint and the scheduler resolve the state. Swamp reads the desired-fleet-state endpoint every five minutes to refresh this read model. The operator command `php artisan orbit:desired-fleet-state` prints the same state as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
+Available releases cache for 30 days, fallbacks recheck the commit's own release every 5 minutes, and `pending`/`unavailable` results cache for 60 seconds (5 minutes after an empty fallback search). Concurrent lookups share a 60-second cache lock (30-second wait). Run `php artisan orbit:desired-fleet-state` on the Gateway to inspect the resolved JSON directly.
 
 ### Fallback to an ancestor release
 
-Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). If a complete fallback search finds no compatible release, or the commit’s release fails provenance verification, the fleet phase fails and keeps its evidence. A newer eligible commit can then release.
-
-When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
-
-1. It takes the 50 newest commits before the Gateway's commit on the first-parent history of `main`. Commits of merged branches never have a release, so the search skips them.
-2. It keeps only the commits whose CLI build inputs match the Gateway's commit. The [build inputs](#cli-build-inputs) are listed below.
-3. It tries their releases from the highest release number down. It checks each one as it checks its own release. A tag on another commit or a release without valid provenance is skipped.
-4. The first available release becomes `cli`, with `status` `available`, that ancestor's `commit`, and the `reason` of the commit's own release.
-
-#### CLI build inputs
-
-A commit's CLI binary is built from `apps/cli`, `packages/php-sdk`, `bin/orbit-build-cli-binary`, `bin/orbit-version`, and `.github/workflows/orbit-cli-binary.yml`. When these match, an ancestor's release is built from the same CLI code as the commit and differs only in the version it prints. So the new footprint never runs next to older CLI code.
-
-#### Keeping a fallback
-
-The Gateway keeps a fallback for the commit. Every 5 minutes it asks GitHub for the commit's own release, which replaces the fallback once it is published. A GitHub error never drops the fallback. When GitHub refused the commit's release, that release never appears, and the fallback lasts until the Gateway deploys a newer commit with its own release.
-
-When GitHub does not answer for an ancestor, the search stops and names nothing. When no ancestor qualifies, the state stays `pending` or `unavailable`, and the search runs again after 5 minutes.
-
-CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release.
-
-Standalone `node:converge` captures the desired release for each admitted attempt rather than skipping admission on a stored footprint digest. Only a recorded `ci-runner` role that is not removing requires an available CLI pin; a missing pin then fails input preparation before machine changes. Other Nodes receive no CLI intent and convergence removes the managed CLI. It can target a managed Linux Node that automatic rollout excludes, including a roleless Node or the Gateway Node. See [footprint convergence](/reference/node-provisioning#converge-the-orbit-footprint) for its scope and repeat contract.
+If a commit's CLI release remains `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway searches up to 50 first-parent ancestors on `main` whose CLI build inputs (`apps/cli`, `packages/php-sdk`, `bin/orbit-build-cli-binary`, `bin/orbit-version`, `.github/workflows/orbit-cli-binary.yml`) match the Gateway's commit, and selects the newest verified published release. It continues checking every 5 minutes for the commit's own release and promotes it once published.
 
 ## What the command does
 
-[`orbit self-update`](/cli/self-update) reads the desired fleet state with the machine's normal Gateway profile and runs one step under a lock: it updates the CLI.
+[`orbit self-update`](/cli/self-update) fetches desired fleet state from the active Gateway profile and replaces the CLI binary atomically.
 
 ### Where it downloads from
 
-The Gateway names which release to install. It never names where to download it. The CLI builds every URL from its own release location, `https://github.com/hardimpactdev/orbit/releases/download`:
+The Gateway names the target version and SHA-256, never the download host. The CLI constructs URLs from `https://github.com/hardimpactdev/orbit/releases/download` (overridable locally with `ORBIT_SELF_UPDATE_RELEASES`) and refuses mismatches (`self_update.release_mismatch`) before downloading.
 
-| Asset | URL |
-| --- | --- |
-| CLI binary | `<location>/cli-v<version>/orbit-<version>-<platform>` |
-| CLI checksums | `<location>/cli-v<version>/SHA256SUMS` |
-
-The Gateway's asset `name` and `url` must equal what the CLI builds, or the step fails with `self_update.release_mismatch` before any download. The CLI downloads `SHA256SUMS` itself and reads the binary's line. That digest must equal the Gateway's `sha256`, and the download must match both. A compromised Gateway can therefore only ask for a published Orbit release. `ORBIT_SELF_UPDATE_RELEASES` on the machine itself changes the location, for a mirror you trust.
-
-Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a size limit: 256 MiB for a binary and 64 KiB for `SHA256SUMS`. `SHA256SUMS` lands in a private temporary directory and is deleted after it is read.
+Downloads run `curl --disable` over HTTPS only with `--connect-timeout 20`, `--max-time 120`, at most 5 redirects, and size caps of 256 MiB (binary) and 64 KiB (`SHA256SUMS`).
 
 ### One update at a time
 
-The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`.
-
-The separate [agent installation and configuration path](/reference/node-agent#install-and-upgrade) takes the same lock from the secret check through the agent restart. It waits up to 300 seconds. Gateway releases do not update the Gateway Node's agent. Native CLI publication writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
-
-Standalone `node:converge` uses that same Linux lock for each atomic replacement of the agent binary and, on [CLI-eligible Nodes](/reference/node-provisioning#orbit-cli), the versioned CLI binary and CLI selection link. On other Nodes, converge removes managed CLI files under that lock and requires no CLI release.
-
-For a replacement, it stages a drifted candidate beside its destination and verifies binary checksums before acquiring the lock. Each final rename waits up to 120 seconds under the lock; the lock does not cover the whole agent phase, configuration writes or service restart. A lock timeout fails the phase without replacing that destination, removes this replacement's staging directory, and leaves earlier completed changes in place. Matching artifacts need no replacement or lock acquisition.
-
-Each self-update candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
+Updates acquire `/run/lock/orbit-self-update.lock` (root on Linux), `/var/run/orbit-self-update.lock` (root on macOS), or `$ORBIT_HOME/self-update.lock` (non-root), waiting up to 120 seconds before failing with `self_update.busy` (or `self_update.lock_failed`). Stale `.<file>.orbit-candidate-<random>` files from interrupted runs are cleaned before download.
 
 ### Update the CLI
 
-The CLI step decides from the running binary, the release status, and the versions.
+The CLI chooses its action from the running binary and desired state:
 
 | Situation | Outcome |
 | --- | --- |
-| `orbit` runs from a source checkout | `skipped`, reason `source_checkout`. Update the checkout with `git pull`. |
-| `orbit` is a PHAR that `php` runs | `skipped`, reason `not_a_release_binary` |
-| The CLI release is `pending` | `pending`. Nothing changes. Run the command again later. |
-| The CLI release is `unavailable` | `skipped`, with the Gateway's reason |
-| No release binary exists for this platform | `skipped`, reason `platform_unsupported` |
-| The binary already has the release's SHA-256 | `unchanged` |
-| This `orbit` is not a release build | Refused with `self_update.version_unknown`. Reinstall a published CLI release. Downgrade consent does not bypass this check. |
-| The release is older than this `orbit` | Refused with `self_update.downgrade_refused`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
-| Otherwise | The release is installed: `updated` |
+| Source checkout | `skipped` (`source_checkout`); update with `git pull`. |
+| PHAR run via `php` | `skipped` (`not_a_release_binary`). |
+| CLI release `pending` or `unavailable` | `pending` or `skipped` with Gateway reason. |
+| Unsupported platform | `skipped` (`platform_unsupported`). |
+| Running binary SHA-256 already matches | `unchanged`. |
+| Non-release build | Refused (`self_update.version_unknown`); reinstall a published release. |
+| Older target release | Refused (`self_update.downgrade_refused`) unless `--allow-downgrade` or `--allow-downgrade-to=<version>` is passed. |
+| Otherwise | Installs new release (`updated`). |
 
-Versions compare by `N`, the commit count. A binary with the release's version but another SHA-256 is replaced, so a damaged binary is repaired.
+Releases live side by side behind a symlink (`/usr/local/bin/orbit -> orbit-0.4681.0`) so running commands keep reading their existing binary:
 
-Older SHA-stamped binaries run the updater they shipped with and may still attempt the update. If your CLI reports a commit SHA, reinstall it using [Install a release](/reference/cli-binaries#install-a-release).
-
-Releases live side by side. `orbit` is a link to a versioned file in the same directory:
-
-```text
-/usr/local/bin/orbit -> orbit-0.4681.0
-/usr/local/bin/orbit-0.4681.0
-/usr/local/bin/orbit-0.4600.0
-```
-
-The install runs in this order.
-
-1. Download the release's `SHA256SUMS` and require its line for this platform's binary to equal the Gateway's `sha256`.
-2. Download the binary with `curl` to a new candidate next to the binary.
-3. Check the candidate's SHA-256. A mismatch deletes the candidate and fails with `self_update.checksum_mismatch`.
-4. Give the candidate the binary's mode. As root, also give it the binary's owner. Flush it to disk.
-5. Run the candidate with `--version`. It must print `Orbit <version>`. Otherwise the candidate is deleted, and the step fails with `self_update.candidate_invalid`.
-6. Rename the candidate to `orbit-<version>`.
-7. If `orbit` does not already select that file, create a new link and rename it over `orbit` in one step. Flush the directory.
-8. Keep the release that ran before, and delete older `orbit-0.N.0` files in that directory.
-
-When the new release needs a link switch, `orbit` keeps selecting the old binary until the switch succeeds. If `orbit` already links to the file being repaired, the rename in step 6 makes the repaired binary available through the existing link. The command needs write access to the directory. Run it with `sudo` for `/usr/local/bin/orbit`, or it fails with `self_update.not_writable`.
-
-The first update of a plain `orbit` file turns it into the link and keeps the old file as `orbit-<old version>`. That one swap replaces the file that running processes read. The command itself prints its result and exits at once. Another `orbit` command that runs during that swap can fail; run it again. Later upgrades and downgrades only switch the link. A same-version repair can replace the running versioned file. The command prints its result and exits at once after that replacement too. A process still running from a release older than the one kept loses its file when that release is deleted.
+1. Download `SHA256SUMS` and verify its digest matches the Gateway's `sha256`.
+2. Download the binary to a candidate file next to `orbit` (`self_update.download_failed` on failure) and verify its SHA-256 (`self_update.checksum_mismatch`).
+3. Match mode and owner, flush to disk, and run `<candidate> --version` in an isolated temporary `ORBIT_HOME` (60-second timeout), requiring `Orbit <version>` (`self_update.candidate_invalid`).
+4. Rename the candidate to `orbit-<version>` (`self_update.install_failed` or `self_update.not_writable`), atomically swap the `orbit` symlink, keep the previous release, and prune older `orbit-0.N.0` files.
 
 ### Result
 
-The command prints one result. Its top-level `outcome` is the first that applies:
-
-| `outcome` | When | Exit |
-| --- | --- | --- |
-| `failed` | A step failed. | 1 |
-| `incomplete` | A step that applies here could not run: the CLI release is `unavailable`. Nothing failed, but the machine is not up to date. | 0 |
-| `pending` | The CLI release is not published yet. Run the command again in a few minutes. | 0 |
-| `updated` | A step changed something. | 0 |
-| `unchanged` | Everything is already current, or a step does not apply here: a source checkout, a PHAR, or an unsupported platform. | 0 |
-
-Human output ends with `Update failed.`, `Update incomplete.`, `Waiting for the CLI release.`, `Orbit updated.`, or `Orbit is up to date.` in the same order. A failure before the first step, such as `gateway.unreachable`, `gateway.profile_missing`, or `self_update.busy`, prints the usual error envelope instead.
-
-| Field | Meaning |
-| --- | --- |
-| `gateway` | The profile name |
-| `commit` | The Gateway's commit |
-| `outcome` | `updated`, `unchanged`, `pending`, `incomplete`, or `failed` |
-| `steps` | One `cli` step, with `outcome` (`updated`, `unchanged`, `pending`, `skipped`, or `failed`), `reason`, `path`, `before`, `after`, and `error` |
-| `request_id` | The Gateway request ID |
-
-`before` and `after` each hold `version` and `sha256`. The `path` is the plain `orbit` file or its selection link. After a failed CLI step, `after` reports the file that `path` selects, with null for values the command could not determine. `error` holds `code` and `message`, or null.
+The command exits `1` on `failed` and `0` on `incomplete`, `pending`, `updated`, or `unchanged`. JSON output returns `{ gateway, commit, outcome, steps, request_id }` with `before`, `after`, `path`, and `error` on the `cli` step.
 
 ## Running it on a Node
 
-On a managed Node that [carries the CLI](/reference/node-provisioning#orbit-cli), run `sudo orbit self-update --json`. Root reads its own Gateway profile from `$ORBIT_HOME/config.json`, which is `/root/.orbit/config.json` under `sudo`. The profile needs:
-
-- a profile URL that reaches the Gateway over WireGuard, such as `https://10.44.0.1`;
-- `ca_path` set to a file with the Orbit root certificate, such as `/etc/orbit/agent/ca.pem`, which the agent converge writes;
-- the profile as the active profile.
-
-The Gateway identifies the Node by the WireGuard address the request comes from, as it does for every CLI request. The file must belong to root with mode `0600`, as [Gateway trust](/reference/gateway-trust#profiles) requires.
+On a managed Node that [carries the CLI](/reference/node-provisioning#orbit-cli), run `sudo orbit self-update --json`. Root reads `/root/.orbit/config.json` (root-owned, mode `0600`) configured with the active Gateway WireGuard URL (for example `https://<gateway-wg-ip>`) and `ca_path` (such as `/etc/orbit/agent/ca.pem`).
 
 ## The newer-release notice
 
-Every CLI request sends `X-Orbit-Client-Version` with the CLI version. When an active WireGuard peer sends it and the Gateway has resolved an available CLI release, the response carries `X-Orbit-Cli-Version` with that release. The Gateway reads it from the cached state only, so no request waits for Git or GitHub. The header is absent while the release is `pending` or `unavailable`.
-
-After a command, when that version is newer than the running release binary, the CLI prints one line on standard error:
-
-```text
-Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.
-```
-
-The CLI prints it at most once every 24 hours, and only when standard error is a terminal and `CI` is unset. It keeps the time of the last notice in `$ORBIT_HOME/self-update-notice.json`, mode `0600`. It never prints the notice in JSON mode, from a source checkout or other build that is not a release, or when it cannot record the time. `self-update` prints no notice.
-
-## Limits
-
-`orbit self-update` has these limits.
-
-- It replaces only the CLI. A Node gets `orbit-agent` from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch).
-- Node convergence applies the [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint). On app-dev this includes the tmpfiles rule that restores the wake marker directory at boot.
-- The fleet rollout publishes the [managed PHP request and upload limits](/reference/php-runtime#request-and-upload-limits) through the Node footprint. Changed modules reload valid active FPM masters.
-- Nothing runs it on an operator machine automatically. The operator runs it after the notice.
-- No agent signal triggers it.
-
-A Node with an active `ci-runner` role participates in [fleet rollout group 2](/reference/gateway-recovery#rollout-set-and-order). A recorded recipe profile does not add a roleless Node to the rollout.
-
-[Update and recover a Gateway: Limits](/reference/gateway-recovery#limits) lists what is not built yet.
+Every CLI request sends `X-Orbit-Client-Version`. When the Gateway has a cached available release, responses return `X-Orbit-Cli-Version`. If newer than the running release binary, the CLI prints a one-line notice to stderr at most once every 24 hours (tracked in `$ORBIT_HOME/self-update-notice.json`, mode `0600`), skipping JSON mode, non-TTY stderr, `CI`, non-release builds, and `self-update` itself.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### The version comes from the Gateway's commit
-
-The CLI release of a commit is named by the commit count, so the Gateway counts its own deployed commit. A version string from a source checkout comes from `git describe` and can name an unrelated tag. Counting the commit gives the one release that belongs to the code the Gateway runs.
-
-### A pending release is not an error
-
-The Gateway deploys before CI publishes the CLI release. Reporting that as a failure would fail every rollout for a few minutes after each release. `pending` lets a caller wait and try again, and it never installs another version instead.
-
-### Every active peer may read the state
-
-A managed Node updates itself from this state whether or not it has access to the Gateway. The state holds only public release names and checksums, so a peer needs no access edge to read it.
-
 ### The CLI trusts the Gateway's provenance check
 
-The Gateway verifies a release's [provenance](/reference/gateway-recovery#release-provenance) before it names a CLI digest. `orbit self-update` and the Node's `cli.install` take that digest from the Gateway, over WireGuard with the pinned Orbit root certificate, and require the release's own `SHA256SUMS` to agree. So they install only bytes the Gateway verified, and they do not verify the Sigstore bundle themselves.
+Verifying Sigstore provenance once on the Gateway keeps a single trust root that Gateway releases update cleanly, while requiring `orbit self-update` to construct GitHub URLs locally and verify `SHA256SUMS` against the Gateway's digest prevents a compromised Gateway from pointing clients at arbitrary downloads.
 
-A check in the CLI would add nothing against a compromised Gateway. Such a Gateway already chooses the agent that every Node runs as root. An attacker would also need to forge a GitHub release to win anything on an operator machine. The check would also carry a pinned trust root in every installed binary. After a Sigstore key rotation, an old CLI could then not verify the release that would update it, and each machine would need a manual reinstall. One check on the Gateway keeps one trust root, which a Gateway release updates.
+### Side-by-side binaries and atomic link swaps
 
-### Replace by rename after every check
-
-A binary that is overwritten in place is broken while the write runs, and a crash leaves it broken. A candidate next to the binary is checked first, and one rename moves it into place. The old binary works until that rename, and the rename either happens whole or not at all.
-
-### Build the download URLs on the machine
-
-The Gateway decides which release the fleet runs, but a compromised Gateway must not choose what code a Node or an operator machine runs as root. The CLI therefore builds every URL from its own release location and reads the checksum from the release's own `SHA256SUMS`. The Gateway's checksum must agree. The worst a Gateway can then do is name another published Orbit release, which `--allow-downgrade` guards.
-
-### Run the candidate before the swap
-
-A checksum proves the download matches the release. It does not prove the binary starts on this machine. Running `--version` before the swap keeps a binary that cannot start from replacing one that can.
-
-### Keep releases side by side
-
-A standalone binary is a static PHP with the CLI appended as a PHAR, and it reads its own code from its path as it runs. A process whose file is replaced by a rename fails with exit 255 at its next class load. That is why releases live side by side behind a link: a running process keeps its versioned file, which the update does not touch. A test with real binaries confirmed it: an `orbit` command running across a link switch finished normally three times out of three, and across a rename it failed every time.
-
-The first update of a plain file still replaces the running file. So the command loads what it still needs before the swap and exits right after it prints the result. The same path rule explains why the CLI hashes its own binary through `<directory>/./orbit`: the binary reads its exact path as the appended PHAR, not as the whole file.
-
-### Download with curl
-
-The static PHP inside a release binary does not always find the system trust store. The system `curl` does, and the Gateway's agent converge already uses it on every Node.
+Because a PHPacker binary reads its appended PHAR from disk while running, overwriting a file in place breaks concurrent commands. Installing `orbit-<version>` beside the running binary, verifying `--version` first, and switching the `orbit` symlink atomically keeps running commands intact. Using system `curl` ensures the system CA trust store works reliably across hosts.
