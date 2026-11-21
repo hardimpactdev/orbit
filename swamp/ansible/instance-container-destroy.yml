@@ -233,7 +233,7 @@
                 argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, item] }}"
                 stdin: ""
               vars:
-                spare_pattern: "^(spare-{{ container.inner_volume | regex_escape }}-[0-9a-f]+|build-{{ container.inner_volume | regex_escape }})$"
+                spare_pattern: "^(spare-{{ container.inner_volume | regex_escape }}-(seed-)?[0-9a-f]+|build-{{ container.inner_volume | regex_escape }})$"
               loop: >-
                 {{ destroy_spares.stdout | from_json | selectattr('type', 'equalto', 'custom') | map(attribute='name')
                    | select('match', spare_pattern) | list }}

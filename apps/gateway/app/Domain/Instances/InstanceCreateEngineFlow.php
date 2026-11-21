@@ -117,7 +117,9 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 'private_names' => array_map(static fn (mixed $name): array => ['host' => ValidatedData::object($name)['host'], 'name' => ValidatedData::object($name)['name']],
                     self::rows($container['private_names'] ?? [])), ...self::allowed($container),
                 ...(isset($container['inner_volume']) ? ['volume' => ['device' => ValidatedData::object($container['inner_volume'])['device'],
-                    'name' => ValidatedData::object($container['inner_volume'])['name']]] : [])],
+                    'name' => ValidatedData::object($container['inner_volume'])['name']],
+                    // The two copies ran side by side; the start compares the seed take each read with the seed's own.
+                    'seed_take' => ['snapshot' => $clone['snapshot'], 'clone' => self::taken($run, 'clone'), 'volume' => self::taken($run, 'copy_volume')]] : [])],
             'club_key' => [...$where, ...array_intersect_key(ValidatedData::object($container['club_key']), array_flip(['directory', 'file', 'owner', 'group', 'tmpfiles', 'gateway', 'serve_unit'])),
                 // Read at the step, as Swamp reads it at its run's start; without a value nothing is written.
                 ...(($key = NestedFleetClubKey::value()) === null ? [] : ['key' => ['blob' => ['content' => $key]]])],
@@ -260,6 +262,14 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         $club = $output('club_key')['club_key'] ?? null;
 
         return [...(is_array($cleaned) ? ['workspace_cleaned' => ValidatedData::object($cleaned)] : []), ...(is_string($club) ? ['club_key' => $club] : [])];
+    }
+
+    /** The seed take that a copy step read before it copied, or empty when it said none. */
+    private static function taken(EngineRun $run, string $step): string
+    {
+        $output = json_decode($run->output($step) ?? 'null', true);
+
+        return is_array($output) && is_string($output['seed_taken_at'] ?? null) ? $output['seed_taken_at'] : '';
     }
 
     /**

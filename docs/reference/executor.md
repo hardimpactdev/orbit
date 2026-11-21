@@ -245,9 +245,9 @@ The `instance` family (enabled by the `app-dev` role) makes a clone of a default
 
 The copy gets its config and its root disk. A btrfs root gets no size. Its `eth0` gets its own address, both ACLs, default egress and ingress reject, and the address filters. Then comes the T3 proxy device, and last the copy's ufw route rules, such as the one from WireGuard to its T3 port; ufw skips a rule that is there.
 
-A nested-fleet copy's clone has `exact_seed`: it copies only the admitted seed, as `instance.copy_volume` copies its volume, and refuses a replaced one with `instance.default_seed_moved`, so its container and volume come from one take.
+A nested-fleet copy's clone has `exact_seed`: it copies only the admitted seed, as `instance.copy_volume` copies its volume, and refuses a replaced one with `instance.default_seed_moved`, so its container and volume come from one seed. It reads the seed's take, its creation time, before it copies, and keeps it in the copy's `/etc/orbit/seed-take`. A repeat reads that file, and copies again a copy of another take that never started.
 
-It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
+It answers `{"snapshot", "seed_taken_at"}`: the snapshot is null for a copy that existed, and the take is null without `exact_seed`. Codes: `instance.clone_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.pool_driver_unsupported`, `instance.clone_failed`.
 
 #### instance.copy_volume
 
@@ -261,7 +261,7 @@ It answers `{"snapshot"}`, or null for a copy that existed. Codes: `instance.clo
 
 The volume records its size. `instance.start` names it in the copy's disk.
 
-It answers `{"snapshot", "spare"}`. Codes: `instance.copy_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.copy_volume_failed`.
+It reads the seed's take before it copies and keeps it as the volume's description. It answers `{"snapshot", "spare", "seed_taken_at"}`. Codes: `instance.copy_volume_input_invalid`, `instance.default_seed_missing`, `instance.default_seed_moved`, `instance.default_seed_incomplete`, `instance.copy_volume_failed`.
 
 #### instance.spare_volume
 
@@ -304,9 +304,11 @@ On a Node without idmapped mounts, the seed's files are shifted. There a stopped
 
 Then the copy starts. The running copy gets its hostname and its `/etc/hosts`: the `127.0.1.1` line and the private names block. Last, root runs the app-account swap file that prepare wrote (`app_account`, `/usr/local/libexec/orbit-app-user`). A copy of an older default moves from `orbit` and `work` to `www-data` there, before checkout runs Git as `agent`. On a copy that already uses `www-data`, the swap only reads. Without `app_account`, when the seed's own swap ran with the same file, the step runs none.
 
+With `seed_take`, before anything else, the start reads the admitted seed's take again. It refuses with `instance.default_seed_moved` unless the takes that `instance.clone` and `instance.copy_volume` answered both match it.
+
 Before the guard reads the devices, the copy's disk names the volume that `instance.copy_volume` made (`volume`).
 
-It answers `applied`. Codes: `instance.start_input_invalid`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
+It answers `applied`. Codes: `instance.start_input_invalid`, `instance.default_seed_moved`, `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`, `instance.container_start_failed`, `instance.clone_private_names_failed`.
 
 #### instance.fetch_branch
 

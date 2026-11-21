@@ -39,6 +39,18 @@ struct StartInput {
     /// A nested-fleet copy's own inner volume, which `instance.copy_volume` made: its disk names it before the guard.
     #[serde(default)]
     volume: Option<Volume>,
+    /// The seed take that the container copy and the volume copy each read before they copied, both of the admitted seed.
+    #[serde(default)]
+    seed_take: Option<SeedTake>,
+}
+
+/// The takes of one admitted seed as `instance.clone` and `instance.copy_volume` read them, side by side.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SeedTake {
+    snapshot: String,
+    clone: String,
+    volume: String,
 }
 
 /// The disk device of the copy's inner volume and the volume it names.
@@ -72,12 +84,13 @@ struct PrivateName {
 /// swap, which only reads on a copy that already uses `www-data`. The copy's Incus templates
 /// rewrite both files at the first start, so the names come after it. On a Node whose seed holds shifted files (a nested
 /// Node without idmapped mounts), a stopped copy's files are shifted back first, so its first start can apply its own map.
-/// A nested-fleet copy (`allowed`) starts only when its effective config, devices and volumes are exactly the allowed ones.
+/// A nested-fleet copy (`allowed`) starts only when its effective config, devices and volumes are exactly the allowed ones, and
+/// only when its container and its volume come from the seed's current take (`seed_take`), else `instance.default_seed_moved`.
 /// Answers how many changes it made.
 ///
 /// # Errors
 ///
-/// `instance.start_input_invalid`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`,
+/// `instance.start_input_invalid`, `instance.default_seed_moved`, `instance.clone_idmap_unshift_failed`, `instance.clone_idmap_unshift_unsupported`,
 /// `instance.container_network_unsafe`, `instance.nic_filters_missing`, `instance.container_start_failed` or
 /// `instance.clone_private_names_failed`.
 pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
@@ -85,6 +98,13 @@ pub fn start(system: &impl System, input: &Value) -> Result<u32, Failure> {
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.start_input_invalid", error.to_string()))?;
     check(&input).map_err(|detail| Failure::new("instance.start_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.container_start_failed" };
+    if let Some(take) = &input.seed_take {
+        // Both copies ran side by side: they hold one take only when each read the seed's current take before it copied.
+        let (_, current) = crate::exact(&incus, &input.project, &input.source, &take.snapshot)?;
+        if take.clone != current || take.volume != current {
+            return Err(Failure::new("instance.default_seed_moved", format!("{} was retaken while the copy ran", take.snapshot)));
+        }
+    }
     let read = || -> Result<Value, Failure> {
         incus
             .query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?
@@ -140,6 +160,9 @@ fn check(input: &StartInput) -> Result<(), String> {
             && !value.starts_with('-')
             && !value.ends_with('-')
     };
+    if let Some(take) = &input.seed_take {
+        crate::seed_name(&take.snapshot).map_err(|detail| format!("seed_take.{detail}"))?;
+    }
     if let Some(volume) = &input.volume {
         if !crate::name(&volume.device) || !crate::name(&volume.name) {
             return Err("volume is not a device and a volume name".to_owned());

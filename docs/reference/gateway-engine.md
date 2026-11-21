@@ -59,7 +59,7 @@ The engine runs a container clone's create from its admitted intent (`direct_pro
 | `fetch` | | Node | Fetches the branch into the Node's mirror; the Gateway sends the read credential as a blob |
 | `copy_volume` | | Node | Makes a nested-fleet copy's inner volume, from a [spare](/reference/development-containers#spare-volumes) when it can |
 | `prepare` | `clone` | copy | Writes the files that the [seed manifest](/reference/development-containers#the-seed-manifest) does not show in the seed |
-| `start` | `prepare`, `copy_volume` | copy | Names the volume, guards the network, starts the copy and gives it its names |
+| `start` | `prepare`, `copy_volume` | copy | Checks that both copies hold the seed's current take, names the volume, guards the network, starts the copy and gives it its names |
 | `club_key` | `start` | copy | Writes a nested-fleet copy's Club key into its `/run` |
 | `checkout` | `start`, `fetch` | copy | Checks out the branch, cleans a task copy and merges `.env` |
 | `spare` | `start` | Node | Makes the default's next spare volume |

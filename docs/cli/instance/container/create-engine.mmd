@@ -39,7 +39,8 @@ sequenceDiagram
   %%> Needs clone. The seed's manifest names what the seed holds.
   %%> Settings are merged into the seed's own, never replaced.
   EN->>C: Start the copy<br/>start · guard · names
-  %%> Needs prepare and copy_volume. The app-user swap runs only on an older seed.
+  %%> Needs prepare and copy_volume. A nested copy starts only when both copies hold the seed's current take.
+  %%> The app-user swap runs only on an older seed.
   par after start
     EN->>C: Deliver the Club key<br/>club_key · tmpfs · nested only
     %%> club_key and checkout lock the same copy, so they run one after the other.

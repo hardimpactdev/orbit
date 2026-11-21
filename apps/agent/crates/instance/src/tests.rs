@@ -91,7 +91,7 @@ fn a_new_copy_gets_its_acl_the_seed_copy_and_the_t3_proxy() {
 
     let output = clone(&fake, &input()).expect("clone");
 
-    assert_eq!(output, r#"{"snapshot":"seed-abc123"}"#);
+    assert_eq!(output, r#"{"seed_taken_at":null,"snapshot":"seed-abc123"}"#);
     let calls = fake.calls();
     assert_eq!(calls[2], "network acl create instance-12 --project default");
     assert_eq!(calls[3], "network acl edit instance-12 --project default");
@@ -135,7 +135,7 @@ fn a_repeat_finds_the_copy_and_its_acl_and_changes_nothing() {
         ("query /1.0/network-acls/", Ok(input()["acl"]["rules"].clone())),
     ]);
 
-    assert_eq!(clone(&fake, &input()).expect("clone"), r#"{"snapshot":null}"#);
+    assert_eq!(clone(&fake, &input()).expect("clone"), r#"{"seed_taken_at":null,"snapshot":null}"#);
     assert_eq!(fake.calls().len(), 3, "the copy and its ACL are found; only the route rule is applied again, which ufw skips");
 }
 
@@ -147,7 +147,7 @@ fn a_replaced_seed_copies_the_newest_and_a_retake_refuses() {
         ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-old", "2026-11-01"), ("seed-new", "2026-11-18")]))),
         ("query /1.0/storage-pools/", Ok(json!({"driver": "zfs"}))),
     ]);
-    assert_eq!(clone(&replaced, &input()).expect("clone"), r#"{"snapshot":"seed-new"}"#);
+    assert_eq!(clone(&replaced, &input()).expect("clone"), r#"{"seed_taken_at":null,"snapshot":"seed-new"}"#);
 
     let retake = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
@@ -655,14 +655,16 @@ fn volume_answers(volumes_held: &[&str], rename: Result<Value, &'static str>) ->
 fn a_spare_of_the_same_take_is_taken_by_a_rename_and_one_another_create_took_falls_back_to_a_copy() {
     let spare = format!("spare-inner-2-{}", take("2026-11-20T10:00:00Z"));
     let fake = volume_answers(&["inner-2", &spare], Ok(json!("")));
-    assert_eq!(copy_volume(&fake, &volume_input()).expect("take"), r#"{"snapshot":"seed-abc123","spare":true}"#);
+    assert_eq!(copy_volume(&fake, &volume_input()).expect("take"), r#"{"seed_taken_at":"2026-11-19","snapshot":"seed-abc123","spare":true}"#);
     let calls = fake.calls();
     assert!(calls.iter().any(|call| call.ends_with(&format!("storage volume rename orbit-instances {spare} inner-12"))), "{calls:?}");
     assert!(!calls.iter().any(|call| call.contains("storage volume copy")));
-    assert!(calls.last().expect("calls").ends_with("storage volume set orbit-instances inner-12 size=30GiB"));
+    assert!(calls[calls.len() - 2].ends_with("storage volume set orbit-instances inner-12 size=30GiB"));
+    // The volume records the take it was made from, for a retry to read back.
+    assert!(calls.last().expect("calls").ends_with("storage volume set orbit-instances inner-12 --property description=2026-11-19"));
 
     let taken = volume_answers(&["inner-2", &spare], Err("Error: Storage volume not found"));
-    assert_eq!(copy_volume(&taken, &volume_input()).expect("copy"), r#"{"snapshot":"seed-abc123","spare":false}"#);
+    assert_eq!(copy_volume(&taken, &volume_input()).expect("copy"), r#"{"seed_taken_at":"2026-11-19","snapshot":"seed-abc123","spare":false}"#);
     assert!(taken.calls().iter().any(|call| call.contains("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/inner-12")));
 }
 
@@ -672,7 +674,7 @@ fn a_spare_of_an_older_take_of_the_same_seed_is_never_taken_and_goes() {
     let older = format!("spare-inner-2-{}", take("2026-11-19T08:00:00Z"));
     let fake = volume_answers(&["inner-2", "inner-12", &older], Ok(json!("")));
 
-    assert_eq!(copy_volume(&fake, &volume_input()).expect("copy"), r#"{"snapshot":"seed-abc123","spare":false}"#);
+    assert_eq!(copy_volume(&fake, &volume_input()).expect("copy"), r#"{"seed_taken_at":"2026-11-19","snapshot":"seed-abc123","spare":false}"#);
 
     let calls = fake.calls();
     let at = |part: &str| calls.iter().position(|call| call.ends_with(part)).unwrap_or_else(|| panic!("{part} not run: {calls:?}"));
@@ -690,9 +692,12 @@ fn a_volume_copy_takes_only_the_admitted_seed_and_a_seed_without_its_volume_half
     ]);
     assert_eq!(copy_volume(&moved, &volume_input()).map_err(|failure| failure.code), Err("instance.default_seed_moved"));
 
-    let used = Fake::new(&[("query /1.0/instances/instance-12?", Ok(json!({"devices": {"inner-pool": {"source": "inner-12"}}})))]);
-    assert_eq!(copy_volume(&used, &volume_input()).expect("repeat"), r#"{"snapshot":null,"spare":false}"#);
-    assert_eq!(used.calls().len(), 1);
+    let used = Fake::new(&[
+        ("query /1.0/instances/instance-12?", Ok(json!({"devices": {"inner-pool": {"source": "inner-12"}}}))),
+        ("volumes/custom/inner-12?", Ok(json!({"description": "2026-11-19"}))),
+    ]);
+    assert_eq!(copy_volume(&used, &volume_input()).expect("repeat"), r#"{"seed_taken_at":"2026-11-19","snapshot":null,"spare":false}"#);
+    assert_eq!(used.calls().len(), 2);
 
     let incomplete = Fake::new(&[
         ("query /1.0/instances/instance-12?", MISSING),
@@ -880,4 +885,126 @@ fn settings_that_need_the_key_refuse_without_it() {
         "json": {"apiKey": "#orbit-model-key"}, "key_value": "#orbit-model-key"}}]);
 
     assert_eq!(prepare(&fake, &prepare_input(&files)).map_err(|failure| failure.code), Err("instance.clone_t3_files_refused"));
+}
+
+#[test]
+fn a_nested_clone_records_the_seed_take_it_read_and_copies_again_a_never_started_copy_of_another_take() {
+    let mut input = input();
+    input["exact_seed"] = json!(true);
+    let new = Fake::new(&[
+        ("query /1.0/instances/instance-12?", MISSING),
+        ("query /1.0/network-acls/", MISSING),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-20T10:00:00Z")]))),
+        ("query /1.0/storage-pools/", Ok(json!({"driver": "btrfs"}))),
+    ]);
+    assert_eq!(clone(&new, &input).expect("clone"), r#"{"seed_taken_at":"2026-11-20T10:00:00Z","snapshot":"seed-abc123"}"#);
+    let calls = new.calls.borrow().clone();
+    let copied = calls.iter().position(|(call, _)| call.contains(" copy instance-2/seed-abc123 instance-12")).expect("copy");
+    let (pushed, take) = calls.iter().enumerate().find(|(_, (call, _))| call.ends_with("- instance-12/etc/orbit/seed-take")).map(|(at, (_, stdin))| (at, stdin.clone())).expect("take file");
+    assert!(copied < pushed);
+    assert_eq!(take.as_deref(), Some("2026-11-20T10:00:00Z\n"));
+
+    // An earlier run copied the seed's older take and never started it: it goes, and the current take is copied.
+    let stale = Fake::new(&[
+        ("query /1.0/instances/instance-12?", Ok(json!({"config": {}, "devices": {}}))),
+        ("query /1.0/network-acls/", Ok(json!({}))),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-20T10:00:00Z")]))),
+        ("file pull instance-12/etc/orbit/seed-take", Ok(json!("2026-11-19T08:00:00Z\n"))),
+        ("query /1.0/storage-pools/", Ok(json!({"driver": "btrfs"}))),
+    ]);
+    assert_eq!(clone(&stale, &input).expect("again"), r#"{"seed_taken_at":"2026-11-20T10:00:00Z","snapshot":"seed-abc123"}"#);
+    let calls = stale.calls();
+    let at = |part: &str| calls.iter().position(|call| call.contains(part)).unwrap_or_else(|| panic!("{part} not run: {calls:?}"));
+    assert!(at("--project orbit-instances delete instance-12 --force") < at(" copy instance-2/seed-abc123 instance-12"));
+
+    // A started copy stays: its take goes to the start, which compares it.
+    let started = Fake::new(&[
+        ("query /1.0/instances/instance-12?", Ok(json!({"config": {"volatile.last_state.power": "RUNNING"}, "devices": {}}))),
+        ("query /1.0/network-acls/", Ok(json!({}))),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-20T10:00:00Z")]))),
+        ("file pull instance-12/etc/orbit/seed-take", Ok(json!("2026-11-19T08:00:00Z\n"))),
+    ]);
+    assert_eq!(clone(&started, &input).expect("kept"), r#"{"seed_taken_at":"2026-11-19T08:00:00Z","snapshot":null}"#);
+    assert!(!started.calls().iter().any(|call| call.contains(" delete ") || call.contains(" copy ")));
+}
+
+fn seed_take_start(at: &str) -> Fake {
+    Fake::new(&[
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", at)]))),
+        ("query /1.0/instances/instance-12?", Ok(running())),
+    ])
+}
+
+#[test]
+fn a_nested_copy_starts_only_when_its_container_and_its_volume_hold_the_seeds_current_take() {
+    let input = |clone: &str, volume: &str| {
+        let mut input = start_input("/usr/local/libexec/orbit-app-user");
+        input["seed_take"] = json!({"snapshot": "seed-abc123", "clone": clone, "volume": volume});
+        input
+    };
+    let now = "2026-11-20T10:00:00Z";
+    let before = "2026-11-19T08:00:00Z";
+    assert!(start(&seed_take_start(now), &input(now, now)).is_ok());
+
+    // The seed was retaken while the two copies ran side by side: one of them, or both, hold another take.
+    for (clone, volume) in [(before, now), (now, before), (before, before)] {
+        let fake = seed_take_start(now);
+        assert_eq!(start(&fake, &input(clone, volume)).map_err(|failure| failure.code), Err("instance.default_seed_moved"));
+        assert_eq!(fake.calls(), vec!["query /1.0/instances/instance-2/snapshots?project=orbit-instances&recursion=1".to_owned()]);
+    }
+    assert_eq!(start(&seed_take_start(""), &input("", "")).map_err(|failure| failure.code), Err("instance.container_start_failed"));
+}
+
+#[test]
+fn a_volume_snapshot_without_a_creation_time_has_no_take_and_refuses() {
+    let fake = Fake::new(&[
+        ("query /1.0/instances/instance-12?", MISSING),
+        ("query /1.0/instances/instance-2/snapshots", Ok(snapshots(&[("seed-abc123", "2026-11-19")]))),
+        ("volumes/custom/inner-2/snapshots", Ok(json!([{"name": "inner-2/seed-abc123"}]))),
+        ("volumes/custom?", Ok(volumes(&["inner-2", "spare-inner-2-x"]))),
+    ]);
+
+    assert_eq!(copy_volume(&fake, &volume_input()).map_err(|failure| failure.code), Err("instance.copy_volume_failed"));
+    assert!(!fake.calls().iter().any(|call| call.contains("storage volume copy") || call.contains("storage volume rename")));
+}
+
+/// A Node whose default retakes its inner volume's seed while the spare's copy runs.
+struct Retaking {
+    fake: Fake,
+    reads: std::cell::Cell<u32>,
+}
+
+impl System for Retaking {
+    fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+        if argv.join(" ").contains("volumes/custom/inner-2/snapshots") {
+            self.reads.set(self.reads.get() + 1);
+            let at = if self.reads.get() == 1 { "2026-11-20T10:00:00Z" } else { "2026-11-20T11:00:00Z" };
+            return Ok(json!([{"name": "inner-2/seed-abc123", "created_at": at}]).to_string());
+        }
+        self.fake.run(seconds, argv, stdin)
+    }
+
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        self.fake.blob(sha256)
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+        self.fake.read(path)
+    }
+
+    fn path(&self, value: &str) -> std::path::PathBuf {
+        self.fake.path(value)
+    }
+}
+
+#[test]
+fn a_spare_whose_seed_was_retaken_during_its_copy_goes_and_is_never_placed() {
+    let node = Retaking { fake: volume_answers(&["inner-2"], Ok(json!(""))), reads: std::cell::Cell::new(0) };
+
+    assert_eq!(spare_volume(&node, &spare_input()).expect("retaken"), r#"{"spare":"retaken"}"#);
+
+    let calls = node.fake.calls();
+    assert!(calls.iter().any(|call| call.ends_with("storage volume copy orbit-instances/inner-2/seed-abc123 orbit-instances/build-inner-2")));
+    assert!(calls.last().expect("calls").ends_with("storage volume delete orbit-instances build-inner-2"));
+    assert!(!calls.iter().any(|call| call.contains("storage volume rename")));
 }

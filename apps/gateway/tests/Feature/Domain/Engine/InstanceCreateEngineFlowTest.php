@@ -153,6 +153,18 @@ it('copies the default\'s inner volume and guards the nested copy\'s exact confi
         ->and((array) $start['allowed']['volumes'])->toBe(['inner-pool' => ['block.filesystem' => 'btrfs', 'security.shifted' => 'true', 'size' => '30GiB']]);
 });
 
+it('hands the start the seed take that the clone and the volume copy each read, beside each other', function (): void {
+    $step = static fn (string $output): OperationEngineStep => (new OperationEngineStep)->forceFill(['status' => 'done', 'node_id' => 3, 'output' => $output]);
+    $operation = engineCloneOperation(nestedTaskCopy(...));
+    $snapshot = $operation->input['direct_provisioning']['container']['clone']['snapshot'];
+    $run = new EngineRun(288, ['clone' => $step('{"snapshot":null,"seed_taken_at":"2026-11-20T10:00:00Z"}'),
+        'copy_volume' => $step('{"snapshot":"'.$snapshot.'","spare":true,"seed_taken_at":"2026-11-19T08:00:00Z"}')], 0, null);
+
+    expect(app(InstanceCreateEngineFlow::class)->input($operation, 'start', $run)['seed_take'])
+        ->toBe(['snapshot' => $snapshot, 'clone' => '2026-11-20T10:00:00Z', 'volume' => '2026-11-19T08:00:00Z'])
+        ->and(app(InstanceCreateEngineFlow::class)->input(engineCloneOperation(), 'start', $run))->not->toHaveKey('seed_take');
+});
+
 it('delivers the Club key where the nested Gateway reads it, and nothing without a value', function (): void {
     $input = app(InstanceCreateEngineFlow::class)->input(engineCloneOperation(nestedTaskCopy(...)), 'club_key', new EngineRun(288, [], 0, null));
 

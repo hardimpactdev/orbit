@@ -266,13 +266,38 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
     let input: CloneInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.clone_input_invalid", error.to_string()))?;
     check(&input).map_err(|detail| Failure::new("instance.clone_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.clone_failed" };
-    let instance = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
+    let mut instance = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
     ensure_acl(&incus, &input.acl)?;
+    // A nested-fleet copy reads its seed's take before it copies; `instance.start` compares it with the volume's and the seed's own.
+    let current = if input.exact_seed { Some(exact(&incus, &input.project, &input.source, &input.snapshot)?) } else { None };
+    let mut taken = None;
+    if let (Some(found), Some((_, take))) = (&instance, &current) {
+        let target = format!("{}{SEED_TAKE}", input.name);
+        let held = incus.run(&["--project".to_owned(), input.project.clone(), "file".to_owned(), "pull".to_owned(), target, "-".to_owned()], None)
+            .map(|text| text.trim().to_owned())
+            .unwrap_or_default();
+        // A copy that never started, of another take (a retake while an earlier run copied), is copied again; a started one stays.
+        if held != *take && found.pointer("/config/volatile.last_state.power").is_none() {
+            incus.change(&["--project", &input.project, "delete", &input.name, "--force"])?;
+            instance = None;
+        } else {
+            taken = Some(held);
+        }
+    }
     let (devices, snapshot) = if let Some(found) = instance {
         (found.get("devices").cloned().unwrap_or(Value::Null), None)
     } else {
-        let snapshot = if input.exact_seed { exact(&incus, &input.project, &input.source, &input.snapshot)? } else { seed(&incus, &input.project, &input.source, &input.snapshot)? };
-        copy(&incus, &input, &snapshot)?;
+        let snapshot = if let Some((snapshot, take)) = &current {
+            copy(&incus, &input, snapshot)?;
+            incus.write(&["--project", &input.project, "file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644", "-",
+                &format!("{}{SEED_TAKE}", input.name)], format!("{take}\n").as_bytes())?;
+            taken = Some(take.clone());
+            snapshot.clone()
+        } else {
+            let (snapshot, _) = seed(&incus, &input.project, &input.source, &input.snapshot)?;
+            copy(&incus, &input, &snapshot)?;
+            snapshot
+        };
         (Value::Null, Some(snapshot))
     };
     if devices.get(&input.proxy.device).is_none() {
@@ -301,7 +326,7 @@ pub fn clone(system: &impl System, input: &Value) -> Result<String, Failure> {
         .collect();
         system.run(60, &argv, None).map_err(|detail| Failure::new("instance.clone_failed", format!("ufw route: {detail}")))?;
     }
-    Ok(serde_json::json!({"snapshot": snapshot}).to_string())
+    Ok(serde_json::json!({"snapshot": snapshot, "seed_taken_at": taken}).to_string())
 }
 
 /// A name Incus allows that cannot read as an option.
@@ -382,7 +407,7 @@ fn check(input: &CloneInput) -> Result<(), String> {
 }
 
 /// An admitted seed snapshot, `seed-<commit>`.
-fn seed_name(snapshot: &str) -> Result<(), String> {
+pub(crate) fn seed_name(snapshot: &str) -> Result<(), String> {
     let seed = snapshot.strip_prefix("seed-").unwrap_or_default();
     if seed.is_empty() || !seed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("snapshot is not seed-<commit>".to_owned());
@@ -411,8 +436,8 @@ fn ensure_acl(incus: &Incus<'_, impl System>, acl: &Acl) -> Result<(), Failure> 
     Ok(())
 }
 
-/// The seed to copy: the admitted one, or the newest seed when a deployment replaced it.
-fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<String, Failure> {
+/// The seed to copy and its take's creation time: the admitted one, or the newest seed when a deployment replaced it.
+fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<(String, String), Failure> {
     let listed = incus
         .query(&format!("/1.0/instances/{source}/snapshots?project={project}&recursion=1"))?
         .ok_or_else(|| Failure::new("instance.default_seed_missing", format!("{source} not found")))?;
@@ -427,8 +452,8 @@ fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &
                 .collect()
         })
         .unwrap_or_default();
-    if snapshots.iter().any(|(name, _)| name == admitted) {
-        return Ok(admitted.to_owned());
+    if let Some(found) = snapshots.iter().find(|(name, _)| name == admitted) {
+        return Ok(found.clone());
     }
     if !snapshots.iter().any(|(name, _)| name.starts_with("seed-") || name.starts_with("next-")) {
         return Err(Failure::new("instance.default_seed_missing", "no seed"));
@@ -436,16 +461,26 @@ fn seed(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &
     let retake = format!("next-{}", &admitted["seed-".len()..]);
     let newest = snapshots.iter().filter(|(name, _)| name.starts_with("seed-")).max_by(|a, b| a.1.cmp(&b.1));
     match newest {
-        Some((name, _)) if !snapshots.iter().any(|(held, _)| *held == retake) => Ok(name.clone()),
+        Some(found) if !snapshots.iter().any(|(held, _)| *held == retake) => Ok(found.clone()),
         _ => Err(Failure::new("instance.default_seed_moved", "the admitted seed is being retaken")),
     }
 }
 
-/// The admitted seed alone, or `instance.default_seed_moved` when a deployment replaced it.
-fn exact(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<String, Failure> {
-    let snapshot = seed(incus, project, source, admitted)?;
-    if snapshot == admitted { Ok(snapshot) } else { Err(Failure::new("instance.default_seed_moved", format!("{admitted} was replaced by {snapshot}"))) }
+/// The admitted seed alone, with its take: the creation time of the container snapshot. A seed that a deployment replaced
+/// refuses with `instance.default_seed_moved`; a snapshot without a creation time has no take to compare, and refuses too.
+pub(crate) fn exact(incus: &Incus<'_, impl System>, project: &str, source: &str, admitted: &str) -> Result<(String, String), Failure> {
+    let (snapshot, taken) = seed(incus, project, source, admitted)?;
+    if snapshot != admitted {
+        return Err(Failure::new("instance.default_seed_moved", format!("{admitted} was replaced by {snapshot}")));
+    }
+    if taken.is_empty() {
+        return Err(Failure::new(incus.code, format!("{admitted} has no creation time")));
+    }
+    Ok((snapshot, taken))
 }
+
+/// Where a nested-fleet copy records the take of the seed it was copied from, so a retry reads it back.
+const SEED_TAKE: &str = "/etc/orbit/seed-take";
 
 /// The copy of `snapshot`, with the copy's config, its root disk and a NIC that admits only the copy's own address.
 fn copy(incus: &Incus<'_, impl System>, input: &CloneInput, snapshot: &str) -> Result<(), Failure> {
@@ -511,9 +546,13 @@ pub fn copy_volume(system: &impl System, input: &Value) -> Result<String, Failur
     let copy = incus.query(&format!("/1.0/instances/{}?project={}", input.name, input.project))?;
     let attached = copy.as_ref().and_then(|copy| copy.pointer(&format!("/devices/{}/source", input.device))).and_then(Value::as_str);
     if attached == Some(input.volume.as_str()) {
-        return Ok(serde_json::json!({"snapshot": null, "spare": false}).to_string());
+        // The take the volume was made from, which it records in its description.
+        let held = incus.query(&format!("/1.0/storage-pools/{}/volumes/custom/{}?project={}", input.pool, input.volume, input.project))?;
+        let taken = held.as_ref().and_then(|held| held.get("description")).and_then(Value::as_str).unwrap_or_default().to_owned();
+        return Ok(serde_json::json!({"snapshot": null, "spare": false, "seed_taken_at": taken}).to_string());
     }
-    let snapshot = exact(&incus, &input.project, &input.source, &input.snapshot)?;
+    // The seed's take, read before the copy; `instance.start` compares it with the container copy's and the seed's own.
+    let (snapshot, taken) = exact(&incus, &input.project, &input.source, &input.snapshot)?;
     let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
     let names = pool.volumes()?;
     if names.contains(&input.volume) {
@@ -521,14 +560,15 @@ pub fn copy_volume(system: &impl System, input: &Value) -> Result<String, Failur
     }
     let spare = spare_name(&input.volume_source, &pool.take(&input.volume_source, &snapshot)?);
     // Incus renames a volume or refuses: a spare goes to one create only.
-    let taken = names.contains(&spare) && pool.change(&["rename", &input.pool, &spare, &input.volume]).is_ok();
-    if !taken {
+    let spared = names.contains(&spare) && pool.change(&["rename", &input.pool, &spare, &input.volume]).is_ok();
+    if !spared {
         pool.change(&["copy", &format!("{}/{}/{snapshot}", input.pool, input.volume_source), &format!("{}/{}", input.pool, input.volume)])?;
     }
     pool.drop_stale(&names, &input.volume_source, &spare);
     // The copy takes the snapshot's config, and a seed that a seed copy moved records `size: 0`: this writes only the record.
     pool.change(&["set", &input.pool, &input.volume, &format!("size={}", input.size)])?;
-    Ok(serde_json::json!({"snapshot": snapshot, "spare": taken}).to_string())
+    pool.change(&["set", &input.pool, &input.volume, "--property", &format!("description={taken}")])?;
+    Ok(serde_json::json!({"snapshot": snapshot, "spare": spared, "seed_taken_at": taken}).to_string())
 }
 
 /// What `instance.spare_volume` makes: the one spare of a default's inner volume.
@@ -562,7 +602,7 @@ pub fn spare_volume(system: &impl System, input: &Value) -> Result<String, Failu
     }
     seed_name(&input.snapshot).map_err(|detail| Failure::new("instance.spare_volume_input_invalid", detail))?;
     let incus = Incus { system, code: "instance.spare_volume_failed" };
-    let snapshot = exact(&incus, &input.project, &input.source, &input.snapshot)?;
+    let (snapshot, _) = exact(&incus, &input.project, &input.source, &input.snapshot)?;
     let pool = Pool { incus: &incus, project: &input.project, name: &input.pool };
     let names = pool.volumes()?;
     let take = pool.take(&input.volume_source, &snapshot)?;
@@ -639,8 +679,13 @@ impl<S: System> Pool<'_, S> {
             .as_ref()
             .and_then(Value::as_array)
             .and_then(|rows| rows.iter().find(|row| row.get("name").and_then(Value::as_str).and_then(|name| name.rsplit('/').next()) == Some(snapshot)))
-            .map(|row| sha256(format!("{snapshot}\n{}", row.get("created_at").and_then(Value::as_str).unwrap_or_default()).as_bytes())[..12].to_owned())
             .ok_or_else(|| Failure::new("instance.default_seed_incomplete", format!("{volume} has no {snapshot}")))
+            .and_then(|row| {
+                // Without a creation time, every take of this name would share one spare: refuse instead.
+                let at = row.get("created_at").and_then(Value::as_str).filter(|at| !at.is_empty())
+                    .ok_or_else(|| Failure::new(self.incus.code, format!("{volume}/{snapshot} has no creation time")))?;
+                Ok(sha256(format!("{snapshot}\n{at}").as_bytes())[..12].to_owned())
+            })
     }
 
     /// Spares of the default's volume made from another take: no create takes them any more. A failed delete waits for the next.
