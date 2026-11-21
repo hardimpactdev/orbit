@@ -689,6 +689,8 @@ Deno.test({ name: "only the Antigravity instance takes a model that differs from
         { model: "claude-opus-5-5-high", base_model: "claude-opus-5-5" },
         { provider: "codexHigh", model: "gpt-6.1-sol-high", base_model: "gpt-6.1-sol", options: [{ id: "reasoningEffort", value: "high" }] },
         { provider: "antigravity", model: "gemini-4-neon", base_model: "gemini-4-carbon", options: [] },
+        // A bare Antigravity model with its base named runs at agy's default thought level.
+        { provider: "antigravity", model: "gemini-4-neon", base_model: "gemini-4-neon", options: [] },
         { provider: "antigravity", model: "gemini-4-neon-medium-high", base_model: "gemini-4-neon", options: [] },
         // Only one effort of an Antigravity model follows its base.
         { provider: "antigravity", model: "gemini-4-neon-ultra", base_model: "gemini-4-neon", options: [] },

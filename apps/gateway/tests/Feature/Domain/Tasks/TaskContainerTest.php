@@ -2056,10 +2056,42 @@ describe('a turn of a group that owns a copy', function (): void {
         }
 
         expect($refused?->errorCode)->toBe('tasks.copy_thread_untiered')->and($refused?->status)->toBe(422)
-            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-3.8-flash with no effort tier, so agy does not run it at its high effort. Start a new thread with --thread=new.")
+            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-3.8-flash with no high effort tier, so agy does not run it at its high effort. Start a new thread with --thread=new.")
             ->and(Operation::query()->count())->toBe($before)
             ->and($thread->refresh()->only(['model', 'effort', 'provider_instance']))->toBe(['model' => 'gemini-3.8-flash', 'effort' => 'high', 'provider_instance' => 'antigravity'])
             ->and(copyTurn($group, ['thread' => 'new'])->input['turn'])->toMatchArray(['thread' => 'new', 'model' => 'gemini-3.8-flash-high']);
+    });
+
+    it('continues a thread admitted before the tiered model on its stored model when that is its model at the recorded effort, and refuses another tier', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->update(['implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-4-neon', 'implementer_agent_effort' => 'high']);
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-4-neon-high']);
+        // As main admitted it: the stored model was already the tier, and its first turn sent that exact id.
+        $first->update(['input' => [...$first->input, 'turn' => Arr::except([...$first->input['turn'], 'model' => 'gemini-4-neon-high'], ['base_model'])]]);
+        $thread = AgentThread::query()->findOrFail($first->input['thread_id']);
+        $thread->update(['model' => 'gemini-4-neon-high']);
+
+        $continued = copyTurn($group);
+        expect($continued->input['turn'])->toMatchArray(['thread' => 'continue', 'model' => 'gemini-4-neon-high'])
+            ->and($thread->refresh()->only(['model', 'effort']))->toBe(['model' => 'gemini-4-neon-high', 'effort' => 'high']);
+        copyTurnEnded($continued, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-4-neon-high']);
+
+        // A tier that is not the recorded effort runs at another thought level than the thread records.
+        $thread->update(['effort' => 'medium']);
+        $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+            $refused = null;
+        } catch (ResourceOperationException $error) {
+            $refused = $error;
+        }
+
+        expect($refused?->errorCode)->toBe('tasks.copy_thread_untiered')->and($refused?->status)->toBe(422)
+            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-4-neon-high with no medium effort tier, so agy does not run it at its medium effort. Start a new thread with --thread=new.")
+            ->and(Operation::query()->count())->toBe($before)
+            ->and($thread->refresh()->only(['model', 'effort']))->toBe(['model' => 'gemini-4-neon-high', 'effort' => 'medium']);
     });
 
     it('sends each Claude and Codex model as set, and each Antigravity model at each of its efforts as its tiered model', function (): void {

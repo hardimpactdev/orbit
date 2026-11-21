@@ -316,16 +316,21 @@ final readonly class TaskTurn
     }
 
     /**
-     * Refuses to continue an Antigravity thread that started on its bare model, as a turn admitted before the tiered model did: `agy`
-     * runs it at its own default thought level, not at the effort the thread records (InstanceContainer::providerModel). The model it
-     * started on is its first turn's; the thread stays as recorded, and a new thread starts on the tiered model.
+     * Refuses to continue an Antigravity thread that started on no tier of its recorded effort, as a turn admitted before the tiered model
+     * did: `agy` runs it at its own default thought level, not at the effort the thread records (InstanceContainer::providerModel). A thread
+     * admitted before then whose stored model already is `<model>-<effort>`, at its recorded effort and one its model offers, started on
+     * that tier and continues on it. The model it started on is its first turn's; the thread stays as recorded, and a new thread starts on
+     * the tiered model.
      */
     private static function requireTiered(AgentThread $thread): void
     {
         if ($thread->provider_instance !== InstanceContainer::AntigravityInstance) {
             return;
         }
-        $tiered = InstanceContainer::providerModel('antigravity', (string) $thread->model, (string) $thread->effort);
+        $model = (string) $thread->model;
+        $effort = (string) $thread->effort;
+        $base = str_ends_with($model, '-'.$effort) ? substr($model, 0, -strlen('-'.$effort)) : '';
+        $tiered = in_array($effort, InstanceContainer::AntigravityModels[$base] ?? [], true) ? $model : InstanceContainer::providerModel('antigravity', $model, $effort);
         $first = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $thread->task_group_id)
             ->where('kind', OperationKinds::TasksCopyTurn)->orderBy('id')->get(['id', 'input'])
             ->map(static fn (Operation $turn): array => ['thread_id' => $turn->input['thread_id'] ?? null, 'turn' => is_array($turn->input['turn'] ?? null) ? $turn->input['turn'] : []])
@@ -333,7 +338,7 @@ final readonly class TaskTurn
         $started = $first['turn']['model'] ?? null;
         if ($started !== $tiered) {
             throw new ResourceOperationException('tasks.copy_thread_untiered',
-                "The {$thread->role} thread {$thread->id} runs on the Antigravity model ".(is_string($started) ? $started : $thread->model)." with no effort tier, so agy does not run it at its {$thread->effort} effort. Start a new thread with --thread=new.", 422,
+                "The {$thread->role} thread {$thread->id} runs on the Antigravity model ".(is_string($started) ? $started : $model)." with no {$effort} effort tier, so agy does not run it at its {$effort} effort. Start a new thread with --thread=new.", 422,
                 details: ['thread_id' => $thread->id, 'model' => $thread->model, 'effort' => $thread->effort]);
         }
     }
