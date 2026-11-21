@@ -36,6 +36,12 @@ sequenceDiagram
     SW-->>GW: Verified commit and owner
   else Development or host checkout
   opt Development default in a container
+    Note over GW: Compare with the deployed commit<br/>GitHub compare · release only
+    %%> What it does:
+    %%> - a deployment that a release admitted compares its commit with the commit the default last deployed (its seed), through GitHub's compare, before any write
+    %%> - the deployed commit descends from the target: the deployment ends at once as a succeeded no-op, `outcome` `already_newer`, with `kept_commit`, `target_commit` and `commit` the kept one; it writes no fact, definition, PHP selection or `.env`, holds nothing and starts no run
+    %%> - a failed compare or no deployed commit admits the deployment as below; its fetch keeps the newer checkout as the backstop
+    %%> - a deployment by hand or by the automatic policy does not compare
     Note over GW: Capture source facts<br/>project:update capture
     %%> What it does:
     %%> - reads the requested commit, or the default branch head once; freezes that SHA for the run

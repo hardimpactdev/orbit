@@ -96,6 +96,10 @@ The exception is a directory that the old commit has and the new commit removes,
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
+A release's commit can be older than the commit that the default last deployed, as when a deployment by hand moved the default on first. The Gateway decides this at the release's admission, before it writes anything. It compares the release commit with the default's deployed commit, its seed, through GitHub's compare.
+
+When the deployed commit descends from the release commit, the deployment ends at once as a succeeded no-op, and no run starts. Its `result` holds `outcome: already_newer`, `already_newer: true`, `kept_commit`, `target_commit` and `commit`, the kept commit. It writes no source fact, Process definition, PHP selection or `.env` template, and it holds nothing. When GitHub cannot answer or the default has no deployed commit, the release's deployment runs, and its fetch decides as follows.
+
 A container default's checkout can already be at a newer commit of the branch, so the target commit is an ancestor of its `HEAD`. The run's fetch decides this by reading the workspace and the Node's mirror, after the container's start and before any fleet check, seed or checkout. What the deployment does then depends on its origin, which its admission records: the release's refresh or the automatic policy. A caller's name is no origin.
 
 - A deployment that a release refresh or the automatic policy admitted succeeds as a no-op.

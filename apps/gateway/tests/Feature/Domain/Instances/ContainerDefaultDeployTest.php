@@ -9,6 +9,13 @@ use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Instances\InstanceDeploymentData;
 use App\Data\Projects\UpdateProjectData;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\GitHub\GitHubCommitComparison;
+use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
@@ -53,6 +60,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Mockery\MockInterface;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -1513,6 +1521,76 @@ it('ends a release deployment whose checkout is already past the commit as a no-
     expect(app(NestedFleetRefresh::class)->advance($release)['defaults'][$instance->id])
         ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved']);
 });
+
+/** A GitHub whose compare answers `$compare` for every pair, or throws when it is null; each compare is listed in `$compares`. */
+function deployCompare(?GitHubComparisonStatus $compare, array &$compares = []): void
+{
+    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'nckrtl', 'organization', 'https://github.com/apps/read', 'unused'));
+    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($compare, &$compares): void {
+        $github->shouldReceive('repositoryInstallation')->andReturn(7);
+        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
+        $github->shouldReceive('compareCommits')->andReturnUsing(function (string $token, GitHubRepository $repository, string $base, string $head) use ($compare, &$compares): GitHubCommitComparison {
+            $compares[] = $base.'...'.$head;
+
+            return $compare === null ? throw GitHubApiException::unavailable() : new GitHubCommitComparison($compare, $base, $base);
+        });
+    }));
+}
+
+it('ends a release deployment of a commit behind the deployed one at admission, with no write and no run', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    [$release, $newer] = [str_repeat('5', 40), str_repeat('2', 40)];
+    $taken = now()->subHour()->startOfSecond();
+    $instance->runtime()->update(['seed_commit' => $newer, 'seed_taken_at' => $taken]);
+    $compares = [];
+    deployCompare(GitHubComparisonStatus::Ahead, $compares);
+    $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
+    $processes = $instance->processes()->get()->toArray();
+    $project = $instance->project()->firstOrFail()->toArray();
+
+    // The release's refresh admits the default's deployment, which ends at once; its next pass publishes the kept seed.
+    $admitted = app(NestedFleetRefresh::class)->advance($release)['defaults'][$instance->id];
+    $operation = Operation::query()->findOrFail($admitted['operation_id']);
+
+    $runtime = $instance->runtime()->firstOrFail();
+    expect($compares)->toBe([$release.'...'.$newer])
+        ->and($operation->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($operation->input['origin'])->toBe(ContainerDeployOutcome::ReleaseOrigin)
+        ->and($operation->result)->toMatchArray(['outcome' => 'already_newer', 'kept_commit' => $newer, 'target_commit' => $release, 'commit' => $newer])
+        ->and($runtime->seed_commit)->toBe($newer)
+        ->and($runtime->seed_taken_at?->toIso8601String())->toBe($taken->toIso8601String())
+        ->and($instance->processes()->get()->toArray())->toBe($processes)
+        ->and($instance->project()->firstOrFail()->toArray())->toBe($project)
+        ->and(app(NestedFleetRefresh::class)->advance($release)['defaults'][$instance->id])
+        ->toMatchArray(['status' => 'current', 'already_newer' => true, 'commit' => $newer, 'operation_id' => $operation->id]);
+    Queue::assertNothingPushed();
+});
+
+it('admits the full deployment when the compare fails, finds no older target, or the deployment is by hand', function (string $case): void {
+    Queue::fake();
+    deployVault();
+    $instance = deployDefault(container: true);
+    $commit = str_repeat('5', 40);
+    $instance->runtime()->update(['seed_commit' => str_repeat('2', 40), 'seed_taken_at' => now()]);
+    $compares = [];
+    deployCompare(match ($case) {
+        'compare fails' => null,
+        'target not behind' => GitHubComparisonStatus::Diverged,
+        'by hand' => GitHubComparisonStatus::Ahead,
+    }, $compares);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit));
+
+    $operation = app(StartInstanceDeployAction::class)->pinned($instance, NestedFleetRefresh::Trigger, null, $commit, release: $case !== 'by hand');
+
+    expect($compares)->toHaveCount($case === 'by hand' ? 0 : 1)
+        ->and($operation->status->terminal())->toBeFalse()
+        ->and($operation->lock_key)->toBe('instance:'.$instance->id)
+        ->and($operation->result)->toBeNull();
+})->with(['compare fails', 'target not behind', 'by hand']);
 
 it('ends a failed checkout with its own code and the receipt of its restart, never executor.result_unknown, and frees the Instance', function (?string $trigger, string $code): void {
     $instance = deployDefault(container: true);
