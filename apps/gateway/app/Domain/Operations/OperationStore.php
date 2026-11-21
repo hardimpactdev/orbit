@@ -97,9 +97,9 @@ final readonly class OperationStore
 
             return $this->idempotency->replay($kind, $parent) ?? throw OperationVersions::deprecated();
         }
-        // A destroy or a sleep of an Instance ends its fleet wait: nothing waits for a fleet that goes or sleeps.
-        if ($targetType === OperationKinds::InstanceTarget && in_array($kind, InstanceFleetOperation::Ends, true)) {
-            InstanceFleetOperation::cancelFor($targetId);
+        // A destroy or a sleep of an Instance ends its fleet wait, and a sleep, a wake, a start or a new create makes its recorded fleet stale.
+        if ($targetType === OperationKinds::InstanceTarget) {
+            InstanceFleetOperation::admitted($kind, $targetId);
         }
         $this->broadcaster->created($operation);
 

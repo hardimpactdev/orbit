@@ -194,7 +194,7 @@ final readonly class StartInstanceRestoreAction
 
     private function assertIdle(Instance $instance, Route $route): void
     {
-        $open = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+        $open = Operation::query()->exceptFleetWait()->whereNotIn('status', OperationStatus::terminalValues())
             ->where(fn ($query) => $query->where(fn ($q) => $q->where('target_type', 'instance')->where('target_id', $instance->id))
                 ->orWhere(fn ($q) => $q->where('target_type', 'route')->where('target_id', $route->id)))->exists();
         if ($open || Operation::query()->where('lock_key', OperationStore::lockKey('instance', $instance->id))->exists()) {

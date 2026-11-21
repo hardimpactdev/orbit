@@ -97,6 +97,17 @@ final class Operation extends Model
         $query->addSelect(['caller_node_name' => Node::query()->select('name')->whereColumn('nodes.id', 'operations.input->caller_node_id')]);
     }
 
+    /**
+     * Leaves out a nested clone's fleet wait (`instance.fleet`): it holds no lock and blocks no work on its Instance, and a destroy or a
+     * sleep cancels it.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeExceptFleetWait(Builder $query): void
+    {
+        $query->where('kind', '!=', 'instance.fleet');
+    }
+
     /** @param Builder<self> $query */
     public function scopePubliclyVisible(Builder $query): void
     {

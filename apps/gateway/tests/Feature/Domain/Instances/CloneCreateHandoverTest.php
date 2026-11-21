@@ -28,6 +28,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceCompleteInput;
+use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -36,6 +37,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskEnd;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Swamp\NativeRunProgress;
@@ -503,6 +505,8 @@ it('records the fleet\'s end on the Instance: its ready time, or its failure, wi
         ->and($runtime->fleet_ready_at !== null)->toBe($code === null)
         ->and([$runtime->fleet_failed_at !== null, $runtime->fleet_error_code])->toBe([$code !== null, $code])
         ->and($instance->status)->toBe(InstanceState::SourceResolved)
+        // A failed wait's fleet start waits for the completion: the Instance is not active yet.
+        ->and($fleet->state['fallback'] ?? null)->toBe($code === null ? null : InstanceFleetOperation::FallbackPending)
         ->and(InstanceData::fromModel($instance)->toArray())->toMatchArray(['fleet_ready_at' => $runtime->fleet_ready_at?->toIso8601String(),
             'fleet_error_code' => $code]);
 })->with([
@@ -531,15 +535,112 @@ it('writes nothing to an Instance that a removal owns when its fleet answers aft
     $instance = Instance::query()->findOrFail($fleet->target_id);
     $destroy = app(StartInstanceDestroyAction::class)->execute($instance, true, cancelCompletion: true);
 
-    // The Node answered before the cancel reached the run: what happened on the Node ends it, but the Instance is the removal's.
+    // The Node answered before the cancel reached the run: the cancel wins, and the Instance is the removal's.
     fleetReceipt($fleet, ['status' => 'output', 'stdout' => '{"fleet":"ready","started":[]}']);
+    InstanceFleetOperation::record($instance->id, null);
     InstanceFleetOperation::record($instance->id + 1000, 'instance.container_fleet_resume_failed');
 
     $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->sole();
     expect($destroy->kind)->toBe('instance.destroy')
         ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
-        ->and($fleet->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($fleet->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null]);
+});
+
+/** Ends the clone's completion as succeeded, so the clone is active. */
+function fleetCompleted(Operation $fleet): Instance
+{
+    $create = Operation::query()->findOrFail($fleet->input['create_operation_id']);
+    $completion = handoverCompletion($create);
+    $completion->forceFill(['status' => 'running', 'state' => [...($completion->state ?? []), 'swamp_run_id' => 'complete-run']])->save();
+    app(InstanceCompleteProjection::class)->apply($completion->refresh(), ['status' => 'succeeded', 'run_id' => 'complete-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['instance_id' => $create->target_id, 'ready' => true]]);
+
+    return Instance::query()->findOrFail($fleet->target_id);
+}
+
+it('starts the fleet as Swamp does when the wait fails, once the clone is active: no clone is left with a fleet nobody starts', function (array $line): void {
+    $fleet = fleetWait($this);
+
+    fleetReceipt($fleet, $line);
+    app(InstanceFleetOperation::class)->sweep();
+    expect($fleet->refresh()->state['fallback'])->toBe(InstanceFleetOperation::FallbackPending)
+        ->and(Operation::query()->where('kind', InstanceStart::Kind)->exists())->toBeFalse();
+
+    $instance = fleetCompleted($fleet);
+    app(InstanceFleetOperation::class)->sweep();
+
+    $start = Operation::query()->where('kind', InstanceStart::Kind)->sole();
+    $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->sole();
+    expect([$instance->status, $start->target_id, $start->lock_key])->toBe([InstanceState::Active, $instance->id, OperationStore::lockKey('instance', $instance->id)])
+        ->and($start->input['fleet'])->toBeArray()
+        ->and($fleet->refresh()->state['fallback'])->toBe($start->id)
+        // The start brings its own end: the failure of the wait is no longer the Instance's fleet.
+        ->and([$runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null]);
+
+    // A second pass admits nothing more.
+    app(InstanceFleetOperation::class)->sweep();
+    expect(Operation::query()->where('kind', InstanceStart::Kind)->count())->toBe(1);
+
+    // The start's end is the fleet's.
+    $start->forceFill(['status' => 'running', 'state' => [...($start->state ?? []), 'swamp_run_id' => 'start-run']])->save();
+    app(InstanceStart::class)->apply($start->refresh(), ['status' => 'succeeded', 'run_id' => 'start-run', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['fleet_seconds' => 12]]);
+    expect(InstanceRuntime::query()->where('instance_id', $instance->id)->value('fleet_ready_at'))->not->toBeNull();
+})->with([
+    'seed_without_tunnel after a background create' => [['status' => 'output', 'stdout' => '{"fleet":"seed_without_tunnel","started":["nested-app-dev"]}']],
+    'a failed check' => [['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']],
+]);
+
+it('ends a cancelled wait as cancelled and records nothing, even when its step fails after the cancel', function (): void {
+    $fleet = fleetWait($this);
+    $fleet->forceFill(['cancel_requested_at' => now()])->save();
+
+    fleetReceipt($fleet, ['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect([$fleet->refresh()->status, $fleet->error_code])->toBe([OperationStatus::Cancelled, 'operation.cancelled'])
+        ->and($fleet->state['fallback'] ?? null)->toBeNull()
+        ->and([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null]);
+});
+
+it('clears the recorded fleet when the Instance sleeps, wakes, starts or is created again, and drops a waiting fallback', function (string $kind): void {
+    $fleet = fleetWait($this);
+    fleetReceipt($fleet, ['status' => 'failed', 'code' => 'instance.container_fleet_resume_failed']);
+    expect(InstanceRuntime::query()->where('instance_id', $fleet->target_id)->value('fleet_error_code'))->toBe('instance.container_fleet_resume_failed');
+
+    app(OperationStore::class)->create($kind, 'instance', $fleet->target_id, $fleet->node_id, ['instance_id' => $fleet->target_id], null, null);
+
+    $runtime = InstanceRuntime::query()->where('instance_id', $fleet->target_id)->sole();
+    expect([$runtime->fleet_ready_at, $runtime->fleet_failed_at, $runtime->fleet_error_code])->toBe([null, null, null])
+        ->and($fleet->refresh()->state['fallback'])->toBe('superseded');
+})->with(InstanceFleetOperation::Resets);
+
+it('lets a task cancel, a copy destroy and a settle pass an open fleet wait: it holds nothing', function (): void {
+    $fleet = fleetWait($this);
+    $instance = fleetCompleted($fleet);
+
+    TaskEnd::assertFree($instance);
+
+    expect($fleet->refresh()->status)->toBe(OperationStatus::Running)
+        ->and(Operation::query()->exceptFleetWait()->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists())->toBeFalse();
+});
+
+it('starts the fleet beside a Conn launch\'s own completion too', function (): void {
+    config(['orbit.engine.kinds' => ['instance.create'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $this->bus = fleetBus();
+    app()->instance(MachineBus::class, $this->bus);
+    $create = handoverCreate(handoverDefault(containerDefaultNode(), ProjectType::NodePackage, null, true));
+    $create->forceFill(['input' => [...$create->input, 'conn_launch_operation_id' => 987]])->save();
+    $succeeded = handoverSucceeded($create);
+    $succeeded['result']['fleet_start'] = 'background';
+
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), $succeeded);
+
+    $fleet = Operation::query()->where('kind', InstanceFleetOperation::Kind)->sole();
+    expect($create->refresh()->result)->not->toHaveKey('completion_operation_id')
+        ->and([$fleet->target_id, $fleet->status, $fleet->input['create_operation_id']])->toBe([$create->target_id, OperationStatus::Running, $create->id]);
 });
 
 it('ends a wait cancelled before its start without running it', function (): void {

@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% A nested-fleet clone's fleet start beside its completion (docs/reference/gateway-engine.md#instancefleet, docs/reference/development-containers.md#a-clone-starts-its-fleet): the create ends when T3 answers, and this Operation waits for the clone's inner fleet on the Gateway engine. It holds no lock, so the completion, a destroy and a sleep never wait for it.
+  %% status: draft
+  %% command: none · admitted by the create's projection when the create's result says `fleet_start: background`
+  %% kind: instance.fleet
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway · NATS
+  participant N as app-dev Node<br/>executor
+  Note over GW: Admit beside completion<br/>no lock · after the create
+  %%> Started by:
+  %%> - the create's projection, in the transaction that ends the create, beside `instance.complete`
+  %%> - only when `prepare` reported Orbit's tunnel boot unit in the seed (`fleet_tunnel`, agent 0.26.0) and the Node reports `instance.fleet_ready`; otherwise the completion runs `clone-fleet`
+  %%> - it follows `instance.create` in `ORBIT_ENGINE_KINDS`
+  %%> On failure:
+  %%> - an admission that fails drops `fleet_start` from the create's result: the completion reads it at its start and runs `clone-fleet`
+  Note over GW: Start on the engine<br/>after the commit
+  %%> A cancel requested before the start ends the wait as cancelled: no step runs.
+  %%> The reconciler's pass starts a wait whose start was lost after a minute.
+  EN->>N: Wait for the inner fleet<br/>fleet · instance.fleet_ready
+  %%> What it does:
+  %%> - on the Node's part for this copy, so it locks no step of the copy
+  %%> - waits for the inner Incus and starts a nested container that did not start by itself, always first
+  %%> - reads the tunnel unit's files again for up to 30 s, and restarts a unit that failed once
+  %%> - then reads readiness every 250 ms for at most 300 s
+  %%> - readiness: the three nested Nodes answer, Doctor passes, and the operator tunnel reaches the nested Gateway
+  %%> On failure:
+  %%> - a failed check fails the step with `instance.container_fleet_resume_failed`; the executor's log names the check
+  %%> - a unit that is missing or failed again answers `seed_without_tunnel`: the wait fails with `instance.fleet_tunnel_failed`
+  alt the fleet is ready
+    N-->>EN: receipt<br/>fleet ready · started
+    Note over GW: Record the fleet<br/>fleet_ready_at on the runtime
+  else the step fails or the budget ends
+    N--xEN: failed receipt<br/>error_code
+    Note over GW: Record the failure<br/>fleet_failed_at · error code
+    %%> The copy keeps running and its status does not change.
+    %%> Fallback: once the Instance is active and free, the Gateway admits `instance.start`, which checks and resumes the fleet as `clone-fleet` does; the reconciler's pass admits it when the completion still ran.
+    %%> A wait still open after its 450 s budget ends as `operation.timed_out` on the reconciler's pass.
+  else a destroy or a sleep is admitted
+    Note over GW: Cancel the wait<br/>record nothing
+    %%> The admission of `instance.destroy` or `instance.sleep` cancels the open wait, and the engine ends it at its next transition.
+    %%> A cancel wins over what the Node answers: the wait ends cancelled and records nothing.
+    %%> No end writes to an Instance that a removal owns or that is gone.
+  end

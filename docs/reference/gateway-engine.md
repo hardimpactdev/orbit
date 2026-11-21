@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/InstanceCreateEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/2027_03_10_000000_create_operation_engine_steps_table.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -85,7 +85,7 @@ A default's own create stays on Swamp.
 
 A nested-fleet clone's create does not wait for its [inner fleet](/reference/development-containers#a-clone-starts-its-fleet). When `prepare` reports Orbit's tunnel unit in the seed (`fleet_tunnel`), the create's result says `fleet_start: background`. Its projection then admits `instance.fleet` beside the completion. That Operation has one step, `fleet` (`instance.fleet_ready`), on its own part of the Node, and holds no lock. Its end records `fleet_ready_at`, or `fleet_failed_at` and `fleet_error_code`, on the Instance's runtime.
 
-`instance.fleet` runs only on the engine: it has no Swamp workflow. It follows `instance.create` in `ORBIT_ENGINE_KINDS`. The admission of a destroy or a sleep of the Instance cancels it, and a cancelled run records nothing.
+`instance.fleet` runs only on the engine: it has no Swamp workflow. It follows `instance.create` in `ORBIT_ENGINE_KINDS`. The admission of a destroy or a sleep of the Instance cancels it, and a cancelled run records nothing. A failed wait falls back to `instance.start` on Swamp, once the Instance is active. The [fleet chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/fleet.mmd) has the flow.
 
 An executor reports its primitives when it connects to the bus, and again every minute, also while it waits for its consumer. The Gateway makes that consumer with the Node's first order, and it sends that order only after a fresh report. The report writes `{actions, version, clock_synchronized}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 

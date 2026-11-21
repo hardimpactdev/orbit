@@ -3679,9 +3679,13 @@ The Operation holds no Instance lock, so the completion, a destroy and a sleep n
 
 - a ready fleet sets `fleet_ready_at`;
 - a failed step sets `fleet_failed_at` and `fleet_error_code`, such as `instance.container_fleet_resume_failed`; the executor's log names the failed check: `incus`, `running`, `doctor` with what its last poll got, `agents` or `operator`;
-- a tunnel unit that failed at boot sets `fleet_error_code` to `instance.fleet_tunnel_failed`.
+- a tunnel unit that is missing or failed again after one restart sets `fleet_error_code` to `instance.fleet_tunnel_failed`.
 
-A failed fleet does not stop the copy or change its status. The admission of a destroy or a sleep of the Instance cancels its open `instance.fleet`. A cancelled wait records nothing, and no end writes to an Instance that a removal owns or that is gone.
+A failed fleet does not stop the copy or change its status. No fleet is left unstarted: once the Instance is `active` and free, the Gateway admits [`instance.start`](#a-stopped-nested-fleet-clone-starts). It runs the fleet's check and resume on the running copy, as `clone-fleet` does, and its end records the fleet again. The failed wait keeps that start's id in `state.fallback`. The reconciler's pass admits it when the completion still ran at the failure.
+
+The admission of a destroy or a sleep of the Instance cancels its open `instance.fleet`. A cancel wins over what the Node answers: the wait ends `cancelled` and records nothing. No end writes to an Instance that a removal owns or that is gone. The wait holds nothing, so a task cancel, a copy's destroy and a settle pass do not wait for it.
+
+The fleet fields describe the current boot only. The admission of a sleep, a wake, a start or a new create clears them and drops a fallback that waits. A start records its own end. A wake that resumes a frozen copy records none: the fields stay empty until the next start or create.
 
 A copy of a seed taken before Orbit's tunnel unit, a clone that Swamp creates, and a create whose Node cannot run `instance.fleet_ready` keep the completion's `clone-fleet`: their create's result has no `fleet_start`.
 

@@ -8,7 +8,6 @@ use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use LogicException;
@@ -25,7 +24,7 @@ final readonly class InstanceFleetEngineFlow implements EngineDefinition
     /** The code of a copy whose tunnel unit failed at boot: the fleet has no tunnel to wait over. */
     public const string TunnelFailed = 'instance.fleet_tunnel_failed';
 
-    public function __construct(private OperationStore $operations) {}
+    public function __construct(private InstanceFleetOperation $fleet) {}
 
     public function steps(Operation $operation): array
     {
@@ -57,17 +56,13 @@ final readonly class InstanceFleetEngineFlow implements EngineDefinition
         $failed = $run->failed();
         $output = json_decode($run->output('fleet') ?? 'null', true);
         $answer = is_array($output) ? ($output['fleet'] ?? null) : null;
+        // A seed whose tunnel unit is gone or failed again after its restart answers `seed_without_tunnel`: the fallback starts the fleet.
         [$status, $code] = match (true) {
             $failed !== null => [OperationStatus::Failed, $failed->error_code ?? 'instance.container_fleet_resume_failed'],
             $run->succeeded() && $answer === 'ready' => [OperationStatus::Succeeded, null],
             $run->succeeded() => [OperationStatus::Failed, self::TunnelFailed],
             default => [OperationStatus::Cancelled, 'operation.cancelled'],
         };
-        if ($status !== OperationStatus::Cancelled) {
-            InstanceFleetOperation::record(ValidatedData::integer($operation->target_id), $code);
-        }
-        $this->operations->change($operation, ['status' => $status, 'finished_at' => now(), 'current_step' => null, 'error_code' => $code,
-            'failed_step' => $failed !== null ? 'fleet' : null,
-            'result' => ['instance_id' => $operation->target_id, 'fleet' => $status === OperationStatus::Succeeded ? 'ready' : ($code ?? 'cancelled')]]);
+        $this->fleet->close($operation, $status, $code, $failed !== null ? 'fleet' : null);
     }
 }
