@@ -23,6 +23,9 @@ class SwampNodeTokens
 {
     public const string Entrypoint = '/usr/local/lib/orbit-swamp/gateway-token';
 
+    /** The swamp role installs this wrapper beside the Entrypoint, which runs every `swamp` call through it. */
+    public const string CredentialEnv = '/usr/local/lib/orbit-swamp/swamp-env';
+
     public const string RenewalUnit = 'orbit-swamp-token-renewal.service';
 
     public function __construct(
@@ -124,8 +127,9 @@ class SwampNodeTokens
             knownHostsFile: $this->knownHosts->path(),
             commandTimeout: $timeout,
         ), new RemoteCommand([self::Entrypoint, ...$arguments], timeout: $timeout, maxOutputBytes: 65_536));
-        if (self::unconverged($result)) {
-            throw new SwampNodeUnconvergedException(SwampNodeUnconvergedException::Code.': '.self::Entrypoint.' is missing on the Swamp Node; converge its swamp role.');
+        $missing = self::missingFile($result);
+        if ($missing !== null) {
+            throw new SwampNodeUnconvergedException(SwampNodeUnconvergedException::Code.': '.$missing.' is missing on the Swamp Node; converge its swamp role.');
         }
         if (! $result->succeeded()) {
             // stderr names the failure; stdout of a mint may hold a secret and is never quoted.
@@ -135,9 +139,24 @@ class SwampNodeTokens
         return $result->stdout;
     }
 
-    /** The remote shell could not find the entrypoint (exit 127 naming it): the swamp role on the Swamp Node predates the renewal. */
+    /** The Node could not find the entrypoint or its swamp-env (exit 127 naming it): the swamp role on the Swamp Node predates the renewal. */
     public static function unconverged(CommandResult $result): bool
     {
-        return $result->exitCode === 127 && str_contains($result->stderr, self::Entrypoint);
+        return self::missingFile($result) !== null;
+    }
+
+    /** The swamp-role file an exit 127 names, or null for any other result, such as a 127 naming another command. */
+    private static function missingFile(CommandResult $result): ?string
+    {
+        if ($result->exitCode !== 127) {
+            return null;
+        }
+        foreach ([self::Entrypoint, self::CredentialEnv] as $file) {
+            if (str_contains($result->stderr, $file)) {
+                return $file;
+            }
+        }
+
+        return null;
     }
 }

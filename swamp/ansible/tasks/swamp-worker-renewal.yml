@@ -1,5 +1,6 @@
 ---
-# The native cfgmgmt step applies the worker template after this phase. It starts the timer only after all three workers are started.
+# This writes the renewal units only. The role add starts worker renewal after all three workers; the role add and the converge
+# start token renewal (swamp-token-renewal-start.yml).
 - name: Make the Swamp runtime folders
   ansible.builtin.file: { path: "/usr/local/lib/orbit-swamp/{{ item }}", state: directory, owner: root, group: root, mode: '0755' }
   loop: [tasks, library]

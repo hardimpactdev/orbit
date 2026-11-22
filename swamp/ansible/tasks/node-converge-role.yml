@@ -16,3 +16,7 @@
     secrets: "{{ scoped_role.secrets }}"
     containers: "{{ scoped_role.containers }}"
     plans: "{{ scoped_role.plans }}"
+# The runtime wrote and reloaded the token renewal units. Worker renewal starts only in the role add, after all three workers.
+- name: Start token renewal after its units
+  when: scoped_role.intent.runtime.swamp is not none
+  ansible.builtin.import_tasks: swamp-token-renewal-start.yml

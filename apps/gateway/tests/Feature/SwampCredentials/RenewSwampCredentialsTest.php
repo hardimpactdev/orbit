@@ -210,6 +210,43 @@ function swampCredentialsEnvironment(string $read = 'orbit-gateway-read-20261101
     return $path;
 }
 
+/**
+ * A console output that keeps stdout and stderr apart, as the command's stderr line needs.
+ *
+ * @return array{ConsoleOutputInterface, BufferedOutput, BufferedOutput}
+ */
+function swampCredentialsSplitOutput(): array
+{
+    $stdout = new BufferedOutput;
+    $stderr = new BufferedOutput;
+    $io = new class($stdout, $stderr) extends BufferedOutput implements ConsoleOutputInterface
+    {
+        public function __construct(private readonly BufferedOutput $out, private readonly BufferedOutput $err)
+        {
+            parent::__construct();
+        }
+
+        public function write(string|iterable $messages, bool $newline = false, int $options = 0): void
+        {
+            $this->out->write($messages, $newline, $options);
+        }
+
+        public function getErrorOutput(): OutputInterface
+        {
+            return $this->err;
+        }
+
+        public function setErrorOutput(OutputInterface $error): void {}
+
+        public function section(): ConsoleSectionOutput
+        {
+            throw new BadMethodCallException;
+        }
+    };
+
+    return [$io, $stdout, $stderr];
+}
+
 beforeEach(function (): void {
     $this->travelTo(now()->parse('2026-11-21T12:00:00Z'));
     $this->node = new FakeSwampNodeTokens;
@@ -499,32 +536,7 @@ it('sends --mint-for-host errors strictly to stderr and never into stdout', func
     swampCredentialsEnvironment();
     $this->reads->reads = false;
 
-    $stdout = new BufferedOutput;
-    $stderr = new BufferedOutput;
-    $io = new class($stdout, $stderr) extends BufferedOutput implements ConsoleOutputInterface
-    {
-        public function __construct(private readonly BufferedOutput $out, private readonly BufferedOutput $err)
-        {
-            parent::__construct();
-        }
-
-        public function write(string|iterable $messages, bool $newline = false, int $options = 0): void
-        {
-            $this->out->write($messages, $newline, $options);
-        }
-
-        public function getErrorOutput(): OutputInterface
-        {
-            return $this->err;
-        }
-
-        public function setErrorOutput(OutputInterface $error): void {}
-
-        public function section(): ConsoleSectionOutput
-        {
-            throw new BadMethodCallException;
-        }
-    };
+    [$io, $stdout, $stderr] = swampCredentialsSplitOutput();
 
     $exit = app(Kernel::class)->handle(
         new StringInput('gateway:swamp-credentials --mint-for-host=read --no-interaction'),
@@ -566,6 +578,35 @@ it('skips a release, its revoke and its host mint with one clear line on an unco
     }
     expect(Artisan::call('gateway:swamp-credentials --no-interaction'))->toBe(1)
         ->and(Artisan::output())->toContain('swamp.gateway_token_entrypoint_missing');
+});
+
+// Release 2205: the swamp role install had the entrypoint but not yet swamp-env, which the entrypoint runs swamp through.
+it('reads exit 127 naming swamp-env as an unconverged Swamp Node, and a release skips with the line that names it', function (): void {
+    $missing = new CommandResult(127, '', "env: '/usr/local/lib/orbit-swamp/swamp-env': No such file or directory", 1, false);
+    expect(SwampNodeTokens::unconverged($missing))->toBeTrue()
+        ->and(SwampNodeTokens::unconverged(new CommandResult(127, '', "env: 'jq': No such file or directory", 1, false)))->toBeFalse()
+        ->and(SwampNodeTokens::unconverged(new CommandResult(1, '', SwampNodeTokens::CredentialEnv, 1, false)))->toBeFalse();
+
+    SwampNodeFixture::ensure();
+    swampCredentialsEnvironment();
+    $ssh = new class($missing) implements SshExecutor
+    {
+        public function __construct(private readonly CommandResult $result) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return $this->result;
+        }
+    };
+    app()->instance(SwampNodeTokens::class, new SwampNodeTokens($ssh, Mockery::mock(SshKeyProvider::class, ['privateKeyPath' => '/dev/null']),
+        Mockery::mock(KnownHostsStore::class, ['path' => '/dev/null'])));
+
+    [$io, $stdout, $stderr] = swampCredentialsSplitOutput();
+
+    expect(app(Kernel::class)->handle(new StringInput('gateway:swamp-credentials --release --no-interaction'), $io))->toBe(0)
+        ->and($stdout->fetch())->toBe('')
+        ->and($stderr->fetch())->toBe('gateway.swamp_credentials_skipped: swamp.gateway_token_entrypoint_missing: '.SwampNodeTokens::CredentialEnv
+            ." is missing on the Swamp Node; converge its swamp role. Token renewal and the release token gate were skipped.\n");
 });
 
 it('reads a missing renewal unit on the Swamp Node as not installed yet, and any other renew-node failure as a renewal failure', function (): void {
