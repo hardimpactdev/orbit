@@ -44,4 +44,4 @@ JSON responses omit certificate material: `gateway:add --json` returns `{ name, 
 
 ## Why it works this way
 
-Fetching unverified once, checking the fingerprint or `--ca` pin, and immediately verifying a second request against that pinned root prevents a changing or intercepted certificate from entering the OS trust store. Requiring `--accept-ca-change` catches unexpected CA replacements, and leaving the OS trust store untouched on `gateway:remove` protects other profiles or local tools sharing the same root CA.
+With a new profile and no `--ca`, both the certificate and its SHA-256 fingerprint come from the same unverified `GET /api/v1/ca/root` response. The second pinned request proves only continuity between those two fetches; it does not authenticate the first response against an active interceptor. Pass `--ca` or verify the fingerprint out of band before trusting a new Gateway. Requiring `--accept-ca-change` catches unexpected CA replacements on known profiles, and leaving the OS trust store untouched on `gateway:remove` protects other profiles or local tools sharing the same root CA.

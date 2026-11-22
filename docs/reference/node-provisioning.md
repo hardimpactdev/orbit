@@ -137,7 +137,7 @@ Busy runners finish their jobs untouched. If the hold script is missing, copy cr
 
 ## macOS Nodes
 
-macOS Nodes are managed for Homebrew formulae, casks, and Vite+ global packages without service roles. Enroll with `orbit node:add <name> <host> --platform=macos --host-key-fingerprint=<fp> --user=<acct> --orbit-user=<acct>` using an existing account, working WireGuard IP, and authorized SSH key.
+macOS Nodes are managed for Homebrew formulae, casks, and Vite+ global packages without service roles. Enroll with `orbit node:add <name> <host> --platform=macos --wireguard-ip=<existing-address> --host-key-fingerprint=<fp> --user=<acct> --orbit-user=<acct>` using an existing account, existing WireGuard IP, and authorized SSH key. Omitting `--wireguard-ip` on a new macOS Node (or sending an address that differs from an existing peer's stored IP) returns HTTP `409` `node.wireguard_required`.
 
 Enrollment pins the host key, verifies platform, `uname -m` architecture (`arm64` stays `arm64`), account, and `ifconfig` WireGuard address, and makes no OS, account, tunnel, DNS, or firewall changes. All Linux-only mutations (roles, Processes, Schedules, Metrics, Node agent, firewall, DNS repair) refuse macOS with HTTP 422 before SSH. Removing a macOS Node revokes managed SSH access, removes the hub peer and Gateway row, and retains user data, Homebrew, Vite+, and host WireGuard config (`retained_on_node`).
 

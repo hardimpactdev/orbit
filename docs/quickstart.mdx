@@ -125,9 +125,11 @@ Verify each checkpoint before moving to the next step.
     php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
     ```
 
-    Bootstrap records the Gateway Node with its `gateway` and `vpn` roles, generates the Orbit root CA and Gateway SSH key, and records the host key. Re-running it keeps the existing CA and SSH key. Pass `--wireguard-ip` and `--wireguard-subnet` if you are using a custom WireGuard subnet.
+    Bootstrap records the Gateway Node with its `gateway` and `vpn` roles, generates the Orbit root CA and Gateway SSH key, and records the host key. It writes nothing under `/etc` and starts no services; re-running it keeps the existing CA and SSH key. Pass `--wireguard-ip` and `--wireguard-subnet` if you are using a custom WireGuard subnet.
 
-    **Checkpoint:** all four services report `active`, and `caddy version` is 2.9.0 or newer:
+    Next, run the `gateway-bootstrap` Swamp workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`) so its `control` stage installs and starts Caddy, PHP-FPM, `wg-quick@orbit`, `dnsmasq`, and the Swamp control plane on the Gateway machine.
+
+    **Checkpoint:** after the `gateway-bootstrap` workflow finishes, all four services report `active`, and `caddy version` is 2.9.0 or newer:
 
     ```bash Gateway machine · orbit
     sudo systemctl is-active php8.5-fpm caddy wg-quick@orbit dnsmasq

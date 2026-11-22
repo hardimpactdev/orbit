@@ -133,7 +133,7 @@ If a failed removal cannot finish, the error reports `cleanup: incomplete` and n
 
 ### Database on a server
 
-An Instance that does not clone from `default` (such as `default` itself) can create an empty database during `instance:create` by passing `--database-server` (API field `database_server`). The caller needs access grants to both the Instance's Node and the Gateway.
+An Instance that does not clone from `default` (such as `default` itself) can create an empty database during `instance:create` by passing `--database-server` (API field `database_server`). A container clone accepts `--database-server` only when it names the `default` Instance's Database server slug; otherwise admission refuses with HTTP `422` `instance.database_clone_unsupported`. The caller needs access grants to both the Instance's Node and the Gateway.
 
 ```bash
 orbit instance:create 12 3 default --database-server=beast-mysql
@@ -143,7 +143,7 @@ After preparing source and before running setup steps, Orbit creates `<project>_
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.database_server_conflict` | 422 | The Instance already receives a [copy](#database-clone) of `default`'s database. |
+| `instance.database_clone_unsupported` | 422 | A container clone passed `--database-server` when `default` has no server database, or named a different server than `default`'s. |
 | `instance.database_server_existing` | 409 | The Instance already finished its first setup; use `database:create --instance` and `instance:setup` instead. |
 | `database.server_missing` | 404 | No Database server matches that slug. |
 | `database.server_inactive` | 409 | The Database server is not active. |

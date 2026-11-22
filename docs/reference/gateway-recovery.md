@@ -344,7 +344,7 @@ The Gateway sends `POST` with `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={h
 
 A verified Gateway release triggers two distinct layers of fleet work:
 
-- **Agent and CLI delivery (`fleet.rollout`):** Delivers the pinned `orbit-agent` binary (and packaged CLI on `ci-runner` Nodes) in risk order via `operation-fleet-rollout`. Trigger manually with `orbit fleet:rollout` (`POST /api/v1/fleet/rollout`).
+- **Agent and CLI delivery (`fleet.rollout`):** Delivers the pinned `orbit-agent` binary (and packaged CLI on `ci-runner` Nodes) in risk order via `operation-fleet-rollout`. Trigger manually via `POST /api/v1/fleet/rollout`.
 - **Verified release fleet pass:** Runs automatically after a Gateway release verifies and daily at 03:05 Europe/Amsterdam with rollout or refresh enabled.
 
 During the verified release fleet pass, each eligible Node (with the serving Gateway Node last) runs delivery and then admits either a scoped role `node.converge` (when role inputs changed) or a full `node.converge` (when host inputs changed). Once all Nodes are `current`, `phases.fleet.status` becomes `current` and default refresh and seed publication may advance.
@@ -378,7 +378,7 @@ Rollouts run at any hour right after a verified release with no time window. A b
 
 ### A failed Node
 
-When delivery fails on a Node, native dependencies stop later Nodes, record the Node's error code, and raise `rollout_halted` once per Node, commit, and error code. After repairing the cause, the next pass (at least 5 minutes later, via a new release, the daily pass, or `orbit fleet:rollout`) starts again at that Node. Do not use `swamp workflow resume` to retry a failed rollout.
+When delivery fails on a Node, native dependencies stop later Nodes, record the Node's error code, and raise `rollout_halted` once per Node, commit, and error code. After repairing the cause, the next pass (at least 5 minutes later, via a new release, the daily pass, or `POST /api/v1/fleet/rollout`) starts again at that Node. Do not use `swamp workflow resume` to retry a failed rollout.
 
 ### Which Nodes a pass visits
 

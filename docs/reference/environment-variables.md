@@ -19,9 +19,9 @@ Orbit owns the environment configuration of every Instance. The Gateway stores e
 The common workflow is to import an existing `.env` file, update individual keys, and synchronize the changes to the Node. See [`env`](/cli/env) for CLI flags and [Gateway environment](/reference/gateway-environment) for the Gateway's own `.env` settings.
 
 ```bash
-orbit env:import 42
-orbit env:update 42 CACHE_STORE redis
-orbit env:sync 42
+orbit env:import --instance=42
+orbit env:update --instance=42 --key=CACHE_STORE --value=redis
+orbit env:sync --instance=42
 ```
 
 ## Operations

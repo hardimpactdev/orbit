@@ -226,7 +226,7 @@ Any blocker fails the Operation with `database.in_use` (409) without dropping an
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while any connection points to the server. Otherwise it marks the server as removing (blocking new database creation), removes the Docker container with `docker rm --force`, verifies the container is gone, and deletes the server and Process records. The data volume stays on disk so data survives; remove the volume manually when you want to discard its data.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while any connection points to the server. Otherwise it marks the server as removing (blocking new database creation), runs `docker rm --force` on the recorded container name, inspects afterward to confirm no container with that name remains, and deletes the server and Process records. Because removal deletes by name before inspecting, it does not verify container ownership first and can remove a same-name replacement container. The data volume stays on disk so data survives; remove the volume manually when you want to discard its data.
 
 A Node running a Database server cannot be removed; [Node removal](/reference/node-provisioning#remove-a-node) refuses with `node.has_database_servers`, even offline.
 
@@ -256,7 +256,6 @@ Database server commands return these error codes:
 | `database.server_busy` | 409 | Another server Operation is already in progress. |
 | `database.server_in_use` | 409 | A connection still points to the server, another removal or ACL change is running, or closing would lock out a client. |
 | `database.server_inactive` | 409 | The server is not active yet. Repeat `database:server:create` to finish it. |
-| `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process. |
 | `database.server_connection_managed` | 409 | An update would replace a managed connection's identity or credentials. |
 | `database.required_by_analytics` | 409 | Analytics uses this connection; move the role first. |
 | `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks removal. |

@@ -113,7 +113,7 @@ Caddy admits only `GET /app/<attached-key>` HTTP/1.1 WebSocket upgrades and the 
 
 Before publishing, Orbit inspects the Instance's production Laravel route list (with a 60-second timeout; failure returns `websocket.route_inspection_failed`, 409) to check for `/app` or `/apps` collisions, including case variants and first-segment parameters. The root Laravel fallback is allowed because Caddy reserves Pusher prefixes ahead of it. Doctor repeats this check to catch collisions added by later deployments.
 
-Attachment and detachment commit stored intent before rebuilding Caddy. If Caddy fails to build during attachment, retry the command; if withdrawal fails to build, run `orbit node:converge <node> --force` on each affected serving Node.
+Attachment and detachment commit stored intent before rebuilding Caddy. If Caddy fails to build during attachment, retry the command; if withdrawal fails to build, run `orbit node:converge <node> --full` on each affected serving Node.
 
 ### Website build and protection
 
@@ -166,7 +166,7 @@ During convergence, the agent stages a new release, activates it, waits up to 30
 
 ## Deploy and recover
 
-Run `orbit node:role:add <node> websocket --converge-existing` only for server or role upgrades, inside an announced reconnect window, and confirm a fresh process report and Gateway realtime before closing the window. After rolling back between pinned Gateway releases, converge the websocket role again so the running Reverb server matches the Gateway's pinned commit.
+Run `orbit node:role:add <node> websocket --converge` only for server or role upgrades, inside an announced reconnect window, and confirm a fresh process report and Gateway realtime before closing the window. After rolling back between pinned Gateway releases, converge the websocket role again so the running Reverb server matches the Gateway's pinned commit.
 
 After restoring the Gateway database, restart every Reverb process so it registers a new boot and loads a fresh snapshot. A changed registry epoch, lower revision, or mismatched digest forces a running process to exit so systemd restarts it, but an unchanged revision can return HTTP 304, so always restart manually after a restore.
 

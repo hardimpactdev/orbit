@@ -67,7 +67,7 @@ Orbit normalizes the host and path of `repository_url` into a canonical reposito
 
 ## Registration needs a Project
 
-[`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project, matching by repository identity or `--project`. If no Project owns the repository, registration fails with `instance.project_missing`. Create the Project with `project:create` first.
+[`instance:register`](/domains/applications#register-an-existing-checkout) repairs only an already-registered host Instance row at that checkout path and requires an explicit Project ID (`--project`). Creating a Project does not make a fresh host checkout registerable: any path without an existing Instance row fails with HTTP `409` `instance.container_required` (use [`instance:create`](/cli/instance/create) to create a container Instance instead).
 
 ## Application directory
 

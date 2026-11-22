@@ -65,7 +65,7 @@ Adoption requires a single installed version, no adoption block, and constraint 
 
 ## Install and update a Tool
 
-`tool:install` and `tool:update` return HTTP `202` with an [Operation](/reference/operations) serialized under one per-`(node, manager)` lock (`operation.target_busy`, 409, on contention). Install refuses already-installed unmanaged packages with `tool.already_installed_unmanaged` (409); adopt them first. Optional SemVer `version_constraint` blocks out-of-range candidates (`blocked_by_constraint` / `tool.version_constraint_blocked`, 422) without downgrading.
+`tool:install` and `tool:update` return HTTP `202` with an [Operation](/reference/operations) serialized under one per-`(node, manager)` lock (`operation.target_busy`, 409, on contention). If install finds an already-installed unmanaged package on the Node, the admitted Operation fails with `tool.package_already_installed`; adopt it with `tool:adopt` first. Optional SemVer `version_constraint` blocks out-of-range candidates (`blocked_by_constraint` / `tool.version_constraint_blocked`, 422) without downgrading.
 
 ## Homebrew formulae
 

@@ -339,7 +339,7 @@ Assistance comments at the parent group level stay on the task group independent
 
 ### Questions
 
-`GET /api/v1/tasks/questions` lists open direction questions; `POST /api/v1/tasks/questions/{question}/close` closes a stale question as `answered` or `superseded`.
+`GET /api/v1/task-questions` lists open direction questions; `POST /api/v1/task-questions/{question}/close` closes a stale question as `answered` or `superseded`.
 
 ### Complete and cleanup
 
@@ -417,6 +417,6 @@ Key routes under `/api/v1` (all require `tasks` enabled except `GET /tasks/statu
 | `GET/POST /tasks`, `GET/PATCH/DELETE /tasks/{task}` | Task group and subtask CRUD |
 | `POST /tasks/{task}/{start,sync,check,turn,publish,complete,cancel}` | Task lifecycle Operations |
 | `POST /tasks/{task}/{pr-ready,pr-merge,dependency-merge}`, `POST /projects/{project}/pr-merge` | PR ready and merge Operations |
-| `GET/POST /tasks/{task}/comments`, `GET /tasks/questions`, `POST /tasks/questions/{question}/close` | Comments and direction questions |
+| `GET/POST /tasks/{task}/comments`, `GET /task-questions`, `POST /task-questions/{question}/close` | Comments and direction questions |
 | `GET /tasks/{task}/agents/{session}`, `GET /tasks/{task}/agents/{session}/stream`, `GET /tasks/{task}/swamp-runs` | Thread transcripts and Swamp run snapshots |
 | `GET /task-insights`, `GET /metrics/task-insights` | Task insights API and Prometheus scrape |
