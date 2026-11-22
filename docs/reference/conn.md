@@ -860,7 +860,7 @@ A reservation answers these fields:
 | `expires_at` | When an open reservation expires |
 | `create_operation_id`, `finalize_operation_id`, `destroy_operation_id` | The clone's create, its finalize, and the destroy of a released or expired one |
 | `environment_id` | The clone's T3 server, from `ready` on: the device pairs with it while its user types |
-| `pairing` | One-time `IssuedConnPairingData` (`{"pairing", "pairing_url"}`), minted in the background after `ready` and handed out once on `GET /reservations/{id}` with `Cache-Control: no-store`, or `null` while preparing, still minting or already read |
+| `pairing` | One-time `IssuedConnPairingData` (`{"pairing", "pairing_url"}`), issued by the create or minted after `ready`, and handed out once on `GET /reservations/{id}` with `Cache-Control: no-store`, or `null` while preparing, still minting or already read |
 | `error_code` | Why a `failed` reservation failed |
 
 Rules:
@@ -871,7 +871,9 @@ Rules:
 - `GET /environments` names the server's open reservation in `reservation_id`. A device hides such a server from its threads until the finalize.
 - Only the device and profile that reserved it read, release or finalize it; any other device or profile gets 404.
 
-Once a reserved clone is `ready`, a background job admits `conn.pairing_create` for the reserving device and profile so `ready` never waits on pairing. The next `GET /reservations/{id}` after the link is minted returns `pairing` once with `Cache-Control: no-store`, capped to the reservation's `expires_at`, and clears the stored credential. While the clone is `preparing`, while the link still mints, or after it was read, released or expired, `pairing` is `null` and the device falls back to explicit pairing.
+A reserved clone's create issues the reserving device's pairing link in its `t3` step, beside the Gateway's sessions, when the Node's agent takes it (`instance.t3_pairing` in its `features`). The label names the device and the reservation, such as `phone via Orbit 3f2a9c1b`. The create's projection records the link for the reserving device and profile, so `ready` comes with it. When the create brings no link, or T3 refused it, a background job admits `conn.pairing_create` once the clone is `ready`.
+
+The next `GET /reservations/{id}` after the link exists returns `pairing` once with `Cache-Control: no-store`, capped to the reservation's `expires_at`, and clears the stored credential. While the clone is `preparing`, while the link still mints, or after it was read, released or expired, `pairing` is `null` and the device falls back to explicit pairing.
 
 A Project whose clones get an owned database, a Valkey user or a Route is refused with `reservation.unsupported` (409), with `details.reason` `database`, `valkey` or `route`. Their create names them by the Instance name, so a draft name would stay. The device then creates the clone on submit, as before.
 

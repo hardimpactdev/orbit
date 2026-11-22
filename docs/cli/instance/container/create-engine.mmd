@@ -60,6 +60,7 @@ sequenceDiagram
   end
   par after checkout
     EN->>C: Start Conn or T3<br/>t3 · sealed sessions · project
+    %%> A reserved clone's t3 also issues its device's pairing link, sealed beside the sessions (agent 0.30.0+).
   and
     EN->>C: Start the Processes<br/>processes
     %%> Later work: today the completion starts them.

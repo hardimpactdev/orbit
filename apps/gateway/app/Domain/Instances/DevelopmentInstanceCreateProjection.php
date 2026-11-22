@@ -42,8 +42,13 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         return app(NativeDevelopmentInstanceInput::class)->create($operation);
     }
 
-    /** `$session`: the Gateway's T3 session an engine run opened from its sealed output; a Swamp run's is in the vault. */
-    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null): Operation
+    /**
+     * `$session`: the Gateway's T3 session an engine run opened from its sealed output; a Swamp run's is in the vault. `$pairing`:
+     * T3's answer to the pairing link an engine create asked for, which no record holds.
+     *
+     * @param  array<string, mixed>|null  $pairing
+     */
+    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null, #[\SensitiveParameter] ?array $pairing = null): Operation
     {
         // A clone's T3 session is read from the vault, and its workspace baseline from its Node, before the transaction, so no lock waits
         // on the network.
@@ -52,6 +57,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         $alreadyActive = (ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true;
         $handover = $clone !== null && $data['status'] === 'succeeded' && ! $alreadyActive;
         $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? []), $session) : null;
+        if ($server !== null && $pairing !== null) {
+            $server['pairing'] = $pairing;
+        }
         $baseline = $handover && ! $operation->status->terminal() ? $this->baseline($operation) : null;
         if ($baseline === false) {
             // The run succeeded, but nothing proves what the workspace held before the user could work: the create fails, and no

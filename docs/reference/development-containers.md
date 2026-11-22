@@ -2085,7 +2085,9 @@ In the Gateway:
 
 The container cannot call the Gateway, so registration never comes from inside it. Orbit renews the Gateway's session from outside, in an hourly tick ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). A container started after its session ended gets a new one within the hour, or within six hours when a try found it stopped. The [renewal chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/environment-renew.mmd) has the steps.
 
-A device pairs as with any T3 server: [`conn:pairing:create`](/reference/conn#pairing-and-revocation), with node access to the container's Node. Pairing with a sleeping Instance's server refuses with `conn.environment_asleep`; the device wakes it first. T3 prints a pairing token to its journal at each start; only root and `agent` can read it, and that is accepted.
+A device pairs as with any T3 server: [`conn:pairing:create`](/reference/conn#pairing-and-revocation), with node access to the container's Node. Pairing with a sleeping Instance's server refuses with `conn.environment_asleep`; the device wakes it first.
+
+A [reserved clone](/reference/conn#reserve-a-clone)'s engine create also issues the reserving device's pairing link. Its `t3` step asks T3 for the link with the Gateway's session and seals the answer beside the sessions. The Gateway asks only an agent that takes it (`instance.t3_pairing`). A refused link never fails the create. T3 prints a pairing token to its journal at each start; only root and `agent` can read it, and that is accepted.
 
 ## Drivers
 

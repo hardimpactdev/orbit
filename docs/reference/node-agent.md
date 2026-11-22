@@ -59,7 +59,7 @@ Agent 0.19.0 adds the `instance` family for app-dev Nodes: `instance.clone`, `in
 
 Agent 0.24.0 adds `instance.fleet_ready`, which waits for the inner fleet of a nested-fleet clone. Agent 0.25.0 asks again every half second while the Gateway or Reverb is not up yet, so a nested fleet's agents join right after its Reverb starts. Agent 0.26.0 lets `instance.prepare` report the seed's tunnel boot unit (`fleet_tunnel`), so the clone's fleet starts beside its completion ([`instance.fleet`](/reference/gateway-engine#instancefleet)). Agent 0.27.0 lets it report the seed's services digest (`services_digest`), so a completion with nothing left ends on the Gateway.
 
-Agent 0.28.0 adds `instance.names`, which gives a [reserved clone](/reference/conn#reserve-a-clone) its final name and branch and reloads Conn Server live on `SIGHUP` with a restart fallback. Agent 0.29.0 lets `instance.club_key` accept `<node>:<part>` targets so it runs beside `checkout` and `t3`, and reports `node_targets` in `NODES`.
+Agent 0.28.0 adds `instance.names`, which gives a [reserved clone](/reference/conn#reserve-a-clone) its final name and branch and reloads Conn Server live on `SIGHUP` with a restart fallback. Agent 0.29.0 lets `instance.club_key` accept `<node>:<part>` targets so it runs beside `checkout` and `t3`, and reports `node_targets` in `NODES`. Agent 0.30.0 lets `instance.t3` issue a [reserved clone](/reference/conn#reserve-a-clone)'s pairing link beside its sessions, and reports that input in `features`.
 
 ## What it observes
 

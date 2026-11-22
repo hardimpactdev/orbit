@@ -79,6 +79,17 @@ it('reads node_targets from the Node capability report and defaults to empty for
     expect($bus->nodeTargetActions(3))->toBe([]);
 });
 
+it('reads the optional inputs a Node executor takes from its report, and none from an older executor', function (): void {
+    $client = new IdleTestClient;
+    $bus = new EngineBus(static fn (): Client => $client);
+
+    $client->dispatched = new Payload('{"actions":["instance.t3"],"features":["instance.t3_pairing"]}');
+    expect($bus->nodeFeatures(3))->toBe(['instance.t3_pairing']);
+
+    $client->dispatched = new Payload('{"actions":["instance.t3"],"node_targets":[]}');
+    expect($bus->nodeFeatures(3))->toBe([]);
+});
+
 it('takes a receipt\'s Node from its subject and ignores the Node its body names', function (): void {
     $payload = new Payload('{"node": 9, "line": {"operation": "5:ensure-0", "status": "applied"}}');
     $payload->subject = 'orbit.receipts.3';

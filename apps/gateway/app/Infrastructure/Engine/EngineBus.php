@@ -175,6 +175,13 @@ final class EngineBus implements MachineBus
         return is_array($report['node_targets'] ?? null) ? array_values(array_filter($report['node_targets'], is_string(...))) : [];
     }
 
+    public function nodeFeatures(int $node): array
+    {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['features'] ?? null) ? array_values(array_filter($report['features'], is_string(...))) : [];
+    }
+
     public function nodeClock(int $node): ?bool
     {
         $clock = $this->nodeReport($node)['clock_synchronized'] ?? null;

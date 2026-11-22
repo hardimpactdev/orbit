@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -76,6 +77,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         ConnEnvironment::query()->where('instance_id', $instance->id)->update(['label' => $label]);
     }
 
+    /** A reserved clone's create issues the reserving device's pairing link with its sessions ([Reserve a clone](/reference/conn#reserve-a-clone)). */
+    public function createPairing(Operation $operation): ?array
+    {
+        return $this->extensions->enabled('conn') ? app(ConnReservations::class)->createPairing($operation) : null;
+    }
+
     public function projectCreate(Instance $instance, array $server): void
     {
         $id = ValidatedData::string($server['environment_id']);
@@ -97,8 +104,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             $environment->cleanup_completed_version = $environment->cleanup_version;
         }
         $environment->forceFill(['instance_id' => $instance->id])->save();
+        // The link the create issued is the reservation's; without it, the reservation mints one after the commit.
+        if ($this->extensions->enabled('conn') && is_array($server['pairing'] ?? null)) {
+            app(ConnReservations::class)->recordPairing($instance, $environment, ValidatedData::object($server['pairing']));
+        }
         // The creating profile's Nodes get their held sessions now, so their first attach is one read.
-        // A reserved clone also mints its one-time pairing link in the background so it never slows `ready`.
+        // A reserved clone whose create issued no pairing link mints one in the background.
         if ($this->extensions->enabled('conn')) {
             DB::afterCommit(static function () use ($instance, $environment): void {
                 app(ConnHeldSessions::class)->preMint($instance, $environment);
