@@ -25,7 +25,7 @@ Principle: [One way, one name](/mission#principles) and [No exceptions and no le
 
 Each container runs one agent server as `agent`, from the Node's shared agent folder ([Shared folders](/reference/development-containers#shared-folders)). The image's `t3.service` starts `/opt/orbit-agent/current/agent/bin/t3`. Orbit calls the same program inside the container: the create's sessions and `project add`, and a task copy turn's `thread` commands and its RPC helper.
 
-The agent folder is shared by every container on a Node, so the choice cannot live in the folder. The default Instance never runs a server, and clones copy the default, so the choice cannot live in the image or the seed either. Originally no converter existed, so a container could not change its server; since 2026-11-22 the Conn Server imports T3's `statev2.sqlite` on its first start, enabling a one-way `t3` to `conn` switch.
+The agent folder is shared by every container on a Node, so the choice cannot live in the folder. The default Instance never runs a server, and clones copy the default, so the choice cannot live in the image or the seed either. Originally no converter existed, so a container kept its recorded server; since 2026-11-22 the Conn Server imports T3's `statev2.sqlite` on its first start, enabling a one-way `t3` to `conn` switch.
 
 ## Decision
 

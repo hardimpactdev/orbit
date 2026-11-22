@@ -204,7 +204,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
 | `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |
 | `task_pr_mode` and `--task-pr-mode` | Set the [mode](/reference/tasks#task-group-modes) of the Project's task copy groups that set none. Send null or `--clear-task-pr-mode` to clear it. Work done before the change waits for a release. |
-| `container_server` and `--container-server=t3\|conn` | Chooses the server of the Project's dev containers that Orbit reserves after the change. Existing containers keep theirs; task copies always run `conn`. See [Container server](#container-server). |
+| `container_server` and `--container-server=t3\|conn` | Chooses the server of the Project's dev containers that Orbit reserves after the change (column default `conn`). Existing `t3` containers keep theirs until switched with [`instance:server:switch`](/cli/instance/server-switch); task copies always run `conn`. See [Container server](#container-server). |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

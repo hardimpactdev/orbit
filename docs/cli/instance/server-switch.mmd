@@ -16,7 +16,7 @@ sequenceDiagram
   %%> Command:
   %%> - `orbit instance:server:switch INSTANCE`
   %%> - syntax: `<instance-id> [--idempotency-key=KEY] [--json]`
-  Note over GW: Validate runtime & idle check
+  Note over GW: Validate & check idle
   %%> When:
   %%> - active container runtime with `container_server = t3` and `conn-server` pinned in the recipe
   %%> - for a running container, confirm no agent turn, pending request or held reservation is active
