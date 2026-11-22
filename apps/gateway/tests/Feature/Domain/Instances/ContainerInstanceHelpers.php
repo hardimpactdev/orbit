@@ -6,6 +6,7 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -169,4 +170,65 @@ function containerServerConnUnpinned(): void
     // The Gateway reads the recipe of its checkout when the checkout is a release link.
     symlink($root.'/release', $root.'/orbit');
     config(['orbit.gateway_checkout' => $root.'/orbit/apps/gateway']);
+}
+
+/**
+ * Swamp serve behind the WebSocket for the native-end job of one Operation: its bound root run ended with `$status`. Returns the
+ * frame types it was asked for.
+ *
+ * @return ArrayObject<int, string>
+ */
+function nativeRunEnded(Operation $operation, string $run, string $status = 'failed'): ArrayObject
+{
+    $history = ['id' => $run, 'workflowName' => app(DirectOperation::class)->workflowFor($operation), 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => now()->subMinutes(5)->toISOString(), 'completedAt' => now()->toISOString(), 'jobs' => []];
+    $types = new ArrayObject;
+    app()->instance(WebSocketClient::class, new class($history, $types) implements WebSocketClient
+    {
+        private ?array $frame = null;
+
+        private bool $open = false;
+
+        /** @param ArrayObject<int, string> $types */
+        public function __construct(private readonly array $history, private readonly ArrayObject $types) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frame = $message;
+            $this->types->append((string) $message['type']);
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            [$frame, $this->frame] = [$this->frame, null];
+            if ($frame === null) {
+                return [];
+            }
+            $payload = match ($frame['type']) {
+                'workflow.history.get' => ['data' => $this->history],
+                'workflow.cancel' => ['data' => ['runId' => $this->history['id'], 'status' => 'cancellation_requested']],
+            };
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => $payload]];
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    });
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.read_token' => 'read-token', 'swamp.run_token' => 'run-token']);
+
+    return $types;
 }

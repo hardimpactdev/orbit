@@ -200,6 +200,8 @@ Operation reads do not request terminal history or expire Operations. The event 
 
 A run that succeeded while its end check was skipped or failed fails with `operation.result_unreadable` in the same pass, and the Operation frees its target. A timed-out Operation whose run did so within its budget ends the same way. It is not reopened each pass.
 
+An Operation that a signed-order fence ended `interrupted` with `executor.result_unknown` after its budget expired gets the same reads until its native end is recorded. Only that end is recorded; the fence keeps the lock until a receipt or the executor journal frees it ([Operations](/reference/operations)).
+
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
 
 A recorded cancel request sets it to `cancelled`, and cancel does the same at once. Without a request it fails with `operation.timed_out` at its budget. The budget is 600 seconds for an unbound admission with attempts `0`, and the history budget of the kind otherwise. Either end clears the target hold.

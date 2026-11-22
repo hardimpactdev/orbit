@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\NativeRunCancellation;
@@ -111,12 +112,12 @@ final readonly class ExpireOperationAction
             && is_array($timeout) && ! isset($timeout['native_terminal_status']);
     }
 
-    /** A timed-out native run may still finish after its target hold was released. */
+    /** A timed-out native run may still finish after its target hold was released, or while its fence holds the target. */
     public static function needsTerminalReceipt(Operation $operation): bool
     {
         $timeout = $operation->state['native_timeout'] ?? null;
 
-        return self::awaitsSettlement($operation) || ($operation->status === OperationStatus::Failed
+        return self::awaitsSettlement($operation) || ExecutorFence::awaitsRunEnd($operation) || ($operation->status === OperationStatus::Failed
             && $operation->error_code === 'operation.timed_out' && is_array($timeout)
             && ! isset($timeout['no_run_verified_at']) && in_array($timeout['native_terminal_status'] ?? null, [null, 'unproven'], true));
     }
@@ -157,21 +158,24 @@ final readonly class ExpireOperationAction
         });
     }
 
-    /** Called only after the shared reader verifies the exact terminal native root identity. */
+    /**
+     * Called only after the shared reader verifies the exact terminal native root identity. An Operation under its signed-order fence
+     * keeps its lock: the recorded end lets its durable receipt free it now (ExecutorFence::resolve), or the journal's next read.
+     */
     public function settle(Operation $operation, string $runId, string $status): Operation
     {
         if (! in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
             throw new \LogicException('A target hold requires terminal native proof.');
         }
 
-        return DB::transaction(function () use ($operation, $runId, $status): Operation {
+        $current = DB::transaction(function () use ($operation, $runId, $status): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (! self::needsTerminalReceipt($current)) {
                 return $current;
             }
             app(DirectOperation::class)->assertRun($current, $runId);
             $timeout = $current->state['native_timeout'] ?? [];
-            app(OperationStore::class)->change($current, ['lock_key' => null,
+            app(OperationStore::class)->change($current, [...(ExecutorFence::awaitsRunEnd($current) ? [] : ['lock_key' => null]),
                 'state' => [...($current->state ?? []), 'native_timeout' => [
                     ...(is_array($timeout) ? $timeout : []), 'native_terminal_status' => $status,
                     'native_terminal_observed_at' => now()->toISOString(),
@@ -180,5 +184,8 @@ final readonly class ExpireOperationAction
 
             return $current;
         });
+        ExecutorFence::resolve($current);
+
+        return $current->refresh();
     }
 }
