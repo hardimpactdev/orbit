@@ -5,10 +5,15 @@ import { behavior, MAXIMUM_ROWS, report, ReportArgs } from "./assets.ts";
 const NOW = new Date("2026-11-02T07:07:00Z");
 const at = (hours: number) =>
     new Date(NOW.getTime() + hours * 3_600_000).toISOString();
-const access = (name: string, hours: number, state = "active") => ({
+const access = (
+    name: string,
+    hours: number,
+    state = "active",
+    principalId = "worker:x",
+) => ({
     name,
     state,
-    principalId: "worker:x",
+    principalId,
     expiresAt: at(hours),
 });
 const enrollment = (name: string, hours: number, state = "enrolled") => ({
@@ -24,6 +29,7 @@ const lists = (
     access: JSON.stringify(accessRows),
     enrollment: JSON.stringify(enrollmentRows),
     certificate,
+    held: "",
 });
 const pair = [access("orbit-node-209-access", 500)];
 const pairEnrollment = [enrollment("orbit-node-209", 500)];
@@ -68,23 +74,36 @@ Deno.test("class boundaries follow the hours left", () => {
     );
 });
 
-Deno.test("the 209 worker pair is reported missing when it is not listed", () => {
-    assertEquals(
-        report(lists([], []), NOW).alerts.map((
-            item,
-        ) => [item.kind, item.name, item.reason]),
-        [
-            ["access", "orbit-node-209-access", "missing"],
-            ["enrollment", "orbit-node-209", "missing"],
-        ],
-    );
+Deno.test("retired orbit-node-209 pair is not reported missing when absent", () => {
+    assertEquals(report(lists([], []), NOW).alerts, []);
 });
+
+// Recorded from swamp 20261114.210101.0-sha.537e03d1 on Node 209: `access token list --json` is a plain array.
+for (const shape of ["plain array", "tokens envelope"] as const) {
+Deno.test(`local --repo-dir access list recorded fixture (${shape}) is parsed cleanly`, async () => {
+    const fixture = await Deno.readTextFile(
+        new URL("fixtures/access-token-list-local.json", import.meta.url),
+    );
+    const result = report(
+        {
+            access: shape === "plain array"
+                ? fixture
+                : JSON.stringify({ tokens: JSON.parse(fixture) }),
+            enrollment: JSON.stringify([enrollment("swamp-role-209-a", 500)]),
+            certificate,
+            held: "serve-driver-20261121\nswamp-role-209-a-access-20261121\n",
+        },
+        NOW,
+    );
+    assertEquals(result.alerts, []);
+});
+}
 
 Deno.test("a changed native shape or certificate fails the run", () => {
     assertThrows(
         () =>
             report(
-                { ...lists(pair, pairEnrollment), access: '{"tokens":[]}' },
+                { ...lists(pair, pairEnrollment), access: '{"unexpected":[]}' },
                 NOW,
             ),
         Error,
@@ -180,10 +199,91 @@ Deno.test("the monitor reads only what the Node's service key may read and passe
         assertEquals(
             run.startsWith(
                 "SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key timeout 30 /usr/local/bin/swamp ",
-            ) || run.startsWith("timeout 30 openssl x509 "),
+            ) || run.startsWith("timeout 30 openssl x509 ") ||
+                (step.name === "held" &&
+                    run.includes("for f in /home/orbit/.config/swamp/serve-driver-token")),
             true,
             step.name,
         );
         assertEquals(run.includes("swamp auth "), false, step.name);
     }
+    // Canary: the held step must never print an undelimited secret from a credential file.
+    const heldStep = sources.find((step) => step.name === "held")!;
+    const folder = await Deno.makeTempDir();
+    try {
+        const canary = "CANARY_SECRET_NO_DOT_MONITOR";
+        await Deno.mkdir(`${folder}/home/.config/swamp`, { recursive: true });
+        await Deno.mkdir(`${folder}/worker/a`, { recursive: true });
+        await Deno.writeTextFile(
+            `${folder}/home/.config/swamp/serve-driver-token`,
+            `${canary}\n`,
+        );
+        await Deno.writeTextFile(
+            `${folder}/worker/a/server.token`,
+            `swamp-role-209-a-access-20261121.fake-secret-ok\n`,
+        );
+        await Deno.writeTextFile(
+            `${folder}/worker/a/enrollment.token`,
+            `${canary}\n`,
+        );
+        const script = heldStep.task.inputs.run
+            .replace("/home/orbit/.config/swamp/serve-driver-token", `${folder}/home/.config/swamp/serve-driver-token`)
+            .replaceAll("/etc/orbit/swamp-role-worker", `${folder}/worker`);
+        const done = await new Deno.Command("sh", {
+            args: ["-c", script],
+            stdout: "piped",
+            stderr: "piped",
+        }).output();
+        const stdout = new TextDecoder().decode(done.stdout);
+        const stderr = new TextDecoder().decode(done.stderr);
+        assertEquals(done.code, 0, stderr);
+        assertEquals(stdout.trim(), "swamp-role-209-a-access-20261121");
+        assertEquals((stdout + stderr).includes(canary), false);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
+Deno.test("a generation is skipped only when a consumer holds a newer one of its family and principal", () => {
+    const rows = [
+        ...pair,
+        access("serve-driver", 2, "active", "user:nckrtl"),
+        access("serve-driver-20261121", 700, "active", "user:nckrtl"),
+        // Same family name but different principal must NOT be suppressed.
+        access("serve-driver-20261001", 10, "active", "user:other"),
+        access("swamp-role-209-b-access", 50, "active", "worker:orbit-node-209"),
+        access("swamp-role-209-b-access-20261121", 700, "active", "worker:orbit-node-209"),
+        // The Gateway env is not visible: an installed reader near expiry alerts even beside a fresh mint whose install failed.
+        access("orbit-gateway-read-20261027", 50, "active", "user:orbit-gateway-read"),
+        access("orbit-gateway-read-20261121", 700, "active", "user:orbit-gateway-read"),
+    ];
+    const alerts = (held: string) =>
+        report({ ...lists(rows, pairEnrollment), held }, NOW).alerts.map((item) => [item.name, item.reason]);
+    assertEquals(alerts("serve-driver-20261121\nswamp-role-209-b-access\nswamp-role-209-b\n"), [
+        ["serve-driver-20261001", "within_72h"],
+        ["swamp-role-209-b-access", "within_72h"],
+        ["orbit-gateway-read-20261027", "within_72h"],
+    ]);
+    // Nothing held: no generation is skipped.
+    assertEquals(alerts("").map(([name]) => name), [
+        "serve-driver",
+        "serve-driver-20261001",
+        "swamp-role-209-b-access",
+        "orbit-gateway-read-20261027",
+    ]);
+});
+
+Deno.test("orbit-orchestrator-read, renewed by no fleet consumer, alerts ten days ahead", () => {
+    const alerts = (hours: number) =>
+        report(
+            lists([...pair, access("orbit-orchestrator-read-20261121", hours)], pairEnrollment),
+            NOW,
+        ).alerts.map((item) => item.reason);
+    assertEquals(alerts(241), []);
+    assertEquals(alerts(240), ["within_10d"]);
+    assertEquals(alerts(72), ["within_72h"]);
+    assertEquals(
+        report(lists([...pair, access("x", 200)], pairEnrollment), NOW).alerts,
+        [],
+    );
 });

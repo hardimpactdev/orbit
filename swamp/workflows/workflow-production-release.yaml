@@ -282,11 +282,37 @@ jobs:
         - ready
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  - name: Load Swamp on Node 209
+  - name: Renew Swamp tokens
+    # Before the load needs serve-driver: the Swamp Node renews its own tokens, the candidate renews the Gateway read and run tokens
+    # and caches them, and the release fails with gateway.release_swamp_token_expiring while a live consumer holds a token that
+    # expires within three days. Instance releases do no credential work.
     labels: {role: swamp}
     writes: true
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
     dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-swamp-credentials-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 840
+        argv:
+        - /usr/bin/timeout
+        - "810"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - swamp-credentials
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Load Swamp on Node 209
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    dependsOn: [{step: Renew Swamp tokens, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-gateway-swamp-load
@@ -321,6 +347,32 @@ jobs:
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent: '${{ inputs.intent }}'
+  - name: Revoke replaced tokens
+    # After the handover the candidate serves. It revokes a replaced Gateway generation only when its configuration holds the
+    # installed name and every long-running Gateway process started after the env changed; otherwise the hourly run finds it again.
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    guard: '${{ inputs.kind != "gateway.release" }}'
+    dependsOn: [{step: Hand over the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-swamp-revoke-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - "165"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - swamp-credentials-revoke
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
   - name: Release unused candidate
     guard: '${{ steps["Check release ownership"].status != "succeeded" }}'
     labels: {role: swamp}

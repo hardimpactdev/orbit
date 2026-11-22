@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Domain\SwampCredentials\SwampGatewayToken;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 
@@ -15,7 +16,7 @@ final readonly class SwampReaderAssistance
 {
     private const string UnknownExpiry = 'The Gateway Swamp reader expiry is unknown. Install a replacement with recorded expiry.';
 
-    private const string ExpiryPrefix = 'The Gateway Swamp reader expires at ';
+    private const array ExpiryPrefixes = ['read' => 'The Gateway Swamp reader expires at ', 'run' => 'The Gateway Swamp run token expires at '];
 
     private const string ExpirySuffix = '. Rotate it before expiry.';
 
@@ -26,9 +27,9 @@ final readonly class SwampReaderAssistance
         return 'swamp.reader_assistance.'.hash('sha256', $token);
     }
 
-    public static function reason(?CarbonImmutable $expiry): string
+    public static function reason(?CarbonImmutable $expiry, SwampGatewayToken $kind = SwampGatewayToken::Read): string
     {
-        return $expiry === null ? self::UnknownExpiry : self::ExpiryPrefix.$expiry->toISOString().self::ExpirySuffix;
+        return $expiry === null ? self::UnknownExpiry : self::ExpiryPrefixes[$kind->value].$expiry->toISOString().self::ExpirySuffix;
     }
 
     /** Called in the installation transaction, with the Gateway release lock held. */
@@ -53,12 +54,15 @@ final readonly class SwampReaderAssistance
         if ($reason === self::UnknownExpiry) {
             return true;
         }
-        if (! str_starts_with($reason, self::ExpiryPrefix) || ! str_ends_with($reason, self::ExpirySuffix)) {
-            return false;
-        }
-        $value = substr($reason, strlen(self::ExpiryPrefix), -strlen(self::ExpirySuffix));
-        $expiry = SwampReaderCredential::expiry($value);
+        foreach (SwampGatewayToken::cases() as $kind) {
+            $prefix = self::ExpiryPrefixes[$kind->value];
+            if (str_starts_with($reason, $prefix) && str_ends_with($reason, self::ExpirySuffix)) {
+                $expiry = SwampReaderCredential::expiry(substr($reason, strlen($prefix), -strlen(self::ExpirySuffix)));
 
-        return $expiry !== null && $reason === self::reason($expiry);
+                return $expiry !== null && $reason === self::reason($expiry, $kind);
+            }
+        }
+
+        return false;
     }
 }

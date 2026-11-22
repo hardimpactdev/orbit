@@ -47,12 +47,13 @@ final class SwampRoleUnits
 
     /**
      * @param  string|null  $repository  The `swamp/` folder serve reads; by default the production checkout of the swamp Node.
-     * @return array{serve:string,worker:string,renewal_service:string,renewal_timer:string}
+     * @return array{serve:string,worker:string,renewal_service:string,renewal_timer:string,token_renewal_service:string,token_renewal_timer:string}
      */
     public static function for(string $user, int $nodeId, ?string $repository = null): array
     {
         return ['serve' => self::serve($user, $repository), 'worker' => self::worker($user, $nodeId),
-            'renewal_service' => self::renewalService($user, $nodeId), 'renewal_timer' => self::renewalTimer()];
+            'renewal_service' => self::renewalService($user, $nodeId), 'renewal_timer' => self::renewalTimer(),
+            'token_renewal_service' => self::tokenRenewalService($user), 'token_renewal_timer' => self::tokenRenewalTimer()];
     }
 
     /**
@@ -98,6 +99,28 @@ final class SwampRoleUnits
     {
         return "[Unit]\nDescription=Schedule Orbit swamp worker connection renewal\n\n"
             ."[Timer]\nOnActiveSec=1min\nOnUnitInactiveSec=5min\nAccuracySec=1s\n\n"
+            ."[Install]\nWantedBy=timers.target\n";
+    }
+
+    /**
+     * Renews the Swamp Node's serve-driver, worker access and enrollment tokens 10 days before expiry: mint a new generation,
+     * switch its file, revoke the old one on a later run. It restarts neither serve nor a worker ({@see renewalService} reconnects).
+     * Each `swamp` call of the playbook runs through `swamp-env`, which sources the serve account's Swamp Club credential env.
+     */
+    private static function tokenRenewalService(string $user): string
+    {
+        return "[Unit]\nDescription=Renew the Orbit Swamp Node's Swamp tokens before they expire\n"
+            ."After=orbit-swamp-serve.service\n\n"
+            ."[Service]\nType=oneshot\n"
+            ."ExecStart=/usr/bin/timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/token-renewal.yml -e orbit_user={$user}\n"
+            ."TimeoutStartSec=11min\nUMask=0077\n";
+    }
+
+    /** Daily, and shortly after boot; a missed day runs at the next boot. */
+    private static function tokenRenewalTimer(): string
+    {
+        return "[Unit]\nDescription=Schedule Orbit Swamp token renewal\n\n"
+            ."[Timer]\nOnBootSec=10min\nOnCalendar=daily\nRandomizedDelaySec=1h\nPersistent=true\n\n"
             ."[Install]\nWantedBy=timers.target\n";
     }
 

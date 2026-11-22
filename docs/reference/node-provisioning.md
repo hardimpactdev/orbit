@@ -1100,6 +1100,32 @@ The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orb
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
 
+### Swamp token renewal
+
+Revoking, rotating or expiring a Swamp access token ends every WebSocket session that uses it, so a live consumer's token is never rotated. On the Swamp Node, `orbit-swamp-token-renewal.timer` runs `orbit-swamp-token-renewal.service` ten minutes after boot and daily after that. The swamp role renders both units in `SwampRoleUnits` and installs the playbook `/usr/local/lib/orbit-swamp/token-renewal.yml` with its module `orbit_swamp_token_renewal`, beside the worker renewal. A Gateway release starts the service too, before it loads Swamp. The renewal renews only a token that expires within ten days:
+
+| Token | Consumer | Renewal |
+| --- | --- | --- |
+| `serve-driver` (`user:nckrtl`) | `~/.config/swamp/serve-driver-token`: serve, the release load, the worker renewal and the credential monitor | Mint `serve-driver-<YYYYMMDD>` and verify a list with the candidate file. Then rename it over the file atomically as `0600` for `orbit`. Revoke a predecessor once the file is at least 24 hours old. |
+| `swamp-role-209-<slot>-access` (`worker:orbit-node-209`) | `/etc/orbit/swamp-role-worker/<slot>/server.token` | Mint `swamp-role-209-<slot>-access-<YYYYMMDD>` with the same principal and verify it as described below. Rename the file atomically as `root:orbit` `0640`. Revoke a predecessor once the worker restarted, as described below. |
+| `swamp-role-209-<slot>` enrollment | `/etc/orbit/swamp-role-worker/<slot>/enrollment.token` | `swamp worker token rotate` once through serve, then write the new secret from `swamp worker token reveal` as `root`, `root:orbit` `0640`, since the worker cannot write it back. The old secret stays valid to its own expiry. |
+
+The renewal works from live facts, not from a record of what it did. A token family is `<base>` or `<base>-<suffix>`. The current generation is the name before the first `.` of its consumer file. A predecessor is another active token of the same family and principal that expires earlier. Every run finds the predecessors again from `swamp access token list`, so a crash at any step loses none.
+
+A new generation is named after the UTC renewal day. When that name is already active, a rerun reveals it again and mints nothing, so a lost mint reply never makes a second generation. When that name is revoked or unusable, the next name takes a `-2` suffix. A refused candidate leaves its consumer file untouched. Older `<base>-<UTC stamp>` names belong to their family.
+
+Before the rename of a worker's `server.token`, `swamp access token list` must show the candidate active, with the same principal and an expiry more than 20 days away. A worker principal may not be able to read, so this list is the proof.
+
+A pinned worker reads `server.token` only when `worker connect` starts; a reconnect inside the same process keeps the old authorization. The renewal therefore compares `ExecMainStartTimestampMonotonic` of `orbit-swamp-worker@<slot>` with the file's change time. The worker renewal restarts the oldest worker after three hours, and each worker within eight hours, so the old generation goes within a day. The renewal never restarts serve or a worker. Every mint, reveal and revoke goes through serve with the serve-driver token file.
+
+The only state is the root-owned `/var/lib/orbit-swamp-token-renewal/state.json` (`0600`). It marks an enrollment rotation before it starts, so a rerun after a crash writes the new secret and never rotates twice, which would retire the secret the connected worker holds. The run reports token names only. A failure quotes the CLI's stderr with anything shaped like a credential redacted, and never its stdout.
+
+On the Swamp Node a `swamp` call from a non-interactive shell (systemd, SSH, a workflow step) fails with `auth_gate_blocked` unless the serve account's Swamp Club credential env, `~/.config/swamp/env.sh`, is sourced first. The swamp role installs `/usr/local/lib/orbit-swamp/swamp-env`, which sources that file with all output discarded and then runs the command. The token renewal, the Gateway token entrypoint and the release's Load step run every `swamp` call through it. When the file is missing or cannot be sourced, it exits 78 with `swamp.credential_env_missing` or `swamp.credential_env_invalid` and the file path, never its content.
+
+Converge the swamp role on the Swamp Node before the first Gateway release that carries the renewal. A release that reaches a Node without `/usr/local/lib/orbit-swamp/swamp-env` still loads: it prints `gateway.release_swamp_env_unconverged` and sources `env.sh` itself. Without `/usr/local/lib/orbit-swamp/gateway-token`, the release, Reconcile and revoke steps print `gateway.swamp_credentials_skipped` and skip the token renewal and the three-day gate. The hourly `gateway:swamp-credentials` still fails with `swamp.gateway_token_entrypoint_missing` until the converge.
+
+`orbit-node-*` worker tokens and `orbit-worker-issuer` are out of scope: no placement targets a per-Node worker, and nothing uses the issuer. The Gateway's own tokens renew from the Gateway ([Renew the Swamp read and run tokens](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens)); it starts this service through `/usr/local/lib/orbit-swamp/gateway-token renew-node` over its managed SSH.
+
 ### Caddy reloads
 
 The Caddy step also writes `/etc/sysctl.d/60-orbit-caddy.conf`, owned by `root:root` with mode `0644`:

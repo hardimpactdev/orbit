@@ -334,10 +334,40 @@ jobs:
         - ready
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  - name: Load Swamp on Node 209
+    # Before the load needs serve-driver: the Swamp Node renews its own tokens, the Gateway renews its read and run tokens, and the
+    # release fails with gateway.release_swamp_token_expiring while a live consumer's token still expires within three days.
+  - name: Renew Swamp tokens
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-swamp-credentials-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 840
+        argv:
+        - '/usr/bin/timeout'
+        - '810'
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; if cmds=$("$1" "$2" list --raw 2>/dev/null) && ! printf "%s\n" "$cmds" | awk "{print \$1}" | grep -qx "gateway:swamp-credentials"; then echo "gateway.swamp_credentials_skipped: target release predates gateway:swamp-credentials; skipping" >&2; exit 0; fi; exec "$@"'
+        - 'bash'
+        - 'swamp-credentials'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - 'php8.5'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/artisan'
+        - 'gateway:swamp-credentials'
+        - '--release'
+        - '--no-interaction'
+  - name: Load Swamp on Node 209
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Renew Swamp tokens, condition: {type: succeeded}}]
     task:
       type: workflow
       workflowIdOrName: operation-gateway-swamp-load
@@ -375,6 +405,37 @@ jobs:
           horizon_drain_seconds: ${{ inputs.intent.horizon_drain_seconds }}
           keep: ${{ inputs.intent.keep }}
           ssh: ${{ inputs.intent.ssh }}
+    # The command revokes a replaced Gateway generation only when the serving configuration holds the installed name and every
+    # long-running Gateway process started after the env changed. A failed or skipped revoke is found again by the hourly run.
+  - name: Revoke replaced tokens
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: Hand over the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-swamp-revoke-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 180
+        argv:
+        - '/usr/bin/timeout'
+        - '165'
+        - '/bin/bash'
+        - '-c'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; if cmds=$("$1" "$2" list --raw 2>/dev/null) && ! printf "%s\n" "$cmds" | awk "{print \$1}" | grep -qx "gateway:swamp-credentials"; then echo "gateway.swamp_credentials_skipped: target release predates gateway:swamp-credentials; skipping" >&2; exit 0; fi; exec "$@"'
+        - 'bash'
+        - 'swamp-credentials-revoke'
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+        - 'php8.5'
+        - '/home/orbit/releases/${{ inputs.intent.id }}/apps/gateway/artisan'
+        - 'gateway:swamp-credentials'
+        - '--revoke'
+        - '--no-interaction'
   - name: Release unused candidate
     labels: {role: swamp}
     writes: true

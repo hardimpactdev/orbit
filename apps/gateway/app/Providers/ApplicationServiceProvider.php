@@ -11,7 +11,6 @@ use App\Console\Commands\BootstrapGatewayCommand;
 use App\Console\Commands\BootstrapPlanCommand;
 use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckProcessArtifactReleasesCommand;
-use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
@@ -21,6 +20,7 @@ use App\Console\Commands\NodeConvergeDigestCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
+use App\Console\Commands\RenewSwampCredentialsCommand;
 use App\Console\Commands\RoleAddCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
 use App\Console\Commands\ServePrivateDnsCommand;
@@ -41,8 +41,8 @@ final class ApplicationServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->commands([
-            CheckSwampReaderCredentialCommand::class,
             InstallSwampReaderCredentialCommand::class,
+            RenewSwampCredentialsCommand::class,
             AgentViewCommand::class,
             AgentViewPublishCommand::class,
             BootstrapGatewayCommand::class,
