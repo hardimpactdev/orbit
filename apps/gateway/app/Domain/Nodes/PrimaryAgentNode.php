@@ -18,30 +18,31 @@ final readonly class PrimaryAgentNode
 {
     public function resolveId(): ?int
     {
-        $agentNodeIds = NodeRole::query()
+        $agentNodeIds = [];
+        foreach (NodeRole::query()
             ->where('role', RoleName::Agent->value)
             ->where('status', LifecycleStatus::Active->value)
             ->whereHas('node', static fn (Builder $query): Builder => $query->where('status', LifecycleStatus::Active->value))
-            ->pluck('node_id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
+            ->get(['node_id']) as $assignment) {
+            $agentNodeIds[$assignment->node_id] = $assignment->node_id;
+        }
 
         if ($agentNodeIds === []) {
             return null;
         }
 
+        $ids = array_values($agentNodeIds);
+
         $explicit = Node::query()
-            ->whereIn('id', $agentNodeIds)
+            ->whereIn('id', $ids)
             ->where('primary_agent', true)
             ->orderBy('id')
-            ->value('id');
+            ->first(['id']);
 
-        if (is_int($explicit) || is_numeric($explicit)) {
-            return (int) $explicit;
+        if ($explicit instanceof Node) {
+            return $explicit->id;
         }
 
-        return count($agentNodeIds) === 1 ? $agentNodeIds[0] : null;
+        return count($ids) === 1 ? $ids[0] : null;
     }
 }

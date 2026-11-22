@@ -65,11 +65,10 @@ final readonly class UpdateNodeAction
         bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $primaryAgent): UpdateNodeResult
     {
         $written = false;
-        /** @var list<int> $demotedIds */
         $demotedIds = [];
         $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $primaryAgent, &$written, &$demotedIds): Node|Operation {
             $node->refresh();
-            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $primaryAgent, $demotedIds);
+            ['written' => $written, 'demotedIds' => $demotedIds] = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $primaryAgent);
             $written = $this->recordCi($node, $settings) || $written;
             if ($settings->isEmpty()) {
                 return $node;
@@ -120,9 +119,9 @@ final readonly class UpdateNodeAction
      * and reports whether one changed. The LAN address selects where Orbit renders LAN traffic, the hub endpoint
      * included (ADR 0251); each render picks it up.
      *
-     * @param  list<int>  $demotedIds
+     * @return array{written: bool, demotedIds: list<int>}
      */
-    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $primaryAgent, array &$demotedIds): bool
+    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $primaryAgent): array
     {
         // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
         if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
@@ -149,24 +148,24 @@ final readonly class UpdateNodeAction
         if ($rebootHold !== null) {
             $node->reboot_hold = $rebootHold;
         }
-        $demoted = false;
+        $demotedIds = [];
         if ($primaryAgent !== null) {
             if ($primaryAgent) {
-                $demotedIds = Node::query()->whereKeyNot($node->id)->where('primary_agent', true)->pluck('id')
-                    ->map(static fn (mixed $id): int => (int) $id)->values()->all();
+                foreach (Node::query()->whereKeyNot($node->id)->where('primary_agent', true)->get(['id']) as $previous) {
+                    $demotedIds[] = $previous->id;
+                }
                 if ($demotedIds !== []) {
                     Node::query()->whereIn('id', $demotedIds)->update(['primary_agent' => false]);
-                    $demoted = true;
                 }
             }
             $node->primary_agent = $primaryAgent;
         }
         if (! $node->isDirty()) {
-            return $demoted;
+            return ['written' => $demotedIds !== [], 'demotedIds' => $demotedIds];
         }
         $node->save();
 
-        return true;
+        return ['written' => true, 'demotedIds' => $demotedIds];
     }
 
     /**
