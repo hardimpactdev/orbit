@@ -8,12 +8,19 @@ use App\Domain\Activity\ActivityInputRedaction;
 use Closure;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 
-/** Keeps admin sessions, settings documents and thread titles out of Activity ([Activity](/cli/activity)). */
+/** Keeps admin sessions, APNs tokens, settings documents and thread titles out of Activity ([Activity](/cli/activity)). */
 final readonly class ConnActivityInputRedaction implements ActivityInputRedaction
 {
     public function commands(): array
     {
-        return ['conn:environment:register', 'conn:profile:settings:update', 'conn:profile:settings:patch', 'conn:thread:record'];
+        return [
+            'conn:environment:register',
+            'conn:profile:settings:update',
+            'conn:profile:settings:patch',
+            'conn:thread:record',
+            'conn:me:push-device:upsert',
+            'conn:attention:record',
+        ];
     }
 
     public function input(string $command, Closure $input): array
@@ -27,6 +34,18 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
         if ($command === 'conn:thread:record') {
             // A title can name a customer, a bug or a secret: the index keeps it, Activity does not.
             return array_intersect_key($values, ['thread_id' => true]);
+        }
+        if ($command === 'conn:me:push-device:upsert') {
+            // The APNs device token never enters Activity.
+            return array_intersect_key($values, array_flip([
+                'device_id', 'apns_environment', 'bundle_id', 'app_version', 'ios_version', 'locale', 'preferences',
+            ]));
+        }
+        if ($command === 'conn:attention:record') {
+            // The thread title never enters Activity.
+            return array_intersect_key($values, array_flip([
+                'event_id', 'type', 'kind', 'environment_id', 'thread_id', 'request_id', 'occurred_at',
+            ]));
         }
 
         return $this->settingsInput($command, $values);

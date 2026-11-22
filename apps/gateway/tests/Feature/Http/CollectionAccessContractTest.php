@@ -22,6 +22,8 @@ function collection_access_policies(): array
             'cluster:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnNodesController.php:22 returns the caller's Node only.
             'conn:me' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnPushDevicesController.php:31 returns the caller Node's own push device only.
+            'conn:me:push-device:show' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnOperationsController.php:52 checks the Operation's caller.
             'conn:operation:show' => ServingNode::Collection,
             // extensions/conn/src/Actions/ReadConnLaunchesAction.php and Domain/ConnLaunchAccess.php scope both reads to the current profile and accessible target Nodes.
