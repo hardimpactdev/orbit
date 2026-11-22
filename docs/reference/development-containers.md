@@ -3183,7 +3183,7 @@ When the default's checkout is already past the release commit, the run's probe 
 
 When the default's seed is the seed of the `kept_commit`, the release publishes it as its seed and copies it to the Nodes behind it. Any other seed fails the release's seed publication with `instance.release_seed_moved`: a seed of another commit, the release commit's included, or one that changed after the refresh read it. The refresh counts only its own deployments, which their admission's `origin` names, as its attempts and its failures.
 
-A refresh deployment that ended but still holds the Instance lock, because its result is unknown (`executor.result_unknown`), ends the default's refresh as failed with `instance.refresh_fenced`, which names the Operation. The refresh neither retries through the lock nor releases it, so the release cycle goes on.
+A refresh deployment that ended but still holds the Instance lock, because its result is unknown (`executor.result_unknown`), ends the default's refresh as failed with `instance.refresh_fenced`, which names the Operation. A later release's refresh of that default, for another commit, ends the same way and names the holder as `fenced_by`, whatever commit the holder deployed; a live deployment of another commit only defers it. The refresh neither retries through the lock nor releases it, so the release cycle goes on.
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 

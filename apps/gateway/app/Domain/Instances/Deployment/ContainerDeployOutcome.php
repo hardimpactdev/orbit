@@ -52,8 +52,8 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
-     * Whether the release's nested-fleet refresh admitted this deployment, by its admission's own `origin`, never by `triggered_by`. A
-     * deployment that a release linked before the input named it carries the `origin` that migration 2027_03_23_000000 wrote.
+     * Whether the release's nested-fleet refresh admitted this deployment, by its admission's own `origin`, never by `triggered_by` or a
+     * release's refresh link. A deployment admitted without an `origin` counts as manual.
      */
     public static function releaseAdmitted(Operation $operation): bool
     {

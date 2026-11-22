@@ -1362,6 +1362,29 @@ it('ends a refresh whose deployment ended under its Instance fence as instance.r
         ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
 });
 
+it('ends the next release refresh as instance.refresh_fenced naming the fenced deployment of an earlier release', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->andReturnUsing(
+        fn (string $url, ProjectSourceAccess $access, string $branch, array $paths, string $commit) => deploySourceRead($commit));
+    $refresh = app(NestedFleetRefresh::class);
+    $refresh->advance(str_repeat('a', 40));
+    $fenced = Operation::query()->where('kind', 'instance.deploy')->sole();
+    // Release A's run ended with an unknown result and keeps the Instance lock (ADR 0266, R2).
+    $fenced->update(['status' => 'interrupted', 'error_code' => 'executor.result_unknown', 'finished_at' => now(), 'state' => [ExecutorFence::Issued => true]]);
+
+    $next = $refresh->advance(str_repeat('b', 40));
+    expect($next)->toBe(['status' => 'failed', 'defaults' => [$instance->id => [
+        'status' => 'failed', 'error_code' => 'instance.refresh_fenced', 'fenced_by' => $fenced->id]]])
+        ->and($fenced->refresh()->lock_key)->toBe('instance:'.$instance->id)
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+
+    // A live deployment of another commit still only defers the refresh.
+    $fenced->update(['status' => 'running', 'finished_at' => null]);
+    expect($refresh->advance(str_repeat('c', 40))['defaults'][$instance->id])->toBe(['status' => 'pending', 'error_code' => 'operation.target_busy']);
+});
+
 it('backs off after a failed refresh and ends after the third attempt', function (): void {
     Queue::fake();
     config(['instances.nested_fleet_refresh' => true]);

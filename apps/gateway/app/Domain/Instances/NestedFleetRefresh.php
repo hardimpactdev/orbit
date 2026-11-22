@@ -8,6 +8,7 @@ use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -177,6 +178,13 @@ final readonly class NestedFleetRefresh
                 return [...$receipt, 'status' => $attempts->count() + $failures >= self::Attempts ? 'failed' : 'pending',
                     'error_code' => $refused->errorCode, 'admission_failures' => $failures,
                     'retry_at' => now()->addMinutes(self::RetryMinutes)->timestamp];
+            }
+            // The Instance lock may belong to a deployment of any commit, another release's included. One that ended and still holds
+            // it keeps it for good (docs/reference/executor.md): the refresh ends here, naming that holder, and never waits on it.
+            $holder = $refused->errorCode === 'operation.target_busy' ? Operation::query()->where('kind', OperationKinds::InstanceDeploy)
+                ->where('lock_key', OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id))->first() : null;
+            if ($holder !== null && $holder->status->terminal()) {
+                return ['status' => 'failed', 'error_code' => 'instance.refresh_fenced', ...$receipt, 'fenced_by' => $holder->id];
             }
             $status = in_array($refused->errorCode, self::DeferredRefusals, true) ? 'pending' : 'failed';
 

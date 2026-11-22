@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Instances/ProductionApplicationPaths.php
   - apps/agent/src/commands/{production,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
-  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData,Console/Commands/PruneInstanceDeployCopiesCommand}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments,2027_03_23_000000_mark_release_linked_deploys}.php}
+  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData,Console/Commands/PruneInstanceDeployCopiesCommand}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
   - swamp/extensions/behaviors/{automatic-deploy/**,operations/development-deploy/**}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
@@ -120,7 +120,11 @@ The admission still records the target commit's source facts, Process definition
 
 **Known limit.** A release deploy that ends `already_newer` can leave the Project's recorded source facts (PHP selection, `.env` template reference, Process definitions) at the older target commit until the next real deploy.
 
-A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin` alone. A deployment admitted before the input named one gets it from an upgrade, which writes `origin` onto each deployment that a release's `default_refresh` row names, so its dispatch keeps a newer checkout too. An unknown executor result still holds the Instance itself, and the release's refresh of that default ends with `instance.refresh_fenced` ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
+A deployment that a release admitted never holds the release's role converge on its Node once it has ended, however it ended, and the Node's row drops it from `waiting_for` ([Gateway recovery](/reference/gateway-recovery)). The release knows its deployment by the admission's `origin` alone, never by `triggered_by` or a release's `default_refresh` link.
+
+**Cutover limit.** A deployment admitted before its input named an `origin`, or by an older Gateway binary after a rollback, has none. It counts as manual: it holds the Node's wait while its result is unknown, and its dispatch refuses an older commit instead of keeping the newer checkout.
+
+An unknown executor result still holds the Instance itself, and the release's refresh of that default ends with `instance.refresh_fenced` ([Refresh after a release](/reference/development-containers#refresh-after-a-release)).
 
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 
