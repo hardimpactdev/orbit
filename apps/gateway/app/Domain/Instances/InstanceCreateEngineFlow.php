@@ -139,7 +139,10 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
                 ...(($clone['clean_workspace'] ?? false) === true && ! self::seedClean($run, $clone) ? ['clean' => true] : []),
                 ...(isset($operation->input['environment_clone']) ? ['merge' => ValidatedData::object($operation->input['environment_clone'])] : [])],
             't3' => [...$where, 'unit' => $t3['unit'], 't3' => $t3['t3'], 'port' => $t3['internal_port'], 'workspace' => $container['workspace'],
-                'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient()],
+                'title' => $t3['title'], 'project_mark' => $t3['project_mark'], 'seal_to' => ExecutorOrderSigner::fromConfig()->sealRecipient(),
+                // A reserved clone's pairing link comes with its sessions, so it is ready to pair; only an executor that takes it is asked.
+                ...(($pairing = app(InstanceLifecycleContributions::class)->createPairing($operation)) !== null
+                    && in_array('instance.t3_pairing', $this->bus->nodeFeatures(ValidatedData::integer($operation->node_id)), true) ? ['pairing' => $pairing] : [])],
             default => throw new LogicException("Step [{$step}] is not an instance step."),
         };
     }
@@ -151,14 +154,14 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
 
     public function finish(Operation $operation, EngineRun $run): void
     {
-        $session = null;
+        [$session, $pairing] = [null, null];
         if ($run->failed() === null && $run->succeeded()) {
-            [$result, $session] = $this->result($operation, $run);
+            [$result, $session, $pairing] = $this->result($operation, $run);
             $data = ['status' => 'succeeded', 'error_code' => null, 'result' => $result];
         } else {
             $data = self::ended($operation, $run);
         }
-        $this->projection->apply($operation, [...$data, ...$run->times()], $session);
+        $this->projection->apply($operation, [...$data, ...$run->times()], $session, $pairing);
         if ($run->failed()?->name === 'fetch') {
             app(InstanceGitHubReadTokens::class)->forget($operation);
         }
@@ -462,9 +465,10 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
     }
 
     /**
-     * The succeeded create's result as the Swamp flow builds it, and the Gateway's T3 session from the sealed `t3` output.
+     * The succeeded create's result as the Swamp flow builds it, the Gateway's T3 session from the sealed `t3` output, and T3's answer
+     * to the pairing link the step asked for, if it did. Neither secret enters the result.
      *
-     * @return array{0: array<string, mixed>, 1: string}
+     * @return array{0: array<string, mixed>, 1: string, 2: array<string, mixed>|null}
      */
     private function result(Operation $operation, EngineRun $run): array
     {
@@ -487,6 +491,6 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
             ...(self::seedServices($operation, $run, $checkout) ? ['services' => 'seed'] : []),
             't3' => ['environment_id' => $environment['environmentId'] ?? null, 'server_version' => $environment['serverVersion'] ?? null,
                 'expires_at' => $body['expiresAt'] ?? null],
-        ], ValidatedData::string($gateway['token'] ?? null)];
+        ], ValidatedData::string($gateway['token'] ?? null), is_array($sealed['pairing'] ?? null) ? ValidatedData::object($sealed['pairing']) : null];
     }
 }

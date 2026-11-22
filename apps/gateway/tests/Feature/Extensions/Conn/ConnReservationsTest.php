@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\InstanceCreateEngineFlow;
 use App\Domain\Instances\InstanceFinalize;
 use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetOperation;
@@ -29,6 +32,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Orbit\Extensions\Conn\Actions\IssueConnPairingAction;
 use Orbit\Extensions\Conn\Domain\ConnAgentActivity;
 use Orbit\Extensions\Conn\Domain\ConnPairingProjection;
 use Orbit\Extensions\Conn\Domain\ConnReservations;
@@ -385,4 +389,91 @@ it('binds a reservation and its pairing to both the reserving device and its pro
     expect(reservationCall($this->phone, 'GET', "reservations/{$reservation->id}")->assertOk()->json('data'))
         ->toMatchArray(['state' => 'expired', 'pairing' => null])
         ->and($pairing->refresh()->credential)->toBeNull();
+});
+
+/**
+ * The reserved clone's create ends on the engine: its `t3` step's output sealed to the Gateway, with T3's answer to the pairing link
+ * when the step asked for one.
+ *
+ * @param  array<string, mixed>|null  $pairing
+ */
+function reservationEngineCreated(ConnReservation $reservation, ?array $pairing): Operation
+{
+    $create = Operation::query()->findOrFail($reservation->create_operation_id);
+    $create->forceFill(['status' => 'running', 'state' => [...($create->state ?? []), 'swamp_run_id' => EngineRun::runIdOf($create->id)]])->save();
+    $sealed = ['environment' => json_encode(['environmentId' => 'env-'.$create->target_id, 'serverVersion' => '0.4.1'], JSON_THROW_ON_ERROR),
+        'gateway' => ['token' => 'gateway-session', 'status' => 200, 'body' => json_encode(['expiresAt' => '2026-12-10T10:00:00.000Z'], JSON_THROW_ON_ERROR)],
+        ...($pairing === null ? [] : ['pairing' => $pairing])];
+    $box = base64_encode(sodium_crypto_box_seal(json_encode($sealed, JSON_THROW_ON_ERROR), (string) base64_decode(ExecutorOrderSigner::fromConfig()->sealRecipient(), true)));
+    $step = static fn (array $output): OperationEngineStep => (new OperationEngineStep)->forceFill(['status' => 'done', 'node_id' => $create->node_id,
+        'output' => json_encode($output, JSON_THROW_ON_ERROR)]);
+    app(InstanceCreateEngineFlow::class)->finish($create->refresh(), new EngineRun($create->id, [
+        'checkout' => $step(['commit' => str_repeat('c', 40)]),
+        't3' => $step(['environment_id' => 'env-'.$create->target_id, 'at_boot' => false, 'sealed' => $box]),
+    ], (int) now()->subSeconds(6)->getTimestampMs(), (int) now()->getTimestampMs()));
+
+    return $create->refresh();
+}
+
+it('has a reserved clone\'s create issue its device\'s pairing link, so the first read of ready hands it out and nothing mints in the background', function (): void {
+    // The engine seals the `t3` step's output to the Gateway's executor key.
+    config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $profile = ConnProfile::query()->create(['name' => 'Nick', 'settings' => ['workspaces' => []]]);
+    ConnProfileBinding::query()->create(['node_id' => $this->phone->id, 'conn_profile_id' => $profile->id]);
+    $reservation = reserve($this->phone, reservationDefault($this->beast));
+    $create = Operation::query()->findOrFail($reservation->create_operation_id);
+    $label = 'phone via Orbit '.substr(str_replace('-', '', $reservation->id), 0, 8);
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeFeatures')->with($this->beast->id)->andReturn(['instance.t3_pairing']);
+    app()->instance(MachineBus::class, $bus);
+
+    expect(app(InstanceCreateEngineFlow::class)->input($create, 't3', new EngineRun($create->id, [], 0, null))['pairing'])
+        ->toBe(['label' => $label, 'scopes' => IssueConnPairingAction::Scopes]);
+
+    $expires = now()->addMinutes(30)->toIso8601ZuluString();
+    $create = reservationEngineCreated($reservation, ['status' => 201,
+        'body' => json_encode(['id' => 'link-1', 'credential' => 'create-link', 'expiresAt' => $expires, 'label' => $label], JSON_THROW_ON_ERROR)]);
+
+    $environment = ConnEnvironment::query()->where('instance_id', $reservation->instance_id)->firstOrFail();
+    $pairing = ConnPairing::query()->findOrFail($reservation->refresh()->conn_pairing_id);
+    expect(json_encode($create->result, JSON_THROW_ON_ERROR))->not->toContain('create-link')
+        ->and($pairing)->toMatchArray(['node_id' => $this->phone->id, 'conn_environment_id' => $environment->id, 'pairing_link_id' => 'link-1', 'client_label' => $label]);
+    Queue::assertNotPushed(MintConnReservationPairing::class);
+
+    $first = reservationCall($this->phone, 'GET', "reservations/{$reservation->id}")->assertOk();
+    expect($first->json('data.state'))->toBe('ready')
+        ->and($first->json('data.pairing.pairing_url'))->toBe(rtrim($environment->url, '/').'/pair#token=create-link')
+        ->and($first->json('data.pairing.pairing.expires_at'))->toBe($first->json('data.expires_at'))
+        ->and($pairing->refresh()->credential)->toBeNull()
+        ->and(reservationCall($this->phone, 'GET', "reservations/{$reservation->id}")->assertOk()->json('data.pairing'))->toBeNull();
+});
+
+it('mints the link in the background when the create brought none or one T3 refused, and asks no executor that does not take it', function (array $features, ?array $answer): void {
+    // The engine seals the `t3` step's output to the Gateway's executor key.
+    config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair()))]);
+    $reservation = reserve($this->phone, reservationDefault($this->beast));
+    $create = Operation::query()->findOrFail($reservation->create_operation_id);
+    $bus = Mockery::mock(MachineBus::class);
+    $bus->shouldReceive('nodeFeatures')->andReturn($features);
+    app()->instance(MachineBus::class, $bus);
+
+    expect(array_key_exists('pairing', app(InstanceCreateEngineFlow::class)->input($create, 't3', new EngineRun($create->id, [], 0, null))))
+        ->toBe($features !== []);
+    reservationEngineCreated($reservation, $answer);
+
+    expect($reservation->refresh()->conn_pairing_id)->toBeNull();
+    Queue::assertPushed(MintConnReservationPairing::class, fn (MintConnReservationPairing $job): bool => $job->reservationId === $reservation->id);
+})->with([
+    'an executor without the input' => [[], null],
+    'T3 unreachable' => [['instance.t3_pairing'], ['status' => 0, 'body' => '']],
+    'T3 refused' => [['instance.t3_pairing'], ['status' => 401, 'body' => '{"error":"unauthorized"}']],
+    'another label' => [['instance.t3_pairing'], ['status' => 201, 'body' => '{"id":"link-1","credential":"c","expiresAt":"2026-11-22T07:00:00Z","label":"someone else"}']],
+]);
+
+it('asks no pairing link of a create that is no open reservation\'s', function (): void {
+    $reservation = reserve($this->phone, reservationDefault($this->beast));
+    $create = Operation::query()->findOrFail($reservation->create_operation_id);
+    app(ConnReservations::class)->release($reservation, ConnReservation::Released);
+
+    expect(app(ConnReservations::class)->createPairing($create))->toBeNull();
 });

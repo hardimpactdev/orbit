@@ -36,6 +36,11 @@ function clock_bus(?bool $clock): MachineBus
             return [];
         }
 
+        public function nodeFeatures(int $node): array
+        {
+            return [];
+        }
+
         public function nodeTargetActions(int $node): array
         {
             return [];

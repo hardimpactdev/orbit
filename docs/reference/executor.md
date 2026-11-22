@@ -182,7 +182,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
-2. reports its primitives, Node-target actions (`node_targets`), version and clock state to key `n<id>` of the `NODES` bucket, every minute;
+2. reports its primitives, Node-target actions (`node_targets`), the optional inputs its actions take (`features`), version and clock state to key `n<id>` of the `NODES` bucket, every minute;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 
 The Gateway routes a kind by the reported primitives, and Doctor reads the clock state.
@@ -374,6 +374,8 @@ The key comes as a blob; without one, nothing is written. It answers `{"club_key
 #### instance.t3
 
 `instance.t3` targets the copy. It starts T3, or the Conn Server that the copy's unit runs, when it is not running, and waits up to 30 s until T3 answers its environment. Then it issues the Gateway's and Swamp's sessions as the workspace's writer. Each token is checked against T3, with the token on curl's standard input, never in an argument. The workspace becomes a T3 project once; a mark file records it.
+
+With `pairing` (`{label, scopes}`), it then sends `POST /api/auth/pairing-token` with the Gateway's session, as [`conn.pairing_create`](/reference/conn#pairing-and-revocation) does, and seals T3's status and body beside the sessions. A refused or unreachable link never fails the step. An executor that takes `pairing` reports `instance.t3_pairing` in `features`.
 
 The tokens leave only sealed to the Gateway's key, `seal_to` in the signed input. It answers `{"environment_id", "at_boot", "sealed"}`. Codes: `instance.t3_input_invalid`, `instance.t3_unready`, `instance.create_agent_failed`, `instance.t3_session_failed`.
 
