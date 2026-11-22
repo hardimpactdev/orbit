@@ -285,6 +285,7 @@ additionalFiles:
   - ansible/tasks/swamp-worker-connections.yml
   - ansible/tasks/swamp-worker-renew-verify.yml
   - ansible/tasks/swamp-worker-renewal.yml
+  - ansible/tasks/swamp-token-renewal-start.yml
   - ansible/tasks/swamp-start-cache.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
