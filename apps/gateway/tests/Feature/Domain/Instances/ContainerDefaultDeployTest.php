@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Instances\InstanceDeploymentData;
@@ -46,6 +47,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampHandshakes;
+use App\Jobs\Operations\ProjectEndedNativeRun;
 use App\Jobs\Operations\RereadExecutorJournal;
 use App\Models\Activity;
 use App\Models\Instance;
@@ -66,6 +70,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Psr\Log\NullLogger;
+
+require_once __DIR__.'/ContainerInstanceHelpers.php';
 
 uses(LazilyRefreshDatabase::class);
 
@@ -1853,3 +1859,37 @@ it('gives every fenced Operation a journal read in turn when more than a batch s
     $this->travel(11)->seconds();
     expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(50)->and($reads())->toBe(1);
 });
+
+it('frees a deploy expired by its budget once its native end is recorded, from the receipt it kept or the journal\'s next read', function (string $delivery): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->andReturn(deploySourceRead(str_repeat('a', 40)));
+    $deploy = fencedRefreshDeploy($instance, signedAt: true, end: ['error_code' => 'operation.timed_out', 'cancel_requested_at' => now(),
+        'state' => ['native_timeout' => ['budget_seconds' => 600, 'deadline' => now()->toISOString()], 'native_cancel_requested_at' => now()->toISOString()]]);
+    $ended = $deploy->finished_at;
+    $done = ['record' => 'done', 'nonce' => str_repeat('a', 32), 'operation' => (string) $deploy->id, 'action' => 'discard',
+        'target' => (string) $instance->id, 'outcome' => ['status' => 'done'], 'at_ms' => 1];
+    deployJournal([[$done]]);
+    if ($delivery === 'websocket before the end') {
+        $queue = Mockery::mock(ExecutorResultQueue::class);
+        $queue->shouldReceive('push')->once();
+        (new ExecutorResults($queue, new NullLogger, app(CommandActivityInputSanitizer::class)))->receive($instance->node_id, ExecutorReply::fromEvent(['operation' => (string) $deploy->id,
+            'line' => json_encode([...$done, 'status' => 'done'], JSON_THROW_ON_ERROR)]) ?? throw new LogicException('Invalid receipt'), 'websocket');
+        expect($deploy->refresh())->lock_key->not->toBeNull();
+    }
+
+    nativeRunEnded($deploy, 'run-1', 'cancelled');
+    (new ProjectEndedNativeRun($deploy->id))->handle(app(SwampCommandStep::class), app(ExpireOperationAction::class), app(SwampHandshakes::class));
+    if ($delivery === 'journal after the end') {
+        expect($deploy->refresh())->lock_key->toBe('instance:'.$instance->id)->and($deploy->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
+        reconcileFencedDeploy($deploy, after: 120);
+    }
+
+    expect($deploy->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->toBeNull()
+        ->and($deploy->finished_at->equalTo($ended))->toBeTrue()
+        ->and($deploy->executor_result)->toMatchArray(['status' => 'done', 'action' => 'discard'])
+        ->and($deploy->state['native_timeout']['native_terminal_status'])->toBe('cancelled')
+        ->and($deploy->state[ExecutorFence::Settled]['status'])->toBe('done')
+        ->and(app(NestedFleetRefresh::class)->admitAll(str_repeat('b', 40))['tool/default on beast'])->toStartWith('operation:');
+})->with(['websocket before the end', 'journal after the end']);

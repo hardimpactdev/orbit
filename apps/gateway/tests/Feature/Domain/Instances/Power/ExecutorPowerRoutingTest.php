@@ -31,9 +31,12 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\DispatchExecutorWake;
+use App\Jobs\Operations\ProjectEndedNativeRun;
 use App\Jobs\Operations\RereadExecutorJournal;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -1083,3 +1086,46 @@ it('R1/R2: frees an interrupted Swamp recovery whose Node journal holds the done
     expect($operation->refresh())->lock_key->toBeNull()->and($operation->executor_result)->toMatchArray(['status' => 'failed', 'action' => $kind])
         ->and($operation->state[ExecutorFence::Settled])->toMatchArray(['by' => 'journal', 'status' => 'failed']);
 })->with(['wake', 'sleep']);
+
+it('R1/R2: applies the late receipt of a Swamp recovery expired by its budget once its native end is recorded, and only then', function (string $kind, bool $receiptFirst): void {
+    Queue::fake();
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => $kind === 'sleep' ? 'running' : 'stopped']);
+    $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $operation = $kind === 'sleep' ? app(InstanceSleep::class)->start($instance, 'cli', null) : app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($operation);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.8'])->postJson('/api/v1/direct-operations/'.$operation->id.'/executor/sign',
+        ['run_id' => $run, 'phase' => 'power'])->assertOk();
+    $swampFrames = nativeRunEnded($operation, $run);
+    $operation->update(['started_at' => now()->subDay()]);
+    app(ExpireOperationAction::class)->execute($operation->refresh());
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull();
+    $ended = $operation->finished_at;
+    $nativeEnd = fn () => (new ProjectEndedNativeRun($operation->id))->handle(app(SwampCommandStep::class), app(ExpireOperationAction::class), app(SwampHandshakes::class));
+    $receipt = fn () => executorWakeReply($operation, $kind === 'sleep' ? ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]
+        : ['status' => 'done', 'action' => 'wake', 'receipt' => ['wake' => 'thawed']]);
+
+    if ($receiptFirst) {
+        $receipt();
+        // The run may still act: the receipt is kept, the lock stays.
+        expect($operation->refresh())->lock_key->not->toBeNull()->executor_result->not->toBeNull();
+        $nativeEnd();
+    } else {
+        $nativeEnd();
+        // Only the run's end is recorded: no receipt yet, so the fence holds the lock.
+        expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull()
+            ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('failed');
+        $receipt();
+        journalAnswers([[journalRecord($operation, $kind, 'done', ['status' => 'done'])]]);
+        $this->travel(11)->seconds();
+        app(ExecutorWake::class)->recoverPendingCompletions();
+        Queue::pushed(RereadExecutorJournal::class, fn (RereadExecutorJournal $job): bool => $job->operationId === $operation->id)->last()?->handle(app(ExecutorWake::class));
+    }
+
+    expect($operation->refresh())->lock_key->toBeNull()->executor_result->toMatchArray(['status' => 'done', 'action' => $kind])
+        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('failed')
+        ->and($operation->finished_at->equalTo($ended))->toBeTrue()
+        ->and($instance->runtime()->firstOrFail()->power_state->value)->toBe($kind === 'sleep' ? 'stopped' : 'running')
+        ->and($swampFrames)->toContain('workflow.history.get');
+})->with(['wake', 'sleep'])->with(['native end first' => false, 'receipt first' => true]);

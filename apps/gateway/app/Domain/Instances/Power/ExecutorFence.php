@@ -133,6 +133,17 @@ final class ExecutorFence
     }
 
     /**
+     * An Operation that ended under its fence after the Gateway expired its run's budget, whose native end is not recorded yet: the
+     * reconcile pass records that end (ExpireOperationAction::settle) with its status, code and lock unchanged, so runEnded() can let a
+     * receipt or the journal free it.
+     */
+    public static function awaitsRunEnd(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Interrupted && $operation->error_code === 'executor.result_unknown'
+            && $operation->lock_key !== null && is_array($operation->state['native_timeout'] ?? null) && ! self::runEnded($operation);
+    }
+
+    /**
      * R1: records the first matching receipt on the Operation and returns the durable one. A receipt recorded earlier always wins over a
      * later copy, so a repeated delivery or a failed transport cannot change it.
      *

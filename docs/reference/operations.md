@@ -23,7 +23,9 @@ With no result by the deadline, the Gateway reads the Node's executor journal fo
 
 The reconcile pass reads the journal again for every Operation that ended `interrupted` with `executor.result_unknown` under a signed-order fence, not only sleep and wake. That includes `instance.deploy` and `instance.start`, whose Swamp run asked the Gateway to sign a lifecycle order, such as the boot's `discard`, and a sleep or wake whose Swamp recovery run signed its order. The pass reads the least recently read Operations first, at most 50 per pass, so each gets its turn.
 
-A recorded result, or a late WebSocket receipt, is stored once. It frees the lock once the Operation's Swamp run is confirmed over. A run that the Gateway expired by its budget is over only when its native terminal is recorded; until then the receipt is kept and the lock stays. A receipt stored before a crash frees the lock on the next pass, unchanged.
+A recorded result, or a late WebSocket receipt, is stored once. It frees the lock once the Operation's Swamp run is confirmed over. A run that the Gateway expired by its budget is over only when its native terminal is recorded; until then the receipt is kept and the lock stays.
+
+The reconcile pass and the native-end job record that terminal for such an Operation and change nothing else: it keeps its status, code, `finished_at`, receipt and lock. A receipt already stored then frees the lock at once; otherwise the next journal read does. A receipt stored before a crash frees the lock on the next pass, unchanged.
 
 No record frees the lock only for an order whose Gateway signing time and expiry the Gateway recorded when it signed. The Gateway's clock must be a minute past that expiry, and the read must prove the journal still keeps records from a minute before the signing, by the Node's clock. An order signed before the Gateway recorded these times frees only by its record.
 
