@@ -18,4 +18,5 @@ enum RoleName: string
     case Analytics = 'analytics';
     case CiRunner = 'ci-runner';
     case Swamp = 'swamp';
+    case Agent = 'agent';
 }

@@ -145,7 +145,7 @@ final readonly class NodeFirewallRuleCatalog
             RoleName::AppProd => [],
             RoleName::Metrics, RoleName::Database => [],
             // WireGuard member trust already admits swamp.orbit on 443.
-            RoleName::WebSocket, RoleName::Swamp => [],
+            RoleName::WebSocket, RoleName::Swamp, RoleName::Agent => [],
             RoleName::Analytics => [
                 $this->rule('orbit:analytics-https', '443', $this->wireguardIp($node), 'orbit'),
                 ...$this->analyticsLocalStorage($node),

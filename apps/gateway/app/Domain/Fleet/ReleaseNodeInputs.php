@@ -328,7 +328,7 @@ readonly class ReleaseNodeInputs
                 'swamp/ansible/tasks/private-dns-listener.yml', 'swamp/ansible/tasks/private-dns-withdraw.yml'],
             // These roles use the common converge play and the branches selected by their rendered resources and software.
             RoleName::AppDev, RoleName::Vpn, RoleName::Router, RoleName::Ingress,
-            RoleName::Database, RoleName::Analytics => [],
+            RoleName::Database, RoleName::Analytics, RoleName::Agent => [],
         };
     }
 

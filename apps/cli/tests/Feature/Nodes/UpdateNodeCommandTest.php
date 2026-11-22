@@ -243,6 +243,22 @@ it('refuses malformed reboot hold options before sending a request', function (s
         ->expectsOutputToContain('node.reboot_hold_invalid')->assertExitCode(1);
 })->with(['', '1', 'yes', 'null']);
 
+it('sets and clears primary_agent through the existing Node update request', function (bool $primary): void {
+    node_update_profile();
+    $mock = MockClient::global(['*/api/v1/nodes/11' => MockResponse::make([
+        'data' => ['id' => 11, 'name' => 'mini', 'status' => 'active', 'primary_agent' => $primary],
+        'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+    ])]);
+    $this->artisan('node:update', ['node' => '11', '--primary-agent' => $primary ? 'true' : 'false', '--json' => true])
+        ->expectsOutputToContain('"primary_agent":'.($primary ? 'true' : 'false'))->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['primary_agent' => $primary]);
+})->with([true, false]);
+
+it('refuses malformed primary_agent options before sending a request', function (string $value): void {
+    $this->artisan('node:update', ['node' => '11', '--primary-agent' => $value, '--json' => true])
+        ->expectsOutputToContain('node.primary_agent_invalid')->assertExitCode(1);
+})->with(['', '1', 'yes', 'null']);
+
 it('refuses the removed task VM and image refresh hold options by name and sends no request', function (string $option): void {
     node_update_profile();
     $mock = MockClient::global();

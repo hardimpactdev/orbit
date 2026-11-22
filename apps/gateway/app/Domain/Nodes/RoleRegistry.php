@@ -22,6 +22,7 @@ final readonly class RoleRegistry
             RoleName::Analytics,
             RoleName::CiRunner,
             RoleName::Swamp,
+            RoleName::Agent,
         ];
     }
 
@@ -137,6 +138,15 @@ final readonly class RoleRegistry
                 // Moving the role means moving its Process and its publication; remove and add it instead.
                 relocatable: false,
                 conflicts: [RoleName::Gateway],
+            ),
+            // Light marker role for a Node that hosts a host-level Conn server entry point (Linux or macOS).
+            RoleName::Agent => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                relocatable: false,
+                metrics: false,
             ),
         };
     }

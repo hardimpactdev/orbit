@@ -63,7 +63,7 @@ A JSON Schema pattern sees characters and Unicode whitespace, while the Gateway 
 
 `GET /api/v1/conn/realtime` (`conn-realtime-show`) and `POST /api/v1/conn/broadcasting/auth` (`conn-realtime-auth`) get their responses by hand in `bin/docs-openapi`: the discovery's nullable `url` and `key`, and the auth's bare `{"auth"}` body without a `data` wrapper, with its 403 `broadcast.channel_forbidden` and 404 `realtime.not_configured`. The `realtime:auth` description says that the Gateway's own auth route refuses every `private-conn-profile.*` channel. `conn-me` and `conn-me-profile` describe `profile_channel`. [Profile events](/reference/conn#profile-events) owns these rules; regenerate OpenAPI and the MCP manifest when they change.
 
-`GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
+`GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields plus `roles` (`string[]`) and `is_primary_agent` (`boolean`) described in [Instance servers](/reference/conn#instance-servers). Their types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.
 
