@@ -387,6 +387,16 @@ The job sends that token as `admin_session`, with the server's environment id, i
 
 Registering again replaces the stored session. The job registers on each server start and before the session expires. An environment whose session expired shows `status: session_expired` and cannot mint pairings until it registers again.
 
+### Unregister a host server
+
+An operator can remove a stale host T3 server entry with `DELETE /environments/{environment_id}` (`conn:environment:unregister`, CLI [`orbit conn:environment:unregister`](/cli/conn/environment-unregister), destructive MCP tool `conn-environment-unregister`) so it stops showing in `conn:environment:list`.
+
+- **Owner-scoped:** requires enabled Conn and node access to the Node that registered the server (or Gateway access when its Node was removed), else `node_access.required` (403).
+- **Host servers only:** a server bound to an Instance (`instance_id` set) is refused with `conn.environment_is_instance` (409); destroy the Instance to remove it.
+- **Busy guard:** a running `conn.*` Operation on the server returns `operation.target_busy` (409) instead of deleting under it.
+- **Synchronous, local removal:** in one transaction, the Gateway deletes the environment row (with its stored `admin_session`), its pairings and held sessions, cached threads, and managed target records (targets, tokens, and revisions), using the same removal routine as Instance destroy. After commit, it drops attached thread references from profiles and deletes execution secret vault copies from the server's `conn.*` Operations. It never contacts the T3 server, which may already be gone.
+- **Idempotent:** returns HTTP 200 with `{"environment_id": "...", "removed": true}` when removed and `{"environment_id": "...", "removed": false}` when the ID is unknown or already removed. Repeated calls never fail. A still-running host T3 server that registers again reappears.
+
 ### Instance servers
 
 `GET /environments` supplies the clone’s Orbit row to Conn: `project_id`, `project_name`, `project_slug`, `instance_name`, `node_name`, and `instance_url` are flat fields beside `environment_id` and `instance_id`. Conn learns the Project and Instance from this Gateway record. Container T3 servers stay stock; they need no T3 change. The same record is returned by the MCP tool `conn-environment-list`.
@@ -1616,6 +1626,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /launches/{operation_id}/retry` | `{ "target": "launch" }` or `{ "target": "application" }` | Launch snapshot (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
+| `DELETE /environments/{environment_id}` | — | `{"environment_id", "removed"}` (200) |
 | `GET /environments/{environment_id}/pairings` | `include_held` query, optional | list of pairing, newest first |
 | `GET /environments/{environment_id}/session` | — | held session (200), or Operation (202) |
 | `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
@@ -1660,6 +1671,7 @@ The objects:
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
 | `conn.environment_not_instance` | 409 | A renewal or a held session asked for a host server; its host renews its own session, and its devices pair themselves. |
+| `conn.environment_is_instance` | 409 | `DELETE /environments/{environment_id}` named a server bound to a container Instance; destroy the Instance to remove it. |
 | `conn.thread_index_unsupported` | 409 | A thread record named a host server; only container servers have an index. |
 | `conn.pairing_in_progress` | 409 | A Gateway session cleanup waits for a pairing that runs with the earlier session. |
 | `conn.environment_asleep` | 409 | The Instance sleeps and the Node holds no session on its server yet. |
