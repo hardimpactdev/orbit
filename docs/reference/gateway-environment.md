@@ -4,12 +4,12 @@ description: "Where the Gateway reads its own .env settings, how to apply a chan
 covers:
   - apps/gateway/.env.example
   - apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php
-  - apps/gateway/app/Actions/Tasks/*SwampReaderCredentialAction.php
-  - apps/gateway/app/Console/Commands/*SwampReaderCredentialCommand.php
+  - apps/gateway/app/Actions/*/*Swamp*Credential*Action.php
+  - apps/gateway/app/Console/Commands/*Swamp*Credential*Command.php
   - apps/gateway/app/Console/Commands/InstallNestedFleetClubKeyCommand.php
-  - apps/gateway/app/Domain/Tasks/SwampReaderCredential.php
-  - apps/gateway/app/Domain/Tasks/SwampReaderAssistance.php
+  - apps/gateway/app/Domain/Tasks/SwampReader*.php
   - apps/gateway/app/Infrastructure/Tasks/SwampReaderEnvironment.php
+  - apps/gateway/app/Infrastructure/SwampCredentials/*.php
 ---
 
 # Gateway environment
@@ -70,8 +70,9 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | --- | --- |
 | `ORBIT_SWAMP_READ_TOKEN` | Dedicated Swamp token with workflow and output-data read grants only. Store it in the Gateway environment; never expose it to the browser. |
 | `ORBIT_SWAMP_ADDRESS` | Swamp server address, default `swamp.orbit`, on port 443. Set its WireGuard address when Gateway DNS cannot resolve that name. TLS always verifies `swamp.orbit`. |
-| `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
+| `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-credentials` or `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
+| `ORBIT_SWAMP_RUN_TOKEN_NAME`, `ORBIT_SWAMP_RUN_TOKEN_EXPIRES_AT` | The same for `ORBIT_SWAMP_RUN_TOKEN`, written by `gateway:swamp-credentials`. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
 | `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways. Written by `gateway:nested-fleet-club-key:install`; each run start reads this file. Empty: a nested-fleet container starts without it. |
 
@@ -92,72 +93,50 @@ On a prepared Gateway, the installer also publishes the replacement into the dir
 
 Each successful installation takes effect without a worker reload. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). If the host process stops during publication, run `sudo /usr/local/libexec/orbit-gateway-environment refresh` before starting another nested fleet. This republishes the complete host file. Keep the private backup under the Gateway operator's retention policy.
 
-### Rotate the Swamp reader credential
+### Renew the Swamp read and run tokens
 
-The Gateway operator owns rotation. Swamp requires admin authority to mint or revoke tokens. The Gateway keeps only workflow and data read grants, so it does not renew itself. A reader token lasts 30 days. While a reader is configured, Orbit checks the shared env file each hour and requests assistance in the `orbit` Project seven days before expiry. Missing name or invalid expiry metadata requests assistance at once. Repeated checks reuse the request for that credential. With Tasks disabled, the check returns a failure instead of silently skipping a due request.
+The Gateway holds two Swamp access tokens: `ORBIT_SWAMP_READ_TOKEN` (principal `user:orbit-gateway-read`, workflow and data read grants only) and `ORBIT_SWAMP_RUN_TOKEN` (principal `user:orbit-gateway`). Each lasts 30 days. A generation is named `<base>-<YYYYMMDD>` after its UTC renewal day, such as `orbit-gateway-read-20261121`. When that name is revoked or unusable, the next is `<base>-<YYYYMMDD>-2`. A plain `orbit-gateway-read` or an older `<base>-<UTC stamp>` belongs to the same family. The generation in use is the name before the first `.` of the env value. `_NAME` and `_EXPIRES_AT` beside it are informative only.
 
-`gateway:swamp-reader:install` is the protected env writer. Run this internal Artisan command as `orbit` on the Gateway host, where the protected file is writable. It reads at most 16 KiB of official `swamp access token reveal --yes --json` output from stdin. Pass the replacement's `expiresAt` from the mint result with `--expires-at`. The command requires a new token name, a non-expired reveal, and an expiry more than seven days away. It never prints the token or passes it in command arguments.
+`gateway:swamp-credentials` runs every hour. It works from live facts only, so a rerun after a crash at any step finds the same facts and finishes:
 
-1. On the Swamp server, mint a replacement under a new name.
+The Gateway finds the Swamp Node by its `swamp` role and reaches it over its managed SSH. There it runs one fixed entrypoint that the swamp role installs, `/usr/local/lib/orbit-swamp/gateway-token`:
 
-   Run as the service account in the Swamp repository. Keep the existing `user:orbit-gateway-read` principal with only `read` grants on `workflow:*` and `data:*`.
+1. `list` returns each token's name, principal and expiry, and the generation each Swamp Node consumer holds. It returns no secret.
+2. A token is due by that list: its generation in the env expires within ten days, or is not active.
+3. `mint read|run` mints today's name with the base's fixed principal for 30 days.
+4. An active name of today is revealed again instead. A lost reply therefore never mints a second generation.
+5. The Gateway reads the reveal on stdout. No argument, log or message holds the secret.
 
-   ```bash
-   replacement="orbit-gateway-read-$(date -u +%Y%m%dT%H%M%SZ)"
-   swamp access token mint "$replacement" \
-     --principal user:orbit-gateway-read --duration 30d --json
-   ```
+The protected installer then does the switch:
 
-2. On Gateway, pull the reveal over its managed SSH connection to Swamp.
+1. It requires a dated name of that base and an expiry more than ten days away.
+2. It verifies a workflow-history read with the new token and writes a private mode-`0600` backup.
+3. It replaces the token, its name and its expiry in one atomic rename.
+4. The command applies `gateway:release:configure` as long as the cached configuration holds an older name. A rerun after a failed configure applies it too.
 
-   Disable shell tracing. Set `replacement` to the minted name, `expires_at` to the exact non-secret expiry in the mint result, and `swamp_host` to the Swamp Node's WireGuard address. Use Gateway's managed key and pinned host identity. The example uses the installed Swamp repository path; run against the repository that serves Swamp. Do not save reveal output to a file or a shell variable.
+A predecessor is another active token of the same family and principal that expires before the installed one. The command revokes it when two facts hold. First, the serving configuration holds the installed name. Second, every long-running Gateway process started after the env last changed: `orbit-agent-view`, Horizon, the engine and `schedule-work`. Systemd reports when each main process started. A release handover restarts them; a Reconcile does not count.
 
-   ```bash
-   set +x
-   set -o pipefail
-   ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
-     -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-     -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts \
-     "orbit@$swamp_host" /usr/local/bin/swamp \
-       access token reveal "$replacement" \
-       --repo-dir /home/orbit/apps/orbit-swamp/default --yes --json | \
-     php /home/orbit/orbit/apps/gateway/artisan \
-       gateway:swamp-reader:install --expires-at="$expires_at"
-   ```
+In a [release container](/reference/gateway-recovery#move-the-gateway-to-release-containers) the guest sees the env only as a read-only projection. Both the hourly run and a release install due tokens through the same protected host path. `swamp/scripts/gateway-swamp-token-install.py` runs on the host as `orbit` to write the backup and atomic rename. Then `orbit-gateway-environment refresh` publishes the new inode to the read-only projection, and `gateway:release:configure` (or the candidate's config cache during a release) caches it.
 
-   The command holds the Gateway release lock, verifies a fresh workflow-history read with the candidate credential, and creates a private mode-`0600` backup before changing the env file. It preserves other settings and replaces the token, its name, and its expiry in one atomic rename. Duplicate definitions, invalid env input, and unsafe files refuse before mutation.
+During a release, the `swamp-credentials` phase runs `gateway:swamp-credentials --mint-for-host=read|run` in the candidate and pipes each verified reveal into that host script. The hourly run reaches the Gateway host over managed SSH with the reveal on protected stdin. The projection is never writable.
 
-   After the verified replacement is installed, the command clears the previous credential's own rotation assistance. A failed live read or env write leaves that assistance open. A newer operator direction or unrelated assistance stays unchanged. Successful output contains only the token name, expiry, and backup path.
+This uses the existing SSH authority of the Gateway over the Swamp Node and adds no grant. The entrypoint mints only the two Gateway bases with their fixed principals, so the read token stays read-only. It revokes only `orbit-gateway-read*` and `orbit-gateway-run*` names. `swamp access token rotate` is never used: it would end every session that still uses the name.
 
-3. Apply the env change and verify the serving Gateway.
+A release meeting the release lock ends the hourly run without error; the release renews itself.
 
-   On a container deployment, run the installed helper on the Gateway host. It publishes the host env and applies it to the serving release.
+Every Gateway release, on a host or in release containers, runs its `Renew Swamp tokens` step before `Load Swamp on Node 209`. It starts `orbit-swamp-token-renewal` on the Swamp Node ([Swamp token renewal](/reference/node-provisioning#swamp-token-renewal)), renews the Gateway tokens, and caches the candidate's configuration again, so the new release loads the installed generation. It then fails with `gateway.release_swamp_token_expiring` while a live consumer holds a generation that expires within three days, or that serve does not list. Those are the serve-driver file, each worker slot's `server.token` and `enrollment.token`, and both Gateway env values. After the handover, `Revoke replaced tokens` runs the revocation rule above. A failed or skipped revocation is found again by the hourly run.
 
-   ```bash
-   sudo /usr/local/libexec/orbit-gateway-environment configure
-   ```
+When renewal fails and an installed read or run token expires within three days, the hourly run asks the operator for assistance on the `orbit` Project. The Swamp credential monitor cannot see the Gateway env, so this is the alert for the generation the Gateway holds.
 
-   On a host deployment, run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure` as `orbit`.
-
-   Read a known group's `/api/v1/tasks/{task}/swamp-runs` endpoint and require `availability: available` with a fresh `observed_at`. HTTP 200 alone does not prove an upstream read. The installer verifies the candidate before publication; it does not refresh the serving configuration or revoke credentials.
-
-4. Revoke the old token only after that read succeeds.
-
-   On Swamp, run `swamp access token revoke <old-name>`. The installer clears the old rotation assistance. Complete its task after serving verification and revocation. If configuration application or serving verification fails, keep the old token valid, restore the protected backup, apply configuration again, and revoke the unused replacement.
-
-`ORBIT_SWAMP_READ_TOKEN_NAME` and `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` record the installed credential.
-
-For an existing installation without these fields, the first hourly check requests assistance. When the name and expiry are already known, back up the env file privately, then add or replace only these two metadata keys in a private editor. Leave `ORBIT_SWAMP_READ_TOKEN` unchanged. Apply configuration using the command for the current deployment in step 3, then run `gateway:swamp-reader:check`. This records metadata without revealing the token. If assistance was already raised, resolve that request after a fresh serving read confirms the existing credential.
-
-Run `gateway:swamp-reader:check` to check now. A due request stays visible after expiry; a token with no reader configured is skipped. Missing the `orbit` Project or disabling Tasks makes a due check fail visibly, and the failure names its error code or class. A release holds the release lock for its whole run. A check that meets that lock ends without error and reads the token again at the next hourly run. The request is an operator action and starts no agent or workflow.
-
-Minting under a new name keeps the old credential valid until the replacement works. `swamp access token rotate <name>` revokes and replaces that name immediately, so it is not used for this handoff. Keep private backups under the Gateway operator's retention policy.
+`gateway:swamp-reader:install` stays the manual writer for the read token, for example after a lost Swamp control plane. It reads at most 16 KiB of `swamp access token reveal --yes --json` from stdin with the mint's `--expires-at`, verifies a read, and writes the same backup and atomic rename. Apply configuration after it, verify a fresh `/api/v1/tasks/{task}/swamp-runs` read, and revoke the old token only once no Gateway process holds it.
 
 Swamp stores the authoritative secret encrypted in its control-plane vault. `reveal` emits plaintext on stdout inside the private pipe. The writer's temporary file, the installed env file, protected backups, and Laravel's configuration cache contain plaintext and require mode `0600`. The [Swamp access commands](https://swamp-club.com/manual/reference/swamp-serve/access-commands) define minting, reveal, and revocation.
 
-#### Why rotation needs an operator
+#### Why the Gateway renews its own tokens
 
-Automatic minting would give the Gateway admin authority over Swamp access. The reader stays read-only. Orbit supplies a tested installer and a scheduled assistance request so renewal has an executable path and a visible deadline.
+An operator renewal missed its deadline once: the serve-driver token expired and two releases failed at Load Swamp. The Gateway already reaches the Swamp Node over its managed SSH, as `orbit`, the account that holds the serve-driver token, so that authority could always mint.
+
+A fixed entrypoint narrows what the Gateway runs with it to the two Gateway bases and their own revocation, and grants it nothing in Swamp: the read token stays read-only. Minting a new name, then switching, then revoking once no process can hold the old name keeps each live session open; `rotate` would end them.
 
 ## Where the file lives
 

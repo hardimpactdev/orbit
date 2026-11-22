@@ -1574,6 +1574,7 @@ cases:
   expected:
   - orbit-swamp-serve.service
   - orbit-swamp-worker-renewal.timer
+  - orbit-swamp-token-renewal.timer
   - orbit-swamp-worker@a.service
   - orbit-swamp-worker@b.service
   - orbit-swamp-worker@c.service

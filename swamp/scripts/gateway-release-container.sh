@@ -709,6 +709,20 @@ case "$action" in
   wait-idle)
     artisan "$candidate" gateway:release:wait-idle --no-interaction
     ;;
+  swamp-credentials)
+    # The guest sees the shared env only as a read-only projection. The candidate mints (or resumes) and verifies each due token,
+    # this host installs it as orbit and publishes it to the guest, and the candidate then caches it and checks every live token.
+    for kind in read run; do
+      artisan "$candidate" gateway:swamp-credentials --mint-for-host="$kind" --no-interaction \
+        | runuser -u orbit -- python3 -I -c "$(src swamp/scripts/gateway-swamp-token-install.py)" "$kind"
+    done
+    /usr/local/libexec/orbit-gateway-environment refresh
+    artisan "$candidate" gateway:swamp-credentials --release --no-interaction
+    ;;
+  swamp-credentials-revoke)
+    [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
+    artisan "$candidate" gateway:swamp-credentials --revoke --no-interaction
+    ;;
   ready)
     address=$(ctl address gateway "$id")
     proxy=$(ip -4 -j addr show orbitgw0 | jq -er '.[0].addr_info[] | select(.scope == "global").local')

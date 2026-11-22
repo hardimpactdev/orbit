@@ -63,7 +63,7 @@ if [[ $phase == reconcile-end ]]; then
 fi
 if [[ -f $lease ]]; then
   case "$phase" in
-    reconcile-idle|reconcile-begin|reconcile-verify)
+    reconcile-idle|reconcile-begin|reconcile-verify|swamp-credentials)
       [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; } ;;
     switch|recover|build|build-checked|check-load)
       echo 'The serving workflows are being reconciled. See gateway-recovery for interrupted runs.' >&2; exit 1 ;;
@@ -115,8 +115,8 @@ if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconci
 fi
 if [[ $phase == build-checked ]]; then phase=build; fi
 case "$phase" in
-  build|web|clone|switch|recover|start-horizon|quiesce|retire|settle|park-preparation|release-unused) ;;
-  migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready) check_recovery ;;
+  build|web|clone|switch|recover|start-horizon|quiesce|retire|settle|park-preparation|release-unused|swamp-credentials-revoke) ;;
+  migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready|swamp-credentials) check_recovery ;;
   *) echo "Unknown Gateway release phase: $phase" >&2; exit 64 ;;
 esac
 # Cleanup belongs to the current host controller, including a rollback to an older
@@ -175,4 +175,10 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   exit
 fi
 git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"
+if [[ $phase == swamp-credentials || $phase == swamp-credentials-revoke ]]; then
+  if ! git -c safe.directory="$repo" -C "$repo" grep -qE "^[[:space:]]*${phase}\)" "$sha" -- "$script"; then
+    echo "gateway.swamp_credentials_skipped: $sha predates the $phase phase; skipping" >&2
+    exit 0
+  fi
+fi
 exec bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") "$phase" "$sha" "$operation" "$@"

@@ -1,0 +1,28 @@
+file = "swamp/tests/ansible_swamp_token_renewal_test.py"
+cost = 1
+cases = [
+  "test_every_swamp_call_sources_the_credential_env_through_swamp_env_as_the_serve_account",
+  "test_the_older_tokens_envelope_renews_like_the_plain_array",
+  "test_an_unknown_token_list_shape_fails_closed_and_changes_no_file",
+  "test_nothing_is_due_so_nothing_changes",
+  "test_due_tokens_mint_a_dated_generation_verify_and_switch_without_rotate_or_revoke",
+  "test_a_refused_worker_candidate_leaves_server_token_untouched",
+  "test_out_of_scope_tokens_are_never_touched",
+  "test_the_old_worker_token_stays_until_the_worker_process_started_after_the_switch",
+  "test_the_old_serve_driver_stays_until_its_file_is_a_day_old",
+  "test_a_rerun_after_a_crash_or_lost_reply_at_any_step_finishes_once_and_keeps_the_predecessor",
+  "test_a_revoked_name_of_today_gets_a_numbered_suffix",
+  "test_malformed_output_never_reaches_the_failure",
+  "test_families_cover_dated_numbered_and_legacy_names",
+  "test_worker_started_during_verification_does_not_revoke_predecessor_for_any_slot",
+  "test_enrollment_fails_closed_on_missing_or_unknown_state",
+  "test_undelimited_secret_in_any_credential_file_fails_without_printing_secret",
+]
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/library/orbit_swamp_token_renewal.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

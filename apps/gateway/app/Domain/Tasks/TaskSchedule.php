@@ -13,7 +13,8 @@ final readonly class TaskSchedule
     public function register(Schedule $schedule): void
     {
         $enabled = static fn (): bool => app(TaskExtensionState::class)->enabled();
-        GatewaySchedule::command($schedule, 'gateway:swamp-reader:check', uniqueFor: 300, overlapMinutes: 10, queue: GatewayQueue::Problems)->hourly()
+        // Renews the Swamp read and run tokens ten days before expiry; a release revokes the replaced ones after it restarts processes.
+        GatewaySchedule::command($schedule, 'gateway:swamp-credentials', uniqueFor: 900, overlapMinutes: 15, queue: GatewayQueue::Problems)->hourly()
             ->when(static fn (): bool => config()->string('swamp.read_token') !== '');
         // The gate check of stage 4 only reads and admits; its bound covers the GitHub reads of one tick.
         GatewaySchedule::command($schedule, 'task:pr-gate', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);

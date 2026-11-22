@@ -1,0 +1,17 @@
+file = "swamp/tests/swamp_gateway_token_test.py"
+cost = 2
+inputs = [
+  "swamp/ansible/files/swamp-env.sh",
+  "swamp/ansible/files/swamp-gateway-token.sh",
+]
+cases = [
+  "test_list_parses_both_cli_shapes_and_names_the_held_generations_without_secrets",
+  "test_every_swamp_call_sources_the_credential_env_without_printing_it",
+  "test_a_missing_credential_env_fails_closed_with_a_clear_message_before_any_swamp_call",
+  "test_list_reads_the_plain_array_of_swamp_20261114_and_the_older_envelope_and_refuses_another_shape",
+  "test_list_does_not_invent_state_when_enrollment_state_is_absent",
+  "test_undelimited_secret_in_credential_files_is_never_printed",
+  "test_mint_names_the_day_and_a_rerun_reveals_the_same_generation",
+  "test_a_revoked_name_of_today_takes_the_next_suffix",
+  "test_revoke_accepts_only_gateway_generations",
+]

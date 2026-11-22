@@ -105,17 +105,21 @@ A pass deletes in batches of 100 versions, one version at a time, for at most 5 
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers on Node 209 ([Schedules of the Swamp Node](#schedules-of-the-swamp-node)). It is alert only: it reads expiry metadata and changes no credential or grant. Three plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers on Node 209 ([Schedules of the Swamp Node](#schedules-of-the-swamp-node)). It is alert only: it reads expiry metadata and changes no credential or grant. Four plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
 
 - `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
-- `openssl x509 -enddate` for the `swamp.orbit` certificate.
+- `openssl x509 -enddate` for the `swamp.orbit` certificate;
+- the token names the Swamp Node's consumers hold: the part before the first `.` of the serve-driver file and of each worker slot's `server.token` and `enrollment.token`, never the secret.
 
-The `check` step, the `credential_report` method of `@nckrtl/node-worker-assets`, classifies their output without reading anything itself. Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`, for a token with no `expiresAt`. Revoked tokens are skipped. The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
+The `check` step, the `credential_report` method of `@nckrtl/node-worker-assets`, classifies their output without reading anything itself. Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`, for a token with no `expiresAt`. Revoked tokens are skipped.
+
+A renewal mints a new generation `<base>-<YYYYMMDD>` and revokes the old one later. A listed generation is skipped only when a consumer holds a newer generation of its family, so an installed token near expiry still alerts beside a fresh mint that was never installed. The monitor cannot see the Gateway env, so every listed Gateway generation counts; the Gateway asks for assistance itself when renewal failed and an installed read or run token expires within three days ([Renew the Swamp read and run tokens](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens)).
+
+`orbit-orchestrator-read`, the operator's file on mini, has no fleet consumer and nothing renews it: it also gets `within_10d` 240 hours before expiry, so the operator mints a new name, switches the file and revokes the old one. The renewals that keep the other live tokens fresh are [Swamp token renewal](/reference/node-provisioning#swamp-token-renewal) and [Renew the Swamp read and run tokens](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens). The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
 
 | Result | Alert reason |
 | --- | --- |
-| A credential is `within_72h`, `within_6h` or `expired` | The class |
-| The `orbit-node-209-access` or `orbit-node-209` token is not listed | `missing` |
+| A credential is `within_10d` (`orbit-orchestrator-read` only), `within_72h`, `within_6h` or `expired` | The class |
 | A native list fails, times out or changes shape | The run fails |
 
 Club tokens are not checked. Their list needs a personal Swamp Club account, and a Node holds only a service key. Their expiry is watched in the Swamp Club account itself.
@@ -126,7 +130,15 @@ If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_f
 
 The Gateway keeps the last projected run, the failure streak and the delivered alerts in the Gateway setting `swamp.credential-monitor`. It skips any run that started at or before the last one, so a replay after a reader reset or `optimize:clear` sends nothing. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
 
-Renewal stays a hand procedure. When an alert names a worker token, follow the [worker enrollment steps](/reference/node-provisioning#per-node-swamp-worker) to issue it again. Then follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209) to restore the worker.
+What an alert asks depends on the credential:
+
+- `serve-driver`, `swamp-role-209-<slot>-access` and `swamp-role-209-<slot>`: [Swamp token renewal](/reference/node-provisioning#swamp-token-renewal) renews these tokens of the three live role workers ten days ahead. A `within_72h` alert means it failed.
+- For those, read `journalctl -u orbit-swamp-token-renewal` on the Swamp Node and fix the cause. Then run `sudo systemctl start orbit-swamp-token-renewal.service`.
+- Never replace a valid live token by hand. A rotate or revoke ends every session that uses it.
+- `orbit-gateway-read*` and `orbit-gateway-run*`: read the output of `gateway:swamp-credentials` on the Gateway and run it again.
+- `orbit-orchestrator-read`: alert only, ten days ahead. Mint a new name, switch the operator file on mini, then revoke the old name.
+- `orbit-node-209-access` and `orbit-node-209` belong to the per-Node worker, which no placement targets, and nothing renews them.
+- An already expired live token: the timer and the release cannot renew through an expired serve-driver token. Follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209).
 
 ## Native run budgets
 

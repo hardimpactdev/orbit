@@ -80,12 +80,15 @@
   loop: "{{ rt.swamp.workers }}"
 - name: Start worker renewal after all workers
   ansible.builtin.systemd: { name: orbit-swamp-worker-renewal.timer, state: started, enabled: true }
+# Token renewal restarts no worker: it mints, switches files and revokes an old generation only after its worker reconnected.
+- name: Start token renewal
+  ansible.builtin.systemd: { name: orbit-swamp-token-renewal.timer, state: started, enabled: true }
 # One backslash: Ansible keeps backslashes in a string inside `{{ }}` as written (unlike `{% %}` and bare conditions), so `\\1`
 # named no unit (Operation 24008, 2026-11-15); see .agents/skills/ansible-phase/SKILL.md. The command-output table renders this loop.
 - name: Check Swamp units
   ansible.builtin.command: { argv: [systemctl, is-active, "{{ item }}"] }
   loop: >-
-    {{ ['orbit-swamp-serve.service', 'orbit-swamp-worker-renewal.timer']
+    {{ ['orbit-swamp-serve.service', 'orbit-swamp-worker-renewal.timer', 'orbit-swamp-token-renewal.timer']
     + (rt.swamp.workers | map('regex_replace', '^(.*)$', 'orbit-swamp-worker@\1.service') | list) }}
   changed_when: false
 - name: Check Swamp version
