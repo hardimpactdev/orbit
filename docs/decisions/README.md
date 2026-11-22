@@ -44,7 +44,7 @@ The [overview](/decisions/overview#retired-decisions) lists all retired decision
 
 | Record | Retired path | Now in |
 | --- | --- | --- |
-| 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Drivers](/reference/tasks#drivers) |
 | 0192 | `/decisions/0192-stop-a-group-whose-pull-request-ended` | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#execution-ownership) |
 | 0193 | `/decisions/0193-run-task-agents-as-a-dedicated-user` | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 

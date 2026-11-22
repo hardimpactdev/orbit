@@ -12,7 +12,7 @@
   "redirects": [
     {
       "source": "/reference/main-full-set",
-      "destination": "/reference/implementation-loop#no-after-merge-stage"
+      "destination": "/reference/implementation-loop#deliver-the-queues-commit-on-main"
     }
   ]
 }

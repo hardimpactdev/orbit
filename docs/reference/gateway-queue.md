@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection and ACL user, its queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection and ACL user, its six Horizon queues, scheduled work, and release drain behavior."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -9,220 +9,135 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as a recipe refresh, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore does not delay the scheduler. Problem filing and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists. Explicit observation passes run in native Swamp workflows.
+The Gateway scheduler dispatches most recurring work as queued jobs executed by [Laravel Horizon](https://laravel.com/docs/horizon), so slow tasks never block the scheduler loop. Lightweight local checks and cleanup run directly in the scheduler, as listed under [Scheduled work](#scheduled-work).
 
 ## Connection
 
-The queue connection `gateway` uses the Redis driver. Its Redis server is reached through a [Redis Database connection](/reference/database-connections), such as `gateway-queue` for Valkey on `services`. Configure the Gateway's [`horizon` Process](#horizon) before enabling the queue. Set these keys in `/home/orbit/shared/gateway.env`, then run a release to cache them and restart Horizon. A release starts an existing Horizon Process; it does not create one. Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler could dispatch work before Horizon runs.
+The `gateway` queue connection uses Laravel's Redis driver backed by a registered [Redis Database connection](/reference/database-connections), such as `gateway-queue` on a Valkey [Database server](/reference/database-servers). Configure the Gateway's [`horizon` Process](#horizon) before enabling the queue, set the variables below in `/home/orbit/shared/gateway.env`, and run a release so both the cached configuration and Horizon restart together.
 
 | Key | Default | Effect |
 | --- | --- | --- |
-| `ORBIT_GATEWAY_QUEUE_CONNECTION` | empty | The slug of the Redis Database connection. Empty keeps the [inline schedule](#without-a-queue) |
-| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other client of that server uses |
+| `ORBIT_GATEWAY_QUEUE_CONNECTION` | empty | Slug of the Redis Database connection. Leaving it empty keeps eligible scheduled commands inline |
+| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | Redis database index dedicated to the queue and Horizon |
 
-The Gateway reads the host, port, username, and password of that connection from its records when a process first uses Redis. A FrankenPHP web worker reads them once when it starts, into the worker's own configuration, so every request it serves uses that host. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
+The Gateway resolves the connection's host, port, username, and password from its database when a process first touches Redis, using Predis so no PHP Redis extension is required. Queue keys use the prefix `orbit-gateway:` and Horizon keys use `orbit-gateway-horizon:`. The connection sets `block_for => 5`, `retry_after => 1800`, and `after_commit => true`.
 
-After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services` is the Valkey [Database server](/reference/database-servers) `services-valkey`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. Every client logs in with a password. The queue and Horizon log in as their own [ACL user](#acl-users), `gateway-queue`, through the Database connection of the same name. That user reaches only the queue's keys.
+The Valkey server listens only on its WireGuard address with append-only persistence (`--appendonly yes`) and `maxmemory-policy noeviction` so queued jobs survive restarts and are never evicted.
 
 ## Queues
 
-Laravel Horizon runs seven queues on the connection with five supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. Builds, operations, Operation starts and the prompt projection of operations keep separate supervisors:
+Horizon runs six queues on the `gateway` connection across five supervisors. The `tasks` supervisor polls `tasks` before `problems` with balancing disabled, while `builds`, `operations`, `operation-starts`, and `operations-prompt` each have their own supervisor:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | Scheduled commands, an approved commit's publish, and a new container's [workspace baseline](/reference/development-containers#workspace-work-state). The Git mirror's lock keeps one push per Project at a time |
-| `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
-| `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
-| `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
-| `operation-starts` | 4 | Native run starts ([Direct Swamp starts](/reference/operations#direct-swamp-starts)), side by side. Job timeout 150 seconds, memory cap 256 MB |
-| `operations-prompt` | 1 | [Ended run projection](/reference/operations#how-an-operation-runs) and [executor wake work](/reference/executor#the-wake-inside-the-request): deferred publication, completion, notices and lifecycle follow-up. Job timeout 150 seconds, memory cap 256 MB |
+| `tasks` | 3 | Scheduled commands, approved commit publishing, and new container [workspace baselines](/reference/development-containers#workspace-work-state) |
+| `problems` | shares the 3 `tasks` workers | Observation context publication, Swamp credential renewals, and batch metadata pruning |
+| `builds` | 2 | Base snapshot refresh admission and image Operations |
+| `operations` | 1 | Serialized Swamp reconciliation, schedule fires, Route promotions, and registry closes |
+| `operation-starts` | 4 | Concurrent [direct Swamp starts](/reference/operations#direct-swamp-starts) (timeout 150 s, memory cap 256 MB) |
+| `operations-prompt` | 1 | [Ended run projection](/reference/operations#how-an-operation-runs) and [executor wake handoffs](/reference/executor#the-wake-inside-the-request) (timeout 150 s, memory cap 256 MB) |
 
-A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
+A slow pass on `operations` never blocks `operations-prompt`, and four `operation-starts` workers let concurrent starts proceed while one waits up to 120 seconds for Swamp confirmation. Status transitions and target holds keep concurrent starts safe.
 
-A start waits for Swamp's confirmation for up to 120 seconds. On one worker such a wait held every other start, and every job on `operations`, behind it. Four start workers, one for each CPU of the Swamp Node, let other starts go on while one waits.
-
-Running side by side is safe: the status change at the start of a submission admits one job per Operation, and a target hold refuses a second Operation for the same held target until the first ends. Kinds that take no target hold, such as `process.*` and `schedule.*`, never had an ordered start: a deferred start could already run after a later one.
-
-Each start worker uses at most 256 MB. To change the count, change `maxProcesses` and `minProcesses` of `operation-starts` in `apps/gateway/config/horizon.php`; the next release starts Horizon with it.
-
-Image jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
-
-A job runs at most 1700 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
-
-The build workers consume `builds`, with Horizon balancing disabled. These jobs admit image Operations. Swamp orders each run.
+General jobs run for at most 1,700 seconds before Laravel's 1,800-second `retry_after` window releases an unacknowledged reservation. Because `tries` is 1, a reservation that times out fails instead of running twice. Idle workers block-pop with a 5-second timeout, so new jobs start within a second when a worker is free.
 
 ## Scheduled work
 
-The scheduler dispatches each of these as a unique job. While the job waits or runs, the scheduler dispatches no second one, so a slow tick never stacks up:
+When the queue is configured, the scheduler dispatches these commands as unique jobs so a slow tick never overlaps itself:
 
-| Command | Every | Queue | Unique for |
+| Command | Cadence | Queue | Unique for |
 | --- | --- | --- | --- |
-| `gateway:swamp-credentials` | hour | `problems` | 900 seconds |
-| `gateway:release:auto` | 5 minutes | `tasks` | 300 seconds |
-| `conn:threads:read` | minute | `problems` | 120 seconds |
-| `orbit:vault-sync` | minute | `tasks` | 900 seconds |
-| `process:artifacts:check-latest` | day | `tasks` | 3600 seconds |
-| `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
-| `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
-| `queue:prune-failed` | day | `tasks` | 3600 seconds |
-| `activitylog:clean` | day | `tasks` | 3600 seconds |
-| `queue:prune-batches` | day | `problems` | 3600 seconds |
+| `gateway:release:auto` | every 5 minutes | `tasks` | 300 seconds |
+| `orbit:vault-sync` | every minute | `tasks` | 900 seconds |
+| `orbit:activity-finalize-interrupted` | every 5 minutes | `tasks` | 600 seconds |
+| `horizon:snapshot` | every 5 minutes | `tasks` | 300 seconds |
+| `operations:repair-fence` | every 5 minutes | `operations` | 300 seconds |
+| `conn:threads:read` | every minute | `problems` | 120 seconds |
+| `gateway:swamp-credentials` | hourly | `problems` | 900 seconds |
+| `queue:prune-failed` | daily | `tasks` | 3,600 seconds |
+| `activitylog:clean` | daily | `tasks` | 3,600 seconds |
+| `queue:prune-batches` | daily | `problems` | 3,600 seconds |
+| `process:artifacts:check-latest` | daily | `tasks` | 3,600 seconds |
+| `task:pr-gate`, `task:pr-when-done`, `task:merge-round`, `task:copy-settle`, `task:insights-refresh` | periodic (Tasks enabled) | `tasks` | per command |
 
-The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
+Each queued command runs in its own PHP process and logs a non-zero exit as an error. `conn:threads:read` runs only while Conn and `ORBIT_CONN_THREAD_INDEX_POLL` are enabled. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` enforce the [disk retention](/reference/gateway-recovery#disk-retention) windows.
 
-`conn:threads:read` is the [Conn thread index](/reference/conn#thread-index) poll. It runs only while Conn is enabled and its switch `ORBIT_CONN_THREAD_INDEX_POLL` is on; it reads T3 servers and starts no Swamp work.
+The scheduler also dispatches these background jobs on the queue:
 
-`process:artifacts:check-latest` is the [daily release check](/reference/processes-and-schedules#upgrade-a-process) of Process artifacts: it reads GitHub once for each distinct repository, touches no Node and starts no Swamp work.
+- `ReconcileSwampOperations` (every minute on `operations`, unique 300 s): reads terminal results of open Swamp runs and records pass timestamps for [`gateway:status`](/cli/gateway/status).
+- `ReconcileExecutorWakes` (every 5 seconds on `operations-prompt`): relays committed wake notices and leases completion or hook handoffs ([Wake handoff recovery](/reference/executor#wake-handoff-recovery)).
+- `CloseWebSocketOperations`, `CheckDevelopmentDeployments`, `PollSwampScheduledResults`, and `InstanceRemovalReaper::Trigger`: periodic lifecycle reconciliation jobs.
+- `AdmitFleetRollout` (daily at 03:05 Europe/Amsterdam), `AdmitFleetReboot` (daily at 03:06 Europe/Amsterdam), and `CheckFleetRebootConfirmation` (every 5 minutes): fleet maintenance passes.
 
-The last five commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning and Activity cleaning also run while Tasks is disabled; batch pruning runs only while Tasks is enabled.
+These lightweight local commands stay inline in the scheduler even when the queue is enabled:
 
-Image reconciliation goes to the same connection.
-
-These commands stay in the scheduler and never go to the queue, also while it is set:
-
-| Command | Every | Overlap lock |
+| Command | Cadence | Overlap lock |
 | --- | --- | --- |
-| `problems:file` | hour | 30 minutes |
-| `project-documents:probes:reconcile` | minute | 10 minutes |
-| `project-documents:cleanup:work` | 5 minutes | 60 minutes |
+| `doctor:collect` | every 5 minutes | overlap-locked |
+| `problems:file` | hourly | 30 minutes |
+| `project-documents:probes:reconcile` | every minute | 10 minutes |
+| `project-documents:cleanup:work` | every 5 minutes | 60 minutes |
 
-The Gateway collects Doctor findings for every Node every five minutes, from the facts the agents already reported. A failing Node check must show without anyone asking. This local scheduled action uses an overlap lock, makes no network call, and runs even while Tasks or the queue is disabled. Findings, recovery, and the last successful full collection time commit together in the existing Problems store. A failed collection rolls back and is reported once until a collection succeeds.
-
-Doctor preloads its stored findings and resource presence. Unchanged findings share one update for their last-seen time, latest collection time, and bounded occurrence history. New, changed, recurring, and recovered findings can need individual writes. All writes stay in the collection transaction. Fingerprints stay stable. Each row stores how many issues mapped to it in the latest run, so status counts every issue.
-
-Each scheduled run logs `Doctor collection ran.` at info level with `duration_ms`, `write_ms`, `nodes`, and `issues`. Monotonic timing measures the whole run and its write transaction. The same state write stores the durations measured before that write; no second write records timing.
-
-Logs, Activity, assistance signals, and the Horizon-only collection have no schedule. `observation:plan` and `observation:health` still collect Doctor findings, the Gateway's logs, and Activity and assistance signals on request, only while Tasks is enabled. The first signal collection begins at the current Activity cursor; assistance retains its 200-task sample and removes closed references.
-
-[`gateway:status`](/cli/gateway/status) shows the last successful full Doctor collection and the findings observed since it started to an active WireGuard peer. `problems:file` retains its separate hourly schedule and lock; [filing eligibility](/reference/tasks#when-a-fingerprint-is-ready) applies to every collection path.
+`doctor:collect` evaluates stored agent facts locally with no network calls, commits findings and collection timestamps in one transaction, and runs even when Tasks or the queue is disabled. `problems:file` files ready fingerprints hourly under [filing eligibility](/reference/tasks#when-a-fingerprint-is-ready).
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of image reconciliation or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
-
-Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue; the end of a root run also queues `ProjectEndedNativeRun` for that Operation on `operations-prompt` ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
-
-The scheduler checks for committed executor wake work every five seconds. When work is due, it queues the unique `ReconcileExecutorWakes` job on `operations-prompt`. That job relays notices and leases completion and hook handoffs, including lost or exhausted jobs. It runs apart from native reconciliation and never enqueues while it holds SQLite's writer. See [Wake handoff recovery](/reference/executor#wake-handoff-recovery).
+When `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, eligible scheduled commands run inline with overlap locks and `horizon:snapshot` is skipped. Operations still require the queue: admitting a native Swamp start without it fails with `swamp.start_enqueue_failed`.
 
 ## Horizon
 
-Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules) named `horizon`, beside the scheduler Process. A Gateway Node without those Processes gets the units `orbit-gateway-schedule.service` and, where a queue is configured, `orbit-gateway-horizon.service` from the `gateway` role convergence. It is a systemd Process with restart policy `always`. It runs `php artisan horizon` with the scheduler's PHP binary, as `orbit`, in the scheduler's directory, the stable path `/home/orbit/orbit/apps/gateway`. Read its output with `orbit process:logs <id>`. Its unit carries the stop policy `KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no` and `TimeoutStopSec` set to the drain, so a stop waits for running jobs and never kills one. The drain is the longest supervisor job timeout plus 30 seconds.
+Horizon runs as the Gateway Node's systemd Process named `horizon` (or `orbit-gateway-horizon.service` from `gateway` role convergence) with `Restart=always`, executing `php artisan horizon` from `/home/orbit/orbit/apps/gateway`.
 
-A system shutdown or reboot does not wait for that drain. The unit's `ExecStop` runs as root and asks systemd for the system state. When the state is `stopping`, it kills every process of the unit at once, itself included, so the stop ends in seconds and the shutdown goes on. The `-` prefix of that `ExecStop` lets its own kill count as success. Without it, a shutdown waited for the drain while WireGuard and SSH were already down. Laravel releases a killed job again after its `retry_after`. Every other stop, such as a release drain or `orbit process:restart`, still waits for running jobs.
+Its unit sets `KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no`, and `TimeoutStopSec` equal to the longest supervisor timeout plus 30 seconds so stops drain active jobs cleanly. During a system shutdown or reboot, the unit's `ExecStop` guard checks `systemctl is-system-running` and kills the unit immediately when the host is `stopping` so shutdown never stalls waiting on dead network links. On a bootstrapped Gateway, the unit is ordered after `valkey-server.service`.
 
-A bootstrapped Gateway starts both before its first run. The Horizon unit is ordered after `valkey-server.service`, so a shutdown stops Horizon before a local queue server.
-
-The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
-
-A supervisor added to `config/horizon.php` starts with the Horizon master on the release that adds it: the release starts Horizon from that release's cached configuration, so it needs no step of its own. Its job timeout counts toward the drain only when it is the longest one.
-
-Horizon uses cached application configuration. After clearing `ORBIT_GATEWAY_QUEUE_CONNECTION`, apply the env change and destroy the Process with `orbit process:destroy <id>`.
+The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains and restarts Horizon across cutover; it never creates the Process. New supervisors added to `config/horizon.php` start automatically on the release that ships them.
 
 ### Reservation metadata failures
 
-Laravel reserves a Redis job before Horizon records its reservation in a separate Redis connection. A failed metadata write must not discard the job that Laravel already reserved. The Gateway binds Horizon's reservation listener to `GatewayHorizonReservation`: it tries the metadata write once, logs a failure, and returns the job to the worker for normal processing. It does not release the job, add an attempt, or retry the Redis command. Horizon still starts its job timer.
-
-The error `Horizon could not record a job reservation.` records the job UUID, queue connection, queue, host, worker PID, reservation attempt count, exception class, and exception message (`exception_message`). The message preserves the cause, such as a Redis EOF or ACL error. It never records the job payload. Use these fields with the Horizon Process journal to distinguish a metadata failure from a worker that exited. A live worker PID alone does not prove that it still owns an attempt: Laravel can discard a popped job after a listener throws, while the worker continues polling.
+Laravel pops a Redis job before Horizon records its reservation metadata on a separate connection. `GatewayHorizonReservation` catches failures on that metadata write, logs `Horizon could not record a job reservation.` with the job UUID, queue, worker PID, and exception message, and returns the job to the worker without discarding it or adding an attempt.
 
 ## Dashboard
 
-Open `https://gateway.orbit/horizon` in a browser on a machine that is a WireGuard peer with Gateway access, the same access that the Orbit CLI needs for Gateway commands. The dashboard is [Horizon New Dawn](https://github.com/hardimpactdev/horizon-new-dawn), a React interface for Horizon. Any other address gets 403.
+Open `https://gateway.orbit/horizon` from any WireGuard peer with Gateway access to view [Horizon New Dawn](https://github.com/hardimpactdev/horizon-new-dawn). Peers without Gateway access receive HTTP 403.
 
-The dashboard can retry, cancel, and clear jobs, and pause queues, so anyone with Gateway access can change the queue. The Gateway keeps no browser session, so the dashboard has no CSRF token. Laravel's request forgery check runs in origin-only mode instead: a request that changes something passes only when the browser sends `Sec-Fetch-Site: same-origin`. Any other such request gets 403. Bulk actions run as jobs on the `tasks` queue.
-
-Each release publishes the dashboard's compiled assets during `composer install` in the [Swamp build step](/reference/gateway-recovery#build-and-seal-a-release), with `php artisan horizon-new-dawn:assets`. The first release with the dashboard runs its migration, which adds the table `horizon_new_dawn_batch_metadata`. Swamp records Horizon metrics every five minutes for the dashboard.
-
-The Redis server needs `maxmemory-policy noeviction`, so that it never drops a queued job to free memory. `services-valkey` has it. It has no `maxmemory`, so it can use the memory of `services`; a limit for the Gateway's use is a follow-up.
+Because the Gateway uses no browser sessions or CSRF tokens, dashboard requests that change state require `Sec-Fetch-Site: same-origin` (HTTP 403 otherwise). Bulk actions run on the `tasks` queue, and releases publish dashboard assets during `composer install` via `php artisan horizon-new-dawn:assets`.
 
 ## Releases
 
-On a Gateway with release containers, the serving container owns Horizon and the scheduler. Handover drains active jobs on that release. A stopped or removed Horizon Process stays stopped across the switch.
+On a container Gateway, the serving container owns Horizon and the scheduler and drains active jobs during handover. On a host PHP-FPM Gateway, the activate child stops Horizon (verifying `KillMode=mixed` and `SendSIGKILL=no`), switches both release symlinks, restarts running application services, and starts Horizon on the new release. Stopped Horizon Processes remain stopped across cutover.
 
-The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks `KillMode=mixed` or `SendSIGKILL=no`, then checks that the unit is inactive. A missing Horizon Process needs no drain.
-
-The drain is the longest supervisor job timeout plus 30 seconds, and it is fixed in the unit: after you change a supervisor timeout, update the Horizon Process to rewrite the unit. A failed drain prevents the switch. Inspect the Process journal and let running jobs finish before retrying. If the run ends after draining, Horizon can stay stopped; inspect the run before starting it again.
-
-After switching both release links, the child starts Horizon on the selected release and verifies the Gateway. A failed health check runs the local rollback script to switch back. Other requests can queue jobs during the drain; their jobs wait in Redis. Job IDs, attempts, delays and chains do not change.
-
-The switch also restarts other running services whose working directory is under the Gateway application, including the scheduler and agent-view.
-
-`orbit process:restart`, `orbit process:stop` and `bin/gateway-rollback` wait for running jobs up to the drain, because the unit carries the stop policy. To restart Horizon on the current release without a wait, run `php artisan horizon:terminate`.
-
-### Switch back to an older release
-
-A release from before the `operation-starts` supervisor does not work that queue. Starts queued there wait in Redis, with their Operations `queued` and their target holds kept, until a release with the supervisor runs again. To start them on the older release, run one worker by hand as `orbit` in `/home/orbit/orbit/apps/gateway` until the queue is empty: `php artisan queue:work gateway --queue=operation-starts --stop-when-empty --tries=1 --timeout=150`.
-
-A release from before Horizon has no `horizon` command. If the rollback script restarts Horizon on that release, the Process fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. The next release with Horizon starts the Process again, and Horizon works the jobs left in Redis.
-
-A job left in Redis keeps its unique lock in the Gateway cache. The older release then queues no second copy of that job, for example no second destroy of the same VM, until the lock expires; a lock without an expiry stays. To let the older release queue it again, remove the lock as `orbit` in `/home/orbit/orbit/apps/gateway`:
-
-```bash
-php artisan tinker --execute='cache()->forget("laravel_unique_job:App\\Jobs\\TaskVms\\DestroyTaskVm:7");'
-```
-
-The key is `laravel_unique_job:` followed by the job class and its unique id, the task VM id for task VM jobs. When the newer release goes live again, it works the jobs left in Redis.
-
-### The removed `task-vms` queue
-
-The release that removed the task VM runtime also removed the `task-vms` queue and its supervisor. Its jobs were the host sweep, the idle release, the observation of parked VMs and the slot release. All four are gone; the slot release left last, with the task VM lifecycle.
-
-The release drain waits only for running jobs. A job still waiting in the `task-vms` list when the release lands stays there, and no worker of the new release reads it. Each one is a periodic job that did nothing with no task VM: at most one sweep, one idle release and one observation, each held by its unique lock for at most 15 minutes. Losing them is safe. The list may be deleted by hand: `php artisan tinker --execute='app("redis")->connection("gateway")->del("queues:task-vms", "queues:task-vms:delayed", "queues:task-vms:reserved", "queues:task-vms:notify");'` as `orbit` in `/home/orbit/orbit/apps/gateway`.
-
-A switch back to the release before brings the supervisor back. It works what is left in the list with the older code, which has those classes. Nothing has queued a slot release since the task VM runtime was removed, so no worker of either release finds one.
-
-### Jobs across releases
-
-A job queued by one release can run on the next one. The release drain prevents old workers from consuming work published after the serving link changes. A change to a queued job's class, its constructor properties, or a table that a job reads, must work with both releases for one release. Remove the old form in a later release.
+Other requests may keep enqueueing jobs in Redis during a drain; job IDs, attempts, delays, and chains stay intact. Because a job queued by one release can execute on the next, any change to a queued job's class, constructor, or tables must stay backward-compatible for one release before removing the old form.
 
 ## When Redis is down
 
-The queue depends on its Redis server, but the Gateway keeps running without it:
+The Gateway continues serving API requests while Redis is unreachable, with bounded degradation:
 
-- The scheduler logs each failed dispatch as an error and frees the job's unique lock, so the next run dispatches it again. The scheduler keeps running.
-- A running Horizon reports each failed read and keeps running. It works the queued jobs again as soon as Redis answers.
-- A Horizon start fails while Redis is down.
-- A request that queues a job, such as a task VM claim, fails with an error.
+- The scheduler logs failed dispatches, releases the job's unique lock, and retries on the next tick.
+- A running Horizon logs failed reads and resumes automatically once Redis returns.
+- Requests that must enqueue a job fail with an error until Redis recovers.
 
-systemd starts a failed Horizon again after 2 seconds. After several failed starts in a row, systemd stops trying, and the Process shows the failure. Start it again with `orbit process:start <id>`; the next release also starts it.
-
-A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
+If repeated start failures cause systemd to stop restarting Horizon, start it again with `orbit process:start <id>` once Redis is healthy.
 
 ## ACL users
 
-After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-server-with-doctor) checks the users.
+The queue and Horizon authenticate to Valkey as the dedicated ACL user `gateway-queue`, restricting access to queue keys only:
 
 | User | Keys | Commands | Used by |
 | --- | --- | --- | --- |
-| `default` | All | All | The admin user. The [AI router collector](/reference/ai-router#collection) and the Gateway's [snapshot reads](/reference/ai-router#clients) also use it, through the Database connection `services-valkey`, until the collector [gets its own user](#not-built) |
-| `gateway-queue` | `orbit-gateway:*` and `orbit-gateway-horizon:*` | The rules in the table below | The queue and Horizon, through the Database connection `gateway-queue` |
+| `default` | All | All | Admin user and the [AI router collector](/reference/ai-router#collection) |
+| `gateway-queue` | `orbit-gateway:*`, `orbit-gateway-horizon:*` | Scoped list below | Gateway queue and Horizon |
 
-[`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server) creates the user from key patterns and allowed commands. Orbit adds `resetchannels`, `-@all`, and the final `-@admin -@dangerous -function -script`, so the user has no pub/sub channel, no admin or dangerous command, and no `FUNCTION` or `SCRIPT` command:
+Create the user with [`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server). Orbit automatically appends `resetchannels`, `-@all`, and `-@admin -@dangerous -function -script` so admin commands, pub/sub, and script flushing stay blocked:
 
-| Input | Why |
+| Flag | Purpose |
 | --- | --- |
-| `--pattern='orbit-gateway:*'`, `--pattern='orbit-gateway-horizon:*'` | The keys of the queue and of Horizon. `orbit-gateway:*` does not match the Horizon prefix `orbit-gateway-horizon:`, so the user names both |
-| `--allow=@connection` | On each new connection, Predis logs in with `HELLO`, sends `CLIENT SETINFO`, and selects the queue's database with `SELECT` |
-| `--allow=@transaction` | `horizon:snapshot` and the dashboard use `MULTI` and `EXEC` |
-| `--allow=@keyspace` | Horizon sets expiry times on jobs and deletes them. `horizon:clear-metrics` finds metrics with `SCAN` |
-| `--allow=@string`, `@list`, `@hash`, `@set`, `@sortedset` | The queue keeps jobs in lists and sorted sets, and an idle worker waits with `BLPOP`. Horizon keeps jobs, metrics, and tags in strings, hashes, sets, and sorted sets |
-| `--allow=eval` | The queue's Lua scripts push, pop, and move jobs. Valkey checks each `redis.call` in a script against the same rules. Orbit refuses `@scripting` |
-| `--allow=time` | The dashboard's Lua scripts for pending jobs call `TIME`. `TIME` is only in `@fast`, which would allow many more commands |
-
-The final `-@admin -@dangerous -function -script` removes commands that the categories above hold, such as `KEYS`, `SORT`, `FLUSHDB`, `CLIENT LIST`, `CLIENT KILL`, `FUNCTION FLUSH`, and `SCRIPT FLUSH`. The Gateway sends none of them. Key patterns do not limit the database index, and Valkey has no memory limit, so a leaked `gateway-queue` password can still fill the server's memory.
-
-### Set up the queue user
-
-These steps bring the `valkey` Process on `services` under Orbit and move the queue to its own user. Run each command on a machine with Gateway access.
-
-First, adopt the Process as a Valkey Database server. `<id>` is the ID of the `valkey` Process in `orbit process:list --node=services`. Run this when the [dashboard](#dashboard) shows no running build or operation, because Valkey restarts once:
-
-```bash
-orbit database:server:create services-valkey --node=services --driver=redis --process=<id> --connection=services-valkey
-```
-
-The Gateway takes the password of `services-valkey` as the admin password, writes the ACL file, and restarts Valkey with it. The server runs `valkey/valkey:8.1`, so the restart also moves the Process from `valkey/valkey:8` to 8.1. Valkey reads its append-only file again, so the queued jobs stay. The queue and the collector keep logging in as `default` with the same password. [When Redis is down](#when-redis-is-down) describes the Gateway during the restart.
-
-Then create the queue's user and its connection:
+| `--pattern='orbit-gateway:*'`, `--pattern='orbit-gateway-horizon:*'` | Matches both queue and Horizon key prefixes |
+| `--allow=@connection` | Predis `HELLO`, `CLIENT SETINFO`, and `SELECT` |
+| `--allow=@transaction` | `MULTI` and `EXEC` for snapshots and the dashboard |
+| `--allow=@keyspace` | Key expiry, deletion, and `SCAN` for metrics cleanup |
+| `--allow=@string`, `@list`, `@hash`, `@set`, `@sortedset` | Queue lists, sorted sets, `BLPOP`, and Horizon hashes |
+| `--allow=eval` | Queue Lua scripts (Valkey still enforces command rules inside scripts) |
+| `--allow=time` | Dashboard pending-job scripts |
 
 ```bash
 orbit database:create gateway-queue --server=services-valkey --database=1 \
@@ -231,56 +146,22 @@ orbit database:create gateway-queue --server=services-valkey --database=1 \
   --allow=@hash --allow=@set --allow=@sortedset --allow=eval --allow=time
 ```
 
-Last, as `orbit` on the Gateway, set this key in `/home/orbit/shared/gateway.env`:
-
-```bash
-ORBIT_GATEWAY_QUEUE_CONNECTION=gateway-queue
-```
-
-Then [run a release](/reference/gateway-recovery#release-as-a-swamp-run) of the current commit, as [Connection](#connection) requires. Read the commit as `release_sha` from `orbit gateway:status --json`:
-
-```bash
-orbit gateway:release:deploy <SHA>
-```
-
-The command follows the release, which must end `verified`. The run drains Horizon, then starts it as `gateway-queue` after the switch ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:auto-release:resume`](/cli/gateway/auto-release-resume).
-
-### Check the queue user
-
-Run `orbit doctor --family=database_server --node=services`. It reports no issue when the server runs with its ACL file and the live users match the records. Open the [dashboard](#dashboard), including its pending jobs. Then read the Horizon log with `orbit process:logs <id>`, where `<id>` is the `horizon` Process of the Gateway Node. A command that the user may not run shows there as an error with `NOPERM`.
-
-To switch back, set `ORBIT_GATEWAY_QUEUE_CONNECTION=services-valkey` and run a release of the current commit again. Horizon then logs in as `default` and works the same jobs. Do not use `gateway:release:rollback` for this: it switches code only, and every release reads the same env file.
+Set `ORBIT_GATEWAY_QUEUE_CONNECTION=gateway-queue` in `/home/orbit/shared/gateway.env` and deploy the current commit so Horizon restarts as `gateway-queue`. Verify with `orbit doctor --family=database_server` and check the Horizon log for `NOPERM` errors.
 
 ## Operations
 
-These commands inspect and control Horizon on the Gateway.
+Run these commands to inspect or control Horizon, running `php artisan` as `orbit` in `/home/orbit/orbit/apps/gateway`:
 
 | Task | Command |
 | --- | --- |
-| See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
-| Restart on the current release | `php artisan horizon:terminate` |
-| Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:builds,gateway:operations` |
+| Inspect Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
+| Graceful restart | `php artisan horizon:terminate` |
+| Pause or resume queues | `php artisan horizon:pause` and `php artisan horizon:continue` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:builds,gateway:operations,gateway:operation-starts,gateway:operations-prompt` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
-Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
-
-## Not built
-
-Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit task:status`](/cli/task/status) when task groups stop moving.
-
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The scheduled Doctor collection records that issue for [`gateway:status`](/cli/gateway/status). A Horizon stopped with `orbit process:stop` is not drift and is not reported.
-
-The collector rebuilds its quota snapshot in Valkey; quota reads never poll the upstream provider.
+A stopped Horizon Process whose desired state is running appears in Doctor as `process.state_mismatch` or `process.crash_loop`.
 
 ## Why it works this way
 
-The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
-
-Scheduled fleet health collection compares stored agent facts and liveness with Gateway intent. Missing facts remain unverifiable findings, and a silent agent remains an issue. The collection time and the existing fingerprints commit together, so an unsuccessful collection cannot look healthy or fresh. The comparison is local and bounded by the fleet's stored records, so it runs in the scheduler without depending on a queue worker.
-
-Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
-
-### An ACL user for the queue
-
-The queue has its own ACL user because Valkey is shared. As `default`, a fault in the queue or Horizon, or a leaked queue password, could read or delete the collector's keys. A second Database connection carries the user, because one connection holds one username and one password for all its clients. The user lives on a [Database server](/reference/database-servers#valkey-starts-only-from-orbits-acl-file), so the Gateway holds its password and Doctor checks it.
+Running slow work in Horizon keeps the scheduler tick fast (milliseconds) and prevents long builds or Swamp starts from blocking unrelated ticks. Sharing the fleet's existing Valkey server avoids operating a second Redis instance on the Gateway host, while a dedicated ACL user isolates queue keys from other Valkey clients.

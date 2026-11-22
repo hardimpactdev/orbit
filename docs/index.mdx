@@ -1,38 +1,47 @@
 ---
 title: "Orbit documentation"
 sidebarTitle: "Overview"
-description: "Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it. You steer."
+description: "Self-hosted platform for developing, running, and maintaining software on your own machines with coding agents and Conn."
 ---
 
-Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it through the CLI or MCP, and you steer. These pages describe how Orbit works today.
+Orbit is a self-hosted platform for developing, hosting, and maintaining software on machines you own. It manages your servers, application environments, automated agent tasks, and Conn workspaces through one CLI, API, and MCP server.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Bootstrap a Gateway, add a Node, and serve a Project on its own domain.
+    Bootstrap a Gateway, add a Node, and serve your first project on a private HTTPS domain.
   </Card>
   <Card title="Mission" icon="compass" href="/mission">
-    What Orbit is for, where it stops, and the principles behind every decision.
+    Why Orbit exists, how it works with Conn and coding agents, and its design principles.
   </Card>
   <Card title="Architecture" icon="network" href="/architecture">
-    The components, how they trust each other, and the paths between them.
+    Orbit's components, trust model, Node roles, and how requests and traffic flow.
   </Card>
   <Card title="Concepts" icon="book-open" href="/concepts">
-    The core terms every part of Orbit shares.
+    Core terms shared across the CLI, API, and documentation.
   </Card>
 </CardGroup>
 
-## Where to go next
+## Guides and reference
 
 <CardGroup cols={3}>
   <Card title="Applications" icon="boxes" href="/domains/applications">
-    Create an Instance, configure its runtime, and give it a domain.
+    Create Instances, configure runtimes, and attach domains.
+  </Card>
+  <Card title="Tasks" icon="list-checks" href="/reference/tasks">
+    Run planned coding-agent work in isolated container copies and open pull requests.
+  </Card>
+  <Card title="Conn" icon="monitor-smartphone" href="/reference/conn">
+    Connect Conn devices, sync profiles, and launch threads in project containers.
   </Card>
   <Card title="Fleet" icon="server" href="/reference/node-provisioning">
-    Add Nodes, assign roles, and keep the fleet healthy.
+    Enroll Nodes, assign roles, and keep machines healthy.
   </Card>
   <Card title="CLI reference" icon="terminal" href="/cli/overview">
-    Every command, with its arguments, options, and guards.
+    Every command family with its arguments, options, and behavior.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/overview">
+    Gateway HTTP endpoints, authentication, and the PHP SDK.
   </Card>
 </CardGroup>
 
-To change Orbit itself, start with [your first contribution](/first-contribution), then follow the [contributor guide](/contributor-guide).
+To contribute to Orbit itself, start with [your first contribution](/first-contribution) and then read the [contributor guide](/contributor-guide).

@@ -1,43 +1,24 @@
 ---
-title: "Reduce Incus VM costs on ZFS"
-description: "Measured findings on topology disk size, dependency-copy writes, and VM memory, with the limits that failed."
+title: "Reduce Incus image and clone costs on ZFS"
+description: "Practical ZFS trimming, reflink, and memory sizing lessons for Incus images and nested fleets."
 ---
 
-# Reduce Incus VM costs on ZFS
+# Reduce Incus image and clone costs on ZFS
 
 ## Problem
 
-These measurements used a Gateway, an operator, and workload VMs nested in a task VM. That manual harness is removed; new proofs use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The measurements below describe that VM setup, not the memory budget of the nested container fleet.
-
-## Cause
-
-Each guest is a copy of the task VM's `node-template`: a btrfs snapshot in the pool `topology-seed`, which is a ZFS clone of the host's [topology seed](/reference/compute-drivers#the-topology-seed). The pool uses LZ4 and sparse 16 GiB root volumes with no reservation. A copy keeps the template's root disk size. The guest root filesystem is ext4, which has no file reflinks, so a [dependency copy](/domains/applications#dependency-copy) writes the data again.
+Base images and cloned guests can retain gigabytes of deleted packages, Docker layers, and duplicated dependency trees on ZFS if cleaned or measured in the wrong order.
 
 ## Solution
 
-**Clean the base image before it is published.** Removing unused Docker images and APT archives, then `fstrim /`, cut Gateway referenced disk data from 6.55 GiB to 1.98 GiB and app-prod from 7.07 GiB to 2.48 GiB. Run `sync -f /` before the trim, or discard cannot reach blocks whose deletions are still pending. Trimming a clone does not free blocks its parent image still references, so measure the ZFS volume, not Docker's reclaimed-space report. The base snapshot must be trimmed before new task VMs copy it.
+Apply these rules when preparing base images or measuring nested-fleet storage and memory:
 
-**Size memory per Node.** Gateway 1.5 GiB, app-dev 2 GiB, app-prod 1 GiB passed the workload and all readiness checks after reboots. That is a 4.5 GiB budget instead of 6 GiB.
-
-| Gateway | app-dev | app-prod | Result |
-| --- | --- | --- | --- |
-| 2 GiB | 2 GiB | 2 GiB | Passed. |
-| 1 GiB | 1.5 GiB | 1 GiB | HTTP and simple commands passed. Readiness failed: the kernel killed PHP on Gateway and MySQL on app-dev. |
-| 2 GiB | 2 GiB | 1 GiB | Passed. |
-| 1.5 GiB | 2 GiB | 1 GiB | Passed. |
-
-An idle-memory reading did not predict the failure. The verifier starts several commands together, and the database Node needs room for them and its services. Keep app-dev at 2 GiB. A blanket 1 GiB or 1.5 GiB setting is not supported.
-
-**Reflinks help dependency copies, but only on a different filesystem.** Three copies of a real Laravel `vendor` tree (8,850 files, about 46 MiB) used 19.1 MiB on XFS against 222.0 MiB on ext4. Synthetic `vendor` and `node_modules` (about 260 MiB) used 7.1 MiB against 815.4 MiB. Using XFS needs a base image change or a workload disk with its own snapshot and cleanup lifecycle. It is still a candidate; do not ship a loop-device filesystem.
-
-**Do not add a trim scheduler.** Guest block discard works and `fstrim.timer` is on. A trim before any cleanup released only tens of MiB.
-
-## Limits
-
-The numbers come from the sample topology, on 2 October 2026, with Incus 6.0.5, host ZFS on the `fast` pool, and Ubuntu 26.04 guests. They do not set memory needs for larger applications, parallel PHP test suites in guests, or long database load. Configured memory is a limit, not resident memory. The XFS timings ran after the ext4 timings on a shared host, so treat them as indicative; the space results are stronger.
-
-The measurements also found two production-scan bugs. After SSH starts in the private `/home/orbit` directory, `sudo -u` changes the user but not the working directory, and GNU `find` cannot restore it. Source classification failed with `app-prod.source_classification_failed`, and retained-release listing failed with `deployment.receipt_invalid`. Any script that switches user with `sudo -u` must enter `/` first.
+- **Sync before trimming:** Clean APT caches and Docker images inside the base image, then run `sync -f /` before `fstrim /`. Without `sync -f /`, discard skips pending deletions.
+- **Measure ZFS, not guest tools:** Trimming a clone never frees blocks still referenced by its parent snapshot. Measure ZFS `used` and `referenced` after a transaction commits rather than Docker's reclaimed-space output.
+- **Do not add a trim scheduler:** Ubuntu guests already enable `fstrim.timer`.
+- **Reflinks need a reflink filesystem:** Dependency copy savings require XFS or btrfs rather than ext4; do not ship loop-device filesystems.
+- **Size memory under load:** Idle memory readings do not predict OOM kills during parallel verification commands and database activity.
 
 ## Verification
 
-For new measurements, use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). Record guest filesystem allocation, ZFS `used` and `referenced`, clone `origin`, configured memory, guest memory pressure, kernel out-of-memory events, and the readiness result. Let a ZFS transaction commit before you read its accounting. Keep file-content and write-isolation checks apart from copy timing; do not treat the VM measurements above as a container baseline.
+Measure candidate changes inside a [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). Record guest filesystem usage, ZFS `used` and `referenced`, clone `origin`, memory pressure, kernel OOM events, and readiness results.
