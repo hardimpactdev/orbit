@@ -1102,7 +1102,7 @@ The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orb
 
 ### Swamp token renewal
 
-Revoking, rotating or expiring a Swamp access token ends every WebSocket session that uses it, so a live consumer's token is never rotated. On the Swamp Node, `orbit-swamp-token-renewal.timer` runs `orbit-swamp-token-renewal.service` ten minutes after boot and daily after that. The swamp role renders both units in `SwampRoleUnits` and installs the playbook `/usr/local/lib/orbit-swamp/token-renewal.yml` with its module `orbit_swamp_token_renewal`, beside the worker renewal. A role add and a Node converge of the swamp role both start and enable the timer after writing its units, and fail unless `systemctl is-active` and `is-enabled` pass; only a role add starts the worker renewal timer, after all three workers. A Gateway release starts the service too, before it loads Swamp. The renewal renews only a token that expires within ten days:
+Revoking, rotating or expiring a Swamp access token ends every WebSocket session that uses it, so a live consumer's token is never rotated. On the Swamp Node, `orbit-swamp-token-renewal.timer` runs `orbit-swamp-token-renewal.service` ten minutes after boot and daily after that. The swamp role renders both units in `SwampRoleUnits` and installs the playbook `/usr/local/lib/orbit-swamp/token-renewal.yml` with its module `orbit_swamp_token_renewal`, beside the worker renewal. A Gateway release starts the service too, before it loads Swamp. The renewal renews only a token that expires within ten days:
 
 | Token | Consumer | Renewal |
 | --- | --- | --- |
@@ -1117,6 +1117,8 @@ A new generation is named after the UTC renewal day. When that name is already a
 Before the rename of a worker's `server.token`, `swamp access token list` must show the candidate active, with the same principal and an expiry more than 20 days away. A worker principal may not be able to read, so this list is the proof.
 
 A pinned worker reads `server.token` only when `worker connect` starts; a reconnect inside the same process keeps the old authorization. The renewal therefore compares `ExecMainStartTimestampMonotonic` of `orbit-swamp-worker@<slot>` with the file's change time. The worker renewal restarts the oldest worker after three hours, and each worker within eight hours, so the old generation goes within a day. The renewal never restarts serve or a worker. Every mint, reveal and revoke goes through serve with the serve-driver token file.
+
+A role add and a Node converge of the swamp role both start and enable the timer after writing its units, and fail unless `systemctl is-active` and `is-enabled` pass; only a role add starts the worker renewal timer, after all three workers.
 
 The only state is the root-owned `/var/lib/orbit-swamp-token-renewal/state.json` (`0600`). It marks an enrollment rotation before it starts, so a rerun after a crash writes the new secret and never rotates twice, which would retire the secret the connected worker holds. The run reports token names only. A failure quotes the CLI's stderr with anything shaped like a credential redacted, and never its stdout.
 
