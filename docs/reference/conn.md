@@ -391,11 +391,13 @@ Registering again replaces the stored session. The job registers on each server 
 
 An operator can remove a stale host T3 server entry with `DELETE /environments/{environment_id}` (`conn:environment:unregister`, CLI [`orbit conn:environment:unregister`](/cli/conn/environment-unregister), destructive MCP tool `conn-environment-unregister`) so it stops showing in `conn:environment:list`.
 
-- **Owner-scoped:** requires enabled Conn and node access to the Node that registered the server (or Gateway access when its Node was removed), else `node_access.required` (403).
-- **Host servers only:** a server bound to an Instance (`instance_id` set) is refused with `conn.environment_is_instance` (409); destroy the Instance to remove it.
-- **Busy guard:** a running `conn.*` Operation on the server returns `operation.target_busy` (409) instead of deleting under it.
-- **Synchronous, local removal:** in one transaction, the Gateway deletes the environment row (with its stored `admin_session`), its pairings and held sessions, cached threads, and managed target records (targets, tokens, and revisions), using the same removal routine as Instance destroy. After commit, it drops attached thread references from profiles and deletes execution secret vault copies from the server's `conn.*` Operations. It never contacts the T3 server, which may already be gone.
-- **Idempotent:** returns HTTP 200 with `{"environment_id": "...", "removed": true}` when removed and `{"environment_id": "...", "removed": false}` when the ID is unknown or already removed. Repeated calls never fail. A still-running host T3 server that registers again reappears.
+Access is owner-scoped. The call requires enabled Conn and node access to the Node that registered the server (or Gateway access after its Node was removed). Otherwise it returns `node_access.required` (403).
+
+Only host servers can be unregistered. A server bound to an Instance (`instance_id` set) is refused with `conn.environment_is_instance` (409); destroy the Instance to remove it. A running `conn.*` Operation on the server returns `operation.target_busy` (409) instead of deleting under it.
+
+Removal is synchronous and local, using the same routine as Instance destroy. In one transaction, the Gateway deletes the environment row (with its stored `admin_session`), its pairings and held sessions, cached threads, and managed target records (targets, tokens, and revisions). After commit, it drops attached thread references from profiles and deletes execution secret vault copies from the server's `conn.*` Operations. It never contacts the T3 server, which may already be gone.
+
+The endpoint is idempotent. It returns HTTP 200 with `{"environment_id": "...", "removed": true}` when removed, and `{"environment_id": "...", "removed": false}` when the ID is unknown or already removed. Repeated calls never fail. A still-running host T3 server that registers again reappears.
 
 ### Instance servers
 

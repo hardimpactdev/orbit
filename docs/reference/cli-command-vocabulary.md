@@ -91,7 +91,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | Family | Actions | Result |
 | --- | --- | --- |
 | `cluster` | `activate`, `deactivate` | The CLI makes a Cluster serve its private domains and LAN ingress, or returns its Routes to Node scope and stops the Router and its LAN ingress; see [cluster](/cli/cluster/activate). |
-| `conn` | `environment-restart`, `node-environments-restart`, `unregister` | The CLI restarts an idle container T3 server, or each one on a Node, so that it shows its machine name ([conn:environment-restart](/cli/conn/environment-restart)), or unregisters a host T3 server ([conn:environment:unregister](/cli/conn/environment-unregister)). |
+| `conn` | `environment-restart`, `node-environments-restart`, `unregister` | Restart idle container T3 servers ([conn:environment-restart](/cli/conn/environment-restart)) or unregister a host T3 server ([conn:environment:unregister](/cli/conn/environment-unregister)). |
 | `database` | `describe`, `import`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), loads a dump into one with `database:import`, or requires a password on a Valkey server [adopted earlier](/reference/database-servers#close-an-adopted-server) with `database:server:update --require-password`. `database:server:create` creates new servers only. |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
