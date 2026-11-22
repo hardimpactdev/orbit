@@ -27,7 +27,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 2,
@@ -51,7 +55,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 3,
@@ -75,7 +83,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 4,
@@ -99,7 +111,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 5,
@@ -123,7 +139,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 6,
@@ -147,7 +167,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 7,
@@ -171,7 +195,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 8,
@@ -195,7 +223,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 9,
@@ -219,7 +251,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 10,
@@ -243,7 +279,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 11,
@@ -267,7 +307,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 12,
@@ -291,7 +335,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 13,
@@ -315,7 +363,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 14,
@@ -339,7 +391,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 15,
@@ -363,7 +419,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 16,
@@ -387,7 +447,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 17,
@@ -411,7 +475,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 18,
@@ -435,7 +503,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 19,
@@ -459,7 +531,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 20,
@@ -483,7 +559,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 21,
@@ -507,7 +587,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 22,
@@ -531,7 +615,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 23,
@@ -555,7 +643,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             },
             {
                 "id": 24,
@@ -579,7 +671,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             }
         ],
         "meta": {
