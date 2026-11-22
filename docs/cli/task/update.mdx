@@ -48,7 +48,7 @@ In a terminal, the task list includes active tasks for a status update. Title an
 
 | Error code | Meaning |
 | --- | --- |
-| `tasks.not_in_backlog` | A title, brief, deliverables, or position change outside `backlog` for a group or a started subtask. |
+| `tasks.not_in_backlog` | A title, brief, or position change outside `backlog` for a group or a started subtask (deliverables changes on a started subtask return `tasks.deliverables_locked`). |
 | `tasks.no_subtasks` | A move to `todo` for a task without subtasks or deliverables of its own. Add at least two subtasks with deliverables. Or give a task with no subtask its own `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
 | `tasks.one_subtask` | A move to `todo` for a task with exactly one subtask, before its deliverables are checked. Add a second subtask, or fold the one into the task: destroy it and give the task its `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while one of two or more subtasks has no deliverables, and then the error details name them, or for a task whose own deliverables are empty. |
