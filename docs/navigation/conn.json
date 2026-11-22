@@ -18,7 +18,8 @@
           "pages": [
             "cli/conn/index",
             "cli/conn/environment-restart",
-            "cli/conn/node-environments-restart"
+            "cli/conn/node-environments-restart",
+            "cli/conn/environment-unregister"
           ]
         }
       ]
