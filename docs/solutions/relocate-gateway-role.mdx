@@ -27,7 +27,7 @@ orbit node:update gateway --name=vpn
 orbit node:add gateway <new-host>
 ```
 
-2. **Prepare the target Node:** Ensure it holds none of the conflicting roles (`app-dev`, `app-prod`, `database`, `analytics`, `ingress`, `ci-runner`), install PHP-FPM and Caddy, copy the Gateway checkout, `ORBIT_HOME` (Orbit CA and Gateway SSH keys), and Gateway `.env`, and ensure both Nodes have SSH management recorded.
+2. **Prepare the target Node:** Ensure it holds none of the conflicting roles (`app-dev`, `app-prod`, `database`, `analytics`, `ingress`, `ci-runner`), install PHP-FPM and Caddy, and verify both Nodes have recorded SSH management. Copy the Gateway checkout, Gateway `.env`, and `ORBIT_HOME` (Orbit CA and Gateway SSH keys), excluding `gateway.sqlite`, `gateway.sqlite-wal`, and `gateway.sqlite-shm` while the source is live.
 3. **Relocate the assignment:**
 
 ```bash
@@ -36,9 +36,14 @@ orbit node:role:relocate gateway gateway --force
 
 If private DNS routing fails on the target, follow the command returned in `follow_up`. If cleanup fails on the source, re-run with `--from`.
 
-4. **Complete the manual cutover:**
-   - Stop and drain all SQLite writers on the old Gateway (`orbit-runtime-hibernator.timer`, `orbit-runtime-hibernator.service`, Horizon, the scheduler, `orbit-agent-view.service`, `orbit-gateway-engine.service` if installed, Caddy, and PHP-FPM) and keep them stopped through handover so no writes or WAL checkpoints race with the copy ([Back up before an update](/reference/gateway-recovery#back-up-before-an-update)).
-   - Copy the quiescent SQLite database (`gateway.sqlite` plus any `-wal`/`-shm` files) from the old Node to the target, then start Caddy and PHP-FPM on the target.
+4. **Fence all source SQLite writers:** Stop and drain every Gateway writer on the old Node (and inside its serving container), verify each unit is inactive, and keep them stopped through handover ([Back up before an update](/reference/gateway-recovery#back-up-before-an-update)):
+   - Host web units: `caddy.service` and `php8.5-fpm.service`.
+   - Container web unit: `orbit-gateway-web.service` inside the serving container (drain gracefully and verify `ActiveState=inactive`).
+   - Queue workers: `orbit-gateway-horizon.service` and any `orbit-process-*-horizon.service` units.
+   - Scheduler: `orbit-gateway-schedule.service` and any `orbit-process-*-schedule-work.service` units.
+   - Background writers: `orbit-runtime-hibernator.timer`, `orbit-runtime-hibernator.service`, `orbit-agent-view.service`, and `orbit-gateway-engine.service` (when installed).
+5. **Copy SQLite and finish cutover:**
+   - Ensure no stale `gateway.sqlite*` files exist on the target, copy the quiescent `gateway.sqlite` (and any remaining `-wal`/`-shm` files) from the old Node, and start the target Gateway services.
    - Note that `gateway.serving_node_id` still points at the old Node until a Gateway bootstrap updates it.
    - Run `orbit node:converge <node-id>` on each Node so its [Node agent](/reference/node-agent#how-it-connects) picks up the new Gateway address.
    - Update CLI profiles referencing the old WireGuard address.

@@ -17,14 +17,14 @@ Operation kinds move off Swamp one at a time, per Operation. Each Operation runs
 
 ## Which kinds run on the engine
 
-`StartSwampRun` chooses between the engine and Swamp after admitting an Operation, keeping admission, locks, and API responses identical. A kind runs on the engine when all of these hold:
+For Operations started through `StartSwampRun` (`firewall.*`, `route.create`, `instance.create`, `instance.complete`, and `instance.fleet`), `EngineKinds::routes()` chooses the engine when all of these hold:
 
 - The engine defines a flow for the kind (`EngineKinds`).
 - The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
 - Every Node targeted by its steps has reported the required primitive.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
-Otherwise `firewall.*`, `route.create`, `instance.create`, and `instance.complete` fall back to their Swamp workflows. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback (`instance.finalize` starts on the engine directly once admitted). The table below lists all kinds with engine definitions:
+When any condition fails, `firewall.*`, `route.create`, `instance.create`, and `instance.complete` fall back to their Swamp workflows. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback. Once admitted, `instance.finalize` calls `Engine::start()` directly without going through `EngineKinds::routes()`, so a bus outage fails it with `engine.start_failed` instead of falling back to Swamp. The table below lists all kinds with engine definitions:
 
 | Kind | Steps | Primitives |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` run
 
 ### Capability reporting
 
-An executor reports `{actions, node_targets, features, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets, and `features` advertises optional action inputs such as `instance.t3_pairing`). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations fall back to Swamp.
+An executor reports `{actions, node_targets, features, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets, and `features` advertises optional action inputs such as `instance.t3_pairing`). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations routed through `EngineKinds::routes()` fall back to Swamp; an admitted `instance.finalize` bypasses that check and fails with `engine.start_failed`.
 
 `clock_synchronized` comes from `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false because clock drift causes the executor to reject signed orders.
 

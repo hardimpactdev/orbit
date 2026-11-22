@@ -3,7 +3,9 @@ title: "orbit task:update"
 sidebarTitle: "task:update"
 ---
 
-Change a task's title, brief, status, copy turn agent, or pull request mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. In a group whose workspace is a task copy, `--status=running` reopens the last completed subtask while the group is open. See [reopen the last subtask](/reference/tasks#reopen-the-last-subtask). See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, status, copy turn agent, or pull request mode. For a task group or started subtask, title and brief change only while the group is in `backlog`. For a `todo` subtask in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` group, you can still update its title, brief, and non-empty deliverables and reorder it within the remaining `todo` tail.
+
+The status moves between `backlog` and `todo`, leaving a parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. In a task copy, `--status=running` reopens the last completed subtask while the group is open ([reopen the last subtask](/reference/tasks#reopen-the-last-subtask), [external status rules](/reference/tasks#tasks-and-subtasks)).
 
 ```bash
 orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--reason=TEXT] [--work-status=STATUS] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
@@ -46,7 +48,7 @@ In a terminal, the task list includes active tasks for a status update. Title an
 
 | Error code | Meaning |
 | --- | --- |
-| `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
+| `tasks.not_in_backlog` | A title, brief, deliverables, or position change outside `backlog` for a group or a started subtask. |
 | `tasks.no_subtasks` | A move to `todo` for a task without subtasks or deliverables of its own. Add at least two subtasks with deliverables. Or give a task with no subtask its own `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
 | `tasks.one_subtask` | A move to `todo` for a task with exactly one subtask, before its deliverables are checked. Add a second subtask, or fold the one into the task: destroy it and give the task its `--deliverables`, as [a task that leaves backlog](/reference/tasks#tasks-and-subtasks) says. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while one of two or more subtasks has no deliverables, and then the error details name them, or for a task whose own deliverables are empty. |

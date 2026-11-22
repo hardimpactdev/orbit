@@ -228,7 +228,7 @@ The review gate verifies an approved review receipt on the current candidate com
 
 ### The reviewer rule
 
-This is the single rule for what a reviewer judges and what blocks a merge. Every task-copy reviewer turn receives it in `<review_rules>` in a thread separate from the implementer: the first review starts fresh, while re-reviews continue the group's reviewer thread unless the caller passes `--thread=new`. Independent reviewers outside task copies apply the same rule, which wins over the implementer quality bar in `AGENTS.md`.
+This is the single rule for what a reviewer judges and what blocks a merge. Every task-copy reviewer turn receives it in `<review_rules>` in a thread separate from the implementer. Review rounds count per subtask, while the reviewer thread belongs to the group. A fresh reviewer thread starts only when the group has none in the copy or the caller passes `--thread=new`; otherwise a turn continues the group's reviewer thread across re-reviews and subsequent subtasks. Independent reviewers outside task copies apply the same rule, which wins over the implementer quality bar in `AGENTS.md`.
 
 Scope covers only the briefs, deliverables, the diff of the checked commit against the base, and what that diff directly affects. Reviewers report no out-of-scope ideas, refactors, or redesigns, and ask for changes outside the touched files only when a blocking finding forces it (naming that finding).
 

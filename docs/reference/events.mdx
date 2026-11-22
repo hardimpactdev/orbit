@@ -103,10 +103,10 @@ Instance events track registration, updates, and deletion:
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.updated` | An Instance is registered (synchronously or on native registration completion), renamed, updated, restored, changes automatic deploy policy, or removal returns while the record remains | `InstanceData` |
-| `instance.deleted` | An Instance is removed | `{ id, name }` |
+| `instance.updated` | An Instance is registered (synchronously or on native registration completion), renamed, updated, restored, or changes automatic deploy policy | `InstanceData` |
+| `instance.deleted` | An Instance is removed | `{ id }` |
 
-`instance.created` is defined in `RecordEventType` with no broadcaster; new container creations, transfers, clones, environment syncs, and deployments do not emit `instance.created` (deployments emit [`deployment.*`](#deployment)).
+`instance.created` is defined in `RecordEventType` with no broadcaster. Destroy admission returns `202` with an Operation and emits no `instance.updated`; container creates, transfers, clones, environment syncs, and deployments also emit no `instance.*` (deployments emit [`deployment.*`](#deployment)).
 
 ### Process
 
