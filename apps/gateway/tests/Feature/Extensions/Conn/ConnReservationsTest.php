@@ -187,6 +187,9 @@ it('finalizes a ready reservation: the name at once under the Instance lock, the
         ->and($finalize->input['instance_file'])->toContain("ORBIT_INSTANCE=fix-login\n")
         ->and($finalize->input['label'])->toBe('pkg / fix-login')
         ->and(reservationCall($this->phone, 'GET', "reservations/{$reservation->id}")->json('data.state'))->toBe('finalizing')
+        // The device follows its finalize through Conn's own Operation read; it is not cancelled there.
+        ->and(reservationCall($this->phone, 'GET', "operations/{$finalize->id}")->assertOk()->json('data.kind'))->toBe(InstanceFinalize::Kind)
+        ->and(reservationCall($this->phone, 'POST', "operations/{$finalize->id}/cancel")->status())->toBe(404)
         // A second finalize names the first.
         ->and(reservationCall($this->phone, 'POST', "reservations/{$reservation->id}/finalize", ['name' => 'other'])->assertStatus(409)->json('error.code'))->toBe('reservation.finalized');
 
