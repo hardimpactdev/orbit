@@ -531,7 +531,7 @@ The deadline case covers a publish that threw, an order with no `accepted` line 
 - After the executor restarts, as the rollout of a new build does, the next read settles such an Operation.
 - Each read again is its own job on the `operations` queue, with a 2 s connect timeout. One unreachable Node delays neither another Instance's recovery nor a wake's completion.
 
-A fenced `instance.start` or `instance.deploy` gets the same reads. Its Swamp run had a lifecycle order signed, such as the boot `discard`. A `done` record, a late receipt, or no record after expiry frees its lock, and it keeps its `interrupted` end.
+A fenced `instance.start` or `instance.deploy`, and a fenced sleep or wake from a Swamp recovery run, get the same reads. Their Swamp run had an order signed, such as the boot `discard`. A `done` record or a late receipt frees the lock once the run is confirmed over. No record frees it only within the bounds the Gateway recorded when it signed ([Operations](/reference/operations)). The Operation keeps its `interrupted` end and `finished_at`.
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
 

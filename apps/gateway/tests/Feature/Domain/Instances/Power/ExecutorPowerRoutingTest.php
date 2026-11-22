@@ -1060,3 +1060,26 @@ it('queues each journal read on its own, so an unreachable Node holds up no othe
     app(ExecutorWake::class)->recoverPendingCompletions();
     Queue::assertPushed(RereadExecutorJournal::class, 2);
 });
+
+it('R1/R2: frees an interrupted Swamp recovery whose Node journal holds the done record of its signed order', function (string $kind): void {
+    Queue::fake();
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => $kind === 'sleep' ? 'running' : 'stopped']);
+    $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $operation = $kind === 'sleep' ? app(InstanceSleep::class)->start($instance, 'cli', null) : app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($operation);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.8'])->postJson('/api/v1/direct-operations/'.$operation->id.'/executor/sign',
+        ['run_id' => $run, 'phase' => 'power'])->assertOk();
+    $power = $kind === 'sleep' ? app(InstanceSleep::class) : app(InstanceWake::class);
+    $power->apply($operation, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->lock_key->not->toBeNull()->executor_result->toBeNull();
+    journalAnswers([[journalRecord($operation, $kind, 'done', ['status' => 'failed', 'code' => 'instance.'.$kind.'_failed'])]]);
+
+    $this->travel(11)->seconds();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    runQueuedJournalRead($operation);
+
+    expect($operation->refresh())->lock_key->toBeNull()->and($operation->executor_result)->toMatchArray(['status' => 'failed', 'action' => $kind])
+        ->and($operation->state[ExecutorFence::Settled])->toMatchArray(['by' => 'journal', 'status' => 'failed']);
+})->with(['wake', 'sleep']);

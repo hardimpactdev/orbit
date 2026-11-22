@@ -26,12 +26,25 @@ final class ExecutorFence
     /** Set when a receipt or the journal freed an Operation that had ended under its fence: what settled it and when. */
     public const string Settled = 'executor_fence_settled';
 
-    /** @param array<string, mixed>|null $state
+    /** Per signed action, by the Gateway's clock: when its first order was signed and when its latest order expires (ms). */
+    public const string Signed = 'executor_orders_signed';
+
+    /**
+     * @param  array<string, mixed>|null  $state
      * @return array<string, mixed>
      */
-    public static function issue(?array $state): array
+    public static function issue(?array $state, ?string $action = null, ?int $expiresMs = null): array
     {
-        return [...($state ?? []), self::Issued => true];
+        $state ??= [];
+        if ($action === null || $expiresMs === null) {
+            return [...$state, self::Issued => true];
+        }
+        $signed = is_array($state[self::Signed] ?? null) ? $state[self::Signed] : [];
+        $earlier = is_array($signed[$action] ?? null) ? $signed[$action] : [];
+        $signed[$action] = ['signed_ms' => min($earlier['signed_ms'] ?? PHP_INT_MAX, now()->getTimestampMs()),
+            'expires_ms' => max($earlier['expires_ms'] ?? 0, $expiresMs)];
+
+        return [...$state, self::Issued => true, self::Signed => $signed];
     }
 
     /** R2: whether a signed order of the Operation may have reached its Node. */
@@ -69,31 +82,54 @@ final class ExecutorFence
         return $projection instanceof InstancePower ? $projection->settle($current, $changes) : $changes;
     }
 
-    /** R1/R2: a receipt stored after its Operation ended under the fence ends it again through settle(), which releases the lock. */
+    /**
+     * R1/R2: a receipt stored after its Operation ended under the fence ends it again through settle(), which releases the lock, once
+     * its Swamp run is confirmed over (runEnded). The end keeps its time; `executor_fence_settled.at` records the release.
+     */
     public static function resolve(Operation $operation): void
     {
         $operation->refresh();
-        if ($operation->status->terminal() && $operation->lock_key !== null && $operation->executor_result !== null) {
+        if ($operation->status->terminal() && $operation->lock_key !== null && $operation->executor_result !== null && self::runEnded($operation)) {
             app(OperationStore::class)->change($operation, ['status' => $operation->status, 'error_code' => $operation->error_code,
-                'finished_at' => now(), 'lock_key' => null, 'state' => [...($operation->state ?? []), self::Settled => [
+                'finished_at' => $operation->finished_at, 'lock_key' => null, 'state' => [...($operation->state ?? []), self::Settled => [
                     'by' => $operation->executor_result['delivery'] ?? 'receipt', 'status' => $operation->executor_result['status'] ?? null, 'at' => now()->toIso8601String()]]]);
         }
     }
 
     /**
-     * An Operation of a signed lifecycle phase (a start or a deploy) that ended under its fence: its Swamp run is over, so only a receipt
-     * or the Node's journal can settle it (ExecutorWake::settleFenced). A signed power Operation settles through ExecutorWake::complete.
+     * An Operation whose Swamp run had an order signed (a start's or a deploy's lifecycle phase, or a wake's or sleep's Swamp recovery)
+     * and that ended under its fence: only a receipt or the Node's journal can settle it (ExecutorWake::settleFenced). An ordinary
+     * signed power Operation settles through ExecutorWake::complete.
      */
-    public static function heldLifecycle(Operation $operation): bool
+    public static function heldAfterRun(Operation $operation): bool
     {
-        return ! ExecutorWake::owns($operation) && ($operation->state[self::Issued] ?? false) === true && ExecutorWake::endedUnknown($operation)
-            && self::lifecycleActions($operation) !== [];
+        return (! ExecutorWake::owns($operation) || isset($operation->state[ExecutorWake::Recovery]))
+            && ($operation->state[self::Issued] ?? false) === true && ExecutorWake::endedUnknown($operation) && self::runActions($operation) !== [];
     }
 
-    /** @return list<string> The executor actions the Operation's admitted lifecycle phases could sign. */
-    public static function lifecycleActions(Operation $operation): array
+    /** @return list<string> The executor actions the Operation's run could have signed: its admitted lifecycle phase or its recovery's power. */
+    public static function runActions(Operation $operation): array
     {
-        return array_values(array_unique(array_filter([ExecutorPowerIntent::action($operation, 'resume'), ExecutorPowerIntent::action($operation, 'boot')])));
+        return array_values(array_unique(array_filter([ExecutorPowerIntent::action($operation, 'resume'), ExecutorPowerIntent::action($operation, 'boot'),
+            isset($operation->state[ExecutorWake::Recovery]) ? ExecutorPowerIntent::action($operation) : null])));
+    }
+
+    /**
+     * Whether the Operation's Swamp run is confirmed over, the proof the reconcile pass takes for a terminal run: an expiry by the
+     * Gateway's budget needs the run's native terminal (or proof that no run exists), and a cancel request must be confirmed by Swamp.
+     * Until then a signed phase may still act, so a receipt is recorded but the lock stays.
+     */
+    public static function runEnded(Operation $operation): bool
+    {
+        $state = $operation->state ?? [];
+        $timeout = $state['native_timeout'] ?? null;
+        if (! is_array($timeout)) {
+            // The run's own terminal ended it; a cancel request without an expiry is refused once an order was signed.
+            return ! is_string($state['native_cancel_requested_at'] ?? null) || isset($state['native_cancel_confirmed_at']);
+        }
+
+        return is_string($timeout['no_run_verified_at'] ?? null)
+            || in_array($timeout['native_terminal_status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true);
     }
 
     /**

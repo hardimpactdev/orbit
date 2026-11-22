@@ -98,10 +98,10 @@ final readonly class ExecutorResults
         if ($operation === null) {
             return null;
         }
-        $held = ExecutorFence::heldLifecycle($operation);
+        $held = ExecutorFence::heldAfterRun($operation);
         $action = match (true) {
             ExecutorWake::owns($operation) => ExecutorPowerIntent::action($operation) ?? 'wake',
-            $held => ExecutorFence::lifecycleActions($operation)[0],
+            $held => ExecutorFence::runActions($operation)[0],
             $operation->kind === OperationKinds::ExecutorProof && $operation->target_type === 'node' && $operation->target_id === $nodeId => 'proof.noop',
             $operation->kind === OperationKinds::ExecutorPowerProof && $operation->target_type === 'instance' => $operation->input['action'] ?? null,
             default => null,
@@ -130,7 +130,7 @@ final readonly class ExecutorResults
         if ($recorded === 1 && ($managed || $held)) {
             // A signed power Operation that ended under its fence completes through the on-time completion (ExecutorWake::complete).
             // The journal's reader runs it itself; a late WebSocket receipt queues it. A Swamp recovery run settles through its projection,
-            // and a held lifecycle Operation (a start or a deploy) is freed here, keeping its status and code.
+            // and a held lifecycle Operation (a start or a deploy) is freed here once its run is over, keeping its status, code and end.
             if (! ExecutorWake::owns($operation) || isset($operation->state[ExecutorWake::Recovery])) {
                 ExecutorFence::resolve($operation);
             } elseif ($route !== 'journal' && ExecutorWake::endedUnknown($operation)) {

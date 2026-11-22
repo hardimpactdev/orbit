@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\Operations;
 
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -39,10 +40,10 @@ final class RereadExecutorJournal implements ShouldBeUnique, ShouldQueue
     public function handle(ExecutorWake $wake): void
     {
         $operation = Operation::query()->find($this->operationId);
-        if ($operation !== null && ExecutorWake::owns($operation)) {
-            $wake->completeHandoff($operation);
-        } elseif ($operation !== null) {
+        if ($operation !== null && ExecutorFence::heldAfterRun($operation)) {
             $wake->settleFenced($operation);
+        } elseif ($operation !== null && ExecutorWake::owns($operation)) {
+            $wake->completeHandoff($operation);
         }
     }
 }

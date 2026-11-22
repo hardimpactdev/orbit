@@ -38,11 +38,12 @@ final class DirectExecutorOrderController extends Controller
                 throw new ResourceOperationException('executor.intent_missing', 'This phase has no admitted executor action.', 403);
             }
 
-            $wire = ExecutorPowerIntent::sign($current, $phase)->wire;
-            // ADR 0266, R2: from here the order may reach the Node, so the Operation keeps its fence until a receipt exists.
-            $current->forceFill(['state' => ExecutorFence::issue($current->state)])->save();
+            $signed = ExecutorPowerIntent::sign($current, $phase);
+            // ADR 0266, R2: from here the order may reach the Node, so the Operation keeps its fence until a receipt exists. The signing
+            // time and expiry bound the journal's proof that the order never acted.
+            $current->forceFill(['state' => ExecutorFence::issue($current->state, ExecutorPowerIntent::action($current, $phase), $signed->expiresMs)])->save();
 
-            return $wire;
+            return $signed->wire;
         });
 
         return response()->json(['data' => ['order' => $order]])->header('Cache-Control', 'private, no-store');
