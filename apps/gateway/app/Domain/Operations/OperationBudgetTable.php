@@ -26,6 +26,8 @@ final class OperationBudgetTable
         // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus input, result and cleanup.
         // Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start. No live run of the kind yet.
         'instance.wake' => 300,
+        // The 240 s switch phase (100 s restart and 30 s Conn Server readiness wait), plus input, result and cleanup.
+        'instance.server_switch' => 300,
         // A nested-fleet clone's start: the 240 s start phase with the Club key, the 300 s fleet check and the 600 s fleet start with
         // its Doctor wait, plus input, result and cleanup. Expected about 110 s: a clone's fleet start took 91 s (Operation 20180).
         'instance.start' => 1200,

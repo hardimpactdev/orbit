@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceServerSwitch;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -138,7 +139,7 @@ final readonly class InstanceWake extends InstancePower
     /** The wake's path (`resumed`, `started`, `restarted_after_resume`, `already_running`), the marker it found and a resume's seconds. */
     protected function phaseKeys(): array
     {
-        return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds'];
+        return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds', 'server_version'];
     }
 
     /**
@@ -175,6 +176,9 @@ final readonly class InstanceWake extends InstancePower
     {
         $instance = Instance::query()->with('node')->find($operation->target_id);
         if ($operation->status === OperationStatus::Succeeded && $instance !== null) {
+            if (is_string($operation->result['server_version'] ?? null) && $operation->result['server_version'] !== '') {
+                app(InstanceLifecycleContributions::class)->projectServerVersion($instance, $operation->result['server_version']);
+            }
             app(InstanceLifecycleContributions::class)->projectWake($instance);
         }
         if (isset($operation->state[self::ResumeState]) && $instance?->node !== null) {
@@ -200,6 +204,9 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
     {
+        if (InstanceServerSwitch::pendingForWake($instance)) {
+            return parent::admit($instance, $runtime, $input, $caller, $requestId);
+        }
         if (ExecutorPowerIntent::forInstance($instance, $runtime)) {
             return app(ExecutorWake::class)->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId);
         }

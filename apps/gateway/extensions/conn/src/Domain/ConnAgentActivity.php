@@ -59,6 +59,7 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
             return AgentActivity::unreadable();
         }
         $turnRuns = false;
+        $pendingRequest = false;
         $last = null;
         try {
             foreach ([...$threads, ...$archived] as $thread) {
@@ -67,6 +68,9 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
                 }
                 $status = $thread['status'] ?? null;
                 $pending = is_array($thread['pendingRuntimeRequest'] ?? null) ? $thread['pendingRuntimeRequest'] : null;
+                if ($pending !== null) {
+                    $pendingRequest = true;
+                }
                 if (self::works($thread, $status, $pending)) {
                     $turnRuns = true;
                 }
@@ -90,7 +94,7 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
             return AgentActivity::unreadable();
         }
 
-        return AgentActivity::read($turnRuns, $last);
+        return AgentActivity::read($turnRuns, $last, $pendingRequest);
     }
 
     /**

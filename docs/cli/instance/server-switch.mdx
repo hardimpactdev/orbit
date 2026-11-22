@@ -1,0 +1,54 @@
+---
+title: "orbit instance:server:switch"
+description: "Switch an existing T3 container Instance to the Conn Server without losing its threads."
+covers:
+  - apps/gateway/app/Domain/Instances/InstanceServerSwitch.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceServerSwitchController.php
+  - apps/gateway/database/migrations/2027_03_23_000000_allow_switching_container_server_to_conn.php
+  - apps/cli/app/Commands/Instances/SwitchInstanceServerCommand.php
+  - packages/php-sdk/src/Requests/Instances/SwitchInstanceServerRequest.php
+  - swamp/ansible/instance-server-switch.yml
+  - swamp/workflows/workflow-operation-instance-server-switch.yaml
+---
+
+Switch an existing container Instance whose runtime records `t3` to the [Conn Server](/reference/development-containers#container-server) (`conn`). The Conn Server imports T3's `statev2.sqlite` into `engine.sqlite` in one transaction on its first start, keeping every project, thread, message, session and pairing while leaving `statev2.sqlite` untouched.
+
+A running container switches at once after Orbit confirms no agent turn, pending request, T3 terminal or service command is active. A stopped container records `conn` immediately and applies the drop-in before `t3.service` starts at its next [`instance:wake`](/cli/instance/wake).
+
+The switch is one-way: a runtime that already records `conn` or runs no server is refused, and `conn` to `t3` is never allowed.
+
+## Usage
+
+```sh
+orbit instance:server:switch 42
+orbit instance:server:switch 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance` | Numeric Instance ID. |
+| `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+The API is `POST /api/v1/instances/{instance}/server-switch`; it starts an `instance.server_switch` Operation. The MCP tool is `instance-server-switch`.
+
+On success, the Operation's result holds `container_server: "conn"`, `switch` (`"switched"` for a live switch or `"deferred"` for a stopped container), and `server_version` once the Conn Server has answered. The Instance's Conn environment keeps its URL and pairings and reports the Conn Server version.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/server-switch"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `instance.id_invalid` | The Instance ID is not a positive number. |
+| `instance.container_server_none` | The Instance has no container runtime or runs no container server (for example, a default Instance). |
+| `instance.container_server_already_conn` | The runtime already records `conn`. |
+| `project.container_server_unavailable` | The recipe's agent folder pins no `conn-server` release. |
+| `instance.container_server_busy` | An agent turn, pending request, active task, T3 terminal or command runs in the container; retry once it is idle. |
+| `instance.t3_unreadable` | The running container's T3 server could not be read to confirm it is idle. |
+| `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
+| `instance.t3_unready` | The Conn Server did not answer `/.well-known/t3/environment` after the restart. |
+| `instance.container_server_version_mismatch` | The answering server's `serverVersion` did not match `conn-server --version`. |
+| `instance.container_server_switch_failed` | The switch run failed without a more specific code; the runtime stays `t3`. |

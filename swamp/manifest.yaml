@@ -232,6 +232,7 @@ additionalFiles:
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml
   - ansible/instance-container-power.yml
+  - ansible/instance-server-switch.yml
   - ansible/conn-environment-restart.yml
   - ansible/operation-process-upgrade.yml
   - ansible/tasks/process-upgrade-verify.yml

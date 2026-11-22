@@ -52,6 +52,13 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
+    public function projectServerVersion(Instance $instance, string $serverVersion): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectServerVersion($instance, $serverVersion);
+        }
+    }
+
     /** A clone's T3 server is registered when there is a contribution and each one holds it. */
     public function registered(Instance $instance): bool
     {

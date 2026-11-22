@@ -48,4 +48,7 @@ interface InstanceLifecycleContribution
      * wake, and it does nothing while its extension is off. A background caller can ask to handle a queue failure as a retry.
      */
     public function projectWake(Instance $instance, bool $retryQueueFailure = false): void;
+
+    /** Records the container server's reported version after a server switch or wake. */
+    public function projectServerVersion(Instance $instance, string $serverVersion): void;
 }

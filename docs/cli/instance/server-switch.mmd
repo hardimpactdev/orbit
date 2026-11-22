@@ -1,0 +1,54 @@
+sequenceDiagram
+  %% Switch an existing T3 container runtime to the Conn Server (ADR 0258, docs/reference/development-containers.md#container-server).
+  %% status: draft
+  %% command: instance:server:switch
+  %% kind: instance.server_switch
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>Instance container
+  CLI->>GW: instance:server:switch ID
+  %%> Command:
+  %%> - `orbit instance:server:switch INSTANCE`
+  %%> - syntax: `<instance-id> [--idempotency-key=KEY] [--json]`
+  Note over GW: Validate runtime & idle check
+  %%> When:
+  %%> - active container runtime with `container_server = t3` and `conn-server` pinned in the recipe
+  %%> - for a running container, confirm no agent turn, pending request or held reservation is active
+  %%> On failure:
+  %%> - serverless runtime (`instance.container_server_none`), already `conn` (`instance.container_server_already_conn`), active turn/task (`instance.container_server_busy`), unreadable T3 (`instance.t3_unreadable`) or lifecycle work (`instance.lifecycle_busy`) refuses with 409
+  alt container is stopped
+    %% path: deferred
+    Note over GW: Record conn & complete<br/>switch: deferred
+    %%> Result:
+    %%> - `instance_runtimes.container_server` becomes `conn` at once; the next `instance:wake` writes `20-orbit-server.conf` before boot and updates `server_version`
+    GW-->>CLI: 202 Accepted<br/>Succeeded Operation ID
+  else container is running
+    %% path: main
+    GW->>SW: Start run, full intent<br/>operation-instance-server-switch
+    GW-->>CLI: 202 Accepted<br/>Operation ID
+    SW->>N: Switch container server<br/>Ansible · tags switch
+    %%> What it does:
+    %%> - re-check `t3.service` processes with `t3-service-processes.j2`; refuse `instance.container_server_busy` if any terminal or command runs
+    %%> - read `bin/conn-server --version`, push `20-orbit-server.conf`, reload systemd, restart `t3.service`, and wait until `/.well-known/t3/environment` reports the Conn Server version
+    %%> - Conn Server imports `statev2.sqlite` into `engine.sqlite` on first start while leaving `statev2.sqlite` unchanged
+    alt switched
+      %% path: switched
+      N-->>SW: Result<br/>switch · server_version
+      SW-->>GW: Run succeeded<br/>terminal result
+      Note over GW: Record conn & version<br/>runtime · ConnEnvironment
+    else busy or failed
+      %% path: failed
+      N--xSW: Switch failed<br/>error_code
+      SW--xGW: Run failed<br/>runtime stays t3
+    end
+  end
+  loop until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: Status and result
+  end

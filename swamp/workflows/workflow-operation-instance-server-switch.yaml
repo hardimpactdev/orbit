@@ -1,0 +1,97 @@
+id: 8c6c2d7a-4b9f-4e3a-9e2b-5d1a7c8f3b21
+name: operation-instance-server-switch
+autoContinue: false
+description: Switch an existing container Instance's server from T3 to the Conn Server (docs/cli/instance/server-switch.mmd).
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.server_switch}
+    intent:
+      type: object
+      properties:
+        instance_id: {type: integer, minimum: 1}
+        t3_port: {type: integer, minimum: 1, maximum: 65535}
+        program: {type: string, minLength: 1, maxLength: 255}
+        drop_in:
+          type: object
+          properties:
+            path: {type: string, const: /etc/systemd/system/t3.service.d/20-orbit-server.conf}
+            mode: {type: string, const: '0644'}
+            content: {type: string, minLength: 1}
+          required: [path, mode, content]
+          additionalProperties: false
+        container:
+          type: object
+          properties:
+            project: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
+            name: {type: string, pattern: '^instance-[1-9][0-9]*$'}
+          required: [project, name]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [instance_id, t3_port, program, drop_in, container, ssh_execution]
+      additionalProperties: false
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: switch
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Switch container server
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "instance-server-switch-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags switch "$ORBIT_ANSIBLE/instance-server-switch.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Switch container server, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-server-switch-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-server-switch-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

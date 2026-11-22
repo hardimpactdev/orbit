@@ -234,6 +234,56 @@
   changed_when: "'refreshed' in wake_ca_bundle.stdout"
   failed_when: false
 
+# A container that was switched while frozen resumes with the old server process still running. When its server drop-in differs
+# from the runtime's recorded server, write it, reload systemd and restart t3.service so the Conn Server takes over.
+- name: Check whether a resumed container needs its server drop-in updated
+  when: >-
+    power == 'awake' and start_resumed | default(false) | bool and container.clone | default(none) is not none
+    and (container.clone.files | default([]) | selectattr('path', 'equalto', '/etc/systemd/system/t3.service.d/20-orbit-server.conf') | list | length) > 0
+  block:
+    - name: Read the resumed container's server drop-in
+      ansible.builtin.command:
+        argv: ['timeout', '10', 'incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'cat', '/etc/systemd/system/t3.service.d/20-orbit-server.conf']
+      register: wake_server_drop_in_current
+      changed_when: false
+      failed_when: false
+
+    - name: Apply the switched server drop-in after resume
+      when: wake_server_drop_in_current.rc != 0 or (wake_server_drop_in_current.stdout ~ '\n') != server_drop_in.content
+      vars:
+        server_drop_in: "{{ (container.clone.files | selectattr('path', 'equalto', '/etc/systemd/system/t3.service.d/20-orbit-server.conf') | list)[0] }}"
+      block:
+        - name: Write the switched server drop-in
+          ansible.builtin.command:
+            argv:
+              - incus
+              - --project
+              - "{{ container.project }}"
+              - file
+              - push
+              - --create-dirs
+              - --uid
+              - "0"
+              - --gid
+              - "0"
+              - --mode
+              - "{{ server_drop_in.mode }}"
+              - "-"
+              - "{{ container.name }}{{ server_drop_in.path }}"
+            stdin: "{{ server_drop_in.content }}"
+            stdin_add_newline: false
+          changed_when: true
+
+        - name: Reload systemd for the switched server
+          ansible.builtin.command:
+            argv: ['timeout', '15', 'incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'systemctl', 'daemon-reload']
+          changed_when: true
+
+        - name: Restart T3 service for the switched server
+          ansible.builtin.command:
+            argv: ['timeout', '100', 'incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'systemctl', 'restart', '--', 't3.service']
+          changed_when: true
+
 # T3 gates only the end of the wake: a clone whose T3 stays silent ends failed while its site already serves.
 - name: Wait for T3
   when: power == 'awake' and container.clone | default(none) is not none
@@ -256,3 +306,10 @@
     that: [t3_ready.rc == 0]
     fail_msg: instance.t3_unready
     quiet: true
+
+- name: Record the container server version after the wake
+  when: >-
+    power == 'awake' and container.clone | default(none) is not none
+    and t3_ready.rc == 0 and (t3_ready.stdout | from_json).serverVersion | default('') != ''
+  ansible.builtin.set_fact:
+    wake_result: "{{ wake_result | default({}) | combine({'server_version': (t3_ready.stdout | from_json).serverVersion}) }}"

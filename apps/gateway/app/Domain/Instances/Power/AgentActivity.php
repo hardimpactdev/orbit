@@ -12,16 +12,16 @@ namespace App\Domain\Instances\Power;
  */
 final readonly class AgentActivity
 {
-    private function __construct(public bool $readable, public bool $turnRuns, public ?int $lastActivityUnix, public ?string $held = null) {}
+    private function __construct(public bool $readable, public bool $turnRuns, public ?int $lastActivityUnix, public ?string $held = null, public bool $pendingRequest = false) {}
 
     public static function held(string $reason): self
     {
         return new self(true, false, null, $reason);
     }
 
-    public static function read(bool $turnRuns, ?int $lastActivityUnix): self
+    public static function read(bool $turnRuns, ?int $lastActivityUnix, bool $pendingRequest = false): self
     {
-        return new self(true, $turnRuns, $lastActivityUnix);
+        return new self(true, $turnRuns, $lastActivityUnix, null, $pendingRequest);
     }
 
     public static function unreadable(): self
