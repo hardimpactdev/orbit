@@ -8,8 +8,7 @@ covers:
   - swamp/ansible/conn-*.yml
   - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/database/migrations/2027_03_22_000001_let_a_reserved_clone_take_its_name.php
-  - apps/gateway/database/migrations/2027_03_23_000000_add_primary_agent_to_nodes_table.php
+  - apps/gateway/database/migrations/{2027_03_22_000001_let_a_reserved_clone_take_its_name,2027_03_23_000000_add_primary_agent_to_nodes_table}.php
   - apps/gateway/database/migrations/*_conn_*.php
 ---
 
