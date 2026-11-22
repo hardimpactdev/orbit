@@ -5,6 +5,7 @@ cases = [
   "no workflow names a deleted task VM workflow or an unwritten vault key",
   "workflow queue bounds have measured per-kind budgets",
   "every Ansible file ships with the ansible-input extension",
+  "every playbook_dir source ships with the ansible-input extension",
   "runtime credentials and generated records are ignored",
   "no workflow names a behavior by a literal and constant names are preserved",
 ]
