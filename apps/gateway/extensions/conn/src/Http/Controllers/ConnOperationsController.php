@@ -34,8 +34,8 @@ final class ConnOperationsController extends Controller
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
         // The caller cancels what it may read here, through the core cancel: its create and the clone's completion end retained for a
-        // retry or a removal. A removal is not cancelled (docs/reference/conn.md#cancel-a-create-or-a-completion).
-        abort_if($operation->kind === 'instance.destroy', 404);
+        // retry or a removal. A removal and a reservation's finalize are not cancelled (docs/reference/conn.md#cancel-a-create-or-a-completion).
+        abort_if(in_array($operation->kind, ['instance.destroy', 'instance.finalize'], true), 404);
         $this->assertOwner($request, $operation);
 
         return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),
@@ -47,7 +47,7 @@ final class ConnOperationsController extends Controller
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         $target = match ($operation->kind) {
             'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment', 'conn.environment_renew' => 'conn_environment', 'conn.session_hold' => 'conn_pairing',
-            'instance.create', 'instance.complete' => 'instance',
+            'instance.create', 'instance.finalize', 'instance.complete' => 'instance',
             'instance.destroy' => ($operation->state['conn_destroy_caller_node_id'] ?? null) === $caller?->id ? 'instance' : null,
             default => null,
         };
@@ -55,7 +55,7 @@ final class ConnOperationsController extends Controller
         // Retry) and by the Node that created the clone, whose create admitted the first completion: the create's reader follows it.
         $node = $caller instanceof Node ? 'node:'.$caller->id : null;
         $owner = match ($operation->kind) {
-            'instance.create', 'instance.destroy' => $node !== null && $operation->triggered_by === $node,
+            'instance.create', 'instance.finalize', 'instance.destroy' => $node !== null && $operation->triggered_by === $node,
             'instance.complete' => $node !== null && ($operation->triggered_by === $node || Operation::query()->where('kind', 'instance.create')
                 ->where('target_type', 'instance')->where('target_id', $operation->target_id)->where('triggered_by', $node)->exists()),
             default => $caller instanceof Node && $operation->callerNodeId() === $caller->id,
