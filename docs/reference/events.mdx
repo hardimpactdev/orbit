@@ -99,15 +99,14 @@ Project events track Project registration, updates, and deletion:
 
 ### Instance
 
-Instance events track creation, branch changes, and deletion:
+Instance events track registration, updates, and deletion:
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.created` | An Instance is created | `InstanceData` |
-| `instance.updated` | An Instance is registered (synchronously or on native registration completion), its deployment branch changes, or removal returns while the record remains | `InstanceData` |
+| `instance.updated` | An Instance is registered (synchronously or on native registration completion), renamed, updated, restored, changes automatic deploy policy, or removal returns while the record remains | `InstanceData` |
 | `instance.deleted` | An Instance is removed | `{ id, name }` |
 
-Transfers, clones, environment syncs, and deployments do not emit `instance.*`; deployments emit [`deployment.*`](#deployment).
+`instance.created` is defined in `RecordEventType` with no broadcaster; new container creations, transfers, clones, environment syncs, and deployments do not emit `instance.created` (deployments emit [`deployment.*`](#deployment)).
 
 ### Process
 

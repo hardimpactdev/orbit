@@ -27,7 +27,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; serve more web roots through Routes | In progress |
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
-| [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#task-vms); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
+| [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/ai-router#task-vm-guard); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | Withdrawn on 2026-11-20; replaced by [0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version) |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
@@ -240,7 +240,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0167 | Resume a Pi turn interrupted by a server restart | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop) |
 | 0168 | Offload large Pi tool output | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop) |
 | 0169 | Start each subtask review in a fresh thread | [Tasks: The reviewer rule](/reference/tasks#the-reviewer-rule) |
-| 0170 | Edit Todo subtasks after a group starts | [Tasks: Correct the deliverables of a started subtask](/reference/tasks#correct-the-deliverables-of-a-started-subtask) |
+| 0170 | Edit Todo subtasks after a group starts | [task:update](/cli/task/update) |
 | 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#execution-ownership) |

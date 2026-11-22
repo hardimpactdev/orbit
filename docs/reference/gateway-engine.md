@@ -24,16 +24,16 @@ Operation kinds move off Swamp one at a time, per Operation. Each Operation runs
 - Every Node targeted by its steps has reported the required primitive.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
-Otherwise the Operation runs on its Swamp workflow. The table below lists the kinds with engine definitions:
+Otherwise `firewall.*`, `route.create`, `instance.create`, and `instance.complete` fall back to their Swamp workflows. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback (`instance.finalize` starts on the engine directly once admitted). The table below lists all kinds with engine definitions:
 
 | Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
-| `instance.fleet` (follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
+| `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
-| `instance.finalize` (follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
+| `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
 
 ### route.create
 
@@ -78,7 +78,7 @@ When `instance.create` recorded `services: seed` and no database, Valkey ACL use
 
 ### instance.finalize
 
-For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names and restart T3 until the new label appears.
+For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names. `names` sends `SIGHUP` first to live-reload Conn Server and preserve active connections, restarting T3 once only if reload fails, then polls until the new label appears.
 
 ### Capability reporting
 
