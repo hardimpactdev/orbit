@@ -764,6 +764,19 @@ describe('revoke and removal', function (): void {
 
         expect(ConnPairing::query()->where('held', true)->exists())->toBeFalse();
     });
+
+    it('deletes the vault copies of a destroyed server only after the destroy commits', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $start = count($this->vault->sent);
+        $deletes = fn (): array => array_values(array_filter(array_slice($this->vault->sent, $start), static fn (array $message): bool => $message['type'] === 'vault.delete'));
+
+        DB::transaction(function () use ($deletes): void {
+            app(ConnInstanceLifecycle::class)->projectDestroy(Instance::query()->findOrFail($this->environment->instance_id));
+            expect($deletes())->toBe([]);
+        });
+
+        expect($deletes())->not->toBe([]);
+    });
 });
 
 it('pre-mints held sessions for the creating profile\'s Nodes that reach a new clone\'s server while the switch is on, and none while it is off', function (bool $on): void {

@@ -19,6 +19,7 @@ use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Throwable;
 
 /**
  * Records a clone's T3 server from its create flow's result ([Instance servers](/reference/conn#instance-servers)). The run checked the
@@ -38,17 +39,32 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
     public function projectDestroy(Instance $instance): void
     {
         $environments = ConnEnvironment::query()->where('instance_id', $instance->id)->lockForUpdate()->get();
+        $copies = [];
         foreach ($environments as $environment) {
-            foreach (Operation::query()->where('input->conn_environment_id', $environment->id)->get() as $operation) {
+            // Only Conn's own kinds name a server, so the kind index bounds the read: a JSON match over every operation scans the
+            // whole table inside the destroy's write lock.
+            foreach (Operation::query()->where('kind', '>=', 'conn.')->where('kind', '<', 'conn/')
+                ->where('input->conn_environment_id', $environment->id)->get() as $operation) {
                 foreach (ValidatedData::object($operation->input['execution_secrets'] ?? []) as $rawCopy) {
                     $copy = ValidatedData::object($rawCopy);
-                    app(SwampScheduleWorkflows::class)->deleteSecret(ValidatedData::string($copy['vault']), ValidatedData::string($copy['key']));
+                    $copies[] = [ValidatedData::string($copy['vault']), ValidatedData::string($copy['key'])];
                 }
             }
             ConnPairing::query()->where('conn_environment_id', $environment->id)->delete();
             $environment->delete();
         }
         app(ConnAttachedThreads::class)->drop(array_values($environments->map(static fn (ConnEnvironment $environment): string => $environment->environment_id)->all()));
+        // Vault deletes are Swamp round trips, so they run after the destroy commits and never hold the write lock. The copies only
+        // reach a server that is gone now, so a failed delete is logged and does not undo the committed destroy.
+        DB::afterCommit(static function () use ($copies): void {
+            foreach ($copies as [$vault, $key]) {
+                try {
+                    app(SwampScheduleWorkflows::class)->deleteSecret($vault, $key);
+                } catch (Throwable $error) {
+                    Log::warning('conn.destroy_secret_delete_failed', ['vault' => $vault, 'exception_type' => $error::class]);
+                }
+            }
+        });
     }
 
     /**
