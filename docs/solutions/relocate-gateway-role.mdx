@@ -37,11 +37,11 @@ orbit node:role:relocate gateway gateway --force
 If private DNS routing fails on the target, follow the command returned in `follow_up`. If cleanup fails on the source, re-run with `--from`.
 
 4. **Complete the manual cutover:**
-   - Copy the updated SQLite database (`gateway.sqlite` plus `-wal`/`-shm`) from the old Node to the target and start Caddy and PHP-FPM there.
+   - Stop all writers on the old Gateway (`orbit-runtime-hibernator.timer`, `orbit-runtime-hibernator.service`, Horizon, the scheduler, Caddy, and PHP-FPM) and keep them stopped through handover so no writes or WAL checkpoints race with the copy ([Back up before an update](/reference/gateway-recovery#back-up-before-an-update)).
+   - Copy the quiescent SQLite database (`gateway.sqlite` plus any `-wal`/`-shm` files) from the old Node to the target, then start Caddy and PHP-FPM on the target.
    - Note that `gateway.serving_node_id` still points at the old Node until a Gateway bootstrap updates it.
    - Run `orbit node:converge <node-id>` on each Node so its [Node agent](/reference/node-agent#how-it-connects) picks up the new Gateway address.
    - Update CLI profiles referencing the old WireGuard address.
-   - Stop Caddy and PHP-FPM on the old Node once the new `/up` endpoint responds.
 
 Private DNS now publishes over SSH to `/var/lib/orbit/private-dns/catalog.json` on the `vpn` Node, which retains `/etc/wireguard/orbit.conf` and needs no Orbit checkout.
 

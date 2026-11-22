@@ -168,7 +168,7 @@ Standalone `node:converge` verifies the secret against the stored hash and never
 php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 ```
 
-This writes the new secret via Swamp (`node.agent_rekey`), restarts `orbit-agent.service`, verifies the SHA-256 on disk, and only then updates the stored verifier.
+This writes the new secret via Swamp (`node.agent_rekey`), restarts `orbit-agent.service`, verifies the SHA-256 on disk, and only then updates the stored verifier. `--attempt` defaults to `1` and forms the Operation idempotency key (`node-agent-rekey-<node-id>-<attempt>`): reusing a Node ID and attempt number returns the existing Operation without generating a new secret, so increment `--attempt` for every new rotation or retry after a failed attempt.
 
 ## Gateway view
 

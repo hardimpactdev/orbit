@@ -43,12 +43,14 @@ The same checkout must produce the exact same `docs/openapi.json`. Three inputs 
 
 ## Contract rules
 
-The generator enforces these schema rules and fails when source code disagrees:
+The generator applies these schema rules:
 
 - **Operations (`#[StartsOperation]`):** Marks routes that return an `Operation` receipt, including `keyed: false`, `requiresKey` (`Idempotency-Key` required), and `bindCaller` metadata.
 - **Destructive routes:** Marks every `DELETE` route and `DESTRUCTIVE_POSTS` (`instance:unregister`, `ai-router:task-guard`) with `x-orbit-destructive`, copied by `bin/mcp-tools` to `destructive`.
 - **Internal callbacks:** Routes in `INTERNAL` (such as Node callbacks like `operation:direct:executor-sign`) stay excluded from the operator MCP catalogue.
 - **Validation mapping:** Laravel `present` maps to required; `strictBoolean`/`strictTrue` map to strict boolean/true schemas; `Rule::in(...)` resolves class constants; partial patch bodies enforce `minProperties: 1`.
-- **Hand-written schemas:** Complex conditional bodies (such as `conn_settings_body()`, `ConnLaunchSnapshot`, `TaskAgentSnapshot`, and `agent:facts` `kind` enum `host`, `units`, `checkout`, `checkouts`, `packages`) are defined explicitly in `bin/docs-openapi` and verified by Gateway contract tests.
+- **Hand-written schemas:** Complex conditional bodies (`conn_settings_body()`, `ConnLaunchSnapshot`, `TaskAgentSnapshot`, and `agent:facts`) are maintained manually in `bin/docs-openapi` rather than derived from runtime validators.
+
+Manual schemas can lag behind runtime validators: for example, `agent:facts` currently hard-codes five `kind` values (`host`, `units`, `checkout`, `checkouts`, `packages`), while `NodeFactKind` also accepts `metrics`, `ufw`, `env_keys`, and `accounts`.
 
 For example, `DELETE /api/v1/conn/environments/{environment}` generates the bodyless destructive `conn-environment-unregister` tool returning 200 `{environment_id, removed}` and documenting `node_access.required` (403), `conn.environment_is_instance` (409), and `operation.target_busy` (409) ([Unregister a host server](/reference/conn#unregister-a-host-server)).

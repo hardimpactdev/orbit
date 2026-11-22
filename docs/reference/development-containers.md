@@ -174,7 +174,7 @@ Right before snapshotting `seed-<commit>`, the default writes shared clone files
 
 #### A completion with nothing left
 
-When a clone has no custom Processes, units, or web config and its seed's `services_digest` matches `InstanceContainer::servicesDigest`, [`instance.complete`](/reference/gateway-engine#instancecomplete) ends immediately on the Gateway engine with zero steps and transitions the clone to `active` without starting a Swamp run.
+When `instance.create` recorded `services: seed` (matching `services_digest`), [`instance.complete`](/reference/gateway-engine#instancecomplete) can end immediately on the Gateway engine with zero steps and move the clone to `active`. This requires no remaining work on the Node: no SQLite or server database fill, no Valkey ACL user, no deferred Route to publish, no custom Processes, and no nested fleet start. Otherwise completion runs on Swamp.
 
 #### Spare volumes
 
@@ -218,7 +218,9 @@ The Gateway inspects container Git state (`ContainerWorkspaceRead`, `workspace-g
 
 ### Destroy
 
-`instance:destroy <id> --yes [--force]` deletes the container, its `instance-<id>` ACL, UFW `orbit:instance-<id>-` rules, repository mirror (`/var/lib/orbit/instance-repositories/<id>.git`), power helper files, and Route. Destroying a default Instance requires the Project to be listed in `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`.
+`instance:destroy <id> --yes --force` deletes the container, its `instance-<id>` ACL, UFW `orbit:instance-<id>-` rules, repository mirror (`/var/lib/orbit/instance-repositories/<id>.git`), power helper files, and Route. Container removal currently requires `--force`; omitting it returns HTTP `409 instance.container_destroy_force_required`.
+
+Destroying an active default container Instance requires the Project ID to be listed in `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` (`503 operation.kind_unavailable` otherwise) and zero clones copying that default (`409 instance.default_has_copies` otherwise). A retained failed or cancelled default (`reserved` or `source_resolved` with no open `instance.create` holding its lock) can be destroyed with `--force` without listing the Project.
 
 ### Migrate a checkout Instance
 

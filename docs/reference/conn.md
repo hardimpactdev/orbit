@@ -35,7 +35,7 @@ Gateway Nodes and peers with Gateway access reach every server.
 
 ## Profiles
 
-Devices bind to a shared profile (`GET /me`, `PUT /me/profile`) storing settings JSON up to 4 MB across top-level sections (`workspaces`, `appearance`, `devices.<type>`, `attachedThreads`, `sidebarHiddenThreads`). `PATCH` updates individual sections with per-section optimistic versioning (`409 conn.settings_version_conflict` on stale versions), while `PUT` replaces the full document.
+Devices bind to a shared profile (`GET /me`, `PUT /me/profile`) storing settings JSON up to 4 MB across top-level sections (`workspaces`, `appearance`, `devices.<type>`, `attachedThreads`, `sidebarHiddenThreads`) at `GET/PUT/PATCH /api/v1/conn/profiles/{profile}/settings`. `PATCH` updates individual sections with per-section optimistic versioning (`409 conn.settings_version_conflict` on stale versions). `PUT` checks the profile `version` and replaces only the included `workspaces`, `appearance`, and `devices` sections while preserving omitted sections; sending `attachedThreads` or `sidebarHiddenThreads` to `PUT` returns HTTP `422` (`validation.failed`). Profiles have no `DELETE` endpoint.
 
 ### Attached threads
 
@@ -79,7 +79,7 @@ When a container Instance's presented machine name changes, `POST /api/v1/conn/i
 
 ## Pairing and revocation
 
-Devices pair with non-container T3 servers by requesting a pairing link through `POST /api/v1/conn/environments/{environment}/pairings` (minted via the server's stored admin session) and can revoke pairings via `DELETE /api/v1/conn/environments/{environment}/pairings/{pairing}`.
+Devices pair with non-container T3 servers by requesting a pairing link through `POST /api/v1/conn/environments/{environment}/pairings` (minted via the server's stored admin session) and revoke pairings via `POST /api/v1/conn/environments/{environment}/pairings/revoke` (passing `pairing_id` in the body for one pairing, and optional `node_id` to target another Node instead of the caller).
 
 ### Held sessions
 
@@ -160,9 +160,9 @@ All Conn endpoints live under `/api/v1/conn` and are summarized below:
 | --- | --- |
 | `GET /me`, `PUT /me/profile` | Caller identity, profile binding, and profile event key |
 | `GET /realtime`, `POST /broadcasting/auth` | Reverb discovery and `private-conn-profile.{key}` authorization |
-| `GET/POST /profiles`, `GET/PUT/PATCH/DELETE /profiles/{profile}` | Profile and settings document management |
+| `GET/POST /profiles`, `GET/PUT/PATCH /profiles/{profile}/settings` | Profile creation, listing, and settings document management |
 | `GET/POST /environments`, `DELETE /environments/{env}` | T3 server listing, registration, and idempotent host-server unregistration (`conn.environment_is_instance` 409 for container servers) |
-| `GET/POST /environments/{env}/pairings`, `GET/DELETE /environments/{env}/pairings/{pairing}` | Device pairing lifecycle |
+| `GET/POST /environments/{env}/pairings`, `GET /environments/{env}/pairings/{pairing}`, `POST /environments/{env}/pairings/revoke` | Device pairing creation, lookup, and revocation |
 | `GET /environments/{env}/session`, `POST /environments/{env}/sessions/cleanup` | Held session retrieval and stale session cleanup |
 | `GET /threads`, `POST /environments/{env}/threads` | Thread index reads and recording |
 | `GET /projects`, `GET /projects/{project}/branches`, `GET /projects/{project}/instances/check`, `POST /projects/{project}/instances` | Project discovery, branch listing, and clone creation |

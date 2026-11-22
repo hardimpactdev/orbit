@@ -84,7 +84,7 @@ Before admitting a manual or automatic deployment of a container default, Orbit 
 
 If the source read fails (`project.source_unavailable`, 502), metadata is invalid or unsupported (422, such as `app-dev.php_version_unsupported` or `project.source_defaults_incomplete`), or the required static PHP build is missing (`instance.host_unavailable`, 409), Orbit refuses the deploy and leaves stored facts unchanged. Orbit never deploys a container default using stale source facts.
 
-A successful admission updates Project-wide facts and environment templates immediately (following the [template merge rules](/domains/applications#how-the-template-changes)) and does not revert them if the deploy later fails or is cancelled. The seed itself updates only after the deploy succeeds. Checkout Instances and production deployments do not refresh Project source facts during deploy.
+A successful admission updates Project-wide facts and environment templates immediately (following the [template merge rules](/domains/applications#project-environment-template)) and does not revert them if the deploy later fails or is cancelled. The seed itself updates only after the deploy succeeds. Checkout Instances and production deployments do not refresh Project source facts during deploy.
 
 ### Seeds
 
@@ -227,7 +227,7 @@ Common deployment error codes and recovery actions:
 
 | Error code | Cause | Recovery |
 | --- | --- | --- |
-| `deployment.repository_rebind_required` | The production home records a different URL for the same repository (for example, SSH after moving to HTTPS). | Run `orbit project:update <project> --repository=<url>` to [re-bind the home](/reference/projects#production-instances). |
+| `deployment.repository_rebind_required` | The production home records a different URL for the same repository (for example, SSH after moving to HTTPS). | Run `orbit project:update <project> --repository=<url>` to [re-bind the home](/reference/projects#repository-changes). |
 | `deployment.repository_mismatch` | The recorded repository identity does not match the Project origin. | None in place; the target belongs to another repository. |
 | `deployment.identity_invalid` | Active `app-prod` placement, account, or repository identity does not match. | Verify Node role, placement, and Project repository settings. |
 | `deployment.route_unavailable` | The production Instance lacks an active application Route for readiness and traffic switching. | Attach or activate an application Route, then deploy again. |

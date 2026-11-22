@@ -46,7 +46,7 @@ Configure the Gateway under `orbit.executor` in `config/orbit.php`:
 | `wait_ms` | `ORBIT_EXECUTOR_WAIT_MS` | `500` | Wait bound in milliseconds for CLI/API executor order replies |
 | `visit_wake_wait_seconds` | `ORBIT_VISIT_WAKE_WAIT_SECONDS` | `30` | End-to-end budget in seconds for holding a visitor HTTP request while an Instance wakes |
 
-To rotate keys, add the new public key beside the old one in `ORBIT_EXECUTOR_PUBLIC_KEYS`, converge all executor Nodes, switch `ORBIT_EXECUTOR_SIGNING_KEY`, and remove the old public key.
+To rotate keys, add the new public key beside the old one in `ORBIT_EXECUTOR_PUBLIC_KEYS`, converge all executor Nodes, switch `ORBIT_EXECUTOR_SIGNING_KEY`, remove the old public key from `ORBIT_EXECUTOR_PUBLIC_KEYS`, and converge all executor Nodes again so each Node installs the single-key `gateway.pub` and restarts `orbit-executor.service`.
 
 ### Build parity
 

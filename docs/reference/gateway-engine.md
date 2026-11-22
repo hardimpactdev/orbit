@@ -20,7 +20,7 @@ Operation kinds move off Swamp one at a time, per Operation. Each Operation runs
 `StartSwampRun` chooses between the engine and Swamp after admitting an Operation, keeping admission, locks, and API responses identical. A kind runs on the engine when all of these hold:
 
 - The engine defines a flow for the kind (`EngineKinds`).
-- The kind appears in `ORBIT_ENGINE_KINDS`, a Gateway environment variable holding a comma-separated list.
+- The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
 - Every Node targeted by its steps has reported the required primitive.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
@@ -31,8 +31,9 @@ Otherwise the Operation runs on its Swamp workflow. The table below lists the ki
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
-| `instance.fleet` | `fleet_ready` | `instance.fleet_ready` |
-| `instance.complete` | zero steps (when nothing remains on the Node) | none |
+| `instance.fleet` (follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
+| `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
+| `instance.finalize` (follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
 
 ### route.create
 
@@ -73,7 +74,11 @@ The Gateway unseals the sessions without using a vault and records `route_public
 
 ### instance.complete
 
-When a clone's `services_digest` matches the current seed and nothing remains for `clone-services` on the Node, `instance.complete` settles immediately on the engine with zero steps ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)).
+When `instance.create` recorded `services: seed` and no database, Valkey ACL user, deferred Route, custom Process, or nested fleet start remains on the Node, `instance.complete` settles immediately on the engine with zero steps ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)).
+
+### instance.finalize
+
+For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names and restart T3 until the new label appears.
 
 ### Capability reporting
 

@@ -103,8 +103,8 @@ Instance events track creation, branch changes, and deletion:
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.created` | An Instance is created or registered | `InstanceData` |
-| `instance.updated` | An Instance's deployment branch changes, or removal returns while the record remains | `InstanceData` |
+| `instance.created` | An Instance is created | `InstanceData` |
+| `instance.updated` | An Instance is registered (synchronously or on native registration completion), its deployment branch changes, or removal returns while the record remains | `InstanceData` |
 | `instance.deleted` | An Instance is removed | `{ id, name }` |
 
 Transfers, clones, environment syncs, and deployments do not emit `instance.*`; deployments emit [`deployment.*`](#deployment).
@@ -248,7 +248,7 @@ Events fire only after an action commits, except for failed deployments and fail
 
 ## Node agent channels
 
-Each managed Linux Node has a presence channel `presence-node.{id}` where its [Node agent](/reference/node-agent) publishes presence, Process state, and workspace updates. The Gateway broadcasts nothing on these channels; its agent view subscriber joins every channel to maintain the [Gateway view](/reference/node-agent#gateway-view).
+Each managed Linux Node has a presence channel `presence-node.{id}` where its [Node agent](/reference/node-agent) publishes presence, Process state, workspace updates, and `client-executor-result` replies. The Gateway publishes the server event `executor-order` (`{ operation, order }`) on `presence-node.{id}` for signed executor orders ([The observer pass-through](/reference/executor#the-observer-pass-through)), and its agent view subscriber joins every channel to maintain the [Gateway view](/reference/node-agent#gateway-view).
 
 ### Membership
 

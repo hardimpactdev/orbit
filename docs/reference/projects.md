@@ -170,7 +170,7 @@ Changes to `slug`, `repository_url`, `default_branch`, or `root` run as one reco
 
 Any failure before the first visible change (a Route cutover or published Project field) rolls back cleanly to `rolled_back` (or stays `rolling_back` for an identical retry if rollback itself fails). Any failure after publication retries forward on an identical request; a different update returns `project.update_in_progress`.
 
-If an unpublished update stalled while holding no active lock, a new update rolls it back first and then proceeds (except on Projects with no Instances, which require an identical retry). During slug updates, Instances without a stored environment skip env sync (`env.configuration_missing`) while Route convergence still updates `APP_URL` in `.env` (see [Project update boundary](/reference/environment-variables#project-update-boundary)).
+If an unpublished update stalled while holding no active lock, a new update rolls it back first and then proceeds (except on Projects with no Instances, which require an identical retry). During slug updates, Instances without a stored environment skip env sync (`env.configuration_missing`) while Route convergence still updates `APP_URL` in `.env` (see [Other writers](/reference/environment-variables#other-writers)).
 
 Git source updates run as the Node's managed user with checkout hooks and filesystem monitors disabled (`-c core.hooksPath=/dev/null -c core.fsmonitor=false`), without mutating local Git config.
 

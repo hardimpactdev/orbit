@@ -228,7 +228,42 @@ The review gate verifies an approved review receipt on the current candidate com
 
 ### The reviewer rule
 
-Reviewers run in a fresh thread separate from the implementer and evaluate the checked candidate diff against the brief and deliverables.
+This is the single rule for what a reviewer judges and what blocks a merge. Every task-copy reviewer turn receives it in `<review_rules>` in a fresh thread separate from the implementer, and independent reviewers outside task copies apply it too. It wins over the implementer quality bar in `AGENTS.md`.
+
+Scope covers only the briefs, deliverables, the diff of the checked commit against the base, and what that diff directly affects. Reviewers report no out-of-scope ideas, refactors, or redesigns, and ask for changes outside the touched files only when a blocking finding forces it (naming that finding).
+
+A finding blocks only if one of these holds:
+
+- A normal run or a likely failure (a crash, reboot, or network loss at one step) would cause real harm.
+- A deliverable is missed or not proven, or a test requested by the briefs is missing or broken.
+
+Real harm means one of these outcomes:
+
+- It stops or deletes something live.
+- It breaks live requests or user-visible behavior.
+- It loses or corrupts data.
+- It produces a wrong result requested by the briefs.
+- It adds a security hole.
+
+These do not block and belong in short follow-ups for the pull request body:
+
+- Limits accepted by the briefs.
+- Rare interleavings, multi-fault races, hardening, and defense in depth.
+- Findings in code behind a flag that is off by default (listed under "before the flag goes on").
+
+Reviewers ask for no new recovery state, marker, or retry path for rare races; removing a state beats hardening it.
+
+The first review is the one full review. It covers every owned outcome, brief requirement, deliverable, and direct effect of the diff, tests at least one way the result could be wrong while checks pass, and checks sibling cases of any blocker before reporting.
+
+A re-review checks only three things:
+
+- Earlier blocking findings (closed or still open, and why).
+- Changes since the last reviewed commit and their direct effects, excluding base merges.
+- New evidence or owner decisions in the turn.
+
+Re-reviews do not re-audit unchanged code, except to report real harm of the first kind spotted in unchanged code (marked "missed in the first review").
+
+Each blocking finding gives its [category](#the-review-receipt), file and line, failing case and consequence, the rule a fix must satisfy, and every case found. The report ends with one exact line: `VERDICT: APPROVE` or `VERDICT: CHANGES`. With no blocking finding, the reviewer approves.
 
 ### The reviewer's pull request text
 

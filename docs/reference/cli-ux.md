@@ -73,7 +73,7 @@ Run the CLI contract checker from the repository root:
 
 ```bash
 bin/cli-contract --changed           # check fixtures for changed commands
-bin/cli-contract --preview <fixture> # preview a rendered fixture
+bin/cli-contract --preview           # preview rendered fixtures
 bin/cli-contract --coverage          # check fixture coverage
 ORBIT_EXPECTED=update bin/cli-contract <fixture>
 ```

@@ -132,7 +132,9 @@ Start endpoints validate access, idempotency, and input, commit a `queued` Opera
 
 ### Retry a start with a key
 
-Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind across callers; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the existing Operation even after it ends; a different target or input returns `409 operation.idempotency_conflict`.
+Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the existing Operation even after it ends; a different target or input returns `409 operation.idempotency_conflict`.
+
+By default, fingerprints are portable across callers with access to the target. Endpoints declared with `bindCaller: true` (including automatic deploys at `POST /api/v1/instances/{instance}/deploy/automatic`, Conn starts, WebSocket app Operations, task pull-request merges, proof runs, and `node.base_inventory`) also bind `caller_node_id` and `command`, so a different caller Node replaying the same key receives `409 operation.idempotency_conflict`.
 
 Internal callers use `OperationIdempotency::under()` and `OperationIdempotency::suspended()`. Keyed Operations are never pruned. `GET /api/v1/conn/environments/{environment}/session` ignores `Idempotency-Key` and deduplicates via its open `conn.session_hold` Operation instead.
 
