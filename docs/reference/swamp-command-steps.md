@@ -197,6 +197,7 @@ Operation reads do not request terminal history or expire Operations. The event 
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A cancel waits for the end of the run's database fill step. That end asks for a pass at once, and the pass checks the rule again before it sends ([Cancel an operation](/reference/operations#cancel-an-operation)).
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
+- An Operation that a signed-order fence ended `interrupted` with `executor.result_unknown` after its budget expired gets the same reads until its native end is recorded. Only that end is recorded; the fence keeps the lock until a receipt or the executor journal frees it ([Operations](/reference/operations)).
 
 A run that succeeded while its end check was skipped or failed fails with `operation.result_unreadable` in the same pass, and the Operation frees its target. A timed-out Operation whose run did so within its budget ends the same way. It is not reopened each pass.
 
