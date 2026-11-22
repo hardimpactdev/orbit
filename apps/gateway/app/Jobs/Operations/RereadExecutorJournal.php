@@ -41,6 +41,8 @@ final class RereadExecutorJournal implements ShouldBeUnique, ShouldQueue
         $operation = Operation::query()->find($this->operationId);
         if ($operation !== null && ExecutorWake::owns($operation)) {
             $wake->completeHandoff($operation);
+        } elseif ($operation !== null) {
+            $wake->settleFenced($operation);
         }
     }
 }

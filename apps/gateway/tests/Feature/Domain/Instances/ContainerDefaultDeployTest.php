@@ -23,6 +23,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Instances\Power\ExecutorFence;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -36,6 +37,12 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\Operations\RereadExecutorJournal;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -1644,4 +1651,108 @@ it('fails a deployment by hand of an older commit in its probe with deployment.c
         ->and($operation->error_code)->toBe('deployment.commit_behind_checkout')
         ->and($operation->lock_key)->toBeNull()
         ->and(json_encode($operation->toArray(), JSON_THROW_ON_ERROR))->toContain('is older than the checkout HEAD');
+});
+
+/**
+ * A release refresh's deploy shaped like Operation 31729: its run had the boot discard signed (ADR 0266, R2), then ended with no
+ * receipt, so the deploy ended interrupted with executor.result_unknown and holds the Instance lock.
+ */
+function fencedRefreshDeploy(Instance $instance): Operation
+{
+    config(['orbit.executor.power_enabled' => true]);
+    app(NestedFleetRefresh::class)->admitAll(str_repeat('a', 40));
+    $deploy = Operation::query()->where('kind', 'instance.deploy')->sole();
+    expect($deploy->input['deployment'])->toMatchArray(['signed_power' => true, 'executor_lifecycle_phase' => 'boot']);
+    $deploy->update(['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1, 'state' => ExecutorFence::issue($deploy->state)]);
+    app(OperationStore::class)->change($deploy, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.deploy_failed']);
+    expect($deploy->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+        ->lock_key->toBe('instance:'.$instance->id)->executor_result->toBeNull();
+
+    return $deploy;
+}
+
+/**
+ * The Node's executor journal answers for the read-only lookup, one per read: its clock (a minute ahead), the accept marker, the
+ * executor's start, then the matching lines; null is an unreadable Node. Returns the remote commands it was asked to run.
+ *
+ * @param  list<list<array<string, mixed>>|null>  $answers
+ * @return ArrayObject<int, list<string>>
+ */
+function deployJournal(array $answers): ArrayObject
+{
+    $commands = new ArrayObject;
+    test()->mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use (&$answers, $commands): CommandResult {
+        $commands->append($command->arguments);
+        $records = array_shift($answers);
+        if ($records === null) {
+            return new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: No route to host', 3, false);
+        }
+
+        return new CommandResult(0, implode("\n", [(string) (now()->getTimestampMs() + 60_000), 'accepts', '0',
+            ...array_map(static fn (array $record): string => json_encode($record, JSON_THROW_ON_ERROR), $records)])."\n", '', 3, false);
+    });
+
+    return $commands;
+}
+
+/** One reconcile pass over the fenced Operations, then the journal read it queued for the deploy. */
+function reconcileFencedDeploy(Operation $deploy): void
+{
+    test()->travel(11)->seconds();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    Queue::pushed(RereadExecutorJournal::class, fn (RereadExecutorJournal $job): bool => $job->operationId === $deploy->id)->last()
+        ->handle(app(ExecutorWake::class));
+}
+
+it('frees an interrupted deploy whose Node journal holds the done discard of its signed boot, and admits the next deploy', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->andReturnUsing(
+        fn (string $url, ProjectSourceAccess $access, string $branch, array $paths, string $commit) => deploySourceRead($commit));
+    $deploy = fencedRefreshDeploy($instance);
+    expect(app(NestedFleetRefresh::class)->admitAll(str_repeat('b', 40)))->toBe(['tool/default on beast' => 'operation.target_busy']);
+    $commands = deployJournal([[['record' => 'done', 'nonce' => str_repeat('a', 32), 'operation' => (string) $deploy->id, 'action' => 'discard',
+        'target' => (string) $instance->id, 'outcome' => ['status' => 'done'], 'at_ms' => 1]]]);
+
+    reconcileFencedDeploy($deploy);
+
+    expect($deploy->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->toBeNull()
+        ->and($deploy->executor_result)->toMatchArray(['status' => 'done', 'action' => 'discard', 'delivery' => 'journal'])
+        ->and($deploy->state[ExecutorFence::Settled])->toMatchArray(['by' => 'journal', 'status' => 'done'])
+        ->and($commands)->toHaveCount(1)->and($commands[0])->toContain(ExecutorJournalLookup::Path);
+    $next = app(NestedFleetRefresh::class)->admitAll(str_repeat('b', 40));
+    expect($next['tool/default on beast'])->toStartWith('operation:')
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(2);
+});
+
+it('keeps an interrupted deploy fenced while its Node journal cannot be read', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->andReturn(deploySourceRead(str_repeat('a', 40)));
+    $deploy = fencedRefreshDeploy($instance);
+    $commands = deployJournal([null]);
+
+    reconcileFencedDeploy($deploy);
+
+    expect($deploy->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+        ->lock_key->toBe('instance:'.$instance->id)->executor_result->toBeNull()->and($commands)->toHaveCount(1);
+    $this->travel(11)->seconds();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+});
+
+it('frees an interrupted deploy once its Node journal has no record of the expired order', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->andReturn(deploySourceRead(str_repeat('a', 40)));
+    $deploy = fencedRefreshDeploy($instance);
+    deployJournal([[]]);
+
+    reconcileFencedDeploy($deploy);
+
+    expect($deploy->refresh())->status->toBe(OperationStatus::Interrupted)->lock_key->toBeNull()->executor_result->toBeNull()
+        ->and($deploy->state)->toMatchArray([ExecutorFence::Absent => true])
+        ->and($deploy->state[ExecutorFence::Settled])->toMatchArray(['by' => 'journal', 'status' => 'absent']);
 });

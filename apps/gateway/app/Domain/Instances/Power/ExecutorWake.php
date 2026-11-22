@@ -378,6 +378,53 @@ final readonly class ExecutorWake
         return $operation->executor_result !== null;
     }
 
+    /**
+     * R1/R2 for a lifecycle Operation (a start or a deploy) that ended under its fence: its Swamp run is over, so the Node's journal
+     * decides its signed order, as reconcile() does for a power Operation. A recorded result frees the lock through the receipt path
+     * (ExecutorResults, then ExecutorFence::resolve); the Operation keeps its status and code. No record of any action after expiry frees
+     * it too. An unreadable or still open journal keeps the fence, and the reconcile pass reads again.
+     */
+    public function settleFenced(Operation $operation): void
+    {
+        $operation->refresh();
+        if (! ExecutorFence::heldLifecycle($operation) || $operation->executor_result !== null || $operation->node_id === null) {
+            return;
+        }
+        // The order was signed after the run started and before it ended: the end bounds its expiry, the start its age.
+        $signedBy = ($operation->finished_at ?? now())->getTimestamp() * 1000 + 999;
+        $signedSince = ($operation->started_at ?? $operation->created_at ?? now())->getTimestamp() * 1000;
+        $absent = true;
+        foreach (ExecutorFence::lifecycleActions($operation) as $action) {
+            try {
+                $found = $this->journal->find($operation, $action, $signedBy, $signedSince);
+            } catch (Throwable $exception) {
+                Log::warning('The Node executor journal could not be read; the Operation stays fenced and the reconcile pass reads it again.',
+                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+
+                return;
+            }
+            if (is_array($found)) {
+                $reply = ExecutorReply::fromEvent(['operation' => (string) $operation->id, 'line' => json_encode($found, JSON_THROW_ON_ERROR)]);
+                if ($reply !== null) {
+                    $this->results->receive($operation->node_id, $reply, 'journal');
+                }
+
+                return;
+            }
+            $absent = $absent && $found === ExecutorJournalLookup::Absent;
+        }
+        if ($absent) {
+            DB::transaction(function () use ($operation): void {
+                $operation->refresh();
+                if ($operation->executor_result === null && self::endedUnknown($operation)) {
+                    $operation->forceFill(['state' => [...($operation->state ?? []), ExecutorFence::Absent => true]])->save();
+                    $this->operations->change($operation, ['status' => $operation->status, 'error_code' => $operation->error_code, 'finished_at' => now(),
+                        'lock_key' => null, 'state' => [...($operation->state ?? []), ExecutorFence::Settled => ['by' => 'journal', 'status' => 'absent', 'at' => now()->toIso8601String()]]]);
+                }
+            });
+        }
+    }
+
     /** A read that answered `open` is no missing worker: the completion job runs again soon, and its lease moves past that run. */
     private function rereadSoon(Operation $operation, int $publishedAtMs): void
     {
@@ -406,9 +453,12 @@ final readonly class ExecutorWake
     /** @return Builder<Operation> */
     private function unknowns(): Builder
     {
-        return Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
-            ->where('state->'.self::State, true)->where('status', OperationStatus::Interrupted)->where('error_code', 'executor.result_unknown')
-            ->whereNotNull('lock_key')->whereNotNull('state->'.self::PublishedAt)
+        // A signed power Operation, or one whose Swamp run had a lifecycle order signed for it, such as a deploy's boot discard.
+        return Operation::query()->where('target_type', 'instance')
+            ->where(fn ($query) => $query->where(fn ($query) => $query->whereIn('kind', [InstanceWake::Kind, InstanceSleep::Kind])
+                ->where('state->'.self::State, true)->whereNotNull('state->'.self::PublishedAt))
+                ->orWhere(fn ($query) => $query->whereNotIn('kind', [InstanceWake::Kind, InstanceSleep::Kind])->where('state->'.ExecutorFence::Issued, true)))
+            ->where('status', OperationStatus::Interrupted)->where('error_code', 'executor.result_unknown')->whereNotNull('lock_key')
             ->where(fn ($query) => $query->whereNull('state->'.self::JournalReadAt)
                 ->orWhere('state->'.self::JournalReadAt, '<=', now()->getTimestamp() - self::JournalRereadSeconds));
     }

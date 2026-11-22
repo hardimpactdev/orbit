@@ -23,6 +23,9 @@ final class ExecutorFence
     /** Set when the Node's journal proved that the expired order never acted (ExecutorWake::reconcile). */
     public const string Absent = 'executor_order_absent';
 
+    /** Set when a receipt or the journal freed an Operation that had ended under its fence: what settled it and when. */
+    public const string Settled = 'executor_fence_settled';
+
     /** @param array<string, mixed>|null $state
      * @return array<string, mixed>
      */
@@ -72,8 +75,25 @@ final class ExecutorFence
         $operation->refresh();
         if ($operation->status->terminal() && $operation->lock_key !== null && $operation->executor_result !== null) {
             app(OperationStore::class)->change($operation, ['status' => $operation->status, 'error_code' => $operation->error_code,
-                'finished_at' => now(), 'lock_key' => null]);
+                'finished_at' => now(), 'lock_key' => null, 'state' => [...($operation->state ?? []), self::Settled => [
+                    'by' => $operation->executor_result['delivery'] ?? 'receipt', 'status' => $operation->executor_result['status'] ?? null, 'at' => now()->toIso8601String()]]]);
         }
+    }
+
+    /**
+     * An Operation of a signed lifecycle phase (a start or a deploy) that ended under its fence: its Swamp run is over, so only a receipt
+     * or the Node's journal can settle it (ExecutorWake::settleFenced). A signed power Operation settles through ExecutorWake::complete.
+     */
+    public static function heldLifecycle(Operation $operation): bool
+    {
+        return ! ExecutorWake::owns($operation) && ($operation->state[self::Issued] ?? false) === true && ExecutorWake::endedUnknown($operation)
+            && self::lifecycleActions($operation) !== [];
+    }
+
+    /** @return list<string> The executor actions the Operation's admitted lifecycle phases could sign. */
+    public static function lifecycleActions(Operation $operation): array
+    {
+        return array_values(array_unique(array_filter([ExecutorPowerIntent::action($operation, 'resume'), ExecutorPowerIntent::action($operation, 'boot')])));
     }
 
     /**

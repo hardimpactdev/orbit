@@ -21,6 +21,10 @@ With [signed power routing](/reference/executor#signed-power-delivery) enabled, 
 
 With no result by the deadline, the Gateway reads the Node's executor journal for the order ([Reconcile by the journal](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#reconcile-by-the-journal)). A recorded result decides. No record after expiry fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees the lock. A Node that cannot be read ends it `interrupted` with `executor.result_unknown`; the lock stays until a later read answers. The activation request waits only within its own [short budget](/reference/executor#the-wake-inside-the-request); a result that arrives later can still complete the Operation promptly.
 
+The reconcile pass reads the journal again for every Operation that ended `interrupted` with `executor.result_unknown` under a signed-order fence, not only sleep and wake. That includes `instance.deploy` and `instance.start`, whose Swamp run asked the Gateway to sign a lifecycle order, such as the boot's `discard`.
+
+A recorded result, or a late WebSocket receipt, is stored once and frees the lock. No record after the order's expiry frees it too. Such an Operation keeps its `interrupted` status and `executor.result_unknown` code, because its run's own result stays unknown; its state names what settled the fence under `executor_fence_settled`. A Node that cannot be read keeps the fence until a later read answers.
+
 SQLite records the wake's notices and lifecycle handoff with the change. A background pass sends them to `operations-prompt` without holding the writer. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers publication, job loss, retries and hook receipts. No queue failure changes an in-bound success.
 
 Container Process journal tails and unit state reads create no Operation. They use the narrow [direct transport exception](/reference/node-agent#commands); Process actions still run as Operations.

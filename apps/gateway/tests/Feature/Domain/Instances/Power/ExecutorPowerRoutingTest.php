@@ -673,6 +673,22 @@ it('R2: never projects an issued boot discard as success without its receipt', f
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });
 
+it('R1/R2: frees an issued boot discard that ended under its fence when its late receipt arrives, keeping its first receipt and its end', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'stopped']);
+    [$operation, $run] = signedLifecycleStart($instance, 'boot');
+    app(InstanceStart::class)->apply($operation, runEnded($run, [], 'succeeded'));
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->lock_key->not->toBeNull();
+
+    executorWakeReply($operation, ['status' => 'done', 'action' => 'discard']);
+    executorWakeReply($operation, ['status' => 'failed', 'action' => 'discard', 'code' => 'instance.discard_failed']);
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->toBeNull()
+        ->and($operation->executor_result)->toMatchArray(['status' => 'done', 'action' => 'discard', 'delivery' => 'websocket'])
+        ->and($operation->state[ExecutorFence::Settled])->toMatchArray(['by' => 'websocket', 'status' => 'done']);
+    expect(app(InstanceSleep::class)->start($instance, 'cli', null))->lock_key->not->toBeNull();
+});
+
 it('R2: settles a cancel between the running claim and the signature at once', function (): void {
     $instance = managedPowerFixture();
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
