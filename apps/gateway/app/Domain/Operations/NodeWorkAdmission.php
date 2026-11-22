@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -91,9 +92,11 @@ final readonly class NodeWorkAdmission
             return $query->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->automatic', true)->get();
         })->unique('id')->sortBy('id')->values();
         $cancel = app(NativeRunCancellation::class);
-        // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did.
+        // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did. A deployment that the
+        // release itself admitted holds no Node once it has ended, however it ended: the release's own fleet pass never waits for it
+        // (docs/reference/deployments.md#development-defaults). Any other ended Operation that keeps its lock still holds the Node.
         $holders = $open->filter(static fn (Operation $operation): bool => (! $operation->status->terminal()
-            || $operation->lock_key !== null || $cancel->awaitsForwarding($operation))
+            || (! ContainerDeployOutcome::releaseAdmitted($operation) && ($operation->lock_key !== null || $cancel->awaitsForwarding($operation))))
             && ($roles || array_intersect($lineage, ValidatedData::integerList($operation->state['admitted_beside'] ?? [])) === []));
         $ids = array_values($holders->map(static fn (Operation $operation): int => $operation->id)->all());
         if ($roles) {

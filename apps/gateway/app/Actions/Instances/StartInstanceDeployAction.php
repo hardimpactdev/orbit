@@ -9,6 +9,7 @@ use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
@@ -44,12 +45,13 @@ final readonly class StartInstanceDeployAction
         private InstanceDeploymentRecorder $history,
     ) {}
 
-    public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
+    /** `$release`: the release's nested-fleet refresh admits it (NestedFleetRefresh), which the input records as its `origin`. */
+    public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null, bool $release = false): Operation
     {
-        return $this->start($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
+        return $this->start($instance, $triggeredBy, $requestId, $commit, $callerNodeId, release: $release);
     }
 
-    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false): Operation
+    private function start(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit, ?int $callerNodeId, bool $automatic = false, bool $release = false): Operation
     {
         if ($commit !== null) {
             GitCommitSha::validate($commit);
@@ -72,7 +74,7 @@ final readonly class StartInstanceDeployAction
                 (string) $project->default_branch, $project->root, $project->type, $commit);
         }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $configuration, $read): Operation {
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $release, $configuration, $read): Operation {
             $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
             if ($automatic) {
                 $this->writer->assertSwamp($instance);
@@ -135,6 +137,11 @@ final readonly class StartInstanceDeployAction
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
             }
+            // Who admitted it, from the admission itself and never from `triggered_by`, which a caller names
+            // (docs/reference/deployments.md#development-defaults).
+            if ($release || $automatic) {
+                $input['origin'] = $release ? ContainerDeployOutcome::ReleaseOrigin : ContainerDeployOutcome::AutomaticOrigin;
+            }
             $operation = $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
                 $input, $triggeredBy, $requestId, lockKey: $development && $deployment['variant'] !== 'container' ? null : OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
             if ($development || ! $operation->wasRecentlyCreated) {
@@ -152,11 +159,11 @@ final readonly class StartInstanceDeployAction
     }
 
     /** Public pins validate the recorded Project identity before admitting the existing operation. */
-    public function pinned(Instance $instance, string $triggeredBy, ?string $requestId, string $commit, ?int $callerNodeId = null): Operation
+    public function pinned(Instance $instance, string $triggeredBy, ?string $requestId, string $commit, ?int $callerNodeId = null, bool $release = false): Operation
     {
         $this->assertRepositoryIdentity($instance);
 
-        return $this->execute($instance, $triggeredBy, $requestId, $commit, $callerNodeId);
+        return $this->execute($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $release);
     }
 
     /** The HTTP boundary requires Gateway Node access before admitting automatic origin. */

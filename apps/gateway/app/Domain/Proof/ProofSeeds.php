@@ -365,7 +365,8 @@ final readonly class ProofSeeds
     /**
      * The proof Nodes currently eligible for this exact seed, with the Operations that published it.
      * A missing admission is recoverable. The existing copy policy leaves a failed target for its next
-     * converge or the next seed.
+     * converge or the next seed. A default whose release deployment kept a newer checkout (`already_newer`) publishes the seed it kept,
+     * which descends from the release commit; any other seed off the release commit has moved.
      *
      * @param  array<int, array<string, mixed>>  $defaults
      * @return array<string, mixed>
@@ -380,6 +381,10 @@ final readonly class ProofSeeds
         }
         $takenAt = ValidatedData::string($proof[$id]['taken_at']);
         $identity = ['instance_id' => $id, 'commit' => $commit, 'taken_at' => $takenAt];
+        if (($proof[$id]['already_newer'] ?? false) === true) {
+            $commit = ValidatedData::string($proof[$id]['commit']);
+            $identity = [...$identity, 'commit' => $commit, 'already_newer' => true];
+        }
         $source = $this->source();
         if ($source === null || $source->instance_id !== $id || $source->seed_commit !== $commit
             || $source->seed_taken_at?->toIso8601String() !== $takenAt) {

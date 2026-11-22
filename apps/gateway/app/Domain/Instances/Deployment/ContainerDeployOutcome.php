@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Logs\LogRedactor;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /**
@@ -20,6 +21,9 @@ final readonly class ContainerDeployOutcome
     /** The step whose first phase starts the container (docs/cli/instance/deploy.mmd). */
     public const string PrepareStep = 'Prepare the container';
 
+    /** The step that starts the container and reads its workspace before any other change. */
+    public const string StartStep = 'Start the container';
+
     /**
      * The proof default's step that waits for its seed hold before any phase (docs/reference/development-containers.md#the-seed-hold); at
      * its bound the deployment fails before it changes the container.
@@ -31,6 +35,31 @@ final readonly class ContainerDeployOutcome
 
     /** The step that prints, as `,<name>,<name>,`, the steps whose inputs the checkout found unchanged. */
     public const string SkipStep = 'Read the steps to skip';
+
+    /** The outcome of a deployment whose checkout was already past its commit, which kept it (docs/reference/deployments.md#development-defaults). */
+    public const string AlreadyNewer = 'already_newer';
+
+    /** The input's `origin` of a deployment that the release's nested-fleet refresh admitted. */
+    public const string ReleaseOrigin = 'release';
+
+    /** The input's `origin` of a deployment that the automatic policy admitted. */
+    public const string AutomaticOrigin = 'automatic';
+
+    /** Whether a deployment keeps a checkout that is already past its commit: one that a release or the automatic policy admitted. */
+    public static function keepsNewer(Operation $operation): bool
+    {
+        return in_array(ValidatedData::object($operation->input ?? [])['origin'] ?? null, [self::ReleaseOrigin, self::AutomaticOrigin], true);
+    }
+
+    /**
+     * Whether the release's nested-fleet refresh admitted this deployment, by its admission's own `origin`, never by `triggered_by` or a
+     * release's refresh link. A deployment admitted without an `origin` counts as manual.
+     */
+    public static function releaseAdmitted(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.deploy'
+            && (ValidatedData::object($operation->input ?? [])['origin'] ?? null) === self::ReleaseOrigin;
+    }
 
     /**
      * @param  array<string, mixed>  $data
@@ -69,15 +98,21 @@ final readonly class ContainerDeployOutcome
         $status = ValidatedData::nullableString($data['status'] ?? null);
         if ($status === 'succeeded') {
             $payload['commit'] = is_string($file['commit'] ?? null) ? $file['commit'] : null;
+            // The probe found the checkout already past the commit: the run kept it as it was and changed nothing, so `commit` is the
+            // checkout's HEAD, which the probe read.
+            if (($file['outcome'] ?? null) === self::AlreadyNewer && is_string($file['kept_commit'] ?? null) && is_string($file['target_commit'] ?? null)) {
+                $payload = [...$payload, 'already_newer' => true, 'outcome' => self::AlreadyNewer, 'commit' => $file['kept_commit'],
+                    'kept_commit' => $file['kept_commit'], 'target_commit' => $file['target_commit']];
+            }
         } elseif ($status === 'failed') {
             $step = $failed[0] ?? 'native_execution';
             $payload['failed_step'] = $step;
-            // A deployment that failed before the container started leaves its power state as it was. "Prepare the container" starts
+            // A deployment that failed before the container started leaves its power state as it was. "Start the container" starts
             // it in its first phase, `start`; each phase that passed writes itself into `phases_passed` as it ends, also when a later
             // phase is killed before it can write a failure.
             $passed = is_array($file['phases_passed'] ?? null) ? $file['phases_passed'] : [];
-            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent', self::SeedHoldStep], true)
-                && ($step !== self::PrepareStep || in_array('start', $passed, true));
+            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
+                && ($step !== self::StartStep || in_array('start', $passed, true));
             $code = match (true) {
                 str_starts_with($step, self::DeployStepsStep) => 'deployment.step_failed',
                 $step === self::SeedHoldStep => 'instance.seed_hold_timeout',

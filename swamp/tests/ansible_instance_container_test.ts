@@ -220,6 +220,10 @@ function fixture() {
     phases(list: string[], extra: Record<string, string> = {}) {
       return this.run(list.join(","), extra, ["-e", `phases=${list.join(",")}`]);
     },
+    /** "Start the container": the start and the probe in one play, which leaves the Project's PHP to the `php` phase. */
+    probe() {
+      return this.run("start,probe", {}, ["-e", "phases=start,probe", "-e", "checkout_probe=true"]);
+    },
     state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
     result: () => JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
     workspace: (...args: string[]) => git(`${folder}/containers/instance-7/srv/workspace`, ...args),
@@ -655,7 +659,7 @@ Deno.test({
       assertEquals(f.result(), { error_code: "deployment.commit_not_on_branch", failed_phase: "fetch", phases_passed: ["start"] });
 
       // Tracked changes in the workspace refuse the checkout and stay.
-      f.container.commit = first;
+      f.container.commit = second;
       f.write();
       assert(f.run("fetch").ok);
       Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`, "<?php echo 3;\n");
@@ -665,13 +669,112 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`), "<?php echo 3;\n");
       f.workspace("checkout", "--", "index.php");
 
-      // An older commit does not fast-forward the branch.
-      const refetch = f.run("fetch");
-      assert(refetch.ok, refetch.output);
+      // An older commit of the branch, which the checkout is already past: the probe right after the start decides it, only reading,
+      // before the Project's PHP, the seed hold, the fleet check, the seed or the bundle. The older intent has no PHP: neither case
+      // removes the newer checkout's PHP or restarts a unit.
+      f.container.commit = first;
+      Object.assign(f.container, { php: null, php_cli_ini: null });
+      f.write();
+      const snapshots = f.state().containers["instance-7"].snapshots;
+      const bundles = f.state().bundles.length;
+      const phpLink = `${f.folder}/containers/instance-7/usr/local/bin/php`;
+      const restarts = () => (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").length;
+      const restarted = restarts();
+      const untouched = () => {
+        assertEquals(f.workspace("rev-parse", "HEAD"), second);
+        assertEquals(Deno.readLinkSync(phpLink), "/opt/orbit-runtime/current/php/8.5/bin/php");
+        assertEquals(restarts(), restarted);
+        assertEquals(f.state().containers["instance-7"].snapshots, snapshots);
+        assertEquals(f.state().bundles.length, bundles);
+      };
+      // A deployment by hand refuses it by its own code and says why.
+      const behind = f.probe();
+      assert(!behind.ok);
+      assertEquals(f.result(), { error_code: "deployment.commit_behind_checkout", failed_phase: "probe", phases_passed: ["start"],
+        detail: `The requested commit ${first} is older than the checkout HEAD ${second} of main; deploy the newer commit instead.` });
+      untouched();
+
+      // A deployment that a release admitted (as Operation 31729) keeps the newer checkout: the play passes, names the real HEAD it
+      // kept, and prints the line on which the workflow skips every later step.
+      Object.assign(f.container, { keep_newer: true });
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`, "kept\n");
+      const kept = f.probe();
+      assert(kept.ok, kept.output);
+      assertStringIncludes(kept.output, "orbit-checkout=already_newer");
+      assertEquals(f.result(), { commit: second, outcome: "already_newer", kept_commit: second, target_commit: first, phases_passed: ["start", "probe"] });
+      untouched();
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`), "kept\n");
+      Deno.removeSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`);
+
+      // The checkout's rules come first, in its order, for a release deployment too: tracked changes refuse before the ancestry.
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`, "<?php echo 3;\n");
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.checkout_dirty");
+      f.workspace("checkout", "--", "index.php");
+      untouched();
+
+      // A commit off the updated source branch's first-parent chain refuses as the fetch does, before the probe reads HEAD: a side
+      // commit that the branch never merged, and one that the branch reaches only through a merge's second parent, even when the
+      // workspace's own first-parent chain holds it behind HEAD.
+      git(f.source, "checkout", "--quiet", "-b", "side", second);
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "side");
+      const side = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "checkout", "--quiet", "main");
+      f.container.commit = side;
+      f.write();
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
+      git(f.source, "merge", "--quiet", "--no-ff", "-m", "merge side", "side");
+      f.workspace("fetch", "--quiet", f.source, side);
+      f.workspace("reset", "--quiet", "--hard", side);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const ahead = f.workspace("rev-parse", "HEAD");
+      const secondParent = f.probe();
+      assert(!secondParent.ok, secondParent.output);
+      assert(!secondParent.output.includes("orbit-checkout=already_newer"));
+      assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
+      assertEquals(f.workspace("rev-parse", "HEAD"), ahead);
+      git(f.source, "reset", "--quiet", "--hard", second);
+      git(f.source, "branch", "--quiet", "-D", "side");
+
+      // A commit of the branch that HEAD has diverged from refuses as diverged, for a release deployment too.
+      f.workspace("reset", "--quiet", "--hard", first);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      f.container.commit = second;
+      f.write();
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.branch_diverged");
+      f.workspace("reset", "--quiet", "--hard", second);
+      untouched();
+
+      // The checkout's commit itself is the normal deployment: the probe passes with no line and leaves the live PHP as it is; only the
+      // `php` phase after the seed hold applies the intent's PHP.
+      const current = f.probe();
+      assert(current.ok, current.output);
+      assert(!current.output.includes("orbit-checkout=already_newer"));
+      assertEquals(f.result(), { commit: null, phases_passed: ["start", "probe"] });
+      untouched();
+      assert(f.run("php").ok);
+      assertThrows(() => Deno.readLinkSync(phpLink));
+      Object.assign(f.container, { php: "/opt/orbit-runtime/current/php/8.5/bin/php", php_cli_ini: "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n" });
+      f.write();
+
+      // A branch that moved away from HEAD is no older commit: even a release deployment refuses it as diverged at the checkout.
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const local = f.workspace("rev-parse", "HEAD");
+      assert(f.run("fetch").ok);
       const diverged = f.run("checkout");
       assert(!diverged.ok);
       assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
-      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(f.workspace("rev-parse", "HEAD"), local);
+      f.workspace("reset", "--quiet", "--hard", second);
+
+      // The newest commit still fast-forwards a release deployment as before, with no `already_newer`.
+      const same = f.run("fetch");
+      assert(same.ok, same.output);
+      assert(f.run("checkout").ok);
+      assertEquals((f.result() as Record<string, unknown>).outcome, undefined);
     } finally {
       f.cleanup();
     }

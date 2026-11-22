@@ -378,6 +378,9 @@ final readonly class ContinueReleaseFleetAction
 
                 continue;
             }
+            // The Operations that held the Node at the last refusal; a pass that gets past the refusal drops them, so an ended wait
+            // never stays listed.
+            unset($row['waiting_for']);
             try {
                 $delay = $this->visit($release, $node, $row, $prepared['nodes'][$node->id], $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
                 if ($delay !== null) {
@@ -675,7 +678,6 @@ final readonly class ContinueReleaseFleetAction
             $row['role_operation_id'] = ($full
                 ? app(StartNodeConvergeAction::class)->execute($node, automatic: true, releaseInputs: $prepared, cli: $cli)
                 : app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true, releaseInputs: $prepared))->id;
-            unset($row['waiting_for']);
 
             return 10;
         }
