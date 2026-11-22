@@ -116,20 +116,20 @@ Verify each checkpoint before moving to the next step.
   </Step>
 
   <Step title="Bootstrap the Gateway" titleSize="h2">
-    **You:** confirm UDP port `51820` is open to the Gateway machine.
+    The fresh-Gateway bootstrap is incomplete: `orbit:bootstrap` starts no services; see [issue #4186](https://github.com/hardimpactdev/orbit/issues/4186).
 
-    Run bootstrap with the public address your Node will use to reach the Gateway:
+    **You:** confirm that UDP port 51820 is open to the Gateway machine.
+
+    Bootstrap with the public address that the Node will use to reach the Gateway:
 
     ```bash Gateway machine · orbit
     cd /home/orbit/orbit/apps/gateway
     php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
     ```
 
-    Bootstrap records the Gateway Node with its `gateway` and `vpn` roles, generates the Orbit root CA and Gateway SSH key, and records the host key. It writes nothing under `/etc` and starts no services; re-running it keeps the existing CA and SSH key. Pass `--wireguard-ip` and `--wireguard-subnet` if you are using a custom WireGuard subnet.
+    Gateway bootstrap records the Gateway Node and its Gateway and VPN roles, sets the VPN settings, makes the Orbit root CA and the Gateway SSH key, and records the host key of the machine. It starts no service and writes nothing outside the Orbit home: Swamp applies the WireGuard hub and the roles afterwards. A second run keeps the CA and the SSH key. Pass `--wireguard-ip` and `--wireguard-subnet` for a private network other than the default. This command cannot repair or rekey an observer.
 
-    Next, run the `gateway-bootstrap` Swamp workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`) so its `control` stage installs and starts Caddy, PHP-FPM, `wg-quick@orbit`, `dnsmasq`, and the Swamp control plane on the Gateway machine.
-
-    **Checkpoint:** after the `gateway-bootstrap` workflow finishes, all four services report `active`, and `caddy version` is 2.9.0 or newer:
+    **Checkpoint:** every service reports `active`, and `caddy version` reports 2.9.0 or newer:
 
     ```bash Gateway machine · orbit
     sudo systemctl is-active php8.5-fpm caddy wg-quick@orbit dnsmasq

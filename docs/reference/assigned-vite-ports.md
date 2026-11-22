@@ -58,7 +58,7 @@ On a checkout Instance, an explicit start or restart prepares Vite before servin
 2. Otherwise, Orbit rechecks the port (up to three attempts on conflict), writes the Vite environment file, and updates Caddy's `/__orbit/vite` handler.
 3. Orbit starts Vite, verifies its listener, and marks the Instance awake on explicit `process:start`.
 
-A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) uses only the recorded port without reassigning ports or republishing Caddy; if that port is unavailable, wake fails with `vite.recorded_port_unavailable` and you should run [`process:start`](/cli/process/start) to recheck and republish. An explicit start that runs out of readiness time fails with `vite.not_ready`.
+A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) uses only the recorded port without reassigning ports or republishing Caddy; if that port is unavailable, wake fails with `vite.recorded_port_unavailable` and you should run [`process:start`](/cli/process/start) to recheck and republish. Under synchronous Process control, an explicit start that runs out of readiness time fails with `vite.not_ready`. On an ordinary checkout Node, `process:start` admits a Swamp Operation that checks the listener once with `ss` and fails its final assertion when the output is empty.
 
 ## Application setup
 
