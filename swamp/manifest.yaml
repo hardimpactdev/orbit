@@ -75,6 +75,7 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/swamp-gateway-token.sh
+  - ansible/files/swamp-env.sh
   - ansible/files/instance-container-wake.sh
   - ansible/files/gateway-release-guest.py
   - ansible/files/gateway-release-infrastructure.py
