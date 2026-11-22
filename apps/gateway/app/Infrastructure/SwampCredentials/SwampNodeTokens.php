@@ -23,6 +23,8 @@ class SwampNodeTokens
 {
     public const string Entrypoint = '/usr/local/lib/orbit-swamp/gateway-token';
 
+    public const string RenewalUnit = 'orbit-swamp-token-renewal.service';
+
     public function __construct(
         private readonly SshExecutor $ssh,
         private readonly SshKeyProvider $keys,
@@ -40,10 +42,21 @@ class SwampNodeTokens
         $this->run(['revoke', $name], 60.0, 'swamp.gateway_token_revoke_failed');
     }
 
-    /** Starts the Swamp Node's own renewal and waits for it to finish. */
+    /**
+     * Starts the Swamp Node's own renewal and waits for it to finish. Until the swamp role converge installs its unit, systemctl
+     * reports the unit as not found: that alone reads as not installed yet.
+     */
     public function renewNode(): void
     {
-        $this->run(['renew-node'], 660.0, 'swamp.node_token_renewal_failed');
+        try {
+            $this->run(['renew-node'], 660.0, 'swamp.node_token_renewal_failed');
+        } catch (RuntimeException $exception) {
+            if (str_contains($exception->getMessage(), 'Unit '.self::RenewalUnit.' not found.')) {
+                throw new SwampNodeRenewalNotInstalledException(SwampNodeRenewalNotInstalledException::Code.': '.self::RenewalUnit
+                    .' is not installed on the Swamp Node; the later swamp role converge installs it.', previous: $exception);
+            }
+            throw $exception;
+        }
     }
 
     /**

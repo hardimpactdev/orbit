@@ -10,9 +10,15 @@ use App\Domain\SwampCredentials\SwampGatewayToken;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\SwampCredentials\GatewayProcessStarts;
 use App\Infrastructure\SwampCredentials\SwampCredentialConfiguration;
 use App\Infrastructure\SwampCredentials\SwampHostTokenInstaller;
+use App\Infrastructure\SwampCredentials\SwampNodeRenewalNotInstalledException;
 use App\Infrastructure\SwampCredentials\SwampNodeTokens;
 use App\Infrastructure\SwampCredentials\SwampNodeUnconvergedException;
 use App\Infrastructure\SwampCredentials\SwampTokenReadCheck;
@@ -22,12 +28,14 @@ use App\Models\Task;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Input\StringInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\ConsoleSectionOutput;
 use Symfony\Component\Console\Output\OutputInterface;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -52,6 +60,8 @@ final class FakeSwampNodeTokens extends SwampNodeTokens
 
     public bool $unconverged = false;
 
+    public bool $renewalMissing = false;
+
     public int $failListOnCall = 0;
 
     private int $listCalls = 0;
@@ -69,6 +79,10 @@ final class FakeSwampNodeTokens extends SwampNodeTokens
         $this->calls[] = implode(' ', $arguments);
         if ($this->unconverged) {
             throw new SwampNodeUnconvergedException(SwampNodeUnconvergedException::Code.': '.self::Entrypoint.' is missing on the Swamp Node; converge its swamp role.');
+        }
+        if ($arguments[0] === 'renew-node' && $this->renewalMissing) {
+            // As run() reports the Node's systemctl before the swamp role converge installs the unit.
+            throw new RuntimeException($code.': Failed to start orbit-swamp-token-renewal.service: Unit orbit-swamp-token-renewal.service not found.');
         }
         if ($arguments[0] === 'list') {
             $this->listCalls++;
@@ -165,6 +179,19 @@ final class FakeSwampCredentialConfiguration extends SwampCredentialConfiguratio
     {
         $this->calls[] = 'candidate';
     }
+}
+
+/** Healthy live consumers on the Swamp Node: the serve-driver and each worker slot hold a generation valid for a month. */
+function swampCredentialsHealthyConsumers(FakeSwampNodeTokens $node): void
+{
+    $node->token('serve-driver-20261121', 'user:nckrtl', '2026-12-21T12:00:00.000Z');
+    $workers = [];
+    foreach (['a', 'b', 'c'] as $slot) {
+        $node->token("swamp-role-209-{$slot}-access", 'worker:orbit-node-209', '2026-12-21T00:00:00.000Z');
+        $node->enrollment["swamp-role-209-{$slot}"] = ['name' => "swamp-role-209-{$slot}", 'expiresAt' => '2026-12-21T00:00:00.000Z', 'state' => 'enrolled'];
+        $workers[] = ['slot' => $slot, 'access' => "swamp-role-209-{$slot}-access", 'enrollment' => "swamp-role-209-{$slot}"];
+    }
+    $node->held = ['driver' => 'serve-driver-20261121', 'workers' => $workers];
 }
 
 /** A shared env with read and run tokens; the layout and lock point at it. The serving configuration holds the same names. */
@@ -539,4 +566,56 @@ it('skips a release, its revoke and its host mint with one clear line on an unco
     }
     expect(Artisan::call('gateway:swamp-credentials --no-interaction'))->toBe(1)
         ->and(Artisan::output())->toContain('swamp.gateway_token_entrypoint_missing');
+});
+
+it('reads a missing renewal unit on the Swamp Node as not installed yet, and any other renew-node failure as a renewal failure', function (): void {
+    SwampNodeFixture::ensure();
+    $ssh = new class implements SshExecutor
+    {
+        public string $stderr = '';
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(1, '', $this->stderr, 1, false);
+        }
+    };
+    $tokens = new SwampNodeTokens($ssh, Mockery::mock(SshKeyProvider::class, ['privateKeyPath' => '/dev/null']),
+        Mockery::mock(KnownHostsStore::class, ['path' => '/dev/null']));
+
+    $ssh->stderr = "Failed to start orbit-swamp-token-renewal.service: Unit orbit-swamp-token-renewal.service not found.\n";
+    expect(fn () => $tokens->renewNode())->toThrow(SwampNodeRenewalNotInstalledException::class, SwampNodeRenewalNotInstalledException::Code);
+
+    foreach (['Job for orbit-swamp-token-renewal.service failed because the control process exited with error code.',
+        'Failed to start other.service: Unit other.service not found.', 'sudo: a password is required'] as $stderr) {
+        $ssh->stderr = $stderr;
+        expect(fn () => $tokens->renewNode())->toThrow(function (RuntimeException $exception): void {
+            expect($exception)->not->toBeInstanceOf(SwampNodeRenewalNotInstalledException::class)
+                ->and($exception->getMessage())->toStartWith('swamp.node_token_renewal_failed: ');
+        });
+    }
+});
+
+it('a release skips a Swamp Node renewal unit not installed yet, with one clear line, and still renews the Gateway tokens', function (): void {
+    swampCredentialsEnvironment();
+    swampCredentialsHealthyConsumers($this->node);
+    $this->node->renewalMissing = true;
+    Log::spy();
+
+    expect(Artisan::call('gateway:swamp-credentials --release --no-interaction'))->toBe(0)
+        ->and(Artisan::output())->toBe("Installed orbit-gateway-read-20261121; cached the configuration.\n")
+        ->and($this->node->calls)->toBe(['renew-node', 'list', 'mint read', 'list'])
+        ->and($this->configuration->calls)->toBe(['candidate']);
+    Log::shouldHaveReceived('warning')->once()->withArgs(static fn (string $message): bool => $message === 'gateway.swamp_node_renewal_not_installed');
+});
+
+it('a release with a Swamp Node renewal unit not installed yet still fails while a live token expires within three days', function (): void {
+    swampCredentialsEnvironment();
+    swampCredentialsHealthyConsumers($this->node);
+    $this->node->access['swamp-role-209-b-access']['expiresAt'] = '2026-11-22T00:00:00.000Z';
+    $this->node->renewalMissing = true;
+
+    expect(fn () => app(RenewSwampCredentialsAction::class)->execute(true))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('gateway.release_swamp_token_expiring')
+            ->and($exception->getMessage())->toContain('slot b server.token (swamp-role-209-b-access)');
+    });
 });
