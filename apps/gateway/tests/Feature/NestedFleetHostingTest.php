@@ -809,6 +809,33 @@ describe('the seed of the proof default on each Node that offers proof places', 
         ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
     });
 
+    it('publishes the newer seed that a release deployment kept as already_newer, and still refuses a seed that moved', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        // The release commit is older than the checkout: the deployment kept the seed at the newer commit.
+        $release = str_repeat('b', 40);
+        $kept = str_repeat('a', 40);
+        $seeds = app(ProofSeeds::class);
+        $takenAt = $default->runtime()->sole()->seed_taken_at->toIso8601String();
+        $row = ['status' => 'current', 'already_newer' => true, 'commit' => $kept, 'taken_at' => $takenAt, 'copies_to_ci' => true];
+
+        $publication = $seeds->releasePublication($release, [$default->id => $row]);
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
+        expect($publication)->toBe(['status' => 'pending', 'instance_id' => $default->id, 'commit' => $kept, 'taken_at' => $takenAt,
+            'already_newer' => true, 'operation_ids' => [$copy->id], 'published_nodes' => [], 'pending_nodes' => [$node->id]])
+            ->and($copy->input['commit'])->toBe($kept);
+
+        // Without already_newer a seed off the release commit has moved; so has a kept seed retaken after the refresh read it.
+        expect($seeds->releasePublication($release, [$default->id => ['copies_to_ci' => true, 'taken_at' => $takenAt]]))
+            ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved', 'commit' => $release]);
+        $default->runtime()->update(['seed_taken_at' => '2026-11-17 00:00:00']);
+        expect($seeds->releasePublication($release, [$default->id => $row]))
+            ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved', 'commit' => $kept, 'already_newer' => true]);
+    });
+
     it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that no copy has tried', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();

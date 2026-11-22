@@ -31,9 +31,12 @@ sequenceDiagram
   %%> What it does:
   %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path and the egress proxy
   %%> - the run budget grows by the fleet steps' bounds
-  SW->>N: Prepare the container<br/>Ansible · start · fetch
+  SW->>N: Start the container<br/>Ansible · start · probe
   %%> What it does:
-  %%> - one play runs the phases `start`, `fleet_start` (with `fleet_room_check`), `seed` and `fetch`, in this order; a normal default runs only `start` and `fetch`
+  %%> - the start, then the read-only probe of the workspace; a checkout already past the release commit ends the run here as a no-op, `already_newer`, before the seed hold, `fleet_start`, the seed, the PHP and the bundle
+  SW->>N: Prepare the container<br/>Ansible · fetch
+  %%> What it does:
+  %%> - one play runs the phases `fleet_start` (with `fleet_room_check`), `seed` and `fetch`, in this order; a normal default runs only `fetch`
   %%> Why one step:
   %%> - none of these phases changes the workspace, so a failure in any of them restores nothing: they share their failure handling
   %%> - each Ansible step costs about 2.5 s to start its play: one step instead of four saves about 7.5 s of every refresh

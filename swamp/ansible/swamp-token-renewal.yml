@@ -1,0 +1,21 @@
+---
+# The Swamp Node's own tokens: serve-driver, each worker's server access token and each enrollment token. It never restarts serve
+# or a worker: orbit-swamp-worker-renewal reconnects the workers, and the old generation is revoked only after that.
+- name: Renew the Swamp Node's Swamp tokens before they expire
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Find the serve account home
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ orbit_user }}"
+    # The module takes no secret and returns token names only; a secret goes only from reveal into its file.
+    - name: Mint, switch and later revoke each due token generation
+      orbit_swamp_token_renewal:
+        user: "{{ orbit_user }}"
+        home: "{{ ansible_facts.getent_passwd[orbit_user][4] }}"
+      register: token_renewal
+    - name: Report what renewed, by token name
+      ansible.builtin.debug:
+        msg: "{{ token_renewal.actions }}"

@@ -97,7 +97,7 @@ Orders for the same target execute serially under a per-target lock; different t
 
 When `/etc/orbit/executor/nats.json` is present, `orbit-executor serve` also connects to the [Gateway engine](/reference/gateway-engine) NATS JetStream bus without credentials (admitted by WireGuard IP and guarded by `orbit_bus_guard` nftables so only `root` can connect).
 
-On the bus, the executor reports `{actions, version, clock_synchronized}` to `$KV.NODES.n<id>` every minute and pulls orders from durable consumer `node-<id>` on `ORDERS` (2 slots per CPU, clamped to 2–8). For each order, it verifies signatures and journal rules identically to the socket and fetches referenced blobs from `KV_CONTENT` into `/var/lib/orbit/executor/blobs` with SHA-256 checks. While running, it sends progress acknowledgements every 2 seconds, publishes the receipt on `orbit.receipts.<id>`, and acknowledges the order only after JetStream stores the receipt.
+On the bus, the executor reports `{actions, node_targets, features, version, clock_synchronized}` to `$KV.NODES.n<id>` every minute (`features` declares optional action inputs such as `instance.t3_pairing`) and pulls orders from durable consumer `node-<id>` on `ORDERS` (2 slots per CPU, clamped to 2–8). For each order, it verifies signatures and journal rules identically to the socket and fetches referenced blobs from `KV_CONTENT` into `/var/lib/orbit/executor/blobs` with SHA-256 checks. While running, it sends progress acknowledgements every 2 seconds, publishes the receipt on `orbit.receipts.<id>`, and acknowledges the order only after JetStream stores the receipt.
 
 ### Action primitives
 
@@ -123,7 +123,9 @@ The `instance` family (enabled on `app-dev`) executes container clone creation s
 | `instance.prepare` | Removes inherited seed units on the stopped copy, assigns a fresh machine ID, and writes files (`files_blob`), JSON merges, symlinks, Orbit root CA / NSS trust, and agent folders |
 | `instance.start` | Verifies NIC guards, unshifts ID maps, boots the copy, configures hostname and `/etc/hosts`, and runs `/usr/local/libexec/orbit-app-user` |
 | `instance.checkout` | Checks out the branch inside the copy, merges `.env` from the seed and Gateway render, and excludes `.env` in `info/exclude` |
-| `instance.t3` | Starts T3, waits up to 30 seconds for readiness, registers the project, and returns Gateway and Swamp sessions sealed to `seal_to` |
+| `instance.t3` | Starts T3, waits up to 30 seconds for readiness, registers the project, and returns sessions (plus optional reserved-clone pairing) sealed to `seal_to` |
+
+When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor advertising `instance.t3_pairing` in `features`, it requests `POST /api/auth/pairing-token` using the Gateway session and seals T3's reply beside the sessions. A refused or unreachable pairing link never fails the step.
 
 ## The observer pass-through
 
@@ -167,6 +169,8 @@ With `ORBIT_EXECUTOR_POWER_ENABLED=true`, sleep and wake send one signed order o
 - No record after order expiry fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees its lock.
 - A `seen` or `open` record schedules follow-up journal reads (1 s, then every 10 s after 30 s).
 - An unreachable Node or unprovable journal marks the Operation `interrupted` (`executor.result_unknown`), keeps the lock fenced, and retries every 10 s on the `operations` queue.
+
+Fenced `instance.start`, `instance.deploy`, and Swamp recovery sleep/wake runs receive the same journal reads to release their lock once the run is confirmed over while keeping `interrupted` and `finished_at` ([Operations](/reference/operations)).
 
 If a signed wake returns `instance.container_stopped`, the Operation hands off to the Swamp wake workflow to boot the container, using `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` on the Node for local signed orders.
 

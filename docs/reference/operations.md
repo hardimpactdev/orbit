@@ -22,6 +22,8 @@ Operations execute on one of four backends depending on kind and configuration:
 - **Signed executor:** Direct WebSocket signed orders for container `instance.sleep` and `instance.wake` ([Executor](/reference/executor#signed-power-delivery)).
 - **Gateway-local:** Coordinators and diagnostics that the Gateway settles directly (`websocket.*`, `proof.run`, `executor.proof`, and record-only `instance.node_service_detach`).
 
+When any Operation (including `instance.deploy`, `instance.start`, and Swamp recovery sleep/wake runs) ends `interrupted` with `executor.result_unknown` under a signed-order fence, the reconcile pass re-reads the Node's executor journal (least-recently-read first, up to 50 per pass). A recorded result or late receipt frees the lock once the Swamp run's native terminal is recorded. An absent record frees the lock only when the Gateway recorded signing time and expiry, its clock is 1 minute past expiry, and the journal proves coverage from 1 minute before signing. The Operation keeps `interrupted`, `executor.result_unknown`, and `finished_at`, recording what settled the fence under `executor_fence_settled`.
+
 Container Process journal tails and unit state reads create no Operation; they use the narrow [direct transport exception](/reference/node-agent#commands). Automatic production deploy Activity entries and alerts also record without an Operation.
 
 ## Instance failure alerts
@@ -56,7 +58,15 @@ Swamp's own garbage collection (`swamp/.swamp.yaml`) retains runs for 6 hours, b
 
 ## Swamp credential expiry alerts
 
-`swamp-credential-monitor` runs hourly at minute 7 on the Swamp Node to inspect `swamp access token list`, `swamp worker token list`, and the `swamp.orbit` TLS certificate. The Gateway reads its `alerts` output and sends `swamp.credential_expiring` (for `within_72h`, `within_6h`, `expired`, or `missing`), `swamp.credential_monitor_failed`, and `swamp.credential_monitor_recovered` to the [signed release webhook](/reference/gateway-recovery#webhook), recording delivery in Activity (`swamp:credential-alert`).
+`swamp-credential-monitor` runs hourly at minute 7 on the Swamp Node across four plain read steps: `swamp access token list`, `swamp worker token list`, the `swamp.orbit` TLS certificate, and the token names held by the Swamp Node's live consumers (serve-driver and each worker slot's `server.token` and `enrollment.token`, never secrets). Superseded token generations are skipped once a consumer holds a newer generation of the same family.
+
+The Gateway reads its `alerts` output and sends `swamp.credential_expiring` (for `within_10d` on `orbit-orchestrator-read` only, `within_72h`, `within_6h`, or `expired`), `swamp.credential_monitor_failed`, and `swamp.credential_monitor_recovered` to the [signed release webhook](/reference/gateway-recovery#webhook), recording delivery in Activity (`swamp:credential-alert`):
+
+- **`serve-driver` and `swamp-role-209-<slot>*`:** Renewed automatically 10 days ahead by [Swamp token renewal](/reference/node-provisioning#swamp-token-renewal). On a `within_72h` alert, inspect `journalctl -u orbit-swamp-token-renewal` and start `orbit-swamp-token-renewal.service`.
+- **`orbit-gateway-read*` and `orbit-gateway-run*`:** Renewed by [`gateway:swamp-credentials`](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens); inspect its output and rerun it.
+- **`orbit-orchestrator-read`:** Operator-managed alert-only token (`within_10d`); mint a new name, switch the file on mini, then revoke the old name. (`orbit-node-209*` tokens are unused and not renewed.)
+
+Never rotate or revoke a valid live token by hand, because doing so ends active sessions. If `serve-driver` has already expired, follow [break-glass recovery](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209).
 
 ## Native run budgets
 

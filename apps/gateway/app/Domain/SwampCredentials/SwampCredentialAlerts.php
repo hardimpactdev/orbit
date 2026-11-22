@@ -25,7 +25,7 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
 
     public const string StateKey = 'swamp.credential-monitor';
 
-    private const array Reasons = ['within_72h', 'within_6h', 'expired', 'missing'];
+    private const array Reasons = ['within_10d', 'within_72h', 'within_6h', 'expired', 'missing'];
 
     public function __construct(private ReleaseAlertWebhook $webhook) {}
 

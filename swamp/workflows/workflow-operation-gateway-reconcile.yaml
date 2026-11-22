@@ -54,10 +54,25 @@ jobs:
             hosts: name:target
             timeoutSec: 810
             argv: [/usr/bin/timeout, '795', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-begin, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
-      - name: Reload serving workflows
+      # Before Reload serving workflows needs serve-driver: renew the Swamp Node and Gateway tokens without revoking predecessors.
+      - name: Renew Swamp tokens
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: Check the serving release, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "gateway-reconcile-swamp-credentials-" + string(inputs.node_id) }}'
+          methodName: exec
+          globalArgs: *gateway
+          inputs:
+            hosts: name:target
+            timeoutSec: 840
+            argv: [/usr/bin/timeout, '810', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, swamp-credentials, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
+      - name: Reload serving workflows
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Renew Swamp tokens, condition: {type: succeeded}}]
         task:
           type: workflow
           workflowIdOrName: operation-gateway-swamp-load
@@ -92,6 +107,7 @@ jobs:
         writes: true
         dependsOn:
           - {step: Check the serving release, condition: {type: succeeded}}
+          - {step: Renew Swamp tokens, condition: {type: always}}
           - {step: Reload serving workflows, condition: {type: always}}
           - {step: Verify the serving release, condition: {type: always}}
         task:

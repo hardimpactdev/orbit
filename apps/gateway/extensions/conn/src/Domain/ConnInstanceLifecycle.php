@@ -7,7 +7,6 @@ namespace Orbit\Extensions\Conn\Domain;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -18,7 +17,6 @@ use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Actions\AdmitConnRenewalAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use Orbit\Extensions\Conn\Models\ConnPairing;
 
 /**
  * Records a clone's T3 server from its create flow's result ([Instance servers](/reference/conn#instance-servers)). The run checked the
@@ -38,17 +36,7 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
     public function projectDestroy(Instance $instance): void
     {
         $environments = ConnEnvironment::query()->where('instance_id', $instance->id)->lockForUpdate()->get();
-        foreach ($environments as $environment) {
-            foreach (Operation::query()->where('input->conn_environment_id', $environment->id)->get() as $operation) {
-                foreach (ValidatedData::object($operation->input['execution_secrets'] ?? []) as $rawCopy) {
-                    $copy = ValidatedData::object($rawCopy);
-                    app(SwampScheduleWorkflows::class)->deleteSecret(ValidatedData::string($copy['vault']), ValidatedData::string($copy['key']));
-                }
-            }
-            ConnPairing::query()->where('conn_environment_id', $environment->id)->delete();
-            $environment->delete();
-        }
-        app(ConnAttachedThreads::class)->drop(array_values($environments->map(static fn (ConnEnvironment $environment): string => $environment->environment_id)->all()));
+        app(ConnEnvironmentRemoval::class)->remove($environments);
     }
 
     /**
@@ -89,6 +77,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         ConnEnvironment::query()->where('instance_id', $instance->id)->update(['label' => $label]);
     }
 
+    /** A reserved clone's create issues the reserving device's pairing link with its sessions ([Reserve a clone](/reference/conn#reserve-a-clone)). */
+    public function createPairing(Operation $operation): ?array
+    {
+        return $this->extensions->enabled('conn') ? app(ConnReservations::class)->createPairing($operation) : null;
+    }
+
     public function projectCreate(Instance $instance, array $server): void
     {
         $id = ValidatedData::string($server['environment_id']);
@@ -110,8 +104,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             $environment->cleanup_completed_version = $environment->cleanup_version;
         }
         $environment->forceFill(['instance_id' => $instance->id])->save();
+        // The link the create issued is the reservation's; without it, the reservation mints one after the commit.
+        if ($this->extensions->enabled('conn') && is_array($server['pairing'] ?? null)) {
+            app(ConnReservations::class)->recordPairing($instance, $environment, ValidatedData::object($server['pairing']));
+        }
         // The creating profile's Nodes get their held sessions now, so their first attach is one read.
-        // A reserved clone also mints its one-time pairing link in the background so it never slows `ready`.
+        // A reserved clone whose create issued no pairing link mints one in the background.
         if ($this->extensions->enabled('conn')) {
             DB::afterCommit(static function () use ($instance, $environment): void {
                 app(ConnHeldSessions::class)->preMint($instance, $environment);

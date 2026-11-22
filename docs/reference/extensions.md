@@ -85,7 +85,7 @@ Core calls extensions exclusively through these typed interfaces:
 | `App\Domain\Operations\OperationSecretSource` | Private Operation secret resolver | Resolve extension-owned execution secrets (`vault`, `conn`). |
 | `App\Domain\Operations\OperationRecordCoordinator` | Operation admission & lifecycle | Coordinate extension-owned Operation records (`conn`). |
 | `App\Domain\Gateway\ExactRequestBody` | Request body size middleware | Exempt specific routes from PHP post-size trimming so routes bound bodies after auth (`documents`, core `mcp`/`mcp/search`). |
-| `App\Domain\Instances\InstanceLifecycleContribution` | Container create, complete, migrate, destroy, wake | Manage T3 environments, held sessions, and cleanup (`conn`). |
+| `App\Domain\Instances\InstanceLifecycleContribution` | Container create, complete, migrate, destroy, wake | Manage T3 environments, reserved-clone `createPairing()` hints (returning `{label, scopes}` for the engine `t3` step while Conn is on, passed into `projectCreate()` as `pairing`), held sessions, and cleanup (`conn`). |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | Runtime hibernator sweep | Report live agent activity before sleeping a container clone (`conn`). |
 | `App\Domain\Instances\InstanceThreadContribution` | Task copy turn, container sleep | Record threads and refresh thread index before sleep (`conn`). |
 | `App\Domain\Nodes\NodeAccessRemovalTransactionHook`, `NodeAccessRemovalHook`, `NodeRemovalHook` | `node:access:remove`, `node:remove` | Record managed revocations, rotate profile event keys, and hand off held sessions (`conn`). |

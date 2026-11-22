@@ -6,8 +6,9 @@ covers:
   - apps/gateway/extensions/conn/src/Domain/{ConnEnvironmentRestart,ConnEnvironmentRestartDecision,ConnEnvironmentRestartProjection}.php
   - apps/gateway/extensions/conn/src/Actions/AdmitConnEnvironmentRestartAction.php
   - apps/gateway/extensions/conn/src/Http/Controllers/ConnEnvironmentRestartController.php
-  - apps/cli/app/Commands/Conn/**
-  - packages/php-sdk/src/{Requests,Responses}/Conn/**
+  - apps/cli/app/Commands/Conn/{RestartConnEnvironmentCommand,RestartNodeConnEnvironmentsCommand,RestartsConnEnvironments}.php
+  - packages/php-sdk/src/Requests/Conn/{RestartConnEnvironmentRequest,RestartNodeConnEnvironmentsRequest}.php
+  - packages/php-sdk/src/Responses/Conn/{ConnEnvironmentRestartResponse,ConnEnvironmentRestartsResponse}.php
   - swamp/ansible/conn-environment-restart.yml
 ---
 

@@ -125,3 +125,99 @@ Task VM parking and resuming are replaced by container [sleep and wake](/referen
 ### Request a preview
 
 Interactive previews run directly on development container Routes rather than disposable task VM previews.
+
+## Incus upgrade and rollback runbook
+
+Before upgrading Incus on a host (such as from Incus 6 to 7), drain running guests, disable autostart across every project without editing profiles, and capture an offline database and ZFS backup.
+
+Save this script as `/root/incus-upgrade-autostart.py` and run `python3 /root/incus-upgrade-autostart.py hold /root/rollback/autostart.json` as root before stopping guests or taking the backup. After verifying one runner on the upgraded or rolled-back daemon, run `restore` with `orbit-ci/<name>` and then without a selection to restore the remaining entries.
+
+```python
+# incus-upgrade-autostart
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+action, filename, *selection = sys.argv[1:]
+manifest = Path(filename)
+if action == "hold":
+    if selection:
+        raise SystemExit("hold does not accept an instance selection")
+    instances = json.loads(subprocess.check_output(
+        ["incus", "list", "--all-projects", "--format=json"], text=True))
+    saved = [
+        {"project": item["project"], "name": item["name"],
+         "value": item["config"].get("boot.autostart")}
+        for item in instances
+    ]
+    manifest.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with manifest.open("x") as stream:
+        json.dump(saved, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    for item in saved:
+        subprocess.check_call(["incus", "--project", item["project"], "config", "set",
+                               item["name"], "boot.autostart=false"])
+elif action == "restore":
+    saved = json.loads(manifest.read_text())
+    if selection:
+        saved = [item for item in saved if f'{item["project"]}/{item["name"]}' in selection]
+        if len(saved) != len(set(selection)):
+            raise SystemExit("selection is missing from the manifest")
+    instances = json.loads(subprocess.check_output(
+        ["incus", "list", "--all-projects", "--format=json"], text=True))
+    local = {(item["project"], item["name"]): item["config"] for item in instances}
+    for item in saved:
+        config = local.get((item["project"], item["name"]))
+        if config is None:
+            continue
+        command = ["incus", "--project", item["project"], "config"]
+        if item["value"] is None:
+            if "boot.autostart" not in config:
+                continue
+            command += ["unset", item["name"], "boot.autostart"]
+        else:
+            command += ["set", item["name"], "boot.autostart=" + item["value"]]
+        subprocess.check_call(command)
+else:
+    raise SystemExit("expected hold or restore")
+```
+
+With every guest stopped and no QEMU process using storage, capture the offline rollback packages, Incus state archive, and recursive ZFS snapshot (setting `dataset` to the host's Incus ZFS dataset):
+
+```bash
+set -euo pipefail
+backup=/root/rollback
+dataset=i7pool/incus
+install -d -m 0700 "$backup/debs"
+# Install dpkg-repack before the maintenance window if the old debs are unavailable.
+for package in incus incus-base incus-client incus-agent; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    if [ "$package" = incus-agent ]; then continue; fi
+    echo "Required rollback package is not installed: $package" >&2; exit 1
+  fi
+  version=$(dpkg-query -W -f='${Version}' "$package")
+  (cd "$backup/debs" && apt-get download "$package=$version") ||
+    (cd "$backup/debs" && dpkg-repack "$package")
+done
+units=(incus-startup.service incus-user.socket incus.socket incus-user.service incus.service)
+systemctl stop "${units[@]}"
+systemctl mask "${units[@]}"
+if pgrep -x incusd || pgrep -f '(^|/)qemu-system-(x86_64|aarch64)( |$)'; then
+  echo "Incus or QEMU is still running" >&2; exit 1
+fi
+paths=(var/lib/incus)
+for path in etc/default/incus etc/incus; do
+  if [ -e "/$path" ]; then paths+=("$path"); fi
+done
+for unit in "${units[@]}"; do
+  path="etc/systemd/system/$unit.d"
+  if [ -d "/$path" ]; then paths+=("$path"); fi
+done
+tar --one-file-system --acls --xattrs -cpf "$backup/incus6.tar" -C / "${paths[@]}"
+zfs snapshot -r "$dataset@pre7"
+```
+
+Unmask and start the Incus daemon and sockets before converging the upgrade, keeping guests stopped until verification passes. To roll back, stop and mask the units again, remove any firmware aliases added by the installer, downgrade from `$backup/debs/*.deb` with `--allow-downgrades`, replace `/var/lib/incus/database` from `$backup/incus6.tar`, roll back every `@pre7` ZFS snapshot, clear `/var/lib/incus/security/apparmor/cache`, and unmask and restart Incus 6 before restoring autostart.

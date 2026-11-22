@@ -1372,3 +1372,76 @@ fn the_names_refuse_a_name_a_host_or_a_branch_they_cannot_trust_before_any_chang
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }
+
+
+fn t3_input(pairing: Option<Value>) -> (Value, crypto_box::SecretKey) {
+    use base64::Engine as _;
+    let secret = crypto_box::SecretKey::from([9; 32]);
+    let mut input = json!({"project": "orbit-instances", "name": "instance-12", "unit": "t3.service", "t3": "/opt/orbit-agent/current/agent/bin/t3",
+        "port": 3773, "workspace": "/srv/workspace", "title": "orbit", "project_mark": "/home/agent/.orbit-t3-project",
+        "seal_to": base64::engine::general_purpose::STANDARD.encode(secret.public_key().as_bytes())});
+    if let Some(pairing) = pairing {
+        input["pairing"] = pairing;
+    }
+    (input, secret)
+}
+
+fn t3_answers(pairing: Result<Value, &'static str>) -> Vec<(&'static str, Result<Value, &'static str>)> {
+    vec![
+        ("/.well-known/t3/environment", Ok(json!(r#"{"environmentId":"env-12","serverVersion":"0.4.1"}"#))),
+        ("--label Orbit Gateway", Ok(json!("gateway-token"))),
+        ("--label Orbit Swamp", Ok(json!("swamp-token"))),
+        ("file pull instance-12/home/agent/.orbit-t3-project", Ok(json!("1\n"))),
+        ("/api/auth/session", Ok(json!("{\"authenticated\":true,\"scopes\":[\"access:read\",\"access:write\"]}\n200"))),
+        ("/api/auth/pairing-token", pairing),
+    ]
+}
+
+fn opened(output: &str, secret: &crypto_box::SecretKey) -> Value {
+    use base64::Engine as _;
+    let sealed = parsed(output)["sealed"].as_str().expect("sealed").to_owned();
+    let bytes = base64::engine::general_purpose::STANDARD.decode(sealed).expect("base64");
+    serde_json::from_slice(&secret.unseal(&bytes).expect("opens")).expect("JSON")
+}
+
+#[test]
+fn a_reserved_copy_gets_its_pairing_link_with_the_gateways_session_sealed_beside_it() {
+    let pairing = json!({"label": "nick via Orbit ab12cd34", "scopes": ["access:read", "orchestration:read"]});
+    let (input, secret) = t3_input(Some(pairing));
+    let fake = Fake::new(&t3_answers(Ok(json!("{\"id\":\"p1\",\"credential\":\"secret-link\",\"expiresAt\":\"2026-11-22T06:05:00Z\",\"label\":\"nick via Orbit ab12cd34\"}\n201"))));
+
+    let output = t3(&fake, &input).expect("t3");
+
+    let sealed = opened(&output, &secret);
+    assert_eq!(sealed["pairing"]["status"], json!(201));
+    assert!(sealed["pairing"]["body"].as_str().expect("body").contains("secret-link"));
+    assert!(!output.contains("secret-link"), "the link leaves the Node only sealed");
+    let calls = fake.calls.borrow();
+    let (call, stdin) = calls.iter().find(|(call, _)| call.contains("/api/auth/pairing-token")).expect("the pairing request");
+    assert_eq!(stdin.as_deref(), Some("Authorization: Bearer gateway-token\n"), "the Gateway's session goes on standard input");
+    assert!(!call.contains("gateway-token"), "{call}");
+    assert!(call.contains(r#"{"label":"nick via Orbit ab12cd34","scopes":["access:read","orchestration:read"]}"#), "{call}");
+}
+
+#[test]
+fn a_refused_pairing_link_leaves_the_step_succeeded_and_without_a_request_none_is_made() {
+    let (input, secret) = t3_input(Some(json!({"label": "nick via Orbit ab12cd34", "scopes": ["access:read"]})));
+    let fake = Fake::new(&t3_answers(Err("curl: (7) Failed to connect")));
+    assert_eq!(opened(&t3(&fake, &input).expect("t3"), &secret)["pairing"], json!({"status": 0, "body": ""}));
+
+    let (input, secret) = t3_input(None);
+    let fake = Fake::new(&t3_answers(Err("never asked")));
+    assert!(opened(&t3(&fake, &input).expect("t3"), &secret).get("pairing").is_none());
+    assert!(!fake.calls().iter().any(|call| call.contains("/api/auth/pairing-token")));
+}
+
+#[test]
+fn a_pairing_label_or_scope_that_could_carry_another_value_is_refused() {
+    for pairing in [json!({"label": "", "scopes": ["access:read"]}), json!({"label": "x\ny", "scopes": ["access:read"]}),
+        json!({"label": "x", "scopes": []}), json!({"label": "x", "scopes": ["access read"]}), json!({"label": "x", "scopes": ["access:read"], "ttl": "1d"})] {
+        let (input, _) = t3_input(Some(pairing));
+        let fake = Fake::new(&t3_answers(Err("never asked")));
+        assert_eq!(t3(&fake, &input).map_err(|failure| failure.code), Err("instance.t3_input_invalid"));
+        assert_eq!(fake.calls(), Vec::<String>::new());
+    }
+}

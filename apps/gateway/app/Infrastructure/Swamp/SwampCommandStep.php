@@ -7,6 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
 use App\Domain\Operations\OperationResultFields;
@@ -69,12 +70,14 @@ final readonly class SwampCommandStep
                     return;
                 }
                 $timeout = $current->state['native_timeout'] ?? [];
-                app(OperationStore::class)->change($current, ['lock_key' => null,
+                // An Operation under its signed-order fence keeps its lock until its receipt or the journal frees it.
+                app(OperationStore::class)->change($current, [...(ExecutorFence::awaitsRunEnd($current) ? [] : ['lock_key' => null]),
                     'state' => [...($current->state ?? []), 'native_timeout' => [
                         ...(is_array($timeout) ? $timeout : []), 'no_run_verified_at' => now()->toISOString(),
                     ]],
                 ]);
             });
+            ExecutorFence::resolve($operation);
 
             return;
         }

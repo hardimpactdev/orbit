@@ -671,7 +671,8 @@
   "swamp-credential-monitor": {
    "access": "read-only",
    "certificate": "read-only",
-   "enrollment": "read-only"
+   "enrollment": "read-only",
+   "held": "read-only"
   },
   "swamp-datastore-watch": {
    "measure": "unreviewed"

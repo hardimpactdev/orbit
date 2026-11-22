@@ -37,6 +37,13 @@ interface MachineBus
      */
     public function nodeTargetActions(int $node): array;
 
+    /**
+     * The optional action inputs `$node`'s executor takes (its `features` report): an older executor refuses an input it does not know.
+     *
+     * @return list<string>
+     */
+    public function nodeFeatures(int $node): array;
+
     /** Whether the Node's executor last reported its clock as synchronized; null without a fresh report that says. */
     public function nodeClock(int $node): ?bool;
 }

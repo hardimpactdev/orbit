@@ -141,8 +141,10 @@ On a host PHP-FPM Gateway, `operation-gateway-release` runs from the Swamp Node 
 | Install web build | Downloads, verifies, and extracts the `apps/web` artifact into `web/releases/<id>` |
 | Snapshot and migrate | Copies SQLite with `VACUUM INTO`, then runs `artisan migrate --force --isolated=1` |
 | Wait for active Operations | Polls every 5 seconds (up to 600 seconds) until [release idle guard](#release-idle-guard) Operations settle, else fails with `gateway.release_busy` |
+| Renew Swamp tokens | Runs `gateway:swamp-credentials --release` in the candidate ([Renew the Swamp read and run tokens](/reference/gateway-environment#renew-the-swamp-read-and-run-tokens)); refuses with `gateway.release_swamp_token_expiring` while any live consumer holds a token expiring within 3 days |
 | Load Swamp | Runs [`operation-gateway-swamp-load`](#load-swamp) on the Swamp Node |
 | Activate | Drains Horizon, switches links via the rollback script, verifies `/up` and version at `https://gateway.orbit`, restarts Horizon, resumes cleanups, and prunes old releases |
+| Revoke replaced tokens | Runs `gateway:swamp-credentials --revoke` to revoke replaced Gateway tokens once no process can hold them (non-fatal) |
 
 A failed verification switches both links back to the previous release, resumes cleanups, and records `switched_back` (raising `release_failed`). Any other failure from Migrate onward, a timeout (3,600-second run budget), or an unreadable result pauses automatic releases for operator inspection.
 
@@ -174,7 +176,7 @@ Swamp serve on the Swamp Node reads `swamp/` from its staging checkout with `--h
 6. Applies trigger overrides from `swamp/config/swamp-node-schedules.json` ([Schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node)).
 7. Verifies served workflows match disk (excluding dynamic `schedule-*` workflows).
 
-Load never restarts serve or workers. Any failure pauses the release with `gateway.release_swamp_load_failed` while leaving the old Gateway live.
+Load runs under `set -euo pipefail`, preserves `swamp` stderr on failure, and never restarts serve or workers. If serve rejects the serve-driver token, Load prints `gateway.release_swamp_token_expired` (start `orbit-swamp-token-renewal.service`, or mint by hand if already expired); if the Swamp Club credential env is missing or broken, it prints `gateway.release_swamp_auth_gate_blocked` (restore `/home/orbit/.config/swamp/env.sh`; [Swamp token renewal](/reference/node-provisioning#swamp-token-renewal)). Any failure pauses the release with `gateway.release_swamp_load_failed` while leaving the old Gateway live.
 
 ### Build and seal a release
 
@@ -349,7 +351,9 @@ During the verified release fleet pass, each eligible Node (with the serving Gat
 
 `ORBIT_FLEET_ROLLOUT` defaults to `true`. `ORBIT_FLEET_ROLLOUT_ORDER` accepts a comma-separated list of workload Node names to visit first.
 
-A failed delivery stops the pass and raises `rollout_halted`. A failed role or host converge marks that Node `failed` and continues to the next Node so the phase ends `failed` and retries on the next pass. Automatic role or host converges yield to active Instance, Conn, and Process work on the target Node for up to 5 minutes (`operation.target_busy` queues new conflicting work while waiting; removals `instance.destroy` and `instance.unregister` always pass), then admit beside remaining holders. Task work neither waits for nor blocks a converge.
+A failed delivery stops the pass and raises `rollout_halted`. A failed role or host converge marks that Node `failed` and continues to the next Node so the phase ends `failed` and retries on the next pass.
+
+Automatic role or host converges yield to active Instance, Conn, and Process work on the target Node for up to 5 minutes (`operation.target_busy` queues new conflicting work while waiting; removals `instance.destroy` and `instance.unregister` always pass), then admit beside remaining holders. An ended deployment admitted by the release's own refresh (`origin` or `default_refresh`) never holds the converge (dropping from `waiting_for`), while other ended Operations keeping a fence (such as an [executor fence](/reference/executor)) continue to hold the Node. Task work neither waits for nor blocks a converge.
 
 To repair a single Node manually, run [`orbit node:converge NODE`](/cli/node/converge).
 

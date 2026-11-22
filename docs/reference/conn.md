@@ -53,9 +53,17 @@ When a profile write commits, the Gateway broadcasts `conn.profile.updated` (`{ 
 
 A T3 server calls `POST /api/v1/conn/environments` with its environment ID and admin session. The calling Node owns that registration; another Node attempting to claim the same environment ID receives HTTP `409 conn.environment_owned`. If the owning Node is removed, only a peer with Gateway access can re-register the environment.
 
+### Unregister a host server
+
+Remove a stale host T3 server entry from the Gateway registry with `DELETE /api/v1/conn/environments/{environment_id}` ([`orbit conn:environment:unregister`](/cli/conn/environment-unregister), destructive MCP tool `conn-environment-unregister`) so it stops appearing in `conn:environment:list`.
+
+Access is owner-scoped and requires Conn enabled plus node access to the registering Node (or Gateway access after Node removal), returning `node_access.required` (403) otherwise. Servers bound to a container Instance (`instance_id` set) refuse with `conn.environment_is_instance` (409); destroy the Instance instead. A running `conn.*` Operation on the server refuses with `operation.target_busy` (409).
+
+Removal is synchronous, local, and idempotent without contacting the T3 server. In one transaction, the Gateway deletes the environment row (`admin_session`), pairings, held sessions, cached threads, and managed target records. After commit, it drops attached thread references from profiles and deletes execution secret vault copies. It returns HTTP `200` with `{"environment_id": "...", "removed": true|false}`, and a still-running host T3 server that registers again reappears.
+
 ### Instance servers
 
-Container Instances automatically register their T3 server under their host `app-dev` Node during clone creation (`clone-register`), exposing the container's T3 port over the host's WireGuard address.
+Container Instances automatically register their T3 server under their host `app-dev` Node during clone creation (`clone-register`), exposing the container's T3 port over the host's WireGuard address. On Instance destroy, terminal projection removes the environment and pairings before core deletes the Instance, scanning only Conn Operation kinds to keep the write lock short. After commit, Orbit deletes vault execution copies (logging `conn.destroy_secret_delete_failed` without failing destroy) and drops attached thread references.
 
 ### Renewal
 
@@ -105,7 +113,7 @@ If `instance.complete` fails after clone creation, `POST /api/v1/conn/instances/
 
 ### Cancel a create or a completion
 
-`POST /api/v1/conn/operations/{operation}/cancel` requests cancellation of an active clone create or completion Operation.
+`GET /api/v1/conn/operations/{operation}` returns `instance.create`, `instance.complete`, Conn-started `instance.destroy`, and (for the admitting Node) a reservation's `instance.finalize`. `POST /api/v1/conn/operations/{operation}/cancel` requests cancellation of an active clone create or completion Operation (returning HTTP `404` for destroy and finalize).
 
 ### Remove an Instance
 
@@ -124,13 +132,15 @@ A Conn device can pre-warm a clone while the user types a new thread ([finalize 
 | `id`, `project_id`, `instance_id` | Reservation UUID, Project ID, and reserved clone ID. |
 | `state`, `expires_at`, `error_code` | `preparing`, `ready`, `finalizing`, `finalized`, `failed`, `expired`, or `released`; expiry timestamp; failure code. |
 | `create_operation_id`, `finalize_operation_id`, `destroy_operation_id` | Associated lifecycle Operation IDs. |
-| `environment_id`, `pairing` | Clone T3 server ID from `ready` on, and one-time `IssuedConnPairingData` (`Cache-Control: no-store`, read once on `GET /reservations/{id}`). |
+| `environment_id`, `pairing` | Clone T3 server ID from `ready` on, and one-time `IssuedConnPairingData` (`Cache-Control: no-store`, issued by the create or minted after `ready`, read once on `GET /reservations/{id}`). |
 
 Rules:
 
 - One open reservation per device, profile, and Project (max three per device; a fourth releases and destroys the oldest).
 - Open reservations expire 10 minutes after creation or last read, destroying the clone and cancelling any open [fleet wait](/reference/development-containers#a-clone-starts-its-fleet).
 - Open reservations keep the clone awake (`conn_reservation`). Submitting the thread finalizes the clone's name and branch via `instance.names` and live-reloads Conn Server (`SIGHUP`).
+
+When the Node's agent reports `instance.t3_pairing` in `features`, the reserved clone's engine create issues the reserving device's pairing link in its `t3` step beside the Gateway's sessions so `ready` arrives with it. If omitted or refused, a background job admits `conn.pairing_create` after `ready`.
 
 ### Remove a clone whose completion runs
 
@@ -151,7 +161,7 @@ All Conn endpoints live under `/api/v1/conn` and are summarized below:
 | `GET /me`, `PUT /me/profile` | Caller identity, profile binding, and profile event key |
 | `GET /realtime`, `POST /broadcasting/auth` | Reverb discovery and `private-conn-profile.{key}` authorization |
 | `GET/POST /profiles`, `GET/PUT/PATCH/DELETE /profiles/{profile}` | Profile and settings document management |
-| `GET/POST /environments`, `GET/DELETE /environments/{env}` | T3 server registration and listing |
+| `GET/POST /environments`, `DELETE /environments/{env}` | T3 server listing, registration, and idempotent host-server unregistration (`conn.environment_is_instance` 409 for container servers) |
 | `GET/POST /environments/{env}/pairings`, `GET/DELETE /environments/{env}/pairings/{pairing}` | Device pairing lifecycle |
 | `GET /environments/{env}/session`, `POST /environments/{env}/sessions/cleanup` | Held session retrieval and stale session cleanup |
 | `GET /threads`, `POST /environments/{env}/threads` | Thread index reads and recording |

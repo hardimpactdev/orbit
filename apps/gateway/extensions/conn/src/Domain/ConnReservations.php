@@ -22,6 +22,7 @@ use App\Models\Project;
 use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,8 +38,9 @@ use Throwable;
 
 /**
  * Reserved clones (docs/reference/conn.md#reserve-a-clone): a device starts a clone when its user opens a new thread, under a draft name,
- * and gives it its name and branch when the user submits. The heavy parts run while the user types: the copy, its start, T3, a
- * nested fleet, and a one-time pairing link minted in the background once the server session is recorded. A reservation nobody finalizes
+ * and gives it its name and branch when the user submits. The heavy parts run while the user types: the copy, its start, T3 with
+ * the device's one-time pairing link, and a nested fleet. When the create brings no link, one is minted in the background once the
+ * server session is recorded. A reservation nobody finalizes
  * expires ten minutes after its last read and is destroyed. Its own transactions take the reservation's row lock, so a finalize and an
  * expiry never both win.
  */
@@ -110,6 +112,56 @@ final readonly class ConnReservations implements OperationRecordCoordinator
         }
 
         return $reservation->refresh();
+    }
+
+    /**
+     * The pairing link a reserved clone's create issues for its device, or null when the create is no open reservation's. Its label
+     * names the reservation, so a resent step asks for the same one.
+     *
+     * @return array{label: string, scopes: list<string>}|null
+     */
+    public function createPairing(Operation $operation): ?array
+    {
+        $reservation = self::opened()->where('create_operation_id', $operation->id)->whereNull('conn_pairing_id')->first();
+        $label = $reservation === null ? null : self::pairingLabel($reservation);
+
+        return $label === null ? null : ['label' => $label, 'scopes' => IssueConnPairingAction::Scopes];
+    }
+
+    /**
+     * Records the pairing link a reserved clone's create issued, inside the create's projection, as `mintPairing` records a minted one:
+     * only for the reservation's device under its profile, while it reaches the server. A link T3 refused, or one nobody may claim,
+     * is not kept: the unused link expires on the server, and `schedulePairing` mints one when the reservation still wants it.
+     *
+     * @param  array<string, mixed>  $answer  T3's `{status, body}`
+     */
+    public function recordPairing(Instance $instance, ConnEnvironment $environment, #[\SensitiveParameter] array $answer): void
+    {
+        $reservation = self::opened()->where('instance_id', $instance->id)->whereNull('conn_pairing_id')->where('expires_at', '>', now())
+            ->lockForUpdate()->first();
+        if (! $reservation instanceof ConnReservation) {
+            return;
+        }
+        $body = json_decode(is_string($answer['body'] ?? null) ? $answer['body'] : '', true);
+        $status = $answer['status'] ?? null;
+        if (! is_int($status) || $status < 200 || $status >= 300 || ! is_array($body)
+            || ! is_string($body['id'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]{1,1024}\z/D', $body['id']) !== 1
+            || ! is_string($body['credential'] ?? null) || $body['credential'] === '' || strlen($body['credential']) > 16384
+            || ! is_string($body['expiresAt'] ?? null)
+            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/D', $body['expiresAt']) !== 1
+            || ($body['label'] ?? null) !== self::pairingLabel($reservation)) {
+            Log::info('conn.reservation_create_pairing_refused', ['reservation_id' => $reservation->id, 'status' => is_int($status) ? $status : null]);
+
+            return;
+        }
+        $caller = Node::query()->whereKey($reservation->node_id)->where('status', LifecycleStatus::Active->value)->first();
+        if (! $caller instanceof Node || self::profileId($caller) !== $reservation->conn_profile_id
+            || ! app(ConnServerAccess::class)->allows($caller, $environment)) {
+            return;
+        }
+        $pairing = ConnPairing::query()->create(['node_id' => $caller->id, 'conn_environment_id' => $environment->id, 'pairing_link_id' => $body['id'],
+            'client_label' => $body['label'], 'expires_at' => Carbon::parse($body['expiresAt']), 'credential' => $body['credential'], 'issue_started_at' => now()]);
+        $reservation->update(['conn_pairing_id' => $pairing->id]);
     }
 
     /**
@@ -203,8 +255,9 @@ final readonly class ConnReservations implements OperationRecordCoordinator
 
                 return null;
             }
-            if (! Operation::query()->where('kind', 'conn.pairing_create')->where('target_type', 'conn_pairing')
-                ->where('target_id', $pairing->id)->where('status', OperationStatus::Succeeded)->exists()) {
+            // A minted link is the reservation's once its mint succeeded; one its create issued has no mint.
+            $mint = Operation::query()->where('kind', 'conn.pairing_create')->where('target_type', 'conn_pairing')->where('target_id', $pairing->id);
+            if ((clone $mint)->exists() && ! $mint->where('status', OperationStatus::Succeeded)->exists()) {
                 return null;
             }
             $expiresAt = $pairing->expires_at->gt($reservationExpiresAt) ? $reservationExpiresAt : $pairing->expires_at;
@@ -351,6 +404,14 @@ final readonly class ConnReservations implements OperationRecordCoordinator
             errorCode: $error,
             pairing: $state === 'ready' ? $pairing : null,
         );
+    }
+
+    /** The label of a reservation's pairing link from its create: the reserving Node's name and the reservation. */
+    private static function pairingLabel(ConnReservation $reservation): ?string
+    {
+        $name = Node::query()->whereKey($reservation->node_id)->value('name');
+
+        return is_string($name) ? $name.' via Orbit '.substr(str_replace('-', '', $reservation->id), 0, 8) : null;
     }
 
     /** The Node's current Conn profile id, or null when the Node has no binding. */

@@ -62,7 +62,7 @@ The engine runs container clone creation (including task copies, Conn clones, Pr
 | `club_key` | `start` | Writes the Club key for a nested-fleet copy into `/run`. |
 | `checkout` | `start`, `fetch` | Checks out the branch, cleans a task copy when needed, and merges `.env`. |
 | `spare` | `start` | Prepares the default's next spare inner volume in parallel. |
-| `t3` | `checkout` | Starts T3 or the Conn Server and returns two sessions sealed to the Gateway's key. |
+| `t3` | `checkout` | Starts T3 or the Conn Server and returns two sessions (plus an optional reserved-clone pairing link when `instance.t3_pairing` is in `features`) sealed to the Gateway's key. |
 | `stop` | `clone` | Failure step that runs only when an earlier step fails. |
 
 The Gateway unseals the sessions without using a vault and records `route_publication: deferred` (`engine_completion`), leaving Route publication to `instance.complete` on Swamp.
@@ -77,7 +77,7 @@ When a clone's `services_digest` matches the current seed and nothing remains fo
 
 ### Capability reporting
 
-An executor reports `{actions, node_targets, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations fall back to Swamp.
+An executor reports `{actions, node_targets, features, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets, and `features` advertises optional action inputs such as `instance.t3_pairing`). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately. If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations fall back to Swamp.
 
 `clock_synchronized` comes from `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false because clock drift causes the executor to reject signed orders.
 

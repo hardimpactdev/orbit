@@ -5,8 +5,8 @@
 #   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure. A clone of a
 #     nested-fleet default (its intent has `fleet`) runs `fleet_check` and `fleet_resume` after its start.
-#   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its intent has `fleet`) adds
-#     `fleet_start` (its one fleet check) and `seed` right after `start`, `fleet_refresh` before the last `seed`, and after a failure
+#   deploy: `start` and `probe` (with `checkout_probe`), `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its
+#     intent has `fleet`) adds `fleet_start` (its one fleet check) and `seed` right before `fetch`, `fleet_refresh` before the last `seed`, and after a failure
 #     `fleet_restore`, then `start` and `fleet_resume`. One run holds the phases that share their failure handling: `phases`, a
 #     comma-separated list in order with the same tags, such as `-e phases=start,fetch --tags start,fetch`.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
@@ -116,7 +116,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(checkout_refusal_detail | default({})) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
                   | combine(executor_carried) | combine(workspace_clean_carried | default({}))
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
@@ -158,7 +158,7 @@
             failure_checkout_stderr: "{{ ansible_failed_result.stderr | default('') | string | trim }}"
             failure_checkout_budget: "{{ 4094 - failure_checkout_head | length }}"
             failure_checkout_detail: >-
-              {{ {} if failure_phase not in ['start', 'checkout', 'proof_checkout'] or failure_code == failure_message
+              {{ {} if failure_phase not in ['start', 'probe', 'checkout', 'proof_checkout'] or failure_code == failure_message
                        or failure_inactive_units | length > 0
                        or ansible_failed_result._ansible_no_log | default(false) | bool
                        or ansible_failed_task.no_log | default(false) | bool

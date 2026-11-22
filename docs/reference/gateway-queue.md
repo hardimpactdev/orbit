@@ -31,7 +31,7 @@ Horizon runs six queues on the `gateway` connection across five supervisors. The
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | Scheduled commands, approved commit publishing, and new container [workspace baselines](/reference/development-containers#workspace-work-state) |
-| `problems` | shares the 3 `tasks` workers | Observation context publication, Swamp reader checks, and batch metadata pruning |
+| `problems` | shares the 3 `tasks` workers | Observation context publication, Swamp credential renewals, and batch metadata pruning |
 | `builds` | 2 | Base snapshot refresh admission and image Operations |
 | `operations` | 1 | Serialized Swamp reconciliation, schedule fires, Route promotions, and registry closes |
 | `operation-starts` | 4 | Concurrent [direct Swamp starts](/reference/operations#direct-swamp-starts) (timeout 150 s, memory cap 256 MB) |
@@ -53,7 +53,7 @@ When the queue is configured, the scheduler dispatches these commands as unique 
 | `horizon:snapshot` | every 5 minutes | `tasks` | 300 seconds |
 | `operations:repair-fence` | every 5 minutes | `operations` | 300 seconds |
 | `conn:threads:read` | every minute | `problems` | 120 seconds |
-| `gateway:swamp-reader:check` | hourly | `problems` | 300 seconds |
+| `gateway:swamp-credentials` | hourly | `problems` | 900 seconds |
 | `queue:prune-failed` | daily | `tasks` | 3,600 seconds |
 | `activitylog:clean` | daily | `tasks` | 3,600 seconds |
 | `queue:prune-batches` | daily | `problems` | 3,600 seconds |

@@ -317,7 +317,7 @@ readonly class ReleaseNodeInputs
         return match ($role) {
             RoleName::AppProd => self::ProductionReleaseHostFiles,
             RoleName::Swamp => ['swamp/ansible/tasks/node-converge-deno.yml', 'swamp/ansible/tasks/swamp-start-cache.yml',
-                'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
+                'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml', 'swamp/ansible/tasks/swamp-token-renewal-start.yml'],
             RoleName::WebSocket => ['swamp/ansible/tasks/websocket.yml'],
             RoleName::Metrics => ['swamp/ansible/tasks/metrics.yml'],
             RoleName::CiRunner => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-bridge-read.yml',

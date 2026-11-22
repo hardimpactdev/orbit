@@ -55,7 +55,10 @@ final readonly class DevelopmentDeployInput
         // Commands run with the account's own home, as Orbit creates managed accounts.
         $user = $instance->node->user;
         $container = $intent['variant'] === 'container'
-            ? [...ValidatedData::object($intent['container']), 'commit' => InstanceDeploymentIntent::commit($operation)] : null;
+            ? [...ValidatedData::object($intent['container']), 'commit' => InstanceDeploymentIntent::commit($operation),
+                // A deployment that a release or the automatic policy admitted keeps a checkout already past its commit, as a no-op
+                // (docs/reference/deployments.md#development-defaults); a deployment by hand refuses it.
+                ...(ContainerDeployOutcome::keepsNewer($operation) ? ['keep_newer' => true] : [])] : null;
         if ($container !== null) {
             // The Processes' environment files, made from the records only while they still render the admitted units.
             $copies['process_environments'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',

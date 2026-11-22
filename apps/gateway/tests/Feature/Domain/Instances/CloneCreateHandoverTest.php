@@ -439,6 +439,11 @@ function fleetBus(): MachineBus
             return ['instance.fleet_ready'];
         }
 
+        public function nodeFeatures(int $node): array
+        {
+            return [];
+        }
+
         public function nodeTargetActions(int $node): array
         {
             return [];

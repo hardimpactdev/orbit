@@ -1,4 +1,5 @@
-//! `instance.t3`: the copy's T3 server running, its two sessions issued and checked, and its workspace a T3 project.
+//! `instance.t3`: the copy's T3 server running, its two sessions issued and checked, its workspace a T3 project, and on request a
+//! one-time pairing link for the device that reserved the copy.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -30,11 +31,23 @@ struct T3Input {
     project_mark: String,
     /// The Gateway's X25519 key: the sessions are sealed to it, so only the Gateway reads them.
     seal_to: String,
+    /// A reserved copy's pairing link, issued with the Gateway's session once it checked out, so the reservation is ready with it.
+    #[serde(default)]
+    pairing: Option<PairingInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PairingInput {
+    label: String,
+    scopes: Vec<String>,
 }
 
 /// Starts T3 when it is not running, waits until T3 answers, issues the two sessions, adds the workspace as a T3 project
 /// once, then checks each session against T3. Answers `{"environment_id", "at_boot", "sealed"}`, where
-/// `sealed` holds `{"environment", "gateway", "swamp"}` sealed to the Gateway: each session's token, status and body.
+/// `sealed` holds `{"environment", "gateway", "swamp"}` sealed to the Gateway: each session's token, status and body. With
+/// `pairing`, it then asks T3 for a pairing link with the Gateway's session, as `conn.pairing_create` does, and `sealed` also holds
+/// `pairing`: T3's status and body. A refused link never fails the step: the Gateway then mints one the usual way.
 ///
 /// # Errors
 ///
@@ -96,6 +109,19 @@ pub fn t3(system: &impl System, input: &Value) -> Result<String, Failure> {
         }
         sealed[*name] = serde_json::json!({"token": token, "status": status, "body": answer.to_string()});
     }
+    if let (Some(pairing), Some((_, token))) = (&input.pairing, issued.iter().find(|(name, _)| *name == "gateway")) {
+        let header = format!("Authorization: Bearer {token}\n");
+        let body = serde_json::json!({"label": pairing.label, "scopes": pairing.scopes}).to_string();
+        let answer = exec(true, &[CURL, "--silent", "--show-error", "--max-time", "5", "--header", "@-", "--header", "Content-Type: application/json",
+            "--data-binary", &body, "--write-out", "\n%{http_code}", &format!("{url}/api/auth/pairing-token")], Some(header.as_bytes()));
+        sealed["pairing"] = match answer {
+            Ok(answer) => {
+                let (text, status) = answer.rsplit_once('\n').unwrap_or((&answer, ""));
+                serde_json::json!({"status": status.trim().parse::<u16>().unwrap_or(0), "body": text})
+            }
+            Err(_) => serde_json::json!({"status": 0, "body": ""}),
+        };
+    }
     let sealed = orbit_executor_core::seal::seal(&input.seal_to, sealed.to_string().as_bytes())
         .map_err(|error| Failure::new("instance.t3_session_failed", format!("seal: {error}")))?;
     Ok(serde_json::json!({"environment_id": environment_id, "at_boot": active, "sealed": sealed}).to_string())
@@ -117,6 +143,13 @@ fn check(input: &T3Input) -> Result<(), String> {
     }
     if input.port == 0 || input.title.is_empty() || input.title.starts_with('-') || input.title.bytes().any(|b| b.is_ascii_control()) {
         return Err("port or title is not valid".to_owned());
+    }
+    if let Some(pairing) = &input.pairing {
+        let scope = |scope: &String| !scope.is_empty() && scope.bytes().all(|b| b.is_ascii_lowercase() || b == b':' || b == b'-');
+        if pairing.label.is_empty() || pairing.label.len() > 1024 || pairing.label.bytes().any(|b| b.is_ascii_control())
+            || pairing.scopes.is_empty() || pairing.scopes.len() > 64 || !pairing.scopes.iter().all(scope) {
+            return Err("pairing label or scopes are not valid".to_owned());
+        }
     }
     Ok(())
 }

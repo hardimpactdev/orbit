@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Releases\ReleaseAlertWebhook;
@@ -41,7 +42,8 @@ final readonly class InstanceOperationAlerts
             $operation->kind, $operation->id, $operation->target_id, $operation->node_id,
             $payload['failed_step'] ?? 'unknown', $payload['error_code'] ?? 'unknown');
         DB::afterCommit(fn () => $this->send($payload));
-        if ($operation->kind === 'instance.deploy' && $operation->triggered_by === NestedFleetRefresh::Trigger) {
+        // A refresh the release admitted, by the admission's own record, never by the caller's name.
+        if (ContainerDeployOutcome::releaseAdmitted($operation)) {
             $failure = ValidatedData::object($operation->state['native_failure'] ?? []);
             $detail = is_string($failure['detail'] ?? null) ? mb_strcut($this->redactor->redact($failure['detail'], []), 0, 1024, 'UTF-8') : null;
             $message = sprintf('The release refresh of Instance %d failed at %s (%s)%s', $operation->target_id, $payload['failed_step'] ?? 'unknown',

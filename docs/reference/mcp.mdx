@@ -48,7 +48,7 @@ The server declares `tools.listChanged: false` and never pushes list-change noti
 
 ## Tools
 
-Tool names match the [API reference](/api/overview) operation IDs (`<family>-<verb>`, such as `node-list`, `instance-show`, `process-restart`). Path, query, header (including `Idempotency-Key`), and JSON body parameters flatten into one input object. `GET` tools are marked read-only, and `x-orbit-destructive` operations (`DELETE` routes plus `instance-unregister`) are marked destructive.
+Tool names match the [API reference](/api/overview) operation IDs (`<family>-<verb>`, such as `node-list`, `instance-show`, `process-restart`). Path, query, header (including `Idempotency-Key`), and JSON body parameters flatten into one input object. For example, `instance-rename` maps `POST /api/v1/instances/{instance}/rename`: Send `instance` and at least one of `branch` or `domain`. `GET` tools are marked read-only, and `x-orbit-destructive` operations (`DELETE` routes plus `instance-unregister`) are marked destructive.
 
 Successful calls return the API JSON as text. API errors return a normal MCP response with `isError: true` and the error envelope plus HTTP status:
 

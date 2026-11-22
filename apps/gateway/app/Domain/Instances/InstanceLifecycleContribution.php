@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Models\Instance;
+use App\Models\Operation;
 
 /**
  * An extension's part of a container Instance's create, destroy and wake flows (docs/reference/development-containers.md#t3-registration-and-pairing).
@@ -17,8 +18,17 @@ interface InstanceLifecycleContribution
     public function assertCreateAvailable(): void;
 
     /**
+     * The pairing link a clone's create issues beside its sessions, as `{label, scopes}`, or null for none: a reserved clone's device
+     * pairs as soon as it is ready. Asked while the create runs; the answer comes back to `projectCreate` as `pairing`.
+     *
+     * @return array{label: string, scopes: list<string>}|null
+     */
+    public function createPairing(Operation $operation): ?array;
+
+    /**
      * Records the clone's T3 server from the run's result: `environment_id`, `server_version`, `url`, `label`, `expires_at` and the
-     * Gateway's `admin_session`, which the projection read from the vault.
+     * Gateway's `admin_session`, which the projection read from the vault. With `pairing`, T3's answer to the pairing link
+     * `createPairing` asked for: `{status, body}`, the body holding the one-time credential.
      *
      * @param  array<string, mixed>  $server
      */

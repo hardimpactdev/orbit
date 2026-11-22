@@ -1,0 +1,21 @@
+order = 1552
+cases = [
+  "the shared start enables and starts token renewal, then fails unless its timer is active and enabled",
+  "the converge roles phase starts token renewal after the runtime writes and reloads its units",
+  "the role add starts token renewal through the same file, and worker renewal only after all workers",
+]
+file = "swamp/tests/swamp_token_renewal_converge_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-role.yml",
+  "swamp/ansible/tasks/node-role-runtime.yml",
+  "swamp/ansible/tasks/role-swamp.yml",
+  "swamp/ansible/tasks/swamp-token-renewal-start.yml",
+  "swamp/ansible/tasks/swamp-worker-renewal.yml",
+]

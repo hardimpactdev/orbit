@@ -161,7 +161,7 @@ git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
 ```
 
-The API endpoint is `POST /api/v1/instances/{instance}/rename` (MCP tool `instance-rename`). It applies only to active development Instances and returns immediately with the updated Instance, without starting an Operation. The Instance ID, name, path, layout, starting commit, and Node stay unchanged.
+The API endpoint is `POST /api/v1/instances/{instance}/rename`. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. It applies only to active development Instances and returns immediately with the updated Instance, without starting an Operation. The Instance ID, name, path, layout, starting commit, and Node stay unchanged.
 
 Orbit verifies the branch against the [Node agent's checkout report](/reference/node-agent#checkouts). Symbolic `HEAD` must already point to the supplied branch and the checkout root and origin must match, or Orbit refuses with `instance.branch_not_checked_out` (including when the Node agent has not reported recently). Dirty or unpushed commits are allowed.
 

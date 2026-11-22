@@ -85,6 +85,7 @@ Route::middleware([
         Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::get('environments/{environment}/session', [ConnSessionsController::class, 'show'])->name('conn:environment:session');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
+        Route::delete('environments/{environment}', [ConnEnvironmentsController::class, 'destroy'])->name('conn:environment:unregister');
         // The read-only Tasks panel (/reference/conn#tasks-panel): the task list and show, read for a device.
         Route::middleware(RequireEnabledExtension::class.':tasks')->withoutMiddleware(RecordCommandActivity::class)->group(function (): void {
             Route::get('tasks', [ConnTasksController::class, 'index'])->name('conn:task:list');

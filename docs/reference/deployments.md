@@ -62,6 +62,12 @@ On container defaults, source preparation removes untracked non-ignored files (`
 
 Source preparation refuses dirty tracked files (`deployment.checkout_dirty`), a local branch with commits missing from the fetched target (`deployment.branch_diverged`), and checkouts that would overwrite an untracked file. Both checkout and steps acquire a `flock` on the checkout directory shared with [setup and teardown steps](/reference/instance-setup); a conflicting lifecycle step fails the deploy with `instance.lifecycle_busy`. Steps must not modify tracked files, or the next deploy will see a dirty checkout.
 
+On container defaults, the first step (`Start the container`) runs a `probe` right after starting the container to detect when the workspace `HEAD` is already past the target commit on the default branch's first-parent chain (applying `deployment.commit_not_on_branch`, `deployment.checkout_dirty`, and `deployment.branch_diverged` first).
+
+For a release or automatic origin, an older target ends immediately as a succeeded no-op (`result.outcome: already_newer`, `target_commit`, `kept_commit`) without taking a seed, restarting units, or running later phases. A release publishes the seed only if it matches `kept_commit` ([Refresh after a release](/reference/development-containers#refresh-after-a-release)). Recorded source facts remain at the admitted target commit until the next real deploy.
+
+A manual deploy (or a legacy admission without `origin`) refuses an older commit with `deployment.commit_behind_checkout` and changes nothing. Once a release-admitted deploy ends, it never holds the release's role converge on its Node ([Gateway recovery](/reference/gateway-recovery#fleet-rollout)). An unknown executor result still holds the Instance lock and ends the release refresh with `instance.refresh_fenced`.
+
 When every required step passes, Orbit updates the default's `seed_commit` (and takes a new container seed, restarting its running development Processes on the new commit). When a required step fails, later steps do not run, the checkout stays at the new commit without rolling back, and `seed_commit` stays at the last successful commit so the automatic policy retries after backoff.
 
 Additional behavior for container defaults:

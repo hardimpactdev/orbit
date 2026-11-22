@@ -659,9 +659,13 @@
 
 # `php` on every PATH in the container is the Project's static build from the runtime folder: `/usr/local/bin` is on the PATH of
 # units, login shells and `incus exec` sessions, so `composer` runs for `agent` and `www-data` alike. A Project without one has none.
+# A deployment's start (`checkout_probe`) leaves it to `php`, the first phase of "Prepare the container", which runs only for a deployment
+# that goes on and only after its seed hold, so neither the probe nor a failed hold changes the live PHP.
 - name: Link the Project's php
-  tags: [container, start]
-  when: phase in ['container', 'start'] and not start_skips_boot | default(false) | bool
+  tags: [container, start, php]
+  when: >-
+    not start_skips_boot | default(false) | bool
+    and ((phase in ['container', 'start'] and not checkout_probe | default(false) | bool) or phase == 'php')
   vars:
     container_php: "{{ container.php | default(none) or '' }}"
   block:
@@ -693,8 +697,10 @@
 # web request, and FrankenPHP serves in classic mode, where it runs. The scan directory also holds the two security settings, as
 # the CLI reads php-cli.ini instead of any php.ini (docs/reference/php-runtime.md#production-safe-settings).
 - name: Configure the container's PHP settings
-  tags: [container, clone, start]
-  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
+  tags: [container, clone, start, php]
+  when: >-
+    not start_skips_boot | default(false) | bool
+    and ((phase in ['container', 'clone', 'start'] and not checkout_probe | default(false) | bool) or phase == 'php')
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
     container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\nzend.exception_ignore_args = 1\nsession.upload_progress.enabled = 0\n"
@@ -811,8 +817,8 @@
 
 # The branch comes from a mirror on the Node: a container cannot reach GitHub, and the read token never enters it.
 - name: Fetch the branch on the Node
-  tags: [container, clone, fetch]
-  when: phase in ['container', 'clone', 'fetch']
+  tags: [container, clone, fetch, probe]
+  when: phase in ['container', 'clone', 'fetch'] or (phase == 'probe' and container.commit is not none)
   vars:
     credential_path: "/tmp/orbit-git-credential-{{ run_id }}"
   block:
@@ -860,10 +866,11 @@
       ansible.builtin.file: { path: "/tmp/orbit-git-credential-{{ run_id }}", state: absent }
       changed_when: false
 
-# A pinned commit must be on the branch's first-parent chain; without one the branch's newest commit deploys.
+# A pinned commit must be on the branch's first-parent chain; without one the branch's newest commit deploys. The probe applies the same
+# rule to the branch it fetched, before it relates the commit to HEAD.
 - name: Check the commit on the Node
-  tags: [fetch]
-  when: phase == 'fetch'
+  tags: [fetch, probe]
+  when: phase == 'fetch' or (phase == 'probe' and container.commit is not none)
   block:
     - name: Read the branch's first-parent chain
       ansible.builtin.command: { argv: "{{ mirror_git + ['rev-list', '--first-parent', 'refs/heads/' ~ container.branch] }}" }
@@ -875,8 +882,91 @@
         fail_msg: deployment.commit_not_on_branch
         quiet: true
     - name: Keep the commit
+      when: phase == 'fetch'
       ansible.builtin.set_fact:
         container_commit: "{{ container.commit if container.commit is not none else container_chain.stdout_lines[0] }}"
+
+# A deployment's start (`checkout_probe`) is followed by `probe`, which reads the workspace before the run changes anything else: before
+# the seed hold, the fleet check, the seed, the Project's PHP (`php`), the bundle and any unit restart (docs/cli/instance/deploy.mmd). It
+# changes only the Node's mirror, which it fetches as the fetch does: a commit off the fetched branch's first-parent chain refuses
+# deployment.commit_not_on_branch, above. Then it reads, and applies the checkout's own rules in its order: tracked changes refuse deployment.checkout_dirty, a workspace off the branch
+# refuses deployment.branch_diverged, a commit that HEAD reaches only through a merge's second parent refuses
+# deployment.commit_not_on_branch, and a commit that is neither HEAD's ancestor nor its descendant refuses deployment.branch_diverged. A
+# commit on HEAD's first-parent chain behind HEAD is older than the checkout: a deployment that a release or the automatic policy admitted
+# (`keep_newer`) ends here as a no-op, `already_newer`, that keeps HEAD and prints `orbit-checkout=already_newer` so every later step
+# skips; any other refuses deployment.commit_behind_checkout and says why (docs/reference/deployments.md#development-defaults). A commit
+# the workspace lacks, or HEAD itself, is the normal deployment, which the fetch and the checkout decide.
+- name: Read whether the checkout is already past the commit
+  tags: [probe]
+  when: phase == 'probe' and container.commit is not none
+  block:
+    - name: Read the tracked changes, the branch and HEAD
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [status, --porcelain, --untracked-files=no]
+        - [symbolic-ref, --quiet, --short, HEAD]
+        - [rev-parse, --verify, --quiet, HEAD]
+      register: probe_state
+      changed_when: false
+      failed_when: false
+    - name: Refuse tracked changes before the deployment
+      ansible.builtin.assert:
+        that: probe_state.results[0].rc == 0 and probe_state.results[0].stdout | trim == ''
+        fail_msg: deployment.checkout_dirty
+        quiet: true
+    - name: Refuse a workspace off the branch
+      ansible.builtin.assert:
+        that: probe_state.results[2].rc != 0 or probe_state.results[1].stdout | trim == container.branch
+        fail_msg: deployment.branch_diverged
+        quiet: true
+    - name: Read how the commit and HEAD relate
+      when: probe_state.results[2].rc == 0 and probe_state.results[2].stdout | trim != container.commit
+      ansible.builtin.command: { argv: "{{ in_workspace + item }}" }
+      loop:
+        - [merge-base, --is-ancestor, "{{ container.commit }}", HEAD]
+        - [merge-base, --is-ancestor, HEAD, "{{ container.commit }}"]
+        - [rev-list, --first-parent, HEAD]
+      register: probe_graph
+      changed_when: false
+      failed_when: false
+    - name: Name how the commit and HEAD relate
+      ansible.builtin.set_fact:
+        probe_head: "{{ probe_state.results[2].stdout | trim }}"
+        probe_relation: >-
+          {{ 'normal' if probe_graph is skipped or probe_graph.results[0].rc not in [0, 1]
+             else ('behind' if container.commit in probe_graph.results[2].stdout_lines else 'second_parent')
+                  if probe_graph.results[0].rc == 0
+             else ('normal' if probe_graph.results[1].rc == 0 else 'diverged') }}
+    - name: Say why an older commit is refused
+      when: probe_relation == 'behind' and not container.keep_newer | default(false) | bool
+      ansible.builtin.set_fact:
+        checkout_refusal_detail:
+          detail: >-
+            The requested commit {{ container.commit }} is older than the checkout HEAD {{ probe_head }} of {{ container.branch }};
+            deploy the newer commit instead.
+    - name: Refuse a commit that HEAD reaches only through a merge
+      ansible.builtin.assert:
+        that: probe_relation != 'second_parent'
+        fail_msg: deployment.commit_not_on_branch
+        quiet: true
+    - name: Refuse a commit that HEAD has diverged from
+      ansible.builtin.assert:
+        that: probe_relation != 'diverged'
+        fail_msg: deployment.branch_diverged
+        quiet: true
+    - name: Refuse an older commit by hand
+      ansible.builtin.assert:
+        that: probe_relation != 'behind' or container.keep_newer | default(false) | bool
+        fail_msg: deployment.commit_behind_checkout
+        quiet: true
+    - name: Keep the newer checkout
+      when: probe_relation == 'behind'
+      ansible.builtin.set_fact:
+        container_already_newer: true
+        container_kept_commit: "{{ probe_head }}"
+    - name: Report the newer checkout
+      when: probe_relation == 'behind'
+      ansible.builtin.debug: { msg: "orbit-checkout=already_newer" }
 
 # The first build brings the branch in only when the workspace is not at the mirror's commit yet, so a rerun changes nothing.
 - name: Read the workspace and the mirror

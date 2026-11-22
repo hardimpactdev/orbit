@@ -132,11 +132,11 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.4.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 ### T3 registration and pairing
 
-Clone creation starts T3 on its allocated host proxy port, creates the workspace project, registers the server with [Conn](/reference/conn#instance-servers), and returns sealed Gateway and Swamp sessions.
+Clone creation starts T3 on its allocated host proxy port, creates the workspace project, registers the server with [Conn](/reference/conn#instance-servers), and returns sealed Gateway and Swamp sessions. For a [reserved clone](/reference/conn#reserve-a-clone), when the agent supports `instance.t3_pairing`, the engine create's `t3` step also issues and seals the reserving device's pairing link (a refused link never fails the create).
 
 ### Threads
 
@@ -274,7 +274,7 @@ Inside a nested fleet, `nested-app-dev` and `nested-app-prod` use btrfs pools (`
 
 ### The Club key of the nested Gateway
 
-The nested Gateway's Swamp Club key is delivered over pipelined stdin directly into `/run` tmpfs inside the container and never touches the host Node's disk.
+The nested Gateway's Swamp Club key is delivered during the `start` phase of `Start the container` (or `clone-club-key` on clones) over pipelined stdin directly into `/run` tmpfs inside the container and never touches the host Node's disk.
 
 ### A stopped nested-fleet clone starts
 
@@ -286,7 +286,11 @@ Proof batches reset a nested-fleet copy back to its clean `base` snapshot via `p
 
 ### Refresh after a release
 
-After a verified Gateway release settles `fleet: current`, `php artisan gateway:refresh-nested-fleets` refreshes nested-fleet defaults and retakes their seeds.
+After a verified Gateway release settles `fleet: current`, `php artisan gateway:refresh-nested-fleets` refreshes nested-fleet defaults and retakes their seeds across three merged Ansible container steps (`Start the container` running `start` and `probe` in 180 s, `Prepare the container` running `php`, `fleet_start`, `seed`, and `fetch` in 920 s, and `Finish the container` in 4,500 s).
+
+If the `probe` finds the default's checkout already past the release commit, the deploy ends after `Start the container` as a succeeded no-op (`already_newer`, `kept_commit`; [Development defaults](/reference/deployments#development-defaults)). The release publishes the seed only if it matches `kept_commit`, failing seed publication with `instance.release_seed_moved` otherwise.
+
+If an ended deploy still holds the Instance lock because its executor result is unknown (`executor.result_unknown`), the refresh ends failed with `instance.refresh_fenced` (naming `fenced_by`) instead of retrying through the lock.
 
 ### What a refresh skips
 
