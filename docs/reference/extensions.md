@@ -108,7 +108,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
 | `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
-| `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
+| `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `createPairing()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
 | `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
 | `App\Domain\Nodes\NodeAccessRemovalTransactionHook` | [`node:access:remove`](/cli/node/access-remove), in the transaction that deletes an edge, with the edge row | `edgeDeleted()` |
@@ -120,6 +120,8 @@ Core receives tagged implementations through constructor parameters marked with 
 The issuer checks its admitted repository and current run before and after minting, returns only native vault descriptors, and revokes a fresh credential if authority changes. An omitted issuer keeps the fixed-grant mint policy. This adds no endpoint or private-input reader.
 
 `InstanceLifecycleContribution::assertCreateAvailable()` runs before any change when creating a container clone or migrating a non-default checkout; either operation without a contribution refuses with `operation.kind_unavailable`. `projectCreate()` receives the clone's T3 server from the run's result inside the create or migration projection transaction, so a refusal leaves the Instance unfinished. Conn contributes it even while the extension is off: the container run creates T3 and its admin session, and recording the result needs no enabled Conn service. Admission therefore does not require the Conn switch. Completion still requires the recorded server.
+
+`createPairing()` answers the pairing link an engine create's `t3` step should issue, as `{label, scopes}`, or null. Conn asks for one for a [reserved clone](/reference/conn#reserve-a-clone) while Conn is on. `projectCreate()` then gets T3's answer as `pairing`.
 
 `registered()` says whether the contribution holds the clone's T3 server; [`instance:complete`](/cli/instance/complete) admits a clone only when every contribution holds it, and refuses with `instance.complete_unavailable` when none exists. Conn answers from its environment row, also while it is off.
 
