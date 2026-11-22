@@ -15,10 +15,12 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\SwampCredentials\GatewayProcessStarts;
 use App\Infrastructure\SwampCredentials\SwampCredentialConfiguration;
 use App\Infrastructure\SwampCredentials\SwampHostTokenInstaller;
+use App\Infrastructure\SwampCredentials\SwampNodeRenewalNotInstalledException;
 use App\Infrastructure\SwampCredentials\SwampNodeTokens;
 use App\Infrastructure\SwampCredentials\SwampTokenReadCheck;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -35,6 +37,9 @@ final readonly class RenewSwampCredentialsAction
     private const array AccessValidStates = ['active'];
 
     private const array EnrollmentValidStates = ['enrolled', 'active'];
+
+    /** The action a release reports when the Swamp Node's renewal unit is not installed yet. */
+    public const string NodeRenewalSkipped = 'skipped the Swamp Node token renewal';
 
     public function __construct(
         private GatewayReleaseLock $lock,
@@ -58,14 +63,22 @@ final readonly class RenewSwampCredentialsAction
     {
         $access = null;
         try {
+            $skipped = [];
             if ($release) {
-                $this->node->renewNode();
+                try {
+                    $this->node->renewNode();
+                } catch (SwampNodeRenewalNotInstalledException $exception) {
+                    // The swamp role converge that installs the unit runs later in this release; the live-token gate still applies.
+                    Log::warning(SwampNodeRenewalNotInstalledException::Code, ['message' => $exception->getMessage()]);
+                    $skipped = [self::NodeRenewalSkipped];
+                }
             }
             $access = $this->access($this->node->list());
             $actions = [];
             $failure = null;
             try {
                 [$actions, $failure] = $this->install($access, $release);
+                $actions = [...$skipped, ...$actions];
             } catch (Throwable $exception) {
                 $failure = $exception;
             }

@@ -8,6 +8,7 @@ use App\Actions\SwampCredentials\RenewSwampCredentialsAction;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SwampCredentials\SwampGatewayToken;
+use App\Infrastructure\SwampCredentials\SwampNodeRenewalNotInstalledException;
 use App\Infrastructure\SwampCredentials\SwampNodeTokens;
 use App\Infrastructure\SwampCredentials\SwampNodeUnconvergedException;
 use Illuminate\Console\Command;
@@ -41,6 +42,11 @@ final class RenewSwampCredentialsCommand extends Command
             $actions = $this->option('revoke') === true
                 ? $renew->revokePredecessors($node->list())
                 : $renew->execute($this->option('release') === true);
+            if (in_array(RenewSwampCredentialsAction::NodeRenewalSkipped, $actions, true)) {
+                $this->stderr(SwampNodeRenewalNotInstalledException::Code.': '.SwampNodeTokens::RenewalUnit.' is not installed on the Swamp Node yet;'
+                    .' the later swamp role converge installs it. Node token renewal skipped; Gateway tokens renewed and the live-token gate still applies.');
+                $actions = array_values(array_diff($actions, [RenewSwampCredentialsAction::NodeRenewalSkipped]));
+            }
             $this->info($actions === [] ? 'No Gateway Swamp token change is due.' : ucfirst(implode('; ', $actions)).'.');
 
             return self::SUCCESS;
