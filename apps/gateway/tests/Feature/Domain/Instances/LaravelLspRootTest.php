@@ -61,6 +61,12 @@ it('finds the one artisan below the workspace without an Instance file, and neve
     expect(laravelLspRoot($workspace, $workspace))->toBe([0, "{$workspace}/apps/shop\n"]);
 });
 
+it('finds the one artisan however deep below the workspace it is', function (): void {
+    $workspace = laravelLspRootWorkspace(['services/commerce/apps/shop/artisan'], "ORBIT_NODE=beast\n");
+
+    expect(laravelLspRoot($workspace, $workspace))->toBe([0, "{$workspace}/services/commerce/apps/shop\n"]);
+});
+
 it('refuses a workspace with no artisan, or with two applications and nothing to pick one', function (array $files): void {
     $workspace = laravelLspRootWorkspace($files, "ORBIT_NODE=beast\n");
 
@@ -68,6 +74,7 @@ it('refuses a workspace with no artisan, or with two applications and nothing to
 })->with([
     'no artisan' => [['composer.json']],
     'two applications' => [['apps/shop/artisan', 'apps/admin/artisan']],
+    'a deep and a shallow application' => [['services/commerce/apps/shop/artisan', 'admin/artisan']],
 ]);
 
 it('puts the program in the runtime folder\'s bin, so a change to it is a new folder version', function (): void {

@@ -40,7 +40,7 @@ final readonly class InstanceFolderPlan
         ."folder=\$(cd \"\$start\" && pwd -P)\n"
         ."while :; do\n  if [ -f \"\$folder/artisan\" ]; then\n    printf '%s\\n' \"\$folder\"\n    exit 0\n  fi\n"
         ."  [ \"\$folder\" = / ] && break\n  folder=\$(dirname \"\$folder\")\ndone\n"
-        ."found=\$(find \"\$start\" -maxdepth 4 \\( -name vendor -o -name node_modules -o -name .git \\) -prune -o -type f -name artisan -print)\n"
+        ."found=\$(find \"\$start\" \\( -name vendor -o -name node_modules -o -name .git \\) -prune -o -type f -name artisan -print)\n"
         ."if [ -n \"\$found\" ] && [ \"\$(printf '%s\\n' \"\$found\" | wc -l)\" -eq 1 ]; then\n"
         ."  cd \"\$(dirname \"\$found\")\" && pwd -P\n  exit 0\nfi\n"
         ."echo \"laravel-lsp-root: no one Laravel application (artisan) at, above or below \$start\" >&2\nexit 1\n";

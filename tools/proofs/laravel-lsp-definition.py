@@ -233,20 +233,22 @@ def main():
     clone_id = created.get('target_id') or created.get('result', {}).get('instance_id')
     completion = created.get('result', {}).get('completion_operation_id')
     say(f'clone Instance {clone_id}, completion Operation {completion}')
-    deadline = time.monotonic() + ACTIVE_SECONDS
-    while True:
-        clone = orbit('instance:show', str(clone_id), '--json')
-        if clone['status'] == 'active':
-            break
-        if clone['status'] in ('failed', 'removed') or time.monotonic() > deadline:
-            fail(f'clone {clone_id} is {clone["status"]}, not active')
-        time.sleep(5)
-    if completion:
-        say('completion Operation: ' + operation_line(orbit('operation:show', str(completion), '--json')))
-    check(clone['status'] == 'active', f'clone {clone_id} ({clone["name"]}) is active on branch {clone.get("selected_branch")} at {clone.get("starting_commit")}')
+    if not clone_id:
+        fail('the create Operation names no clone Instance')
     container = f'instance-{clone_id}'
 
     try:
+        deadline = time.monotonic() + ACTIVE_SECONDS
+        while True:
+            clone = orbit('instance:show', str(clone_id), '--json')
+            if clone['status'] == 'active':
+                break
+            if clone['status'] in ('failed', 'removed') or time.monotonic() > deadline:
+                fail(f'clone {clone_id} is {clone["status"]}, not active')
+            time.sleep(5)
+        if completion:
+            say('completion Operation: ' + operation_line(orbit('operation:show', str(completion), '--json')))
+        check(clone['status'] == 'active', f'clone {clone_id} ({clone["name"]}) is active on branch {clone.get("selected_branch")} at {clone.get("starting_commit")}')
         prove(container, clone, default)
     finally:
         if args.keep:

@@ -86,7 +86,7 @@ The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [p
 
 1. The application folder that a Laravel clone's `/etc/orbit/instance` names in `ORBIT_APPLICATION`: the Project root without `public`.
 2. The nearest folder at or above `path` with `artisan`. The working folder is the default `path`.
-3. The one folder below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
+3. The one folder at any depth below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
 
 It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
 
