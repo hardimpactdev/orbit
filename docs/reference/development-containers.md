@@ -76,7 +76,7 @@ Incus mounts two recipe folders built on the host read-only into every container
 
 ### The pinned shape tools
 
-The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, ripgrep, `laravel-lsp`, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
+The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, ripgrep, `laravel-lsp`, `phpactor`, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
 
 #### Laravel language server
 
@@ -89,6 +89,35 @@ The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [p
 3. The one folder at any depth below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
 
 It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
+
+#### PHP symbol index
+
+The recipe pins the [Phpactor](https://github.com/phpactor/phpactor) PHAR (`phpactor` `2026.11.22.0`, by SHA-256) as a part of the runtime folder, as it pins `laravel-lsp`. A Laravel default prepares Phpactor's index of its PHP classes before each seed, so a clone's first class lookup reads an index that is already built. The PHP symbol index and the [Laravel language server](#laravel-language-server) keep separate caches: `laravel-lsp` builds no index on disk and loads its framework data on demand.
+
+Only the Project's `default`, of a Laravel source, on a Node whose one app role is an active `app-dev`, gets the work: its container intent has `php_index` (`PhpSymbolIndex`). A clone, a non-Laravel source, a production Instance, an `app-prod` Node, a Node with no app role, such as a CI Node, and an `app-dev` role that is not active get none. On an `app-prod` Node the PHAR sits in the production runtime folder with every other runtime part, and nothing runs it.
+
+The `php_index` phase runs right before the `seed` phase: in the create's seed step, and in "Finish the container" of each deployment, after the checkout, the deploy steps (Composer's install and any generated PHP among them) and the `processes` phase. `agent` runs `phpactor index:build` at the application's folder, the one with `artisan` that `laravel-lsp-root` prints, with the deploy steps' environment. Orbit passes Phpactor no setting and writes no file in the Project.
+
+Phpactor finds its index by itself. The folder it is started in, or the root URI its language server gets, is its project root, and its index is `~/.cache/phpactor/index/<folder name>-<first 6 hex of the MD5 of the folder's path>`. A clone has the same home and application path as its default, so a fresh Phpactor in the clone finds the seed's index: `phpactor index:build`, or a language-server session started at `laravel-lsp-root`, reindexes only the files that changed since the seed.
+
+The run is incremental and bounded:
+
+- Phpactor reindexes a PHP file whose ctime is not older than the index's last update. A build on an index that exists reads only what changed, and nothing resets it.
+- The run records a fingerprint in `~/.cache/orbit-php-index.json`. It covers the `phpactor` and `php` paths, the folder, and the index's timestamp files.
+- The fingerprint also covers each PHP file and folder below the application's folder, with its ctime and size. `.git` is left out.
+- An unchanged fingerprint starts no Phpactor, as at a repeat refresh of the same commit.
+- The build runs at `nice -n 19` and `ionice -c 3`, as one Phpactor process, within 600 s (`PhpSymbolIndex::Seconds`).
+- The step's bound holds 630 s for the phase: the 600 s and 30 s for the exec. Only an intent with `php_index` adds the 630 s to the run's budget.
+- No unit, timer or daemon runs Phpactor. A clone's boot starts nothing.
+
+A build that fails or runs past its bound fails the phase with `instance.php_index_failed`. Its detail names Phpactor's exit code or the bound, with the end of Phpactor's output. The seed is not taken, so the old seed stays, and the run records no fingerprint, so the next deployment builds again. Orbit fails the deployment rather than warn: a seed whose index is missing or half built would hand every clone a lookup that is silently wrong.
+
+To prepare the index in existing Laravel defaults, converge each `app-dev` Node so its runtime folder holds `phpactor`, then deploy each Laravel default on it. A deployment at the same commit retakes the seed:
+
+```bash
+orbit node:converge <node>
+orbit instance:deploy <default-instance-id>
+```
 
 ### PHP
 

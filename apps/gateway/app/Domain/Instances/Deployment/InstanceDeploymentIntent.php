@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\PhpSymbolIndex;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
@@ -235,6 +236,7 @@ final readonly class InstanceDeploymentIntent
     /**
      * The container as the deployment runs it. A default also holds the files every clone of it needs before its seed
      * (InstanceContainer::seedFiles), and its seed records the digest of the services part it holds (InstanceContainer::servicesDigest).
+     * A Laravel default on an app-dev Node prepares its PHP symbol index before the seed (PhpSymbolIndex).
      *
      * @return array<string, mixed>
      */
@@ -246,6 +248,7 @@ final readonly class InstanceDeploymentIntent
         }
 
         return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime),
-            'services_digest' => InstanceContainer::servicesDigest($container)];
+            'services_digest' => InstanceContainer::servicesDigest($container),
+            ...(($index = PhpSymbolIndex::intent($instance)) === null ? [] : ['php_index' => $index])];
     }
 }

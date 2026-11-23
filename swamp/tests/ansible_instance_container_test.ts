@@ -101,7 +101,7 @@ function fixture() {
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py", "instance_root_disk.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml", "instance_default_clean.py",
-    "instance_seed_files.py"]) {
+    "instance_seed_files.py", "instance_php_index.py"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -4322,6 +4322,132 @@ Deno.test({
       assertEquals(f.result(), { error_code: "instance.fleet_seed_missing" });
       assertEquals(f.state().containers["instance-7"].restored, [kept]);
       assertEquals(f.state().containers["instance-7"].status, "Running");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/**
+ * A Laravel default's intent with `php_index` (PhpSymbolIndex): a stand-in `phpactor` on the deploy environment's PATH records where
+ * and how it runs, and writes its index's timestamp under the container home's cache, where Phpactor keeps it. A marker file makes
+ * it fail.
+ */
+function phpIndexFixture() {
+  const f = fixture();
+  const bin = `${f.folder}/php-index-bin`;
+  Deno.mkdirSync(bin);
+  Deno.writeTextFileSync(`${bin}/phpactor`, `#!/bin/sh
+printf '%s %s\\n' "$(pwd)" "$*" >> '${f.folder}/phpactor-calls'
+[ -e '${f.folder}/phpactor-fails' ] && { echo 'Phpactor: cannot parse app/Broken.php'; exit 3; }
+mkdir -p "$HOME/.cache/phpactor/index/workspace-abcdef" && date +%s > "$HOME/.cache/phpactor/index/workspace-abcdef/timestamp.v3"
+`);
+  Deno.chmodSync(`${bin}/phpactor`, 0o755);
+  Deno.symlinkSync(new TextDecoder().decode(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout).trim(), `${bin}/php`);
+  const home = `${f.folder}/containers/instance-7/home/agent`;
+  Object.assign(f.container, {
+    environment: [`HOME=${home}`, "USER=agent", `PATH=${bin}:/usr/bin:/bin`],
+    php_index: { root: "/srv/workspace", seconds: 600 },
+  });
+  f.write();
+  const calls = () => {
+    try {
+      return Deno.readTextFileSync(`${f.folder}/phpactor-calls`).trim().split("\n");
+    } catch {
+      return [];
+    }
+  };
+  return { f, home, calls };
+}
+
+Deno.test({
+  name: "a Laravel default indexes as agent at its application folder before its first seed; a repeat refresh skips, a new commit reindexes",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, home, calls } = phpIndexFixture();
+    try {
+      const workspace = `${f.folder}/containers/instance-7/srv/workspace`;
+      const setup = f.phases(["container", "workspace", "processes"]);
+      assert(setup.ok, setup.output);
+      // The create's seed step: the index, then the seed.
+      const first = f.phases(["php_index", "seed"]);
+      assert(first.ok, first.output);
+      const head = git(f.source, "rev-parse", "HEAD");
+      // At the application's folder, as agent, with no option of Orbit's: Phpactor finds its project and index by itself.
+      assertEquals(calls(), [`${workspace} index:build --no-interaction --no-ansi`]);
+      assert(f.state().workspace_calls.includes("agent /usr/bin/env"), JSON.stringify(f.state().workspace_calls));
+      assertEquals(f.result(), { commit: head, phases_passed: ["php_index", "seed"] });
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      // Phpactor's own index and the run's fingerprint live in agent's home, which the seed holds; nothing lands in the Project.
+      assert(Deno.statSync(`${home}/.cache/phpactor/index/workspace-abcdef/timestamp.v3`).isFile);
+      assert(Deno.statSync(`${home}/.cache/orbit-php-index.json`).isFile);
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
+
+      // A repeat refresh of the same commit, as "Finish the container" runs it: the tree did not change, so no Phpactor starts.
+      const repeat = f.phases(["processes", "php_index", "seed", "check"]);
+      assert(repeat.ok, repeat.output);
+      assertEquals(calls().length, 1);
+      assertMatch(repeat.output, /TASK \[Build the index as agent at the application's folder\] \*+\nok: \[node\]/);
+
+      // A deployment of a commit with a new class: Phpactor's incremental build runs again on the same index, never with `--reset`.
+      Deno.writeTextFileSync(`${f.source}/Invoice.php`, "<?php class Invoice {}\n");
+      git(f.source, "add", ".");
+      git(f.source, "commit", "--quiet", "-m", "invoice");
+      for (const phases of [["start", "fetch"], ["checkout"], ["processes", "php_index", "seed", "check"]]) {
+        const result = f.phases(phases);
+        assert(result.ok, `${phases}: ${result.output}`);
+      }
+      assertEquals(calls().length, 2);
+      assert(calls().every((call) => !call.includes("--reset")), calls().join("\n"));
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${git(f.source, "rev-parse", "HEAD")}`]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a default whose intent has no php_index runs no index work in the php_index phase",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, calls } = phpIndexFixture();
+    try {
+      delete (f.container as Record<string, unknown>).php_index;
+      f.write();
+      const setup = f.phases(["container", "workspace", "processes"]);
+      assert(setup.ok, setup.output);
+      const seeded = f.phases(["php_index", "seed"]);
+      assert(seeded.ok, seeded.output);
+      assertEquals(calls(), []);
+      assert(!f.state().workspace_calls.includes("agent /usr/bin/env"), JSON.stringify(f.state().workspace_calls));
+      assertEquals(f.result().phases_passed, ["php_index", "seed"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed index fails the run with instance.php_index_failed and Phpactor's reason, before the seed, and the old seed stays",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, calls } = phpIndexFixture();
+    try {
+      const setup = f.phases(["container", "workspace", "processes", "php_index", "seed"]);
+      assert(setup.ok, setup.output);
+      const before = f.state().containers["instance-7"].snapshots;
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/Broken.php`, "<?php class\n");
+      Deno.writeTextFileSync(`${f.folder}/phpactor-fails`, "");
+
+      const failed = f.phases(["processes", "php_index", "seed", "check"]);
+      assert(!failed.ok, failed.output);
+      assertEquals(calls().length, 2);
+      const result = f.result();
+      assertEquals(result.error_code, "instance.php_index_failed");
+      assertEquals(result.failed_phase, "php_index");
+      assertEquals(result.phases_passed, ["processes"]);
+      assertStringIncludes(result.detail, "The PHP symbol index: phpactor index:build exited 3: Phpactor: cannot parse app/Broken.php. The old seed stays.");
+      assertEquals(f.state().containers["instance-7"].snapshots, before);
     } finally {
       f.cleanup();
     }

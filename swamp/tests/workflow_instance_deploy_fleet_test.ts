@@ -57,17 +57,18 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     // The start and the probe run first, in a step of their own, which leaves the Project's PHP to "Prepare the container".
     assertEquals(step("Start the container").task.inputs.run,
         'timeout 580 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start,probe -e phases=start,probe -e checkout_probe=true "$ORBIT_ANSIBLE/instance-container.yml"');
-    assertEquals(phases("Finish the container", container), ["processes", "seed", "check"]);
-    assertEquals(phases("Finish the container", nested), ["processes", "fleet_refresh", "seed", "check"]);
+    // The PHP symbol index of a Laravel default comes right before its seed; a container whose intent has no `php_index` skips it.
+    assertEquals(phases("Finish the container", container), ["processes", "php_index", "seed", "check"]);
+    assertEquals(phases("Finish the container", nested), ["processes", "fleet_refresh", "php_index", "seed", "check"]);
     // The same list selects the tags and orders the phases; only the fleet check reads the room a refresh needs.
     assertEquals(step("Prepare the container").task.inputs.run,
         'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"');
     assertEquals(step("Finish the container").task.inputs.run,
         'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" "$ORBIT_ANSIBLE/instance-container.yml"');
-    // Each bound is the sum of its phases' bounds: php 60 + fetch 400; processes 120 + seed 120 + check 60; a nested fleet adds the check 400
-    // and the first seed 120, and the refresh 4,200.
+    // Each bound is the sum of its phases' bounds: php 60 + fetch 400; processes 120 + php_index 630 + seed 120 + check 60; a nested fleet
+    // adds the check 400 and the first seed 120, and the refresh 4,200.
     assertEquals([seconds("Prepare the container", container), seconds("Prepare the container", nested)], ["460", "980"]);
-    assertEquals([seconds("Finish the container", container), seconds("Finish the container", nested)], ["300", "4500"]);
+    assertEquals([seconds("Finish the container", container), seconds("Finish the container", nested)], ["930", "5130"]);
     // The order: start before the fetch, the checkout and the deploy steps between the two, and the check last.
     assert(names.indexOf("Write the container intent") < names.indexOf("Start the container"));
     assert(names.indexOf("Start the container") < names.indexOf("Hold the seed"));

@@ -75,8 +75,9 @@ sequenceDiagram
   opt web-serving Project
     SW->>N: Create the Route<br/>child operation-route-create
   end
-  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
+  SW->>N: Take the seed snapshot<br/>Ansible · tags php_index, seed
   %%> What it does:
+  %%> - one play runs the phases `php_index` and `seed`; `php_index` does work only for a Laravel default on an active app-dev Node: `agent` builds Phpactor's index at the application's folder, niced and within 600 s, which every clone copies with the seed (docs/reference/development-containers.md#php-symbol-index); a failed build fails the create with `instance.php_index_failed` before any seed, and the run's budget holds its 630 s
   %%> - stops the Processes for a moment and snapshots the container as `seed-<commit>`, which clones copy
   %%> - a default with an inner volume: also snapshots the volume as `seed-<commit>` while the Processes are stopped; the two snapshots of one name are the seed. Right before the volume's half, `sync -f /srv/inner-pool` as root in the container commits btrfs, so the snapshot holds the inner pool. A failed flush deletes the container half and fails with `instance.seed_volume_flush_failed`; a failed volume snapshot deletes both halves and fails with `instance.seed_volume_snapshot_failed`
   alt all steps pass in budget

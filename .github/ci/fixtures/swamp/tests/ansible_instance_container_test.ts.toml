@@ -118,16 +118,19 @@ cases = [
   "a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing",
   "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
+  "a Laravel default indexes as agent at its application folder before its first seed; a repeat refresh skips, a new commit reindexes",
+  "a default whose intent has no php_index runs no index work in the php_index phase",
+  "a failed index fails the run with instance.php_index_failed and Phpactor's reason, before the seed, and the old seed stays",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 9348
+cost = 9498
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 118
+slices = 121
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -167,6 +170,7 @@ inputs = [
   "swamp/ansible/files/instance-container-power.py",
   "swamp/tests/fixtures/instance-power-helper.ts",
   "swamp/tests/_support/power_helper.ts",
+  "swamp/ansible/instance_php_index.py",
 ]
 
 [case_costs]
@@ -291,6 +295,10 @@ inputs = [
 "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it" = 70
 "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit" = 45
 "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work" = 40
+# The PHP symbol index: local runs on a task copy (2026-11-23) x 1.15, rounded up to 5 s.
+"a Laravel default indexes as agent at its application folder before its first seed; a repeat refresh skips, a new commit reindexes" = 75
+"a default whose intent has no php_index runs no index work in the php_index phase" = 30
+"a failed index fails the run with instance.php_index_failed and Phpactor's reason, before the seed, and the old seed stays" = 45
 [mandatory_cases]
 "swamp/ansible/instance-container.yml" = ["a failed start retains its task and bounded stderr and hides private task output"]
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]

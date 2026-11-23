@@ -23,7 +23,7 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $parts = array_keys($recipe->instances->runtime);
 
     expect(array_values(array_filter($parts, static fn (string $name): bool => ! str_starts_with($name, 'browser-'))))
-        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'laravel-lsp', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
+        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'laravel-lsp', 'phpactor', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
         ->and($recipe->instances->runtime['chrome-headless-shell'])->toEqual($recipe->instances->agent['chrome-headless-shell'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
@@ -119,6 +119,16 @@ it('pins the official laravel/lsp PHAR as the runtime folder\'s `laravel-lsp`, w
         ->and($lsp->artifact->location)->toBe('https://github.com/laravel/lsp/releases/download/v0.0.32/laravel-lsp')
         ->and($lsp->artifact->algorithm)->toBe('sha256')
         ->and($lsp->artifact->digest)->toBe('86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51');
+});
+
+it('pins the Phpactor PHAR as the runtime folder\'s `phpactor`, which a Laravel default\'s seed runs for its symbol index', function (): void {
+    $phpactor = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['phpactor'];
+
+    expect($phpactor->version)->toBe('2026.11.22.0')
+        ->and($phpactor->bin)->toBe(['phpactor' => 'phpactor.phar'])
+        ->and($phpactor->artifact->location)->toBe('https://github.com/phpactor/phpactor/releases/download/2026.11.22.0/phpactor.phar')
+        ->and($phpactor->artifact->algorithm)->toBe('sha256')
+        ->and($phpactor->artifact->digest)->toBe('1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659');
 });
 
 it('reads a part without `bin` as files that give the folder no program', function (): void {

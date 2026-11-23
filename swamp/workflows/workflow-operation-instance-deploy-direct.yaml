@@ -1980,7 +1980,7 @@ jobs:
     # The container's phases after the checkout and the dev deploy steps, in one play and in this order: `processes`, the Project's
     # development Processes (changed units and environment files from the vault go in and restart, and a moved commit restarts the
     # Processes that restart on deploy); for a nested-fleet default `fleet_refresh`, which refreshes its running inner fleet so clones
-    # copy a fleet on the new commit; `seed`, the seed snapshot; and `check`. A failure in any of them restores the old seed of a
+    # copy a fleet on the new commit; `php_index`, the Phpactor index of a Laravel default on an app-dev Node; `seed`, the seed snapshot; and `check`. A failure in any of them restores the old seed of a
     # nested-fleet default. The handlers a phase notifies run before the next phase, and each phase writes the result file as it ends.
     labels:
       role: swamp
@@ -2012,9 +2012,10 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "processes,fleet_refresh,seed,check" : "processes,seed,check" }}'
-          # The sum of the bounds of the phases it runs: processes 120, seed 120, check 60, and for a nested fleet the refresh 4,200.
-          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "4500" : "300" }}'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "processes,fleet_refresh,php_index,seed,check" : "processes,php_index,seed,check" }}'
+          # The sum of the bounds of the phases it runs: processes 120, the PHP symbol index 630 (its intent's 600 and 30 for the exec),
+          # seed 120, check 60, and for a nested fleet the refresh 4,200.
+          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "5130" : "930" }}'
           ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.credential.key) }}'
   - name: Restore the old seed
     # A nested-fleet default that failed after its container changed (from the checkout on) goes back to its newest seed, the one

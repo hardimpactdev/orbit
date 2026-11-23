@@ -373,7 +373,8 @@ jobs:
           behaviorName: '${{ "ic-seed-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
+            # The PHP symbol index of a Laravel default, then the seed: 630 s (its intent's 600 and 30 for the exec) and 120 s.
+            run: timeout 750 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags php_index,seed -e phases=php_index,seed "$ORBIT_ANSIBLE/instance-container.yml"
             env: &container_phase
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'

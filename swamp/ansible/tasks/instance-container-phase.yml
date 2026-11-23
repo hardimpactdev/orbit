@@ -1891,6 +1891,35 @@
         argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'restore', container.inner_volume.pool, container.inner_volume.name, restore_seed] }}"
       changed_when: true
 
+# The Phpactor symbol index of a Laravel default on an app-dev Node, right before its seed, so a clone's first lookup reads the seed's
+# index (docs/reference/development-containers.md#php-symbol-index). Only an intent with `php_index` has it (PhpSymbolIndex). `agent`
+# runs it at the application's folder with the deploy steps' environment; an unchanged tree starts no Phpactor, and a changed one
+# reindexes only what changed, niced and within the intent's bound. A failed or late build fails the phase, so the old seed stays.
+- name: Prepare the PHP symbol index
+  tags: [php_index]
+  when: phase == 'php_index' and container.php_index is defined
+  block:
+    - name: Build the index as agent at the application's folder
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', (container.php_index.seconds + 30) | string, 'incus', 'exec', '--project', container.project,
+              '--cwd', container.php_index.root, container.name, '--', 'runuser', '-u', 'agent', '--', '/usr/bin/env', '-i']
+             + container.environment
+             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), container.php_index.seconds | string] }}
+      register: php_index_built
+      changed_when: php_index_built.rc == 0 and (php_index_built.stdout | from_json).index != 'unchanged'
+  rescue:
+    - name: Name why the index failed
+      ansible.builtin.set_fact:
+        php_index_failure:
+          detail: >-
+            {{ 'The PHP symbol index: '
+               ~ ((ansible_failed_result.stderr | default('') | string | trim)[-600:] or (ansible_failed_result.msg | default('') | string))
+               ~ '. The old seed stays.' }}
+    - name: Fail the index
+      ansible.builtin.fail:
+        msg: instance.php_index_failed
+
 # Orbit delivers the Swamp Club key of a nested fleet at each start into the tmpfs `/run`, so no seed holds it. The key file that was
 # placed by hand on the disk before that delivery refuses the seed before the seed changes anything. Only the path is tested.
 - name: Refuse a nested-fleet seed while the Club key is on the disk

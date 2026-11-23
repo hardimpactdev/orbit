@@ -16,6 +16,7 @@ use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\PhpSymbolIndex;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -125,6 +126,8 @@ final readonly class StartInstanceDeployAction
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
                 'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps))
                     + (isset($deployment['fleet']) ? NestedFleetIntent::RunSeconds : 0)
+                    // A Laravel default on an app-dev Node prepares its PHP symbol index before its seed.
+                    + PhpSymbolIndex::runSeconds($deployment['container'] ?? null)
                     // The proof default first waits for its seed hold (docs/reference/development-containers.md#the-seed-hold).
                     + (is_array($deployment['container'] ?? null) && ($deployment['container']['seed_hold'] ?? false) === true ? ProofSeeds::HoldWaitSeconds : 0),
                 ...($commit === null ? [] : ['commit' => $commit])];
