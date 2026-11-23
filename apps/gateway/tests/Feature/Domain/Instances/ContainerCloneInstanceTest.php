@@ -148,6 +148,18 @@ describe('a clone of the container default', function (): void {
             ->and(substr_count($metadata, "\n"))->toBe(8);
     });
 
+    it('names a Laravel application\'s folder below the workspace in the Instance file, where laravel-lsp starts', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $default->project->update(['type' => ProjectType::Monorepo, 'root' => 'apps/shop/public', 'php_version' => '8.5', 'is_laravel' => true]);
+        $laravel = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'shop'))['clone']['files'][0]['content']);
+        $default->project->update(['is_laravel' => false]);
+        $other = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'other'))['clone']['files'][0]['content']);
+
+        expect($laravel['ORBIT_APPLICATION'])->toBe(InstanceHostIntent::Workspace.'/apps/shop')
+            ->and($other)->not->toHaveKey('ORBIT_APPLICATION');
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);

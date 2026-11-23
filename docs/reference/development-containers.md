@@ -51,6 +51,10 @@ Converging an `app-dev` Node leaves existing host-checkout Instances untouched a
 
 Each unprivileged container receives 4 CPUs, 4,096 processes, 40 GiB root disk (80 GiB default for nested-fleet defaults via `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`), 8 GiB RAM (12 GiB nested), `hidepid=invisible`, and `user.max_user_namespaces=0` (non-nested).
 
+### Image packages
+
+The container image adds `acl`, `git`, `nftables`, `sudo`, and `bind9-dnsutils` (`dig`, which the Swamp fixtures run, as CI runners have it) to the stock Ubuntu image. A nested-fleet image adds `wireguard-tools`, `sqlite3`, `zstd`, and `btrfs-progs`. A change to the list is a new image alias that a Node converge builds.
+
 ### Isolated ID ranges
 
 `IsolatedIdRanges` assigns each container an isolated block of subordinate UIDs and GIDs on the host (`65,536` IDs for normal containers) so two containers never share host UIDs.
@@ -72,7 +76,19 @@ Incus mounts two recipe folders built on the host read-only into every container
 
 ### The pinned shape tools
 
-The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
+The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, ripgrep, `laravel-lsp`, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
+
+#### Laravel language server
+
+The recipe pins the official [laravel/lsp](https://github.com/laravel/lsp) PHAR (`laravel-lsp` `0.0.32`) as a part of the runtime folder, so every container, a clone of a Laravel default included, has `laravel-lsp` on its `PATH` with nothing installed per clone. It runs on the container's `php`, the Project's PHP version, and boots the application from its own `vendor/`. No unit starts it: a client starts one server over stdio, as `agent`, when it needs one, and the server loads framework data on demand.
+
+The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [path]`, a program of the same folder, prints that folder. It takes the first of these:
+
+1. The application folder that a Laravel clone's `/etc/orbit/instance` names in `ORBIT_APPLICATION`: the Project root without `public`.
+2. The nearest folder at or above `path` with `artisan`. The working folder is the default `path`.
+3. The one folder at any depth below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
+
+It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
 
 ### PHP
 
