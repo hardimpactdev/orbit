@@ -23,7 +23,7 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $parts = array_keys($recipe->instances->runtime);
 
     expect(array_values(array_filter($parts, static fn (string $name): bool => ! str_starts_with($name, 'browser-'))))
-        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
+        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'laravel-lsp', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
         ->and($recipe->instances->runtime['chrome-headless-shell'])->toEqual($recipe->instances->agent['chrome-headless-shell'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
@@ -109,6 +109,16 @@ it('gives the runtime folder one trust module for Chromium, at its own path outs
         // Only this part names a module; no other part changes its shape.
         ->and(array_keys(array_filter($plan, static fn (array $entry): bool => isset($entry['trust_module']))))->toBe(['browser-p11-kit-modules'])
         ->and(str_starts_with($plan['browser-p11-kit-modules']['trust_module']['path'], 'lib/'))->toBeFalse();
+});
+
+it('pins the official laravel/lsp PHAR as the runtime folder\'s `laravel-lsp`, which runs on the container\'s own `php`', function (): void {
+    $lsp = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['laravel-lsp'];
+
+    expect($lsp->version)->toBe('0.0.32')
+        ->and($lsp->bin)->toBe(['laravel-lsp' => 'laravel-lsp'])
+        ->and($lsp->artifact->location)->toBe('https://github.com/laravel/lsp/releases/download/v0.0.32/laravel-lsp')
+        ->and($lsp->artifact->algorithm)->toBe('sha256')
+        ->and($lsp->artifact->digest)->toBe('86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51');
 });
 
 it('reads a part without `bin` as files that give the folder no program', function (): void {

@@ -585,6 +585,8 @@ final readonly class InstanceContainer
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
                     ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
+                    // The Laravel application's folder, where `laravel-lsp-root` starts the language server (InstanceFolderPlan::LaravelLspRoot).
+                    .($instance->source_is_laravel === true ? 'ORBIT_APPLICATION='.InstanceEnvironmentRenderer::quote(self::application($instance))."\n" : '')
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],

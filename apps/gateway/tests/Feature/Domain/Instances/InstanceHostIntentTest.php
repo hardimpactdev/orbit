@@ -578,10 +578,10 @@ describe('the shared folders', function (): void {
 
         // `vp` is no program of its part: the folder links it from the Vite+ home. PHP Data Bridge has no program: PHP reads its files.
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
-        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg', 'chrome-headless-shell'])
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg', 'laravel-lsp', 'chrome-headless-shell'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'agy', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
-            ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'chrome-headless-shell' => 'zip', 'php/8.5' => 'tar'])
+            ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'laravel-lsp' => 'file', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'chrome-headless-shell' => 'zip', 'php/8.5' => 'tar'])
             ->and(array_unique(array_values($browser)))->toBe(['deb'])
             ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'antigravity' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip', 'agent-browser' => 'file'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);
