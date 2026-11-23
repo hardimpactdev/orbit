@@ -17,7 +17,14 @@
             "failed_step": null,
             "error_code": null,
             "result": {
-                "tables": ["cache", "jobs", "migrations", "orders", "products", "users"]
+                "tables": [
+                    "cache",
+                    "jobs",
+                    "migrations",
+                    "orders",
+                    "products",
+                    "users"
+                ]
             },
             "cancel_requested": false,
             "attempts": 0,
@@ -28,7 +35,13 @@
             "started_at": "2026-10-31T09:00:00+00:00",
             "finished_at": "2026-10-31T09:00:00+00:00",
             "poll_after_seconds": null,
-            "assistance": null
+            "assistance": null,
+            "error": null,
+            "current_step_started_at": null,
+            "current_step_observed_at": null,
+            "overdue_since": null,
+            "hold_wait_reason": null,
+            "ready_at": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

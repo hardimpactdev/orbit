@@ -56,7 +56,7 @@ Successful calls return the API JSON as text. API errors return a normal MCP res
 {"isError": true, "content": [{"type": "text", "text": "{\"status\":422,\"error\":{\"code\":\"validation.failed\",\"message\":\"...\"}}"}]}
 ```
 
-Machine callbacks, streaming endpoints, browser pages, direct Swamp internal endpoints (`operation-direct-*`), Conn launch HTTP endpoints, and internal WebSocket registry hooks are excluded from the catalogue in `bin/mcp-tools`. Log tools (`instance-logs`, `process-logs`, `schedule-logs`) and `task-swamp-runs` return bounded snapshots rather than streams.
+Machine callbacks, streaming endpoints, browser pages, direct Swamp internal endpoints (`operation-direct-*`), Conn launch HTTP endpoints, internal WebSocket registry hooks, and the OpenAPI document itself (`gateway-openapi`) are excluded from the catalogue in `bin/mcp-tools`. Log tools (`instance-logs`, `process-logs`, `schedule-logs`) and `task-swamp-runs` return bounded snapshots rather than streams.
 
 ### Operations
 

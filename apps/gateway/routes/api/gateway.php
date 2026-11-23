@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
 use App\Http\Controllers\Api\GatewayReleaseAutomationController;
 use App\Http\Controllers\Api\GatewayReleasesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
+use App\Http\Controllers\Api\OpenApiDocumentController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -19,6 +20,10 @@ Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
 Route::middleware([RequireActiveWireGuardPeer::class])
     ->get('gateway/desired-fleet-state', [GatewayDesiredFleetStatesController::class, 'show'])
     ->name('gateway:desired-fleet-state');
+// Any active WireGuard peer may read the OpenAPI document this release was built with.
+Route::middleware([RequireActiveWireGuardPeer::class])
+    ->get('openapi.json', [OpenApiDocumentController::class, 'show'])
+    ->name('gateway:openapi');
 
 // Gateway releases run in their own systemd unit; deploy and rollback answer 202 with the queued record.
 Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])

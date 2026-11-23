@@ -27,7 +27,11 @@
                 "merge_check": null,
                 "php_version": null,
                 "is_laravel": null,
-                "maintenance": false
+                "maintenance": false,
+                "nested_fleet": false,
+                "task_pr_mode": null,
+                "default_auto_deploy": true,
+                "container_server": "conn"
             }
         ],
         "meta": {
