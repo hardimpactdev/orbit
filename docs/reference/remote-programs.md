@@ -1,6 +1,6 @@
 ---
 title: "Remote programs"
-description: "The remaining program runner and the programs still to port to Swamp."
+description: "The legacy SSH program runner, its remaining admission-time checks, and its protocol."
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
@@ -9,53 +9,40 @@ covers:
 
 # Remote programs
 
-Node management runs through [named Rust agent commands](/reference/node-agent#commands). New Node behavior must not use the program runner. The Tasks workspace scripts that the Gateway sent over SSH are removed ([old paths](/reference/old-paths#the-task-vm-readers)).
+Routine Node actions run through Swamp workflows, the [Gateway engine](/reference/gateway-engine), or [named Rust agent commands](/reference/node-agent#commands). New Node behavior must not use the legacy SSH program runner.
 
-One narrow exception reads Git dependencies of a host checkout Instance at destroy admission. This read must refuse with HTTP 409 before any removal side effect, including the Schedule trigger withdrawal that admission performs. `InstanceDestroyWorktrees::assertAvailable` accepts only the resolved Instance; it builds fixed Python/Git argv from the Instance’s stored checkout path.
+A Gateway [architecture test](/reference/node-agent#commands) enforces this boundary and permits only the narrow admission-time exceptions below.
 
-The read is read-only, has a ten-second outer timeout and three seconds per Git invocation. It reads only the owner’s Git registry and each recorded checkout’s Git common directory, without traversing checkout contents, and runs as the Node’s existing SSH account with its existing identity and pins. It adds no identity or capability. Containers, reserved sources, missing checkout paths and inactive Nodes skip it.
+## Admission exceptions
 
-An unreachable Node or outer SSH timeout refuses with `instance.host_unavailable`; a Git error in the target refuses with `instance.remove_refused`. Other checkout failures use bounded, non-blocking pointer reads inside the same call, without a tree scan or retry. Only confirmed dependents use `instance.worktree_dependents`. The check is admission only; an admitted retry or workflow dispatch never repeats it after removal has started.
+Two synchronous checks still run over the Node's pinned SSH connection at admission so the Gateway can return HTTP 409 before recording side effects.
 
-Transfer uses this same Instance-only reader before admitting a new host-checkout transfer, for the same intact-refusal boundary. It adds no generic execution entry, identity or capability. An admitted transfer retry skips the read.
+**Host-checkout Git dependents (`instance.destroy-git`):** `InstanceDestroyWorktrees::assertAvailable` checks a host-checkout Instance before destroy or transfer admission. It reads only the owner's Git registry and recorded checkout common directories without scanning working trees (10-second outer timeout, 3 seconds per Git call). Containers, reserved sources, missing paths, and retries skip it. Unreachable Nodes refuse with `instance.host_unavailable`, Git errors refuse with `instance.remove_refused`, and confirmed dependents refuse with `instance.worktree_dependents`.
 
-Destroy admission also reads the [replication slots](/reference/instance-removal#replication-slots) of owned PostgreSQL databases, for the same intact-refusal boundary. It is not a program: `InstanceDestroyReplicationSlots` sends the drop's own admin client argv (`sudo -n docker exec -i` with `psql`) over the existing SSH executor to the Database server's Node, with the existing SSH account, identity and pins, and the server's admin password as protected stdin. It reads one view. Each server gets at most 5 seconds and no retry. The read adds no identity or capability.
+**PostgreSQL replication slots:** `InstanceDestroyReplicationSlots` checks owned PostgreSQL databases at destroy admission before Schedule withdrawal. It runs `sudo -n docker exec -i` with `psql` over pinned SSH, passes the admin password on stdin, and times out after 5 seconds per server with no retries.
 
-The follow-up moves these checks and Schedule withdrawal together into Swamp. This fix keeps the synchronous refusal small instead of moving that lifecycle boundary. No other new caller is allowed by this exception.
+## Program files and runtimes
 
-## Program files
+`RemoteProgramCatalog` loads a catalogued program's header (name, libraries, declared outcomes, and timeout) and prepends its runtime library. `SshProgramRunner` supports two runtimes over the Node's pinned SSH connection:
 
-Destroy admission calls the catalogued `instance.destroy-git` program under the narrow exception above. The workspace owner check left with the workspace lease. The runner and its header format remain for the Services-only Operation primitive.
+- **Python (`bootstrap.py` and `lib/program.py`):** Runs Python 3.10+ in isolated mode (`-I`) with source, a NUL byte, and JSON input, writing one JSON result line.
+- **Bash:** Runs under `bash -seu --` with environment setup such as `GitReadEnvironment` for read-only Git checks.
 
-`RemoteProgramCatalog` reads the program header and prepends `lib/program.py`. The header declares the program name, libraries, outcomes, and 30-second timeout. The assembled source and its JSON input travel through `SshProgramRunner` over the Node's pinned SSH connection.
-
-## Python programs
-
-PHP tests run the retained programs in isolated processes. Timeout and descendant-cleanup tests use real deadlines. The authentication test waits for a log marker that proves the checker consumed the first token fragment before sending the rest, so redaction across separate reads needs no injected Python clock or read hook.
-
-The retained runtime needs Python 3.10 or newer. `resources/remote/bootstrap.py` receives source, one NUL byte, and JSON input. It runs under Python's isolated mode, so the working directory and user site packages cannot supply imports. An unsupported Python version exits before running the program.
-
-`lib/program.py` reads one JSON object and writes one result line with `outcome` and `data`. Logs go to standard error. A declared refusal exits zero with its result. An exception or termination signal produces no result.
+Declared refusals exit `0` with their structured result, while logs go to standard error.
 
 ## The runner
 
-The Services-only [Operation primitive](/reference/operations#swamp-execution) can invoke a named program from the same catalog. Each kind must explicitly allow the program and bind its schema-checked input to admitted intent. The primitive takes the target from the Operation, never from the caller. Firewall allows no RemoteProgram.
+`SshProgramRunner` validates the result shape and declared outcome, distinguishing unreachable Nodes, missing or malformed results, undeclared outcomes, timeouts, and cancellation.
 
-`SshProgramRunner` checks the result shape and declared outcome. It distinguishes unreachable Nodes, missing results, malformed results, undeclared outcomes, timeouts, and cancellation. Failures retain a redacted stderr tail of at most 4096 bytes and the exit status when available. Redaction runs before truncation.
-
-The Gateway has an [architecture test](/reference/node-agent#commands) that permits the narrow exceptions above explicitly. It rejects new dependencies on the runner elsewhere.
+Output is capped at 4 MiB. On failure, the runner redacts secrets before retaining the last 4,096 bytes of standard error and the exit status.
 
 ## Still to port
 
-The Gateway still sends these programs from `apps/gateway/resources` to Nodes, outside Swamp. Each moves to a Swamp flow:
+Two sets of files under `apps/gateway/resources` still ship outside Swamp and remain to be moved into native workflows:
 
-- The remote runner files `remote/bootstrap.py` and `remote/lib/program.py`.
-- The CI cache import `tasks/ci-caches.sh`.
-
-`remote/route/publish-dns.py` and `remote/database/valkey.py` have no catalog entry and no caller. Delete them.
-
-PHP tests cover the retained bootstrap and result protocol.
+- `remote/bootstrap.py` and `remote/lib/program.py` (the remote Python runner).
+- `tasks/ci-caches.sh` (the CI cache import script).
 
 ## Why it works this way
 
-Named programs extracted source from PHP strings so lint and direct tests could check it. Compiled [Node commands](/reference/node-agent#typed-commands-over-ssh) now keep Node logic and its tests in Rust.
+Named programs originally moved shell logic out of inline PHP strings so lint and unit tests could cover it. Compiled [Node commands](/reference/node-agent#typed-commands-over-ssh) and Swamp workflows replace that layer with typed contracts and native execution.

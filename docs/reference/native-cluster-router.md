@@ -1,44 +1,47 @@
 ---
-title: Native Cluster Router transitions
-description: "How a Router set or unset runs: the charts' steps, whole rendered files, and the Router the Gateway records from the result."
+title: "Native Cluster Router transitions"
+description: "How a Cluster Router set or unset runs, the rendered files each step writes, and how the Gateway records the resulting Router."
 ---
 
-`cluster.router_set` and `cluster.router_unset` follow their charts, [`cluster/router-set.mmd`](/cli/cluster) and [`cluster/router-unset.mmd`](/cli/cluster). Admission captures the candidate, the old Router assignments and every Cluster Route. The Gateway renders the whole files each step writes: each Node's before, prepared and lasting Caddyfile, and the private DNS records. Every step runs on Node 209 through official `@swamp/ssh` and `@swamp/cfgmgmt` behaviors with the stored host keys. Admission reads no Node account and changes no Router.
+# Native Cluster Router transitions
+
+`cluster.router_set` and `cluster.router_unset` follow [`cluster/router-set`](/cli/cluster/router-set) and [`cluster/router-unset`](/cli/cluster/router-unset). Admission captures the candidate Node, existing Router assignments, and every Cluster Route. It also renders each Node's before, prepared, and lasting Caddyfiles plus private DNS records up front.
 
 ## Set a Router
 
-The candidate serves every Cluster Route before private DNS selects it:
+The candidate serves every Cluster Route before private DNS points at it:
 
-1. `Prepare the Router` installs the router role's account, packages and pinned Caddy package on the candidate.
-2. `Request the certificates` and `Sign the CSRs` make a key on the candidate for each Cluster Route and have the Gateway sign its request.
-3. `Open LAN paths` lets members reach the candidate on 443/tcp and 53/tcp+udp, and the candidate reach each workload's Route ports.
-4. `Install certs, publish` writes each Node's prepared Caddyfile, which serves the Cluster Routes from the candidate beside the old Router.
-5. `Probe the workloads` checks from the candidate over the LAN that every Route's workload answers with a chain the Orbit root trusts.
-6. `Select the Router in DNS` points the Cluster names at the candidate, then waits the DNS grace.
-7. `Retire the old Router` writes the old Router's lasting Caddyfile and removes its Router certificates and the LAN rules only it needed.
+| Order | Step | What it does |
+| --- | --- | --- |
+| 1 | Hold Route Nodes | Locks affected Route Nodes for the transition (`route_hold.busy` on conflict). |
+| 2 | Prepare the Router | Installs the `router` role account, packages, and pinned Caddy package on the candidate. |
+| 3 | Request and sign CSRs | Generates a key on the candidate for each Cluster Route and signs the CSR on the Gateway. |
+| 4 | Open LAN paths | Allows Cluster members to reach `443/tcp` and `53/tcp+udp`, and the candidate to reach workload Route ports. |
+| 5 | Install certs and publish | Writes each Node's prepared Caddyfile so the candidate serves alongside the current Router. |
+| 6 | Probe the workloads | Verifies over LAN from the candidate that each workload answers with a trusted Orbit CA chain. |
+| 7 | Select the Router in DNS | Points Cluster names at the candidate and waits for the DNS grace window. |
+| 8 | Retire the old Router | Writes the old Router's lasting Caddyfile, removes its Router certificates, and drops unused LAN rules. |
+| 9 | Release Route Nodes | Releases the transition holds. |
 
-When a step before the selection fails, `Restore the before state` writes the captured before Caddyfiles, removes the LAN rules the change added and puts the before DNS records back. The old Router keeps serving and the candidate assignment is marked failed. To drop that candidate, run `node:role:remove NODE router`: it withdraws the candidate from its Node ([a stale Router assignment](/cli/node/role-remove#a-stale-router-assignment)). When `Retire the old Router` fails, the candidate already serves: it becomes active and the old assignment stays unfinished for a rerun. A new version of a certificate scope that a site still names installs only in the retire step.
+If a step before DNS selection fails, Orbit restores the before Caddyfiles, added LAN rules, and prior DNS records. The current Router keeps serving. To clean up a failed candidate, run `orbit node:role:remove <node> router` ([stale Router assignment](/cli/node/role-remove#a-stale-router-assignment)). If retirement fails after DNS selection, the candidate stays active and the old assignment remains unfinished for a rerun.
 
 ## Unset a Router
 
-`Withdraw the Router sites` writes each Router Node's Caddyfile without the Router sites and removes their certificates. `Remove the LAN rules` removes the Router tuples no Route needs. `Check the rules are gone` runs the `check` of the same behaviors on each Node and is the end check. It never removes Node baseline WireGuard rules.
-
-When no Node holds Router state, admission ends the unset at once with no run (R1): it deletes the Router assignment and records the Operation as succeeded.
+When no Node holds Router state, admission deletes the assignment and finishes immediately. Otherwise Orbit withdraws Router sites and certificates from each Router Node, removes unused Router LAN rules (keeping baseline WireGuard rules), and verifies those rules are gone.
 
 | Error code | Step |
 | --- | --- |
-| `cluster.router_prepare_failed` | `Prepare the Router` |
-| `app-dev.certificate_request_failed` | `Request the certificates` |
-| `app-dev.certificate_sign_failed` | `Sign the CSRs` |
-| `route.lan_firewall_failed` | `Open LAN paths`, `Remove the LAN rules` |
-| `route.publish_failed` | `Install certs, publish` |
-| `route.probe_failed` | `Probe the workloads` |
-| `private_dns.publication_failed` | `Select the Router in DNS` |
-| `cluster.router_retire_failed` | `Retire the old Router` |
-| `route.withdraw_failed` | `Withdraw the Router sites` |
-| `route.removal_check_failed` | `Check the rules are gone` |
-| `cluster.router_failed` | A failure outside these steps |
+| `route_hold.busy` | Hold Route Nodes |
+| `cluster.router_prepare_failed` | Prepare the Router |
+| `app-dev.certificate_request_failed` | Request the certificates |
+| `app-dev.certificate_sign_failed` | Sign the CSRs |
+| `route.lan_firewall_failed` | Open LAN paths, Remove the LAN rules |
+| `route.publish_failed` | Install certs, publish |
+| `route.probe_failed` | Probe the workloads |
+| `private_dns.publication_failed` | Select the Router in DNS |
+| `cluster.router_retire_failed` | Retire the old Router |
+| `route.withdraw_failed` | Withdraw the Router sites |
+| `route.removal_check_failed` | Check the rules are gone |
+| `cluster.router_failed` | Any other failure |
 
-The Gateway reads the outcome from Swamp's run data, never from step output. It changes only the admitted Router assignment IDs and leaves unrelated roles intact.
-
-Native Router admission captures ordered Caddy candidate `urls` during the [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror). The shared native fetch consumer requires candidates only after the Gateway producer release is live. A transport failure may try upstream; a checksum mismatch stops before publication.
+The Gateway updates only the admitted Router assignment IDs from the terminal run result and leaves unrelated roles intact.

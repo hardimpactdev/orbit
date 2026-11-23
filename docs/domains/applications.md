@@ -1,6 +1,6 @@
 ---
 title: "Applications"
-description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
+description: "How a Project becomes an Instance on a Node: create a development container, configure its runtime and database, deploy to production, and remove it."
 covers:
   - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/DatabaseClone/**
@@ -13,52 +13,56 @@ covers:
 
 # Applications
 
-A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. Every new development Instance runs in an [Instance container](/reference/development-containers). Existing checkout and worktree Instances keep working until they migrate. Production clone remains the sole new-checkout exception: an Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
+A [Project](/reference/projects) tracks one Git repository and its defaults. An Instance is a running copy of that Project on a Node. Every new development Instance runs in an [Instance container](/reference/development-containers), while existing host checkouts keep working until migrated. Production Instances run on `app-prod` Nodes with release directories, created through [cloning](/reference/instance-cloning). The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and PHP-FPM by default.
 
-This page follows an Instance from creation to removal. Each step links to the page that owns its details.
+Each stage of an Instance's lifecycle has a dedicated command:
 
-| Step | Command | Details |
+| Stage | Command | Details |
 | --- | --- | --- |
 | Record the repository | `project:create` | [Projects](/reference/projects) |
-| Create a development checkout | `instance:create` | [Create a development Instance](#create-a-development-instance) |
-| Adopt an existing checkout | `instance:register` | [Register an existing checkout](#register-an-existing-checkout) |
-| Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
-| Clone development source | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
-| Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
+| Create a development container | `instance:create` | [Create a development Instance](#create-a-development-instance) |
+| Retry an existing checkout registration | `instance:register` | [Register an existing checkout](#register-an-existing-checkout) |
+| Run setup commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
+| Clone to development or production | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
+| Deploy a release | `instance:deploy` | [Production release layout](/reference/deployments) |
 | Record a renamed branch | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
-| Move a checkout into a container | `instance:migrate` | [`instance:migrate`](/cli/instance/migrate) |
+| Move a host checkout into a container | `instance:migrate` | [`instance:migrate`](/cli/instance/migrate) |
 | Sleep or wake a container | `instance:sleep`, `instance:wake` | [Sleep and wake](/reference/development-containers#sleep-and-wake) |
-| Bring back a failed host removal | `instance:restore` | [`instance:restore`](/cli/instance/restore) |
+| Restore a failed host removal | `instance:restore` | [`instance:restore`](/cli/instance/restore) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
-| Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
-| Forget a host checkout and keep its folder | `instance:unregister` | [Unregister a host checkout](/reference/instance-removal#unregister-a-host-checkout) |
+| Remove an Instance | `instance:destroy` | [Instance removal](/reference/instance-removal) |
+| Forget a host checkout without deleting files | `instance:unregister` | [Unregister a host checkout](/reference/instance-removal#unregister-a-host-checkout) |
 
 ## Create a development Instance
 
-Select an active Linux Node with an active `app-dev` role. Every new create makes an Instance container; see [Container creation](/cli/instance/create#container-creation). The name `default` is reserved for the Project's default development source. A name that equals the Project `default_branch`, such as `main`, also means `default`: Orbit creates the `default` Instance, exactly as if you passed `default`. See [A default-branch name means default](#a-default-branch-name-means-default).
+Pick an active Linux Node with the `app-dev` role. Create the Project's `default` Instance first; every other development container on that Node clones from it. Passing the Project's `default_branch` as the name (such as `main`) automatically maps to `default` (see [A default-branch name means default](#a-default-branch-name-means-default)).
 
 ```bash
 orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release
 ```
 
-The Gateway returns HTTP 202 with one native Operation. The create root serves web-serving Projects with their Route, creates its own database on a `--database-server`, and copies the default Instance's [database clone](#database-clone). At admission the Gateway renders the Instance's `.env` from the [Project environment template](#project-environment-template) and stores it. Swamp prepares the source, writes that `.env`, runs setup and starts the [development Processes](/reference/processes-and-schedules#project-definitions) as steps of that root, and returns the checked-out commit. It runs local commands as the recorded Node account. The frozen agent performs no action.
+Orbit returns HTTP 202 with an Operation. During creation, Orbit reserves the Route and ports, renders `.env` from the [Project environment template](#project-environment-template), prepares the source, sets up or clones the database, runs the Project's setup steps, and starts its [development Processes](/reference/processes-and-schedules#project-definitions).
 
-Swamp clones the repository to `<apps-root>/<project-slug>/<name>` using the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from recorded Node settings. The branch is a separate choice.
+Container clones finish the primary `instance.create` Operation as soon as the workspace and agent thread are ready, and return `completion_operation_id` for the remaining background steps. Pass `--wait-active` in the CLI to wait for both Operations to finish.
+
+### Branch selection
+
+The branch is chosen independently of the Instance name:
 
 | Input | Selected branch |
 | --- | --- |
-| `default`, no `--branch` | The Project `default_branch`. |
-| Another name, no `--branch` | The matching origin branch, otherwise the existing local branch, otherwise a new branch with that name from the fetched `default_branch` commit. |
-| Any name, `--branch=<branch>` | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. The branch need not equal the Instance name. |
+| `default`, no `--branch` | The Project's `default_branch`. |
+| Another name, no `--branch` | Matching origin branch, otherwise existing local branch, otherwise a new branch with that name from `default_branch`. |
+| Any name with `--branch=<branch>` | Requested origin branch, otherwise existing local branch, otherwise a new branch from `default_branch`. |
 
-For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed fails the create; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
+For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates `t3code/1a2b3c4d` from the fetched default commit if it does not exist yet. Existing local branches are never reset, and Orbit never falls back to another branch if `default_branch` is missing. Invalid branch names fail with `validation.failed` before anything changes.
 
-Follow the returned Operation with `operation:show`, using `poll_after_seconds` and `after_sequence`, until it succeeds, fails, or is cancelled. After success, fetch its captured `target_id` with `instance:show`. That Instance returns `selected_branch`, `branch_override`, and the starting commit. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch.
+When Orbit converts a default-branch name to `default`, `--branch` keeps its meaning: `instance:create <project> <node> main --branch=release` creates `default` pinned to `release`. The Operation result includes `name_converted_from` when a conversion occurred, and `instance:show` reports `selected_branch`, `branch_override` (null when inherited), and the starting commit.
 
-When Orbit converts a name, it changes only the name. `--branch` keeps its meaning: without it, the `default` Instance inherits the default branch; with it, the value is the `branch_override`, as it is for `default --branch=<branch>`. So `instance:create <project> <node> main --branch=release` creates the `default` Instance pinned to `release`. The final Operation result carries `name_converted_from`: the requested name when Orbit converted it, otherwise null. A retry with the same name converts again and reports it again.
+### Tracking progress and retries
 
-The admission response contains an Operation, as in this abbreviated example:
+Follow the returned Operation with `operation:show` using `poll_after_seconds` and `after_sequence`:
 
 ```json
 {
@@ -73,110 +77,99 @@ The admission response contains an Operation, as in this abbreviated example:
 }
 ```
 
-Creation records `reserved`, `source_resolved`, and then `active`. A native failure retains the Instance and owned source, records `failed_step` and `error_code`, and leaves `first_setup_pending` set. It does not admit cleanup children. An identical create can retry after the failed root is terminal.
+Creation moves through `reserved`, `source_resolved`, and `active`. If a step fails, Orbit keeps the Instance and source, records `failed_step` and `error_code`, and leaves `first_setup_pending` set so you can fix the issue and retry the exact same `instance:create` command. Changing the Project, Node, root, or branch override on a retry returns `instance.placement_conflict`. Use [Instance removal](/reference/instance-removal) to discard an abandoned reservation.
 
-A fresh reservation records a unique source preparation ID before remote work. Preparation refuses an existing destination, creates the directory exclusively, and records the ID with its device and inode in Git metadata after cloning.
+After activation, you can commit and move `HEAD`, while keeping the recorded branch checked out. Update the recorded branch with [`instance:rename`](#record-a-renamed-branch) after renaming it in Git; [removal](/reference/instance-removal#native-order) refuses a mismatched branch with `instance.source_branch_mismatch` (even with `--force`), and [cloning](/reference/instance-cloning#candidate-rules) refuses it with `instance.clone_candidate_branch_invalid`.
 
-Source preparation and retry require the saved preparation identity when the destination exists. A lost reply can reuse that owned source. An unconfirmed directory is refused rather than adopted. A retry must keep the same Project, Node, root, and branch override; a change returns `instance.placement_conflict`. Resolved source identity is retained across a setup retry. Use [Instance removal](/reference/instance-removal) to remove an abandoned reservation.
+### Refusal codes
 
-After activation, you can commit and move `HEAD`. The starting commit stays as it is. The recorded branch changes only through [recording a renamed branch](#record-a-renamed-branch), or when a Project default-branch update switches a `default` Instance without `branch_override`. Keep the recorded branch checked out. [Removal](/reference/instance-removal#native-order) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
-
-
-The Gateway refuses these requests before it changes anything:
-
-| Code | Cause |
-| --- | --- |
-| `project.source_defaults_incomplete` | The Project has no valid default branch or root. |
-| `instance.node_inactive` | The Node is not an active Linux Node. |
-| `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
-| `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
-| `instance.default_path_occupied` | The name is `default`, and its path overlaps another managed Instance. Unmanaged paths are checked by Swamp after admission. |
-| `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
-| `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
-
-### Dependency copy
-
-New Instances start from the checkout of `default` on the same Node, at the last commit that [deployed](/reference/deployments#development-defaults) there. Orbit creates a linked worktree at that commit. The Instances API exposes `seed_path` and `seed_commit` on `default`, so external callers can create their own linked worktrees at the same commit before registration.
-
-The Project's [setup steps](/reference/instance-setup) own dependency copying. They receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and can reflink all their dependency and cache folders, including nested monorepo projects. Copy only disposable folders that do not hold Instance-specific configuration, absolute links or runtime state. Do not copy `.env`, logs, databases, `public/hot` or configuration caches. A deployment of the default can change these folders while setup copies them, so keep the locked installs after the copy. A linked worktree shares Git history, never the seed's working files.
-
-Use `cp -a --reflink=auto` for an ordinary-copy fallback on filesystems without block cloning, or `--reflink=always` when a Project requires shared blocks. When `default` has not deployed yet, Orbit creates an independent clone; the seed variables are empty and setup installs from lock files. Project setup steps replace the automatic copy of root `vendor` and `node_modules`.
-
-### Database clone
-
-When the Project has an Instance named `default` with a database attached under prefix `DB`, every other new development Instance gets its own copy of that database. The copy has the same kind as the source. Orbit makes it after the source is ready and before the setup steps, so a setup step such as a migration runs against the copy.
-
-| Source | Copy |
-| --- | --- |
-| MySQL on a [Database server](/reference/database-servers) | A database named `<project>_<instance>` on the same server, owned by the Instance's user and filled with `mysqldump --single-transaction` piped into `mysql` inside the server's container, plus the test database `<project>_<instance>_test`. |
-| SQLite file inside the `default` checkout | A copy at the same relative path in the new checkout, also on another Node. Tests use `:memory:`. |
-
-Orbit copies a snapshot made with SQLite's backup API, on the same Node and from another Node, with the same steps as [`instance:clone`](/cli/instance/clone). A file already at the target path is kept.
-
-Native `instance:create` runs the copy as steps of its run, after `.env` and before setup. A MySQL copy first creates the owner and databases with the `database:create` child, then pipes the dump inside the server's container.
-
-Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`. The Gateway records Swamp's result and the attachment.
-
-When the Instance has no stored configuration yet and its [application directory](/reference/projects#application-directory) has a `.env`, Orbit first [imports](/reference/environment-variables#import) that file, so synchronization keeps its other keys. Without a `.env`, synchronization writes only the stored keys.
-
-The clone returns these codes.
+Orbit refuses invalid create requests before changing anything:
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.database_clone_unsupported` | 422 | The source is not MySQL on a Database server or a SQLite file inside the `default` checkout. Nothing changes. |
-| `instance.database_clone_failed` | 502 | The copy failed. Orbit drops the partial copy and removes the Instance as a failed setup does. |
+| `project.source_defaults_incomplete` | 409 | The Project has no valid default branch or root. |
+| `operation.kind_unavailable` | 503 | The Project uses `gh_cli` source access, which `instance:create` does not support. |
+| `instance.node_inactive` | 409 | The Node is not an active Linux Node. |
+| `instance.node_not_app_dev` | 409 | The Node has no active `app-dev` role. |
+| `instance.candidate_required` | 409 | The Node has `app-prod`; use [`instance:clone`](/reference/instance-cloning) instead. |
+| `instance.placement_unavailable` | 409 | The Node does not hold exactly one active `app-dev` or `app-prod` role. |
+| `instance.default_missing` | 409 | A non-default container create found no active `default` container with a seed snapshot on that Node. |
+| `instance.container_required` | 409 | The `default` Instance on that Node is a host checkout; migrate it to a container first. |
+| `instance.default_seed_in_flight` | 409 | A nested-fleet `default` container is currently retaking its seed snapshot. |
+| `instance.path_taken` | 409 | Another managed Instance already uses the target path. |
+| `instance.default_path_occupied` | 409 | The `default` path overlaps another managed Instance. |
+| `instance.removal_conflict` | 409 | A retry arrived while the Instance is being removed. |
+| `instance.route_unserved` | 422 | `--domain` was passed for a Project type that does not serve web traffic. |
+| `route.domain_invalid` | 422 | The requested domain is invalid or longer than 64 characters. |
 
-No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
+### Dependency copy
 
-Swamp records each finished native step. The Gateway marks the connection complete after Swamp reports success. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy. Only a create that has not finished its [first setup](/reference/instance-setup#run-setup) resumes this way. A retry keeps the Instance when the copy or a setup step fails again; only the request that activated the Instance removes it.
+Host-checkout worktrees start from the `default` checkout on the same Node at its last [deployed commit](/reference/deployments#development-defaults). The API exposes `seed_path` and `seed_commit` on `default`, and Orbit passes `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` to Project [setup steps](/reference/instance-setup).
 
-The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+Setup steps can reflink disposable dependency and cache directories (such as `vendor` or `node_modules`) using `cp -a --reflink=auto` (or `--reflink=always` when shared blocks are required), followed by locked installs. Never copy `.env`, logs, databases, `public/hot`, or configuration caches. If `default` has not deployed yet, the seed variables are empty and setup installs from lockfiles.
+
+### Database clone
+
+When a Project's `default` Instance has a database attached under prefix `DB`, every new development Instance gets its own copy before setup steps run. The copy keeps the same engine as the source:
+
+| Source | Copy behavior |
+| --- | --- |
+| MySQL on a [Database server](/reference/database-servers) | Creates `<project>_<instance>`, its `_test` database, and an Instance user on the same server, then streams `mysqldump --single-transaction` into it. |
+| PostgreSQL on a [Database server](/reference/database-servers) | Creates a template-cloned database and test database on the same server for container clones. |
+| SQLite file inside `default` | Copies a SQLite backup snapshot at the same relative path (or inherits it via ZFS on container clones). Tests use `:memory:`. |
+| Valkey on a [Database server](/reference/database-servers) | Creates a dedicated per-clone Valkey user on container clones. More than one Valkey target is refused. |
+
+Shared database attachments (`shared` mode) are inherited directly rather than cloned. Orbit records each owned copy under connection slug `<project>-<instance>`, attaches it under `DB`, and synchronizes `.env` and `.env.testing`. If the Instance has no stored environment yet and an existing `.env` is present in its [application directory](/reference/projects#application-directory), Orbit [imports](/reference/environment-variables#import) it first so existing keys stay intact.
+
+The clone copy holds the full data of `default`, including any personal data. A Project without a `default` Instance, or whose `default` has no `DB` attachment, skips cloning.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_clone_unsupported` | 422 | The source database kind cannot be cloned, more than one Valkey target is attached, or `--database-server` conflicts with `default`'s server on a container clone. |
+| `instance.database_slug_taken` | 409 | The derived SQLite connection slug is already in use. |
+| `instance.database_clone_failed` | 502 | The copy failed. Orbit drops the partial copy and removes the Instance on initial create. |
+
+If a failed removal cannot finish, the error reports `cleanup: incomplete` and names the `instance:destroy` command to run. No teardown step runs because setup has not started yet. On a retry after an interrupted initial create, Orbit finishes any incomplete copy and runs setup without deleting the Instance if the retry fails again.
 
 ### Database on a server
 
-An Instance that gets no copy, such as the `default` Instance itself, can get an empty database during create. Name a [Database server](/reference/database-servers) with `--database-server` (API field `database_server`).
+An Instance that does not clone from `default` (such as `default` itself) can create an empty database during `instance:create` by passing `--database-server` (API field `database_server`). A container clone accepts `--database-server` only when it names the `default` Instance's Database server slug; otherwise admission refuses with HTTP `422` `instance.database_clone_unsupported`. The caller needs access grants to both the Instance's Node and the Gateway.
 
 ```bash
 orbit instance:create 12 3 default --database-server=beast-mysql
 ```
 
-After the source is ready and before the setup steps, Orbit does what [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server) does. It creates the database `<project>_<instance>`, its test database, and the Instance's user on the server, with the connection slug `<project>-<instance>`. It records the Instance as the owner and attaches the database under prefix `DB`. The `.env` and `.env.testing` that the Gateway renders name it. A setup step such as a migration finds the database on the first create.
+After preparing source and before running setup steps, Orbit creates `<project>_<instance>`, its `_test` database, and an Instance user on that [Database server](/reference/database-servers), attaches it under `DB`, and renders `.env` and `.env.testing`.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `instance.database_server_conflict` | 422 | The new Instance gets a [copy](#database-clone) of the `default` database. Nothing changes. |
-| `instance.database_server_existing` | 409 | The Instance exists and finished its first setup. The message names the `database:create --instance` and `instance:setup` commands to run. Nothing changes. |
-| `database.server_missing` | 404 | No Database server has that slug. Nothing changes. |
-| `database.server_inactive` | 409 | The Database server is not active. Nothing changes. |
-| `database.driver_unsupported` | 422 | The Database server is a Valkey server, which holds no Instance databases. Nothing changes. |
-| `instance.database_create_failed` | 502 | Orbit could not finish the database. |
+| `instance.database_clone_unsupported` | 422 | A container clone passed `--database-server` when `default` has no server database, or named a different server than `default`'s. |
+| `instance.database_server_existing` | 409 | The Instance already finished its first setup; use `database:create --instance` and `instance:setup` instead. |
+| `database.server_missing` | 404 | No Database server matches that slug. |
+| `database.server_inactive` | 409 | The Database server is not active. |
+| `database.driver_unsupported` | 422 | The target is a Valkey server, which does not hold Instance databases. |
+| `instance.database_create_failed` | 502 | Orbit could not finish creating the database. |
 
-The other `database:create` codes, such as `database.name_conflict` and `database.slug_conflict`, pass through. On the request that creates the Instance, every failure after the check removes the Instance and the database it owns, as a failed copy does, and no setup step runs. When a create stops before the database exists, an identical `instance:create` creates it and then runs the setup steps. That retry never removes the Instance: when the database or a setup step fails, the Instance remains and the error says so.
-
-`--database-server` applies only to an Instance that `instance:create` is still creating. For an Instance that finished its first setup, Orbit refuses the option with `instance.database_server_existing` and changes nothing, even when that Instance's last `instance:setup` failed. Give it a database with [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server), then run `instance:setup`. A repeat of a finished create whose Instance already owns a database on that server changes nothing and returns status 200. When that Instance's last `instance:setup` failed, the repeat returns `instance.setup_step_failed` instead.
-
-The caller needs an [access grant](/cli/node) to the Instance's Node and to the Gateway, the same access `database:create` needs.
+Standard `database:create` errors (such as `database.name_conflict` and `database.slug_conflict`) also pass through. On initial create, any failure after admission removes the Instance and owned database; on a retry of an interrupted create, Orbit leaves the Instance in place. Repeating a finished create whose Instance already owns a database on that server returns HTTP 200 without changes (or `instance.setup_step_failed` if its last `instance:setup` failed).
 
 ## Record a renamed branch
 
-Rename the Git branch in the checkout first, then tell Orbit what is already checked out:
+Rename the branch in Git first, then tell Orbit so its records match:
 
 ```bash
 git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. The Gateway answers at once with the Instance; there is no task to follow. Only an active development checkout or linked worktree is eligible, not a production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API endpoint is `POST /api/v1/instances/{instance}/rename`. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. It applies only to active development Instances and returns immediately with the updated Instance, without starting an Operation. The Instance ID, name, path, layout, starting commit, and Node stay unchanged.
 
-The Gateway checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout, which arrives within seconds of a change. Symbolic `HEAD` must already name the supplied branch, and the checkout's top level and origin must still match, or the request refuses with `instance.branch_not_checked_out`. While the agent is silent, the same code says the Gateway can't verify. Dirty or unpublished source is allowed.
+Orbit verifies the branch against the [Node agent's checkout report](/reference/node-agent#checkouts). Symbolic `HEAD` must already point to the supplied branch and the checkout root and origin must match, or Orbit refuses with `instance.branch_not_checked_out` (including when the Node agent has not reported recently). Dirty or unpushed commits are allowed.
 
-A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch preserves the existing override. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
-
-A request containing `domain` returns `operation.kind_unavailable`. Native Route replacement is not available through rename. Repeating a request is safe: an already recorded branch writes nothing. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance/rename) lists the inputs, output, and refusal codes.
+Updating the branch sets both `selected_branch` and `branch_override`, pinning even a `default` Instance to that branch. Passing the already recorded branch keeps the existing override and makes no writes. Passing `domain` returns `operation.kind_unavailable`, and a concurrent lifecycle operation returns `instance.lifecycle_busy`. See [`instance:rename`](/cli/instance/rename) for full details.
 
 ## Register an existing checkout
 
-New host registration is refused with `instance.container_required` (409), before checkout observation or records. Use [`instance:create`](/cli/instance/create) for a new container. The behavior below applies only to retrying an existing registered checkout on its app-dev Node. Supply its Project ID and original checkout at `<apps-root>/<project-slug>/<name>`.
+New host registrations are refused with `instance.container_required` (409). Use [`instance:create`](/cli/instance/create) to create a container instead. The behavior below applies only to retrying an existing registered host checkout at `<apps-root>/<project-slug>/<name>` on its `app-dev` Node.
 
 ```bash
 cd /fast/apps/acme/feature
@@ -184,164 +177,113 @@ orbit instance:register --project=12 --name=feature --yes
 orbit instance:register --project=12 --setup --domain=feature.acme.test --yes
 ```
 
-The Gateway checks the [Node agent's fresh report](/reference/node-agent#checkouts) of the checkout's owner, path, shared Git directory, origin, branch and application metadata. It never uses the CLI's inspection as proof. A renamed worktree branch is recorded from that report. Registering preserves Git HEAD, the index, dirty files and the user's environment file.
+Orbit verifies the checkout's owner, path, Git directory, origin, branch, and framework metadata from the [Node agent's checkout report](/reference/node-agent#checkouts), keeping Git `HEAD`, dirty files, and your `.env` intact. Without `--setup`, `--domain`, or a world-readable `.env`, Orbit records the active Instance immediately (HTTP 201). With any of those options, Orbit returns HTTP 202 and runs an `instance.register` Operation (see [`instance:register`](/cli/instance/register)).
 
-With no opt-in work and a private or absent `.env`, the Gateway records an active Instance at once and returns HTTP 201. No Operation or Swamp run starts. The observed PHP version and Laravel marker make the Instance usable by later commands.
-
-`--setup` runs the Project setup steps and starts its development Processes. `--domain` creates a Route in the Node TLD through the `route:create` child workflow. A public `.env` is protected as `0640 orbit-env` without reading its contents. These optional changes share one `instance.register` Operation; HTTP 202 returns its id to follow. The [`instance:register` chart](/cli/instance/register) names its guarded steps. Setup follows the Project commands; Route creation may update `APP_URL`, while the rest of the user's `.env` stays in place.
-
-A missing or stale report refuses with `instance.source_invalid`. Mismatched Git layout, repository or owner refuses with its specific source error before reservation. A Node step failure keeps the checkout and marks the Instance failed. Fix the cause and repeat the request; completed work stays in place.
-
-Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
-
-The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override. Registration creates no Project: use [`project:create`](/cli/project/create) first. Project inference and relocation remain unavailable.
+A missing or stale checkout report returns `instance.source_invalid`. Registration transfers source ownership to Orbit so a later `instance:destroy` deletes the checkout; to release a host checkout without deleting its files, use [`instance:unregister`](/reference/instance-removal#unregister-a-host-checkout). The CLI requires confirmation (`--yes` in noninteractive or JSON mode). Create the Project with [`project:create`](/cli/project/create) first; names default to the directory name (lowercase DNS labels up to 63 characters), and a name matching the Project's default branch becomes `default`.
 
 ## Provision the application endpoint
 
-Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
+Before preparing source, Orbit assigns a [Vite port](/reference/assigned-vite-ports) and [SSR port](/reference/assigned-ssr-ports) and reserves the Route domain (`--domain` if given, otherwise generated from the Cluster or Node TLD; see [Routes](/reference/routes#select-a-domain-and-scope)). Only `laravel-app` and `symfony-app` Projects receive a Route automatically.
 
-The PHP version and whether the application is Laravel follow the [Project source facts](/reference/projects#project-types). The native root checks out the admitted branch, writes the rendered `.env`, runs the Project setup list, and then creates and starts the Project's development Processes. The Instance becomes active only after every step succeeds; a failed step keeps the Instance and marks it failed.
-
-An identical create for an active Instance with completed first setup skips source and setup effects. If a later explicit setup failed, create returns `instance.setup_step_failed`; use `instance:setup`. A failed initial setup keeps the source and resolved identity for an identical create retry. There is no automatic teardown or removal child.
+The PHP version and framework type come from the Project's source facts. An Instance becomes `active` only after source preparation, `.env` rendering, setup steps, and development Processes all succeed. Repeating an identical create on an already active Instance skips source and setup work (or returns `instance.setup_step_failed` if a later manual `instance:setup` failed).
 
 ## Laravel application URL
 
-For a routed source, Orbit inspects the [application directory](/reference/projects#application-directory) derived from the effective web root. A nested Laravel app uses its own `composer.json` and `artisan`, not the repository-root files. Registration does not discover that root for you.
+For web-serving Projects, Orbit inspects the [application directory](/reference/projects#application-directory) derived from the effective web root without running Composer, Artisan, or application code. For non-package Projects, Orbit recognizes Laravel when the directory has a regular `artisan` file and a `composer.json` declaring `laravel/framework` once in `require` or `require-dev`. A `composer.json` without those markers is plain PHP; no `composer.json` means no PHP runtime. `laravel-package` Projects are exempt from requiring `artisan`.
 
-For Project types other than `laravel-package`, Orbit treats a source as Laravel when it has a regular `artisan` file and a `composer.json` that declares `laravel/framework` exactly once, in `require` or `require-dev`. A source with a `composer.json` and neither marker is plain PHP. A source without `composer.json` has no PHP. A `laravel-package` Project is exempt from this application-marker validation: it needs no `artisan`, and a `laravel/framework` declaration alone is valid.
-
-| Source | Code |
+| Problem | Code |
 | --- | --- |
-| For a non-package Project: `artisan` without the declaration, the declaration without `artisan`, the declaration in both sections, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
-| `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
-| `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
+| Non-package Project has `artisan` without `laravel/framework`, `laravel/framework` without `artisan`, duplicate declarations, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
+| `composer.json` is missing while `artisan` exists, or `composer.json` is a symlink, non-regular file, or owned by another user | `app-dev.source_metadata_unsafe` |
+| `composer.json` is invalid JSON, or no supported PHP version satisfies its constraint | `app-dev.php_version_unsupported` |
 
-Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies. The [Node agent](/reference/node-agent#commands) reads them as the managed user with `instance.inspect-development-profile`, and writes `APP_URL` with `instance.write-development-url`.
+For Laravel Instances, Orbit writes `APP_URL=https://<route-domain>` atomically:
+
+- If `.env` exists, Orbit updates or adds `APP_URL` and fills an empty `APP_KEY`, leaving all other lines untouched.
+- If `.env` is missing, Orbit creates it from `.env.example` (or empty) with `APP_URL`, a generated or stored `APP_KEY`, and `APP_NAME`.
+- If `bootstrap/cache/config.php` exists, Orbit updates its cached `url` entry.
+
+A symlinked file or cache directory, duplicate `APP_URL` lines, or an unreadable cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
 
 ### Symfony applications
 
-A `symfony-app` Project checks `bin/console` instead of `artisan`. Its source is valid when it has a regular `bin/console` file and a `composer.json` that declares `symfony/framework-bundle` in `require`. A `composer.json` with neither marker is plain PHP. `bin/console` without the declaration, the declaration without `bin/console`, or a symlinked `bin/console` returns `app-dev.symfony_source_invalid`. `bin/console` without `composer.json` returns `app-dev.source_metadata_unsafe`.
-
-A Symfony source is never Laravel. Orbit does not write `APP_URL` for it and does not force `APP_URL` in its stored environment. Set the values the application needs with [`env:update`](/reference/environment-variables).
-
-For a Laravel source, Orbit writes `APP_URL=https://<route-domain>`:
-
-- When `.env` exists, Orbit replaces the one `APP_URL` line or adds it. It also fills an `APP_KEY` line that has an empty value. Every other byte stays the same.
-- When `.env` is missing, Orbit creates it from `.env.example`, or empty, and adds `APP_URL`. The new file also gets a usable `APP_KEY` and the Project's `APP_NAME`.
-- When `bootstrap/cache/config.php` exists, Orbit replaces its one cached `url` value.
-
-Laravel cannot boot without `APP_KEY`, and a fresh `.env.example` often has an empty key and `APP_NAME=Laravel`. So a new `.env` takes the Instance's non-empty [stored](/reference/environment-variables) `APP_KEY`. Without one, it keeps a non-empty template key or gets a random 32-byte key with the `base64:` prefix. It takes the Instance's stored `APP_NAME` too. Without one, a missing, empty, or `Laravel` name becomes the Project name. An existing `.env` keeps its name and any non-empty key. The key reaches the Node as protected input, never as a command argument. Orbit leaves duplicate `APP_KEY` or `APP_NAME` lines as they are.
-
-A symlinked file or cache directory, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. Orbit validates both files and the cache directories before it changes either file or its permissions. Each file replacement is atomic. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
+A `symfony-app` Project checks for a regular `bin/console` file and `symfony/framework-bundle` in `composer.json` `require`. Missing pairs or a symlinked `bin/console` return `app-dev.symfony_source_invalid`, and `bin/console` without `composer.json` returns `app-dev.source_metadata_unsafe`. Orbit never writes `APP_URL` for Symfony Instances; manage their environment with [`env:update`](/reference/environment-variables).
 
 ## Project environment template
 
-The Gateway keeps one environment template per Project. It builds the template from the committed `.env.example` of the Project's application directory on the default branch. It records the template when the Project is added or its source changes, with any source access, and the template then follows each new default-branch head. A container default also captures the template from its [deployed commit](/reference/deployments#container-source-facts).
+Orbit maintains one environment template per Project from the committed `.env.example` in the application directory on the default branch. It captures the template on project creation, source changes, and container default deployments ([container source facts](/reference/deployments#container-source-facts)).
 
-### When the Gateway checks
+For GitHub App Projects with an Instance checked by the automatic deploy policy, Orbit checks `.env.example` whenever a new default-branch head appears, downloading the file only when its Git blob SHA changes. A refresh failure never blocks head checks and leaves the existing template untouched.
 
-The [automatic deploy policy](/reference/deployments#swamp-policy-contracts) reads `instance:deployment-source:head` on a schedule. The Gateway checks the template on each such read of the default branch. Orbit adds no webhook and no other poller.
+When `.env.example` changes, the template updates by these rules:
 
-A Project needs GitHub App source access. It also needs an Instance whose head the policy reads.
+- New keys take their example values.
+- Unedited keys matching the previous example take the new example values.
+- Values edited by an operator stay unchanged.
+- Keys removed from `.env.example` stay in the template marked removed.
 
-### What a check costs
-
-A head that the Gateway already checked costs nothing. A new head costs one GitHub read: the git blob SHA of `.env.example`. The Gateway downloads the file only when the blob changed.
-
-### How the template changes
-
-A changed `.env.example` updates the template by these rules:
-
-- A new key takes its example value.
-- A key with its old example value takes the new example value.
-- An edited value stays. A value that differs from its example is an Orbit or operator edit.
-- A key that `.env.example` dropped stays in the template, marked removed.
-- The template records the commit and blob that it now matches.
-
-Existing Instances keep their stored environment. Nothing marks them. The new template applies at the next `instance:create`, which renders the template, the Instance's stored values, `APP_NAME`, `APP_ENV`, `APP_DEBUG` and, for a Laravel application, a new `APP_KEY`. A retry keeps the values the first admission stored.
-
-A refresh failure never fails the head read. An invalid `.env.example` leaves the template unchanged until a later head.
+Existing Instances keep their current stored environment. New Instances created with `instance:create` render from the latest template combined with `APP_NAME`, `APP_ENV`, `APP_DEBUG`, and (for Laravel) a fresh `APP_KEY`.
 
 ## Production Instances
 
-`instance:create` refuses an `app-prod` Node with `instance.candidate_required`, including a repeat for a production Instance that already exists. A production Instance always starts as a [clone](/reference/instance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.
-
-A Project can have one production Instance per `app-prod` Node. Each production Instance has its own Unix user, home, and [PHP-FPM service](/reference/php-runtime#production-runtime).
+`instance:create` refuses `app-prod` Nodes with `instance.candidate_required`. Always create a production Instance by [cloning](/reference/instance-cloning) an existing development or production Instance, then run its first [deployment](/reference/deployments). Each Project can have at most one production Instance per `app-prod` Node, with its own Unix user, home directory, and [PHP-FPM service](/reference/php-runtime#production-runtime).
 
 ## Set the web root
 
-An Instance inherits the Project root. `--root` stores a relative override for one Instance. The root is a relative path of at most 255 bytes. Each segment uses only `A-Z`, `a-z`, `0-9`, `.`, `_`, and `-`, and is not `.` or `..`. A leading or trailing `/` or an empty segment is refused. A package Project also accepts `.`, the repository root. On a production Instance, the root resolves inside the selected release, through `<home>/current`.
+An Instance inherits its Project's root unless you pass `--root` to store a relative override (at most 255 bytes, using only `A-Z`, `a-z`, `0-9`, `.`, `_`, and `-`, with no `.` or `..` segments or leading/trailing slashes). Package Projects also accept `.` for the repository root. On production Instances, the root resolves inside `<home>/current`.
 
 ## Input boundary
 
-`instance:create` and `instance:destroy` accept no repository, command, or shell input. The Project owns the repository. Registration accepts source facts only, and the Gateway verifies each one. It never accepts a Node: the caller is the Node.
-
-## Why it works this way
-
-These reasons explain the design. Check them before you propose a change.
-
-### Registration takes ownership
-
-A registered source enters the same lifecycle as a created checkout: one managed path, one removal command, one set of safety checks. Registration that only observes an external worktree was rejected. It needed a separate unregister command, could not move or delete the source, and left Orbit serving paths it did not control. Adopting only linked worktrees was rejected too, because an independent checkout is equally useful source.
-
-### The default Instance keeps its name
-
-The default development source keeps the name `default`, its path, and its Route when the Project's default branch changes. An Instance named after its branch would move and get a new domain on every branch rename. A second public name for the default branch, such as `main_branch`, was rejected because two names for one setting make the contract unclear.
-
-### A default-branch name means default
-
-Callers, often agents, pass the default branch as the name, such as `instance:create <project> <node> main`. Their intent is the Project's default development source. Orbit used to accept the name as given, so these Instances got a `/main` path and a `main.<slug>.<tld>` domain beside the real default. Orbit now converts such a name to `default` and says so in `name_converted_from`. Refusing the name was rejected: the caller's intent is clear, and a refusal only adds a round trip. The conversion changes the name and nothing else, so `--branch` and the registration identity rules keep one meaning each.
-
-An Instance that was named after the default branch before this change keeps its name. Create and register now resolve that name to `default`, so reach the old Instance through other commands, such as `instance:show` and `instance:destroy` with its ID.
-
-### An explicit branch stays explicit
-
-Orbit records `--branch` even when it equals the default branch. Comparing values later cannot tell a deliberate choice from an inherited one. So when the Project default branch changes, Orbit switches only the development Instance named `default`, and only when it has no override. Using the Instance name as the only way to pick a branch was rejected, because a release branch would then need a new identity.
-
-### Development branch reconciliation
-
-An agent can start on a temporary branch such as `t3code/1a2b3c4d`, rename it locally after its first message, then record `t3code/login-redirect` and a readable URL. Branch names are independent of Instance identity: they can contain `/`, but Instance names decide managed paths and generated domains. Requiring branch and Instance names to match was rejected. Selecting a different existing branch as a fallback was rejected too, because it silently gives the agent the wrong source. Orbit creates only a genuinely missing requested branch from the fetched default commit.
-
-Branch recording is explicit and checks the checkout without changing it. Inferring a rename in Doctor or removal would mutate intent and hide a checkout switch. Running `git branch -m` inside Orbit would repeat the caller's operation and introduce races. Renaming the Instance or moving its directory would disrupt agents and Processes without helping branch reconciliation. Force still cannot waive a resolved source's branch identity check: it permits discarding dirty or unpublished work, not deleting a checkout with a different identity. Recording an unpublished branch does not make its commits published for normal removal.
-
-Failed creation should release its name, path and domain, not leave every attempt for manual deletion. Cleanup therefore removes confirmed attempt-owned resources while retaining recovery state when it cannot finish. Origin and account ownership are insufficient evidence: an unregistered same-origin checkout may contain another caller's work. The preparation receipt binds a reservation to the directory it created, so retries and force cannot claim an existing or replacement checkout. An interruption before that receipt leaves source intact rather than guessing ownership.
-
-An Instance-owned domain change uses the existing Route replacement path rather than another Route endpoint or an in-place domain edit. That path already owns Caddy, certificates, DNS, Laravel URL synchronization and retries. A generated Route keeps its provenance and generation basis; converting it to explicit provenance would erase how it originated and change later slug and TLD recomputation. Its supplied readable domain can therefore change again when those inputs change.
-
-Infrastructure cannot share a database transaction with source records, so Orbit validates first and records a changed branch only after requested domain convergence succeeds. Promising atomic rollback after cutover was rejected: recovery before cutover restores the old domain, while recovery after cutover completes the change.
-
-### Active does not mean healthy
-
-An Instance is active once Orbit prepared its source, runtime, Route, and Laravel URL. A new application can lack dependencies or a database, and it can return errors. You need the endpoint to finish that setup. So Orbit does not wait for a healthy response. A health gate, a separate activation command, and setup commands inferred from the framework were rejected.
-
-### Orbit owns the Laravel URL
-
-Laravel uses `APP_URL` to build links outside a request. When Orbit changes a domain and leaves `APP_URL` alone, links break. So Orbit derives `APP_URL` from the Route in development and production. Reading an existing `APP_URL` as the source of the domain was rejected: the Route decides the endpoint.
-
-### Each new Instance copies the default database
-
-Instances that share one database can wipe each other's data, for example when a test run empties it. [Tests get their own database](/reference/database-connections#tests-get-their-own-database) explains that risk and the separate test database. The `default` Instance is the Project's main development source, so its database holds the Project's working data. So every other new development Instance gets its own copy, and the rule depends only on what `default` has attached.
-
-An opt-in flag on `instance:create` was rejected: an Instance created without it shares or lacks data, which is the problem the copy solves. A Project setting that names the source Instance was rejected: `default` already is the main source, and a second setting would allow two answers. Converting a SQLite source to MySQL on each copy was rejected: type differences between the engines make such a copy unreliable. So the copy keeps the kind of its source.
-
-### Create the database before setup
-
-A database attached with `database:create --instance` can only come after the Instance exists. By then `instance:create` has run the setup steps, so a migration step failed and rolled the whole create back. Orbit now creates the database inside the create, between activation and setup, by reusing `database:create`. Ignoring a failed setup step was rejected, because an Instance whose setup failed is not a useful result. A default server stored on the Project was rejected, because the choice belongs to each Instance and a second hidden default would compete with the [database clone](#database-clone).
-
-A create retry resumes only an Instance that carries the create's own mark, never one inferred from `failed_step: setup`. That value also follows a failed `instance:setup` on an Instance that has been live for weeks, and a retry that treated it as an unfinished create removed that Instance when the database or setup failed. For the same reason, an existing Instance gets its database from `database:create --instance`, and a retry never removes an Instance that an earlier request activated.
-
-### Copy dependencies, not the checkout
-
-A Project knows its own dependency and cache folders. Copying only the root missed the dependency trees of nested projects. Project setup steps can copy the matching folders from the default checkout and then install incrementally. Copying a whole checkout is rejected because it brings Instance-specific configuration and runtime state. A ZFS dataset clone per Instance is rejected because it needs per-Instance datasets and privileges; ordinary reflinks work within the existing storage layout.
-
-### One application model
-
-The Instance is the only runnable application model. Orbit keeps no conversion tooling and no compatibility path for other models. Two models would double every lifecycle rule and every check.
-
-## Native source inspection
-
-Development registration and branch rename run from Node 209 through official SSH using captured checkout intent and pinned host keys. Git observations and environment-file protection are separate native steps. For registration the Gateway checks the read facts itself; for rename it records the terminal source result from the commits feed. In both, steps do not read intent or report progress through callbacks. Registration adopts the checkout in place. Rename records a branch that is already checked out and never changes Git HEAD.
+`instance:create` and `instance:destroy` accept no repository URLs, shell commands, or arbitrary paths because the Project owns the repository. Registration accepts only source facts verified by the Gateway against the calling Node.
 
 ## Move a checkout Instance into a container
 
-[`instance:migrate`](/cli/instance/migrate) moves one development checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on its Node: its branch with the commits that were never pushed, its changed, untracked and ignored files, and its Route. Its database stays where it is. A Project's default Instance moves first, and a move that fails leaves the checkout Instance serving as before. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
+[`instance:migrate`](/cli/instance/migrate) moves a legacy host-checkout development Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node, preserving its branch, unpushed commits, untracked and ignored files, and Route while leaving its database in place. Migrate the Project's `default` Instance first; if migration fails, the original checkout continues serving. See [Old paths](/reference/old-paths).
+
+## Why it works this way
+
+These design choices explain the rules above.
+
+### Registration takes ownership
+
+Registered checkouts share the same managed lifecycle, safety checks, and removal flow as created Instances. Observing external worktrees without owning them was rejected because it left Orbit serving paths it could not safely move or clean up.
+
+### The default Instance keeps its name
+
+Naming the main development Instance `default` keeps its path and Route stable even if the Project's default branch changes. Naming it after the branch would move its directory and domain on every branch rename, and a second alias like `main_branch` was rejected to keep one name per setting.
+
+### A default-branch name means default
+
+Callers and agents often pass the default branch name (such as `main`) when they mean the Project's default development Instance. Converting that name to `default` and reporting `name_converted_from` avoids creating a duplicate `main.<slug>.<tld>` Instance while avoiding an unnecessary refusal round trip.
+
+### An explicit branch stays explicit
+
+Orbit stores `--branch` in `branch_override` even when it matches `default_branch`, because comparing strings later cannot distinguish an intentional pin from inheritance. When a Project changes its default branch, only a `default` Instance with no override switches automatically.
+
+### Development branch reconciliation
+
+Agents often start on a temporary branch (such as `t3code/1a2b3c4d`) and rename it locally once the task takes shape. Keeping branch names independent of Instance names lets branches contain `/` without breaking DNS labels or managed paths. Branch recording is explicit and read-only so Orbit never mutates Git state behind the user's back, and `--force` removal still refuses a mismatched branch so Orbit never deletes the wrong checkout.
+
+### Active does not mean healthy
+
+An Instance becomes `active` once its source, runtime, Route, and `APP_URL` are ready. New apps often lack dependencies or database migrations until after creation, so waiting for an HTTP 200 health gate was rejected.
+
+### Orbit owns the Laravel URL
+
+Laravel relies on `APP_URL` for URLs generated outside HTTP requests. Deriving `APP_URL` from the Route keeps links working automatically whenever a domain changes; inferring the domain from `.env` was rejected because the Route is the source of truth.
+
+### Each new Instance copies the default database
+
+Sharing one development database across Instances causes test runs and migrations to clobber each other's data (see [Tests get their own database](/reference/database-connections#tests-get-their-own-database)). Copying `default`'s database automatically avoids an opt-in flag that callers might forget, and keeping the same engine avoids cross-engine type mismatches.
+
+### Create the database before setup
+
+Running `database:create --instance` only after `instance:create` meant setup steps like migrations failed on the first run. Creating the database inside `instance:create` before setup solves that while keeping retry behavior safe: only Instances marked with `first_setup_pending` resume through `instance:create`, so an existing live Instance is never deleted on a setup failure.
+
+### Copy dependencies, not the checkout
+
+Projects know their own dependency folders (including nested monorepo packages), whereas copying an entire checkout brings along Instance-specific `.env` and runtime state. Passing `ORBIT_SEED_PATH` to Project setup steps lets each Project reflink only clean dependency directories.
+
+### One application model
+
+The Instance is Orbit's only runnable application model. Avoiding parallel legacy models keeps every lifecycle rule, check, and command consistent.

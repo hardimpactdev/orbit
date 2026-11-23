@@ -11,46 +11,45 @@ covers:
 
 # Instance logs
 
-Instance, Process and Schedule logs share the [viewer lease contract](/reference/live-logs). Each command returns a bounded snapshot unless the caller passes `--follow`.
-
-The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
+The Gateway reads the end of an Instance's application log file. Because the application writes this file itself, it shows application errors that Process logs do not. [Processes and schedules](/reference/processes-and-schedules) and [Schedules](/reference/schedules) cover service and schedule logs.
 
 ## Read the log
 
-`GET /api/v1/instances/{instance}/logs` returns the end of the log as one newline-separated string in `data.logs`. `lines` sets the number of lines from 1 through 1,000, and the default is 100. The response also names the Instance in `data.id` and `data.name` and repeats `data.lines`. The read does not stream, so the Gateway refuses `follow`. It returns at most 256 KiB of the newest lines and sets `data.truncated` when it left out older lines. When the lines asked for are larger, it returns fewer, and never a line cut at its start.
+`GET /api/v1/instances/{instance}/logs` runs `instance.read-application-log` over SSH on the Instance's Node and returns `{ id, name, lines, logs }`. `lines` accepts 1 through 1,000 (default 100), and the read is capped at 4 MiB of the newest complete lines. Passing `follow` is refused (`validation.failed`).
 
-The web app shows this log on the Instance page. [`orbit instance:logs`](/cli/instance/logs) returns it in the terminal, and the PHP SDK sends the same request.
+The web app displays this log on the Instance page, [`orbit instance:logs`](/cli/instance/logs) prints it in the terminal, and the PHP SDK calls the same endpoint.
 
 ## Follow the log live
 
-A viewer can follow the log as the application writes it with a [live log stream](/reference/live-logs). The Node agent reads the same file with the same rules, and the Gateway relays new lines to that viewer only. The web app's log pane and `orbit instance:logs --follow` use a stream. The one-shot read uses the same path and is refused with `logs.live_unavailable` when the Gateway cannot open a stream.
+Development Instances support live log following in the web app and through `orbit instance:logs --follow` using a [live log stream](/reference/live-logs). The Node agent reads the same file and rules, and the Gateway relays new lines to that viewer only.
+
+Production Instances are SSH-only for application logs: live follow refuses with `409 logs.live_unavailable` (`reason: "ssh_only"`), while one-shot reads continue to work over SSH.
 
 ## Know which file the Gateway reads
 
-The Gateway reads one file under `storage/logs` in the Instance's [application directory](/reference/projects#application-directory), which is the Laravel convention. Root `apps/site/public` means `<checkout>/apps/site/storage/logs` in development or `<production-home>/current/apps/site/storage/logs` in production. Root `public` keeps `storage/logs` at the checkout or release root. One-shot reads and live streams use the same directory.
+Orbit reads one file under `storage/logs` in the Instance's [application directory](/reference/projects#application-directory) (for example `<checkout>/apps/site/storage/logs` in development or `<production-home>/current/apps/site/storage/logs` in production when the web root is `apps/site/public`):
 
 | Order | File | Used when |
 | --- | --- | --- |
-| 1 | `laravel.log` | The file exists. This is the `single` log channel. |
-| 2 | The newest `laravel-*.log` | `laravel.log` is absent. This is the `daily` log channel. |
+| 1 | `laravel.log` | The file exists (`single` log channel). |
+| 2 | The newest `laravel-*.log` | `laravel.log` is absent (`daily` log channel). |
 
-An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The [Node agent](/reference/node-agent#log-tails) reads only a regular file that sits directly in a real `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file. It returns at most the last 256 KiB of the file.
+If neither file exists, the request succeeds with an empty log. The caller never specifies a path. The reader accepts only regular files directly inside a real `storage/logs` directory and ignores symbolic links.
 
 ## Know what the Gateway redacts
 
-The Gateway replaces each stored environment value of the Instance with `[REDACTED]` before it returns the log. It skips a value shorter than eight characters, because a short value such as `local` or `true` is an ordinary word and would blank the log. It also skips the values of an exact list of Laravel setting keys, such as `APP_ENV` and `LOG_CHANNEL`, so `production` in `production.INFO` stays readable. [Live logs](/reference/live-logs#redaction) lists the keys. A secret under any other key, such as `LOG_SLACK_WEBHOOK_URL`, is redacted. The Gateway then applies the same secret patterns that it applies to Process logs. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
+Before returning log output, the Gateway replaces every stored environment value of the Instance (eight characters or longer) with `[REDACTED]`, skipping standard non-secret Laravel setting keys listed in [Live logs: Redaction](/reference/live-logs#redaction). Overlapping or adjacent matches collapse into a single marker, and the Gateway applies the same credential-pattern redaction used for Process logs ([text-redaction failures](/cli/activity#text-redaction-failures)).
 
-Where stored values overlap or touch, the Gateway replaces their whole covered range with one marker, so no part of either value remains.
-
-The log can still contain data that the application wrote on purpose, such as an email address in an exception message. Node access decides who may read it: the caller needs access to the Node that owns the Instance.
+Application logs can still contain personal or business data written by the app itself, so reading them requires an access grant to the Instance's Node.
 
 ## Handle a failed read
 
-A failed read returns an Orbit error with one of these codes. The log itself is never part of an error.
+Error responses never include log content.
 
 | Status | Error code | Cause |
 | --- | --- | --- |
-| 422 | `validation.failed` | `lines` is outside 1 through 1,000, or the request names `follow`. |
-| 422 | `instance.checkout_path_invalid` | The recorded checkout path is not a valid storage path. |
-| 409 | `logs.live_unavailable` | The agent cannot answer. `error.details.reason` says why. |
-| 429 | `logs.stream_limit` | The Node already has 16 open tails. |
+| 403 | `peer.identity_unknown` or `node_access.required` | Caller is not an active WireGuard peer or lacks access to the Instance's Node. |
+| 404 | `resource.not_found` | No Instance matches the selector. |
+| 422 | `validation.failed` | `lines` is outside 1 through 1,000, or `follow` was passed. |
+| 422 | `instance.checkout_path_invalid` | Recorded checkout path is not a valid storage path. |
+| 502 | `instance.logs_failed` | SSH or the remote log reader failed to read the log. |
