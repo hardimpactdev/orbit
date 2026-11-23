@@ -290,7 +290,8 @@
   when: power == 'awake' and container.clone | default(none) is not none and intent.server_import_seconds is defined
   ansible.builtin.command:
     argv: >-
-      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+      {{ ['timeout', (intent.server_import_seconds | int + 10) | string,
+          'incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
           '--', 'runuser', '-u', 'agent', '--', 'timeout', intent.server_import_seconds | string, 'sh', '-c',
           'until curl --fail --silent --max-time 2 "$0" >/dev/null; do sleep 1; done',
           'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}
