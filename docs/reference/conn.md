@@ -174,7 +174,7 @@ Device rows are deleted when a Node is removed (`ConnNodeRemoval`), loses its la
 
 ### APNs credentials
 
-Store the Apple APNs `.p8` key in Orbit's encrypted Gateway settings with `php artisan conn:push-credentials:set --key-id <id> --team-id <id>` (key read from stdin) or `PUT /api/v1/conn/push-credentials` (Gateway access, `private_key` redacted from Activity). `php artisan conn:push-credentials:show` and `GET /api/v1/conn/push-credentials` return only `configured`, `key_id`, and `team_id`.
+Store the Apple APNs `.p8` key in Orbit's encrypted Gateway settings with [`orbit conn:push-credentials:set`](/cli/conn/push-credentials-set) (or `php artisan conn:push-credentials:set --key-id <id> --team-id <id>` on the Gateway; key read from stdin) or `PUT /api/v1/conn/push-credentials` (Gateway access, `private_key` redacted from Activity). [`orbit conn:push-credentials:show`](/cli/conn/push-credentials-show), `php artisan conn:push-credentials:show`, and `GET /api/v1/conn/push-credentials` return only `configured`, `key_id`, and `team_id`.
 
 ## API
 
