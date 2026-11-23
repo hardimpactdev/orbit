@@ -33,6 +33,7 @@ final readonly class HttpApnsClient implements ApnsClient
         private ApnsJwtProvider $jwt,
         private array $backoffMs = self::DefaultBackoffMs,
         private ?Closure $sleeper = null,
+        private ?string $hostOverride = null,
     ) {}
 
     public function send(ApnsMessage $message): ApnsSendResult
@@ -47,7 +48,8 @@ final readonly class HttpApnsClient implements ApnsClient
             return new ApnsSendResult(status: 0, apnsId: null, reason: 'CredentialsNotConfigured');
         }
 
-        $url = self::hostFor($message->apnsEnvironment).'/3/device/'.$message->apnsToken;
+        $host = $this->hostOverride ?? self::hostFor($message->apnsEnvironment);
+        $url = rtrim($host, '/').'/3/device/'.$message->apnsToken;
         $payload = self::payload($message);
         $refreshedToken = false;
         $result = new ApnsSendResult(status: 0, apnsId: null, reason: 'ConnectionFailed');
@@ -138,12 +140,7 @@ final readonly class HttpApnsClient implements ApnsClient
     private function sendOnce(string $url, array $headers, array $payload, ApnsMessage $message, int $attempt): ApnsSendResult
     {
         try {
-            $response = Http::withOptions([
-                'version' => 2.0,
-                'curl' => [
-                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_0,
-                ],
-            ])
+            $response = Http::withOptions(['version' => 2.0])
                 ->timeout(10)
                 ->connectTimeout(5)
                 ->withHeaders($headers)

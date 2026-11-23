@@ -436,6 +436,62 @@ describe('ConnPush HTTP/2 APNs client', function (): void {
         '400 DeviceTokenNotForTopic' => [400, 'DeviceTokenNotForTopic', true],
         '400 PayloadTooLarge kept' => [400, 'PayloadTooLarge', false],
     ]);
+
+    it('sends through the real Guzzle curl handler to a local listener without curl option errors', function (): void {
+        $script = <<<'PHP'
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+if ($server === false) { exit(1); }
+$name = stream_socket_get_name($server, false);
+echo $name . "\n";
+flush();
+$conn = @stream_socket_accept($server, 5);
+if ($conn !== false) {
+    stream_set_timeout($conn, 2);
+    $raw = '';
+    while (! str_contains($raw, "\r\n\r\n") && ! feof($conn)) {
+        $chunk = fread($conn, 4096);
+        if ($chunk === false || $chunk === '') { break; }
+        $raw .= $chunk;
+    }
+    fwrite($conn, "HTTP/1.1 200 OK\r\napns-id: real-curl-apns-id\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    fclose($conn);
+}
+fclose($server);
+PHP;
+
+        $proc = proc_open(
+            [PHP_BINARY, '-r', $script],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        assert(is_resource($proc));
+        fclose($pipes[0]);
+        $address = trim((string) fgets($pipes[1]));
+        expect($address)->toStartWith('127.0.0.1:');
+
+        try {
+            $device = apns_device($this->phone, str_repeat('4a', 32), 'sandbox');
+            $event = apns_event($this->environment, ['thread_id' => 'thread-real-curl']);
+
+            app()->singleton(ApnsClient::class, fn (): HttpApnsClient => new HttpApnsClient(
+                jwt: app(ApnsJwtProvider::class),
+                backoffMs: [0, 0],
+                hostOverride: 'http://'.$address,
+            ));
+
+            app()->call([new SendConnPushJob($event->id), 'handle']);
+
+            $send = ConnPushSend::query()->where('event_id', $event->event_id)->firstOrFail();
+            expect($send->conn_push_device_id)->toBe($device->id)
+                ->and($send->apns_status)->toBe(200)
+                ->and($send->apns_id)->toBe('real-curl-apns-id');
+        } finally {
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            proc_terminate($proc);
+            proc_close($proc);
+        }
+    });
 });
 
 describe('ConnPush rate limits and stale drop', function (): void {
