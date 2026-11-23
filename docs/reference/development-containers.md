@@ -78,7 +78,13 @@ The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun
 
 The recipe pins the official [laravel/lsp](https://github.com/laravel/lsp) PHAR (`laravel-lsp` `0.0.32`) as a part of the runtime folder, so every container, a clone of a Laravel default included, has `laravel-lsp` on its `PATH` with nothing installed per clone. It runs on the container's `php`, the Project's PHP version, and boots the application from its own `vendor/`. No unit starts it: a client starts one server over stdio, as `agent`, when it needs one, and the server loads framework data on demand.
 
-The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [path]`, a program of the same folder, prints it: the application folder that a Laravel clone's `/etc/orbit/instance` names in `ORBIT_APPLICATION` (the Project root without `public`), else the nearest folder at or above `path` (the working folder by default) with `artisan`, else the one folder below `path` with it, skipping `vendor`, `node_modules`, and `.git`. It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
+The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [path]`, a program of the same folder, prints that folder. It takes the first of these:
+
+1. The application folder that a Laravel clone's `/etc/orbit/instance` names in `ORBIT_APPLICATION`: the Project root without `public`.
+2. The nearest folder at or above `path` with `artisan`. The working folder is the default `path`.
+3. The one folder below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
+
+It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
 
 ### PHP
 

@@ -57,7 +57,7 @@ final readonly class InstanceFolderPlan
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, 'laravel-lsp-root' => self::LaravelLspRoot],...$mount];
+        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, 'laravel-lsp-root' => self::LaravelLspRoot], ...$mount];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];

@@ -49,7 +49,7 @@ Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combini
 
 Container hosts publish two read-only shared folders built from the recipe:
 
-- **`/opt/orbit-runtime` (`runtime`):** Static glibc PHP binaries, Composer, Vite+ runtime (`vp`), Node.js, pnpm, Bun, `chrome-headless-shell`, and the 26 pinned Chromium `browser-*` libraries and fonts.
+- **`/opt/orbit-runtime` (`runtime`):** Static glibc PHP binaries, Composer, Vite+ runtime (`vp`), Node.js, pnpm, Bun, ripgrep, the official `laravel-lsp` PHAR with its `laravel-lsp-root` finder ([Laravel language server](/reference/development-containers#laravel-language-server)), `chrome-headless-shell`, and the 26 pinned Chromium `browser-*` libraries and fonts.
 - **`/opt/orbit-agent` (`agent`, `root:2750`):** `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser`.
 
 #### The Vite+ home
