@@ -90,6 +90,46 @@ pre * {
   color: var(--orbit-ink) !important;
 }
 
+/* Active sidebar item: solid black with white text in light mode, inverted in dark mode. */
+#sidebar a[aria-current="page"],
+#sidebar-content a[aria-current="page"] {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  font-weight: 500;
+  text-shadow: none !important;
+}
+
+#sidebar a[aria-current="page"] *,
+#sidebar-content a[aria-current="page"] * {
+  color: #ffffff !important;
+}
+
+.dark #sidebar a[aria-current="page"],
+.dark #sidebar-content a[aria-current="page"] {
+  background-color: #f4f2ec !important;
+  color: #050506 !important;
+}
+
+.dark #sidebar a[aria-current="page"] *,
+.dark #sidebar-content a[aria-current="page"] * {
+  color: #050506 !important;
+}
+
+/* Inline code: subtle warm tinted background with dark text, darker than Mintlify's faint default. */
+:not(pre) > code {
+  background-color: rgba(32, 35, 31, 0.085) !important;
+  color: var(--orbit-text-primary) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding-top: 0.08em !important;
+  padding-bottom: 0.14em !important;
+}
+
+.dark :not(pre) > code {
+  background-color: rgba(244, 242, 236, 0.11) !important;
+  color: var(--orbit-text-primary) !important;
+}
+
 /* Hairline borders instead of the default grey rules. */
 #sidebar,
 #navbar,

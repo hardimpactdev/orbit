@@ -1,6 +1,6 @@
 ---
 title: "Instance setup and teardown"
-description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
+description: "How a Project stores named setup and teardown commands, and when Orbit runs them for development Instances."
 covers:
   - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/{StepLists/**,InstanceSourceProfileGuard.php}}
   - apps/gateway/app/Actions/*/{StartDevelopmentInstanceCreateAction,RegisterInstanceAction,StartInstanceStepListAction}.php
@@ -13,35 +13,13 @@ covers:
 
 # Instance setup and teardown
 
-[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace. Its create runs one T3 step until the thread is usable. That step runs the checkout part of the workspace phase, which reads `.env` from one private vault copy. Beside the checkout, it writes the agent's files and waits for T3. When both have ended, it checks the sessions. Registration follows and builds the create's result, so a ready clone skips `finish`.
+A Project stores two ordered lists of named shell commands for host-checkout development Instances: setup steps and teardown steps. New development Instances run in [Instance containers](/reference/development-containers), which use the Project's [development deploy steps](/reference/deployments#development-deploy-steps) instead (`instance:setup` refuses container Instances with `operation.kind_unavailable`). Production Instances use [production deploy steps](/reference/deployments#deploy-steps).
 
-When the admission took the free Route Nodes, the create's job `publication` publishes the clone's address beside the copy ([the address during the create](/reference/development-containers#the-address-during-the-create)). The clone's [completion](/reference/development-containers#complete-a-clone) then installs its own Process records; a clone of a default with a Valkey target gets its [own Valkey user](/reference/development-containers#a-clones-valkey-user) before its Processes start.
-
-Conn records the T3 server even while the extension is off. A clone also starts without a ready ai-router route: its create result records `model_route` readiness, and T3 cannot reach a model until the route is ready ([Model access](/reference/development-containers#model-access)).
-
-Orbit records the T3 server after reading T3's registration receipt; the completion activates the clone. A Route the create published is active already. Its helpers and public intent travel on the copy step's stdin in the one-line launch copy, as its `stage` beside the credentials in its `private`. The copy step's stdin carries the Git credential line and the placeholder model environment, so T3 starts with the copy ([T3 starts with the copy](/reference/development-containers#t3-starts-with-the-copy)).
-
-A nested-fleet clone gets its nested Gateway's [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) in its own step, `clone-club-key`, on SSH stdin right after its start; the create's result says what that step did in `nested_fleet_club_key`. The completion's `clone-fleet` step starts the fleet it copied and waits for Doctor ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)). Every other clone skips it. A failed first launch still removes the private clone folder.
-
-A Project stores two ordered lists of named commands: setup steps and teardown steps. Existing host checkouts keep their setup retries, explicit setup and teardown. New development Instances are containers and follow the deploy and completion paths above; create never reserves a new host checkout. Setup does not require a Route: an existing unrouted monorepo `default` can become `active` and run the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
-
-[Registration](/cli/instance/register) refuses new host admission with `instance.container_required` (409). A retry of an existing registration runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. On retry, setup checks and starts existing Project-defined Processes too; it retains their records. An empty list with no Processes or other Node work starts no run.
-
-With `--domain`, registration publishes the prepared checkout's Route after setup and Process creation. The Instance stays reserved until the Route answers over TLS.
-
-Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
-
-Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. The commands run in order as one Ansible phase, `setup`, each as `bash -eu -c <command>` in the checkout as the account; the first failure stops the phase, the failure names the step, and the phase keeps its log and stderr for failure diagnosis. A Project without setup steps runs no setup phase. Command stdout is discarded on the Node.
-
-Stderr stays in Swamp's native run history on Node 209. When the Gateway reads a failure, it redacts the Instance's stored environment values and credential-shaped values before it keeps a tail of at most 4 KiB. A nonzero exit still fails create.
-
-Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
-
-Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. Explicit `instance:setup` admission records the current list digest. A configuration change before execution refuses the admitted list; start a new Operation to use the new configuration.
+Each step is stored on the Project with a name, command, timeout, and position (never written as a script into the checkout). `instance:setup` records a digest of the list at admission; if the list changes before execution starts, the Operation is refused and you must start a new one.
 
 ## Record a step
 
-Record the steps on the Project before you create an Instance. `--project` selects the Project by its numeric ID.
+Manage setup and teardown steps on the Project using its numeric `--project` ID:
 
 ```bash
 orbit instance:setup-step:create install-php --project=4 --command='composer install --no-interaction'
@@ -49,33 +27,29 @@ orbit instance:setup-step:create install-js --project=4 --command='vp install' -
 orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f database/database.sqlite'
 ```
 
-| Command | Result |
+| Command | Behavior |
 | --- | --- |
-| `instance:setup-step:create NAME --project=ID --command=COMMAND` | Add a setup step at the end, or at `--before=NAME` or `--after=NAME`. |
-| `instance:setup-step:list --project=ID` | List the setup steps in order. |
-| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. `--rebalance` changes other steps in the same write. |
-| `instance:setup-step:destroy NAME --project=ID` | Remove a setup step. The others keep their order. |
-| `instance:teardown-step:*` | The same four commands for the teardown list. |
+| `instance:setup-step:create NAME --project=ID --command=COMMAND` | Adds a setup step (`--timeout`, `--before`, `--after`, `--rebalance`, `--json`). |
+| `instance:setup-step:list --project=ID` | Lists setup steps in order (`--json`). |
+| `instance:setup-step:update NAME --project=ID` | Updates `--command`, `--timeout`, placement, or `--rebalance` (`--json`). |
+| `instance:setup-step:destroy NAME --project=ID` | Deletes a setup step (`--yes` required noninteractively, `--json`). |
+| `instance:teardown-step:*` | Same four commands for teardown steps. |
 
-`destroy` asks for confirmation with No selected. `--yes` confirms without a prompt and is required for JSON and noninteractive calls.
-
-The Gateway checks each change against these limits and stores nothing when one fails.
+Orbit validates each step before saving:
 
 | Field | Rule |
 | --- | --- |
-| `name` | 1 to 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. Unique within the list. |
-| `command` | Nonempty UTF-8, at most 16 KiB, no NUL byte. |
-| `timeout_seconds` | 1 to 540. The default is 240. |
-| `before`, `after` | The name of a step in the same list. Use at most one. |
-| `rebalance` | Other steps in the same list and their new timeouts, each as `name` and `timeout_seconds`. The Gateway sets them in the same write. |
+| `name` | 1 to 63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit. Unique in its list. |
+| `command` | Non-empty UTF-8 string, at most 16 KiB, no NUL bytes. |
+| `timeout_seconds` | Integer from 1 to 540 (default `240`). |
+| `before`, `after` | Name of another step in the same list (mutually exclusive). |
+| `rebalance` | Other steps and their new timeouts updated atomically in the same write. |
 
-A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, within the list Operation budget. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
-
-A list stored before that limit can total more. The Gateway keeps it, and accepts a change only when the change does not raise the list's total. A lower total becomes the new ceiling, so do not lower a step on its own to make room.
+Each list allows at most 32 steps, and step timeouts sum to at most 540 seconds (legacy lists above 540 seconds cannot raise their total). [Activity](/cli/activity) never records step command text or output.
 
 ### Make room in a full list
 
-To add a step to a full list, or to move time from one step to another, change the other steps in the same write. Repeat `--rebalance=NAME=SECONDS` for each step whose timeout changes. The Gateway checks the whole list after the change, so the total must stay within 540 seconds, or within the stored total of an older list.
+Pass repeated `--rebalance=NAME=SECONDS` flags to adjust other steps' timeouts in the same write while keeping the list total within 540 seconds:
 
 ```bash
 orbit instance:setup-step:create browsers --project=4 --command='npx playwright install' --timeout=180 \
@@ -83,270 +57,90 @@ orbit instance:setup-step:create browsers --project=4 --command='npx playwright 
 orbit instance:setup-step:update build-assets --project=4 --timeout=540 --rebalance=install-js=360
 ```
 
-The first command adds a 180-second step and lowers `build-assets` by 180 seconds. The second gives that time back to `build-assets` and takes it from `install-js`. A write that would raise the total stores nothing and fails with `The lifecycle list timeout total is too large.`
+## Credentialed Git
 
-Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
+For private repositories, Orbit mints a GitHub App token with a short lifetime and `Contents: read` access (never stored in checkout config or command arguments; `gh_cli` is refused on `instance:create`). Fetches run as the Node's managed user over HTTPS only (`GIT_ALLOW_PROTOCOL=https`, `http.followRedirects=false`) with checkout hooks, filesystem monitors, and credential helpers disabled so an untrusted `.git/config` cannot hijack credentials.
 
-A container Instance has no setup steps: the default's development deploy steps install and migrate, and a clone copies the result. `instance:setup` refuses a container Instance with `operation.kind_unavailable`. See [the default Instance](/reference/development-containers#the-default-instance).
-
-Container agents use `Orbit Agent <agent@orbit.local>` as their Git identity when the name or email is unset. Convergence preserves each configured identity value.
-
-## Checkout access
-
-The development create workflow runs from Node209 over SSH as the Node's managed user, with two Ansible phases for the Node work. It captures the stored WireGuard endpoint and full host pins at admission. The checkout phase prepares the owned checkout, validates its configured origin, resolves the admitted branch and inspects the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
-
-A seeded create returns `instance.branch_in_use` before preparing a target when the requested branch is already checked out in another worktree. Choose a new branch; Orbit does not force shared refs to move.
-
-A task workspace is a checkout inside its own [task VM](/reference/compute-drivers#task-vms). There the VM's managed user `orbit` owns it and runs the agents, the setup steps, and the checks.
-
-### Credentialed Git
-
-The development parent uses the existing numeric Operation GitHub mint primitive. It receives a named execution copy in the native vault containing either a fresh App token with Contents-read access to that repository or no token for an anonymous read.
-
-A clone gets the same credential line in its clone copy and in its one-line launch copy ([Development containers](/reference/development-containers#create)). The App key stays in the Gateway. The Gateway accepts GitHub’s stateless installation-token format, including JWT dots, and still verifies repository scope, permissions and expiry. A failed mint skips all source actions. `gh_cli` source access refuses before create admission. TaskVM workspace provisioning has a separate native parent; this create parent does not admit TaskVM placements.
-
-A fetch carries the GitHub token. It runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` empty, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `GIT_ALLOW_PROTOCOL` is `https`, `protocol.allow` is `never`, and HTTPS is allowed on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels in the command's input on the standard input of the SSH process, never in an argument or a file.
-
-The checkout's `.git/config` is not trusted. The operator writes it, and so does every program that runs as the managed user: setup steps, development Processes, and any agent working in the checkout. Command-line settings outrank that file, so a planted credential helper, hook, `url.*.insteadOf`, or transport setting cannot run a command or move the fetch off HTTPS while the token is in the environment.
+A seeded worktree create returns `instance.branch_in_use` if the requested branch is already checked out in another worktree.
 
 ## Run setup
 
-Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/setup.mmd)). The Gateway keeps list configuration and validates its immutable digest and target. When the run starts, it passes every command in order, the account and the checkout as run inputs. The run reaches the Node over official `@swamp/ssh` from the swamp role's workers, runs each command as one `@swamp/ssh exec` step as the account with `sudo -u`, in order, and stops at the first failure. The Gateway reads the outcome and the failed step from the run; an end check, `Check every step passed`, holds the result. No step reads the Gateway.
+Run setup manually on an active host-checkout development Instance with `instance:setup` (`POST /api/v1/instances/{instance}/setup`, returning HTTP 202 with an Operation):
 
-`instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
+```bash
+orbit instance:setup <instance> [--idempotency-key=KEY] [--json]
+```
 
-Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. Development creation and removal compose the configured commands directly in their native parents. They do not start a child Operation.
+Setup also runs during host-checkout `instance:create` retries and `instance:register --setup` (never during `instance:clone`). Commands run in order via `bash -eu` from the repository root as the Node's managed user (exporting `VP_HOME` when a Vite+ store is configured), stopping at the first failure. Stdout is discarded; on failure, Orbit keeps up to 4 KiB of redacted stderr in `error.detail`.
 
-A native create failure retains its reserved Instance and owned checkout with a bounded failure code. After its root is terminal, submit a fresh normal create Operation with a new idempotency key, or use [Instance removal](/reference/instance-removal). A failure after the Route's key was made also withdraws the Route in the same run, through the restore side of the publication that the Gateway captured at admission; create starts no other cleanup. A fresh run may repeat earlier setup commands; configure them to converge. Failed-run `workflow resume` is not required because pinned e459 loses inline official SSH global arguments on resume.
-
-The development `instance:create` root runs from control Node209 over SSH with its complete admitted input and stored host pins. The Node work is two Ansible phases of `swamp/ansible/operation-instance-create.yml`, `checkout` and `setup`, behind one `@nckrtl/ansible-input` step that writes the admitted intent; the database, Process and Route work are child workflows. Nothing is copied to the Node. A placed Swamp step costs about 1.1 s of dispatch on Node209 whatever it does, so the checkout and its `.env` are one phase, not eight steps.
-
-The `checkout` phase refuses a branch that another worktree of the seed repository holds, then makes the checkout and its origin. When a fetch is needed, the GitHub read token is written as a 0600 credential file, Git fetches with it, and the file is removed after the fetch, also after a failure. The phase then checks out the admitted branch and prints only its commit as one `orbit-commit=` line.
-
-The same phase writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0640 and group `orbit-env`, so the Node agent can report its key names; the Gateway pushes it to the vault after the admission commits. The `setup` phase runs the commands, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
-
-Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
-
-The root runs its setup list after the checkout phase, before recording the Instance as active. For a web-serving Project it creates the Route beside the setup steps, with the same child as `route:create`. The Route's key, CSR and signature are made at the start, beside the checkout, and that child takes the signed certificate. The checkout phase has already granted Caddy its access and set `APP_URL`, so the Route's own phase skips both on that Node. A failed setup leaves the published Route; `instance:destroy` withdraws it. It refuses `--database-server` before reservation. 
-
-Setup steps receive two variables:
+Setup steps receive these environment variables:
 
 | Variable | Value |
 | --- | --- |
-| `ORBIT_SEED_PATH` | The checkout of `default` on the same Node. |
-| `ORBIT_SEED_COMMIT` | The last commit that [deployed](/reference/deployments#development-defaults) in that checkout. |
+| `ORBIT_INSTANCE_ID` | Numeric ID of the Instance. |
+| `ORBIT_INSTANCE_NAME` | Name of the Instance. |
+| `ORBIT_SEED_PATH` | Checkout path of `default` on the same Node (empty if `default` has not deployed). |
+| `ORBIT_SEED_COMMIT` | Last [deployed commit](/reference/deployments#development-defaults) of `default` (empty if undeployed). |
 
-Development create captures these values for its run. Explicit setup captures them when its run starts. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
-
-When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
-
-A task VM has no `default` Instance and no seed. Every new task workspace [clones from the Gateway mirror](/reference/compute-drivers#clone-and-set-up-every-workspace), then runs the Project's setup steps. `@orbit/ci-caches` imports the SHA-bound cache ref. Running workspaces keep their existing checkout and disk.
-
-A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url). A routed task VM workspace gets that `.env` and its PHP packages before the baseline check, and its Route after the check started. Its setup steps must not need the Route. See [Start the baseline check before the Route](/reference/compute-drivers#start-the-baseline-check-before-the-route).
-
-Create activates the Instance only after source, environment, every admitted setup action and its development Processes succeed. Failure retains the unfinished Instance and its captured source and environment for a fresh Operation. It does not run teardown or automatic removal.
-
-The result step, `finish` (or a ready clone's `clone-register`, which reads the same inputs), receives each container phase as an object for a default and for a clone. Swamp ends a `${{ … }}` expression at the first `}}`, so a map inside it closes with `} }`. A test evaluates the `finish` inputs for each kind of create, with expressions cut where Swamp cuts them.
-
-Each command runs with `bash -eu` at the repository root of the code the Instance serves, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
-
-That root is the checkout. A `default` Instance deploys in its checkout too, so setup sees the code that runs. Its seed is its own checkout, so its setup gets empty seed variables. Setup, teardown, and a [development deployment](/reference/deployments#development-defaults) of the default share the lifecycle lock on the checkout, under the retained explicit setup path. The native create root does not use that lock.
-
-The retained explicit setup and teardown path exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Native create exports the same store when the account has one, in the same order, as the legacy setup runner did. Project-local `vp` processes inherit the selected value even in these non-login shells, rather than using the default `~/.vite-plus`.
-
-The retained `instance:setup` path uses the agent's `instance.run-lifecycle-step`, a checkout lock and process-group cleanup. Native destroy executes each private command through official SSH, and native create runs the whole list in one official SSH step; each command keeps its admitted timeout. Public history contains no command text or output. A failed command stops later commands and retains the Instance. Official SSH stops its local SSH process on cancellation or timeout; it does not prove remote descendants have stopped. Inspect the target before starting a fresh Operation after an uncertain command outcome.
-
-[Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity keeps its repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
-
-`instance:register` runs no setup, and it refuses no Node on behalf of the Project. It refuses a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on with `operation.kind_unavailable` (503) before it reads the agent report, and again when it records the Instance. Both checks call the checkout entry of the placement rule.
-
-A checkout whose `.env` is absent or private registers at once from the Node agent's report, with no task. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`, or `instance.setup_step_unavailable` when the command is missing or not executable. Every run starts at the first step.
-
-```bash
-orbit instance:setup <instance>
-```
-
-`instance:clone` runs neither list.
+For routed Laravel checkouts, `.env` (with `APP_URL`, `APP_KEY`, and `APP_NAME`) is already written before setup runs. If a setup step fails during `instance:create`, Orbit retains the unfinished Instance and source so you can fix the step and retry `instance:create` or discard it with [`instance:destroy`](/reference/instance-removal). Container Instances configure `Orbit Agent <agent@orbit.local>` as the default Git identity when unset, and check required Processes at clone registration (`instance.container_process_inactive`).
 
 ## Deadlines
 
-Explicit `instance:setup` returns after admitting the Operation. Each command runs within its stored timeout, and the whole list within 540 seconds, the most its timeouts may add up to.
+Each setup or teardown step uses its stored timeout (summed up to 540 seconds per list):
 
-Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts and 30 seconds for the Process step. A Route adds 180 seconds, and so does the Instance's own database (a copy, or one on a Database server); the setup phase stops at 540 seconds. The destroy run budget is 60 seconds, plus the teardown timeouts (at most 540 seconds), plus 180 seconds for each Route it withdraws and 180 seconds when it removes owned databases.
+- **Explicit `instance:setup`:** Bounded by the 540-second list budget.
+- **Container `instance:create`:** 1,800 seconds plus development deploy step timeouts, plus 180 seconds for a default's server database.
+- **Host checkout `instance:create` retry:** 60 seconds plus up to 540 seconds for setup, 30 seconds for Processes, 240 seconds for a Route, and 180 seconds for databases.
+- **Destroy (`instance:destroy`):** 60 seconds (host) or 600 seconds (container), plus up to 540 seconds for teardown, 330 seconds per withdrawn Route, and 180 seconds for databases.
 
-A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget. Failed-create Route withdrawal uses the [deferred child](/reference/instance-removal) shared with removal.
-
-A step that runs past its timeout, is cut short by the list budget, or has no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
+A step that exceeds its timeout or runs out of list budget ends the Operation with `command.deadline_exceeded` (`outcome: deadline`).
 
 ## Run teardown
 
-`instance:destroy` of an active development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
-
-Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
-
-The first teardown command that exits non-zero or times out stops the removal. The Route is already withdrawn; the source and record stay, and the command returns `instance.teardown_step_failed`. A missing command (exit 127) returns `instance.teardown_step_unavailable` instead. Setup uses the same distinction with `instance.setup_step_unavailable`.
-
-A failed native run exposes a bounded, redacted stderr tail or native step error in the Operation’s `error.detail`, with its `failed_step`. The Gateway redacts known target environment secrets and credential-shaped values before it keeps the 4 KiB tail. Stdout is never failure evidence. Fix or destroy the step, then run `instance:destroy` again.
-
-## Bootstrap the Orbit repository
-
-The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all four Composer projects. A cold bootstrap can exceed the list budget.
-
-```bash
-orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
-```
-
-`bin/bootstrap` builds the ignored API and documentation outputs. Family conversion pull requests use the [family registration paths](/contributor-guide#parallel-command-families).
-
-Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
-
-## Beast setup changes after deployment
-
-These are operator steps on shared beast, not task fixtures. Re-read Projects 33 (`orbit-website`) and 46 (`orbit`) and their ordered setup and development deploy lists before changing them. Preserve their Instance-specific environment, key and database setup. Finish initializing Orbit's default Instance 303 without a Route, and deploy the default of each Project successfully before using it as a seed.
-
-### Project 33
-
-Record ordered [development deploy steps](/reference/deployments#development-deploy-steps) for the website's locked Composer and Bun installs, migrations, and asset build. Keep installs, migrations, and builds required. Do not put Instance-only environment, key, or database-copy setup in this list. Read the default Instance's ID from `orbit project:show 33 --json`, then run `orbit instance:deploy ID --json` and check its final result before enabling seed copies.
-
-Add a first setup step that copies the website's `vendor` and `node_modules` from `ORBIT_SEED_PATH` when it is nonempty. Use `cp -a --reflink=auto` into absent destinations. Keep the locked incremental install afterward. An install that deletes the destination first discards the copy.
-
-### Project 46
-
-Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, and `packages/php-sdk`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required. No step runs a test suite: main CI fills the [main caches](/reference/implementation-loop#main-caches). Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
-
-Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, and `packages/php-sdk`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
-
-### Cache ownership
-
-Create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately.
-
-A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
-
-## Configure Orbit's task policy
-
-Orbit's task check is explicitly `composer check`; new Project defaults do not supply it. Record setup steps for each dependency tree that this repository check needs. The baseline runs only those steps. The live Orbit Project is id 46. Re-read it before every deployment, and stop if the id, check, or lists differ from the handoff.
-
-### Preflight
-
-These reads change nothing. Run them against the Gateway that will receive the deployment.
-
-```bash
-orbit project:show 46 --json
-orbit instance:setup-step:list --project=46 --json
-orbit instance:teardown-step:list --project=46 --json
-```
-
-Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total. To add a step to such a list, [rebalance the other steps in the same write](#make-room-in-a-full-list).
-
-The task baseline runs each setup step with that step's own timeout. Explicit setup uses its list Operation budget; creation and removal use their request deadlines, as [Deadlines](#deadlines) describes. `instance:create` holds 150 seconds back: 60 for teardown and 90 for removal.
-
-A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. Lower those timeouts before relying on `instance:create` or `instance:setup` for this Project. Do not raise the total.
+During `instance:destroy` of an active host-checkout development Instance, Orbit runs the Project's teardown steps after source checks pass and before deleting the checkout. Teardown may remove ignored files, but modifying tracked files blocks normal removal (retry with `--force`). Any failing or missing teardown step stops removal after Route withdrawal and returns `instance.teardown_step_failed` or `instance.teardown_step_unavailable` with up to 4 KiB of redacted stderr.
 
 ## Gateway-owned setup steps
 
-A setup step whose command is `@orbit/ci-caches` runs a Gateway-owned operation, not a shell command. For development Instances, the Rust agent selects the baseline and invokes the checkout's `bin/ci-cache-ref` importer with fixed arguments, within the step's timeout. It sends no shell source. The task workspace setup list applies the same baseline rule through its workspace tooling. Teardown rejects it. Its errors name the step. The check log shows at most the first 4096 characters of a setup command, so an operation's payload does not fill the log.
+A setup step whose command is `@orbit/ci-caches` invokes a cache importer owned by the Gateway rather than an arbitrary shell command (refused in teardown). Check logs cap displayed commands at 4,096 characters.
 
 ## Import CI main caches
 
-Add this step after the install steps of a monorepo whose CI publishes main caches the way Orbit's `ci.yml` does:
+Add `@orbit/ci-caches` after your dependency install steps in a monorepo whose CI publishes Pint and PHPStan caches to `refs/orbit/ci-cache/<sha>` (see [CI cache refs](/reference/implementation-loop#ci-cache-refs)):
 
 ```bash
 orbit instance:setup-step:create ci-caches --project=PROJECT --command='@orbit/ci-caches' --timeout=120 --json
 ```
 
-CI publishes main's Pint and PHPStan caches at `refs/orbit/ci-cache/<sha>`, where `<sha>` is the full code commit tested on `main`, not the commit holding the cache files. The [CI publication policy](/reference/implementation-loop#ci-cache-refs) defines the publisher, manifest, authentication, and retention. This Git ref replaces the artifact download and base64 setup-command payload. `@orbit/ci-caches` remains the setup operation, and `bin/ci-cache-ref import` validates the cache files obtained from the ref; neither needs a GitHub Actions artifact in the workspace.
+Orbit resolves the exact tested baseline SHA (`HEAD` on `main`, or the recorded `refs/worktree/orbit/ci-baseline` ancestor on a task branch) and fetches `refs/orbit/ci-cache/<selected-sha>` via the Gateway's GitHub App (`Contents: read`). It never falls back to another SHA.
 
-For a task VM, the Gateway fetches code and the cache namespace into its [Git mirror](/reference/compute-drivers#git-on-a-task-vm), then transfers the selected objects over SSH. Source objects travel first; an optional cache pack follows, so a failed cache transfer cannot fail the source transfer. Ordinary development Instances keep their existing source fetch path and receive an optional cache-only pack from the same Gateway mirror when their Project declares this setup operation.
-
-For GitHub, it uses its [GitHub App](/reference/github-app) with `Contents: read` for this repository, using the existing credentialed Git protections. Reading cache refs needs no `Actions: read` permission. The cache transfer gives the workspace no GitHub credential. Task VMs do not fetch from GitHub themselves. Cache objects stay outside the source tree until the setup step imports them after dependency installation.
-
-[New task workspace selection](/reference/implementation-loop#ci-cache-refs) separates the starting code commit from the cache baseline before setup.
-
-The Gateway selects a code SHA before looking up its cache ref. For a checkout of `main`, that is the selected checkout commit. For a task branch, it is the recorded baseline commit from `main`, which must be an ancestor of the checkout's `HEAD`. Another branch with no recorded baseline whose `HEAD` is a `main` commit, such as a fresh agent branch, selects that `HEAD` commit; without one, it runs cold. It requests only `refs/orbit/ci-cache/<selected-sha>`: it never substitutes the newest cache ref, a different ancestor's ref, or a ref for a later main commit.
-
-The Gateway records the task baseline in `refs/worktree/orbit/ci-baseline`, a per-worktree ref that other linked workspaces cannot overwrite. Later main fetches preserve it while a task branch is checked out. The ref suffix and every manifest's tested commit must agree exactly. The cache commit's own object ID is not the tested code SHA.
-
-The importer checks each project's identity, manifest schema, file checksums, lock file, tool configuration, and PHP minor version before writing private caches. `bin/ci-cache-ref import` validates the whole cache tree, then imports compatible Pint and PHPStan caches into their tool cache paths under `vendor/`. The ref holds no test graph. Rector exports no cache. An absent optional tool cache leaves that tool cold.
-
-The importer also checks the PHP version that each quality cache records, because each tool discards a cache from another PHP version:
-
-| Cache | Must match the workspace |
-| --- | --- |
-| Pint | The full PHP version that the cache records under `php`, such as `8.5.11` |
-| PHPStan | The PHP version that the result cache metadata records, such as `80511` for 8.5.11 |
-
-PHPStan also compares the loaded PHP extensions and their versions. The importer does not check those, so after a PHPStan import the log says `[<project>] imported CI phpstan cache; PHPStan may still run cold if the PHP build differs`. When a cache does not match, or records no PHP version, the log says `[<project>] <tool> cache not imported, it runs cold: <reason>`, and the tool runs cold.
-
-Cache files must be regular files at allowed relative paths, with no symlinks or path traversal. The payload is limited to 1,024 files and 64 MiB of expanded data; temporary import files are removed when the step exits.
-
-PHPStan's result cache is PHP code, which PHPStan executes when it reads the cache. Orbit trusts it only because the repository's own successful main CI publishes the ref. Pull request and fork runs cannot publish workspace cache refs. The default branch, workflow, and users who can write repository refs must therefore be trusted to run code in the checkout. Checksums detect damaged bytes, not a malicious publisher. Matching SHAs and configuration guard compatibility; Git transport does not make an untrusted cache safe.
-
-A retry or later baseline preserves the workspace's own quality caches: the importer writes a cache only where none exists. The importer still checks that the ref and payload match the selected SHA. The log names each cache it keeps or skips and the reason.
-
-Cache availability does not gate setup or baseline checks. The code fetch remains required; the cache fetch is optional and must not turn an absent ref into a failed code fetch.
+`bin/ci-cache-ref import` validates manifest schema, file checksums, lockfiles, tool configs, exact PHP version (Pint `php` version and PHPStan result-cache PHP version), and safety bounds (regular files only, no symlinks or traversal, at most 1,024 files and 64 MiB expanded) before writing missing caches into `vendor/`. Existing caches are preserved.
 
 | Situation | Result |
 | --- | --- |
-| Code fetch or source authentication fails | The source operation fails; a cold cache cannot repair missing code |
-| Cache ref is missing, not yet published, pruned, or cannot be read | Setup continues without imported caches and logs the reason |
-| Ref suffix, manifest, or selected baseline disagree; baseline is not an ancestor of `HEAD` | Reject the payload and continue cold; never use another ref |
-| Payload exceeds the limits, has unsafe paths, invalid data, or bad checksums | Reject it before writing caches, log the reason, and continue cold |
-| A quality cache's lock file, tool configuration, or PHP version differs | Skip that tool cache and log the reason |
-| Required import tooling is missing or writing a validated cache fails | Fail the named setup step; this is a broken setup, not a cache miss |
+| Code fetch or auth fails | Source operation fails. |
+| Cache ref missing, pruned, or unreadable | Setup continues cold and logs the reason. |
+| Ref SHA or manifest mismatch, or payload exceeds limits | Payload rejected; setup continues cold. |
+| Lockfile, tool config, or PHP version differs | That tool cache is skipped and runs cold. |
+| Importer binary missing or write fails | Fails the named setup step. |
 
-An older ref is usable only for its explicitly selected baseline, never as a fallback for another SHA. A workspace created before CI publishes its baseline ref, or whose baseline ref a newer publication pruned, runs cold. A later source refresh followed by setup or a task baseline can import that same SHA's ref. [Ref retention](/reference/implementation-loop#cache-ref-retention) does not remove caches already imported into a running workspace. Workspaces always clone and run setup.
+Because PHPStan executes its result cache as PHP code, only trust cache refs published by your repository's own protected `main` CI workflow.
 
 ## Failure codes
 
-These codes name the step that failed. The sections above say whether the Instance stays.
+Orbit returns these codes for setup and teardown failures:
 
-| Code | Cause |
-| --- | --- |
-| `instance.setup_step_failed` | A setup command exited with an error. |
-| `instance.teardown_step_failed` | A teardown command failed or timed out during `instance:destroy`. |
-| `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
-| `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
-| `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
-| `command.deadline_exceeded` | A step ran past its timeout, or the list budget stopped it. |
+| Code | HTTP / Scope | Cause |
+| --- | --- | --- |
+| `setup_step.not_found`, `teardown_step.not_found` | 404 | Named step does not exist in the Project's list. |
+| `instance.step_not_admitted` | 409 | Step list changed between admission and execution. |
+| `instance.setup_unavailable` | 409 | Target is not an active host-checkout development Instance. |
+| `operation.kind_unavailable` | 503 | `instance:setup` targeted a container Instance. |
+| `instance.setup_step_failed` | Operation | A setup command exited non-zero. |
+| `instance.teardown_step_failed` | Operation | A teardown command exited non-zero or timed out. |
+| `instance.setup_step_unavailable` | Operation | A setup command was missing or not executable (`outcome: missing`). |
+| `instance.teardown_step_unavailable` | Operation | A teardown command was missing or not executable (`outcome: missing`). |
+| `command.deadline_exceeded` | Operation | A step exceeded its timeout or the list budget. |
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### Named rows, not a script
-
-Each command is its own row, so a failure names one step and you can reorder steps without rewriting a script. One script body and a path in the repository were rejected: the failure report could name no step, and the operator records the command on the Project.
-
-### Lists on the Project
-
-The commands run for every Instance of a repository, so they live on the Project. Per-Instance copies were rejected because they would drift from what the operator recorded. The command family is `instance:` because the commands run for an Instance.
-
-### A failed setup removes the new Instance
-
-A half-set-up Instance is not a useful result of `instance:create`. So a confirmed failure tears it down and removes it, and the next create starts clean. Resuming a create after a failed setup was rejected.
-
-### Registration skips setup by default
-
-Registration adopts a checkout that is usually set up already. Running setup on every registration was rejected. `--setup` runs it on request.
-
-### Teardown failure stops removal
-
-Teardown is the operator's cleanup. Removal continues only after that cleanup succeeds.
-
-### Task setup runs in the task check
-
-Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list inside the task check on the task VM, as the VM's managed user `orbit`, which also runs the agents. That user has sudo, so host-dependent setup and tests work. Task teardown runs as the same user before the Gateway destroys the VM.
-
-### Gateway-owned baseline delivery
-
-CI artifacts are repository data. The Gateway already owns the GitHub App, so it downloads and validates the files before Node delivery. Personal tokens on disposable machines were rejected because they duplicate credentials and complicate revocation. A fixed setup identifier keeps the existing ordered step contract and prevents Projects from selecting arbitrary artifact URLs or granting a Node App access. Both instance setup and task baseline setup interpret it before any shell execution.
-
-On a container Node with the main Mailpit, create and development clone apply [mail setup](/reference/development-containers#development-mail) within their container launch, before preparing the workspace. They reuse the existing launch instead of dispatching a separate `mail` or `clone-mail` step. It admits the SMTP path and enables two loopback listeners, without a Node converge.
-
-The existing clone workspace phase prepares its [private Node store](/reference/development-containers#private-node-runtimes) as the app user and fetches the selected branch pin before application Processes start. A seed with a private store keeps its cached versions, with no separate Node-store playbook. A clone without Processes still prepares its writable store for later Node use; only the pin fetch is skipped. Fresh default creates still use the stock image and report node_pin.status=not_prepared (container_from_stock_image), without a new failure.
-
-The independent Route publication job reuses create’s admitted Route input and shipped assets. Its site child reads the parent file while keeping its own temporary files; parent cleanup waits for publication to settle. Certificate validation, Caddy reload and TLS proof retain their order.
-
-An attached [Node service target](/reference/processes-and-schedules#node-service-target-records) must pass its probe before application work. A failed create keeps the target’s public reason, unit states and elapsed time in the Operation result.
-
-An inactive required Process during clone registration returns `instance.container_process_inactive` with its unit and [public exit facts](/reference/development-containers). This code reaches the Operation without private command output.
+Storing each step as a named row on the Project lets failures report the exact failing step, keeps all Instances of a repository consistent, and lets operators reorder steps without editing scripts inside checkouts. Registration skips setup by default because adopted checkouts are usually already prepared (`--setup` opts in). Failed creates keep the unfinished Instance rather than auto-deleting it so you can inspect errors and retry without losing context, while teardown failures halt removal so operator cleanup finishes before files are deleted. Using a reserved `@orbit/ci-caches` token lets the Gateway deliver validated CI caches without handing GitHub credentials to workspaces.

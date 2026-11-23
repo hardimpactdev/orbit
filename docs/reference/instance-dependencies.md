@@ -10,38 +10,36 @@ covers:
 
 # Instance dependencies
 
-Swamp owns dependency scanning, advisory checks, target selection, and updates. The Gateway reads its versioned results from `swamp.orbit`. Opening an Instance or Project dependency view starts no scan, workflow, task, or package command. The browser calls the Gateway only. [Dependency contracts](/reference/instance-dependency-contracts) defines the producer data and read limits.
-
-Swamp also parses manifests and lockfiles and admits dependency batches. The Gateway validates the published result contract; it has no lock-graph reader or dependency inventory.
+Swamp owns dependency scanning, advisory checks, target selection, and batch updates. The Gateway reads Swamp's versioned results from `swamp.orbit` and serves them to the browser. Opening an Instance or Project dependency view never starts a scan, workflow, task, or package command. See [Dependency contracts](/reference/instance-dependency-contracts) for producer schemas and bounds.
 
 ## Versions and evidence
 
-Select a source by its repository-relative path and ecosystem. Each source shows its package manager, distinct package resolutions, direct or transitive status, regular and development scopes, and registry, Git, or local/path origin. Versions stay opaque; two resolutions of the same package remain separate.
+Select a dependency source by its repository-relative path and ecosystem (`source` query parameter, 64-character lowercase hex SHA-256). Pagination accepts `packages_page` (1 through 50) and `findings_page` (1 through 5). Each source lists its package manager, distinct package resolutions, direct or transitive status, regular and development scopes, and `registry`, `git`, or `path` origin.
 
-The view names the scanned repository commit and observation time. A Git scan reports **locked repository versions**, not an Instance's installed versions. A worker installation is a worker observation. Only an installed observation for the exact Instance can describe its installed versions. A missing or mismatched observation means unknown Instance state. It does not mean that the Instance has no dependencies.
+Each report records the scanned commit and observation time:
 
-The Project view reads its default branch. The Instance view reads its recorded source branch and compares the report commit with its recorded checkout or deployed commit when available. A report for another commit remains Project evidence and is marked stale for the Instance. Orbit does not contact the Instance to inspect packages during a read.
+- **Locked repository versions:** produced by a Git scan of lockfiles, not an inspection of installed files on an Instance.
+- **Worker observations:** installed packages observed inside a worker.
+- **Instance installed versions:** labelled as installed only when observed on that exact Instance.
+
+The Project view and development `default` Instances read the Project's `default_branch`; other Instances read their recorded source branch and compare the report commit against their recorded checkout or deployed commit. Inactive or removing Instances return HTTP 409. Orbit never contacts an Instance to inspect packages during a dependency read.
 
 ## Updates and blocked findings
 
-Swamp supplies major-version and advisory findings, current versions, verified exact target versions, advisory IDs, and safe reasons. Findings are ready, blocked, or in a batch. A blocked finding without a verified fix has no target. Orbit does not infer one or change Swamp's policy.
+Swamp supplies major-version and security advisory findings with current versions, verified target versions, advisory IDs, and status (`ready`, `blocked`, or `in_batch`). A blocked finding without a verified fix has a `null` target; Orbit never infers one.
 
-The view links the open whole-project batch PR and its task group when known. PR evidence has three states: open, confirmed absent, and unknown. A failed lookup is unknown, even if the last known PR is shown. Partial scans cannot admit incomplete batches. Swamp owns admission and update execution through the existing task VM flow.
+The view links any open whole-project batch PR and its task group. PR evidence is explicitly `open`, `absent`, or `unknown` (a failed lookup stays `unknown` even when showing the last known PR). Partial scans never admit incomplete batches.
 
 ## Freshness and failure
 
-Inventory becomes stale after 26 hours, after a failed source refresh, or when its known source commit differs from the selected source. A running attempt is visible alongside the prior successful report. Failed refreshes keep that report's original commit and time.
+Inventory becomes stale after 26 hours, after a failed source refresh, or when the report commit differs from the Instance's known commit. PR evidence expires after 5 minutes. Gateway refresh caching lasts up to 60 seconds without resetting observation times; a single index refresh also piggybacks stale default-branch indexes for up to 200 other Projects on the same connection.
 
-PR lookup evidence expires after five minutes. Gateway refresh caching lasts at most 60 seconds and never resets observation times. If Swamp is unreachable or returns invalid data, the Gateway shows the last validated evidence as stale. Without previous evidence it shows unavailable. A dependency read is a view of the [handshake ledger](/reference/swamp-command-steps#handshake-ledger): when Operations need the rest of serve's window, it answers the same stale or unavailable shape with HTTP 200 and a `Retry-After` header. One refresh reads the stale indexes of all Projects on one connection. An error never becomes an empty successful inventory.
+If Swamp is unreachable, returns invalid data, or defers view reads behind active Operations via the [handshake ledger](/reference/swamp-command-steps#handshake-ledger) (HTTP 200 with `Retry-After`), the Gateway serves the last validated evidence marked stale (or unavailable if none exists). Errors never produce an empty successful inventory.
 
 ## Native feature retirement
 
-Orbit retires `instance:dependencies:scan` and `instance:dependencies:update`, their API and MCP operations, and the Node agent commands used only for dependencies. Remove operator-owned Schedules that invoke those commands before deploying this change. The known Gateway `dependency-nightly-scan` Schedule was removed through Orbit's Schedule API.
-
-Deploy the Swamp producer that passes the shared v1 fixtures before releasing the Gateway reader. Confirm that it publishes Project/ref indexes and immutable reports for the Projects in scope. The reader has no native inventory fallback.
-
-The migration deletes native dependency observations, attempts, package identities, resolutions, edges, and the Instance sub-project discovery column. Old inventory is not imported into Swamp. A rollback restores empty tables, not deleted history. Generic Instance resolution, runtime hibernation, deployment package installation, and Task capabilities keep their existing owners. Domain and directory resolution errors use the `instance` family: `instance.domain_invalid`, `instance.directory_invalid`, `instance.target_not_found`, `instance.target_ambiguous`, and `instance.unavailable`.
+Dependency scanning and updates run solely through Swamp; there are no native `instance:dependencies:scan` or `instance:dependencies:update` commands, API/MCP endpoints, agent commands, or local inventory tables in the Gateway. Domain and directory resolution errors use the `instance` error family (`instance.domain_invalid`, `instance.directory_invalid`, `instance.target_not_found`, `instance.target_ambiguous`, and `instance.unavailable`).
 
 ## Why it works this way
 
-Swamp already owns dependency maintenance. Keeping native scans or a fallback would leave two systems with different policy and evidence. The Gateway provides one bounded, authorized read path while Swamp owns the results and their targets. Immutable report pointers preserve a coherent publication and last-good provenance during failed refreshes. Explicit PR certainty prevents a failed lookup from claiming that no update is open.
+Having Swamp own scanning, policy, and batch updates while the Gateway provides a single bounded, authorized read path avoids duplicating dependency policy across two systems. Immutable report pointers preserve coherent last-good provenance during failed refreshes, and explicit PR certainty prevents a failed lookup from claiming no update PR is open.

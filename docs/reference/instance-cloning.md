@@ -1,6 +1,6 @@
 ---
 title: "Instance cloning"
-description: "Clone a candidate's committed source and stored configuration into a production Instance through one native Swamp workflow."
+description: "Clone an active development or production candidate's committed source and stored environment into a new production Instance."
 covers:
   - apps/gateway/app/Actions/Instances/StartInstanceCloneAction.php
   - apps/gateway/app/Domain/Instances/{InstanceCloneProjection,NativeInstanceProvisioningIntent}.php
@@ -11,95 +11,77 @@ covers:
 
 # Instance cloning
 
-Production clone is the sole new host-checkout exception to [container-only admission](/reference/development-containers#container-only-admission) until production containers ship. A Project’s active, running container default with a recorded seed and existing development checkouts can be candidates. This exception does not enable new host registration.
-
-Cloning turns an active candidate into a new production Instance on an `app-prod` Node. The Gateway reserves the target, copies the candidate's stored environment values and captures public intent. One native Swamp workflow, `operation-instance-clone`, runs on Node 209 and reaches the Nodes through official `@swamp/ssh` and `@swamp/cfgmgmt` actions. The candidate keeps running. The [chart](/cli/instance/clone) shows each step.
+`instance:clone` creates a new production Instance on an `app-prod` Node from an active candidate (an existing checkout Instance or a running container `default` Instance with a recorded seed). The candidate stays untouched and continues running. See [`instance:clone`](/cli/instance/clone) for the step flow.
 
 ```bash
-orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH]
+orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--idempotency-key=KEY] [--json]
 ```
 
-The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs access to both Nodes. An `Idempotency-Key` returns the same admission after a lost response. The request accepts no Project, commit, Unix user or filesystem path other than the SQLite source.
+The CLI calls `POST /api/v1/instances/{candidate}/clone` and requires access grants to both Nodes. Passing an `Idempotency-Key` returns the same admission after a lost response.
 
 | Input | Meaning |
 | --- | --- |
-| `node_id` | Active Linux Node with an active `app-prod` role. A web Project also needs the Node's TLD. |
-| `name` | New production Instance name, using the same [name format](/cli/instance) as development create. |
-| `preview_name` | Combined with the Node TLD into the private preview domain, such as `shop.com.prod.orbit`. |
-| `branch` | Repository branch for the target; defaults to the candidate's recorded branch. A missing branch is refused. |
-| `sqlite_source_path` | Absolute path to one SQLite database on the candidate that seeds the clone's own database. |
+| `node_id` | Active Linux Node with an active `app-prod` role (web Projects also require a Node TLD). |
+| `name` | New production Instance name (lowercase DNS label up to 63 characters). |
+| `preview_name` | Combined with the Node TLD to form the private preview domain (for example, `shop.prod.orbit`). |
+| `branch` | Repository branch for the clone; defaults to the candidate's recorded branch. |
+| `sqlite_source_path` | Optional absolute path to a SQLite file on a host-checkout candidate to seed the clone's database. |
 
 ## Candidate rules
 
-The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the branch, commit, clean working tree and absence of submodules before the clone writes anything on the destination. Git hooks and filesystem monitors are disabled. For an existing checkout, the read also verifies the repository identity and rejects a Git origin containing credentials after redacting them on the Node.
+The candidate must be active, have a recorded source profile, and have its recorded branch checked out with a clean working tree and no submodules. For a container `default`, wake it first with [`instance:wake`](/cli/instance/wake) so Orbit can verify its `HEAD` matches the recorded seed commit.
 
-Wake a sleeping default with [`instance:wake`](/cli/instance/wake) before cloning. For a container default, the read runs inside the recorded container as the workspace owner and checks that HEAD matches the Gateway’s recorded seed commit. The development create loads that commit from the Project repository through a bundle, so the workspace does not need a Git origin.
-
-Other container Instances and SQLite snapshots from containers are refused with `operation.kind_unavailable`. A candidate of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused with the same code (503) before that check, by the checkout entry of the [placement rule](/reference/projects#nested-fleet-setting): a production clone makes a host checkout. See [the default Instance](/reference/development-containers#the-default-instance).
+Non-default container Instances, SQLite snapshots from containers, candidates with attached Database connections, and Projects with [`nested_fleet`](/reference/projects#nested-fleet-setting) enabled are refused with `operation.kind_unavailable`.
 
 ## Destination checks
 
-The Gateway refuses before it reserves anything:
+Orbit validates candidate and destination rules before reserving any record:
 
-| Error code | When |
-| --- | --- |
-| `instance.node_inactive` | The Node is inactive or not Linux. |
-| `instance.node_not_app_prod` | The Node has no active `app-prod` role. |
-| `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |
-| `route.tld_required` | A web Project's Node has no TLD. |
-| `route.domain_conflict` | Another Route owns the preview domain. |
-| `operation.kind_unavailable` | A web Project's Node is in an active Cluster, the Node (or the candidate's Node) is a task VM, or the candidate has an attached Database connection. |
-
-Development [`instance:create`](/cli/instance/create) uses the same Route child. Before its branch is recorded, [Conn branch choices](/reference/conn#threads-in-an-orbit-project) follow the branch selected for its create.
-
-One account and home serve one Project per Node. A candidate with an attached Database connection needs its own native composition. Seed SQLite with `sqlite_source_path` instead.
+| Error code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.clone_candidate_inactive` | 409 | Candidate or its Node is inactive or non-Linux, or a container default is not running. |
+| `instance.source_profile_missing` | 409 | Candidate lacks a recorded `source_is_laravel` profile. |
+| `instance.clone_candidate_branch_invalid` | 409 | Candidate has no valid checked-out branch. |
+| `instance.name_invalid` | 409 | Instance name is not a valid DNS label. |
+| `instance.node_inactive` | 409 | Destination Node is inactive or not Linux. |
+| `instance.node_not_app_prod` | 409 | Destination Node has no active `app-prod` role. |
+| `instance.production_placement_conflict` | 409 | The Project already has a production Instance on that Node. |
+| `instance.removal_conflict` | 409 | Target Instance is currently being removed. |
+| `instance.clone_database_slug_taken` | 409 | Derived SQLite connection slug is already owned by another Instance. |
+| `route.tld_required` | 409 | Destination Node has no TLD for a web-serving Project. |
+| `route.domain_conflict` | 409 | Another Route already owns the preview domain. |
+| `operation.kind_unavailable` | 409 / 503 | Unsupported placement (active Cluster on a web Project, non-default container, nested-fleet Project, or candidate with attached databases). |
 
 ## What the clone gets
 
-The clone runs as `orbit-app-<project>` in `/home/orbit-app-<project>`.
+Each production Instance gets its own Unix account `orbit-app-<project_id>` and home directory `/home/orbit-app-<project_id>` (one production Instance per Project per Node).
 
 ### Source
 
-Swamp fetches committed source from the admitted Project repository into `releases/initial`. Working files, dependency directories and logs from the candidate are not copied. When the candidate and target use the same branch, their commits must match.
-
-The release's application `.env` is a link to the home `.env`, as in every deployed release. A tracked, unchanged `.env` gives way to the link. Root writes the release-layout marker that [deployments](/reference/deployments) require under `/var/lib/orbit/app-instance-sources/<instance>`, with mode `0600`.
+Orbit fetches committed source from the Project repository into `releases/initial` using a scoped GitHub App read token (or anonymous access for public repos). Working files, dependencies, and logs from the candidate are not copied. When candidate and clone use the same branch, their commits must match. Orbit links the release's `.env` to `<home>/.env` and writes the release-layout marker under `/var/lib/orbit/app-instance-sources/<instance>`.
 
 ### Environment
 
-The target receives independently encrypted copies of the candidate's stored values. `DB_*` values and WebSocket app credentials are not copied. The Gateway forces production mode: `APP_ENV=production` and `APP_DEBUG=false`.
-
-The Gateway publishes the rendered file as a named vault execution copy. `@swamp/cfgmgmt/file` writes it as the account's home `.env` with mode `0640` and group `orbit-env`.
-
-Before the write, the run creates that group when the Node lacks it and gives it traverse on the home with `setfacl -m g:orbit-env:--x`, as Caddy has traverse on a release. The Node agent's unit holds the group and binds the home back read-only, so it can report the file's key names, never values. Private values never enter workflow inputs or public results. The shared native VP jobs then prepare the checkout's pinned Vite+ runtime as the account. A project without VP requirements skips them.
+The clone receives independently encrypted copies of the candidate's stored environment values, excluding `DB_*` keys and WebSocket app credentials. Orbit sets `APP_ENV=production` and `APP_DEBUG=false`, renders `<home>/.env` with mode `0640` and group `orbit-env` so the Node agent can observe key names without reading values, and prepares any pinned Vite+ runtime required by the checkout.
 
 ### Database
 
-With `sqlite_source_path`, the Gateway attaches a new SQLite connection at `<home>/database.sqlite` under `DB`. The rendered `.env` names it.
-
-Swamp copies a consistent snapshot through the SQLite backup API and checks its digest. Development [`instance:create`](/cli/instance/create) runs the same three steps to copy the default Instance's SQLite database; a MySQL default database is copied with `mysqldump` instead. It installs the file once as the account's, with mode `0600`. Swamp removes the snapshot files on every Node, also after a failure.
+When `sqlite_source_path` is provided on a host-checkout candidate, Orbit takes a consistent snapshot via the SQLite backup API, verifies its digest, installs it at `<home>/database.sqlite` (mode `0600`), attaches it under `DB`, and removes temporary snapshot files on both Nodes.
 
 ### Processes and Schedules
 
-The Project's production definitions become records at admission. The run installs them enabled but not started. The first deploy starts them.
+Orbit copies the Project's production Process and Schedule definitions at admission and installs them enabled but stopped. The first deployment starts them.
 
 ### Preview Route
 
-A web Project gets a private Route for the preview domain. The Route stays pending until the clone succeeds. The run makes a key and CSR on the Node, and the Gateway signs it. The run then installs the certificate and the Caddy site, and probes the site over TLS from 209.
-
-Private DNS already answers the Node's TLD, so no DNS step runs. The preview site answers TLS at once. Its PHP-FPM pool comes with the first deploy, which converges the production PHP runtime for the profiled version.
-
-### Repository access
-
-When the run starts, the Gateway mints a scoped GitHub App read token for the repository and pushes it into the vault. The fetch step writes it as a temporary `0600` credential file owned by the account, and the next step removes it; the token never enters argv. Without an App installation the file is empty and Git reads anonymously.
+Web-serving Projects receive a private preview Route using `<preview_name>.<node-tld>`. Orbit generates the Node key and CSR, signs it with the Gateway CA, publishes Caddy, and verifies TLS before activating the Route. The production PHP-FPM pool is created on the first deployment.
 
 ## Result and retries
 
-The last step, `Report the result`, prints the clone's public result and fails on its error code. On success the Gateway activates the preview Route, then the Instance, and records the commit, branch, PHP version and Vite+ runtime. The result lists key-only `warnings` for copied values that point at the candidate Node, its development TLD or a path outside the production home, and for development drivers such as `QUEUE_CONNECTION=sync`. Values never appear in warnings.
+On success, Orbit activates the preview Route and Instance and returns key-only `warnings` in the Operation result (flagging copied keys that reference the candidate Node, development TLD, host paths outside the production home, or development drivers like `QUEUE_CONNECTION=sync`). Values never appear in warnings.
 
-Failure or cancellation keeps the target reserved and records the error on the Instance and its pending Route. An identical retry reuses the target, its Route and its database connection. A changed candidate, Node, name, preview, branch or SQLite input returns `instance.clone_retry_conflict`. An identical request after completion returns the first successful admission. The candidate's source, Processes, environment and database remain unchanged.
+If a clone fails, Orbit keeps the reserved target and records the error on the Instance and its pending Route; cancellation records the error on the Instance while leaving the pending Route unchanged. Repeat the identical request to retry (`instance.clone_retry_conflict` if any input changed); repeating after completion returns the original admission.
 
 ## Next steps
 
-The clone ends with an active Instance and no release. Review the warnings with `env:update` and `env:sync`, record deploy steps with `instance:deploy-step:create`, then run `instance:deploy`. The first deploy selects a release and starts the Processes and Schedules.
-
-A task VM receives its workspace through [`task:start`](/cli/task/start). It cannot use `instance:create` for that workspace.
+A newly cloned Instance is active with no live release yet. Review any environment warnings with `env:update` and `env:sync`, add deploy steps with `instance:deploy-step:create`, and run [`instance:deploy`](/reference/deployments) to build the first release and start Processes and Schedules.
