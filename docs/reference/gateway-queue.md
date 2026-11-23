@@ -30,7 +30,7 @@ Horizon runs six queues on the `gateway` connection across five supervisors. The
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | Scheduled commands, approved commit publishing, and new container [workspace baselines](/reference/development-containers#workspace-work-state) |
+| `tasks` | 3 | Scheduled commands, approved commit publishing, new container [workspace baselines](/reference/development-containers#workspace-work-state), and Conn push notifications (`SendConnPushJob`) |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, Swamp credential renewals, and batch metadata pruning |
 | `builds` | 2 | Base snapshot refresh admission and image Operations |
 | `operations` | 1 | Serialized Swamp reconciliation, schedule fires, Route promotions, and registry closes |

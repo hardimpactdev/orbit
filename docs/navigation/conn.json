@@ -19,7 +19,9 @@
             "cli/conn/index",
             "cli/conn/environment-restart",
             "cli/conn/node-environments-restart",
-            "cli/conn/environment-unregister"
+            "cli/conn/environment-unregister",
+            "cli/conn/push-credentials-set",
+            "cli/conn/push-credentials-show"
           ]
         }
       ]

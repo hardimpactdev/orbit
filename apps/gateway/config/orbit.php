@@ -184,5 +184,7 @@ return [
         'managed_targets' => (bool) env('ORBIT_CONN_MANAGED_TARGETS', false),
         // How long notice publication and rotation of one managed target wait for each other before they fail safe.
         'managed_target_lock_wait_seconds' => 10,
+        // iOS push notifications for Conn threads that need attention (docs/reference/conn.md#push-notifications): off by default.
+        'push' => (bool) env('ORBIT_CONN_PUSH', false),
     ],
 ];

@@ -24,8 +24,8 @@ Every caller is authenticated by its active WireGuard Node IP (`403 peer.identit
 
 | Endpoints | Required access |
 | --- | --- |
-| Server list, pairing endpoints, held session, thread record (`POST /environments/{id}/threads`) | Node access to the Node that registered the server |
-| `GET /me`, `PUT /me/profile`, profiles/settings, Conn Operations, `GET /projects`, `GET /threads` | Node access to at least one Node (results filter to accessible Nodes) |
+| Server list, pairing endpoints, held session, thread record (`POST /environments/{id}/threads`), attention (`POST /environments/{id}/attention`) | Node access to the Node that registered the server |
+| `GET /me`, `PUT /me/profile`, `PUT/GET/DELETE /me/push-device`, profiles/settings, Conn Operations, `GET /projects`, `GET /threads` | Node access to at least one Node (results filter to accessible Nodes) |
 | `POST /projects/{id}/instances`, `GET /projects/{id}/branches`, `GET /projects/{id}/instances/check` | Node access to the Node hosting the Project's default Instance |
 | `POST /launches` | Active peer; `expected_node_id`, `expected_profile_id`, and target Node access enforced inside the admission transaction (`withoutMiddleware(RequireNodeAccess::class)`) |
 | `GET /launches`, `GET /launches/{id}`, cancel, retry | Active peer bound to the recorded profile with access to the target Node |
@@ -152,6 +152,30 @@ Durable launches (`POST /api/v1/conn/launches`, `GET /api/v1/conn/launches`, `GE
 
 Launches pin child Operation versions at admission, never lock the parent synchronously from inside a child's terminal transaction, and recover missed settlements inside `ReconcileSwampOperations`. Conflicting scope edits return `409 conn.launch_scope_changed`; retrying or cancelling after handoff commits returns `409 conn.launch_handoff_committed`.
 
+## Push notifications
+
+iOS push notifications for Conn threads that need attention sit behind `orbit.conn.push` (`ORBIT_CONN_PUSH`, off by default). While the switch is off, every push route returns `conn.push_disabled` (404) and `SendConnPushJob` sends nothing.
+
+### Device registration and attention events
+
+An iOS device registers, reads, and removes its token through `PUT /api/v1/conn/me/push-device`, `GET /api/v1/conn/me/push-device?device_id=<uuid>`, and `DELETE /api/v1/conn/me/push-device/{device_id}`. These routes use the same WireGuard peer, `conn` extension, and collection node-access checks as `GET /api/v1/conn/me`. Registrations upsert on `(node_id, device_id)` in `conn_push_devices`. The APNs device token is stored encrypted and never appears in API responses or Activity.
+
+Native Conn Servers report events to `POST /api/v1/conn/environments/{environment}/attention` behind `RequireNodeAccess` and `ConnServerAccess::assert`, with `thread_title` redacted from Activity. Managed (container) Conn Servers report events to `POST /api/v1/conn/managed/attention` behind `RequireConnManagedTargets`, `RequireConnPush`, and `AuthenticateConnManagedTarget`, and record no Activity.
+
+Both attention routes verify that `environment_id` matches the authenticated server and that `thread_id` does not belong to another environment. Each server is limited to 120 events per minute (`conn.attention_rate_limited`, 429). Events are deduplicated by unique ULID `event_id`: a repeat returns 200 as a no-op, and a new event returns 202, stores a row in `conn_attention_events` (pruned after 7 days by `conn:push:prune-events`), and queues `SendConnPushJob`.
+
+### Audience, delivery, and cleanup
+
+`SendConnPushJob` runs on the `tasks` queue ([Gateway queue](/reference/gateway-queue#queues)). At delivery time, `ConnPushDeliverer` drops events older than 1 hour and resolves recipients through `ConnServerAccess` (`NodeAccessAuthorizer`, as `conn:thread:list`), matching profile bindings, per-kind preferences (`approval`, `input`, `turn_finished`, `turn_failed`), and `hide_titles`. It enforces alert rate limits of one alert per thread per 30 seconds per device, and at most 30 alerts per device per hour followed by one summary alert. Background `attention_cleared` pushes bypass alert rate limits.
+
+`HttpApnsClient` sends HTTP/2 requests with ES256 provider JWTs (renewed every 40 minutes) to `api.sandbox.push.apple.com` or `api.push.apple.com` according to each device's `apns_environment`. One `.p8` key serves both hosts. It sends `apns-push-type` (`alert` or `background`), `apns-topic` (`bundle_id`), `apns-priority` (`10` for `approval`/`input`, `5` otherwise), `apns-expiration` (`now + 1h`), and `apns-collapse-id` (SHA-256 of `environment_id:thread_id`), with only `environment_id`, `thread_id`, and `kind` in `userInfo`. Transient `429`/`500`/`503` failures retry with backoff up to 3 tries; `403 ExpiredProviderToken` renews the JWT once; `410 Unregistered`, `400 BadDeviceToken`, and `400 DeviceTokenNotForTopic` delete the device row and record the reason in `conn_push_sends`. Every delivery is recorded in `conn_push_sends` (`event_id`, device row id, APNs status, `apns-id`, and deletion reason) without tokens, JWTs, or titles, and pruned after 7 days.
+
+Device rows are deleted when a Node is removed (`ConnNodeRemoval`), loses its last access edge (`ConnNodeAccessRemoval`), or has its last live pairing revoked (`ConnOperationCompletion`; routine held-session renewals leave a live pairing in place, so devices stay).
+
+### APNs credentials
+
+Store the Apple APNs `.p8` key in Orbit's encrypted Gateway settings with [`orbit conn:push-credentials:set`](/cli/conn/push-credentials-set) (or `php artisan conn:push-credentials:set --key-id <id> --team-id <id>` on the Gateway; key read from stdin) or `PUT /api/v1/conn/push-credentials` (Gateway access, `private_key` redacted from Activity). [`orbit conn:push-credentials:show`](/cli/conn/push-credentials-show), `php artisan conn:push-credentials:show`, and `GET /api/v1/conn/push-credentials` return only `configured`, `key_id`, and `team_id`.
+
 ## API
 
 All Conn endpoints live under `/api/v1/conn` and are summarized below:
@@ -159,12 +183,14 @@ All Conn endpoints live under `/api/v1/conn` and are summarized below:
 | Route | Purpose |
 | --- | --- |
 | `GET /me`, `PUT /me/profile` | Caller identity, profile binding, and profile event key |
+| `PUT/GET /me/push-device`, `DELETE /me/push-device/{device}` | iOS push device registration, lookup, and removal (behind `ORBIT_CONN_PUSH`) |
 | `GET /realtime`, `POST /broadcasting/auth` | Reverb discovery and `private-conn-profile.{key}` authorization |
 | `GET/POST /profiles`, `GET/PUT/PATCH /profiles/{profile}/settings` | Profile creation, listing, and settings document management |
 | `GET/POST /environments`, `DELETE /environments/{env}` | T3 server listing, registration, and idempotent host-server unregistration (`conn.environment_is_instance` 409 for container servers) |
 | `GET/POST /environments/{env}/pairings`, `GET /environments/{env}/pairings/{pairing}`, `POST /environments/{env}/pairings/revoke` | Device pairing creation, lookup, and revocation |
 | `GET /environments/{env}/session`, `POST /environments/{env}/sessions/cleanup` | Held session retrieval and stale session cleanup |
 | `GET /threads`, `POST /environments/{env}/threads` | Thread index reads and recording |
+| `POST /environments/{env}/attention`, `POST /managed/attention` | Native and managed Conn Server attention event ingestion (behind `ORBIT_CONN_PUSH`) |
 | `GET /projects`, `GET /projects/{project}/branches`, `GET /projects/{project}/instances/check`, `POST /projects/{project}/instances` | Project discovery, branch listing, and clone creation |
 | `GET /instances/{instance}/work`, `POST /instances/{instance}/{complete,destroy,t3-restart}`, `POST /nodes/{node}/t3-restart` | Clone workspace inspection, completion, removal, and T3 restarts |
 | `GET /operations/{operation}`, `POST /operations/{operation}/cancel` | Conn Operation reads and cancellation |
