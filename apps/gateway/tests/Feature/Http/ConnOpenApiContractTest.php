@@ -760,6 +760,21 @@ describe('Conn OpenAPI contract', function (): void {
         assert_response_matches_openapi(openapi_http($caller, 'GET', "/api/v1/conn/operations/{$connOp->id}"), 'GET', '/api/v1/conn/operations/{operation}', 200, $covered);
         assert_response_matches_openapi(openapi_http($caller, 'POST', "/api/v1/conn/operations/{$connOp->id}/cancel"), 'POST', '/api/v1/conn/operations/{operation}/cancel', 200, $covered);
 
+        // Cancelled operation whose result is an empty PHP array (`[]`), as engine flows write on cancellation
+        $cancelledEmptyResultOp = Operation::query()->create([
+            'kind' => 'conn.pairing_create',
+            'target_type' => 'conn_pairing',
+            'target_id' => $issuedPairing->id,
+            'node_id' => $host->id,
+            'input' => ['caller_node_id' => $caller->id],
+            'status' => OperationStatus::Cancelled->value,
+            'result' => [],
+        ]);
+        $cancelledOpResp = openapi_http($caller, 'GET', "/api/v1/conn/operations/{$cancelledEmptyResultOp->id}");
+        assert_response_matches_openapi($cancelledOpResp, 'GET', '/api/v1/conn/operations/{operation}', 200, $covered);
+        expect(openapi_decode_json((string) $cancelledOpResp->getContent())->data->result)->toBe([]);
+        assert_response_matches_openapi(openapi_http($caller, 'GET', "/api/v1/operations/{$cancelledEmptyResultOp->id}"), 'GET', '/api/v1/operations/{operation}', 200, $covered);
+
         // 37-41. Conn launches: create, list, show, retry, cancel
         $launchCreate = openapi_http($caller, 'POST', '/api/v1/conn/launches', [
             'expected_profile_id' => $profileId,
@@ -910,6 +925,27 @@ describe('Conn OpenAPI contract', function (): void {
         expect($nonEmptyDecoded->error->details)->toBeInstanceOf(stdClass::class);
         expect(openapi_problems($nonEmptyDecoded, $errorSchema, $spec))->toBe([]);
 
+        // Origin-refused 403 from GuardBrowserOrigins (omits `details`)
+        $originRefused = openapi_http($caller, 'GET', '/api/v1/conn/me', [], ['Origin' => 'https://evil.example']);
+        $originRefused->assertForbidden();
+        $originDecoded = openapi_decode_json((string) $originRefused->getContent());
+        expect($originDecoded->error->code)->toBe('api.origin_refused')
+            ->and(property_exists($originDecoded->error, 'details'))->toBeFalse()
+            ->and(openapi_problems($originDecoded, $errorSchema, $spec))->toBe([]);
+
+        // Disabled-extension 409 from RequireEnabledExtension (adds top-level `status: 409`)
+        app(ExtensionStore::class)->set('conn', false);
+        try {
+            $extensionDisabled = openapi_http($caller, 'GET', '/api/v1/conn/me');
+            $extensionDisabled->assertConflict();
+            $disabledDecoded = openapi_decode_json((string) $extensionDisabled->getContent());
+            expect($disabledDecoded->status)->toBe(409)
+                ->and($disabledDecoded->error->code)->toBe('extension.disabled')
+                ->and(openapi_problems($disabledDecoded, $errorSchema, $spec))->toBe([]);
+        } finally {
+            app(ExtensionStore::class)->set('conn', true);
+        }
+
         // Negative validation proof: missing required field and wrong nullability are rejected by the schema
         $missingRequired = (object) ['environment_id' => 'env-1'];
         expect(openapi_problems($missingRequired, $spec['components']['schemas']['ConnHeldSession'], $spec))
@@ -924,7 +960,7 @@ describe('Conn OpenAPI contract', function (): void {
             ->toBe([]);
 
         // Auth declarations
-        expect($spec['components']['securitySchemes'])->toHaveKeys(['wireguardPeer', 'managedTargetBearer'])
+        expect($spec['components']['securitySchemes'])->toHaveKeys(['wireguardPeer', 'managedTargetBearer', 'taskKeyBearer'])
             ->and($spec['security'])->toBe([['wireguardPeer' => []]])
             ->and($spec['paths']['/api/v1/gateway/status']['get']['security'])->toBe([])
             ->and($spec['paths']['/api/v1/ca/root']['get']['security'])->toBe([]);
@@ -933,6 +969,13 @@ describe('Conn OpenAPI contract', function (): void {
             expect($spec['paths'][$managedPath]['post']['security'])
                 ->toBe([['wireguardPeer' => [], 'managedTargetBearer' => []]]);
         }
+
+        expect($spec['paths']['/api/v1/copy/whoami']['get']['security'])
+            ->toBe([['wireguardPeer' => [], 'taskKeyBearer' => []]])
+            ->and($spec['paths']['/api/v1/copy/handoff']['post']['security'])
+            ->toBe([['wireguardPeer' => [], 'taskKeyBearer' => []]])
+            ->and($spec['paths']['/api/v1/copy/pull-request']['post']['security'])
+            ->toBe([['wireguardPeer' => [], 'taskKeyBearer' => []]]);
 
         // MCP tools for managed routes have their real per-route inputs
         $catalogue = json_decode((string) file_get_contents(dirname(base_path(), 2).'/apps/gateway/resources/mcp/tools.json'), true, 512, JSON_THROW_ON_ERROR);

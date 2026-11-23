@@ -1465,6 +1465,15 @@ SCHEMA_FIELD_ENUMS = {
     ('TaskInsights', 'period'): ['24h', '7d', '30d'],
 }
 
+# PHP-array fields that serialize as `{...}` when non-empty and `[]` when empty (not cast to stdClass).
+PHP_ARRAY_OBJECT_FIELDS = {
+    ('Operation', 'input'),
+    ('Operation', 'result'),
+    ('Operation', 'error'),
+    ('Operation', 'assistance'),
+    ('ConnProfileSettings', 'settings'),
+}
+
 
 def ref(cls):
     name = comp_name(cls)
@@ -1479,6 +1488,12 @@ def ref(cls):
                 values = enums['OperationStatus'] if (name, key) == ('Operation', 'status') else SCHEMA_FIELD_ENUMS[(name, key)]
                 nullable = isinstance(sch.get('type'), list) and 'null' in sch['type']
                 sch['enum'] = [*values, None] if nullable else list(values)
+            if (name, key) in PHP_ARRAY_OBJECT_FIELDS:
+                nullable = (isinstance(sch.get('type'), list) and 'null' in sch['type']) or ('oneOf' in sch and {'type': 'null'} in sch['oneOf'])
+                variants = [{'type': 'object', 'additionalProperties': True}, {'type': 'array', 'maxItems': 0}]
+                if nullable:
+                    variants.append({'type': 'null'})
+                sch = {'oneOf': variants}
             props[key] = sch
         if name == 'ConnPairing':
             props['held'] = {'type': 'boolean', 'description': 'Present when `include_held=true`: true for a held session pairing.'}
@@ -1546,6 +1561,9 @@ def prop_schema(p):
     if nullable:
         if '$ref' in sch:
             sch = {'oneOf': [sch, {'type': 'null'}]}
+        elif 'oneOf' in sch:
+            if {'type': 'null'} not in sch['oneOf']:
+                sch = {'oneOf': [*sch['oneOf'], {'type': 'null'}]}
         elif 'type' in sch:
             kinds = sch['type'] if isinstance(sch['type'], list) else [sch['type']]
             if 'null' not in kinds:
@@ -2323,6 +2341,11 @@ spec = {
                 'scheme': 'bearer',
                 'description': "Managed Conn target service credential (`Authorization: Bearer <service_credential>`), verified together with the serving Node's active WireGuard peer (`AuthenticateConnManagedTarget`).",
             },
+            'taskKeyBearer': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'description': "Task copy key (`Authorization: Bearer <copy_key>`), verified together with the serving Node's active WireGuard peer (`RequireTaskKey`).",
+            },
         },
         'schemas': {
             'Meta': {'type': 'object', 'properties': {'request_id': {'type': 'string', 'format': 'uuid', 'description': 'The request ID the Gateway assigned or accepted; the same value is in the `X-Orbit-Request-Id` response header and in the Activity record.'}}, 'required': ['request_id']},
@@ -2331,10 +2354,11 @@ spec = {
                 'additionalProperties': False,
                 'required': ['error'],
                 'properties': {
+                    'status': {'type': 'integer', 'description': 'Optional HTTP status code included by `RequireEnabledExtension` (`extension.disabled`).'},
                     'error': {
                         'type': 'object',
                         'additionalProperties': False,
-                        'required': ['code', 'message', 'details'],
+                        'required': ['code', 'message'],
                         'properties': {
                             'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'},
                             'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'},
@@ -2343,7 +2367,7 @@ spec = {
                                     {'type': 'object', 'additionalProperties': True},
                                     {'type': 'array', 'maxItems': 0},
                                 ],
-                                'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule. Encodes as `[]` when empty and as a JSON object when non-empty. The request ID travels in the `X-Orbit-Request-Id` response header.',
+                                'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule. Encodes as `[]` when empty and as a JSON object when non-empty; omitted by `GuardBrowserOrigins` (`api.origin_refused`). The request ID travels in the `X-Orbit-Request-Id` response header.',
                             },
                         },
                     },
@@ -2367,10 +2391,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     op = {'operationId': op_id, 'summary': summary_for(route), 'tags': [tag], 'parameters': []}
     route_middleware = route.get('middleware', [])
     is_managed_target = 'Orbit\\Extensions\\Conn\\Http\\Middleware\\AuthenticateConnManagedTarget' in route_middleware
+    is_task_key = 'App\\Http\\Middleware\\RequireTaskKey' in route_middleware
     if route['name'] in ('gateway:status', 'gateway:trust'):
         op['security'] = []
     elif is_managed_target:
         op['security'] = [{'wireguardPeer': [], 'managedTargetBearer': []}]
+    elif is_task_key:
+        op['security'] = [{'wireguardPeer': [], 'taskKeyBearer': []}]
     if route['extension'] is not None:
         op['x-orbit-extension'] = route['extension']
     if method == 'delete' or route['name'] in DESTRUCTIVE_POSTS:
