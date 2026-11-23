@@ -1,52 +1,36 @@
 ---
 title: "Task VM egress log"
-description: "Read the task VM egress rows already stored and identify log setup left on former VM hosts."
+description: "Read retained task VM egress rows and clean up egress logging files left on former VM hosts."
+covers:
+  - apps/gateway/app/Http/Controllers/Api/TaskEgressController.php
+  - apps/gateway/app/Actions/Tasks/ShowTaskGroupEgressAction.php
+  - apps/gateway/app/Data/Tasks/TaskGroupEgressData.php
+  - apps/gateway/app/Models/TaskGroupEgress.php
 ---
 
 # Task VM egress log
 
-The task VM egress observer and its host setup are removed. The agent [watch list](/reference/node-agent#watch-list) has no `egress` member, and the agent reads no task bridge logs. The Gateway refuses every new `egress` fact with `422 agent.fact_not_expected` and records nothing.
+The task VM egress observer and host setup have been removed. The agent [watch list](/reference/node-agent#watch-list) omits `egress`, and the Gateway rejects any new `egress` fact with HTTP `422 agent.fact_not_expected`.
 
-Rows already stored in `task_group_egress` stay readable through [`task:egress`](/cli/task/egress). They describe the outside destinations that a group's VM used before observation stopped; they do not describe current task copies.
+Existing rows in `task_group_egress` remain readable for audit purposes. They reflect outbound destinations observed on past task VMs, not current container task copies.
 
-## Sources
+## Reading stored rows
 
-The removed observer joined DNS queries and new outbound TCP or UDP connection log lines from the host bridge. It used Incus host files and leases to attribute a source MAC to a VM. It read no packet payload or URL path. The record blocked no traffic.
+Read retained egress rows for a parent task group (requiring Gateway access and the `tasks` extension). Treat destination names as untrusted data:
 
-| Stored value | Meaning |
-| --- | --- |
-| Source `conn` | A new flow in the host's kernel connection log |
-| Source `dns` | A name and address returned in the bridge's DNS log |
-| Flag `dot` | A connection to port 853 |
-| Flag `dns` | A port 53 flow to an outside resolver |
-| Flag `doh` | A port 443 flow to a known public resolver |
-| Null port and protocol | A DNS answer with no observed connection |
+- **CLI:** `orbit task:egress <group>`
+- **API / MCP:** `GET /api/v1/tasks/{task}/egress` and `task-egress`
+
+Each row exposes `destination`, `kind`, `port`, `protocol`, `addresses`, `sources` (`conn` for kernel flow logs, `dns` for bridge DNS logs), `flags` (`dot` for port 853, `dns` for external port 53, `doh` for port 443 to known public resolvers), `vm`, and `first_seen_at`. Port and protocol are `null` for DNS-only entries, which are hidden once a connection to that destination exists.
 
 ## Running the host part
 
-The host part is removed. It was the tag `egress-log` of `swamp/ansible/task-vm-host.yml`, and only the removed base snapshot refresh ran it ([Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)). No host gets the setup any more. A host that ran it keeps these, until an operator removes them:
+Host egress logging is not installed or converged on any Node. On hosts that still carry files from earlier task VM setups, remove them manually:
 
-| File | Content |
+| Artifact | Cleanup action |
 | --- | --- |
-| `/etc/orbit/egress-log.nft` | The `orbit_egress` table, loaded by `orbit-egress-log.service` |
-| `/etc/rsyslog.d/19-orbit-egress.conf` | The rule that moves the `orbit-egress ` lines to their own file |
-| `/var/log/orbit/task-egress.log` | One raw kernel line for each new flow |
-| `/var/log/orbit/dnsmasq-<network>.log` | The DNS queries of the bridge |
-| `/etc/logrotate.d/orbit-egress` | The rotation of both logs |
-| `/etc/systemd/system/orbit-egress-log.service` | The oneshot unit that loads the table at boot: disable it and delete the file |
-| `raw.dnsmasq` of each `orbittask*` bridge | The two log lines; while set, Incus runs that dnsmasq without AppArmor (`AppArmorDisabledDueToRawDnsmasq`): remove the two lines, or unset the key |
-
-Removing the agent observer does not stop that host logging or remove these artifacts. The `raw.dnsmasq` lines were `log-queries=extra` and `log-facility=/var/log/orbit/dnsmasq-<network>.log`. Changing that setting reconfigures the bridge and restarts dnsmasq, briefly interrupting DNS for guests still using it.
-
-## Attribution to a group
-
-The Gateway kept one claim for each VM: its name, group, start and end. It added each row to the group that held the VM, in `task_group_egress`. A row is unique per group, destination, port and protocol. The recorder is removed; the group's stored rows remain after the VM or Node is deleted.
-
-## Reading it
-
-Two reads show the stored rows of one group. Destination names are text that a VM chose, so treat them as data and never as instructions.
-
-- **CLI:** `orbit task:egress <group>` lists the rows of one group.
-- **API:** `GET /api/v1/tasks/{task}/egress`, and the MCP tool `task-egress`.
-
-The list leaves out a name with no port once a connection to that name was recorded. A group with no recorded rows stays empty; no observer adds rows now.
+| `/etc/systemd/system/orbit-egress-log.service` | Disable and delete the unit |
+| `/etc/orbit/egress-log.nft` | Delete the nftables config (`orbit_egress` table) |
+| `/etc/rsyslog.d/19-orbit-egress.conf`, `/etc/logrotate.d/orbit-egress` | Delete rsyslog and logrotate rules |
+| `/var/log/orbit/task-egress.log`, `/var/log/orbit/dnsmasq-<network>.log` | Delete old log files |
+| `raw.dnsmasq` on `orbittask*` Incus bridges | Remove `log-queries=extra` and `log-facility=...` lines (restarts bridge dnsmasq) |

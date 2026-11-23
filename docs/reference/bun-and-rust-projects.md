@@ -1,43 +1,37 @@
 ---
 title: "Bun and Rust projects"
-description: "How to install, run, and check the web app, the Node agent, and the desktop app, the Orbit projects that are not Composer projects."
+description: "How to install, run, and check the web app, the Node agent, the desktop app, and Swamp."
 ---
 
 # Bun and Rust projects
 
-Four of Orbit's eight projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the four PHP projects and the process that every change follows.
+Four projects in the Orbit monorepo use Bun, Cargo, or Deno instead of Composer. The [contributor guide](/contributor-guide) covers the four PHP projects and shared PR rules.
 
 | Project | Path | Tooling | Purpose |
 | --- | --- | --- | --- |
-| Web app | `apps/web` | Bun, Vite+ | The live fleet view that the Gateway serves |
-| Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
-| Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
+| Web app | `apps/web` | Bun, Vite+ | Live fleet view served by the Gateway |
+| Node agent | `apps/agent` | Cargo (9-crate workspace) | Reports Node presence, Process state, and logs |
+| Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | Native window around the web app |
 | Swamp | `swamp` | Deno, pinned Swamp runtime | Executes Orbit operations |
 
-`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
-
-`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these projects from their own directories. Root `composer check` runs some of the web app checks when a change touches them, as [Web app checks](/reference/implementation-loop#web-app-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
-
-## Swamp
-
-Run Swamp commands from `swamp/`. Use the runtime pinned in `.swamp.yaml`. Validate every workflow with `swamp workflow validate --json`, run `DENO_JOBS=4 deno test --parallel --allow-read --allow-env --allow-run --allow-write --allow-net extensions/behaviors/operations`, and run the placement and Swamp-shape checks. Follow the binding [Swamp-shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) when you design operations. Gateway and Swamp changes ship in one Orbit PR; the old `orbit-swamp` repository is frozen.
+`bin/bootstrap --with-bun` runs `bun install --frozen-lockfile` in `apps/web` and `apps/desktop`. `bin/bootstrap --with-rust` runs `cargo fetch --locked` in `apps/agent` and `apps/desktop`. Root `composer check` (`bin/review-check`) runs web checks when web/API files change and `cargo fmt --all -- --check` when Rust files change, but full tests for these projects run from their own directories.
 
 ## Prerequisites
 
-Install the tools for the projects that you change.
+Install the tools for the projects you change:
 
 | Tool | Version | Needed for |
 | --- | --- | --- |
-| [Bun](https://bun.sh) | 1.4.2, the version in each `package.json` | Web app, desktop app |
-| [Rust](https://rustup.rs), with `rustfmt` and `clippy` | stable | Node agent, desktop app |
-| Playwright Chromium and WebKit | the version the web app locks | Web app browser tests |
-| [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) | for your operating system | Desktop app |
+| [Bun](https://bun.sh) | `1.4.2` (pinned in `apps/web/package.json`) | Web app, desktop app |
+| [Rust](https://rustup.rs) (`rustfmt`, `clippy`) | Stable (MSRV `1.89`) | Node agent, desktop app |
+| Playwright Chromium & WebKit | Locked by `apps/web` | Web app browser tests |
+| [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) | OS-specific | Desktop app |
 
-Vite+ is a dev dependency of the web app, so the `bun run` scripts find its `vp` command without a global install. Keep the `vite` package alias and `overrides.vite` on the same core version as `vite-plus`; mixed cores give plug-ins incompatible types. Pin the Vitest override to the version that Vite+ uses so the browser and test runner packages agree.
+In `apps/web`, keep `vite`, `overrides.vite`, and `vitest` overrides aligned with `vite-plus`. See [Dependencies](/contributor-guide#dependencies) for update and audit rules.
 
 ## Web app
 
-Install the dependencies and serve the app with demo data:
+Install dependencies and start the demo server (in-memory fleet, no Gateway required):
 
 ```bash
 cd apps/web
@@ -45,9 +39,7 @@ bun install
 bun run demo
 ```
 
-`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md) describes both modes and the layout of the source. Use the [task copy and its nested fleet](/reference/tasks#build-a-feature-in-one-copy) for end-to-end checks.
-
-Run the checks before you submit a change:
+Use `bun run dev` on a WireGuard peer to connect to the Gateway in your CLI profile, or test live mutations in a [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). Before submitting a PR, run:
 
 ```bash
 bun run check
@@ -55,19 +47,13 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. `bun run test` runs those two stages in order to avoid competing browser workloads on smaller development machines. CI runs both stages in that order before building the web app.
+`bun run check` formats, lints, and type-checks. `bun run test` runs `bun run test:unit` (Node unit + verification-daemon tests) followed by `bun run test:browser` (headless Chromium). Install the locked browsers once with `bunx playwright install --with-deps --only-shell webkit chromium`.
 
-Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage.
-
-Install the locked browsers and their system libraries once with `bunx playwright install --with-deps --only-shell webkit chromium`, as CI does. Run it after installing the frozen lockfile, and again when Playwright changes. The app tests use Chromium at 1280 by 800 with the `en-GB` locale and UTC timezone; verification tests also use WebKit and the device descriptors in [Web verification](/reference/web-verification#options). The app loads its JetBrains Mono font from its locked dependency, not a system font. Screen snapshots are text, not pixels.
-
-[Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
-
-Gateway Composer install builds `docs/openapi.json`; run `bin/build-api` again after API edits. Web checks and builds generate the ignored `src/api/schema.d.ts`. Never commit either output. The `tools/api-types` Bun workspace owns the generator and its TypeScript 5 compiler API dependency. The web app uses TypeScript 7 for type checking. `bun install --frozen-lockfile` installs both workspaces from one lockfile. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
+API edits require `bin/build-api` from the root to refresh `docs/openapi.json`; web checks and builds regenerate the ignored `src/api/schema.d.ts` via the `tools/api-types` workspace (TypeScript 5, while `apps/web` uses TypeScript 7). UI changes also follow [web verification](/reference/web-verification#options) and [automated tests](/reference/web-verification#automated-tests). See [Web app](/reference/web-app#browser-tests) for polling test rules.
 
 ## Node agent
 
-The agent runs only on Linux Nodes. It talks to systemd over D-Bus and reads its configuration from `/etc/orbit/agent`, so you check it locally and run it on a Node.
+The Node agent runs on Linux and talks to systemd over D-Bus. Check it from `apps/agent`:
 
 ```bash
 cd apps/agent
@@ -77,25 +63,24 @@ scripts/check-crates test --locked
 cargo build --release --locked
 ```
 
-[Node agent](/reference/node-agent#checks) explains the dev-profile optimization for redaction tests. [Live logs](/reference/live-logs#stream-tests) describes paused-clock coverage and real-process fixture waits.
+`scripts/check-crates` covers both the workspace crates and local extension crates under `apps/gateway/extensions/*/agent/`. Follow these test rules:
 
-Linux package-cache tests run Composer, npm, and Bun against temporary homes. Put the installed runtime binaries on `PATH`; a launcher that resolves its runtime from `HOME` cannot use the isolated home. These tests verify archive hits, normal registry misses, and private writes. External downloads are blocked; registry misses use a local test server. CI installs these test prerequisites before running Cargo.
+- Run `cargo test` as a normal user (never root, because the agent refuses to tail root-owned log files) and never set `RUST_TEST_THREADS=1`.
+- Keep Composer, npm, and Bun on `PATH` for package-cache tests (launchers that resolve from `HOME` fail under isolated test homes).
+- Commit `Cargo.lock` with any dependency change.
+- Run privileged tests (`caddy_access`, `valkey_acl`) only on disposable Linux hosts with `-- --ignored` (set `ORBIT_AGENT_TEST_BINARY` if copying the binary).
 
-`cargo test` uses Rust’s default test threads, which follow the available CPU count. Do not set `RUST_TEST_THREADS=1` or `--test-threads=1`. Run `cargo test` as a normal user, not as root. The agent refuses to tail a log file that root owns, and one log stream test fails when root creates its fixture. Commit `Cargo.lock` with any dependency change. CI runs Cargo check and tests on agent source, Cargo, test or composed extension crate changes, and on shared CI changes. Release delivery builds support Linux `x86_64`; CI produces no agent delivery.
-
-The privileged Caddy access tests live in `apps/agent/tests/caddy_access.rs`. On a disposable Linux test host with `acl`, a `caddy` account, and passwordless sudo, run `cargo test --release --locked --test caddy_access -- --ignored`. To test ACL publication through Docker, use `cargo test --release --locked --test valkey_acl -- --ignored` on the same disposable host with Docker. The tests run the agent as root and check access as the managed user and Caddy. They own private fixture and lock directories. When copying the compiled test to a test host, set `ORBIT_AGENT_TEST_BINARY` to the agent built from the same source.
-
-To watch what an installed agent reports, join its Node's presence channel with the viewer script:
+Inspect live agent events on a WireGuard peer with:
 
 ```bash
 bun apps/agent/scripts/node-agent-viewer.ts --gateway=https://gateway.orbit --reverb=wss://reverb.orbit --key=APP_KEY --node=NODE_ID
 ```
 
-Run it from a WireGuard peer of the fleet. The [Node agent](/reference/node-agent) page describes what the agent observes, how the Gateway installs it, and how a tag releases it.
+See [Node agent](/reference/node-agent#checks) and [Live logs](/reference/live-logs#stream-tests) for redaction and stream-test details.
 
 ## Desktop app
 
-Install the dependencies of both apps, then open the window:
+Install both workspaces and launch the Tauri window:
 
 ```bash
 cd apps/web && bun install
@@ -103,10 +88,19 @@ cd ../desktop && bun install
 bun run dev
 ```
 
-`bun run dev` starts the web app's dev server and opens it in a desktop window. The desktop app has no tests yet. Before you submit a change, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`; CI does not currently check the desktop app. The [desktop app](/reference/desktop-app) page describes the build and its limits.
+Before submitting desktop changes, run `cargo fmt --all -- --check` and `cargo clippy --locked --all-targets -- -D warnings` in `apps/desktop/src-tauri`. Desktop CI checks are paused.
+
+## Swamp
+
+Run Swamp checks from `swamp/` using the runtime pinned in `.swamp.yaml`:
+
+```bash
+swamp workflow validate --json
+DENO_JOBS=4 deno test --parallel --allow-read --allow-env --allow-run --allow-write --allow-net extensions/behaviors/operations
+```
+
+Follow the [Swamp-shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) and run `bin/swamp-shape-gate` from the root. Gateway and Swamp changes ship together in the Orbit monorepo.
 
 ## CI
 
-The Web job runs unit, verification and browser tests before building selected web changes and every PR. Main can reuse the verified PR tree; otherwise it runs the Web job. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Desktop checks remain paused.
-
-The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.
+In CI ([CI](/reference/implementation-loop#ci)), the `web` job runs unit, verification, browser tests, and builds on PRs and `merge_group` (main promotes the merge-queue `web-queue-*` artifact to `web-dist-<sha>`). The `agent` job runs `cargo check`, `clippy`, and `scripts/check-crates test` within a 4-minute timeout when agent or extension crates change; release builds for Linux and macOS agents run in `orbit-cli-release.yml` on `main`.

@@ -8,13 +8,11 @@ covers:
 
 # Your first contribution
 
-This page is the short path from a fresh clone to a merged pull request, for a person who works by hand. The [contributor guide](/contributor-guide) holds the full rules, and each step below links to the part that explains it.
+This guide walks through a manual contribution from a fresh clone to a merged pull request. The [contributor guide](/contributor-guide) holds the full rules, and [What you can skip](#what-you-can-skip) lists maintainer and agent workflows you do not need. Ask questions and report bugs in [GitHub issues](https://github.com/hardimpactdev/orbit/issues).
 
-The contributor guide also describes work that Orbit's maintainers and Orbit's own agents do, such as Orbit Tasks and Incus review. You do not run that work. [What you can skip](#what-you-can-skip) lists it. Ask questions and report bugs in [GitHub issues](https://github.com/hardimpactdev/orbit/issues).
+## 1. Get the code and tools
 
-## 1. Get the code and the tools
-
-Fork [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit) on GitHub, then clone your fork:
+Fork [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit) on GitHub, then clone your fork and add `upstream`:
 
 ```bash
 git clone https://github.com/YOUR-ACCOUNT/orbit.git
@@ -22,108 +20,102 @@ cd orbit
 git remote add upstream https://github.com/hardimpactdev/orbit.git
 ```
 
-Before each change, start a branch from the latest `main` of the main repository:
+Start each branch from the latest `upstream/main`:
 
 ```bash
 git fetch upstream
 git switch -c my-change upstream/main
 ```
 
-Install the tools for the projects that you plan to change.
+Install the tools needed for the projects you plan to touch:
 
 | Tool | Needed for |
 | --- | --- |
 | Git | Every change |
-| PHP 8.5 and Composer 2 | The four Composer projects and the documentation checks |
+| PHP 8.5 and Composer 2 | PHP projects and documentation checks |
 | OpenSSL | `bin/bootstrap` |
-| PCOV or Xdebug, optional | Running only the tests that your change affects |
-| [Bun](https://bun.sh) | The web app and the desktop app |
-| [Rust](https://rustup.rs) | The Node agent and the desktop app |
+| [Bun](https://bun.sh) | Web app and desktop app |
+| [Rust](https://rustup.rs) | Node agent and desktop app |
 
-[Bun and Rust projects](/reference/bun-and-rust-projects#prerequisites) lists the Bun and Rust versions. The Gateway runs only on Linux. Its tests also run on macOS with extra tools, which [Implement and verify](/contributor-guide#3-implement-and-verify) lists.
+See [Bun and Rust projects](/reference/bun-and-rust-projects#prerequisites) for exact Bun and Rust versions. The Gateway runs on Linux; running its tests on macOS requires extra tools listed in [Implement and verify](/contributor-guide#3-implement-and-verify).
 
-## 2. Install the dependencies
+## 2. Install dependencies
 
-From the repository root, run:
+Run `bin/bootstrap` from the repository root:
 
 ```bash
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the four Composer projects, then runs their tests and quality checks. When `~/.orbit/gateway.app-key` is missing, it writes a new Gateway app key there, outside the clone.
+`bin/bootstrap` installs the four Composer projects, generates `~/.orbit/gateway.app-key` when absent, and runs their tests and quality checks. Pass `--skip-checks` to install without running checks (useful on macOS before installing the extra Gateway test tools). Pass `--with-bun` or `--with-rust` to install locked Bun or Cargo dependencies.
 
-Add `--skip-checks` to install without the checks. The default run includes the Gateway tests. On macOS, they need the extra tools that [Implement and verify](/contributor-guide#3-implement-and-verify) lists, so use `--skip-checks` until you install them. Add `--with-bun` or `--with-rust` to also install the locked dependencies of the Bun and Rust projects.
+## 3. Pick a project and read its rules
 
-## 3. Pick a project and read its guidance
+Read the [README](https://github.com/hardimpactdev/orbit#repository) to locate the project you are changing, then read that project's `AGENTS.md` (for example, [`apps/cli/AGENTS.md`](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/AGENTS.md)). Those coding and testing rules apply to people and agents alike.
 
-Orbit has eight projects, and the [README](https://github.com/hardimpactdev/orbit#repository) lists them. Each project has an `AGENTS.md` file with its coding and testing rules, such as [`apps/cli/AGENTS.md`](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/AGENTS.md). The file is written for agents, and its rules apply to people too. Read it before you change that project.
+Before building a feature, read the [mission](/mission), [architecture](/architecture), and [concepts](/concepts). Significant architectural decisions also ship with an ADR ([Check the architecture](/contributor-guide#1-check-the-architecture)).
 
-Before you build a feature, read the [mission](/mission), the [architecture](/architecture), and the [concepts](/concepts). A feature that makes a significant architecture decision also includes an ADR, as [Check the architecture](/contributor-guide#1-check-the-architecture) explains.
+## 4. Update docs, then write code
 
-## 4. Write the documentation, then the code
+Update the affected pages under `docs/` before changing behavior in code. Bug fixes that restore documented behavior and behavior-preserving refactors can leave docs unchanged ([Write the documentation](/contributor-guide#2-write-the-documentation)).
 
-Update the pages under `docs/` that describe the behavior you change, before you write code. A fix that restores documented behavior, or a refactor that changes no behavior, can leave the documentation alone. [Write the documentation](/contributor-guide#2-write-the-documentation) has the details.
-
-To list the pages that a change affects, run this from the repository root, with one `--paths` for each file that you plan to change:
+You can preview which pages your planned paths cover:
 
 ```bash
 bin/docs-impact --base "$(git merge-base upstream/main HEAD)" --paths apps/cli/app/Commands/GatewayCommand.php
 ```
 
-The command prints a JSON report of the impacted pages. Running it is optional for you.
+Implement the change and add tests. Every bug fix includes a regression test that fails before the fix and passes after it.
 
-Then build the change and its tests. A bug fix adds a test that fails before the fix and passes after it.
+## 5. Run checks
 
-## 5. Run the checks
-
-In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the full Project check at handoff. Outside an Orbit task, run these commands in each Composer project that you changed, such as `apps/cli`:
+Run tests and quality checks in every Composer project you changed (such as `apps/cli`):
 
 ```bash
 composer test
 composer check
 ```
 
-For the web app, the Node agent, and the desktop app, run the commands in [Bun and Rust projects](/reference/bun-and-rust-projects). When you change pages under `docs/`, run these from the repository root:
+For `apps/web`, `apps/agent`, `apps/desktop`, or `swamp`, follow [Bun and Rust projects](/reference/bun-and-rust-projects). When you edit `docs/`, run the docs build and linter from the repository root:
 
 ```bash
 composer docs-build
 composer docs-lint
 ```
 
-Generated outputs stay out of Git. Add a new page through its own file in `docs/navigation/`, then run `composer docs-build` and `composer docs-lint`. Docs-lint fails for a page that is in no navigation fragment. See [Parallel command families](/contributor-guide#parallel-command-families).
+Keep generated outputs out of Git. Register any new doc page in its own `docs/navigation/` fragment ([Parallel command families](/contributor-guide#parallel-command-families)) so `composer docs-lint` passes.
 
-When you change a Gateway API route or its data, run `bin/docs-openapi`, then `bin/mcp-tools`, then `bin/api-fixtures --check` from the root. The generators write ignored outputs and fail when the sources disagree with the API contract. Root `composer check` and CI run the same steps.
+When you change a Gateway API route or payload, regenerate and verify the API contract from the root:
+
+```bash
+bin/build-api
+composer api-fixtures
+```
 
 ## 6. Open a pull request
 
-Push your branch to your fork and open a pull request against `main`. The [pull request template](https://github.com/hardimpactdev/orbit/blob/main/.github/pull_request_template.md) has three sections:
+Push your branch to your fork and open a pull request against `main`. Fill in the three sections of the [pull request template](https://github.com/hardimpactdev/orbit/blob/main/.github/pull_request_template.md):
 
-- **Change**: the problem and the resulting behavior. Link an issue when one exists.
-- **Architecture and documentation**: the ADRs and the pages that the change adds or updates.
-- **Verification**: the commands you ran, their results, and the limits. A bug fix says `Fixes #N` and names its regression test.
-
-You can open a draft pull request while you work. Mark it ready for review when the change is complete.
+- **Change:** The problem and resulting behavior, plus any linked issue.
+- **Architecture and documentation:** Added or updated ADRs and documentation pages.
+- **Verification:** Commands run, results, and limits. Bug fixes include `Fixes #N` and name the regression test.
 
 ## 7. Review and merge
 
-After you mark the pull request ready, these steps follow:
+Once you mark the pull request ready for review, these steps run:
 
-1. CI runs the quality checks and tests of the projects that your change reaches. Fix any failure.
-2. Orbit's independent reviewer checks the code, the documentation, and any ADRs. It also reproduces the change on Orbit's Incus machines and records the results.
-3. You address the review findings and push the fixes. The reviewer checks them.
-4. The gate of [stage 4](/reference/command-development-pipeline#4-pr-and-ci) passes, and the pull request is squash-merged into `main`.
+1. CI runs static analysis, builds, and tests for the projects your diff touches.
+2. An independent reviewer checks code, documentation, and ADRs, and reproduces fleet behavior in a nested fleet.
+3. You fix any review findings and push updates.
+4. Once `Required checks` and review pass, the PR enters the GitHub merge queue and squash-merges into `main` ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)).
 
-A merge needs passing CI, a successful independent code and Incus review, and resolved findings. [Review and merge](/contributor-guide#review-and-merge) describes the review evidence.
-
-Every PR must pass the [docs-impact gate](/contributor-guide#2-write-the-documentation). If a covered page needs no update, explain why in a `Docs-unaffected: <page>: <reason>` line in the PR body. CI names the missing pages and the exact syntax.
+Every PR must satisfy the [docs-impact gate](/contributor-guide#2-write-the-documentation). If a covered page needs no edit, add a `Docs-unaffected: <page>: <reason>` line to the PR body.
 
 ## What you can skip
 
-Orbit's maintainers and Orbit's own agents do the following work. A person who contributes by hand does not run it:
+Manual contributors do not need to run maintainer or agent workflows:
 
-- Orbit Tasks and their briefs, subtasks and deliverables.
-- The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
-- The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
-- Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI does not run the Project check for now. The root checks in step 5 still apply to you.
-
-[Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology) explains why contributors do not run Incus.
+- Orbit Tasks briefs, subtasks, deliverables, and `bin/task-check`.
+- Incus or nested-fleet review runs (handled during review; see [Review reproduces on a topology](/contributor-guide#review-reproduces-on-a-topology)).
+- Agent skills in `.agents/skills`.
+- Root `composer check` (`bin/review-check`); run the per-project, docs, and API checks in step 5 instead.

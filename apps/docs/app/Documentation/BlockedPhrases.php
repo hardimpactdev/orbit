@@ -29,8 +29,12 @@ final readonly class BlockedPhrases
      * @param  array<int, string>  $lines  prose lines keyed by 1-based line number, fenced code already removed
      * @return list<Finding>
      */
-    public function scan(array $lines, string $path, string $rule): array
-    {
+    public function scan(
+        array $lines,
+        string $path,
+        string $rule,
+        string $guidance = 'Name the actor, the condition, and the observable result instead.',
+    ): array {
         $findings = [];
 
         foreach ($lines as $lineNumber => $line) {
@@ -50,7 +54,7 @@ final readonly class BlockedPhrases
                     line: $lineNumber,
                     severity: FindingSeverity::Error,
                     rule: $rule,
-                    message: "Blocked phrase `{$phrase}`. Name the actor, the condition, and the observable result instead.",
+                    message: "Blocked phrase `{$phrase}`. {$guidance}",
                 );
             }
         }

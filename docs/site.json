@@ -2,7 +2,7 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Orbit",
-  "description": "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it.",
+  "description": "Self-hosted platform for developing, running, and maintaining software on your own machines with coding agents and Conn.",
   "colors": {
     "primary": "#20231f",
     "light": "#f4f2ec",
@@ -199,7 +199,7 @@
     },
     {
       "source": "/decisions/0199-post-direction-requests-to-opsbot-immediately",
-      "destination": "/reference/tasks#assistance-is-recorded-in-activity"
+      "destination": "/reference/tasks#assistance-and-resolution"
     },
     {
       "source": "/decisions/0197-native-project-documents-with-private-s3-storage",
@@ -607,7 +607,7 @@
     },
     {
       "source": "/decisions/0085-build-orbit-top-as-a-thin-tui-client",
-      "destination": "/reference/web-app#one-live-fleet-view"
+      "destination": "/reference/web-app#fleet-views"
     },
     {
       "source": "/decisions/0086-offer-the-api-as-mcp-tools",
@@ -763,7 +763,7 @@
     },
     {
       "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
-      "destination": "/reference/web-app#annotations-outside-the-gateway"
+      "destination": "/reference/web-app#annotation-overlay"
     },
     {
       "source": "/decisions/0120-extract-agent-annotation-package",
@@ -775,7 +775,7 @@
     },
     {
       "source": "/decisions/0147-retire-orbit-top",
-      "destination": "/reference/web-app#one-live-fleet-view"
+      "destination": "/reference/web-app#fleet-views"
     },
     {
       "source": "/decisions/0180-absorb-built-decisions-into-the-docs",
@@ -819,15 +819,15 @@
     },
     {
       "source": "/decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
-      "destination": "/reference/tasks#an-optional-generic-extension"
+      "destination": "/reference/tasks"
     },
     {
       "source": "/decisions/0110-route-task-sessions-with-laravel-ai-jev",
-      "destination": "/reference/tasks#session-routing"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0112-isolate-agent-threads-behind-drivers",
-      "destination": "/reference/tasks#agent-threads"
+      "destination": "/reference/tasks#read-a-thread"
     },
     {
       "source": "/decisions/0113-gate-task-completion-on-validation-and-review",
@@ -851,11 +851,11 @@
     },
     {
       "source": "/decisions/0122-hold-task-groups-in-backlog-until-ready",
-      "destination": "/reference/tasks#prepare-a-task-in-backlog"
+      "destination": "/reference/tasks#model"
     },
     {
       "source": "/decisions/0124-plan-backlog-groups-with-a-t3-planner",
-      "destination": "/reference/tasks#prepare-a-task-in-backlog"
+      "destination": "/reference/tasks#model"
     },
     {
       "source": "/decisions/0125-run-the-project-check-when-the-implementer-hands-off",
@@ -867,7 +867,7 @@
     },
     {
       "source": "/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
-      "destination": "/reference/tasks#session-routing"
+      "destination": "/reference/tasks#execution-ownership"
     },
     {
       "source": "/decisions/0133-verify-typed-subtask-deliverables-at-handoff",
@@ -875,7 +875,7 @@
     },
     {
       "source": "/decisions/0134-resume-pi-agent-streams-from-a-cursor",
-      "destination": "/reference/tasks#agent-viewer"
+      "destination": "/reference/tasks#read-a-thread"
     },
     {
       "source": "/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
@@ -883,11 +883,11 @@
     },
     {
       "source": "/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
-      "destination": "/reference/tasks#pull-request-and-settle-metrics"
+      "destination": "/reference/tasks#settle-metrics"
     },
     {
       "source": "/decisions/0163-prove-a-failing-test-on-the-start-commit",
-      "destination": "/reference/tasks#prove-a-command-fails-on-the-start-commit"
+      "destination": "/reference/tasks#baseline-check"
     },
     {
       "source": "/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
@@ -907,11 +907,11 @@
     },
     {
       "source": "/decisions/0169-start-each-subtask-review-in-a-fresh-thread",
-      "destination": "/reference/tasks#review-a-subtask"
+      "destination": "/reference/tasks#handoffs-and-review"
     },
     {
       "source": "/decisions/0170-edit-todo-subtasks-after-a-group-starts",
-      "destination": "/reference/tasks#change-subtasks"
+      "destination": "/reference/tasks#tasks-and-subtasks"
     },
     {
       "source": "/decisions/0171-reset-fixup-caps-after-operator-work",
@@ -927,7 +927,7 @@
     },
     {
       "source": "/decisions/0178-run-project-agnostic-tasks-without-a-planner",
-      "destination": "/reference/tasks#project-owned-task-policy"
+      "destination": "/reference/tasks#task-group-modes"
     },
     {
       "source": "/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch",
@@ -963,7 +963,7 @@
     },
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
-      "destination": "/reference/tasks#task-agents-run-on-pi"
+      "destination": "/reference/tasks#drivers"
     },
     {
       "source": "/decisions/0194-respond-to-github-review-feedback",
@@ -1015,19 +1015,19 @@
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
-      "destination": "/reference/ai-router#why-it-works-this-way"
+      "destination": "/reference/ai-router"
     },
     {
       "source": "/decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
-      "destination": "/reference/ai-router#a-reserved-name-not-a-route"
+      "destination": "/reference/ai-router#collector-endpoints"
     },
     {
       "source": "/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-      "destination": "/reference/ai-router#a-reserved-name-not-a-route"
+      "destination": "/reference/ai-router#collector-endpoints"
     },
     {
       "source": "/solutions/cutover-proxycli",
-      "destination": "/reference/ai-router#check-the-collector"
+      "destination": "/reference/ai-router#collector-endpoints"
     },
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
@@ -1087,11 +1087,11 @@
     },
     {
       "source": "/decisions/0236-measure-task-delivery-from-recorded-lifecycle-times",
-      "destination": "/reference/tasks#insights-come-from-recorded-times"
+      "destination": "/reference/tasks#lifecycle-times"
     },
     {
       "source": "/decisions/0237-read-swamp-task-output-through-the-gateway",
-      "destination": "/reference/tasks#swamp-output-stays-a-read"
+      "destination": "/reference/tasks#swamp-run-output"
     },
     {
       "source": "/decisions/0182-start-tasks-from-project-task-definitions",
@@ -1107,7 +1107,7 @@
     },
     {
       "source": "/decisions/0256-a-clone-create-is-two-operations",
-      "destination": "/reference/development-containers#a-clone-create-is-two-operations"
+      "destination": "/reference/development-containers#complete-a-clone"
     }
   ]
 }
