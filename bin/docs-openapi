@@ -245,7 +245,10 @@ def resolve_rule_constants(source, path):
     constant_pattern = re.compile(r'\b(\w+)::(\w+)\b(?!->|\()')
     in_refs = {pair for match in in_pattern.finditer(source)
                for pair in constant_pattern.findall(match.group(1))}
-    if not refs and not in_refs and not self_refs:
+    # `Rule::in(Cls::Values)` names a whole array constant.
+    in_list_pattern = re.compile(r'Rule::in\((self|[A-Z]\w*)::(\w+)\)')
+    in_list_refs = set(in_list_pattern.findall(source))
+    if not refs and not in_refs and not self_refs and not in_list_refs:
         return source
     namespace = re.search(r'^namespace\s+([\w\\]+);', source, re.M).group(1)
     uses = {alias or name.rsplit('\\', 1)[-1]: name for name, alias in re.findall(r'^use\s+([\w\\]+)(?:\s+as\s+(\w+))?;', source, re.M)}
@@ -259,7 +262,7 @@ def resolve_rule_constants(source, path):
 
     expressions = sorted({expression(cls, name, call) for _, cls, name, call in refs}
                          | {expression('self', name, '') for name in self_refs}
-                         | {expression(cls, name, '') for cls, name in in_refs})
+                         | {expression(cls, name, '') for cls, name in in_refs | in_list_refs})
     script = "require 'vendor/autoload.php'; echo json_encode([" + ', '.join(expressions) + "], JSON_THROW_ON_ERROR);"
     values = dict(zip(expressions, run_json(['php', '-r', script], GW)))
 
@@ -292,7 +295,14 @@ def resolve_rule_constants(source, path):
             sys.exit(f'Rule::in constant {cls}::{name} in {path.name} is not a string or integer')
         return 'Rule::in([' + constant_pattern.sub(literal, match.group(1)) + '])'
 
-    return in_pattern.sub(resolve_in, source)
+    def resolve_in_list(match):
+        cls, name = match.groups()
+        value = values[expression(cls, name, '')]
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            sys.exit(f'Rule::in constant {cls}::{name} in {path.name} is not a list of strings')
+        return 'Rule::in([' + ', '.join("'" + item.replace("'", "\\'") + "'" for item in value) + '])'
+
+    return in_pattern.sub(resolve_in, in_list_pattern.sub(resolve_in_list, source))
 
 
 TASK_COPY_AGENT_RULES = re.compile(r"\.\.\.TaskAgent::rules\(\s*(?:'([a-z_]*)')?\s*\)")
@@ -1461,7 +1471,7 @@ REQUIRED_DATA_SCHEMAS = {
     'ConnNode', 'ConnProfile', 'ConnProfileSettings',
     'ConnProject', 'ConnProjectCheck', 'ConnProjectBranch',
     'ConnBranchPullRequest', 'ConnBranchInstance', 'ConnInstanceNameCheck',
-    'ConnReservation', 'ConnThread',
+    'ConnReservation', 'ConnThread', 'ConnPushDevice', 'ConnPushCredentialsStatus',
     'Operation', 'OperationStep',
     'RealtimeConfig', 'Project',
     'TaskInsights', 'TaskInsightsSummary', 'TaskInsightsBreakdowns',
@@ -1478,6 +1488,7 @@ SCHEMA_FIELD_ENUMS = {
     ('Operation', 'status'): None,  # filled from enums['OperationStatus']
     ('OperationStep', 'status'): ['running', 'succeeded', 'failed', 'skipped', 'cancelled', 'interrupted'],
     ('TaskInsights', 'period'): ['24h', '7d', '30d'],
+    ('ConnPushDevice', 'apns_environment'): ['sandbox', 'production'],
 }
 
 # PHP-array fields that serialize as `{...}` when non-empty and `[]` when empty (not cast to stdClass).
@@ -1510,6 +1521,10 @@ def ref(cls):
                     variants.append({'type': 'null'})
                 sch = {'oneOf': variants}
             props[key] = sch
+        if name == 'ConnPushDevice':
+            props['preferences'] = closed_object({key: {'type': 'boolean'} for key in ('approval', 'input', 'turn_finished', 'turn_failed', 'hide_titles')})
+            for key in ('created_at', 'updated_at'):
+                props[key] = {'type': 'string', 'format': 'date-time'}
         if name == 'ConnPairing':
             props['held'] = {'type': 'boolean', 'description': 'Present when `include_held=true`: true for a held session pairing.'}
         components[name] = {'type': 'object', 'properties': props}
@@ -2016,6 +2031,16 @@ def register_conn_schemas():
         'kind': {'type': 'string', 'enum': ['observed', 'recovered']},
         'acknowledged_at': timestamp,
     })
+    # POST /api/v1/conn/environments/{environment}/attention and /api/v1/conn/managed/attention
+    components['ConnAttentionReceipt'] = closed_object({
+        'event_id': text,
+        'accepted': {'type': 'boolean', 'const': True},
+        'deduplicated': {'type': 'boolean', 'description': 'True when the Gateway already recorded this `event_id`; the answer is then 200, else 202.'},
+    })
+    components['ConnPushDeviceRemoval'] = closed_object({
+        'device_id': {'type': 'string', 'format': 'uuid'},
+        'removed': {'type': 'boolean', 'description': 'False when the calling Node had no such device.'},
+    })
     components['ConnManagedToken'] = closed_object({
         'token': text,
         'expires_at': timestamp,
@@ -2182,6 +2207,7 @@ RESPONSE_OVERRIDES = {
     'ConnManagedTargetsController@introspect': {'$ref': '#/components/schemas/ConnManagedIntrospect'},
     'ConnManagedTargetsController@ack': {'$ref': '#/components/schemas/ConnManagedAck'},
     'ConnManagedTargetsController@issue': {'$ref': '#/components/schemas/ConnManagedToken'},
+    'ConnPushDevicesController@destroy': {'$ref': '#/components/schemas/ConnPushDeviceRemoval'},
     'AgentThreadsController@show': {'$ref': '#/components/schemas/TaskAgentSnapshot'},
     'ProjectDevelopmentDeployStepsController@index': {'$ref': '#/components/schemas/DevelopmentDeploySteps'},
     'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
@@ -2232,6 +2258,10 @@ CTRL_DATA_OVERRIDES = {
     'ConnTasksController@show': ('ConnTaskDetailData', False),
     'ConnThreadsController@index': ('ConnThreadData', True),
     'ConnPairingsController@index': ('ConnPairingData', True),
+    'ConnPushDevicesController@upsert': ('ConnPushDeviceData', False),
+    'ConnPushDevicesController@show': ('ConnPushDeviceData', False),
+    'ConnPushCredentialsController@show': ('ConnPushCredentialsStatusData', False),
+    'ConnPushCredentialsController@update': ('ConnPushCredentialsStatusData', False),
     'ConnPairingsController@show': ('IssuedConnPairingData', False),
     'RealtimeConfigController@show': ('RealtimeConfigData', False),
     'ConnProjectBranchesController@index': ('ConnProjectBranchData', True),
@@ -2886,6 +2916,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'] in ('conn:attention:record', 'conn:managed:attention'):
+        receipt = {'$ref': '#/components/schemas/ConnAttentionReceipt'}
+        responses['200'] = envelope(receipt, 'The Gateway already recorded this `event_id`; nothing changed.')
+        responses['202'] = envelope(receipt, 'Recorded the event and queued its push.')
+        responses['429'] = error_response('More than 120 events in a minute for this server (`conn.attention_rate_limited`); `details.retry_after` names the seconds to wait.')
     if route['name'].startswith('conn:launch:'):
         data = ref('ConnLaunchSnapshot')
         if route['name'] == 'conn:launch:list':
@@ -2957,6 +2992,16 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
     if params and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
+    if route['name'] == 'conn:me:push-device:show':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or the calling Node has no push device with this `device_id`.')
+    elif route['name'] == 'conn:attention:record':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or no Conn environment matches the path.')
+    elif route['name'] == 'conn:managed:attention':
+        responses['404'] = error_response('Managed targets are off (`conn.managed_disabled`), the environment has no managed target (`conn.managed_target_unknown`), or Conn push is off (`conn.push_disabled`).')
+    elif route['name'] == 'conn:me:push-device:destroy':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or `device_id` is not a UUID.')
+    elif route['name'].startswith('conn:push-credentials:') or route['name'] == 'conn:me:push-device:upsert':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`).')
     if starts_operation or (route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] == 'conn:environment:session':

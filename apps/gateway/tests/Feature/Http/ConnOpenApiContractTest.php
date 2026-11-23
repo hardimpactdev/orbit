@@ -857,6 +857,59 @@ describe('Conn OpenAPI contract', function (): void {
             'handlers_closed_at' => '2026-11-22T20:00:02Z',
         ], $managedHeaders), 'POST', '/api/v1/conn/managed/ack', 200, $covered);
 
+        // Conn push: devices, APNs credentials, and attention from native and managed servers
+        config(['orbit.conn.push' => true]);
+        $deviceId = (string) Str::uuid();
+        $devicePayload = [
+            'device_id' => $deviceId,
+            'apns_token' => str_repeat('ab', 32),
+            'apns_environment' => 'sandbox',
+            'bundle_id' => 'dev.conn.ios',
+            'app_version' => '1.2.3',
+            'ios_version' => '18.4',
+            'locale' => 'en_US',
+            'preferences' => ['approval' => true, 'input' => true, 'turn_finished' => false, 'turn_failed' => true, 'hide_titles' => false],
+        ];
+        assert_response_matches_openapi(openapi_http($caller, 'PUT', '/api/v1/conn/me/push-device', $devicePayload), 'PUT', '/api/v1/conn/me/push-device', 200, $covered);
+        assert_response_matches_openapi(openapi_http($caller, 'GET', '/api/v1/conn/me/push-device?device_id='.$deviceId), 'GET', '/api/v1/conn/me/push-device', 200, $covered);
+        assert_response_matches_openapi(openapi_http($caller, 'DELETE', '/api/v1/conn/me/push-device/'.$deviceId), 'DELETE', '/api/v1/conn/me/push-device/{device_id}', 200, $covered);
+
+        // An unconfigured Gateway sends null key_id and team_id.
+        $credentialsBefore = openapi_http($caller, 'GET', '/api/v1/conn/push-credentials');
+        assert_response_matches_openapi($credentialsBefore, 'GET', '/api/v1/conn/push-credentials', 200, $covered);
+        expect($credentialsBefore->json('data.key_id'))->toBeNull();
+        $apnsKey = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        assert($apnsKey !== false);
+        $apnsPem = '';
+        openssl_pkey_export($apnsKey, $apnsPem);
+        assert_response_matches_openapi(openapi_http($caller, 'PUT', '/api/v1/conn/push-credentials', [
+            'key_id' => 'KEY1234567',
+            'team_id' => 'TEAM123456',
+            'private_key' => $apnsPem,
+        ]), 'PUT', '/api/v1/conn/push-credentials', 200, $covered);
+
+        $attention = [
+            'event_id' => (string) Str::ulid(),
+            'type' => 'attention',
+            'kind' => 'approval',
+            'environment_id' => $managedEnv->environment_id,
+            'thread_id' => 'thread-push-1',
+            'request_id' => 'req-1',
+            'occurred_at' => Carbon::now()->toIso8601String(),
+            'thread_title' => 'Fix login bug',
+        ];
+        assert_response_matches_openapi(openapi_http($host, 'POST', "/api/v1/conn/environments/{$managedEnv->environment_id}/attention", $attention), 'POST', '/api/v1/conn/environments/{environment}/attention', 202, $covered);
+        assert_response_matches_openapi(openapi_http($host, 'POST', "/api/v1/conn/environments/{$managedEnv->environment_id}/attention", $attention), 'POST', '/api/v1/conn/environments/{environment}/attention', 200, $covered);
+        assert_response_matches_openapi(openapi_http($host, 'POST', '/api/v1/conn/managed/attention', [
+            ...$managedBase,
+            ...$attention,
+            'event_id' => (string) Str::ulid(),
+            'type' => 'attention_cleared',
+            'kind' => null,
+            'request_id' => null,
+            'thread_title' => null,
+        ], $managedHeaders), 'POST', '/api/v1/conn/managed/attention', 202, $covered);
+
         // 50-55. The 6 operations Conn calls outside /api/v1/conn
         assert_response_matches_openapi(openapi_http($caller, 'GET', "/api/v1/operations/{$connOp->id}"), 'GET', '/api/v1/operations/{operation}', 200, $covered);
         assert_response_matches_openapi(openapi_http($caller, 'POST', "/api/v1/instances/{$sleepingInstance->id}/wake"), 'POST', '/api/v1/instances/{instance}/wake', 202, $covered);
