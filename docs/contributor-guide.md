@@ -15,471 +15,121 @@ covers:
 
 # Contributing to Orbit
 
-Submit a complete feature: its implementation, tests, documentation, and any architecture decisions. Orbit reproduces the feature on Incus during independent review, and the maintainer approves each merge.
+Ship every feature as one complete pull request containing code, tests, documentation, and any architecture decisions. New contributors working manually can start with [Your first contribution](/first-contribution).
 
-New to Orbit? [Your first contribution](/first-contribution) is the short path for a person who works by hand. It also lists the parts of this guide that Orbit's maintainers and agents handle.
+Every change follows the same order: check architecture, update documentation, implement and prove in a task copy (with its nested fleet for fleet behavior), open a complete PR, pass review and CI, and merge through the merge queue ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). For command changes, commit the spec (chart, page, and cases) first.
 
-The order is always the same: architecture, documentation, implementation, passing end-to-end proof, a complete pull request, review, the gate, and merge ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). For a command change, the spec (chart, page and cases) is the first commit on the feature branch. Build and prove the feature in one task copy, using its nested fleet for fleet behavior, before any pull request opens, draft or ready. CI confirms an already-passing result.
+## Bootstrap
 
-From the repository root, install the project dependencies:
+Install the Composer projects and repository hooks from the root:
 
 ```bash
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the four Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+`bin/bootstrap` installs the four Composer projects serially (sharing one download cache), generates `$ORBIT_HOME/gateway.app-key` (default `~/.orbit/gateway.app-key`) when missing, configures `core.hooksPath` to `.githooks`, and runs each project's checks. Repeat runs skip unchanged installs using fingerprint files (`vendor/.orbit-bootstrap-*`, `node_modules/.orbit-bootstrap-install`, `target/.orbit-bootstrap-fetch`); delete those records to force a fresh run.
 
-Repeat runs skip installs whose manifests, lock files, local package-manager settings and tool version match the last successful install and whose dependency output still exists. Cargo checks its cached crates offline before reusing a fetch. Composer installs stay serial because they share a download cache. Bootstrap rebuilds the Gateway API and Docs outputs only when their source fingerprint changes or an output is missing. Failed work is retried on the next run.
+Useful flags:
 
-Remove the project's `vendor/.orbit-bootstrap-*` records to force its install and generation again; Bun records live in `node_modules`, and Cargo records in `target`.
+- `--skip-checks`: Install dependencies and hooks without running tests or static checks.
+- `--dependencies-only`: Skip checks and Gateway key generation while still installing dependencies, changed outputs, and `.githooks`.
+- `--with-bun` / `--with-rust`: Also install locked Bun (`apps/web`, `apps/desktop`) or Cargo (`apps/agent`, `apps/desktop`) dependencies ([Bun and Rust projects](/reference/bun-and-rust-projects)).
 
-The default still runs every Composer project's tests and quality checks, including when all installs and generators are current. Use `--skip-checks` to omit those checks. `--dependencies-only` also omits the Gateway key; it still installs dependencies, builds changed outputs and configures the Git hook. A Project default must finish setup before its seed is taken: [task copies inherit that seed and run no baseline setup](/reference/task-instance-workspace#check-phases).
-
-Bootstrap also installs the repository's Git hooks through local `core.hooksPath`, including with `--dependencies-only`. The pre-push hook runs `bin/docs-impact --gate --base origin/main` and refuses a push when it fails. Fetch `origin/main` before preparing a push. Commit the impacted documentation and resolve the gate's findings before pushing again.
+The pre-push hook runs `bin/docs-impact --gate --base origin/main` and blocks pushes when covered pages are neither updated nor waived.
 
 ## 1. Check the architecture
 
-Read the [mission](/mission), the [architecture](/architecture), and the [concepts](/concepts). Then read the documentation, code, and tests of the parts your feature changes. The documentation is the current truth about Orbit, and each page explains its design in a "Why it works this way" section. [Architecture decisions](/decisions/overview) holds the decisions that are not built yet.
+Read the [mission](/mission), [architecture](/architecture), and [concepts](/concepts), then inspect the docs, code, and tests for the area you are changing. Use `composer docs-context -- --component=apps/cli` (or `--concept=Cluster`) for an ordered reading list.
 
-Find the pages for a component with `composer docs-context -- --component=apps/cli`. `--concept=Cluster` selects pages by concept. The command returns an ordered reading list. It does not decide what the feature must do.
+### Decisions ship with their feature
 
-When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name the mission principle it serves. Implementation details stay in code and tests.
-
-Mark the draft `In progress.` Reviewers assess it with the implementation and the documentation. The pull request that completes the decision absorbs it into the owning page and retires the record, so the documentation stays the single source of truth. The [ADR guide](https://github.com/hardimpactdev/orbit/blob/main/docs/decisions/README.md) covers the steps, numbering, and format.
+When a change introduces a significant architectural boundary, contract, security rule, or hard-to-reverse choice, add an ADR on the same branch marked `In progress.` and naming the mission principle it serves (`Principle:`). When the feature is complete, absorb the decision into the owning documentation page, remove the ADR file, and register its redirect in `apps/docs/config/adr-retired-slugs.php` and `docs/site.json`. See the [ADR guide](https://github.com/hardimpactdev/orbit/blob/main/docs/decisions/README.md).
 
 ## 2. Write the documentation
 
-Update the pages under `docs/` before you write code. Describe what a user can do, the limits, and what happens when an operation fails. Write in the present tense, and check that the pages and the proposed ADRs agree. The documentation ships in the same pull request as the behavior it describes.
+Update affected pages under `docs/` before writing code, in present tense, describing user-visible behavior, limits, and failures. Bug fixes that restore documented behavior and behavior-preserving refactors need no doc edits. If code, tests, docs, and ADRs disagree, stop and resolve the conflict explicitly.
 
-Update the documentation when the feature changes behavior, terms, architecture, a public or operational contract, or knowledge that another contributor needs. A fix that restores documented behavior, or a refactor that changes no behavior, can leave the documentation alone. Do not write prose only to produce a documentation change.
+### Docs impact stays in the repository
 
-When an ADR, a page, the code, or a test disagree, stop and report the conflict. Do not resolve it by quietly changing one of them.
-
-Run the deterministic impact check for the group's start commit and every planned path, including paths that do not exist yet. [Docs impact stays in the repository](#docs-impact-stays-in-the-repository) explains why Orbit owns this check:
+Run `bin/docs-impact` against the merge base with `origin/main` to list pages covering your planned paths:
 
 ```bash
 bin/docs-impact --base <start-commit> --paths <planned-path>
 ```
 
-The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. In Orbit Tasks, the subtask that changes the behaviour also changes its pages, as the [Orbit Tasks policy](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) describes. A `docs_required` report means that subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: no page changes.
-
-The report, not an agent's opinion, is the mechanical evidence. A machine `no_docs_change` verdict is not semantic approval: the reviewer still checks meaning, completeness, surface ownership, and waivers.
-
-
-
-A person who contributes outside Orbit Tasks can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
-
-The impact checker maps each CLI family to `docs/cli/<family>/index.mdx`. Register a new family in `DocsImpact::CLI_FAMILIES` and add its reference page in the same change.
-
-At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
-
-Every pull request runs `bin/docs-impact --gate` in the Docs job, which blocks Required checks. A change with no documentation impact needs no acknowledgement. For each impacted page that needs no change, put a separate line in the **PR body**:
+The checker maps every CLI family via `DocsImpact::CLI_FAMILIES` to `docs/cli/<family>/index.mdx`; register new families and pages in the same PR. Both `bin/task-check` and CI's Docs job run `bin/docs-impact --gate`. When a covered page genuinely needs no update, add a waiver line to the **PR body** (or the local file pointed to by `--pr-body-file`, `ORBIT_DOCS_PR_BODY_FILE`, or `<git-common-dir>/orbit/proposed-pr-bodies/<branch>.md`):
 
 ```text
-Docs-unaffected: docs/reference/tasks.md: This fixes the implementation to match the existing documented behavior.
+Docs-unaffected: docs/reference/tasks.md: Fixes implementation to match documented behavior.
 ```
 
-Use the exact page path and a specific, non-empty reason. There is no blanket waiver. The gate prints accepted reasons under `exceptions`; the reviewer checks each one.
+### One documentation corpus
 
-After editing the body, run `gh run rerun <run-id> --failed`; the failure prints the run ID. This reruns failed jobs and the aggregate while keeping successful jobs, including a successful proof. A body edit itself starts no CI run. The Docs job reads the live PR body through the API and rejects a changed head.
-
-The gate ignores private `.git/orbit/docs-unaffected` notes. Ownership errors and failed generators cannot be waived.
-
-Before pushing, save the proposed PR body outside the checkout and run the same gate locally after preparing the generated contracts:
-
-```bash
-bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md
-```
-
-The file is input data, never executed. Copy its acknowledgement lines into the PR body. For the pre-push hook or checks run from your current shell, export `ORBIT_DOCS_PR_BODY_FILE=/tmp/orbit-pr-body.md` before pushing. Without a body file, the gate accepts no waivers. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
-
-A Gateway task handoff opens a fresh SSH session on the task checkout; it does not inherit your exported variables. Before handoff, save the proposed PR body **on that checkout's machine** at `<git-common-dir>/orbit/proposed-pr-bodies/<branch>.md`. Obtain the directory with `git rev-parse --path-format=absolute --git-common-dir` and the branch with `git branch --show-current`. Create parent directories for branch names containing `/`.
-
-`bin/review-check` and `bin/task-check` pass only that branch's file to the gate as its waiver file, and `bin/review-check` records the command in the check report. When an impacted page is missing, the gate names that file and says whether it is absent or holds no valid line for the page. In a task copy, the implementer writes `/srv/workspace/.git/orbit/proposed-pr-bodies/task-<id>.md` before the handoff check, as [the scoped task check](/reference/tasks#docs-impact-waivers-in-a-copy) states. A detached checkout has no branch file. An explicit local `ORBIT_DOCS_PR_BODY_FILE` takes precedence.
-
-The reviewer confirms these proposed lines at handoff. CI reads only the live PR body, never the checkout's proposed-body file. When Orbit's publish opens or updates the pull request of a [task copy](/reference/tasks#task-copy), it copies the proposed body's waiver lines into the PR body. Otherwise copy them to the PR body before READY.
-
-Run from the repository root:
+Rebuild derived files and run the linter from the repository root after editing docs:
 
 ```bash
 composer docs-build
 composer docs-lint
 ```
 
-The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configuration are build outputs. Git ignores `docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, and `docs/flows-data.js`. Do not add them to a pull request. After each green CI run on main, the Docs site workflow builds the docs and force-pushes the `docs-site` branch: main's tree plus `docs/docs.json`, `docs/openapi.json`, and `docs/flows-data.js`. Mintlify deploys that branch to the site. A run for a commit whose CI failed publishes nothing, and an older commit never replaces a newer build. To rebuild by hand, run the Docs site workflow on main.
-
-`bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) that command pages place to `docs/flows-data.js`, and `docs/flow.js` draws each one where its page places it. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
-
-Run `bin/build-api` after API changes. Root `composer check` calls that same owner once to build OpenAPI and the MCP catalogue, then builds the documentation before its read-only docs-impact gate. It passes `--prepared-api` to `bin/review-check` so the selected contract lane validates fixtures without generating the API again. A standalone review check still builds the API when its contract lane is selected. A reused checkout therefore checks fresh ignored outputs on its first handoff. A failed generator stops the check. A direct docs-impact run still rejects outputs that are stale.
-
-Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
+Generated artifacts stay ignored by Git (`docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, `docs/flows-data.js`). `composer docs-lint` enforces structure, links, and prose style (`orbit.docs_prose_style` rejects em dashes, filler phrases, and vague headings). `bin/build-api` regenerates the OpenAPI spec and MCP tool manifest; `bin/docs-merge-check` verifies navigation and generated-file merges; CI publishes the built docs to the `docs-site` branch.
 
 ### Parallel command families
 
-Each family owns its registrations. The shared loaders include files in filename order. A family conversion pull request may change its implementation, tests, SDK classes, documentation pages, and these registration files:
+Command families register in separate files so parallel PRs do not conflict on central registries:
 
-| Registration | Family-owned path |
+| Surface | Registration path |
 | --- | --- |
-| Gateway bindings and tagged contributions | `apps/gateway/app/Providers/Domains/<Domain>ServiceProvider.php` |
-| Gateway API routes | `apps/gateway/routes/api/<family>.php` |
-| Operation declarations | `apps/gateway/app/Domain/<Domain>/operation-kinds.php` |
-| CLI vocabulary | `apps/cli/app/Support/CommandVocabulary/<family>.php` |
-| Documentation navigation and new redirects | `docs/navigation/<page-or-family>.json` |
-
-A domain provider extends Laravel's `ServiceProvider`. Bootstrap discovers it without an entry in `bootstrap/providers.php`. The route loader supplies `/api/v1`; each family file declares its own middleware. Keep each tagged contribution in its owning provider. Existing optional extensions retain their extension providers and routes.
-
-An operation manifest returns a map from kind name to an `OperationKind` class for PHP execution, or to `['executor' => 'swamp', 'completion' => CompletionClass::class]` for Swamp execution. Keep new kind constants in the owning domain. The registry rejects duplicate kind names. The CLI fragment returns `actions`, `noun_endings`, and `route_exceptions` lists.
-
-A navigation fragment contains a nonempty `navigation` list of entries with `tab`, `group`, `order`, and `pages`. `composer docs-build` fails on a fragment without one. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
-
-Family conversion pull requests leave the shared loaders, `ApplicationServiceProvider.php`, `CommandVocabulary.php`, `OperationKinds.php`, `docs/site.json`, and build workflows alone. Changes to these contracts belong in a separate shared-infrastructure pull request. Family pull requests never update generated files or install a merge driver.
+| Gateway service provider | `apps/gateway/app/Domains/<Domain>ServiceProvider.php` |
+| API routes | `apps/gateway/routes/api/<family>.php` |
+| Operation kinds | `apps/gateway/app/Domain/<Domain>/operation-kinds.php` |
+| CLI vocabulary | `apps/cli/app/CommandVocabulary/<family>.php` |
+| Docs navigation | `docs/navigation/<page-or-family>.json` |
 
 ## 3. Implement and verify
 
-Build the feature and its tests against the documented behavior. Keep the in-progress ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
-
-Run the tests that cover your change with stock Pest: `vendor/bin/pest --compact` with a test file path or `--filter`. `composer test` runs the project's full suite. Orbit runs no test impact analysis. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
-
-Follow the [Feature delivery merge gate](/reference/implementation-loop#full-suites-gate-merges) for PR checks.
-
-CI runs builds and static checks on pull requests, main pushes, task handoff pushes and manual dispatches. It also runs the full Gateway and CLI Pest suites when their inputs change; [CI](/reference/implementation-loop#ci) owns its setup and selection rules. Other PHP suites remain local checks.
-
-The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, runs no tests. CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists the gate's steps.
-
-The `test` script in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts.
-
-Test fixtures must work with the dependencies their CI job installs. For cross-project source fixtures, load the real source with the test project's dependency autoloader and include every adapter bootstrap file. Do not rely on another project's `vendor/` directory unless the job explicitly installs it.
-
-CI supplies Bun 1.4.2 for the web build and generated contracts. Keep Bun available locally.
-
-Local SSH fixtures give task-runner login shells a disposable `HOME`, not the contributor's shell profiles. Guest-script fixtures redirect host paths, including `/usr/local/bin`, into their temporary root. Keep these boundaries when adding tests: a check must not depend on personal profile output or write host tool launchers.
-
-Gateway tests of Node work fake `AgentCommandRunner` with scripted answers and refusals, as `Tests\Support\FakeAgentCommandRunner` does. They assert Gateway intent: the commands, their inputs, and how results and refusals become records and errors. Do not rebuild an agent command's filesystem or Git work in PHP. Rust tests in `apps/agent` prove it on the real implementation.
-
-Build expensive read-only Git fixtures once per test file, then copy them into each case's disposable directory before changing them. Cleanup must restore owner read, write, and traversal access on fixture directories without following symlinks or changing hard-linked file modes.
-
-Use blocking process completion for fixture commands rather than a polling runner. For bundled Python programs, a test host can share imports and compiled code, but each invocation runs in a fresh child with its own globals, environment, working directory, and process group. Share no mutable program state between cases.
-
-Keep real subprocess coverage for remote programs that manage Git state or process groups. Capture and status tests can run the real program synchronously; detached admission, cancellation, and managed-run tests keep their real launch path. Use explicit readiness signals when testing timeout and cancellation boundaries. The retained Tasks checker uses real deadlines; its elapsed-time proofs live in `TaskCheckDeadlineTest`.
-
-Keep a real-clock case where enforcing the timeout is the behavior under test. Start a readiness-timeout fixture with its normal startup budget, then set its short deadline after `Process::start()` returns; process launch must not expire before the readiness helper runs. Scheduler tests advance the framework clock instead of sleeping.
-
-In an Orbit task, the implementer runs only the tests that cover the change in each changed Composer project. The Gateway runs the Project check at handoff, and CI runs selected builds, static checks and Gateway and CLI Pest suites on the handoff commit. Outside an Orbit task, run these commands in each changed project, such as `apps/cli`:
-
-```bash
-composer test
-composer check
-```
-
-The Gateway runs only on Linux. You can run its tests on macOS, as the next two paragraphs describe, but to run a Gateway, use a Linux machine and follow the [Quickstart](/quickstart).
-
-Gateway tests run the shell programs that Orbit installs on Ubuntu Nodes. On macOS, install the Linux tools they need with `brew install bash coreutils gnu-sed findutils caddy`. The test bootstrap puts these tools first on `PATH`, supplies `setsid` and `flock`, and stops with the missing package names when a tool is absent. The test application reads the tracked `.env.example`, not your `.env`. Child processes that boot the Gateway, such as `artisan` calls, still read `.env` when it exists.
-
-Some tests run Node programs that use Linux kernel interfaces, such as `/proc/net/tcp` or `os.O_PATH`. On Linux, such as in CI, these tests run directly. On another system, such as macOS, they run on the Linux SSH host that `ORBIT_LINUX_TEST_HOST` names, such as an Ubuntu machine like the Nodes. The host needs the tools used by the delegated case and must accept `ssh` without a prompt.
-
-Ordinary cases need no sudo. Only deliberately selected `privileged` cases need a disposable host with sudo and the `caddy` account; the default test selection excludes them. See [Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege). When `ORBIT_LINUX_TEST_HOST` is not set, these tests are skipped, and the skip message names the variable. CI runs the selected Gateway default suite and its two privileged kernel cases; record other local verification separately.
-
-Each test process copies `apps/gateway` to the host with rsync once and reuses the copy. The copy holds only the files that Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`. So ignored files such as keys, logs, caches, and databases stay local, and no `.env` file except `.env.example` leaves your machine. The copy lives in a mode 700 directory under `/tmp/orbit-gateway-linux-tests-<uid>`. The process removes its copy when it ends, also on Ctrl-C or `SIGTERM`. The host stops a test that runs longer than five minutes, or `ORBIT_LINUX_TEST_TIMEOUT` seconds. A later run removes the copies that a killed process left, after six hours.
-
-`bin/pest-plain` creates a fresh directory under the system temporary directory before starting Pest. It respects an inherited `TMPDIR`, except Orbit's private agent and check directories: those runs use `/tmp` so cross-user fixtures can traverse every parent. It sets `TMPDIR`, `TMP`, and `TEMP` for the run, so ParaTest worker files, generated PHP files, and browser profiles share the same lifetime as test fixtures.
-
-The wrapper stops its remaining child processes and waits for them before removing its directory, including on Ctrl-C or `SIGTERM`. On Linux it also owns orphaned descendants that start a new session, reaps exited orphans while the command runs, and stops the run when its launcher parent dies. It preserves the directory and reports its path if a process cannot stop. It never scavenges another run's files.
-
-The first interrupt is forwarded to the test process group. The launcher gives the group and its adopted children up to 75 seconds to finish cleanup, even when the Pest leader exits before its workers. This exceeds the Linux host cleanup's 60-second SSH timeout. A second interrupt forces termination. After an ordinary exit, remaining children stop immediately. `SIGKILL` of the launcher can leave a run directory for manual inspection. Use `bin/pest-plain vendor/bin/pest ...` for direct Pest runs too.
-
-Gateway bootstrap reuses the run directory. Without the wrapper it creates a process-local `orbit-gateway-tests-<pid>-<random>` directory. Create fixtures under `sys_get_temp_dir()`, not a fixed `/tmp`, unless the test needs a short Unix socket path or a path that a Node program fixes. On `app-dev` Nodes, the [tmpfiles rule](/reference/node-provisioning#converge-the-orbit-footprint) empties `/tmp/orbit-*` and `/dev/shm/orbit-*` directories a day after their contents last changed.
-
-Every Gateway Feature test gets `Storage::fake('local')`. Its Laravel storage path points to a temporary directory for that test, including direct-file staging. An after-test guard compares the original `storage/app` tree and fails if files changed there. Use the fake disk or a per-test temporary path for archives; never write transcript fixtures to the real archive root. Give global test constants and helpers names unique to their test file: the full suite loads Unit and Feature files together.
-
-Gateway tests that need real commits or a database visible to subprocesses use `Tests\Support\WithCommittedSqliteDatabase`. It migrates a pristine SQLite template once per test file and copies it into each case's private directory. The ordinary `RefreshDatabase` connection stays inside its transaction; the committed fixture uses a separate connection. Do not roll back or purge the ordinary connection to replace it, because that invalidates Laravel's migration cache and reloads the database for every case.
-
-Before replacing this helper with a stock reset trait, compare complete Documents workloads, including setup and teardown, not repeated migration calls alone. Both setups must preserve real commits, subprocess visibility, reference defaults, and per-case isolation. `DatabaseTruncation` permits real commits; its seeder must restore reference rows and reset application ID counters left by empty tables that Laravel skips truncating.
-
-The Gateway's fresh-install schema is one squashed Laravel migration, followed by a migration that seeds required reference rows. The baseline keeps the last applied migration's name, `2026_12_03_000000_allow_cold_recipe_image_rebuilds`, so an existing Gateway that completed the recorded migration chain skips it. Fresh installations create the same tables, indexes, foreign keys, checks, and triggers and record the squashed history. Trigger diagnostics use the current Project and Instance names. Finish the recorded chain before deploying a squash. The baseline cannot be rolled back.
-
-Keep tables and columns in `Schema::create` calls so Larastan reads them through its normal migration scanner and fingerprints the PHP source. SQLite triggers and partial indexes stay SQL data in the migration. Do not add a separate schema dump. `SchemaBaselineTest` compares the table names, column names, and nullability Larastan reads with the loaded SQLite schema. It checks the fixed squashed-history boundary and the exact current migration files after it, so adding a migration does not require changing a hard-coded total.
-
-Separate named test connections use the stock migrate command, with no schema-path override or SQLite CLI dependency. Point `queue.batching.database` at the same connection before migrating; Horizon's batch-metadata migration uses that setting. When adding a migration after the squash, test its upgrade and rollback against the preceding schema; delete those history tests and their unused helpers when the migration is next squashed. Required fresh-install reference rows belong in the reference-row migration.
-
-Keep non-Gateway suites fast with each ecosystem's stock test tools. PHP tests use controllable clocks and Laravel's `Sleep::fake()` for timeout budgets, and in-process Artisan calls with transport fakes for command behavior. Give in-process nonterminal commands an explicit nonterminal input stream; never inherit the test runner's stdin. For raw output and channel assertions, call the real console kernel with separate in-memory stdout and stderr streams rather than mocking its output style. SDK-backed CLI commands use Saloon's transport fake, not Laravel's HTTP fake.
-
-Keep one real binary smoke test for local profile output, and real PTY cases for raw input, echo, terminal-state restoration, and proving that explicit consent skips a terminal prompt.
-
-Cover the SDK retry's default clock with one short test that uses real time. Inject a clock for the other timeout tests. Console lifecycle tests use short work and renderer intervals for process ownership and cleanup checks. Keep cold nested-panel startup and settlement inside the outer callback.
-
-The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
-
-Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. CLI tests have five seconds, for every test size: on a hosted runner, two seconds cut tests whose cleanup waited on the disk. The limit exists to catch a test that hangs, not to measure speed. Unsized Gateway tests have a five-second limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner.
-
-An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
-
-A task check in a copy also runs on a shared host. So `bin/task-check` passes each Pest run the limit of its project's CI job, which it reads from `.github/workflows/ci.yml`.
-
-A Swamp fixture unit, such as a Python or Deno test file or one slice of it, declares at most the 150 seconds of CI's lane, `shard_seconds` in `.github/ci/checks.toml`; CI stops it at `unit_ceiling_seconds`. `bin/task-check` prints both caps at its start, and runs CI's budget tests on every change.
-
-Gateway permits a reviewed exception only when real elapsed time is the behaviour under test and a controllable clock or transport would lose that proof. Put only the approved cases in a dedicated native PHPUnit class with class-level `#[Large]` and a one-line justification beside the attribute. Use stock `timeoutForLargeTests`, not custom timeout or sizing machinery; keep unrelated tests unsized. The [Gateway test time-limit reference](/reference/implementation-loop#gateway-test-time-limits) lists the approved exceptions and enforcement settings.
-
-CLI feature tests build fresh applications, configuration, containers, and command objects. Isolation regressions check that mutations do not survive a refresh and compare the complete command registry, including aliases, visibility and input definitions, with an independent subprocess. Use real subprocesses for proofs that depend on a cold boot or the process environment. CI does not add a private bytecode cache.
-
-Consent matrices register only their command in the real application kernel. An affirmative case for each family retains full command discovery. Tests that validate prompt input deliver Backspace keys in one buffered read instead of rendering hundreds of unrelated frames. The prompt still processes every key. The real PTY driver polls readiness every 2 ms and drains queued output without waiting once the child has exited. Neither interval is a production-cadence assertion.
-
-When a test must observe native cURL options, inject its option-setting callable and use a stock mock that delegates to `curl_setopt`; checking a private timeout selector does not prove the transfer uses it.
-
-Add regression tests for behavior changes and their important failure modes. A bug fix adds a test that fails before the fix and passes after it. Confirm that the tests that exercise the new behavior ran.
-
-Docs tests build a fresh Git repository for each isolated case. Fixture indexing and command assertions run in-process unless process or environment isolation is the behavior under test. Temporary Git repositories disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
-
-The disposable route corpus keeps real core controllers, Laravel route discovery, and the explicitly registered Conn extension provider, but only the endpoints and form requests needed by the merge proofs and the generator's request-schema checks. Disable unrelated third-party provider discovery in the private applications; those providers are not inputs to these proofs. Register the real Docs application provider and Librarian provider explicitly for context generation and independent linting. This avoids copying unrelated application history and evaluating unused request constants. Keep every Python case in the external quality check.
-
-Tests for generated merges write distinct markers to derived artifacts instead of generating branch snapshots. Maintained navigation entries and ADR rows remain real inputs. Each merge order runs independently through real Git and generators, and must equal the same complete expected tree and artifact bytes. Preview commands also run separately in both orders.
-
-Recorded fixtures contain real generator output for the base, combined ADR additions, and combined endpoint changes. Separate read-only freshness cases rebuild each fixture's outputs, including a fresh web type comparison. Every check must pass and leave all artifacts unchanged. Regenerate fixture bytes with the real generators when their inputs change; never update them just to silence a mismatch. Policy tests use small, valid corpora that exercise the rule under test; `composer docs-lint` checks the full corpus.
-
-Run the merge generators in sequence. Give each independent freshness gate its own Python case for each recorded fixture: OpenAPI, MCP tools, Docs lint, navigation, and web types. Each gate checks that all recorded artifacts remain unchanged. The quality check runs these cases sequentially, without a nested worker pool. Another case rejects generators that run on a different thread. The real merge and freshness cases remain separate.
-
-GitHub CI runs Composer validation, changed-PHP syntax checks, selected Gateway Pest, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
-
-Required checks target five minutes for pull requests; the fast checks take about 2 minutes. Project checks are removed from CI for now; Gateway Pest is required when selected, and other changed behavior is tested locally. Keep Orbit TypeScript coverage in fast unit tests; do not add native workflow suites. Nick decides which checks return. Keep the remaining fast gates.
-
-A pull request merges through the [merge queue](/reference/implementation-loop#merge-queue). After the gate, whoever opens the pull request queues it as `nckrtl`:
-
-```bash
-gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>
-```
-
-The SHA is the head that passed the gate; GitHub refuses a head that moved. GitHub queues the pull request when `Required checks` is green on the head, tests the commit that `main` will receive, and merges it when that run is green. Do not update the branch because `main` moved. A pull request whose queue run fails leaves the queue: fix it and run the command again.
-
-The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. Main delivers the commit the queue tested; a red `main` is fixed forward and never released. The proof runs only on the PR head. A draft can hold back an already-built and proven change; it does not move implementation or proof after PR creation.
-
-Root `composer check` builds OpenAPI and the documentation outputs before running `bin/review-check`, so a task checkout checks artifacts from its current sources.
-
-The gate runs `composer check` in each of the four Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web app profile. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
-
-Each project's `composer check` runs Rector and Pint in fix mode, then PHPStan. Commit the formatter edits with your change; no CI job checks style. The [feature delivery reference](/reference/implementation-loop#formatters-run-in-fix-mode) explains why. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
-
-## Audit tests and unused code
-
-Routine test review uses each project's testing guidance and the existing reviewer skill. For a requested suite cleanup or unused-code sweep, use the reviewer's [optional audit procedure](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/references/test-audit.md). It requires evidence for removals, named retained coverage, and checks that repaired assertions catch the intended defect. It does not add a mandatory PR gate. A script that checks test quality remains a proposed follow-up.
-
-## Static analysis
-
-PHPStan checks each PHP project during `composer check`, at level 9. The projects are `apps/gateway`, `apps/cli`, `packages/php-sdk`, and `apps/docs`. Laravel projects use Larastan. The SDK uses PHPStan directly.
-
-Fix the code that PHPStan reports, so that the declared type and the runtime value agree. Do not clear a finding with any of these:
-
-- an ignore, including `@phpstan-ignore`, or a baseline
-- `assert()` or an inline `@var` that overrides the inferred type
-- a cast that only silences the finding
-- a wider type that hides the finding
-
-The finding pack also rejects a call to `strtotime()`, so use Carbon parsing. In a test, chain `preventStrayClassifications()` to every `Classification::fake()` call.
-
-The CLI keeps one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. The entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
-
-## Dependencies
-
-Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
-
-When updating Vite+ in web, keep the `vite` alias on the same Vite+ core version. Match the `vitest` override and web's Playwright browser provider to the Vitest version in `vite-plus/dist/versions.js`. Remove overrides for Vitest packages absent from the new runner.
-
-Dependabot holds routine `vite-plus` version updates in web until it can move the core alias and runner overrides with them. Update that set together manually. Security updates remain enabled and must satisfy the same version alignment.
-
-Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group so one daily pull request bundles routine updates. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
-
-When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review.
-
-If an advisory has no fix, do not hide it. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
-
-From the repository root, `composer audit:dependencies` runs `composer audit --locked` for each Composer lockfile and `bun audit` for each Bun lockfile. The Dependency audit workflow runs it every night and on manual dispatch.
-
-## 4. Submit a complete pull request
-
-Explain the problem, the resulting behavior, the architecture decisions, the documentation changes, the verification results, and the remaining limits. Link an issue when one exists. A bug fix closes its issue with `Fixes #N` and names its regression test.
-
-Open the pull request and request maintainer review only after the feature is built and its end-to-end proof has passed in one task copy with its nested fleet. Draft pull requests have the same pre-PR proof requirement. Include the proof evidence and state that an independent review ran before opening the PR.
-
-## Review and merge
-
-Orbit's independent reviewer checks the code, the documentation, and the ADRs, and reproduces the feature in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The reviewer records the commit, the environment, the actions, the results, and the limits. The [feature delivery reference](/reference/implementation-loop) lists that evidence.
-
-Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. The gate and the merge are [stage 4](/reference/command-development-pipeline#4-pr-and-ci).
-
-## Work outside a task
-
-In an Orbit task, Orbit reviews each subtask and opens the pull request, so these steps do not apply to task agents. They apply when you work outside a task, by hand or with an agent.
-
-Follow the order: architecture, documentation, implementation, passing end-to-end proof, one pull request, CI, the gate, and merge. Check the existing ADRs. Propose a significant architecture change in the feature's pull request. For a command change, commit the spec (chart, page and cases) first on the feature branch ([stage 1](/reference/command-development-pipeline#1-prep)).
-
-Open no pull request, draft or ready, until the feature is built and proven. Keep the pull request focused on the feature, including any harness changes it needs.
-
-Run `composer test` and `composer check` in each changed Composer project. Confirm that the tests covering the feature ran. Root `composer check` also runs checks across projects. For dependency updates and advisories, follow [Dependencies](#dependencies).
-
-Before you open or update a pull request, run one independent review in a fresh subagent. Give it the diff and the [plug-in point checklist](/reference/extensions#add-a-plug-in-point). Fix its findings first. State in the pull request body that this review ran.
-
-Merge needs green CI and the gate of stage 4. Queue the pull request through the [merge queue](/reference/implementation-loop#merge-queue) with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>`. Do not update a branch because `main` moved. A known correctness failure on `main` holds unrelated merges until a reviewed fix is verified on `main`.
-
-Preserve other work. Remove the machines and records you created.
-
-## Use an agent
-
-The skills in the repository guide an agent through the work. They live in `.agents/skills`, where Codex finds them. `.claude/skills` is a relative symbolic link to `../.agents/skills`, so Claude Code finds the same skills. Each project folder's rules live in its `AGENTS.md`. A `CLAUDE.md` beside it links to `AGENTS.md`, so Claude Code loads the rules when it reads a file in that folder. Edit only the skill or the `AGENTS.md`; the links follow.
-
-| Task | Skill |
-| --- | --- |
-| Shape the feature and prepare its ADRs and documentation | [grill-with-docs](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/grill-with-docs/SKILL.md) |
-| Prepare, implement, or review work tracked by Orbit Tasks | [orbit-tasks](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) |
-| Prepare a command: chart, page and cases (stage 1) | [preparing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/preparing-commands/SKILL.md) |
-| Prove a command on the nested fleet (stages 2 and 3) | [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md) |
-| Build and submit the feature or command (stage 4) | [developing-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/developing-commands/SKILL.md) |
-| Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
-
-For focused work, use [writing-documentation](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), or [verifying-web-ui](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
-
-An independent reviewer can review the proposed ADRs and documentation before coding, on request.
-
-### Refresh the bundled Swamp skills
-
-Swamp's upstream guidance lives in [`.agents/swamp-upstream`](https://github.com/hardimpactdev/orbit/blob/main/.agents/swamp-upstream/README.md), where no client loads it by itself: the managed block that `swamp repo upgrade` writes into `swamp/AGENTS.md`, kept in `managed-section.md`, and the `swamp` and `swamp-getting-started` skills, kept under `skills`. Both follow `swampVersion` in `swamp/.swamp.yaml`. The [source manifest](https://github.com/hardimpactdev/orbit/blob/main/.agents/swamp-upstream/swamp-source.json) records the full upstream commit, import method and SHA-256 of each skill file. Keep these files word for word, so that a refresh can be compared with them, including links that are broken upstream. Orbit's rules live in `swamp/AGENTS.md`, outside the block.
-
-The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. A refresh ends in the same layout:
-
-1. Clone `https://github.com/swamp-club/swamp.git` into `.amp/in/orb-backup/swamp-upstream` and check out the full commit matching the runtime pin. Verify its full SHA before continuing.
-2. From the Orbit root, run the upgrade with the pinned binary in a disposable repository and user home.
-
-The upgrade installs both skills into `~/.claude/skills` and `~/.agents/skills` of the user who runs it. It also writes `.claude/settings.local.json` and prepends the managed block to `AGENTS.md`. Run in place, it would make the skills load again in every session.
-
-```sh
-export SWAMP_SCRATCH="$(mktemp -d)"
-mkdir "$SWAMP_SCRATCH/home" "$SWAMP_SCRATCH/repo"
-cp swamp/.swamp.yaml swamp/AGENTS.md "$SWAMP_SCRATCH/repo/"
-ln -s AGENTS.md "$SWAMP_SCRATCH/repo/CLAUDE.md"
-(
-  cd "$SWAMP_SCRATCH/repo"
-  export HOME="$SWAMP_SCRATCH/home" XDG_CONFIG_HOME="$SWAMP_SCRATCH/home/.config" \
-    XDG_DATA_HOME="$SWAMP_SCRATCH/home/.local/share" XDG_CACHE_HOME="$SWAMP_SCRATCH/home/.cache"
-  [ -n "${SWAMP_API_KEY:-}" ] || swamp auth login
-  swamp repo upgrade --tool claude --tool codex
-)
-```
-
-The upgrade needs a Swamp account, and the disposable home holds no saved login. The subshell signs in with `swamp auth login` inside that home, so the credential is removed with it in step 4. Without a browser, export `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` from a collective token before you run it; the subshell then skips the sign-in.
-
-3. From the same shell, run this Python code. It copies the block to `.agents/swamp-upstream/managed-section.md`, replaces both skill folders from upstream and records their hashes.
-
-```python
-import hashlib
-import json
-import os
-from pathlib import Path
-import re
-import shutil
-import subprocess
-
-upstream = Path('.amp/in/orb-backup/swamp-upstream')
-commit = subprocess.check_output(['git', '-C', str(upstream), 'rev-parse', 'HEAD'], text=True).strip()
-version = re.search(r'^swampVersion: (\S+)$', Path('swamp/.swamp.yaml').read_text(), re.M)[1]
-assert commit.startswith(version.split('-sha.')[1])
-home = Path('.agents/swamp-upstream')
-generated = Path(os.environ['SWAMP_SCRATCH'], 'repo/AGENTS.md').read_text()
-end = '<!-- END swamp managed section -->\n'
-block = re.search(r'<!-- BEGIN swamp managed section - DO NOT EDIT -->\n.*?' + re.escape(end), generated, re.S)[0]
-(home / 'managed-section.md').write_text(block)
-source = upstream / 'src/infrastructure/assets/skill_assets.ts'
-bundled = source.read_text().split('const BUNDLED_SKILLS:', 1)[1].split('\n];', 1)[0]
-paths = sorted(re.findall(r'relativePath:\s*"([^"]+)"', bundled))
-assert {path.split('/')[0] for path in paths} == {'swamp', 'swamp-getting-started'}
-skills = home / 'skills'
-for name in ('swamp', 'swamp-getting-started'):
-    shutil.rmtree(skills / name)
-hashes = {}
-for path in paths:
-    content = (upstream / '.claude/skills' / path).read_bytes()
-    target = skills / path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
-    hashes[path] = hashlib.sha256(content).hexdigest()
-manifest = {
-    'repository': 'https://github.com/swamp-club/swamp',
-    'commit': commit,
-    'swampVersion': version,
-    'method': 'SkillAssets.copySkillsTo: BUNDLED_SKILLS from .claude/skills, byte-for-byte; see docs/contributor-guide.md#refresh-the-bundled-swamp-skills',
-    'files': hashes,
-}
-(home / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
-```
-
-4. Remove the disposable copy with `rm -rf "$SWAMP_SCRATCH"`. `git status` shows changes only under `.agents/swamp-upstream`; `swamp/AGENTS.md` and your own home are untouched.
-5. Review the upstream diff of `.agents/swamp-upstream`, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
-
-CI runs this read-only drift check of the skill files in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
-
-## Report a problem
-
-Use [GitHub issues](https://github.com/hardimpactdev/orbit/issues) for bugs and questions. The bug report form adds the `bug` label, so the [open bugs](https://github.com/hardimpactdev/orbit/issues?q=is%3Aissue+is%3Aopen+label%3Abug) list counts every reported bug. A bug found inside an Orbit task still gets an issue when the task does not fix it. Include the source commit, the Orbit version, the operating system, the exact command, the expected result, and the observed result. Remove credentials, environment values, private keys, tokens, and personal data from shared logs. Include a request ID and a stable error code when you have them.
-
-## Why it works this way
-
-These reasons explain the process. Check them before you propose a change.
-
-### Decisions ship with their feature
-
-A pull request carries the ADR, the implementation, and the documentation together, and absorbs the ADR when it completes the decision. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
-
-### Review reproduces on a topology
-
-Orbit's reviewer judges the change from its tests, its diff and its pre-PR proof in the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The manual VM topology harness is removed; task groups do not declare topologies. External contributors and internal automation meet the same review and merge standard.
-
-A separate proof run for each candidate is a rejected alternative. That flow kept a proof plan and fixtures beside each branch, captured immutable evidence on a proof topology, kept those machines through review, compared later commits by recorded inputs, and promoted the proof topology into the snapshot at closeout. It doubled the delivery steps and held machines through review. The ownership and cleanup rules of that flow still apply to every topology.
-
-### One documentation corpus
-
-All maintained documentation lives under the root `docs/` directory, for humans and agents alike. `apps/docs` holds only the tooling: the lint rules, the context index builder, and their tests. A second content tree would drift from the first.
-
-### Docs impact stays in the repository
-
-The Gateway Tasks engine stores work, deliverables, and lifecycle state. Each Project supplies its own task check and repository policy. Orbit keeps `bin/docs-impact` and its extraction logic in the repository, and enforces the result through `composer check` and `bin/review-check`. Putting docs-first rules in the Gateway is rejected, because it would couple a generic engine to Orbit's documentation, ADRs, and tooling.
-
-A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned current surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
-
-Deleting a migration without an owner does not require a new ownership binding for the removed file. Removing an owned migration still routes the change to its page, and new or changed migrations still need owners.
-
-A waiver belongs in the PR body so a reviewer can see it. Before the PR exists, the task check reads the branch-specific proposed-body file on its own checkout; Orbit's publish of a task copy copies those lines to the PR body; any other author copies them before READY. Private Git notes are not review evidence. A shared tracked waiver file is rejected because concurrent branches would edit the same lines.
-
-Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
-
-A planned new file needs an owner whose glob also matches a tracked path, such as `metrics-*/**`, so a kind's new behavior directory needs no placeholder. Test inputs need no owner: `tests/` directories and the topology proof fixtures in `swamp/proof/`. A change to `apps/gateway/resources/machine-software/recipe.json` that only bumps pinned values (snapshots, versions, URLs and digests) needs no prose either: the page documents the recipe's shape and rules, not its pins. Any other recipe change still routes to its page.
-
-Coverage declarations are optional, but docs-lint checks that their globs are safe and match tracked paths. A committed ratchet prevents already-covered pages from dropping their declarations. Requiring coverage on every page at once is rejected, because a monotonic ratchet lets documentation consolidation add ownership incrementally without weakening existing coverage.
+Keep project-specific implementation details in each project's `AGENTS.md` (mirrored via `CLAUDE.md`) and `.agents/skills` (symlinked at `.claude/skills`).
 
 ### Checks that need no network
 
-`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the built context index. It fails for a page that is in no navigation fragment, unless `MintlifyLinksRule::OUTSIDE_NAVIGATION` lists it with the reason. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
+All four Composer projects (`apps/gateway`, `apps/cli`, `packages/php-sdk`, `apps/docs`) run offline tests and static checks:
 
-Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
+- **Per-project:** `composer test` and `composer check` inside the project directory.
+- **Root PHP suites:** `bin/test` runs all Composer suites (use `bin/pest-plain` for clean output without ANSI formatting).
+- **Task copy gate:** `bin/task-check` runs scoped Pest, Pint, PHPStan, `docs-impact`, `swamp-shape-gate`, CI policy, and API fixtures for changed paths ([The scoped task check](/reference/implementation-loop#the-scoped-task-check)).
+- **Local full gate:** Root `composer check` runs `bin/review-check` ([The candidate gate](/reference/implementation-loop#the-candidate-gate)).
 
-Check a proposed head and its merge result with the current Docs tooling:
+### Static analysis
+
+Every PHP project runs PHPStan at level 9 plus Pint and Rector (`composer check`). Formatters run in fix mode locally ([Formatters run in fix mode](/reference/implementation-loop#formatters-run-in-fix-mode)).
+
+- Fix findings in code rather than silencing them with baselines, `ignoreErrors`, `@phpstan-ignore`, `assert()`, or inline `@var` casts ([Findings are fixed, not silenced](/reference/implementation-loop#findings-are-fixed-not-silenced)).
+- `tools/phpstan/orbit-rules.neon` disallows `strtotime()` and inline `@var` overrides (`NoInlineVarOverrideRule`). The only permitted `ignoreErrors` entry is the `count: 3` entry on `ToolCommand.php` in `apps/cli/phpstan.neon`.
+
+### Gateway tests on macOS and Linux
+
+Gateway tests use `Storage::fake('local')`, `WithCommittedSqliteDatabase` for committed SQLite checks, and the database safety guard ([Gateway tests and privilege](/reference/implementation-loop#gateway-tests-and-privilege)). On macOS, install the GNU tools and Caddy required by `TestToolchain`:
 
 ```bash
-bin/docs-merge-check --base origin/main --head HEAD --head-only
-bin/docs-merge-check --base origin/main --head HEAD
+brew install bash coreutils gnu-sed findutils caddy
 ```
 
-`--head` defaults to `HEAD`. `--head-only` checks that committed tree alone; otherwise `--base` is required and Git builds the merge result in a temporary local clone. Both modes run strict docs lint, including the ADR lifecycle rules, without changing the working tree. The merge preview retains both parents for history checks and binds the coverage ratchet baseline to the resolved `--base` commit, not the checkout's local `main`. Head-only mode preserves the source checkout's `origin/main` baseline when present; without it, lint uses the head's committed ratchet. Neither mode substitutes local `main` for that baseline.
+To run Linux-only Gateway tests from macOS, point `ORBIT_LINUX_TEST_HOST` (optional `ORBIT_LINUX_TEST_TIMEOUT`) at a Linux host. See [Gateway test time limits](/reference/implementation-loop#gateway-test-time-limits) and [Parallel processes](/reference/implementation-loop#parallel-processes) for execution limits. Docs tests (`apps/docs/phpunit.xml`) do not enforce a per-test wall-clock limit.
 
-The command isolates Laravel's configuration-cache path in its private scratch directory so a workspace or inherited cache cannot select a different documentation tree; existing caches are left untouched.
+## Dependencies
 
-An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
+Dependabot opens one daily multi-ecosystem update PR across Composer, Bun, and GitHub Actions pinned by full SHA. Keep Vite+ and its `vite` / `vitest` overrides aligned across `apps/web/package.json`. Run `composer audit:dependencies` (`bin/dependency-audit`) locally; `.github/workflows/dependency-audit.yml` runs nightly.
 
-CI's Docs build job checks out the immutable event SHA (`github.sha`), checks the generated context index and runs strict documentation lint. On pull requests, that SHA is the event's merge commit, not the moving `refs/pull/N/merge` ref or the PR head. `Required checks` requires this job on every event; there is no second Docs merge-ref job.
+## Review and merge
 
-The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
+CI runs all affected PHP suites (`gateway-tests`, `gateway-real-clients`, `cli-tests`, `sdk-tests`, `docs`), `web` (unit, verification, browser), `agent` (Cargo check, Clippy, test), `swamp`, `proof`, and `ci-policy` ([Full suites gate merges](/reference/implementation-loop#full-suites-gate-merges)).
 
-The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
+### Review reproduces on a topology
 
-### Audits stay outside the gate
+Contributors do not need Incus machines. Maintainers and Orbit's independent reviewer reproduce fleet changes inside a task copy's nested fleet before approving merge, recording the tested commit, commands, exit codes, and resulting state.
 
-Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and an advisory fix pull request ships the fix.
+Once `Required checks` and review pass, queue the PR for squash merge on its exact verified head ([Merge queue](/reference/implementation-loop#merge-queue)):
 
-### A generated context index
-
-`docs/generated/context.json` maps pages to concepts and components. Agents use it to load the right pages without reading all the code. Generation is an explicit write, and lint only checks that the built index is current.
+```bash
+gh pr merge <number> -R hardimpactdev/orbit --squash --auto --match-head-commit <SHA>
+```

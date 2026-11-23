@@ -1,146 +1,25 @@
 ---
 title: "Swamp evaluation ledger"
-description: "Version-specific observations and candidate improvements for Swamp's native resources and dispatch."
+description: "Runtime and worker constraints observed in Swamp that shape Orbit workflow design."
 ---
 
 # Swamp evaluation ledger
 
-This ledger records observations against the versions named in each section, not current dependency pins or promises of missing features in newer releases. Recheck an entry against the installed package before using it to choose an implementation. [Swamp shape](/swamp/porting) owns Orbit's current integration rules.
+Orbit defaults to Ansible phases for machine execution ([Port a command to the Swamp shape](/swamp/porting) and [`swamp/docs/swamp-shape.md`](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). This page records Swamp runtime constraints that still shape how workflows and playbooks are structured. Recheck any constraint after upgrading the pinned Swamp runtime in `swamp/.swamp.yaml`.
 
-## Official cfgmgmt Docker container gaps
+## Dispatch and worker constraints
 
-Pinned package: `@swamp/cfgmgmt@2026.10.27.1`.
+These runtime behaviors explain why Orbit groups machine work into coarse Ansible phases instead of fine-grained steps:
 
-Process creation uses one `@swamp/ssh exec` argv: `docker run -d --name NAME ... IMAGE ARGV`. The image is pulled with `docker_image`; the end check uses `docker_container`.
+- **Cold-start dispatch overhead:** Each `swamp worker exec-dispatch` launches a compiled Deno binary. Splitting one Node operation into many tiny Swamp steps multiplies dispatch latency; grouping related machine work into one Ansible phase avoids that cost.
+- **Shared Deno compile cache (`/tmp/deno-compile-swamp.cache`):** Running `swamp` as `root` under `UMask=0077` leaves cache subdirectories unreadable by non-root workers; Swamp role convergence repairs permissions.
+- **Unix socket path length:** SSH multiplexing control sockets live under `/tmp/swamp-ssh/<name>` to stay within Linux's 108-byte `sun_path` limit.
 
-The container behavior lacks an env-file option, working directory, labels and a command argument list. Its command is one string. These gaps prevent faithful Process creation through its apply method. No shipped script is needed. The official check includes the observed environment in state, so Process stores that resource in the execution vault and projects only the native assertion.
+## Workflow expression and input quirks
 
-## Process pass 3 observations
+Keep these evaluator behaviors in mind when authoring `swamp/workflows/*.yaml`:
 
-These observations compare the Process actions with the pinned native resources.
-
-| Chart action | Pinned behavior operations kept visible | Candidate improvement |
-| --- | --- | --- |
-| Apply the unit | systemd apply; conditional daemon-reload; conditional restart | Could apply reload an unchanged unit after a failed activation, and activate a changed running unit? |
-| Apply/stop/remove the unit | systemd apply; systemctl stop for activating units | Could ensure stopped also stop activating units? |
-| Remove the unit | systemd stopped/disabled; file absent; daemon-reload | Could systemd offer ensure absent? |
-| Replace the container | docker rm -f; docker run -d | Could docker_container support the Process options and exact argv? |
-| Verify state | official check; native assert | Could a check optionally fail on drift while preserving its state data? |
-| Publish Horizon and check it | systemd apply; check; native assert | Could systemd provide a bounded wait for the active state after a graceful application handoff? |
-
-The Node observer does not currently record the Process user's home. Certificate paths therefore retain one getent observation and a pure public rendering step. A recorded account home would let admission finish that rendering and remove both steps. No new Node wrapper or script was added.
-
-Official Docker state outputs use a generated vault key under `swamp-cfgmgmt-docker_container-<definition UUID>-<method>-state-<host>-current.env`. The Gateway grant permits that output namespace for apply/check only. Grants for execution inputs remain unchanged.
-
-## Tools candidates for Swamp evaluation
-
-These are open questions from the Tools pass-3 reconciliation. Evidence uses Swamp e459 and cfgmgmt 2026.11.01.1. The workflow keeps separate operations today; it adds no wrapper executor.
-
-| Extra workflow steps | Pinned behavior and candidate question |
-| --- | --- |
-| Prepare package commands; Choose package action; Decode package state | These existing behaviors only shape typed argv or observations. Could reusable workflow bindings and typed output projections remove these dispatches? |
-| Fetch the signing key; Read the key fingerprint; Assert the key fingerprint; Dearmor the signing key | `fetch` requires a remote Node. Worker-local download, OpenPGP inspection and the native assertion are separate operations. Could an official worker-side download and verified-key resource fit? |
-| Prepare apt keyrings; Publish the signing key; Pin repository packages; Write the apt source | Directory mode, a binary `copy_file`, and UTF-8 `file` resources have separate APIs. Could a resource set preserve these native checks under one progress name? |
-| Refresh apt source | File apply does not refresh apt. The apt refresh method has no source scope or option to retain other indexes. Could those options fit the official behavior? |
-| Remove the staged key | Public worker files need cleanup after completion or failure. Could native temporary-artifact lifetime remove this cleanup step? |
-| Read manager version; Read installed package; Read macOS version | The manager version, inventory, candidate and cask/bottle compatibility are different command results. Could package observations expose these together, including normal candidate versions? |
-| Check apt package / Check apt absence; Check the package / Check it is gone; Assert package state | Apt `check` records drift and succeeds; a native assert enforces compliance. Could checks optionally fail on drift and expose public state in step outputs? |
-| Remove repository pins | `apt_repository.apply(ensure=absent)` removes its source and signing key, but does not manage apt preferences. Could optional preferences belong to that resource? The separate signing-key removal was redundant and is gone. |
-
-Apt writes keep SSH argv because the official package resource cannot express `--no-remove` and the bounded dpkg lock wait. Homebrew keeps argv for its managed prefix, environment and bottle policy. Could those options fit the official resources? Installation on first use still uses the existing bootstrap boundary; it is not credited as fully rule 22 done.
-
-
-## Node removal candidates
-
-The removal family uses official cfgmgmt and direct SSH argv, with no shipped scripts. These operations remain separate native steps; no wrapper combines them.
-
-| Chart action | Native operations and candidate question |
-| --- | --- |
-| Stop and remove services | systemd apply, guarded exec stop, file/directory apply, daemon-reload. Could systemd converge activating units to stopped and support absent units in one operation? |
-| Remove role certificates | One rm argv handles the canonical current directory or symlink. Could an official absent resource handle both types? |
-| Withdraw firewall access | Exact UFW argv and a native assertion preserve comments, routed rules and destinations. Could firewall represent those fields and retain the full rule identity? |
-| Verify removal | Resource check methods and native assert. Could checks optionally fail on drift while retaining their state? |
-| Purge role data | Guarded official exec covers Docker volumes and ordered Incus project/network/ACL deletion. Could native resource behaviors cover these absent operations? |
-
-## Node role lifecycle candidates
-
-These questions concern convergence and checks, not a new executor around them.
-
-| Chart action | Separate pinned operations and candidate question |
-| --- | --- |
-| Install prerequisites | Check the retained Docker provider, refresh APT, install missing packages through one bounded `--no-remove --no-upgrade` argv, fetch pinned PHP packages and check exact versions. Could apt support these preservation and lock options? |
-| Apply the role runtime | File and directory apply, systemd apply, restart and check remain separate methods. Could systemd restart only when its binary or configuration changes? |
-| Write private files | Numeric owners compare against stat's account names, so Grafana needs an account at UID/GID 472. Could file resolve numeric owners? Checks retain only hashes and metadata. |
-| Publish the config | File stages a candidate, SSH validates and copies over the live inode, then sends SIGHUP. Could file preserve the inode for single-file Docker bind mounts? |
-| Check the role | Official checks record non-compliance without failing. A native assertion enforces their statuses. Could an optional fail-on-drift mode remove that extra step? |
-| Inspect Metrics containers | Check compares images, ports, mounts and restart policy. Could it accept public environment expectations and compare network, command, labels, health and log options? |
-| Start Incus; Check Incus | Incus enables its socket and reports the daemon unit as `indirect`. Separate systemd resources check the enabled socket and running daemon. Could systemd represent activation through another unit? |
-
-A real Metrics proof rejected Grafana's public environment list: this pinned workflow expands it before defining the behavior, although the argument is sensitive. The check omits it. Its network argument is not compared, and command, labels, health and log options have no compliance fields.
-
-## Fleet resource conversion candidates
-
-The official resources keep file publication, systemd apply and restart, and the final digest check visible as separate operations. Could systemd apply restart only when its unit or binary changed and prove the resulting service state? The shared observer flow currently restarts on every visit.
-
-The bounded digest argv checks the binary, recorded key and public files together. Could official resources expose a composite check without returning file content? The Gateway now supplies only the public verifier digest; no Secret comparison is needed.
-
-## Conn pairing native data candidates
-
-Curl always records stdout, so an unknown response credential needs a private file, a typed reader and explicit cleanup. Could a native HTTP or command output spec store a response as sensitive data and return only its locator? That could remove private-directory progress steps while preserving one visible API action.
-
-Sensitive-field keys include the resource instance. A fixed instance shared across pairing issues reused its credential key; pairing-specific instances keep unread outputs separate. Could remote `writeResource` handles expose their exact sensitive-field locators? The pinned runtime omits attributes, so the data type currently derives that locator from its documented model, method, resource, instance and field names.
-
-## Task publication native command candidates
-
-Git bundle export, SSH copy, bare initialization, import and commit/tree reads remain separate native operations. Could a native artifact transfer preserve the admitted commit and tree without extra command dispatches?
-
-Pinned e459 discards outputs from failed command steps. Publication captures bounded Git and GitHub replies in private files and uses an immediate typed reader for public refusal codes. The command permits a nonzero exit so that reader can preserve `tasks.not_fast_forward` and `tasks.workflows_permission`; the reader then fails natively. Could failed command output specs retain only a typed public error or a sensitive locator? That could remove these reader steps without exposing raw CLI replies. No final report or wrapper executor is added.
-
-The pinned workflow input validator rejects explicit null before inspecting `anyOf`. `default: null` admits the push-only PR option. Could nullable schemas validate directly while preserving required-field checks?
-
-## Project routine history access
-
-The pass-3 routine design reads unfinished attempts from native Swamp run history and removes begin/finish notes. Pinned Swamp e459 exposes `queryData` to user behaviors, but that API reads resource data, not unfinished execution records. The extension-author context does not expose the internal `outputRepository`, although the internal worker proxy implements it. Could a supported, scoped run-history query be exposed to user behaviors?
-
-Three native draft runs failed with `project.routine_history_unavailable`; one is `b884a2b0-e122-4f4e-8dc6-59294b51ae46`. A pure test that supplied the internal repository hid this missing capability. The official extension catalog has no native Swamp history reader. The unproven draft remains outside the shipped source; no replacement ledger, filesystem scan, token or wrapper was added. Routine still awaits this capability or an explicit design decision.
-Nested exporter children use forEach concurrency 1 on the shared control worker. Unbounded child starts exhausted the pinned runtime's 30-second worker queue while sibling children still ran. Could the dispatcher apply backpressure before admitting child work, while preserving parallelism across Nodes?
-## Production deployment native resource candidates
-
-Production deployment keeps credential apply/removal, Git clone/checkout/branch proof, links, systemd apply/reload/check and the final selection/commit assertion as separate pinned operations. Could Git expose an immutable branch selection without extra reads? Could systemd checks fail on drift while retaining their structured state, so a parent would not need to assert `compliant`? First deployment also needs file apply, configuration test and service apply; a native PHP-FPM resource could make that one useful action. No wrapper behavior joins these operations.
-
-Private deploy commands use the admitted app account with the rendered environment on native SSH stdin. Command output is suppressed before Bash parses the private body, including syntax errors. Could SSH support sensitive command output directly, so deploy can retain a safe failure tail without staging scripts or raw output in history?
-
-The official SSH control socket adds a random suffix below `/tmp/swamp-ssh/<name>`. A valid 58-character behavior name exceeded Linux’s Unix-socket path limit on the proof Node. The deploy uses a short SSH connection name, and reads the shared app account group once for all timer units. Could the SSH behavior hash or bound its socket directory independently of the readable behavior name?
-
-When sudo changes from the SSH account to a private app account, commands need an explicit working directory. `sudo -H` changes HOME but leaves the old cwd; GNU find can fail restoring that inaccessible directory. Public argv now uses `env -C <app-home>` before source and runtime preparation.
-
-Role convergence uses official apply results to avoid restarting matching Reverb inputs. Docker check exposes public compliance while its observed state remains in the execution vault. Prometheus config needs an in-place copy before SIGHUP because replacing a bind-mounted file leaves the running container on the old inode. Could the file resource offer an in-place mode for such mounts?
-
-## Caddy publication
-
-The pinned file behavior separates apply and check; check records drift without failing, so a native assertion enforces compliance after reload. A separate pinned SSH connection check rejects the request's wrong host key before cfgmgmt uses the enrolled Node's known_hosts entry.
-
-Could file accept the admitted host-key list directly? Could check optionally fail on drift while retaining its state? Validation and reload remain separate bounded SSH argvs. No wrapper joins these operations.
-
-
-## Network drift observations
-
-The network parent reads public WireGuard state and DNS state, then uses a pure typed comparison before calling the existing official-resource child. The pinned runtime evaluates behavior definitions and static task inputs before guards. Its CEL checker also rejects a map/null conditional, so the optional DNS policy is an empty-or-one list. Could guarded tasks defer their unused definition expressions, or support nullable typed values? The no-drift proof confirms no WireGuard file or unit changes; no wrapper merges Node actions.
-
-## Nice-to-have: a warm runner for dispatched steps
-
-Pinned Swamp `20261103.000636.0-sha.db3f6373`. `swamp worker connect` starts a new `swamp worker exec-dispatch` process for each dispatched step. The child is the compiled binary and pays a full start: a bare `swamp --version` takes 0.72–0.85 s on the 4-core Swamp Node. A dispatched `command/shell` `true` takes about 1.2 s end to end; the measured range is 1.2–1.6 s wall, with about 1.07 s of child CPU on a loaded test host. The same step in process takes 0.08 s.
-
-Production run records (at least 6,365 dispatched steps over five hours) show a minimum of 0.83–1.0 s and a median of 1.3–1.8 s for a dispatched step. A data-only step such as `decode` or `result` costs the same, because it is dispatched too.
-
-Repo size and loading were ruled out: child CPU was 1.063 s with a minimal repo and 1.066 s with a production copy. Extension loading took 1.067 s against 1.068 s for `command/shell`. The serve-to-worker hand-off had a median gap of 6–12 ms; serve work took 0.07–0.09 s CPU per step and worker CPU 0.003 s. Neither datastore size nor skipping per-step reports changed the timing. A child process per dispatch gives isolation, per-dispatch credentials and process-group kill, so this is the design, not a defect.
-
-Flows with 20 to 70 steps spend most of their run time on this start. `instance.create` has about 48 dispatches on its critical path, which is an estimated 58–65 s of its 85 s. Could the worker keep a warm runner between dispatches, or start the child from a snapshot, while keeping that isolation? Estimated floor: about 0.35 s instead of about 1.3 s. Meanwhile Orbit can put the work of one phase on one Node into fewer, larger steps. Not filed upstream: this is a request, not a bug.
-
-## Start cache in shared `/tmp`
-
-Pinned Swamp `20261103.000636.0-sha.db3f6373`. The compiled binary keeps a 10 MB V8 code cache at `<temp dir>/deno-compile-swamp.cache`, which is `/tmp/deno-compile-swamp.cache` by default (Deno `cli/rt/binary.rs`, `std::env::temp_dir()`). The name holds only the binary name, so every user and every Swamp version shares one file. The binary writes a new file beside the old one and renames it, and the sticky `/tmp` forbids that over a file of another owner.
-
-On the Swamp Node, a run as root under `UMask=0077` recreated the file as `root:root` mode `0600` on 2026-11-06 at 19:16:27 UTC. From then on the worker's `exec-dispatch` processes (user `orbit`) could not read it, and every dispatch took about 0.35 s longer: a bare `swamp --version` went from 0.72–0.75 s to 1.06–1.14 s on a quiet Node. Nothing in the logs said so, and a new binary would not have refreshed the file either, because the service user cannot replace it.
-
-Is there a setting that places or protects the cache? If not, a per-user cache directory, or a mode set on write, would avoid it. A line in the log when the cache cannot be read would have shown it at once. The cause is measured on one Node and not reproduced on a clean machine. Orbit repairs the file at the next converge of the swamp role. Not filed upstream: this is a request, not a bug.
+- **Eager input evaluation:** `vault.get` and static step inputs can evaluate before step guards skip a step; pass optional secrets through bounded inputs or guarded child workflows.
+- **Nullable `anyOf` inputs:** Declare nullable types explicitly on `anyOf` schemas so Swamp input validation accepts `null`.
+- **Expression closing braces:** Swamp ends `${{ ... }}` at the first `}}`; avoid nested `}}` inside workflow expressions (checked by the expression-end fixture).
+- **Working directory under `sudo -H`:** Use `env -C <dir>` rather than assuming `sudo -H` preserves the caller's working directory.

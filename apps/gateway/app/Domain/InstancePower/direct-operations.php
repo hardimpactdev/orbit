@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\InstanceServerSwitch;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
@@ -17,4 +18,7 @@ return [
     'instance.start' => ['workflow' => 'operation-instance-start', 'workflow_inputs' => true,
         'projection' => InstanceStart::class,
         'terminal_result' => ['job' => 'start', 'step' => 'result']],
+    'instance.server_switch' => ['workflow' => 'operation-instance-server-switch', 'workflow_inputs' => true,
+        'projection' => InstanceServerSwitch::class,
+        'terminal_result' => ['job' => 'switch', 'step' => 'result']],
 ];

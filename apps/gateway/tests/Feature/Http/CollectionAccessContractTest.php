@@ -22,6 +22,8 @@ function collection_access_policies(): array
             'cluster:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnNodesController.php:22 returns the caller's Node only.
             'conn:me' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnPushDevicesController.php:31 returns the caller Node's own push device only.
+            'conn:me:push-device:show' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnOperationsController.php:52 checks the Operation's caller.
             'conn:operation:show' => ServingNode::Collection,
             // extensions/conn/src/Actions/ReadConnLaunchesAction.php and Domain/ConnLaunchAccess.php scope both reads to the current profile and accessible target Nodes.
@@ -156,6 +158,8 @@ function collection_access_outside_node_access(): array
         'gateway:status', 'gateway:trust',
         // routes/api/gateway.php:19 lets any active WireGuard peer read what the fleet should run (ADR 0202).
         'gateway:desired-fleet-state',
+        // routes/api/gateway.php lets any active WireGuard peer read the release's OpenAPI document.
+        'gateway:openapi',
         // routes/api/operation.php:15 authorizes the peer against the run's participant bindings.
         'operation:direct:show', 'operation:direct:private-material',
         // routes/api/metrics.php:21 admits only the active Metrics Node, whose Prometheus scrapes the task insights totals.

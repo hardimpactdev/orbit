@@ -1321,6 +1321,18 @@
                     "rg": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
                 }
             },
+            "laravel-lsp": {
+                "version": "0.0.32",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/laravel/lsp/releases/download/v0.0.32/laravel-lsp",
+                        "sha256": "86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51"
+                    }
+                },
+                "bin": {
+                    "laravel-lsp": "laravel-lsp"
+                }
+            },
             "php-data-bridge": {
                 "version": "0.3.1",
                 "artifacts": {

@@ -12,127 +12,68 @@ covers:
 
 # PHP runtimes
 
-Orbit installs the exact PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins, from Sury packages, and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache.
-
-Managed PHP supports amd64 only, because [Linux Nodes are x86_64 only](/reference/node-provisioning#machine-architecture). Orbit never substitutes packages from another architecture.
+On Linux host Nodes (`x86_64` / `amd64` only), Orbit installs the exact PHP build pinned by the [machine software recipe](/reference/compute-drivers#php-build) from Sury packages and serves each site through PHP-FPM over a Unix socket. Development checkout Instances share one PHP-FPM service per PHP version, while each production PHP Instance gets its own dedicated PHP-FPM service and OPcache. [Container Instances](#container-php) run a static PHP build with FrankenPHP instead of host PHP-FPM.
 
 ## Select the PHP version
 
-The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows. A monorepo uses the root Composer constraint with this same rule; it stays non-Laravel and needs no framework entry point.
-
-With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root remains the corresponding `apps/site/public`. Root `public` keeps the checkout or release root as the application working directory.
-
-Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
-
-The Gateway renders each production runtime's files. The [Node agent](/reference/node-agent#commands) checks and publishes them, as root, with `php.converge-production-runtime`, and `php.remove-production-runtime` removes them. Each command first checks the root-owned marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and each takes the agent's lock `production-php:<user>`, so two changes to one runtime never overlap.
-
-The generated pool records the resolved release as a comment. A release switch changes those bytes and restarts that Instance's dedicated service, so existing workers cannot keep the previous release as their working directory. A confirmed no-op reconciliation does not restart the service.
-
-Before publishing a changed pool, Orbit durably records a pending generation. After it starts and verifies the master, it durably records the applied generation with the boot ID, master PID, and process start time, then clears the pending receipt. A retry restarts FPM when the published bytes match but acknowledgment is missing.
-
-Convergence rejects a pending generation or a receipt that does not match the desired release. It accepts a running master that started after the recorded one: after a host reboot, or after a restart in the same boot. With no pending receipt, Orbit has no change in progress, so that master loaded the files Orbit confirmed. An unattended package upgrade that restarts the service is therefore not drift and does not make convergence restart it again. A receipt that names a master newer than the running one is rejected.
-
-The check cannot see a change made outside Orbit, such as an operator who edits the generated files and restarts the service, or reverts an edit without a restart. Orbit accepts that risk; the byte checks of the generated files still report an edit that remains.
-
-Native runtime validation accepts the application's directory in the initial release only while `current` is absent. After selection it expects the application's directory under `current`.
+The Gateway reads `composer.json` from the Instance's [application directory](/reference/projects#application-directory) (or repository root for non-Laravel monorepos) before publishing the runtime or DNS. It checks PHP 8.5 first, then PHP 8.4, and selects the first version satisfied by `require.php`.
 
 | Source | Result |
 | --- | --- |
-| No `composer.json` | No PHP. Orbit prepares no PHP runtime. |
+| No `composer.json` | No PHP runtime is prepared. |
 | `composer.json` without `require.php` | PHP 8.5. |
-| A constraint that 8.5 or 8.4 meets | The first match, 8.5 before 8.4. |
-| An invalid constraint, or one that neither version meets | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported`. |
-| The recipe has no build for the version, or a pinned package cannot be downloaded or fails its digest | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
+| Constraint satisfied by 8.5 or 8.4 | First match (8.5 before 8.4). |
+| Invalid or unsatisfied constraint | `app-dev.php_version_unsupported` or `app-prod.php_version_unsupported`. |
+| Missing recipe build or bad package digest | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
 
-The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
+The selected version is recorded in the Instance's [source profile](/domains/applications#provision-the-application-endpoint); there is no manual PHP version input field. For `apps/site/public`, PHP-FPM's working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production, while Caddy's document root stays `apps/site/public`.
 
 ## PHP build
 
-The PHP step of the `app-dev` and `app-prod` roles installs the recipe's [PHP set](/reference/compute-drivers#php-build) of each selected version with `php.install-build`, the one [PHP build installer](/reference/compute-drivers#install-the-php-build). Recipe convergence, the task VM image build, and CI run the same program. The step reads the set from the recipe; it keeps no list of its own.
+The PHP step on `app-dev` and `app-prod` Nodes installs each selected version from the recipe using `php.install-build` ([PHP build installer](/reference/compute-drivers#install-the-php-build)). When installed packages already match the recipe, nothing is downloaded.
 
-For package changes, the PHP step of an Instance uses these options:
+During Instance package steps:
 
-- It keeps PHP packages outside the recipe and installs with `--no-remove`, so a deploy never removes an extension that a site uses. Recipe convergence refuses such packages instead.
-- It loads PCOV in the CLI only on an `app-dev` Node.
-- On app-dev, it restarts only the shared `php<version>-fpm` service. Its pools must pass `php-fpm<version> -t`.
-- A production Instance PHP step restarts no active master.
-- A service whose pools fail validation keeps running. The pool publication that follows removes a stale pool and reloads the service.
-- A stopped service stays stopped until pool publication starts it.
+- Extra packages outside the recipe stay installed (`--no-remove`). Full recipe convergence refuses unmanaged PHP packages instead.
+- PCOV is loaded in the CLI only on `app-dev` Nodes.
+- On `app-dev`, only the shared `php<version>-fpm` service restarts after passing `php-fpm<version> -t`; stopped services stay stopped until pool publication starts them.
+- On `app-prod`, package installation does not restart running dedicated masters; they pick up the new build on their next restart or deployment.
+- Settings-only changes validate and gracefully reload active masters (`process_control_timeout = 30s`). Any master with invalid pools stays running until pool publication repairs it.
 
-Package changes restart no dedicated production master. The step logs the masters left running, which may still use the previous PHP build or settings. Their next restart, such as the next deployment, loads the new build.
-
-The shared and dedicated PHP-FPM global configurations set `process_control_timeout = 30s`, so later graceful reloads allow in-flight requests up to 30 seconds to finish. The first reload after rollout still uses the old timeout already loaded in the running master; it can cut in-flight requests once. Runtime module publication reports every active master whose configuration check fails; the Gateway logs those deferred units for repair.
-
-A settings-only change follows the [PHP build installer's reload policy](/reference/compute-drivers#install-the-php-build): it validates every active master, including dedicated production masters, and gracefully reloads those that pass. An Instance step keeps a master with invalid configuration running, reports it as deferred, logs it, and continues with the other masters. It keeps the INI so that master loads the setting at its next successful reload or restart. Pool publication can then repair the Instance's configuration without another master's invalid configuration blocking the step.
-
-Recipe convergence instead fails and restores the previous settings when a master fails validation. Rollback reloads masters that were reloaded and restarts only masters that were restarted.
-
-When every package is at its recipe version, the installer downloads nothing, and the step logs `PHP packages match the recipe; skipped the package download.` A refusal or a failed install fails the step with `app-dev.php_install_failed` or `app-prod.php_install_failed`. Another PHP apt source, a missing file, or an unsupported system fails it with `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. The error carries the installer's log.
-
-The [Tools](/reference/tools#protected-packages) apt manager cannot install, update, adopt, or remove the role's PHP packages.
-
-Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
+Install failures return `app-dev.php_install_failed` or `app-prod.php_install_failed`. The [Tools](/reference/tools#protected-packages) apt manager cannot install, update, adopt, or remove managed PHP packages.
 
 ## Development runtime
 
-Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway renders desired pools from stored state. The native `php.converge-shared-pools` command publishes each version into `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`. Instance creation, transfer, and removal run that convergence.
+Host development checkouts share the distribution `php<version>-fpm` service. Each application directory of an Instance gets its own pool and socket (`orbit-app-instance-<id>`, plus a hashed suffix for additional [web-root Routes](/reference/routes#serve-several-web-roots)), written to `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`.
 
-The read-only `php.inspect-shared-pools` command reports missing working directories and the versions whose desired pools can run. The Gateway installs those versions, then calls `php.converge-shared-pools` once with all desired configurations. When no shared pools remain desired, the Gateway sends an empty configuration directly, without account, inspection, or package preflights. The mutation holds one Node-wide shared-pool lock while it discovers installed state, retires pools that move between versions, activates their replacements, and recovers failures. It never sends installed configuration back to PHP for parsing.
+Pool convergence runs under a Node-wide shared-pool lock:
 
-One PHP-FPM convergence runs these steps:
+1. Checks the `chdir` of every installed and desired pool as root, skipping any pool whose directory is missing so one broken pool never stops other sites.
+2. Installs any needed [PHP build](#php-build) without starting the service.
+3. Stages and validates each version's pool set with `php-fpm<version> -t`.
+4. Publishes changed files, enables and reloads (or starts) each service, and restores prior files and service state on failure.
+5. Fails with `app-dev.php_pool_directory_missing` after publishing valid pools if any desired pool had a missing directory.
 
-1. It reads each `orbit-scopes.conf`. As root, it checks the working directory (`chdir`) of every installed pool and of every pool that stored state renders.
-2. It skips a pool whose working directory is missing. The native runtime result records that pool.
-3. It installs the [PHP build](#php-build) without starting the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
-4. It stages each version's desired pools with the other pool files and validates every set with `php-fpm<version> -t` before publication.
-5. It moves changed candidates into place, enables the services, and reloads them. The reload also starts a stopped or failed service.
-6. It starts a stopped or failed service whose file is already current.
-7. If publication or activation fails, it restores touched versions in reverse order with their prior file modes and service state.
-8. A convergence that skipped a pool fails with `app-dev.php_pool_directory_missing` after it publishes every version. The error names the pool.
+[Instance removal](/reference/instance-removal#native-order) runs this convergence after clearing the Route and before deleting the checkout so PHP-FPM never retains a pool pointing at a deleted directory.
 
-Step 3 downloads nothing when every package is already at its recipe version. A failed restoration reports `php.shared_pool_recovery_failed`; the Gateway maps it to the existing runtime failure.
-
-A restored file leaves out a pool whose working directory is gone, because that file could never pass `php-fpm -t` again. The final error makes Instance creation, deployment, transfer, and a Project root change report the missing directory. Without it, they would succeed and leave a site that answers `502`.
-
-PHP-FPM refuses to start while any pool names a missing `chdir`, so one such pool would stop every site of that version. That is why convergence skips such a pool and still publishes the others.
-
-Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#native-order).
-
-Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the native `php.configure-runtime` command compares the module with the installed file and repairs the link. It gracefully reloads active shared and dedicated production masters when the module, its enablement, or the shared global configuration changed and their pools pass `php-fpm<version> -t`. A master with invalid pools stays running until pool publication repairs it. A failed publication restores the previous module and link and reloads the masters already changed.
-
-A development pool checks every file on every request, so a saved file is served at once:
-
-```ini
-php_admin_value[opcache.validate_timestamps] = 1
-php_admin_value[opcache.revalidate_freq] = 0
-```
-
-`opcache.file_update_protection` stays at its stock 2 seconds, because file times have one-second resolution.
-
-A development Instance in a container uses no pool: FrankenPHP serves it in its container, from the static PHP build of its version in the runtime folder. See [the default Instance](/reference/development-containers#the-default-instance).
+Orbit publishes `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only (`/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`). Development pools check file timestamps on every request (`opcache.validate_timestamps = 1`, `opcache.revalidate_freq = 0`, stock 2-second `opcache.file_update_protection`).
 
 ### Container PHP
 
-Container PHP has four settings, the same in every container. The container phase writes them to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read. When the file changes in a running container, the phase restarts the container's running `orbit-*` units, because a running PHP read the settings at its start.
+Container Instances use a static PHP build and FrankenPHP instead of host PHP-FPM. Every container receives four runtime settings in `/etc/orbit/php/conf.d/99-orbit-runtime.ini` (restarting running `orbit-*` units if changed):
 
-| Setting | Value | Why |
+| Setting | Value | Purpose |
 | --- | --- | --- |
-| `memory_limit` | `1G` | It matches the CI test limit |
-| `auto_prepend_file` | `/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php` | PHP loads [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge) before the app, so Conn shows a request's data without a package in the app |
-| `zend.exception_ignore_args` | `1` | [Production-safe settings](#production-safe-settings) |
-| `session.upload_progress.enabled` | `0` | [Production-safe settings](#production-safe-settings) |
-
-The bridge comes from the [runtime folder](/reference/development-containers#shared-folders), so one update on the Node reaches every container. It records web requests only: under the CLI it returns at once. FrankenPHP serves in classic mode, where each request gets a fresh PHP; the bridge stays off in FrankenPHP's worker mode. An app turns the bridge off with `collect.enabled: false` in a `php-data-bridge.json` beside its `composer.json`.
+| `memory_limit` | `1G` | Matches CI test memory limit. |
+| `auto_prepend_file` | `/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php` | Loads [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge) on web requests so Conn can inspect requests (disable with `collect.enabled: false` in `php-data-bridge.json`). |
+| `zend.exception_ignore_args` | `1` | [Production-safe settings](#production-safe-settings). |
+| `session.upload_progress.enabled` | `0` | [Production-safe settings](#production-safe-settings). |
 
 #### Production-safe settings
 
-The static build has no `php.ini` of its own, so without one PHP runs on its built-in defaults: `zend.exception_ignore_args=0`, `session.upload_progress.enabled=1` and `display_errors=1`. With `fatal_error_backtraces=1`, PHP 8.5's default, the first two are the conditions of remote code execution flaws that PHP 8.5.13 fixes: CVE-2026-129474, CVE-2026-129182, CVE-2026-115560 and CVE-2026-126714 ([compute drivers](/reference/compute-drivers#install-the-php-build)). So no container PHP runs on those defaults:
+The static PHP CLI compiles in `zend.exception_ignore_args=1` and `session.upload_progress.enabled=0` so container PHP never runs with unsafe built-in defaults (mitigating PHP 8.5 fatal-error backtrace CVEs). Development containers also enforce both in `99-orbit-runtime.ini`.
 
-The build compiles `zend.exception_ignore_args=1` and `session.upload_progress.enabled=0` into the PHP CLI (`with-hardcoded-ini` in `tools/static-php/craft.yml`). `frankenphp php-cli` is that CLI too. A `-d` option still overrides them. The FrankenPHP server sets its own entries, so it reads the settings from a file.
-
-A development container reads both settings from `99-orbit-runtime.ini` above. It writes no `php.ini`.
-
-A production release container reads `/etc/orbit/php/php.ini`. The file is the build's `php.ini-production`, which the static archive ships beside `bin/`. Orbit's lines follow it and win:
+Production release containers ship `/etc/orbit/php/php.ini` built from `php.ini-production` with these overriding lines:
 
 | Setting | Value |
 | --- | --- |
@@ -142,67 +83,35 @@ A production release container reads `/etc/orbit/php/php.ini`. The file is the b
 | `display_startup_errors` | `0` |
 | `expose_php` | `0` |
 
-The release preparer writes the file at every deploy, before it builds the release, so each new release container has it. The CLI reads it too, because a release container has no `php-cli.ini`.
-
 #### PCOV in the CLI only
 
-The PHP CLI of a development container loads PCOV, so Pest TIA and `pest --coverage` work there. The container phase, and the clone guest on clone, write the CLI-only file `/etc/orbit/php/php-cli.ini` with one line:
-
-```ini
-extension=/opt/orbit-runtime/current/php/<php-version>/modules/pcov.so
-```
-
-`<php-version>` is the Project's PHP version: the part whose `bin/php` the link `/usr/local/bin/php` points to. A Project without PHP gets no file, and the phase removes Orbit's file. The `pcov.so` comes from the same [static PHP build](/reference/compute-drivers#static-php-build) as the linked `php`.
-
-The Gateway renders the file into the container intent as `php_cli_ini`: one `extension=` line for each name in the recipe's `instances.php.cli_extensions`. So a new CLI-only extension needs no change in Ansible or the clone guest.
-
-The file names only modules that the Node's runtime folder holds. Each writer looks in the container, where that folder is mounted at `/opt/orbit-runtime`, and drops an `extension=` line whose module file is not there. Any other line stays. When no line is left, the writer removes Orbit's file, as for a Project without PHP.
-
-A Gateway release can reach a Node before the Node's role converge installs the new runtime folder. The file then leaves PCOV out, so PHP CLI calls do not warn "Unable to load dynamic library". A create, clone, task copy, deploy or refresh still passes. The container phase runs again at each start and deploy, so the line returns by itself once the Node holds the module.
-
-The PHP CLI reads `php-<sapi>.ini` in its config path, `/etc/orbit/php`, and reads the `conf.d` scan directory as well. It reads `php.ini` only when it finds no `php-cli.ini`; Orbit writes no `php.ini` there. FrankenPHP's server has the SAPI name `frankenphp`, so it does not read `php-cli.ini`, and it never loads PCOV. `frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and loads PCOV, as `php` does. Only the server never loads PCOV. The settings of `99-orbit-runtime.ini` stay in `conf.d`, because both binaries need them. When the file changes in a running container, the phase restarts the running `orbit-*` units, as for the shared settings: a queue worker is a PHP CLI too.
-
-`pcov.enabled` stays at PCOV's default, on, so Pest TIA needs no flag. This costs test time for Projects that use no coverage. A production container gets no `php-cli.ini`. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) holds the decision.
+Development containers load PCOV for the PHP CLI only (never in the FrankenPHP web server) by writing `/etc/orbit/php/php-cli.ini` with `extension=/opt/orbit-runtime/current/php/<php-version>/modules/pcov.so` when the module exists in the mounted runtime folder. Both `php` and `frankenphp php-cli` use the `cli` SAPI and read `php-cli.ini`; FrankenPHP's `frankenphp` web SAPI ignores it. Projects without PHP and production containers receive no `php-cli.ini`.
 
 ## Production runtime
 
-Each production Instance that serves PHP has a dedicated service for its Unix user. Production users on one Node share the installed PHP packages, but not a PHP-FPM master.
+Each host production PHP Instance (`laravel-app`, `symfony-app`, or a routed Laravel `monorepo`) gets a dedicated PHP-FPM service and OPcache for its Unix user (`laravel-package` selects a PHP version but does not run PHP-FPM):
 
 | Part | Name or path | Owner |
 | --- | --- | --- |
 | Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway |
 | Pool | `orbit-<production-user>` | Gateway |
 | Socket | `/run/php/<production-user>.sock`, mode `0660`, group `caddy` | Gateway |
-| Generated files | `/etc/orbit/php-fpm/<production-user>/generated/`, including `master.ini` | Gateway |
+| Generated files | `/etc/orbit/php-fpm/<production-user>/generated/` (including `master.ini`) | Gateway |
 | Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operator |
 
-A [Route with a web root](/reference/routes#web-roots-on-production) adds a pool for its application directory to the same master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock` and its working directory under `current`. The suffix is the same hash of the relative directory as in development. The generated pool file holds that pool's process settings, because `local.conf` tunes only the default pool. Convergence refuses a pool whose directory is not inside a release, and checks each socket after a start. Without such a Route, the generated files are unchanged. All pools share the master's OPcache, so one cache refresh covers them.
+Additional [web-root Routes](/reference/routes#web-roots-on-production) add pools (`orbit-<production-user>-<suffix>`, socket `/run/php/<production-user>.<suffix>.sock`) under the same master so one OPcache refresh covers all pools. Before the first deploy, the pool uses `releases/initial`; after a deploy or rollback selects a release, Orbit reconciles the pool to `current` and records the resolved release in the generated pool file so release switches restart the dedicated master cleanly.
 
-Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. Removal keeps the ownership marker beside the tuning, so the same runtime can be created again without adopting an unowned file. A different identity still refuses.
-
-The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Rust agent validates the effective configuration. It refuses a `local.conf` that changes the identity, including a `chroot` directive. It never adopts an existing user, service, socket, or file that belongs to something else.
-
-A failed start restores the generated files and service state from before the change. An interrupted change resumes from the recorded identity.
-
-The shared `/etc/orbit` directory stays `root:root` with mode `0711`, so production users can reach their Schedule scripts without listing the directory. `/etc/orbit/php-fpm` stays closed to application users.
-
-A `laravel-app` or `symfony-app` Instance serves PHP. A `monorepo` Instance serves PHP only when it has a Route and a Laravel source. A `laravel-package` can select a PHP version from its Composer constraint but is not classified as a Laravel application or served through PHP-FPM. Other types start no PHP-FPM master. Production source inspection applies the Instance's project type when it classifies the Composer and Artisan metadata. It [checks the production checkout](/reference/instance-cloning#destination-checks) as the production user, even when the SSH user's home is private.
+Convergence holds a per-user lock (`production-php:<user>`), verifies the ownership marker `/etc/orbit/php-fpm/<user>/orbit.identity`, and validates effective configuration so `local.conf` cannot override user, socket, PHP version, paths, or `chroot`. Orbit tracks pending and applied generation receipts (including boot ID, master PID, and start time) so interrupted retries converge reliably while an unattended package restart is not flagged as drift. `local.conf` is seeded once and never overwritten by Orbit; failed starts restore previous generated files and service state.
 
 ## Request and upload limits
 
-The managed FPM module sets `post_max_size = 64M` and `upload_max_filesize = 64M` for both `app-dev` and `app-prod`. Each PHP size is 64 MiB. The POST limit covers the complete request, including multipart overhead, so a file upload must fit inside that limit. Application validation can impose a smaller limit. The CLI keeps its stock settings, and Orbit leaves production `local.conf` tuning unchanged.
+The managed host FPM module sets `post_max_size = 64M` and `upload_max_filesize = 64M` (64 MiB, covering multipart overhead) on both `app-dev` and `app-prod`. Dedicated production masters inherit these values from FPM `conf.d` before loading `master.ini`. The agent validates both limits (positive, up to 1 GiB, upload no larger than POST) with `php-fpm -i` before activation. Host PHP-FPM sites route through Caddy with no Caddy request-body size cap (neither nginx nor FrankenPHP is used on host PHP-FPM sites).
 
-Dedicated production services scan the same FPM `conf.d` directory before their generated `master.ini`, so they inherit these limits. Each master keeps its own OPcache settings. The agent requires both size settings to be positive PHP size quantities at most 1 GiB, with the upload limit no greater than the POST limit and verifies the effective values with `php-fpm -i` before activation.
-
-The `php-runtime` [Node footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) publishes the module for the recipe profile’s PHP versions and the versions selected by active Instances on app Nodes. These are candidate versions: the agent leaves an absent PHP-FPM binary untouched. A recipe version that is not installed cannot fail the fleet rollout. Its digest covers the renderer, selected profile, and candidate PHP versions; it never reads live inventory.
-
-After a Gateway release supplies the new renderer and agent, `orbit node:converge <node>` applies it to existing Nodes and reloads valid active masters. The automatic fleet rollout runs the same convergence after release adoption and image promotion; a merge alone changes no running Node. Instance PHP convergence also publishes the module. Recipe convergence publishes it on app Nodes after the PHP installer succeeds, even when the footprint digest already matches. A version installed later therefore receives the module before recipe convergence records success.
-
-Orbit routes these applications through Caddy to PHP-FPM. The managed Caddy site and reverse-proxy configuration adds no request-body size cap. This path uses neither nginx nor FrankenPHP.
+The `php-runtime` [Node footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) distributes this module during `orbit node:converge <node>` and automatic fleet rollouts, skipping PHP versions not installed on a Node.
 
 ## OPcache settings
 
-The development module and each production `master.ini` apply these values.
+Development and production PHP-FPM masters use these OPcache directives:
 
 | Directive | `app-dev` | `app-prod` |
 | --- | --- | --- |
@@ -210,28 +119,22 @@ The development module and each production `master.ini` apply these values.
 | `opcache.memory_consumption` | 512 | 256 |
 | `opcache.interned_strings_buffer` | 64 | 32 |
 | `opcache.max_accelerated_files` | 65407 | 65407 |
-| `opcache.validate_timestamps` | 1, per pool | 0 |
+| `opcache.validate_timestamps` | 1 (per pool) | 0 |
 | `opcache.jit` / `opcache.jit_buffer_size` | disable / 0 | disable / 0 |
 
-A shared service on a Node with both roles uses the `app-dev` values. A dedicated production master always uses the `app-prod` values. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off.
+Nodes with both roles use `app-dev` values for the shared service and `app-prod` values for each dedicated production master. `opcache.preload`, `file_cache`, and `huge_code_pages` stay off.
 
 ## Process management
 
-Every pool uses `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 for a development pool and 20 for a production pool. Production tuning lives in `local.conf`.
-
-The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request limit. Its API commands stop remote work after 570 seconds; see [Activity](/cli/activity#interrupted-requests).
+Every pool uses `pm = ondemand`, `pm.process_idle_timeout = 10s`, and `pm.max_requests = 500`, with `pm.max_children = 10` in development and `20` in production (tunable in `local.conf`). The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request limit (stopping remote API work after 570 seconds; see [Activity](/cli/activity#interrupted-requests)).
 
 ## Refresh production code
 
-A production master keeps compiled code until its cache empties. Each [deployment](/reference/deployments) and rollback reloads the Instance's dedicated PHP-FPM service gracefully. Running requests finish, and the new workers start with an empty OPcache. The reload never touches another Instance's service. `opcache_reset()` from the PHP CLI cannot reach the service's cache. Laravel's `php artisan optimize` is an application deploy step.
-
-## Doctor
-
-Native PHP runtime provisioning validates its configuration. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks role-service liveness and does not repeat PHP package, pool or configuration validation.
+Each [deployment](/reference/deployments) and rollback gracefully reloads the Instance's dedicated PHP-FPM service so in-flight requests finish and new workers start with an empty OPcache without affecting other Instances. Calling `opcache_reset()` from PHP CLI cannot reach the FPM master's cache.
 
 ## Check a Node
 
-Run these commands on the Node to inspect one production runtime:
+Inspect a production runtime on its Node:
 
 ```sh
 systemctl is-active orbit-<production-user>-php8.5-fpm.service
@@ -240,54 +143,26 @@ stat /run/php/<production-user>.sock
 find /etc/orbit/php-fpm/<production-user> -maxdepth 2 -type f -print
 ```
 
-Another production user must show a different service, socket, master, and cache.
+[Doctor](/cli/doctor/doctor#what-each-family-checks) checks role-service liveness; native PHP provisioning owns package, pool, and configuration validation.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
 ### PCOV only where checks run
 
-PCOV is part of PHPStan's cache key, so the machines that share CI caches must load it: `app-dev` Nodes, task VMs, and CI. A development container's PHP CLI loads it too, for Pest TIA and coverage; its FrankenPHP server does not. Production Nodes and the Gateway run no checks, so their CLI does not pay its overhead.
+PCOV is part of PHPStan's cache key, so `app-dev` Nodes, development container CLIs, task VMs, and CI load it for shared caches and Pest coverage, while production Nodes and FrankenPHP web workers skip its overhead.
 
 ### Sury packages, not a custom PHP build
 
-A static-php build is 10 to 15 percent slower on Orbit's Nodes, lacks `pdo_sqlite` and `pdo_pgsql`, and its glibc variant crashes on some CPUs. A custom build would also make Orbit own PHP security updates. So Orbit uses the pinned Sury packages.
-
-### One installer with a rollback
-
-Each caller once had its own install code, and their safety checks differed. One program gives every machine the same extras check, rollback, and health checks. The installer keeps the previous build as files, so a PHP-FPM that fails to start after a change gets its previous build back at once instead of waiting for an operator.
-
-### The recipe's files, not the Sury apt source
-
-Sury's apt index carries only its newest build. Installing from it gave each Node the build of the day it was set up, and an exact `package=version` disappears from the index when Sury moves on. The recipe's `.deb` files are checked by digest, and the same files build task VM images and converge Nodes. So every machine runs one build, and the caches that depend on it fit everywhere. [Compute drivers: One PHP build](/reference/compute-drivers#one-php-build) gives the reasons for one build.
-
-### OPcache sizing per role
-
-The stock limit of 10,000 cached files overflows with two Laravel checkouts on one Node. OPcache memory belongs to the master, so sizing is set per service. Timestamp checks are a per-pool setting.
-
-### Development checks every file
-
-Checking every file costs about 1.5 ms per request. Turning OPcache off costs about 80 ms. So development keeps OPcache on and checks every request.
-
-### No JIT
-
-The tracing JIT gives a Laravel request no measurable gain and has known crash classes.
+For host PHP-FPM Nodes, Orbit installs pinned Sury `.deb` packages from the [machine software recipe](/reference/compute-drivers#one-php-build) rather than maintaining a custom host build or pulling moving upstream apt indexes. Every host Node runs the exact same digest-verified build with automatic rollback if PHP-FPM fails to start.
 
 ### One master per production user
 
-All pools under one master share one OPcache. A reset through one pool's socket clears the cache of every pool. So each production user gets its own master, and a refresh never affects another application. The cost is one cache allocation and service per production Instance.
-
-### Tuning stays on the Node
-
-The operator tunes `local.conf` on the Node. Storing tuning in the Gateway was rejected: it adds storage and synchronization for settings the operator can edit in place. Tuning in the generated files was rejected, because Orbit rewrites them.
+Pools under one master share a single OPcache. Giving each production user its own master isolates OPcache resets and tuning (`local.conf`) to that application, while keeping `opcache.validate_timestamps = 1` in development avoids the ~80 ms cost of disabling OPcache entirely. Tracing JIT stays off because it gives Laravel no measurable gain and introduces crash classes.
 
 ### Publish pools before starting PHP-FPM
 
-On 2026-10-08, an unattended package upgrade restarted PHP 8.5 FPM on a development Node. The service did not start, because `orbit-scopes.conf` still named three removed task workspaces whose directories were gone. Every PHP 8.5 site on the Node was down. A convergence could not repair it, because package installation started the service before it rewrote the pools.
-
-So installation now only enables the service, publication starts it, and convergence never renders a pool for a missing directory. Validating the candidate with `php-fpm -t` and restoring the previous file on a failed start still protect a running service from a bad change. Instance removal also withdraws the pool and reloads PHP-FPM before it deletes the checkout, so a removal never leaves a live pool that names a deleted directory.
+PHP-FPM refuses to start if any pool references a missing `chdir`. Installing packages without starting the service, skipping pools whose directories are missing during convergence, and removing pools before deleting checkouts keep one broken or removed checkout from taking down other sites on the same Node.
 
 ### PHP from Composer
 
-A PHP project already states its supported versions in `composer.json`. A PHP version field on the Instance was rejected, because it would duplicate that intent and need its own update lifecycle.
+Reading `require.php` from `composer.json` keeps the repository as the single source of truth instead of duplicating a PHP version field on Instances.

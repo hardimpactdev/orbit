@@ -1,6 +1,6 @@
 ---
 title: "Browser access to the Gateway"
-description: "Which web pages may call the Gateway API and MCP endpoints from a browser, and how the Gateway refuses the rest."
+description: "Which browser origins may call the Gateway API and MCP endpoints, and how the Gateway refuses all other pages."
 covers:
   - apps/gateway/app/Http/Middleware/GuardBrowserOrigins.php
   - apps/gateway/app/Domain/Gateway/BrowserOriginPolicy.php
@@ -10,36 +10,30 @@ covers:
 
 # Browser access to the Gateway
 
-This page tells an operator which web pages may call the Gateway API from a browser. The Gateway identifies a caller by its WireGuard address. So without this check, any page open in a browser on a WireGuard peer would act with that peer's authority.
+Because the Gateway authenticates callers by WireGuard IP rather than a browser session or token, any web page open on a WireGuard peer could otherwise call the API with that peer's authority. `GuardBrowserOrigins` blocks cross-origin browser requests before CORS, routing, and peer identity checks run.
 
 ## Allowed callers
 
-The check covers `/api/*`, `/mcp`, and `/mcp/*`. It runs before CORS, routing, and the WireGuard identity check. The [queue dashboard](/reference/gateway-queue#dashboard) at `/horizon` and `/horizon/*` has its own rule: Laravel's request forgery check admits a request that changes something only when the browser sends `Sec-Fetch-Site: same-origin`.
+The middleware protects `/api/*`, `/mcp`, and `/mcp/*`. The [queue dashboard](/reference/gateway-queue#dashboard) at `/horizon` and `/horizon/*` enforces Laravel's `Sec-Fetch-Site: same-origin` check on state-changing requests.
 
 | Caller | Result |
 | --- | --- |
-| The CLI, the SDK, MCP clients, and other programs that send no `Origin` and no cross-site `Sec-Fetch-Site` | Allowed. |
-| A page on the Gateway's own origin, such as the [web app](/reference/web-app) | Allowed. |
-| A page on `https://<gateway node>.<private domain>` | Allowed, with a CORS response for that exact origin. |
-| Any other page | Refused with HTTP 403 and `api.origin_refused`. |
+| CLI, SDK, MCP clients, or scripts sending no `Origin` and no cross-site `Sec-Fetch-Site` | Allowed |
+| Page on the Gateway's own origin (such as the [web app](/reference/web-app)) | Allowed |
+| Page on `https://<gateway-node>.<private-domain>` (optional `:443`) | Allowed with exact-origin CORS response (`exposed_headers: X-Orbit-Request-Id`) |
+| Any other page (including `Origin: null` and preflights) | Refused with HTTP 403 (`api.origin_refused`) |
 
-A request without `Origin` passes only when its `Sec-Fetch-Site` is absent, `same-origin`, or `none`. So a cross-site request without an `Origin`, such as a link opened from another site, is refused. A request whose origin is `null` is refused. A CORS preflight from a refused page is refused too. The Gateway never answers CORS with `*` and never allows credentials.
-
-Public Routes, custom proxy Routes, app Routes, and analytics tracking hosts grant no browser access.
+Requests without `Origin` pass only when `Sec-Fetch-Site` is absent, `same-origin`, or `none`, blocking cross-site navigations and form posts. The Gateway never sends `Access-Control-Allow-Origin: *` and never enables credentials (`supports_credentials: false`). Public, custom proxy, app, and analytics tracking Routes grant no browser API access.
 
 ## Web app development server
 
-`vp dev` in `apps/web` proxies `/api` to the Gateway and `/grafana` to Grafana. For both, the proxy removes the browser's `Origin` header, because it serves the page on its own origin. The browser's `Sec-Fetch-Site` header still reaches the Gateway, so a cross-site request through the development server is refused too.
+`vp dev` in `apps/web` proxies `/api` to the Gateway, `/grafana` to Grafana, and `/app/` WebSockets to Reverb. For `/api` and `/grafana`, the proxy strips the browser's `Origin` header while preserving `Sec-Fetch-Site`, so cross-site requests through the dev server are still refused.
 
-For disposable UI work that needs a Gateway, use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The manual topology harness and its operator VM web proxy are removed. Use [web verification](/reference/web-verification) for demo-mode layout checks; do not exercise mutating actions against the live fleet.
-
-The `bin/web-verify` tests use a demo Gateway and real Chromium and WebKit to check that off-origin requests, redirects, and WebSockets cannot reach another server. A blocked WebSocket must close or report an error; a timeout does not pass.
-
-These protocol checks run in their own verification file with fresh browser contexts, independently of the daemon lifecycle tests. This tool's confinement is separate from the live Gateway's origin policy above and grants no additional browser access. Test scheduling does not change the development proxy's header handling.
+For disposable UI work that mutates fleet state, use a [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). Use [web verification](/reference/web-verification) for demo-mode layout checks.
 
 ## Refusal response
 
-A refused request receives this JSON body with HTTP 403.
+Refused browser requests receive HTTP 403 with this JSON error envelope:
 
 ```json
 {"error": {"code": "api.origin_refused", "message": "Browser requests from this origin cannot reach the Gateway API."}}
@@ -47,12 +41,4 @@ A refused request receives this JSON body with HTTP 403.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### Orbit's own origins only
-
-The Gateway has no login, so a browser on a peer carries the peer's authority. CORS alone does not help, because a cross-site form `POST` reaches the server without a preflight. Only the Gateway's own origins may call the API. A fixed list of TLDs such as `*.test` is rejected, because an unrelated site can use those names.
-
-### No browser login
-
-A login or token for browsers is rejected, because it would change the identity model of every client. The origin check closes the exposure without it.
+CORS alone cannot stop cross-site form `POST` requests without preflights, and adding a browser login would split Orbit's WireGuard identity model. Restricting browser access to the Gateway's own origins closes cross-site exposure without changing client authentication.

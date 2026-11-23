@@ -1,15 +1,15 @@
 ---
 title: "Tech stack"
-description: "The languages, frameworks, and platform each part of Orbit uses."
+description: "Languages, frameworks, runtimes, and verification tools used across the Orbit monorepo."
 ---
 
 # Tech stack
 
-Orbit is one repository with separate projects. Each project has its own dependencies, tests, and lock file.
+Orbit is a monorepo containing separate projects, each with its own dependencies, lock file, and test suite.
 
 ## Projects
 
-Each project in the repository uses the stack in this table.
+Each directory in the repository uses the stack below.
 
 | Project | Stack |
 | --- | --- |
@@ -17,14 +17,26 @@ Each project in the repository uses the stack in this table.
 | `apps/cli` | PHP 8.5, Laravel Zero 13 |
 | `packages/php-sdk` | PHP 8.5, Saloon |
 | `apps/web` | TypeScript, React, TanStack Router and Query, Tailwind CSS, Vite+ |
-| `apps/desktop` | Rust, Tauri 2, wrapping `apps/web` |
+| `apps/desktop` | Rust, Tauri 2 (wraps `apps/web`) |
 | `apps/agent` | Rust |
 | `apps/docs` | PHP 8.5, Laravel 13, Librarian |
+| `swamp/` | TypeScript / Deno workflows and Ansible playbooks |
 
-## Platform
+## Runtime platform
 
-Service Nodes run Ubuntu 26.04. macOS Nodes support selected Homebrew formulae, casks, and Vite+ global tools through SSH, without service roles. macOS system updates and firewall management are outside this support. On Ubuntu, Orbit runs services natively under systemd: Caddy serves HTTP and HTTPS, PHP-FPM runs the exact Sury PHP build that the [machine software recipe](/reference/compute-drivers#php-build) pins, and WireGuard carries the private network. Docker runs container Processes, such as shared databases and Plausible, and the `metrics` role's Prometheus and Grafana. Reverb on the `websocket` Node carries realtime events. Mintlify publishes this documentation.
+Service Nodes run Ubuntu 26.04. Orbit manages core services natively with systemd, uses Caddy for HTTP and HTTPS, runs the pinned Sury PHP build from the [machine software recipe](/reference/compute-drivers#php-build), and connects the fleet over WireGuard.
 
-## Checks
+Development Instances run in Incus containers. Docker runs containerized Processes (such as shared databases and Plausible) and the `metrics` stack (Prometheus and Grafana). Laravel Reverb on the `websocket` Node streams realtime events, and Mintlify builds this documentation site.
 
-Pest, Pint, Larastan, PHPStan, and Rector check the PHP projects. Vitest and Playwright check the web app. Cargo's `fmt`, `clippy`, and `test` check the Node agent. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to run these checks. Incus provides disposable Linux machines for end-to-end tests. GitHub Actions runs the checks for every pull request. See the [contributor guide](/contributor-guide) for the local workflow.
+macOS Nodes do not run service roles; they support selected Homebrew formulae, casks, and Vite+ global tools over SSH. System updates and firewall rules on macOS stay outside Orbit.
+
+## Quality checks
+
+Each language stack runs its own local and CI checks on every pull request.
+
+- **PHP:** Pest, Pint, Larastan, PHPStan, and Rector.
+- **Web app:** Vitest and Playwright.
+- **Rust (Node agent and desktop):** `cargo fmt`, `cargo clippy`, and `cargo test`.
+- **End-to-end tests:** Disposable Linux containers and VMs via Incus.
+
+See [Bun and Rust projects](/reference/bun-and-rust-projects) for exact commands and the [contributor guide](/contributor-guide) for the full development workflow.

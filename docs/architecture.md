@@ -1,64 +1,79 @@
 ---
 title: "Architecture"
-description: "Orbit's components, the boundaries between them, and the four paths that connect them."
+description: "Orbit's components, trust model, Node roles, and how control, traffic, observation, tasks, and Conn flow through the fleet."
 ---
 
 # Architecture
 
-Orbit has one Gateway that owns all fleet state. Clients ask the Gateway for changes. The Gateway records them, and Swamp applies them to Nodes. Nodes run applications and report what they observe.
+One central Gateway owns all fleet state in Orbit. When a human or agent requests a change, the Gateway validates permissions, records the intent, and hands execution to Swamp to apply on your Nodes. Nodes run your applications and report live status back to the fleet.
 
 ## Components
 
-Orbit consists of these components. Each one lives in its own project in the repository.
+Each Orbit component lives in its own directory in the repository.
 
 | Component | Code | Role |
 | --- | --- | --- |
-| Gateway | `apps/gateway` | The only authority. It stores fleet state, authorizes requests, and starts the work that applies changes to Nodes. It also serves the API, MCP, and the web app. |
-| Swamp | `swamp/` | Applies state to Nodes. It runs the workflows the Gateway starts, reaches Nodes over SSH, and returns the result of each run to the Gateway. |
-| CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
-| Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
-| Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It also runs the typed commands that the Gateway sends. |
+| Gateway | `apps/gateway` | Single source of truth for fleet state. Authorizes requests, coordinates Node changes, and serves the HTTP API, MCP server, and web app. |
+| Swamp | `swamp/` | Applies changes to Nodes over SSH by running workflows started by the Gateway and reporting back each result. |
+| CLI | `apps/cli`, `packages/php-sdk` | Thin client for humans and agents. Talks only to the Gateway API and never connects directly to a Node. |
+| Web app | `apps/web`, `apps/desktop` | Single-page interface that reads the Gateway API and streams live state updates. The desktop app wraps it in a native shell. |
+| Node agent | `apps/agent` | Daemon running on managed Linux Nodes that reports presence and Process state and executes typed commands from the Gateway. |
 
 ## Trust
 
-Every Node joins one private WireGuard network. The Gateway identifies each caller by the WireGuard address its request comes from. A directed access grant decides which Nodes that caller may act on. Humans and agents use the same API with the same rules. Node agents report through their own endpoints with a per-Node secret.
+Every Node joins one private WireGuard network. The Gateway identifies each caller by its WireGuard IP address and checks a directed access grant to decide which Nodes that caller may act on. Humans, coding agents, and Conn devices all use the same API under the same rules. Node agents authenticate to their own reporting endpoints using a per-Node secret.
 
-The Gateway is private and reachable only over WireGuard. Public traffic enters only through Nodes with the `ingress` role, and the Gateway never shares a Node with `ingress`.
+The Gateway stays private and is reachable only over WireGuard. Public HTTP and HTTPS traffic enters only through Nodes with the `ingress` role, and the Gateway never shares a machine with `ingress`.
 
 ## Nodes and roles
 
-A Node is a machine in the WireGuard fleet. Ubuntu 26.04 Nodes run Orbit service roles. macOS Nodes support selected tools through their existing SSH account and package managers, with no service roles. Tools do not require a role. [Node provisioning](/reference/node-provisioning#macos-nodes) describes macOS enrollment.
+A Node is any machine enrolled in your WireGuard fleet. Ubuntu 26.04 Nodes run Orbit service roles, while macOS Nodes support managed Tools through their existing SSH account and package managers without service roles. Tools do not require a role. See [macOS Nodes](/reference/node-provisioning#macos-nodes) for enrollment details.
 
-On Ubuntu, services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker. macOS tool support does not enable these runtimes.
+On Ubuntu Nodes, Orbit manages services natively with systemd, runs development Instances in Incus containers, and runs container Processes and the `metrics` stack (Prometheus and Grafana) in Docker.
 
-| Role | Work |
+| Role | Responsibility |
 | --- | --- |
 | `gateway` | Runs the Gateway. One per fleet. |
 | `vpn` | Runs the WireGuard hub. One per fleet. |
 | `app-dev` | Runs development Instances and task workspaces. |
 | `app-prod` | Runs production Instances. |
-| `router` | Sends each Cluster Route to the Node that runs its Instance. |
+| `router` | Routes Cluster domains to the Node running each target Instance. |
 | `ingress` | Accepts public HTTP and HTTPS traffic. |
 | `database` | Runs shared database Processes in Docker. |
 | `websocket` | Runs the realtime server. One per fleet. |
 | `metrics` | Collects fleet metrics. One per fleet. |
 | `analytics` | Collects visit analytics. One per fleet. |
-| `swamp` | Runs Swamp serve and its workers, and serves `swamp.orbit`. One per fleet. |
+| `swamp` | Runs Swamp serve and its workers, serving `swamp.orbit`. One per fleet. |
+| `ci-runner` | Runs GitHub Actions runners and proof copies. |
 
-A role refuses a Node that holds a conflicting role. For example, the `gateway` role never shares a Node with `app-dev`, `app-prod`, `database`, `analytics`, or `ingress`. [Node provisioning](/reference/node-provisioning) lists every conflict.
+Incompatible roles cannot share a Node. For example, `gateway` never shares a Node with `app-dev`, `app-prod`, `database`, `analytics`, `ingress`, or `ci-runner`. [Node provisioning](/reference/node-provisioning) lists every conflict rule.
 
-## Paths
+## How the parts connect
 
-**Control.** A human or agent runs a CLI command or an MCP tool. The request reaches the Gateway over WireGuard. The Gateway checks the caller, records the request, and applies the change to each Node over one shared SSH connection per Node.
+Five main flows connect Orbit's components.
 
-**Traffic.** A Route gives an Instance a domain on one Node or one Cluster. Private requests arrive over WireGuard. Public requests enter through `ingress`. In a Cluster, `router` sends each request to the Node that runs the Instance. Caddy serves the Instance there. See [Routes](/reference/routes).
+### Control
 
-**Observation.** Node agents publish state to the `websocket` Node. The Gateway keeps a view of it, and the web app shows it live. [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's actual state and reports every difference without changing anything.
+A human or agent runs a CLI command or MCP tool, sending a request to the Gateway over WireGuard. The Gateway authorizes the caller, records the Operation, and applies changes to each affected Node over a shared SSH connection.
 
-**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one subtask at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks). Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet), so no task group runs today.
+### Traffic
+
+A Route maps a domain to an Instance or local service on a Node or Cluster. Private traffic arrives over WireGuard, while public traffic enters through `ingress`. In a Cluster, the `router` Node forwards each request to the Node hosting the Instance, where Caddy serves it. See [Routes](/reference/routes).
+
+### Observation
+
+Node agents publish live status to the `websocket` Node so the Gateway stays current and the web app updates in real time. [Doctor](/cli/doctor) compares expected Gateway state against each Node's actual state and reports any drift without making changes.
+
+### Tasks
+
+When the [Tasks](/reference/tasks) extension is enabled, Orbit runs planned work in isolated container copies of a project's default Instance on an `app-dev` Node. Coding agents complete subtasks in order, verify each handoff against the project's task check, review the branch, and open a pull request through the GitHub App.
+
+### Conn
+
+When the [Conn](/reference/conn) extension is enabled, the Gateway signs Conn devices in as Nodes, syncs shared profiles and settings across devices, and manages pairings and container server sessions. Live T3 editor and agent traffic flows directly between each Conn device and its T3 servers over WireGuard without passing through the Gateway.
 
 ## Data
 
-The Gateway's SQLite database holds all Orbit records. [Project Documents](/reference/project-documents) keep hierarchy, versions, and encrypted storage credentials there, but their file bodies live in a dedicated private UpCloud S3-compatible bucket. Only the Gateway accesses that bucket. Applications keep their own data in their own databases. Orbit stores connection records for them.
+The Gateway stores all Orbit records in its SQLite database. [Project Documents](/reference/project-documents) keep folder hierarchy, versions, and encrypted storage credentials in SQLite, while file contents live in a private UpCloud S3-compatible bucket accessed only by the Gateway. Applications keep their own data in their own databases, and Orbit stores the connection records for them.
 
-See [Concepts](/concepts) for the terms, and each domain page for its details.
+Next, read [Concepts](/concepts) for the core terms shared across Orbit.

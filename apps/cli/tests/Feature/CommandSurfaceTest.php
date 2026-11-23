@@ -10,6 +10,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\GatewayExtensionState;
 use App\Support\CommandVocabulary;
 use App\Support\ExtensionCommandVisibility;
+use App\Support\GatedExtensionCommand;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -153,6 +154,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:rename',
         'instance:restore',
         'instance:rollback',
+        'instance:server:switch',
         'instance:setup',
         'instance:setup-step:create',
         'instance:setup-step:destroy',
@@ -770,6 +772,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:sleep' => [['instance'], ['idempotency-key' => null, 'json' => false]],
         'instance:unregister' => [['instance'], ['yes' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:wake' => [['instance'], ['idempotency-key' => null, 'json' => false]],
+        'instance:server:switch' => [['instance'], ['idempotency-key' => null, 'json' => false]],
         'instance:logs' => [['instance'], ['lines' => '100', 'follow' => false, 'json' => false]],
         'instance:migrate' => [['instance'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'instance:node-service:attach' => [['instance'], ['process' => null, 'protocol' => 'tcp', 'port' => null, 'host-env-key' => null, 'port-env-key' => null, 'json' => false]],
@@ -1316,6 +1319,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:mail:update' => [['instance' => '1'], ...$profileMissing],
         'instance:sleep' => [['instance' => '1'], ...$profileMissing],
         'instance:wake' => [['instance' => '1'], ...$profileMissing],
+        'instance:server:switch' => [['instance' => '1'], ...$profileMissing],
         'instance:logs' => [['instance' => '1'], ...$profileMissing],
         'instance:migrate' => [['instance' => '1', '--force' => true], ...$profileMissing],
         'instance:node-service:attach' => [['instance' => '1', '--process' => '1', '--port' => '1025', '--host-env-key' => 'MAIL_HOST', '--port-env-key' => 'MAIL_PORT'], ...$profileMissing],
@@ -1799,3 +1803,21 @@ it('refuses missing and invalid IDs as structured errors without transport', fun
         MockClient::destroyGlobal();
     }
 })->with([[[]], [['instance' => '0']], [['instance' => 'garbage']]]);
+
+it('registers Conn push credentials commands behind the conn extension with expected options', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    expect($commands)->toHaveKeys(['conn:push-credentials:set', 'conn:push-credentials:show'])
+        ->and(CommandVocabulary::allowsCommand('conn:push-credentials:set'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('conn:push-credentials:show'))->toBeTrue();
+
+    $set = $commands['conn:push-credentials:set'];
+    $show = $commands['conn:push-credentials:show'];
+
+    expect($set)->toBeInstanceOf(GatedExtensionCommand::class)
+        ->and($set->extensionSlug())->toBe('conn')
+        ->and(array_keys($set->getDefinition()->getOptions()))->toContain('key-id', 'team-id', 'json')
+        ->and($show)->toBeInstanceOf(GatedExtensionCommand::class)
+        ->and($show->extensionSlug())->toBe('conn')
+        ->and(array_keys($show->getDefinition()->getOptions()))->toContain('json');
+});

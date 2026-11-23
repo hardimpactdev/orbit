@@ -10,45 +10,43 @@ covers:
 
 # Vaultwarden
 
-The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes one **Database item**. The Vault app and Conn read those items, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes the items. [`vault`](/cli/vault) lists the commands.
+The Gateway can publish the database credentials it holds into one collection of a [Vaultwarden](https://github.com/dani-garcia/vaultwarden) organization. Each credential becomes a **Database item** that the Vault app and Conn can read, so people get current credentials without asking Orbit. Orbit stays the source of truth: it creates, rewrites, and permanently deletes items. [`vault`](/cli/vault) lists the commands.
 
-Setup and sync invoke the pinned Bitwarden CLI directly on Swamp workers. Passwords enter through the environment or stdin, and session files are private. Typed data methods filter private CLI responses before Swamp records outputs. Only public cipher IDs, revisions and fingerprints reach the publishing ledger. A failed CLI command fails its step; cleanup still removes the private cache.
-
-Vaultwarden publishing is the `vault` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/vault`. While the switch is off, its API operations and MCP tools refuse with `extension.disabled`, the CLI hides its commands, and the sync does not run. The stored setup and the record of published items stay. New installs start with the switch off. Upgrades preserve its stored value.
+Vaultwarden publishing is the `vault` [extension](/reference/extensions). While the switch is off, its API endpoints and MCP tools return `extension.disabled` (409), the CLI hides its commands, and scheduled sync pauses. Turning the switch off keeps the stored setup and publishing ledger intact. New installs start with the switch off, and upgrades preserve its state.
 
 ## Set up
 
-Do these steps in Vaultwarden first:
+Prepare Vaultwarden first:
 
-1. Create an account for the Gateway. Keep the default KDF, PBKDF2-SHA256. The Gateway refuses an account that uses Argon2id.
-2. Create an organization, for example `Orbit`, and a collection in it, for example `Databases`.
-3. Invite the Gateway account to the organization and give it **Can manage** on the collection. Confirm the membership.
-4. Sign in as the Gateway account and copy its personal API key: `client_id` and `client_secret`.
+1. Create an account for the Gateway using the default PBKDF2-SHA256 KDF (at most 2,000,000 iterations). Argon2id accounts are refused.
+2. Create an organization (for example `Orbit`) and a collection inside it (for example `Databases`).
+3. Invite the Gateway account to the organization with **Can manage** access on the collection and confirm membership.
+4. Sign in as the Gateway account and copy its personal API key (`client_id` and `client_secret`).
 
-Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Sync uses the official CLI's TLS verification with the Orbit public root added to its trust store. It never disables verification. Admission limits the destination to that managed HTTPS origin.
+Vaultwarden must run behind an Orbit Route such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host with no user info, path, query, or fragment. Orbit verifies TLS using the Bitwarden CLI's default trust store plus the public Orbit CA root (`NODE_EXTRA_CA_CERTS`) and never disables verification.
 
-Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:destroy`](#tear-down) first.
+Run [`vault:setup`](/cli/vault/setup) with the origin, API key, master password, organization, and collection (each by name or ID). Field limits: `url` up to 2,048 characters, `client_id`, `organization`, and `collection` up to 255 characters, and `client_secret` and `master_password` up to 1,024 characters.
 
-The setup run prepares the public intent, invokes the official CLI to verify the account, clears its disposable session, and checks the result. It ships no scripts. Cleanup runs after verification succeeds or fails. A new setup checks the supplied credentials again; a native resume keeps completed verification. The final check does not log in again.
+Setup starts an [Operation](/reference/operations) that logs in with the pinned Bitwarden CLI, unlocks the account, verifies write access to the collection by creating and deleting a temporary probe item, logs out, and removes its private scratch directory. The Gateway stores the configuration only after verification and cleanup both succeed. You can re-run setup to rotate the API key or master password; changing the organization or collection while items are published fails with `vault.items_published` (run [`vault:destroy`](#tear-down) first).
 
-No response or Activity entry returns the API key or the master password. The MCP `vault-setup` tool takes them as arguments, so they reach the agent's transcript. Run setup with the CLI, which reads them from files, when that matters.
+No response or Activity entry exposes the API key or master password. Because the MCP `vault-setup` tool receives them as arguments, prefer the CLI (which reads them from files) when keeping secrets out of an agent transcript matters.
 
 ### Who can redirect the credentials
 
-Setup, sync, and teardown need access to the Gateway. A caller with that access chooses where the Gateway publishes every MySQL and PostgreSQL password, within the hosts that Orbit routes. Grant Gateway access only to Nodes you trust with those passwords.
+Setup, sync, and teardown require Gateway Node access. Anyone with that access controls which `.orbit` Vaultwarden origin receives MySQL and PostgreSQL passwords, so grant Gateway access only to trusted Nodes.
 
 ## Items
 
-The Gateway publishes one item for each of these:
+The Gateway publishes one item for each eligible source:
 
 | Source | Item name | Credentials |
 | --- | --- | --- |
-| A `mysql` or `pgsql` [Database connection](/reference/database-connections) with a host, port, database, username, and password | The connection slug | The connection's own |
-| A [Database user](/reference/database-servers#add-a-user) whose password Orbit stores | `<slug> (<username>)` | The user's, with the connection's host, port, and database |
+| A `mysql` or `pgsql` [Database connection](/reference/database-connections) with host, port, database, username, and password | The connection slug | The connection's own |
+| A [Database user](/reference/database-servers#add-a-user) whose password Orbit stores (skipping any user whose username matches its connection's username) | `<slug> (<username>)` | The user's credentials with the connection's host, port, and database |
 
-Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault/status).
+Redis and SQLite connections get no item. Incomplete `mysql`/`pgsql` connections and Database users without a stored password appear under `skipped` in [`vault:status`](/cli/vault/status).
 
-Each item is a Secure Note in the configured collection. The official Bitwarden CLI owns sync authentication and encryption. Its custom fields follow schema version 1 of Vault's Database item:
+Each item is a Secure Note in the configured collection using schema version 1 of Vault's Database item:
 
 | Field | Value |
 | --- | --- |
@@ -60,39 +58,32 @@ Each item is a Secure Note in the configured collection. The official Bitwarden 
 | `tls` | `disabled` |
 | `orbit.source` | `database-connection:<id>` or `database-user:<id>` |
 
-The note says that Orbit manages the item. Orbit overwrites changes made in Vaultwarden.
+The note indicates that Orbit manages the item. Orbit overwrites manual edits made in Vaultwarden.
 
 ### Database user passwords
 
-[`database:user:create`](/cli/database/user-create) stores the user's password encrypted on the Database user record. No response returns it. A user created before Orbit stored passwords has no item until `database:user:create` sets the password again.
+[`database:user:create`](/cli/database/user-create) stores the user's password encrypted on the Database user record without returning it in any response. Any user created without a stored password gets no Vaultwarden item until `database:user:create` sets its password again.
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a Swamp integration worker on Node 209. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while `vault` is enabled and configured, skipping whenever another Vault Operation is already running. When nothing changed locally, the sync skips contacting Vaultwarden except for an hourly reconciliation check.
 
-| Wanted item | Published item | Action |
-| --- | --- | --- |
-| Present | None | Create it in the collection. |
-| Present, content changed | Present | Rewrite it. |
-| Present, content unchanged | Present | Nothing. |
-| None | Present | Delete it permanently. |
+Each sync compares desired items against the publishing ledger and, when contacting Vaultwarden, reconciles collection items by their `orbit.source` field:
 
-A run that finds nothing to do does not contact Vaultwarden, except once an hour. A run that contacts Vaultwarden also reads the collection and recognizes Orbit's items by their `orbit.source` field:
-
-| Found in the collection | Action |
+| State in Vaultwarden | Action |
 | --- | --- |
-| A published cipher that is gone or in the trash | Create the item with a new ID. Do not adopt another cipher for that recorded source. |
-| A published item that someone changed | Rewrite it. |
-| An item for a wanted source for which the ledger has no entry | Adopt it and rewrite it. This covers a create that timed out before its first ledger record, and wanted items left by `vault:destroy --keep-items`. |
-| A recorded item in the trash or whose source is gone from Orbit, with an ID and decrypted source that match the publishing ledger | Delete it permanently, unless it belongs to another visible collection. |
-| A copy of a recorded source with a different cipher ID, or an unrecorded item for an unwanted source | Leave it, even if the recorded cipher is missing or trashed. A marker alone does not authorize adoption, rewriting, or deletion. |
-| An item without `orbit.source` | Leave it. |
+| Wanted item absent from ledger and collection | Create it in the collection. |
+| Wanted item content changed or edited manually | Rewrite it. |
+| Published cipher missing or trashed | Create a replacement with a new ID without adopting another cipher. |
+| Unrecorded item matching a wanted source | Adopt and rewrite it (covers timed-out creates and items kept by `vault:destroy --keep-items`). |
+| Recorded item trashed or whose source is gone, with matching ID and `orbit.source` | Delete it permanently, unless it also belongs to another visible collection. |
+| Unrecorded copy of a recorded source, unrecorded unwanted item, or item without `orbit.source` | Leave it untouched. |
 
-The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
+Do not add `orbit.source` fields to manual items. Sync runs item mutations sequentially using a disposable `0600` session directory and always logs out and deletes that cache when finished. Ledger results are capped at 4,096 entries per list, 1 KiB per entry, and 256 KiB total; oversized results are rejected before updating the ledger.
 
-A failed change fails the native run. The publishing ledger stays unchanged, and the next run reconciles remote state before retrying. Earlier successful mutations can remain in Vaultwarden. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
+If a sync fails, the publishing ledger stays unchanged and the next run reconciles remote state before retrying. Database operations never wait on Vaultwarden. `last_synced_at` updates and `last_error` clears only after a successful run.
 
-[`vault:sync`](/cli/vault/sync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
+[`vault:sync`](/cli/vault/sync) triggers the same full reconciliation immediately (including the hourly check) and returns HTTP 202 with an Operation. Only one Vault Operation runs at a time.
 
 ## Status
 
@@ -100,129 +91,79 @@ A failed change fails the native run. The publishing ledger stays unchanged, and
 
 | Field | Meaning |
 | --- | --- |
-| `configured` | Whether Vaultwarden is set up. The other fields are null or empty when it is not. |
+| `configured` | Whether Vaultwarden is set up (other fields are `null` or empty when `false`). |
 | `url` | The Vaultwarden origin. |
 | `email` | The Gateway account's email. |
-| `organization`, `collection` | Each an object with `id` and `name`. |
-| `items` | The number of published items. |
-| `pending` | The number of new or changed credential intents plus ledger records for removed sources. This local count does not plan remote writes. |
-| `skipped` | Each source that gets no item: `source`, `slug`, `username`, and `reason` (`incomplete` or `password_unknown`). |
-| `last_synced_at` | When a run last finished without an error, or null. |
-| `last_error` | The `code` and `message` of the last failed run or item, or null. |
+| `organization`, `collection` | Objects with `id` and `name`. |
+| `items` | Count of published items. |
+| `pending` | Count of new or changed credential intents plus ledger records for removed sources. |
+| `skipped` | Sources omitted from sync: `source`, `slug`, `username`, and `reason` (`incomplete` or `password_unknown`). |
+| `last_synced_at` | Timestamp of the last error-free sync, or `null`. |
+| `last_error` | `code` and `message` of the last failed run, or `null`. |
 
 ## Tear down
 
-[`vault:destroy`](/cli/vault/destroy) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
+[`vault:destroy`](/cli/vault/destroy) permanently deletes every published item whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then clears the stored configuration and publishing ledger. Unrecorded copies and items with mismatched sources stay untouched.
 
-Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, the Gateway records a completed Operation, clears its setup and ledger, and starts no Swamp run or Vaultwarden request. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+Before deleting anything, teardown refuses with `vault.item_shared` if any selected item also belongs to another visible collection (Vaultwarden deletes the whole item across collections). Sync uses the same guard. Note that Vaultwarden's `collectionIds` lists only collections visible to the Gateway account.
 
-Vaultwarden's `collectionIds` response lists only collections visible to the account. The sharing check detects those memberships; an absent ID does not prove that the item has no membership in a collection hidden from the account. Sync uses the same check before deleting a recorded item.
+Pass `--keep-items` (API body `{"keep_items": true}`) to clear Orbit's configuration and ledger immediately without contacting Vaultwarden. A later setup on the same collection adopts wanted items during sync. If Vaultwarden fails to delete some items, teardown keeps the configuration and removes only the ledger entries that succeeded so you can retry.
 
 ## API
 
-All operations need access to the Gateway.
+All endpoints require access to the Gateway Node.
 
 | Method | Path | Result |
 | --- | --- | --- |
-| `GET` | `/api/v1/vault` | Show the status. |
-| `PUT` | `/api/v1/vault` | Set up, with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns an Operation (202). |
-| `POST` | `/api/v1/vault/sync` | Record a sync Operation (202). |
-| `DELETE` | `/api/v1/vault` | Tear down. Optional body `{"keep_items": true}`. Returns an Operation (202). |
+| `GET` | `/api/v1/vault` | Show status. |
+| `PUT` | `/api/v1/vault` | Set up with `url`, `client_id`, `client_secret`, `master_password`, `organization`, and `collection`. Returns an Operation (202). |
+| `POST` | `/api/v1/vault/sync` | Start a sync Operation (202). |
+| `DELETE` | `/api/v1/vault` | Tear down (optional `{"keep_items": true}`). Returns an Operation (202). |
 
-| Error | Status | When |
+### Synchronous admission errors
+
+The API returns these errors synchronously before admitting an Operation:
+
+| Code | HTTP | When |
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `vault` extension is off. |
-| `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
-| `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
-| `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
-| `vault.item_shared` | 409 | A published item selected for deletion also belongs to another visible collection. No item is deleted. |
-| `validation.failed` | 422 | The `url` is not an HTTPS origin on a `.orbit` host. |
-| `vault.sync_failed` | 502 | `vault:sync` could not make at least one change. `details` holds `failed` and `first_error`. |
-| `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |
-| `vault.kdf_unsupported` | 422 | The account uses Argon2id, or more than 2,000,000 PBKDF2 iterations. |
-| `vault.organization_missing` | 422 | The account is not a confirmed member of the organization. |
-| `vault.collection_missing` | 422 | The organization has no such collection that the account can reach. |
-| `vault.collection_read_only` | 422 | The account cannot write to the collection. |
-| `vault.unreachable` | 502 | Vaultwarden did not answer, or answered with an error. |
+| `vault.not_configured` | 409 | Sync or teardown called before setup. |
+| `vault.sync_busy` | 409 | Another setup, sync, or teardown Operation is running. |
+| `vault.gateway_missing` | 409 | The Gateway Node record is missing. |
+| `validation.failed` | 422 | Invalid field length, or `url` is not an HTTPS origin on a `.orbit` host. |
+
+### Operation errors
+
+These codes appear on failed Vault Operations:
+
+| Code | Meaning |
+| --- | --- |
+| `vault.items_published` | Setup names a different organization or collection while items are published. |
+| `vault.item_shared` | A published item selected for deletion also belongs to another visible collection. |
+| `vault.login_failed` | Vaultwarden refused the API key, or the master password could not unlock the account. |
+| `vault.kdf_unsupported` | The account uses Argon2id or more than 2,000,000 PBKDF2 iterations. |
+| `vault.organization_missing` | The account is not a confirmed member of the organization. |
+| `vault.collection_missing` | The organization has no accessible collection matching the request. |
+| `vault.collection_read_only` | The account cannot write to the collection. |
+| `vault.unreachable` | Vaultwarden did not answer or returned an error. |
+| `vault.sync_failed` | Sync could not complete one or more remote changes. |
+| `vault.result_invalid` | The sync or setup result exceeded size limits or failed validation. |
+| `vault.intent_changed` | The vault intent changed while the Operation was running. |
 
 ## Why it works this way
 
-The Gateway already holds every database password, and the API never returns one. Vaultwarden gives people a reader they already trust, with sharing and history, without a new way to read passwords from Orbit.
-
 ### Orbit keeps its own copy
 
-Orbit stays the source of truth. If the secrets lived only in Vaultwarden, the Gateway would still need the organization key to use them, so they would not be hidden from it. Deploys and recovery would also depend on Vaultwarden, which runs on an Orbit Node.
-
-### The API does not return passwords
-
-Returning passwords through the Orbit API was rejected. Every client with Gateway access would read every password, and copies made that way would still go stale when Orbit rotates a password.
-
-### The Gateway holds one more secret
-
-The Gateway stores the master password of its Vaultwarden account, so that it can unlock the account for each run. That password unlocks only what the account can reach.
+Orbit stays the source of truth so deploys and recovery never depend on Vaultwarden, and credentials are never exposed through the Orbit API where any Gateway client could read stale copies.
 
 ### TLS is disabled in items
 
-Orbit records no TLS mode for a connection, and its Database servers listen on WireGuard. So each item says `tls` `disabled`.
+Managed Database servers listen on WireGuard without TLS, so Orbit records `tls` as `disabled` on published items.
 
 ### Items are matched by their source
 
-Vaultwarden assigns the item ID. A create that times out can still store the item, so recording an item before its create does not tell the Gateway which item exists. The `orbit.source` field names the source record, so the next run finds that item and adopts it.
+Because Vaultwarden assigns cipher IDs after creation, a timed-out create can still succeed remotely. Recording `orbit.source` lets the next sync find and adopt that item instead of duplicating it.
 
-### The scheduler runs the sync
+### Scheduled sync with the official CLI
 
-The sync runs from the scheduler instead of inside each database write. When Vaultwarden is down, database operations still succeed, and a later run copies the change.
-
-### The sync stops while the extension is off
-
-Publishing is the feature itself, not the end of work that was already recorded, as the Documents cleanup is. If the sync kept running while `vault` is off, the Gateway would keep sending credentials to Vaultwarden after the operator turned the feature off. A stale item is the smaller cost, and the first run after the switch turns on fixes it.
-
-### The account keeps PBKDF2
-
-Setup and sync delegate key derivation to the official CLI. Setup reads its cached KDF metadata and refuses an account configured for Argon2id.
-
-### Sync uses the official CLI
-
-Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown use the same CLI primitives.
-
-### TLS verifies the server
-
-Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup and teardown use the same CLI trust configuration and bounded commands.
-
-### Removed credentials are deleted
-
-When a credential is removed, its item is deleted permanently instead of moved to the trash, so a removed password does not stay readable.
-
-## Operation execution
-
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup uses the native account workflow described below. Teardown uses `operation-vault-teardown` with vault-backed credentials and full public intent. Only setup keeps an encrypted admission snapshot until its terminal configuration projection.
-
-A retry reconciles the collection by `orbit.source` before it creates an item. It adopts a wanted marker only when that source has no ledger entry. A missing recorded cipher creates a replacement and preserves unrecorded copies. Only recorded orphans are eligible for deletion. A failed teardown keeps its configuration and removes only the ledger entries whose native deletion steps succeeded. Scheduled synchronization records intent; it does no network work in PHP.
-
-Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
-
-## Direct Swamp writer
-
-`vault.setup` uses `operation-vault-setup`. The Gateway pushes one execution copy into the Swamp vault and passes the full public intent and names-only descriptor. A Swamp role worker verifies the account and collection with the official Bitwarden CLI. It creates a harmless test item because CLI collection exports omit write permissions. Native cleanup deletes that item, logs out and removes the private scratch directory. A native assert checks verification and cleanup. A cleanup failure marks the Operation failed, even after successful account verification.
-
-Only the successful terminal result stores the setup; a failure preserves the previous configuration and publishing ledger. Each new setup verifies its supplied credentials; native resume retains completed steps. Typed checks fail with a public refusal code. The Gateway maps that code or a failed CLI step to the public Vault error without reading failed-step output.
-
-The pinned CLI caches the account KDF as public disk-state metadata. Setup reads that metadata to preserve the PBKDF2-SHA256 constraint and iteration limit, without a second HTTP client or cryptography implementation.
-
-`vault.teardown` uses the same pinned CLI and typed private-data methods as setup and sync. It plans all deletions before changing anything, refusing shared items first. Each admitted ledger entry has a native deletion step, guarded by its exact ID and source match. After work fails or is skipped, cleanup logs out and removes the private cache. A native assertion checks the terminal state.
-
-The Gateway reads that terminal result once, clears its setup only on success, and records completed deletions on failure. Terminal replay does not alter a later setup. It has no private-material request, result callback, shipped script or custom Vaultwarden client.
-
-### Native sync with the official Bitwarden CLI
-
-The Gateway starts `operation-vault-sync` with full public intent. All steps run on Node 209; the Gateway Node ID identifies the Operation target. This integration calls Vaultwarden over HTTPS and needs no worker or CLI installation on the Gateway Node. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach only the typed method or CLI action that needs them. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
-
-Swamp core workflows and command execution fit. Official extensions were checked at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies API-key login, password-env unlock, item JSON on stdin and permanent deletion. Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be available on the placed worker; normal npm package execution/cache resolves the pinned official CLI.
-
-One temporary CLI app-data directory belongs to each run. Its derived session key stays in a file with mode `0600`. Native sensitive-field storage encrypts the session and leaves only a vault reference in step output. The CLI resolves that key into `BW_SESSION`; the value never enters arguments. Only public item metadata leaves the CLI boundary. Item steps use native concurrency 1 because they share the official CLI's writable cache. Each write item has its own native behavior identity, so the default ten-result retention keeps its public write receipt available for native recovery.
-
-Failure summaries ignore unavailable write outputs and keep the run failed; they never publish a partial ledger. Logout and cache removal follow success or failure. Native resume must restart from the workspace step to rebuild this disposable session and inventory; it must not reuse a cleaned-up session. There is no custom retry loop or lock.
-
-Account and sync CLI actions use one plain command per step. Typed data methods select public account and cipher metadata from private files. Swamp stores credentials and session keys as sensitive fields in the vault; later commands resolve their key names into the environment. Native failures carry the public refusal code, without shell exit-code dispatch.
-
-Both Vault kind declarations include the native credential-field grant in their execution-copy policy. The Gateway registry check requires this declaration to match the intended Swamp grants; native Swamp configuration validation checks the rendered expressions separately.
+Running sync from the scheduler keeps database writes independent of Vaultwarden availability, and pausing sync while the `vault` extension is off stops credential publishing immediately. Delegating login, encryption, and item writes to the pinned `@bitwarden/cli` package avoids maintaining a custom Vaultwarden client, and permanently deleting removed items prevents revoked passwords from lingering in the trash.

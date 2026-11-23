@@ -703,7 +703,11 @@ if (family === "list") {
     }
     if (!state.containers[name].t3) Deno.exit(7);
     if (url.endsWith("/.well-known/t3/environment")) {
-      console.log(JSON.stringify({ environmentId: `env-${name}`, label: state.containers[name].t3_label ?? "t3", serverVersion: "0.1.7" }));
+      // The server that the unit's drop-in names answers: the Conn Server reports its T3 contract version.
+      let dropIn = "";
+      try { dropIn = Deno.readTextFileSync(`${rootfs(name)}/etc/systemd/system/t3.service.d/20-orbit-server.conf`); } catch { /* none */ }
+      const serverVersion = dropIn.includes("/conn-server serve") ? "0.1.10" : "0.1.7";
+      console.log(JSON.stringify({ environmentId: `env-${name}`, label: state.containers[name].t3_label ?? "t3", serverVersion }));
     } else {
       const token = (await new Response(Deno.stdin.readable).text()).replace("Authorization: Bearer ", "").trim();
       const known = (state.sessions ?? []).find((session: { token: string }) => session.token === token);
@@ -711,6 +715,14 @@ if (family === "list") {
         ? JSON.stringify({ authenticated: true, scopes: known.scopes, expiresAt: "2026-12-10T10:00:00.000Z" }) + "\n200"
         : "\n401"));
     }
+    Deno.exit(0);
+  }
+  if (command[0].endsWith("/t3") && command[1] === "--version") {
+    console.log("t3 v0.1.7");
+    Deno.exit(0);
+  }
+  if (command[0].endsWith("/conn-server") && command[1] === "--version") {
+    console.log("conn-server 0.4.2 (T3 server 0.1.10 contract, contract digest f72ee133e341)");
     Deno.exit(0);
   }
   if (command[0].endsWith("/t3")) {

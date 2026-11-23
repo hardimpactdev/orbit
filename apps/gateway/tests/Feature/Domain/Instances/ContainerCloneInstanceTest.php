@@ -148,6 +148,18 @@ describe('a clone of the container default', function (): void {
             ->and(substr_count($metadata, "\n"))->toBe(8);
     });
 
+    it('names a Laravel application\'s folder below the workspace in the Instance file, where laravel-lsp starts', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $default->project->update(['type' => ProjectType::Monorepo, 'root' => 'apps/shop/public', 'php_version' => '8.5', 'is_laravel' => true]);
+        $laravel = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'shop'))['clone']['files'][0]['content']);
+        $default->project->update(['is_laravel' => false]);
+        $other = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'other'))['clone']['files'][0]['content']);
+
+        expect($laravel['ORBIT_APPLICATION'])->toBe(InstanceHostIntent::Workspace.'/apps/shop')
+            ->and($other)->not->toHaveKey('ORBIT_APPLICATION');
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -2001,13 +2013,13 @@ describe('the server a container records', function (): void {
             ->and(['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last])->toBe($before);
     });
 
-    it('keeps a runtime\'s server: no update changes it', function (): void {
+    it('refuses a conn runtime\'s switch back to t3', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         $clone = containerCreate($default->project, $node, 'feature');
 
         expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 't3']))
-            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+            ->toThrow(QueryException::class, 'An Instance runtime can only switch its container server from t3 to conn.');
     });
 });
 

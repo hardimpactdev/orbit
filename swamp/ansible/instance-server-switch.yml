@@ -1,0 +1,218 @@
+---
+# Switches an existing container Instance from T3 to the Conn Server (docs/cli/instance/server-switch.mmd).
+# The Gateway checked T3's threads before admitting the run. Right before writing the drop-in and restarting `t3.service`,
+# this playbook re-checks `t3.service` processes with `templates/t3-service-processes.j2` so no running turn or terminal is cut.
+# A container that stopped before the run takes the drop-in through the file API and finishes with `switch: deferred`.
+# The Conn Server listens only once its first-start import of T3's threads finished: the wait is `intent.import_seconds`. A failure
+# after the drop-in is written reports `container_server: conn`, so the Gateway's record follows the unit and nothing restarts the import.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: container_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Switch container server to Conn
+  hosts: container_node
+  gather_facts: false
+  become: true
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    container: "{{ intent.container }}"
+    as_agent: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--'] }}
+  tasks:
+    - name: Run the server switch
+      tags: [switch]
+      block:
+        - name: Read the container
+          ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+          register: switch_read
+          changed_when: false
+
+        - name: Handle a stopped container
+          when: (switch_read.stdout | from_json).status == 'Stopped'
+          block:
+            - name: Write the Conn Server drop-in to the stopped container
+              ansible.builtin.command:
+                argv:
+                  - incus
+                  - --project
+                  - "{{ container.project }}"
+                  - file
+                  - push
+                  - --create-dirs
+                  - --uid
+                  - "0"
+                  - --gid
+                  - "0"
+                  - --mode
+                  - "{{ intent.drop_in.mode }}"
+                  - "-"
+                  - "{{ container.name }}{{ intent.drop_in.path }}"
+                stdin: "{{ intent.drop_in.content }}"
+                stdin_add_newline: false
+              changed_when: true
+
+            - name: Record the deferred switch
+              ansible.builtin.set_fact:
+                switch_result: { switch: deferred, container_server: conn }
+
+        - name: Refuse a container that is neither running nor stopped
+          when: switch_result is not defined and (switch_read.stdout | from_json).status != 'Running'
+          ansible.builtin.fail: { msg: instance.container_not_running }
+
+        - name: Read the processes of T3's service
+          when: switch_result is not defined
+          ansible.builtin.command:
+            argv:
+              - incus
+              - exec
+              - --project
+              - "{{ container.project }}"
+              - "{{ container.name }}"
+              - --
+              - sh
+              - -c
+              - >-
+                set -eu; main=$(systemctl show -p MainPID --value t3.service); cg=/sys/fs/cgroup/system.slice/t3.service;
+                procs=$(cat "$cg/cgroup.procs"); echo "main $main";
+                echo "children $(sed -n 's/^nr_descendants //p' "$cg/cgroup.stat" | grep . || echo -1)";
+                for p in $procs; do ps -o pid=,ppid=,sid=,tty=,comm= -p "$p" || [ ! -d "/proc/$p" ]; done
+          register: switch_ps
+          changed_when: false
+          failed_when: false
+
+        - name: Refuse a busy container whose T3 runs a terminal or command, or whose processes cannot be read
+          when: switch_result is not defined and (not switch_users.readable or (switch_users.terminals + switch_users.commands) > 0)
+          ansible.builtin.fail: { msg: instance.container_server_busy }
+          vars:
+            switch_users: >-
+              {{ (lookup('ansible.builtin.template', 'templates/t3-service-processes.j2',
+                         template_vars={'lines': switch_ps.stdout_lines if switch_ps.rc == 0 else []}) | from_json) }}
+
+        - name: Read the Conn Server contract version
+          when: switch_result is not defined
+          ansible.builtin.command:
+            argv: "{{ as_agent + [intent.program, '--version'] }}"
+          register: switch_version
+          changed_when: false
+
+        - name: Parse the Conn Server contract version
+          when: switch_result is not defined
+          ansible.builtin.set_fact:
+            expected_server_version: >-
+              {{ (switch_version.stdout | trim | regex_search(intent.version_pattern, '\1') | default([], true)) | first | default('', true) }}
+
+        - name: Refuse an unreadable Conn Server version
+          when: switch_result is not defined
+          ansible.builtin.assert:
+            that: [expected_server_version != '']
+            fail_msg: instance.container_server_version_mismatch
+            quiet: true
+
+        - name: Write the Conn Server drop-in
+          when: switch_result is not defined
+          ansible.builtin.command:
+            argv:
+              - incus
+              - --project
+              - "{{ container.project }}"
+              - file
+              - push
+              - --create-dirs
+              - --uid
+              - "0"
+              - --gid
+              - "0"
+              - --mode
+              - "{{ intent.drop_in.mode }}"
+              - "-"
+              - "{{ container.name }}{{ intent.drop_in.path }}"
+            stdin: "{{ intent.drop_in.content }}"
+            stdin_add_newline: false
+          changed_when: true
+
+        - name: Note the written drop-in
+          when: switch_result is not defined
+          ansible.builtin.set_fact: { switch_written: true }
+
+        - name: Reload systemd in the container
+          when: switch_result is not defined
+          ansible.builtin.command:
+            argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, systemctl, daemon-reload]
+          changed_when: true
+
+        - name: Restart T3 service on Conn Server
+          when: switch_result is not defined
+          ansible.builtin.command:
+            argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, timeout, "100", systemctl, restart, --, t3.service]
+          changed_when: true
+
+        - name: Wait until the Conn Server answers with its version
+          when: switch_result is not defined
+          block:
+            - name: Wait for the Conn Server's import and read its descriptor
+              ansible.builtin.command:
+                argv: >-
+                  {{ as_agent + ['timeout', intent.import_seconds | string, 'sh', '-c',
+                                 'until curl --fail --silent --max-time 2 "$0"; do sleep 1; done',
+                                 'http://127.0.0.1:' ~ intent.t3_port ~ '/.well-known/t3/environment'] }}
+              register: switch_env
+              changed_when: false
+              failed_when: false
+
+            - name: Refuse a Conn Server that does not answer
+              ansible.builtin.assert: { that: [switch_env.rc == 0], fail_msg: instance.t3_unready, quiet: true }
+
+            - name: Refuse a server version that does not match the Conn Server
+              ansible.builtin.assert:
+                that: [(switch_env.stdout | from_json).serverVersion | default('') == expected_server_version]
+                fail_msg: instance.container_server_version_mismatch
+                quiet: true
+
+            - name: Record the switched server
+              ansible.builtin.set_fact:
+                switch_result:
+                  switch: switched
+                  container_server: conn
+                  server_version: "{{ expected_server_version }}"
+
+        - name: Write the result
+          ansible.builtin.copy:
+            content: "{{ switch_result | to_json }}"
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: &local
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      rescue:
+        - name: Write the failure
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.msg
+                  if (ansible_failed_result.msg | default('') is match('^(?:instance|conn)\.[a-z0-9_]+$'))
+                  else 'instance.container_server_switch_failed'}
+                 | combine({'container_server': 'conn'} if switch_written | default(false) | bool else {}) | to_json }}
+            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          changed_when: false
+          vars: *local
+        - name: Fail the server switch
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The container server switch failed.') }}"

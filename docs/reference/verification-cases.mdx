@@ -1,6 +1,6 @@
 ---
 title: "Verification cases"
-description: "How the cases that prove an Orbit command are written, checked and run: a short YAML specification built from a fixed set of steps, one shared runner, a coverage check against the command chart, and batches that each start from one restore of the task's base snapshot."
+description: "How Orbit command verification cases are structured, scheduled, and executed by the shared proof runner."
 covers:
   - swamp/proof/runner/**
   - tools/swamp-proof-guest/**
@@ -8,384 +8,110 @@ covers:
 
 # Verification cases
 
-**Design draft.** The case format, the runner and the steps that the cases of `firewall:allow` use are built. `bin/check-cases` is not built.
+A verification case proves one command behavior on the nested test fleet ([stage 3](/reference/command-development-pipeline#3-proof)). Cases are declarative YAML specs executed by one shared runner (`swamp/proof/runner/`).
 
-A verification case proves one behavior of one command on the nested test fleet of [stage 3](/reference/command-development-pipeline#3-proof). A case is a specification, not code: a short YAML block built from a fixed set of steps. One shared runner executes every case. Code is written only for a new kind of check, and then once, as a new step.
+## Trust boundary and preparation
 
-the proof VM is the trust boundary; candidate code, including the agent install, runs inside it.
+The proof copy is the trust boundary: candidate code runs inside its disposable, credential-free, egress-restricted nested fleet. Every `runner.py batch`, `runner.py case`, and `runner.py setup` prepares the fleet before running cases, with no preparation caching between commands:
 
-Preparation reads the tested checkout's `apps/gateway/resources/agent/frozen-manifest.json`. It installs that pin with checksum verification and fails on any download error or mismatch. PR review is the gate for candidate code; proof preparation runs inside the disposable, credential-free, egress-restricted VM.
+- Reads `apps/gateway/resources/agent/frozen-manifest.json` from the candidate checkout and installs the pinned observer with checksum verification on all three nested Nodes (`proof-gateway.yml`, `proof-observers.yml`).
+- Restarts observers, discards stale receipts, and waits up to 18 checks (every 5 seconds) for the nested Gateway to record matching versions, digests, and fresh host facts.
+- Enforces a 330-second hard preparation deadline (`timeout 330`) and a separate 120-second setup budget; failures stop cases as `infrastructure`.
 
-Every `runner batch` and direct `runner case` prepares the fleet before any case starts. This also applies to batches with no setup steps and older released workflows that skip `runner setup`. A setup command prepares independently before applying its declared start state. No preparation success is cached between commands.
+## Outer machine and nested Nodes
 
-One Ansible run applies Gateway prerequisites. Another uses Node convergence's atomic checksum-verified installer on all three nested Nodes, stops the observers, discards their old host receipts, starts them, then waits for the nested Gateway to record every expected version with its binary digest and a new host fact. The wait checks every 5 seconds, up to 18 retries; each preparation is bounded at 330 seconds. Setup gets a separate 120-second budget within its 480-second transport limit. A preparation failure stops cases as infrastructure. Every base restore repeats preparation without saving a new base snapshot. Case deadlines are unchanged.
-
-## Where the runner runs
-
-The runner runs on the outer machine: the machine that holds the three nested containers `nested-gateway`, `nested-app-dev` and `nested-app-prod`. Orbit ran it on a task VM; task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). It drives the containers with local `incus exec`, so its user must be allowed to use that Incus. It runs the candidate CLI from the checkout that holds `runner.py`.
-
-The runner reads the facts about its own machine from its own process. It holds no constant for them and never asks which kind of machine it is on.
+The runner runs on the outer machine hosting `nested-gateway`, `nested-app-dev`, and `nested-app-prod` and drives them via local `incus exec`. It resolves its runtime paths from the process rather than hardcoded constants:
 
 | Fact | Source |
 | --- | --- |
-| The checkout | The path of the runner's own files. |
-| The user | The user that runs the runner. It must own the CLI home: the CLI refuses a home that another user owns. |
-| The home | The home of that user, as the operating system gives it. The `HOME` of the environment does not decide. |
-| The CLI home | `.orbit` in that home. An `ORBIT_HOME` in the runner's environment does not move it. |
-| The nested CA | `nested-ca.pem` in the CLI home. The fleet start pins it there. |
+| Checkout | Path of `runner.py` |
+| User and home | `pwd.getpwuid(os.getuid())` (ignores `HOME`) |
+| CLI home and CA | `~/.orbit` and `~/.orbit/nested-ca.pem` (ignores `ORBIT_HOME`) |
+| Pinned Ansible tools | `/opt/orbit-shape-gate` ([pinned shape tools](/reference/development-containers#the-pinned-shape-tools)) |
+| Terminal width | `COLUMNS=240` for noninteractive human output checks |
 
-On a task VM the user is `orbit` and the home is `/home/orbit`.
-
-The nested Nodes do not depend on the outer machine. On every nested Node the managed user is `orbit` with the home `/home/orbit`. The fleet start mounts the checkout at `/home/orbit/orbit` on the Gateway and on `app-dev`. A case can call the CLI from another Node. The runner then prepares that Node: it mounts the checkout there, copies the CA of the outer machine to `/home/orbit/.orbit/nested-ca.pem` and adds the CLI profile.
-
-Fleet preparation needs the pinned Ansible tools on the outer machine, and Swamp must run in the nested Gateway. A copy of a nested-fleet default holds the tools in `/opt/orbit-shape-gate`: the [refresh](/reference/development-containers#the-pinned-shape-tools) builds them in the default before its seed. The task image holds them there too. When they are not there, the runner builds them in the user's cache, which needs the internet. When that build fails with an error, preparation fails and its message names the pinned folder.
+On every nested Node, the managed user is `orbit` (`/home/orbit`). When a case sets `cli.as` to another Node, the runner mounts the checkout there, copies `nested-ca.pem`, adds a CLI profile, and runs `php apps/cli/orbit` once before scheduling.
 
 ## The case file
 
-Each command has one file, `swamp/proof/<family>/<command>.cases.yaml`. The cases come from the command's chart and page, never from the code. The draft for `firewall:allow` is [`allow.cases.yaml`](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/firewall/allow.cases.yaml). `orbit proof:run` selects a command with the [selection list](/reference/feature-flow#choose-the-cases) and runs this file; a selected command without it is uncovered (`no cases file for COMMAND`).
+Each command has one file at `swamp/proof/<family>/<command>.cases.yaml`, derived from its chart and CLI page. Missing files report `no cases file for COMMAND` ([Choose the cases](/reference/feature-flow#choose-the-cases)).
 
-YAML, because:
+### File keys
 
-- A tool reads it, so it can reject an unknown step, an unknown chart path or a missing batch. A Markdown table cannot be checked.
-- It allows comments, which JSON does not, and nested lists, which TOML writes badly.
-- Swamp workflows are YAML, so authors and reviewers already know it.
-
-One file per command, because the reviewer reads the whole contract of a command beside its chart and page, and the coverage check works on one chart. Agents that write at the same time work on different commands, so their files do not collide. If two agents must write one command, each writes its cases to a scratch file and the author joins them. Cases are independent list items, so joining is concatenation.
+Top-level keys configure target placement, shared fixtures, and exclusions:
 
 | Key | Meaning |
 | --- | --- |
-| `command` | The command, such as `firewall:allow`. |
-| `chart` | The chart under `docs/cli`, such as `firewall/allow`. |
-| `target` | The Node the command acts on. |
-| `sources` | The Nodes that probe the target. |
-| `spread` | The Nodes that cases take in turn, such as `[app-dev, app-prod, gateway]`. Without it every case acts on `target`. See [Several cases at a time](#several-cases-at-a-time). |
-| `parallel` | How many cases `runner batch` runs at a time, from 1 to 16. The default is 4. |
-| `baseline` | The state that `unchanged` compares: the runner records it at the start of `act`. |
-| `batch` (on each case) | The name of a batch in `swamp/proof/batches.yaml`, which defines every batch, its start state and the run order. |
-| `node` (on a case) | The Node that plays the target for this case. It beats `spread`. |
-| `exclusive` (on a case) | `true` makes the case run alone. |
-| `vars` | Named lists that a command line splices with `"@name"`. |
-| `fixtures` | Named lists of steps that cases reuse. |
-| `uncovered` | Chart paths, options or codes that have no case yet, each with a reason. |
-| `waits` | Named reasons that keep cases from running, such as a fleet window that the owner schedules. A case names one with its own `waits`. |
-| `cases` | The cases. |
+| `command`, `chart` | Command name (for example `firewall:allow`) and chart path under `docs/cli`. |
+| `target`, `sources` | Default target Node and probing source Nodes. |
+| `spread`, `parallel` | Nodes cases rotate across (`spread`), and max concurrent cases (`1`–`16`, default `4`). |
+| `baseline` | State captured before `act` for `unchanged` assertions. |
+| `vars`, `fixtures` | Reusable argument lists (`"@name"`) and step lists (`use:`). |
+| `uncovered`, `waits` | Uncovered paths/codes with reasons, and named deferrals (`waits`). |
+| `cases` | List of case definitions. |
 
-A case from the draft (its `negative` key is shown [below](#prove-a-case-can-fail)):
+### Case keys
 
-```yaml
-- id: new-restricted-allow
-  batch: fresh-fleet
-  covers: [main, changes-needed, succeeded]
-  summary: A new allow for one source opens the port for that source only, in the right order.
-  setup:
-    - use: blocked-port
-  act:
-    - cli:
-        run: [firewall:allow, "@tcp_rule"]
-        expect: {exit: 0, status: succeeded}
-  expect:
-    - probe: {id: gateway-connects, from: gateway, to: app-dev, port: "${port}", expect: connect}
-    - probe: {from: app-prod, to: app-dev, port: "${port}", expect: blocked}
-    - probe: {from: "${sources}", to: app-dev, port: "${control}", expect: connect}
-    - record: {list: firewall:list, node: app-dev, where: {port: "${port}", action: allow, protocol: tcp, source: "${gateway.src}", status: active}, count: 1}
-    - ufw: {on: app-dev, family: 4, rows: [{to: "${port}/tcp", action: ALLOW, from: "${gateway.src}"}, {ref: deny}]}
-    - unchanged: {since: act, except: {port: "${port}"}}
-    - doctor: {node: app-dev, drift: 0}
-```
+Each entry in `cases` defines one independent test (no cleanup needed because batches restore `base`):
 
-| Case key | Required | Meaning |
+| Key | Required | Meaning |
 | --- | --- | --- |
-| `id` | yes | Short name, unique in the file. The verdict carries it. |
-| `batch` | yes | The starting state the case needs. |
-| `covers` | yes | The chart path ids the case exercises. Use `[]` for a case that covers no drawn path, such as a refusal. |
-| `summary` | yes | One sentence: the behavior the case proves, taken from the page. |
-| `setup` | no | Steps that build the starting state. A failed step makes the case `unrun`. |
-| `act` | yes | The command under test, called through the real CLI. |
-| `expect` | yes | What must be true afterwards. Every step runs, so one verdict lists all failures. |
-| `stages` | no | Replaces `act` and `expect` when a case needs more than one round. A list of `act` and `expect` pairs, run in order. |
-| `variants` | no | A list of variable sets. The case runs once per set, and each run has its own verdict, such as `protocols[both]`. |
-| `read_only` | no | `true` marks a case that changes nothing, such as a refusal or a read. It has no `setup` and no `negative`, each `cli` call expects `request: none`, and its other steps are reads (`probe`, `ufw`, `record`, `doctor`, `unchanged`, `package`). The runner refuses a marked case with any other step. Default `false`. |
-| `fails_on_base` | no | `true` opts a new or changed case into CI replay on the merge base. It must fail there with cause `assertion`. Default `false`. |
-| `fails_today` | no | One line saying why the case fails on the current code. The build removes it. |
-| `negative` | no | How to prove that the case can fail. See [Prove a case can fail](#prove-a-case-can-fail). |
-| `timeout` | no | Seconds for the case. Default 180. |
-| `waits` | no | The name of a reason in the file's `waits`. The case loads and keeps its steps, but the plan and the runner skip it until the reason is gone. Remove the key when it can run. |
-
-A case writes no cleanup. Each batch starts from a restore of the task's `base` snapshot, and each case creates what it needs on its own resources: free ports, its own listeners, a new Instance. So cases in a batch do not touch each other. A case that did not pass triggers no restore; a case that cannot share the batch with others gets its own.
-
-A proof copy resets its inner fleet once before its first batch. The read-only cases (`read_only: true`) of a batch with no setup leave the fleet at `base`. So the proof runs them as a batch of their own, first on its copy, and the copy resets again only after a batch that can change the fleet.
+| `id`, `batch`, `covers`, `summary` | Yes | Unique verdict ID, batch name from `swamp/proof/batches.yaml`, chart path IDs (`[]` for refusals), and one-line summary. |
+| `setup` | No | Precondition steps; failures mark the case `unrun` (`precondition`). |
+| `act`, `expect` | Yes (or `stages`) | Command under test and assertions (all `expect` steps run so one verdict lists every failure). |
+| `stages` | No | Sequence of `act`/`expect` pairs for multi-round checks on one long Operation. |
+| `variants` | No | Variable sets producing separate verdicts (`id[variant]`). |
+| `node`, `exclusive` | No | Explicit target Node (overrides `spread`) and `exclusive: true` to force running alone. |
+| `read_only` | No | `true` for no-op/refusal cases (no `setup`/`negative`, `request: none`, read steps only). |
+| `fails_on_base`, `fails_today`, `negative` | No | Merge-base replay opt-in, temporary failing-today marker, and negative-test mutation block. |
+| `timeout`, `waits` | No | Per-case timeout in seconds (default `180`) and deferral name from file `waits`. |
 
 ## Steps
 
-The vocabulary is fixed. The first set is small and covers the `firewall` commands.
+The runner supports a closed set of steps (`swamp/proof/runner/spec.py`):
 
-| Step | Where | What it does |
+| Step | Phase | Purpose |
 | --- | --- | --- |
-| `use` | any | Insert a [fixture](#fixtures), with parameters. |
-| `listener` | setup | Start TCP or UDP listeners on a Node, on free ports, and bind each port to a name. `block` starts a run of consecutive ports. |
-| `ufw_rule` | setup | Add a rule that the test owns, straight on the Node, above or below another row. A bound anchor selects that case's rule for the same protocol by its tuple and comment; an unbound anchor names a comment. The row's comment is `proof:<as>`, or the text of `comment`. |
-| `fault` | setup, act | Make `ufw` on the Node fail after the n-th call that contains a word. `clear` removes it. The runner also removes it when the case ends. |
-| `busy_node` | setup | Keep one firewall write running on the Node, so its lock is held. The runner releases it when the case ends. |
-| `agent_report` | setup | Wait until the agent of each listed Node has reported again, so the Gateway holds the state the case built. |
-| `node_down` | setup | Stop the agent and the SSH of a Node, then wait 20 seconds until the Gateway counts the agent as offline. A case that stops a Node needs its own batch. |
-| `node_access_remove` | batch setup | Remove the access grant of one Node to another. |
-| `node_fixture` | setup | Create a recorded Node fixture in the nested Gateway and bind its identity. Runs alone. |
-| `recorded_request` | act | Read a Node through the candidate Gateway HTTP kernel with a request-local agent view and outbound guards. Runs alone. |
-| `executor_key` | setup | Make the executor's proof-only key on the nested Gateway and pin its public half there ([Proof key](/reference/executor#proof-key)). Runs alone. |
-| `executor_order` | act, expect | Sign one `proof.noop` order for `on` and hand it to the executor as the caller `as` (`relay`, `other_user`, `root_outside_observer` or `relay_other_program`). `expect` names the result line's fields, `refused_caller` with the logged code, or `connect: denied`. `save` and `nonce` reuse a nonce. |
-| `executor_publish` | act, expect | Publish `count` (default 1, at most 50) signed `proof.noop` orders for `on` as `executor-order` over the observer's WebSocket, through the nested Gateway's own signer and publisher; each order gets its own [`executor.proof` Operation](/reference/executor#the-proof-operation), which waits once for its result after the last publish and then closes. That Operation keeps the first line that reaches the listener. So a tampered order, or a replay that arrives before its original's result, closes it `failed` with `executor.proof_refused`. Each refusal also leaves a failed `executor.order_check_failed` Activity, and so a Problem, on the nested Gateway. `tamper` makes an order security test's order (`bad_signature`, `changed_action`, `changed_target`, `expired`, `unknown_action`, `wrong_node`), and `replay: true` publishes each order twice, the same wire, before the one wait. After a fixed wait, `done: true` needs a `done` journal record of every first copy and saves the latency from publish to result. `refused: <code>` needs that refusal from the observer path for each order or replayed copy. With `replay`, the journal must show the action ran exactly once for each Operation; the refusal may or may not carry the first result, as the copies race. |
-| `executor_round_trip` | act, expect | Run `count` (default 1, at most 50) [`executor.proof` Operations](/reference/executor#the-proof-operation) for `on`, one after another, through the nested Gateway: each publishes its signed `proof.noop` as `executor-order` and waits with `ExecutorResultWait`. Each trip needs an observed `accepted` followed by `done` in the waiter, the result recorded on its Operation, and one run in the executor's journal. The latency from publish to the result in the waiter is saved as p50, p95 and max. |
-| `executor_power` | act, expect | Send one signed `sleep` or `discard` (default `sleep`) for `instance` on `on`, using a durable `executor.power_proof` Operation. The Instance is an id or a unique name on that Node. Sleep needs a real clone, a `ready` plan, the limits record, the marker and at most 32 MiB residual anonymous RAM; discard needs both records gone. The case's fixture must already run T3 and Vite. This smoke check does not replace the 30-cycle clone proof. |
-| `executor_lost_result` | act, expect | Run one `executor.proof` order for `on`, drop its Valkey hand-off, and need a new waiter to time out. Then send a new order, with a new nonce, for the same Operation, and need a `repeat` with the first result in the waiter, the first result kept on the Operation, the Operation succeeded, and one run in the executor's journal. |
-| `ipv6_addresses` | batch setup | Give Nodes an IPv6 address on the proof bridge. |
-| `cli` | setup, act | Run `orbit` built from the tested commit. Keys: `run`, `forms`, `tty`, `expect`, `save`, and `as` (the Node that runs the CLI; default `gateway`). On another Node the runner mounts the tested checkout there, gives it a CLI profile for the nested Gateway, and runs `php apps/cli/orbit` as the managed user: no `orbit` binary is installed on a nested Node. |
-| `probe` | any | Open a connection from a Node to a port and expect `connect` or `blocked`. |
-| `ufw` | expect | Read `ufw status numbered` on a Node and check rows. |
-| `record` | expect | Run a read command and count the rows that match. |
-| `doctor` | expect | Run Doctor for a Node and check its drift count. |
-| `unchanged` | expect | Compare the baseline with the state at the start of `act`. |
-| `ufw_delete` | setup, negative | Delete a row by hand, to build drift or to prove that a case can fail. |
+| `use` | Any | Expand a named `fixture` with parameters. |
+| `listener` | `setup` | Start TCP/UDP listeners on free ports (or consecutive `block` ranges). |
+| `ufw_rule`, `ufw_delete` | `setup`, `negative` | Insert or delete test-owned UFW rules directly on a Node. |
+| `fault`, `busy_node` | `setup`, `act` | Inject `ufw` command failures or hold a firewall write lock (cleaned up on case exit). |
+| `agent_report`, `node_down` | `setup` | Wait for fresh agent facts, or stop agent + SSH until offline. |
+| `node_access_remove`, `ipv6_addresses` | Batch setup | Remove a Node access grant, or assign IPv6 addresses on the proof bridge. |
+| `node_fixture`, `recorded_request` | `setup`, `act` | Seed a recorded Node fixture or send a request through the candidate Gateway HTTP kernel. Runs alone. |
+| `executor_key`, `executor_order`, `executor_publish`, `executor_round_trip`, `executor_power`, `executor_lost_result` | `setup`, `act`, `expect` | Provision the proof-only executor key (`executor_key`, runs alone) and exercise signed orders, WebSocket delivery, power ops, and lost-result recovery. |
+| `cli` | `setup`, `act` | Run candidate `orbit` (`run`, `forms: [json, human]`, `tty`, `save`, `as`, and `expect`: `exit`, `status`, `code`, `skipped`, `steps`, `request: none`, `human`, `json`). |
+| `probe`, `ufw`, `record`, `doctor`, `unchanged` | `expect` (or any for `probe`) | Check TCP/UDP reachability, numbered UFW rows, CLI list counts, Doctor drift, and baseline stability. |
+| `service`, `package`, `ansible_changes` | `setup`, `act`, `expect` | Check or stop a systemd unit (`service`), verify an installed package (`package`), or assert zero Ansible changes from saved Operation step artifacts (`ansible_changes`). |
 
-Details that a case author needs:
+## Batches and concurrency
 
-- **`listener`** starts listeners on free ports and binds each name in `ports`. `proto` is `tcp`, `udp` or a list of both: a list uses the same port for each protocol. `family` is 4 or 6; an IPv6 listener takes IPv6 only. `block: {as: range, size: 5}` starts `size` consecutive ports (2 to 50) and binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}`. The step fails if a port does not answer on the Node itself.
-- **`cli`** adds `--json` before an option terminator (`--`), or at the end when there is none. `forms: [json, human]` runs the call in each form, `human` without `--json`; use it only on calls that are safe to repeat, such as a refusal or a skip. Noninteractive calls use `COLUMNS=240` on both the outer machine and nested Nodes, so human text checks do not depend on the runner's terminal width. `tty` runs the call in a terminal and answers prompts, in the human form only (see below). `expect` takes:
-  - `exit`: the exit code.
-  - `status`: the status of the Operation. In the JSON form it is the `status` of the document; in a human run it is read from the Operation named on the `Operation:` line.
-  - `code`: an error code, read from the JSON form. A human run that has no JSON form takes the text instead: the output must contain the code.
-  - `skipped`: a reason code that the JSON document gives under a key named `skipped` (or any key with `skip` in its name). It needs the JSON form.
-  - `steps: {name: "Change the rules", count: 1}`: read `operation:show` for the returned Operation ID and require exactly that many executed steps with exactly this name or its forEach-indexed form, such as `Change the rules-0-0` (two matching numeric indices). Skipped steps do not count. Missing step data fails the check. It needs the JSON form.
-  - `request: none`: the call created no Operation in its audit scope. The runner derives the scope from each CLI call, rather than the cases file's command. Known writes (`firewall:allow` and `firewall:deny`) to the placed Node filter `operation:list` by their write kind, `target_type=node_firewall` and the Node ID, before selecting the newest page. Cross-Node calls, unresolved targets and commands without a known write scope (including `firewall:list`) run exclusively and audit without filters. Comparing the newest matching ID detects an added Operation even when the page is full. The `operations` baseline audits the scopes of all CLI steps in the case.
-  - `human`: a text, or a list of texts, that the output must contain. Escape codes are removed first.
-  - `json`: a list of `{path: assignments[0].status, equals: active}`, `{path: skipped, absent: true}`, or `{path: result.elapsed_seconds, at_most: 120}` assertions. Paths use dotted object fields, zero-based indexes, or a unique row selector such as `nodes[id=2].roles` or `assignments[role=database].status`. Numeric selector values match numbers; other values match strings. Missing or duplicate rows fail. Equality compares the complete typed value. `at_most` requires finite numbers and includes the bound. A missing path fails unless `absent: true` was requested. These assertions require the JSON form.
-  - The step's `save` maps paths to names, for example `save: {roles: recorded-roles}`. Later `${recorded-roles}` values retain the full JSON value, including lists and null, for cross-command comparisons. Saving also requires the JSON form.
-- **`tty`** is a list of steps. `see` waits for text in the output that came after the previous step. A `see` alone only waits, and the next step looks after that text, so several of them can follow one screen: the title, the search line, then the header of a table. `send` types a text and Enter, and `^C` sends Ctrl-C. `choose` picks an item by its label and presses Enter. In a list prompt (Laravel Prompts) it moves the highlight, the line with `›`. In a searchable table, such as the Node prompt (a `/ Search` line above the rows), it types the label, which filters the rows, and moves down to the row with a cell that equals the label. A label that no row has fails the case with the rows that were left. A command that never shows the text, or ends before it, fails the case with the end of its output: that is a finding about the command, not about the runner. The driver is `tools/swamp-proof-guest/terminal.py`, built on the standard `pty` module.
-- **`probe`** in `setup` is a precondition: a mismatch makes the case `unrun`. In `expect` it is an assertion: a mismatch fails the case. A list in `from`, `proto` or `port` runs one probe for each combination. `family` is 4 or 6, and `proto` is `tcp` or `udp`. A TCP probe connects. A UDP probe sends one datagram and waits for the listener's answer, so `connect` means the answer came and `blocked` means nothing came in 3 seconds. A refusal (an ICMP error, or a closed TCP port) is neither: it is reported as `refused`. An IPv6 probe needs `ipv6_addresses` in the batch.
-- **`ufw`** checks that each row appears exactly once, in the order listed, top to bottom. `absent` rows must not appear. A row is `to`, `action`, `from` and an optional `comment`, or `ref` to a rule that `ufw_rule` bound with `as`.
-- **`record`** runs `list`, for one `node` or for every Node when `node` is left out, then matches `where` against each row. Each row carries the name of its Node under `node`. A list as a value matches any of its items, and the word `present` matches any value that is not null. A `record` needs `count`, `min` or `order`. `count` is exact; `min` is a lower bound. `args` adds options to the list call. `section` names the part of the JSON to read: `rules` (default), `managed`, `unmatched` or `live`. `order` lists rows that must appear in that sequence, not necessarily next to each other.
-- **`doctor`** waits until 65 seconds after `act` ended, so that a report of the Node agent follows the change, then runs Doctor for the Node. The agent's tick has no fixed phase after a restore of `base`, so the wait does not use it. Use it in the main success case, not in every case.
-- **`unchanged`** compares the providers named in `what`, or all of `baseline` except `operations`. `operations` runs only when `what` names it, because the command under test creates an Operation. `except` leaves out rows for one port. `request: none` uses the `operations` provider. `node_records` compares all rows and columns of `nodes`, `node_roles`, `node_access`, and `clusters`, ordered by ID. Use both providers for a read that must change neither recorded detail nor Operations.
-- **`fault`** puts a shim in place of `/usr/sbin/ufw` on the Node (the real program stays as `ufw.real`; a shell script of 20 lines, `tools/swamp-proof-guest/ufw-shim.sh`). `fail_after: {match: delete, count: 1}` lets the calls through until the 1st call whose arguments contain the word has run; every later call that writes then exits 1 with `ufw: injected fault`. Calls that read (`status`, `show`, `version`, `help`) always pass, so the runner's own reads and the Node's reports keep working. `fault: {clear: true}` removes the fault on every Node where the case set one. Only `command: ufw` exists.
-- **`busy_node`** holds a firewall write on the Node. It puts the same shim in place, holds a lock that the shim's writes wait on (`flock`), and starts a real `firewall:allow` of a spare port in the background. The step ends when the CLI prints its first line, which it does after the Gateway admitted the request, so the Gateway holds the Node's firewall for that Operation. `seconds` (default 120) bounds the lock. When the case ends, the runner releases the lock, waits for the held write to finish, and puts the real `ufw` back, so the next case does not meet an Operation that still runs. `command` is `firewall:allow` (the default) or `firewall:deny`.
-- **`ipv6_addresses`** gives each listed Node an address `fd42:232:2::<last octet of its IPv4 address>/64` on the interface of its bridge address, then pings every Node from every other over IPv6; a failed ping makes the case `unrun`. It binds `${<node>.src6}` and the IPv6 address that `probe` uses. It stands in the `setup` of a batch.
+`swamp/proof/batches.yaml` defines shared batches and their setup steps. Each batch starts from a `base` restore (45-second health bound); read-only cases with no setup run first on a fresh copy so the copy only resets after a mutating batch.
 
-A fault, a held write and the Node's IPv6 addresses live on the Node. The runner ends the fault and the held write when the case ends, so a later case in the batch does not see them. A restore of `base` removes everything else.
+The runner assigns every case one lock class:
 
-Placeholders:
+- **Alone (`alone`):** Uses `node_down`, `agent_report`, `node_access_remove`, `ipv6_addresses`, `node_fixture`, `recorded_request`, `executor_key`, cross-Node/unresolved CLI calls, or `exclusive: true`.
+- **Reader (`reads its Node`):** Only read steps (`probe`, `ufw`, `record`, `doctor`, `unchanged`, `package`) and CLI calls expecting `request: none`. Multiple readers share a Node.
+- **Writer (`alone on its Node`):** Any other case; runs exclusively on its placed Node while other Nodes run concurrently.
 
-| Placeholder | Value |
-| --- | --- |
-| `${app-dev.id}` | The Node ID in the nested Gateway. The Nodes are `gateway`, `app-dev` and `app-prod`. |
-| `${gateway.src}`, `${gateway.src6}` | The IPv4 or IPv6 address that the Node uses to reach the target. |
-| `${port}`, `${control}` | Names that `listener` bound. A `block` binds `${range.lo}`, `${range.mid}`, `${range.hi}` and `${range.spec}` (`lo:hi`). |
-| `${sources}` | The `sources` list of the file. |
-| `${retained.id}`, `${retained.name}`, `${retained.cluster_name}`, `${retained.tld}` | Values bound by `node_fixture: {kind: retained, as: retained, consumer: app-prod, serving: app-dev}`. |
-| `${recorded-roles}` | A typed value bound by `cli.save`. |
-| `${proto}` | A fixture parameter or a variant variable. |
-
-A placeholder that holds a list expands the step or row that uses it, once per item. `"@name"` in a command line splices a `vars` list.
-
-### Recorded Node reads
-
-`node_fixture` writes test-owned records through `tools/swamp-proof-guest/recorded-read.php` in the mounted candidate Gateway. `kind` is `retained`, `sparse`, `unmanaged`, or `managed`; `as` names the bound fixture. `retained` also needs `consumer` and `serving` Nodes for named access relations. It retains a failed Node, a named Cluster, non-default network/settings detail, and active, provisioning, failed, and removing role assignments. Fixture writes suppress provisioning observers. They are test setup, not command behaviour. They run only in the disposable nested Gateway; restore the fleet before and after the batch.
-
-`recorded_request` takes `node`, `caller`, `agent`, `age` (seconds), and `expect` (the JSON assertions above). The helper boots the actual candidate HTTP kernel and its authorization middleware with the caller's recorded WireGuard address. `agent` is `online`, `offline`, `not_seen`, or `unknown`. The request-local cache and clock exercise the 15-second freshness boundary, expired event data with retained last-seen time, and subscriber unavailability without changing the running subscriber. Assertions read `{status, body}`; evidence is saved as `recorded-request.json`.
-
-For this isolated kernel request, Laravel HTTP/process fakes refuse and count attempted outbound calls, and PHP disables native curl, socket, and process entry points. It cannot obtain a live Node or external service answer. This is a guarded request, not a network trace of PHP-FPM. The same cases also call the real CLI over HTTPS for transport and rendering; Gateway feature tests check the no-contact rule independently. Neither fixture nor helper is shipped as a production route.
-
-Node list and show keep role names under `roles` and complete assignment records under `assignments`. Save and compare `assignments` to check shared lifecycle and failure detail against `node:role:list`. The checked-in proof-selection rules select the list and show cases for shared Node code, while reporting Node-family commands without cases as uncovered. A change to the show cases file selects the show proof.
-
-All `node:show` cases, including the retained-detail and recorded-agent cases, live in `swamp/proof/node/show.cases.yaml`. On a fresh task-owned nested fleet, validate the file and run its batches:
-
-```bash
-python3 swamp/proof/runner/runner.py plan --file swamp/proof/node/show.cases.yaml
-python3 swamp/proof/runner/runner.py batch fresh-fleet --file swamp/proof/node/show.cases.yaml
-python3 swamp/proof/runner/runner.py batch node-down --file swamp/proof/node/show.cases.yaml
-python3 swamp/proof/runner/runner.py batch no-grant --file swamp/proof/node/show.cases.yaml
-```
-
-Restore before each batch and after the last batch, especially after `node-down` or `no-grant`. A plan validates the cases; it is not proof that they passed on the fleet.
-
-## Fixtures
-
-A fixture is a named list of steps with parameters. It keeps the starting state out of every case. `use: blocked-port` inserts it; `use: {fixture: blocked-port, proto: [tcp, udp]}` sets its parameters.
-
-```yaml
-fixtures:
-  blocked-port:
-    params: {proto: [tcp], family: 4}
-    steps:
-      - listener: {on: app-dev, proto: "${proto}", family: "${family}", ports: [port, control]}
-      - ufw_rule: {as: deny, on: app-dev, action: deny, proto: "${proto}", port: "${port}", above: proof-network}
-      - probe: {from: "${sources}", to: app-dev, family: "${family}", proto: "${proto}", port: "${control}", expect: connect}
-      - probe: {from: "${sources}", to: app-dev, family: "${family}", proto: "${proto}", port: "${port}", expect: blocked}
-```
-
-This is the setup that [verifying-commands](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/verifying-commands/SKILL.md) asks for: a healthy listener, a control probe that connects, and a test port that is blocked over the test path before the command runs, with the broad `proof-network` allowance out of the way. A fixture that several commands share moves to `swamp/proof/<family>/fixtures.yaml`.
-
-## Chart paths and coverage
-
-Every `alt` branch, `else` branch and `opt` block of a command chart carries an id, on a comment line directly below it:
-
-```text
-alt changes needed
-  %% path: changes-needed
-```
-
-`main` is the path with the required arguments only; it needs no marker. A case lists the ids it exercises in `covers`.
-
-Ids, because the alternatives break. A branch label is also a progress name and changes when someone improves the wording. A line number moves with every edit. An id changes only when someone rewrites the branch on purpose, and then the check fails until the case follows. Name an id for what happens (`already-applied`), unique in its chart. Markers are comments, so the chart renderer ignores them. `bin/check-flows` also fails a branch without an id, for charts that have a cases file.
-
-`bin/check-cases` (new) reads the cases file, the chart and the command page. It lists three kinds of item that no case covers:
-
-| Item | Where it comes from | Covered when |
-| --- | --- | --- |
-| Chart path | `main` and every `%% path:` id | a case names it in `covers` |
-| Option | the option table of the page | a `cli` step passes it (`--json` counts through `forms`) |
-| Code | every `family.code` token on the page or in the chart, such as `firewall.rule_exists` | a `cli` step expects it as `code` or `skipped` |
-
-An item that no case covers fails the check unless `uncovered` lists it with a reason. The check also fails on an unknown step, chart path, fixture, variable or batch, and on a case without `batch`, `covers` or `summary`. A code that a case expects but the page and chart do not name is reported as a page gap.
-
-For the drafted `firewall:allow` file it reports:
-
-```text
-firewall:allow  14 cases, 16 verdicts
-  chart paths  5 of 5
-  options      3 of 4   no case: --label
-  codes        3 of 4   no case: firewall.backend_inactive
-  page gap     firewall.node_id_invalid, input.cancelled: expected by cases, named by neither page nor chart
-```
-
-The check cannot read prose. The reviewer walks the `Requirements` of each chart step against the cases. For `firewall:allow` that finds three more gaps: the access grant, a target that is not an active Linux Node, and an invalid port or source.
-
-## Batches and restores
-
-A batch is a group of cases that run one after another after one restore. Every case names its batch. `swamp/proof/batches.yaml` defines each batch: a name, a summary, optional setup steps, and the order in which batches run. A batch belongs to one command. CI balances batches across its copies; a copy may run batches from several commands. A batch that changes the fleet may split by case: each part runs on its own copy after its own restore and the batch's setup ([proof:run](/cli/proof/run)). So a case may never rely on another case of its batch, nor on running on the same copy. Batch definitions such as `dual-stack` are shared.
-
-- The run starts on the task's `base` snapshot. The first batch needs no restore.
-- A later batch starts with a restore of `base`, about 16 seconds, then its setup steps. The workflow runs it with `runner setup BATCH`; a later `runner case` finds the result on the fleet (for IPv6, the addresses that Incus reports for the guests).
-- Inside a batch, cases undo nothing. Each uses its own resources, so it does not see the others. The workflow runs a batch in one step, `runner batch BATCH`, which runs the cases [several at a time](#several-cases-at-a-time).
-- A case that changes state all cases share gets its own batch: UFW turned off, an injected `fault`, a held lock (`busy_node`), network setup, or a check of the complete list.
-- A case that does not pass triggers no restore: it leaves only its own resources, and the next batch restores `base` anyway. A case that must not meet that state gets its own batch.
-- A restore that fails or is not healthy within 45 seconds stops the run. The cases that did not run become `unrun` with cause `infrastructure`; the verdicts already reached stay.
-- A case that needs a state that no batch offers gets a new batch. Do not build a different world inside one case.
-- When several behaviours need the same long Operation, such as a converge or a role install, write one case with `stages`. The first stage runs the Operation; each later stage checks one more behaviour on the state the stage before left, such as a repeat that changes nothing or a keyed retry that starts no Operation. List every behaviour in `covers` and in the summary. Drop no assertion of a merged case without a stated reason.
-- `base` holds Nodes converged with the default scope at the seed's commit. On `base`, a converge changes nothing unless the commit under proof changed an input. A case that needs a change, such as a repair, sets up that change itself.
-
-A batch costs a restore, so keep few. `firewall:allow` needs two:
-
-| Batch | Starting state | Cases |
-| --- | --- | --- |
-| `fresh-fleet` | The healthy fleet. Only Orbit's own rules and the `proof-network` allowance exist. | 13 |
-| `dual-stack` | As above, and every Node has an IPv6 address on the proof bridge. | 1 |
-
-## Several cases at a time
-
-The nested fleet has three Nodes. The runner spreads cases across them and allows several readers on one Node. A writer needs that Node to itself.
-
-- **Placement.** A case acts on the Node of its `node` key. A case without one takes the next Node of `spread`, in file order. A case placed on a Node other than `target` plays the same story there: the two Nodes trade roles in every step, so `on: app-dev`, `to: app-dev` and `${app-dev.id}` name the placed Node, and the source Nodes are the other two. Each case still keeps its own ports and rules.
-- **Locks.** The runner finds out what a case needs of the fleet from its steps:
-  - A case runs **alone** (`plan` prints `alone`) when it uses `node_down`, `agent_report`, `node_access_remove`, `ipv6_addresses`, `node_fixture` or `recorded_request`, reads records of every Node, works on another Node, or sets `exclusive: true`. Every CLI call must resolve to the placed Node before sharing is allowed. A cross-Node call, an unresolved target or a command without a known Operation scope also runs alone and audits Operations without filters. Such a case stays on `target`, takes no turn of `spread` and runs after the others.
-  - A **reader** (`reads its Node`) has only read steps (`probe`, `ufw`, `record`, `doctor`, `unchanged`, `package`) and CLI calls that expect `request: none`. Several readers may run on the same Node. The `operations` comparison uses the same scope and newest ID as `request: none`.
-  - Every other case is a **writer** (`alone on its Node`), including `fault`, `busy_node`, `service`, listener setup and any CLI call that can create an Operation. A writer runs beside no reader or writer on its own Node, including during setup and cleanup. It may run beside cases on other Nodes.
-- **Parallel.** `runner batch BATCH --file F` reads the fleet once, starts as many cases as `--parallel` (or `parallel` in the file) allows under these locks, and prints the verdict lines at the end, those that did not pass first. `--only \"ID ID\"` runs some cases of the batch. Every verdict stays in the full result artifact; the separate 4 KiB history tail is not the report. The exit status is the worst verdict: 1 when a case failed, else 2 when one was unrun, else 0.
-- **CLI callers.** Before scheduling, the runner prepares each Node required by `cli.as` once: checkout mount, CLI home, CA and profile. Case execution does no caller preparation. A preparation failure starts no case and reports infrastructure failures. `runner case` prepares its caller before execution too.
-- **Node Operation wait.** A noninteractive `node:converge` or `node:role:add` call on a copy has a 600-second CLI limit, for both outer and nested callers. Both wait for an Operation that installs software, and the copies on one Node share its disk and its package downloads. The fleet’s unshifted Gateway checkout identifies this mode. Its elapsed CLI wait does not consume the case budget for setup and assertions; each call, including setup, repeat stages and output forms, keeps its own 600-second limit. Task VMs keep the 240-second CLI limit and existing case budget. Product timing assertions, including repeat’s 120-second limit, do not change. A timeout of either CLI fails the active case as `infrastructure` and stops the batch from starting more cases. Every waiting case gets an `unrun` infrastructure receipt naming the timed-out case; already active cases finish. The Operation is not claimed cancelled or settled, and it may still change the Node, so no later case of the batch may run beside it. The next batch resets the fleet. The enclosing batch limit remains unchanged.
-
-- **Shared facts.** `runner batch` reads the fleet once, the guests, their addresses and the Node IDs of the nested Gateway, and every case of the batch uses that. `runner case` reads it for its one case.
-
-A case that is placed on a Node must not name that Node inside a longer text, such as an expected line of output: only a value that is a Node name, and the `${node.id}`, `${node.src}` and `${node.src6}` placeholders, trade places.
+Noninteractive `node:converge` and `node:role:add` calls on copies with unshifted checkouts (`checkout.shift=false`) get a 600-second CLI limit (240 seconds otherwise). A CLI timeout fails the active case as `infrastructure` and marks remaining waiting cases in that batch `unrun` (`infrastructure`).
 
 ## The run
 
 <div className="flow-at" data-chart="reference/pipeline/3-proof-runner"></div>
 
-The flow of a proof is [stage 3](/reference/command-development-pipeline#3-proof); in CI, [`proof:run`](/cli/proof/run#how-it-works) starts it. This page does not restate them. The shared runner is `swamp/proof/runner/`.
-
-Each case ends with one JSON line of at most 1 KB. Long failure messages are shortened in that line; the full receipt keeps every failure:
-
-```json
-{"id": "protocols[both]", "verdict": "failed", "cause": "assertion", "secs": 41.2, "failed": ["expect[2] probe: app-prod to 47212/udp connected, expected blocked"]}
-```
+Each case emits one JSON verdict line (at most 1 KB, including up to 3 failed `calls` with `run`, `exit`, `code`, and truncated `stderr`):
 
 | Verdict | Cause | Meaning |
 | --- | --- | --- |
-| `passed` | | Every step passed. |
+| `passed` | | All steps passed. |
 | `failed` | `assertion` | An `act` or `expect` step failed. |
-| `failed` | `infrastructure` | A step could not run, for example the fleet is unreachable. |
-| `unrun` | `precondition` | A `setup` step failed, such as a port that was not blocked before the command. |
-| `unrun` | `infrastructure` | A failed restore stopped the run before the case, or a proof in CI reached the run budget of its shard before the batch of the case ended. |
+| `failed` | `infrastructure` | Execution or transport failed (for example, unreachable fleet or CLI timeout). |
+| `unrun` | `precondition` | A `setup` step failed. |
+| `unrun` | `infrastructure` | A restore failure or shard budget stopped the batch before the case ran. |
 
-Neither `failed` nor `unrun` is a pass. The full receipt of a case, with every step, command output, the firewall before and after and the timings, stays in the evidence directory of the task VM. There is no receipt store. In CI the proof VM is destroyed, so only the verdict lines stay; the author reruns the proof in their own task VM for the full receipt.
-
-A failed CLI check includes the Operation's public `failed_step` and `error_code`, when present, in its failure message. This also applies to a failed setup command. Named-step checks read those fields from `operation:show`; human output uses its printed Operation ID. Private error details stay out of the verdict line.
-
-A case that did not pass also keeps its failed CLI calls in `calls`: one entry for each call whose check failed, the first three. An entry gives the command (`run`), its exit code (`exit`), its error code (`code`: the Operation's `error_code` or the refusal's `error.code`, else `null`) and the last 160 characters of its stderr on one line (`stderr`). A call that the Gateway refused before admission has no Operation, so `calls` is what names its cause. When the line is too long, the runner shortens the failure messages first and drops the last calls last.
-
-A case marked `fails_today` runs like any other and reports its real verdict. The build PR removes the mark when the command passes.
-
-## Write and review
-
-The cases are written last, after the chart and the page, from those two and never from the code.
-
-1. List the chart paths, options and codes. For each, decide which case covers it.
-2. Write each case from the fixture and step tables. A case needs no code. A check that the steps cannot say is a request for a new step.
-3. Run `bin/check-cases` and `runner plan --dry-run` (both new). The dry run prints every case with fixtures and placeholders resolved, and the batch order, without a fleet.
-4. A second agent reviews, read-only, with the chart, the page and the file.
-
-A new step is a function in the runner, an entry in its argument schema, a row in the table above and a test. It lands in the PR of the first case that needs it, and every later case can use it.
-
-Cases of different commands are written by different agents at the same time. They share only the vocabulary, the fixtures and the batch list, which change rarely and in their own PRs.
-
-The reviewer checks:
-
-| Check | Question |
-| --- | --- |
-| Source | Does each expectation follow from the page and the chart, not from the code? |
-| Precondition | Does each effect case first show, in `setup`, that the port is blocked and a control port works over the test path? |
-| Real effect | Does a case that promises traffic check traffic, and not only the record? |
-| Refusal | Does each refusal expect `request: none` and `unchanged`, with one case for each way past a guard? |
-| Repeat and failure | Does a repeat case exist, and a failure after a partial change that a retry settles without duplicates? |
-| Coverage | Does `bin/check-cases` print nothing unexplained, and does each `uncovered` entry hold a real reason? |
-| Size | Is any case longer than about 30 lines? Split it or move steps to a fixture. |
-| Names | Are there only placeholders, no concrete IDs, hosts or addresses? |
-
-## Prove a case can fail
-
-A case can show that its expectations detect a broken effect. The `negative` key says how:
-
-```yaml
-negative:
-  after: act
-  do:
-    - ufw_delete: {on: app-dev, to: "${port}/tcp", from: "${gateway.src}"}
-  must_fail: [gateway-connects]
-```
-
-The Swamp workflow restores `base` and runs `runner case ID --negative`, which runs the case a second time. After `act` it runs the `do` steps, which break the effect. The expectations in `must_fail`, named by their `id`, must fail, and the rest still run and are listed in the receipt. A case where they pass is not a test. The two checks differ: `negative` breaks the effect, while `fails_on_base` removes the new code. The verdict is `passed` with `"negative": true` when every one of them failed. The run happens when the case is new or changed, with `runner case ID --negative`, and not in every proof run.
+`runner.py` subcommands are `plan` (`--json`, `--steps`, `--lines`), `batch`, `case` (`--negative` to verify `must_fail` assertions detect broken effects), `setup`, and `replay`. Exit codes are `0` (passed), `1` (failed), `2` (unrun), and `3` (spec error). Guest helpers live in `tools/swamp-proof-guest/`.
 
 ### Opt into merge-base replay
 
-Set `fails_on_base: true` when a case proves new or fixed behavior that the merge base lacks:
-
-```yaml
-- id: fixed-behavior
-  fails_on_base: true
-  # batch, covers, summary, act and expect follow as usual
-```
-
-CI replays only flagged cases that the runner’s case-level comparison identifies as added or changed in this PR, including changes to their expanded fixtures, vars, settings or batch setup. It also limits replay to the cases admitted to this proof batch. Code or tooling changes that select a whole file do not make its unchanged flagged cases replay. Cases without the flag never replay. Coverage of behavior that main already has, such as refusals or offline handling, normally leaves the flag unset.
-
-CI checks the head runner for replay support first. Older heads without that command skip selection and replay. With no eligible flagged cases, CI skips replay entirely.
-
-Every replayed case must end `failed` with cause `assertion` on the merge base. A passing case, an infrastructure failure or a missing verdict fails the proof with a `CASE@merge-base` verdict. The [stage 3 chart](/reference/command-development-pipeline#3-proof) owns the replay steps and limits. Once the case is merged, later PRs leave it out unless its definition changes again. Keep the flag; no cleanup is needed. `fails_today` is a temporary spec note and does not opt into replay.
-
-## Where the code is
-
-The runner is `swamp/proof/runner/`: `runner.py plan|case|restore|setup`, the loader `spec.py`, the steps `steps.py`, the fleet access `fleet.py`, the programs that run on a Node (`listener.py`, `probe.py`) and the tests. The terminal driver and the `ufw` shim are in `tools/swamp-proof-guest/`. A step that is not built fails the case with cause `infrastructure` and the message `... is not built`. `bin/check-cases` (about 150 lines) is not built. After it, a case costs 15 to 40 lines of YAML and no code, and a new kind of check costs one step.
-
-## Role host effects and unchanged Ansible phases
-
-`service: {on: app-dev, name: docker.service, state: active}` checks the actual systemd state. Setup or act may use `state: stop` to damage the fixture before the command repairs it. `package: {on: app-dev, any: [docker.io, docker-ce]}` requires an installed package.
-
-Save a JSON Operation ID with `cli.save: {id: repeat}`. Then `ansible_changes: {operation: "${repeat}", phases: [Set up Tool Managers], changed: 0}` reads stdout from each phase's exact native `command/shell` `result` artifact, selected by its recorded data ID and version. The separate `log` artifact is text, not a JSON result. Each named phase must succeed and contain a full Ansible recap with no changed, failed or unreachable hosts. Missing or truncated output fails the assertion. A failed read reports the exception's code, message and caller location, without trace arguments or raw output. This checks machine phases; writing the private run input is not an unchanged machine resource.
+Set `fails_on_base: true` on a new or changed case that proves behavior absent from the merge base. When replay runs (`runner.py replay`), every eligible flagged case must fail on the merge base with cause `assertion`; a passing or unrun result fails the proof with `CASE@merge-base`. In container copies, merge-base replay is not yet wired into `proof:run`, so `fails_on_base` currently acts as case metadata ([old paths](/reference/old-paths#the-task-vm-proof-run)).

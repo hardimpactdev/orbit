@@ -567,7 +567,7 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => $runtime->server()->program(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
+                't3' => $runtime->server()->program(), 'version_pattern' => $runtime->server()->versionPattern(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame,
                 'key_value' => self::ModelKeyValue],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
@@ -585,6 +585,8 @@ final readonly class InstanceContainer
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
                     ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
+                    // The Laravel application's folder, where `laravel-lsp-root` starts the language server (InstanceFolderPlan::LaravelLspRoot).
+                    .($instance->source_is_laravel === true ? 'ORBIT_APPLICATION='.InstanceEnvironmentRenderer::quote(self::application($instance))."\n" : '')
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],

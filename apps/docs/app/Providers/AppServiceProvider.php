@@ -11,6 +11,7 @@ use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
 use App\Librarian\Rules\DocumentationIssueReferenceRule;
 use App\Librarian\Rules\DocumentationNarrativeRule;
+use App\Librarian\Rules\DocumentationProseStyleRule;
 use HardImpact\Librarian\Docs\MarkdownSnapshot;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -30,6 +31,12 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DocumentationNarrativeRule::class, fn (): DocumentationNarrativeRule => new DocumentationNarrativeRule(
             $this->app->make(DocumentationRepository::class),
             new BlockedPhrases($this->stringList('orbit-docs.narrative_phrases')),
+        ));
+
+        $this->app->singleton(DocumentationProseStyleRule::class, fn (): DocumentationProseStyleRule => new DocumentationProseStyleRule(
+            $this->app->make(DocumentationRepository::class),
+            new BlockedPhrases($this->stringList('orbit-docs.style_phrases')),
+            $this->stringList('orbit-docs.vague_headings'),
         ));
 
         $this->app->singleton(DecisionRecordStructureRule::class, fn (): DecisionRecordStructureRule => new DecisionRecordStructureRule(

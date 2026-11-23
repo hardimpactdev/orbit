@@ -1,6 +1,6 @@
 ---
 title: "Realtime events with Reverb"
-description: "Turn on realtime events with the websocket role, and the gotchas that stop Reverb or its clients from working."
+description: "Enable realtime events with the websocket role and diagnose common Reverb setup failures."
 covers:
   - apps/gateway/app/Domain/WebSocket/**
   - apps/gateway/app/Infrastructure/WebSocket/**
@@ -12,39 +12,44 @@ covers:
 
 ## Problem
 
-The web app and `realtime:logs` need the Gateway to push events, and without a working `websocket` role the Gateway broadcasts nothing. [Realtime events](/reference/events) defines the channels and events. [Reverb apps](/reference/websocket-apps) owns the server, the app registry, upgrades, and recovery.
+The web app and `realtime:logs` rely on Gateway broadcasts over WebSockets ([Realtime events](/reference/events)). Without an active `websocket` role, the Gateway broadcasts nothing. [Reverb apps](/reference/websocket-apps) owns the server, registry, upgrades, and recovery.
 
 ## Cause
 
-Reverb holds long-lived WebSocket connections, so it runs outside the Gateway process, as the `websocket` role, the way the `metrics` role runs Prometheus and Grafana. Clients subscribe at `wss://reverb.orbit`.
+Reverb holds long-lived connections outside the Gateway process via the `websocket` role and serves clients at `wss://reverb.orbit`.
 
 ## Solution
 
+Assign the `websocket` role using a numeric Node ID:
+
 ```bash
-orbit node:role:add gateway websocket
+orbit node:role:add <node-id> websocket
 ```
 
-The role is a singleton and conflicts with no other role, so it can share a Node with `gateway` and `vpn`. No Project, Instance, Route, or `.env` edit is involved. To move or remove it, use [`node:role:relocate`](/cli/node/role-relocate) and `node:role:remove`; [Reverb apps](/reference/websocket-apps#remove-a-dead-websocket-node) covers a dead Node.
+`websocket` is a singleton with no role conflicts, so it can share a Node with `gateway` and `vpn`. Move or remove it with [`node:role:relocate`](/cli/node/role-relocate) and `node:role:remove` (see [Remove a dead websocket Node](/reference/websocket-apps#remove-a-dead-websocket-node)).
 
-Four things go wrong:
+Common failure modes:
 
-- **Composer fails on a fresh Node.** `composer install` fails its platform check on Ubuntu 26.04 unless `php-curl` and `php-xml` are installed. The role baseline installs both.
-- **Agents see no events.** Another Reverb app must set `accept_client_events_from` to `members`, as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
-- **The Gateway reports no connection.** It reads the connection from published Reverb sites whose process has reported `serving` in the current registry history. Reverb reports every 5 seconds, and the Gateway accepts a report younger than 60 seconds, so a dead or hung process leaves after one minute. App operations keep a stricter 15-second window. A new boot clears the confirmation. A role in `provisioning`, `failed`, or `removing` still supplies realtime while such a process serves it, so a private DNS publication failure leaves `realtime:show` configured.
-- **Converge refuses.** It refuses a Node that lacks an address its Caddy sites bind, before it changes anything. A preparation failure leaves the running process alone. An activation failure needs forward recovery with a compatible release, and a failed rollback reports `websocket.rollback_failed`. Orbit never starts a static app list that could hold revoked credentials.
+- **Composer fails on Ubuntu 26.04:** Requires `php-curl` and `php-xml` (installed by the role baseline).
+- **Agents emit no events:** Reverb apps carrying agent traffic must set `accept_client_events_from` to `members` ([Node agent channels](/reference/events#node-agent-channels)).
+- **Gateway reports disconnected:** Reverb reports `serving` every 5 seconds; the Gateway expires stale reports after 60 seconds (15 seconds for app operations) and clears confirmation on reboot.
+- **Converge refuses or rollback fails:** Preflight refuses Nodes missing a bindable Caddy listen address without changing state. Activation failures require forward recovery; a failed rollback returns `websocket.rollback_failed`.
 
-`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. The server ref belongs to the Gateway release and has no environment override. The Gateway needs no broadcast setting in its `.env`.
+Override defaults in Gateway `.env` with `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` (the pinned server ref comes from the Gateway release).
 
 ## Limits
 
-This covers one Reverb server behind one `websocket` assignment, which serves several [Reverb apps](/reference/websocket-apps). Production starts with one process. Package upgrades still need an announced reconnect window.
+One `websocket` role runs one Reverb server serving multiple [Reverb apps](/reference/websocket-apps). Package upgrades still require an announced reconnect window.
 
 ## Verification
+
+Run these checks from a peer trusting the Orbit CA:
 
 ```bash
 orbit realtime:show
 orbit doctor --node=<node-id> --family=role
 getent ahostsv4 reverb.orbit
+curl -i -X POST https://reverb.orbit/apps/<app-id>/events
 ```
 
-`orbit realtime:show` reports `configured` and `wss://reverb.orbit`. `getent` resolves `reverb.orbit` to the role Node's WireGuard address. On the Node, `systemctl is-active orbit-websocket` prints `active`. From a Node that trusts the Orbit CA, `curl -i -X POST https://reverb.orbit/apps/<app-id>/events` answers `401` with `Authentication signature invalid`, which proves that Reverb answers behind the Caddy site.
+`orbit realtime:show` reports `configured` and `wss://reverb.orbit`, `getent` resolves to the role Node's WireGuard IP, `systemctl is-active orbit-websocket` returns `active`, and the unauthenticated `POST` returns `401` (`Authentication signature invalid`).

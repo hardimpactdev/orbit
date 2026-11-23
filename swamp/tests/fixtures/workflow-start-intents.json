@@ -82,7 +82,7 @@
                     "acl": "instance-2",
                     "nic_acl": "orbitinst0-proxy",
                     "bridge_cidr": "10.253.0.0/24",
-                    "bridge_admitted_at": 1795180407782292,
+                    "bridge_admitted_at": 1795433627679094,
                     "bridge_endpoints": [],
                     "acl_rules": {
                         "description": "Orbit Instance 2",
@@ -178,6 +178,7 @@
                             "url": "http://10.44.0.7:3800",
                             "label": "trial / task-1",
                             "t3": "/opt/orbit-agent/current/agent/bin/conn-server",
+                            "version_pattern": "^conn-server \\S+ \\(T3 server (\\d+\\.\\d+\\.\\d+) contract\\b",
                             "project_mark": "/home/agent/.config/orbit/t3-project",
                             "condition": "/etc/orbit/instance"
                         },
@@ -580,7 +581,7 @@
                         "acl": "instance-2",
                         "nic_acl": "orbitinst0-proxy",
                         "bridge_cidr": "10.253.0.0/24",
-                        "bridge_admitted_at": 1795180407782292,
+                        "bridge_admitted_at": 1795433627679094,
                         "bridge_endpoints": [],
                         "acl_rules": {
                             "description": "Orbit Instance 2",
@@ -676,6 +677,7 @@
                                 "url": "http://10.44.0.7:3800",
                                 "label": "trial / task-1",
                                 "t3": "/opt/orbit-agent/current/agent/bin/conn-server",
+                                "version_pattern": "^conn-server \\S+ \\(T3 server (\\d+\\.\\d+\\.\\d+) contract\\b",
                                 "project_mark": "/home/agent/.config/orbit/t3-project",
                                 "condition": "/etc/orbit/instance"
                             },

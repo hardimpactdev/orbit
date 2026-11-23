@@ -1463,6 +1463,10 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             // The second change: T3 starts with the copy (development-containers.md#t3-starts-with-the-copy). The unit's condition file,
             // the model environment's frame line, and the files that go in before the first start.
             $expected['clone']['t3']['condition'] = '/etc/orbit/instance';
+            // The recorded server's version line pattern, which the wake checks the answering server against (ContainerServer::versionPattern).
+            $mark = array_search('project_mark', array_keys($expected['clone']['t3']), true);
+            $expected['clone']['t3'] = [...array_slice($expected['clone']['t3'], 0, $mark, true), 'version_pattern' => ContainerServer::T3->versionPattern(),
+                ...array_slice($expected['clone']['t3'], $mark, null, true)];
             $expected['clone']['model_environment']['frame'] = '#orbit-model-environment';
             // The value an Antigravity instance holds in place of the model key (InstanceContainer::ModelKeyValue).
             $expected['clone']['model_environment']['key_value'] = InstanceContainer::ModelKeyValue;

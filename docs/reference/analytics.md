@@ -11,76 +11,46 @@ covers:
 
 # Analytics role
 
-The `analytics` role runs Plausible Community Edition for the fleet. An Instance sends visits to it through a tracking host. The Gateway reads the visits back for the Orbit web Instance page. [`analytics`](/cli/analytics) lists the role commands. [Instance analytics stats](/reference/instance-analytics-stats) owns the read.
-
-Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
-
-The Gateway records Analytics intent and projects results. Each supported operation starts one native Swamp DAG. Swamp owns Plausible API calls, container updates, certificates, Caddy, firewall rules and private DNS publication through placed jobs. The Gateway has no Analytics executor or polled writer. Unported role lifecycle operations return `operation.kind_unavailable`.
+The `analytics` role runs Plausible Community Edition for the fleet. Instances publish first-party tracking hosts that forward visits to Plausible, and the Gateway reads visitor counts back for the [Instance analytics panel](/reference/instance-analytics-stats). [`analytics`](/cli/analytics) lists the CLI commands.
 
 ## Prepare the database Processes
 
-The role keeps its data in two Docker Processes. Create them first on an active Node with the `database` role.
+Plausible stores its data in two Docker Node Processes on an active `database` Node:
 
 | Process | Image | Holds |
 | --- | --- | --- |
-| PostgreSQL | `postgres:16`, or a managed `postgres:18` server | Plausible accounts and site settings |
-| ClickHouse | `clickhouse/clickhouse-server`, any tag | Every tracked event |
+| PostgreSQL | `postgres:16`, or a managed `postgres:18` [Database server](/reference/database-servers) | Plausible accounts and site settings |
+| ClickHouse | `clickhouse/clickhouse-server` | Tracked events |
 
-A Process needs a command. For PostgreSQL, use `postgres`. The ClickHouse image passes its own configuration file, so give it a server argument after two dashes, such as `-- --logger.level=warning`.
-
-Publish unmanaged PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the database Node's WireGuard address only. A managed PostgreSQL server may also publish its exact recorded LAN address under the [private-network trust model](/reference/database-servers#private-publication). Wildcard and public publication are refused. Analytics still connects over WireGuard.
-
-For unmanaged storage, Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
-
-For managed PostgreSQL 18, create exactly one canonical `plausible-db` connection on the server before assigning its Process to analytics. The role resolves that database owner's encrypted credentials from the connection. A missing or ambiguous owner is refused; the server admin is never used. `database:update` protects managed identity and credentials, and `database:destroy` refuses removal of the analytics owner connection.
+Publish unmanaged PostgreSQL port `5432` and ClickHouse HTTP port `8123` on the database Node's WireGuard address only (managed PostgreSQL 18 may also publish its private LAN address). For unmanaged Processes, Plausible reads `POSTGRES_USER` (default `postgres`), `POSTGRES_PASSWORD`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB` from each Process's environment. For managed PostgreSQL 18, create one canonical `plausible_db` database connection on the server before assigning Analytics; Orbit resolves that owner's encrypted credentials automatically and blocks `database:destroy` while Analytics uses it. Plan roughly 2 GB of memory for the three services.
 
 ## Assign the role
 
-Assign the role with `orbit node:role:add NODE analytics --postgres-process=ID --clickhouse-process=ID`. In a terminal, the CLI asks for a missing Process. The role is a singleton. It conflicts with `gateway` and combines with `database`, so one services Node can hold both. It cannot be assigned during `node:add`, and it cannot be relocated.
+Assign the singleton role to a Node (conflicts with `gateway`, combines with `database`, cannot be assigned during `node:add` or relocated):
 
-Assignment also refuses an existing `plausible` or selected storage Process used by an Instance's Node service target. `process.node_service_ownership_conflict` names the dependent Instances before role settings, Process configuration or runtime changes. Detach those targets before assigning the Process to Analytics.
+```bash
+orbit node:role:add <node> analytics --postgres-process=<id> --clickhouse-process=<id>
+```
 
-Assignment refuses a storage Process that does not fit:
+Assignment refuses Processes attached as an Instance Node service target (`process.node_service_ownership_conflict`) or storage Processes failing validation:
 
 | Error code | Cause |
 | --- | --- |
-| `analytics.postgres_process_missing`, `analytics.clickhouse_process_missing` | The Process does not exist. |
-| `analytics.process_not_docker` | The Process is not a Docker Process. |
-| `analytics.process_not_node` | The Process does not belong to a Node. |
-| `analytics.process_not_database_node` | The Process's Node is not an active `database` Node. |
-| `analytics.postgres_unsupported`, `analytics.clickhouse_unsupported` | The image is not the supported engine. |
-| `analytics.storage_credentials_missing` | A required Process credential or canonical managed PostgreSQL owner connection is missing or ambiguous. |
-| `analytics.storage_port_missing` | The Process does not publish port 5432 or 8123. |
-| `process.wireguard_ip_missing` | The Process's Node has no WireGuard address. |
+| `analytics.postgres_process_missing`, `analytics.clickhouse_process_missing` | Process does not exist. |
+| `analytics.process_not_docker`, `analytics.process_not_node` | Process is not a Docker Node Process. |
+| `analytics.process_not_database_node` | Process's Node is not an active `database` Node. |
+| `analytics.postgres_unsupported`, `analytics.clickhouse_unsupported` | Image is not a supported PostgreSQL or ClickHouse engine. |
+| `analytics.storage_credentials_missing` | Required credentials or canonical `plausible_db` connection are missing or ambiguous. |
+| `analytics.storage_port_missing` | Process does not publish port `5432` or `8123`. |
+| `process.wireguard_ip_missing` | Process's Node has no WireGuard address. |
 
-The Analytics footprint requires these resources. Role convergence is unavailable until its native Node workflow is registered; the Gateway does not run a PHP baseline.
+Role convergence publishes ClickHouse configuration files and adds local Docker-bridge firewall rules (`orbit:analytics-postgres-local` and `orbit:analytics-clickhouse-local`) when storage shares the Analytics Node. It then initializes the database (`createdb` and `migrate`), starts the `plausible` Docker Process at `ORBIT_ANALYTICS_PLAUSIBLE_VERSION` (default `3.2.1`), waits up to 60 seconds for `/api/health`, and publishes `https://analytics.orbit` with an Orbit CA certificate, Caddy site, and private DNS record.
 
-| Step | Result |
-| --- | --- |
-| Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node. The Process must already mount them read-only. See [ClickHouse configuration](#clickhouse-configuration). |
-| Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. |
-| Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
-| Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
-
-After initial Analytics startup, its Ansible readiness phase waits up to 60 seconds for `/api/health` before publication. Convergence checks the existing Process without running initialization again.
-
-The firewall phase replaces a previous local storage port only when the rest of its owned rule matches.
-
-Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
-
-The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
-
-You can read the logs of `plausible` and restart it like any other Process. You cannot remove it, or either storage Process, while the role is assigned (`process.required_by_analytics`). The core feature registers this check as a [Process removal guard](/reference/extensions#plug-in-points).
-
-The current lifecycle identifies Plausible by its Node and the name `plausible`, not a persisted owning-role claim. A convergence with different configuration can remove that named Process through the internal owning-role path before recreating it; role removal and unreachable forget also select by name. Do not use an unrelated Process with that name on an Analytics Node. The [ownership proposal](/decisions/0210-give-each-extension-its-own-code-boundary#explicit-process-ownership-before-extraction) replaces this unsafe selection with explicit ownership; it is not implemented by this documentation change.
-
-`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit provisions Instance sites through the native analytics enable workflow. The operator owns the Plausible management account and API credentials. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
+Do not create an unrelated Process named `plausible` on the Analytics Node, and do not remove `plausible` or either storage Process while the role is assigned (`process.required_by_analytics`). Open `https://analytics.orbit` over WireGuard right after setup to register the owner account, then store a Stats API key on the Gateway with `orbit analytics:credentials --set`.
 
 ## ClickHouse configuration
 
-ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
-
-Role add writes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. Its [Node Ansible phase](/reference/node-provisioning#role-ansible-phases) creates the folders and applies the canonical file map. An unchanged file stays untouched. Database initialization remains a native Swamp step.
+To prevent ClickHouse's default system log tables and background merges from exhausting memory on small Nodes, role convergence writes Plausible's four standard ClickHouse configuration files (`0644`, `root`) on the ClickHouse Node:
 
 | Host file | Container path |
 | --- | --- |
@@ -89,154 +59,44 @@ Role add writes Plausible's four ClickHouse files as root with mode `0644` on th
 | `/etc/orbit/analytics/clickhouse/config.d/low-resources.xml` | `/etc/clickhouse-server/config.d/low-resources.xml` |
 | `/etc/orbit/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml` | `/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml` |
 
-`logs.xml` keeps only `query_log`, for 30 days, and turns off ClickHouse's other system log tables. To diagnose ClickHouse itself, use its console log and `query_log`. Tables that ClickHouse wrote earlier keep their data. Orbit does not drop them.
-
-The selected ClickHouse Process must already mount these files read-only at the listed container paths. The current native footprint publishes the files but does not add or validate those mounts, replace the container, or restart ClickHouse. Missing mount reconciliation and automatic restart are a known gap in native role convergence. After a file changes, restart the Process through its normal Process operation so ClickHouse reads it. Each restart drops Plausible's ClickHouse connection until ClickHouse is back.
-
-To publish the configuration to an existing install, converge the role again with the same two Processes, then restart ClickHouse if any file changed:
-
-```bash
-orbit node:role:add NODE analytics --converge --postgres-process=ID --clickhouse-process=ID
-```
-
-A failure stops convergence before Plausible runs and fails the owning Operation. It does not mark the ClickHouse Process failed. A later convergence attempts file publication again. Removing the role leaves the files and existing mounts in place.
+`logs.xml` retains only `query_log` for 30 days and disables other system log tables. Mount all four files read-only into your ClickHouse Process and restart the Process after any file changes. To republish files on an existing install, re-run `orbit node:role:add <node> analytics --converge --postgres-process=<id> --clickhouse-process=<id>`.
 
 ## Update and remove the role
 
 ### Update Plausible
 
-`orbit analytics:update VERSION` captures the public Process definition and returns an Operation. All steps run on209 and use official SSH to the admitted Node with its stored host key. The Gateway formats the existing environment with the canonical Docker env-file renderer and pushes it through the shared execution-copy helper. Process children write a private cfgmgmt env file, use its path in Docker argv and remove it after creation. Workflow inputs contain only the vault and key names; initialization and Process installation read that copy through native vault expressions.
-
-The workflow checks the owned container, runs `createdb` and `migrate` as separate steps, then uses the shared native Process destroy/create workflows for replacement. A repeated version checks health without replacing an unchanged container. The first update removes an old agent startup wrapper and binary mount. Start a stopped Plausible Process before updating it.
-
-Health is one owned-spec and HTTP observation, with native resume for another attempt. After rollback, resume from `observation` to repeat replacement; a plain resume cannot accept the restored old spec as the new version. If replacement or readiness fails, explicit native steps remove the failed container and restore the captured prior Process definition. Database migrations are not reversed. A failed restoration is reported separately; the Gateway changes the pin only after success. Initialization failure leaves the original container in place.
-
-The shared subscriber reads the fixed terminal result and projects only public version and recovery metadata. There is no Gateway step callback, private-material source, custom Process callback or health retry loop in this update path. The update generates no credentials.
-
-A new role starts at the version in the Gateway's `ORBIT_ANALYTICS_PLAUSIBLE_VERSION`, which defaults to `3.2.1`.
+`orbit analytics:update <version>` validates `X.Y.Z` (`analytics.version_invalid`), requires an active role and running `plausible` Process (`analytics.role_missing`, `analytics.runtime_missing`, `analytics.runtime_stopped`, 409), runs `createdb` and `migrate`, replaces the container, and checks `/api/health`. If replacement or health fails, Orbit restores the previous container definition (database migrations are not reversed) and leaves the version pin unchanged.
 
 ### Remove the role
 
-Dashboard publication first runs the shared [Caddy package step](/reference/node-provisioning#package-sources). It leaves an installed Caddy at or above the floor in place.
-
-`orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, the DNS record, and the role's firewall rules. It deletes the stored `SECRET_KEY_BASE` and the role settings. It never touches the two databases or their Processes. Remove those Processes yourself to remove the data. Orbit does not back up or prune Plausible's event data. Removal fails with `analytics.tracking_hosts_exist` while any Instance has a tracking host.
+`orbit node:role:remove <node> analytics` removes the `plausible` Process, Caddy site, certificate, DNS record, firewall rules, and stored `SECRET_KEY_BASE`. It never touches PostgreSQL or ClickHouse Processes or data. Removal is refused while any Instance still has a tracking host (`analytics.tracking_hosts_exist`).
 
 ## Publish a tracking host
 
-A tracking host is a Route of kind `analytics_tracking` that belongs to one Instance. It proxies only Plausible's script and event paths.
+A tracking host is a Route of kind `analytics_tracking` belonging to one Instance. Enable it with `orbit instance:analytics:enable <instance>`, which publishes `analytics.<instance domain>` (or up to 10 explicit `--host` values, rejecting IPs and `.orbit` domains), configures the Plausible site, timezone (default `Europe/Amsterdam`), and up to 100 goals (`Goal.CustomEvent`, `Goal.Pageview`, `Goal.Revenue`, with up to 3 `custom_props`), and returns an Operation (202).
 
-`orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>`. The analytics role must be active (`analytics.role_missing`). The Instance must already serve a domain (`analytics.domain_required`). `--host=HOST` names another host. You can repeat it up to ten times. The command sets the exact host set, so it removes a host that you leave out. A host that another Route owns fails with `analytics.host_taken`.
+Tracking Routes mirror the Instance's authoritative Route (Node-scoped, private Cluster Router, or public Cluster Ingress) and move automatically with Cluster transitions. They proxy only two paths over WireGuard to Plausible and return `404` on everything else so the dashboard stays private:
 
-A tracking Route copies the Node, Cluster, and publication of the Instance's own Route when you create it.
-
-| The Instance's Route | Who serves the tracking host |
+| Path | Target |
 | --- | --- |
-| Node-scoped | The Instance's own Node, behind whatever edge fronts that Node. |
-| Cluster-scoped and private | The Cluster's Router. |
-| Cluster-scoped and public | The Router. The Ingress forwards the host to it, as for every public Route. |
+| `/js/*` | Plausible tracking script (`/js/script.js`) |
+| `/api/event` | Plausible event ingestion |
 
-When a Cluster attach, detach, activation, or deactivation moves the Instance, the tracking host moves with it. Both placements serve the host until private DNS answers for the old placement can have expired. Then the old placement stops. A move that fails before private DNS moves leaves the host on its old placement, and a retry moves it again.
+Direct `route:create`, `route:update`, `route:target:set`, `route:target:unset`, `route:converge`, and `route:destroy` refuse `analytics_tracking` Routes (`route.kind_unsupported`, `route.analytics_native_required`, `route.tracking_managed`). Use `orbit instance:analytics:show <instance>` to inspect the CNAME record and script tag, and `orbit instance:analytics:disable <instance> [--yes]` to detach the site and remove tracking Routes while preserving Plausible event history. Disable analytics before destroying an Instance (`analytics.tracking_hosts_exist`).
 
-When another edge terminates public TLS for the Instance, point the tracking host at that same edge.
+### Tracking Operation errors
 
-The host answers two paths and nothing else:
-
-| Path | Goes to |
-| --- | --- |
-| `/js/*` | The Plausible tracking script |
-| `/api/event` | The Plausible event endpoint |
-| Every other path | 404, so the dashboard never becomes public |
-
-The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
-
-`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. The native enable workflow creates or converges the Plausible site, timezone and requested goals. Add the script tag to the Project. Disable detaches the site binding and removes the tracking hosts; it preserves Plausible event history.
-
-An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
-
-Disable follows the chart [`instance/analytics-disable.mmd`](/cli/instance/analytics-disable). It removes the tracking hosts from private DNS outside the TLD. Then each Router and Ingress gets its whole Caddyfile without the tracking sites, and their certificate scopes go. `Check the hosts are gone` runs the `check` of the same official behaviors and is the end check. An Instance without tracking hosts has nothing to remove: its Operation has already succeeded, and no run starts.
-
-A failure keeps the tracking records and site binding for diagnosis; native resume repairs host effects without reviving a terminal Gateway Operation. Only successful terminal projection deletes the captured tracking records and binding. Disable does not call Plausible or need its credentials.
-
-## Instance page panel
-
-The Orbit web Instance page shows live visitors, visitors for Plausible's day, 7 days, and 30 days, and the top ten pages. It shows the panel when the analytics role is active and the Instance has a tracking host. The Plausible site is the Instance's own domain. When the Gateway cannot read the Stats API, the panel says so and shows no counts. See [Instance analytics stats](/reference/instance-analytics-stats).
-
-## Why it works this way
-
-These reasons explain the design. Check them before you propose a change.
-
-### Storage on database Nodes
-
-Database servers belong on `database` Nodes, where the operator sizes, inspects, and backs them up. So the role names two Processes that the operator created, by ID. A Node can run several PostgreSQL Processes, so naming only a Node would be ambiguous. The role never creates a database server itself.
-
-### No database provisioners
-
-Plausible creates and migrates its own PostgreSQL database. The ClickHouse image creates its own database and user from its environment. So Orbit adds no PostgreSQL or ClickHouse administration.
-
-### Plausible as a Process
-
-The Process runtime already converges a Docker container on a Node, with logs, restarts, and Doctor checks. A second container runtime, Compose, or an Instance would duplicate that work.
-
-### Plausible's own ClickHouse files
-
-Without them, ClickHouse ran a merge loop on a small Node. Orbit uses Plausible's tested files unchanged, instead of its own variant. Use single-file mounts because the ClickHouse image keeps its own files in `config.d` and `users.d`.
-
-### A dedicated Route kind with two paths
-
-Browsers must reach Plausible's script and event endpoints from the public internet, but they do not need the dashboard or the rest of its API. A dedicated Route kind derives its upstream from the active analytics role and exposes only `/js/*` and `/api/event`. Every other path returns 404. This fixed surface is small to verify and keeps the dashboard private.
-
-General path proxying on any Route is rejected, because nothing else needs it and it would broaden the [custom proxy upstream rules](/reference/routes#custom-proxy-routes). A reserved prefix on the Instance's own site is also rejected, because it puts fleet infrastructure inside every Project's site, can collide with the Project's paths, and makes tracking depend on the Instance's runtime being awake. Publishing `analytics.orbit` is rejected, because it would expose the whole fleet's dashboard and login.
-
-### A tracking host that mirrors the Instance's Route
-
-The fleet does not have to own its public edge. A tracking host mirrors the Instance's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the Instance's own domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
-
-### Native workflows manage sites
-
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, SSH connections and Route snapshots. All steps run on Node 209. The Gateway copies its existing Plausible credentials through the shared execution-copy helper; workflow input contains only vault and key names. Command steps resolve that descriptor into their environment.
-
-Site management uses `https://analytics.orbit`, matching Plausible’s configured base URL so its Secure session cookies accompany login requests. One shipped script owns the Plausible site action group: login, inspection, create or update when needed, goals batches, verification, Stats API access and logout. The session cookie and CSRF token stay only in that process’s memory. Credentials, cookies and CSRF tokens never enter outputs or session files. Logout runs after success or failure.
-
-Enable follows the chart [`instance/analytics-enable.mmd`](/cli/instance/analytics-enable): `Converge the site`, then the tracking certificate (`Request the certificate`, `Sign the CSR`), `Publish Caddy, reload` with each Router and Ingress's whole Caddyfile, `Probe the tracking host` from Node 209, and private DNS outside the TLD. The end check is the probe, or the publish step for a private host.
-
-A fresh enable admission reconciles the same site without creating a duplicate. A native operator resume repeats `Converge the site` with a fresh login; a later failure can resume at its step without repeating provider work. Native resume does not reopen a terminal Gateway Operation. Script failures provide a public error code and safe stderr for the shared F1 failure wrapper and projector; provider bodies never appear in diagnostics.
-
-The parent composes canonical Route certificate, Caddy, DNS and TLS-probe children through official SSH. The certificate child signs the public CSR with the canonical Gateway primitive. The CA private key stays only in the Gateway; each leaf private key stays on its Node. Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. The workflow publishes the Router, verifies its private TLS endpoint from Ingress, activates the public handler, publishes private DNS and waits for the canonical 31-second grace before withdrawing old placements. The Instance's existing public Route owns the Ingress port rules.
-
-Only successful terminal projection publishes tracking records, clears retiring placements and saves the site binding. Each step has its own error code:
+Analytics enable and disable Operations report these error codes:
 
 | Error code | Step |
 | --- | --- |
-| `analytics.site_failed` | `Converge the site` |
-| `app-dev.certificate_request_failed` | `Request the certificate` |
-| `app-dev.certificate_sign_failed` | `Sign the CSR` |
-| `route.publish_failed` | `Publish Caddy, reload` |
-| `route.probe_failed` | `Probe the tracking host` |
-| `private_dns.publication_failed` | `Publish private DNS`, `Remove private DNS` |
-| `route.withdraw_failed` | `Withdraw sites, certs` |
-| `route.removal_check_failed` | `Check the hosts are gone` |
-| `analytics.enable_failed`, `analytics.disable_failed` | A failure outside these steps |
+| `analytics.site_failed` | Converge Plausible site |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed` | Tracking certificate CSR / signing |
+| `route.publish_failed`, `route.probe_failed` | Caddy publish / TLS probe |
+| `private_dns.publication_failed` | Private DNS update |
+| `route.withdraw_failed`, `route.removal_check_failed` | Withdraw tracking sites / verify removal |
+| `analytics.enable_failed`, `analytics.disable_failed` | Any other failure |
 
-The Gateway reads the outcome from Swamp's run data, never from step output. A failure retains the admitted records for diagnosis. Enable and disable return an accepted Operation. Disable preserves the Plausible site and history. Container version updates remain a separate native operation and use a names-only execution-copy reference for the runtime environment.
+## Why it works this way
 
-Swamp core supplies ordering, commands, vault resolution and recovery. Official SSH and the cfgmgmt actions owned by Routes supply host effects. The official extension catalogue has no Plausible CE management API, so one Python action group calls that API directly. Native steps split at the provider-to-Route boundary, where guard, placement and recovery needs change. No step reads intent, fetches credentials or projects results through Gateway HTTP.
-
-### Stats read on the Gateway
-
-The browser never holds the Stats API key, and it cannot ask for another Instance's site. One Gateway-scoped key serves every Instance, because Plausible scopes each read by site domain. A failed read never shows zeros, because a missing key must not look like an empty site.
-
-### Compose Analytics tracking into Route changes
-
-Target-only Route changes keep the hostname catalog and require no Analytics lifecycle effect. A Route parent that changes tracking placement or publication uses `AnalyticsRoutePlan::capture()` to admit the current and retiring host Nodes, Router leaves, private DNS owners and Ingress TLS probes. Capture reads stored state, including `node.user`, and omits the home. Leaf `home` is optional; when present the worker checks it against the local account. Capture neither executes work nor changes records.
-
-Route parents compose the canonical native certificate, Caddy, DNS and Route LAN workflows from the captured public intent. The parent retains its kind and run; it creates no child Operation. The signer remains the exact Gateway certificate primitive, and each leaf private key stays on its service Node. Tracking state changes belong to the parent’s normal result projection; no Analytics action adapter executes local certificate or LAN work.
-
-`AnalyticsRoutePlan::associated($appRoute)` selects published, non-retiring tracking Routes (the same set the tracking-site renderer serves) through the app Route's target Instances. Each Instance must name that app Route as its `authoritativeRoute()`. The `analyticsTracking` relation exists on the tracking Route, not on the app Route. A secondary app Route owns no tracking host.
-
-`captureUpdate($appRoute, $candidate)` captures only placement or publication changes for those hosts. It returns each `route_id`, bounded `before`/`after` state, `publish`/`rollback` host plans and their union `node_ids` without writing. Existing default and custom tracking hostnames stay literal. A domain-only change does not rename them or call Plausible; an explicit Analytics enable converges the provider site and desired host set.
-
-The Route parent stores that capture in its immutable input. Its own result projection calls `checkpointUpdate($captured, $checkpoint)` with that stored input: `certificates_ready` publishes the new stored placement, `public_verified` enables the public handler, `placement_cleanup` withdraws retiring placement after the native DNS grace, and `complete` clears transition fields. `rollback` restores the captured prior state. These callbacks change only tracking records and do no execution or receipt validation. The parent publishes fresh Caddy/DNS/firewall state between callbacks and owns terminal replay.
-
-The parent admits the returned union `node_ids`, plus its own root and other effect Nodes. Publish and cleanup must use the union of both host plans, including the previous Ingress when a host changes from public to private. A new private publication plan alone does not list that old public listener.
-
-Rollback plans include candidate Router leaves that do not belong to the original active placement. After restoring stored state and republishing it, the parent builds each fresh participant view with `cleanupForNode($rollbackPlan, $callerNodeId)`. The method accepts the persisted parent plan, decodes its cleanup through the shared Analytics leaf decoder, and filters it against the Node's currently rendered certificate scopes. A scope used by any restored or newly published site is preserved. The native step removes only leaves in that fresh view.
+Keeping PostgreSQL and ClickHouse on `database` Nodes lets operators size and back up storage independently, while running Plausible as an ordinary Docker Process reuses Process logs, restarts, and Doctor checks. Exposing only `/js/*` and `/api/event` on a first-party tracking Route keeps the Plausible dashboard private on WireGuard and avoids content blockers without colliding with application routes. Reading Stats API counts from the Gateway keeps the API key off browsers and prevents missing keys from appearing as zero traffic.

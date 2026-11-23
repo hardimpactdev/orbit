@@ -5,132 +5,85 @@ description: "Reference for the proof CI job and the case selection list. The st
 
 # Feature flow
 
-The stages a command goes through, from prep to a refreshed fleet, are in the [command development pipeline](/reference/command-development-pipeline). Its stage charts in `reference/pipeline/` own the flow. This page holds the reference that the charts do not: the terms, the proof CI job and the case selection list.
+The [command development pipeline](/reference/command-development-pipeline) owns the six stages of a command change. This page covers the proof CI job and `swamp/proof/selection.txt`.
 
-## Words used here
+## Terms
 
-These terms distinguish the task images, topology seeds, their hosts and the state on each Node.
+These two terms separate Orbit-owned files from user workloads on a Node:
 
 | Term | Meaning |
 | --- | --- |
-| Task VM hosts | Machines that run task VMs and their nested topologies: beast, shark and host 14. Task VMs are off today. |
-| Task image | The VM image that a host starts its task VMs from. Each host builds its own. |
-| Topology seed | Stopped copies of a ready Gateway with Swamp, `app-dev` Node and `app-prod` Node, kept by each host. A task VM resets its test fleet from them. |
-| Orbit footprint | What Orbit owns on a Node: the agent, CLI, Gateway code, and the files and units Orbit renders for itself. |
-| Workload state | What users run on Nodes: Instances, Processes, containers, Caddy sites, firewall rules, `.env` files and role config. |
+| Orbit footprint | Files and units Orbit owns: the agent, CLI, Gateway code, and rendered Orbit configs. |
+| Workload state | User resources on Nodes: Instances, Processes, containers, Caddy sites, firewall rules, `.env` files, and role config. |
 
 ## The proof CI
 
-The job `proof-run` is built. When it runs, it is part of `Required checks` and blocks the merge; no switch makes it report-only ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)). The outside-PR label workflow is built. Execution is on by default (`proof.execution`); see [the execution switch](/cli/proof/run#the-execution-switch). CI admits no proof today: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
+`proof-run` in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) via `bin/ci-proof-run` on a self-hosted runner enrolled in the private network ([The proof run job](/reference/implementation-loop#the-proof-run-job)). When enabled (`ORBIT_PROOF_ENABLED=true`), a selected proof is part of `Required checks` and blocks merge; there is no report-only mode ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)). Execution on the Gateway is controlled separately by `proof.execution` ([the execution switch](/cli/proof/run#the-execution-switch)).
 
-The job is `proof-run` (`CI proof`). See [the proof run job](/reference/implementation-loop#the-proof-run-job).
+### How `proof-run` executes
 
-A job in `.github/workflows/ci.yml` runs [`orbit proof:run`](/cli/proof/run) on a self-hosted runner, waits for the verdict, and passes or fails. The runner reaches the Gateway over the private network as an enrolled Node. The job adds no runner and no access.
+The job selects and runs cases against the PR head without checking out the PR code onto the runner:
 
-**The job**
+- `bin/ci-build-plan` reads `swamp/proof/selection.txt` and starts `proof-run` for any changed path that selects a command or matches no rule (docs-only changes skip it).
+- `proof-run` passes the PR head SHA and a run/attempt idempotency key to `orbit proof:run --json`; Orbit fetches the commit and runs cases inside container proof copies.
+- The workflow timeout is `275` minutes (`WAIT=270m` in `bin/ci-proof-run`: admission wait plus execution budget). A new push or cancelled job cancels the active proof run.
+- The job summary lists cases, uncovered paths, and a private receipt link without command output or hostnames.
+- A run with uncovered paths and no cases passes and states that clearly; a capacity failure or any failed/unrun selected case fails the job.
+- Proof tests the PR head, not `main` after merge.
 
-- The `changes` job reads the changed paths with `bin/ci-build-plan`, which reads `swamp/proof/selection.txt`. A path that needs a proof starts `proof-run`.
-- A path that matches no line also starts the job, and `proof:run` refuses it. A change to documentation only never starts the proof CI.
-- `proof-run` passes one commit SHA to `orbit proof:run --json`: the pull request head.
-- It also passes an idempotency key built from the workflow run and its attempt. It checks out only its own script and chooses no cases.
-- Orbit fetches the commit and selects the cases with its own program.
-**The result**
+### Fork pull requests and guards
 
-- The job summary lists each case, the uncovered paths and the receipt link. It holds no command output and no host name. The receipt link needs access to the private network.
-- A run with uncovered paths and no case passes, and the summary says so. It never looks like a run that proved something.
-- A capacity message with no cases fails. No proof passes without case verdicts.
-- Its artifact receipt names the commit, operation, selected commands, outcome and idempotency key. It excludes execution input and host details.
-- Other errors and failed assertions stay red. The job exits with the verdict. The timeout is 45 minutes: the VM wait plus the run budget. A cancelled job cancels its run.
-- The proof tests the pull request head, not its merge with `main`. It does not run again after the merge: main runs no proof.
+Fork PRs never run `proof-run` automatically:
 
-**Triggers**
-
-- A pull request from a branch of `hardimpactdev/orbit` runs the job automatically.
-- A pull request from a fork starts no proof by itself.
-
-**Outside pull requests**
-
-- A maintainer approves the pull request and adds the label `run-proofs`.
-- The label starts the workflow `proof-outside.yml`, which passes the head SHA from the label event to `orbit proof:run`. The verdict is the result of that workflow run.
-- Orbit accepts only the current head, with the label and a maintainer's approval of exactly that commit.
-- A new push removes the label and cancels the proof of the old head. The new head needs a new approval and the label again.
-- A label added before the approval fails. Remove the label and add it again after approving.
-- `ci.yml` starts no proof for such a pull request.
-- `Required checks` requires the outside proof's status on the exact head while proof admission is on.
-
-**Guards**
-
-- The runner group of beast and shark serves only this repository.
-- A GitHub setting requires a maintainer's approval for every workflow run of an outside collaborator. A maintainer does not approve a run whose diff touches `.github/`.
-- The workflow condition picks a self-hosted runner for a pull request from this repository. It picks a hosted runner for every other pull request.
-- `tools/test_ci_runner_policy.py` pins the condition. A fork controls its own copy of the workflow, so the approval is the gate and the condition is the second layer.
-- The job passes no secret.
-- The CI proof VM holds no Pi token and no real model key. The fixed model key it holds is a placeholder that only the model router guard accepts, from the task VM network.
-- Orbit refuses a commit that is not on a branch of the repository, so a job that reaches a runner can still prove only trusted code.
-
-**Required check**
-
-- A selected proof is part of `Required checks` whenever CI admits proofs (`ORBIT_PROOF_ENABLED`).
-- Only the scope step may skip it, and only for a change that needs no proof.
+- A maintainer must approve the exact head commit and add the `run-proofs` label, which triggers `proof-outside.yml` and reports the `Orbit outside proof` status.
+- Pushing a new commit removes the label, cancels the prior proof, and requires fresh approval and re-labeling.
+- `proof-run` only runs for same-repository PRs (`head.repo.full_name == github.repository`) on the Sabre/Shark shard runner pool (`self-hosted, hardimpact, orbit-shard`), pinned by `tools/test_ci_runner_policy.py`.
+- The job passes no secrets, proof copies hold no real model keys, and Orbit refuses commits not on a repository branch.
 
 ## Choose the cases
 
 ### Instance execution coverage
 
-CI reports **Instance execution proof coverage** for files executed by Nodes during `instance:create`, `instance:clone`, `instance:migrate` and `instance:destroy`. The ownership rules live in the selection list, including shared child workflows and shipped scripts. While a command has no real case, its changed execution files produce a warning: `no real proof case covers these executed files: <list>`. A skipped proof is not proof of those files. Existing refusal cases remain available when their own definitions or admission code change.
+CI checks **Instance execution proof coverage** for files executed by Nodes during `instance:create`, `instance:clone`, `instance:migrate`, and `instance:destroy`. While a command has no real passing Operation case (exit `0`, terminal `succeeded`, not `fails_today`), touching its execution files emits a warning. Once a command has a real case in base or head, failing to select any real case fails build-input selection.
 
-A real case calls the command in an action, expects exit zero and terminal `succeeded`, and is not marked `fails_today`. Once that case exists in either the comparison base or the head, selecting none of that command’s real cases fails build-input selection. Removing the last real case or shadowing its mapping cannot return the command to warning-only coverage.
+### Selection list (`swamp/proof/selection.txt`)
 
-An edit to the mapping checks the owners of tracked execution files before it can become a new base. This checks selection locally; it adds no fleet wait to Required. The first lifecycle proof runs as a non-required result until its measured setup, case and cleanup cost has been accepted.
-
-
-The file `swamp/proof/selection.txt` is the selection list: it maps changed paths to commands. Each line holds a path glob and the value it selects. `bin/ci-build-plan` and Orbit read the list of the tested commit.
+`swamp/proof/selection.txt` maps changed path globs to commands. Both `bin/ci-build-plan` and Orbit read the list from the tested commit:
 
 ```text
-# path glob                                   selects
-docs/**                                       skip
-**/*.md                                       skip
-apps/web/**                                   skip
-swamp/workflows/workflow-firewall-*.yaml      firewall:allow firewall:deny firewall:remove
-swamp/proof/firewall/allow.cases.yaml         firewall:allow
-swamp/workflows/workflow-vault-sync.yaml      none: no case yet
+# path glob                                           selects
+docs/**                                               skip
+**/*.md                                               skip
+apps/web/**                                           skip
+swamp/workflows/workflow-operation-firewall-direct.yaml firewall:allow firewall:deny firewall:remove
+swamp/proof/firewall/allow.cases.yaml                 firewall:allow
+swamp/workflows/workflow-vault-sync.yaml              none: no case yet
 ```
 
 | Value | Meaning |
 | --- | --- |
-| `skip` | The path needs no proof: documentation, charts, case descriptions, the web app. |
-| `<family>:<command>` | Select each listed command. Code changes run its whole cases file; cases-only changes run the affected entries. Without a cases file, the command is listed as uncovered. |
-| `*` | Every case runs. The list does not use it: a proof runs only when a command's own code or cases change. |
-| `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
+| `skip` | Needs no proof (docs, charts, web app). |
+| `<family>:<command>` | Selects listed commands; code changes run the whole file, while cases-only edits run affected entries. |
+| `*` | Runs every case (not used in the list). |
+| `none: <reason>` | Listed as uncovered without failing the run. |
 
-The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Further colons of the command name become `-`, so `instance:deploy-step:create` has `swamp/proof/instance/deploy-step-create.cases.yaml`. A command without that file is listed as uncovered with the reason `no cases file for COMMAND`. When every case runs, each cases file of the commit is one command, labelled by its family and file name. A cases file that states `cases: []` has no case yet. However it is selected, by `--all`, by its command's code or by a range, it is listed as uncovered with the reason `none: no case yet` and does not fail the run.
+Each command's cases live at `swamp/proof/<family>/<command>.cases.yaml` (extra colons become `-`, such as `deploy-step-create.cases.yaml`). Missing files report `no cases file for COMMAND`; files with `cases: []` report `none: no case yet`.
 
-- The last matching line wins.
-- A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.
-- A rename or a delete counts for the old path too.
-- A change to the selection list selects nothing by itself.
-- A file list that GitHub returns incomplete selects every case, and so does `--all`.
-- A cases file selects its own command. Charts and pages are `skip`.
+Matching rules:
 
-After choosing commands, choose their cases:
+- Last matching line wins; documentation globs (`**/*.md`, `**/*.mdx`, `**/*.mmd`) stay at the bottom.
+- Unmapped paths fail with `proof.path_unmapped`; malformed lines fail with `proof.selection_invalid`.
+- Renames and deletes match both old and new paths; editing `selection.txt` alone selects nothing.
+- Incomplete GitHub file lists, missing selection lists, or `--all` select every case.
 
-1. Expand base and head definitions with the runner. Include fixtures, list vars, variants, fleet settings and batch setup.
-2. Publish the runner selection as `proof-selection.json`. Bind it to the exact head and merge base.
-3. Read the runner result in the Gateway. Validate its identity and selected case ids.
-4. Record selected case ids and reasons. Keep each case in its batch with its required setup.
+### Case-level narrowing
 
-The runner compares canonical definitions by id. A command code change selects the whole file. Changes to the runner, selection code or selection list disable narrowing for every selected command. These tooling changes alone select no commands. Any parse error or unknown construct, including an unknown fixture key, also selects the whole file. The artifact records every considered file, including files with zero selected cases.
+After selecting commands, the runner narrows to affected cases:
 
-The Gateway honors a validated result for code changes too, including explicit empty entries for execution coverage gaps. An all-cases request still runs every case. The Gateway does not compare YAML definitions. Expired or mismatched results select whole files.
+1. Expand base and head case definitions (fixtures, vars, variants, fleet settings, batch setup).
+2. Publish `proof-selection.json` bound to the exact head and merge base.
+3. The Gateway validates the artifact and runs only the selected case IDs in their required batches.
 
-Merge-base replay is a separate opt-in within this selection. The runner uses the same case-level comparison to find added or changed definitions, then keeps only cases with `fails_on_base: true` that belong to the admitted batch. Whole-file selection for code, tooling or uncertainty does not by itself make unchanged cases eligible. Unflagged cases never replay. A merged flag stays in the file without causing replay in later PRs. See [when to set the flag](/reference/verification-cases#opt-into-merge-base-replay).
+Expired, mismatched, or uncertain results fall back to whole files. Command code changes, tooling/runner changes, or parse errors disable narrowing and run the whole file. Valid selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed`, `proof tooling changed`, and `selection uncertain`. Comments and formatting select nothing, and a verified zero-case selection succeeds without allocating a copy.
 
-Selection reasons are `changed`, `added`, `uses changed fixture`, `uses changed var`, `batch setup changed`, `file settings changed`, `command code changed`, `proof tooling changed` or `selection uncertain`. A changed case includes all its variants. Deleted cases select nothing. A verified zero-case selection succeeds without a VM.
-
-Comments, formatting and uncovered descriptions select nothing. The Gateway and `bin/ci-build-plan` consume one runner result, checked with shared fixtures. Case order can change fleet placement; when it does, the affected cases run.
-
-The PR that adds the first cases file of a command family maps the files of the family. A family block lists every command of the family. The Node family selects `node:list` and reports the remaining Node commands as uncovered until they have cases. It holds the Gateway Action, Request, Data, Domain, Infrastructure, Model, migration, route and controller files, and the CLI and SDK files. Until the first cases file exists, these files stay `skip`.
-
-Code that every command runs through, and the proof tooling itself, selects `none:` with a reason: a proof runs only when a command's own code or cases change, and the next such change proves the shared code too. The documentation skips (`**/*.md`, `**/*.mdx`, `**/*.mmd`) come last in the list. A README inside a directory that selects commands therefore stays `skip`.
-
-A malformed line is refused with `proof.selection_invalid`. A commit without a selection list selects every case.
+`fails_on_base: true` stays in case files as metadata for merge-base replay ([Opt into merge-base replay](/reference/verification-cases#opt-into-merge-base-replay)), which is currently unexecuted in container copies.

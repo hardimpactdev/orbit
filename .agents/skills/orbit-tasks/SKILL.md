@@ -135,6 +135,7 @@ subtask, <what works>.
 12. When the proof rests on a model's output, such as a brief that a new session writes, add an accepted limit that names the slips that do not block. Without it, each rerun finds a new slip.
 13. Write every criterion, outcome, guardrail and fact as its own bullet or numbered item. A sub-point is a nested bullet. No paragraph packs several criteria into one sentence. A fact together with its source or its number is one point. The operator reads briefs in the Conn task view on a phone.
 14. A brief has no open question. Before the task starts, the owner finds the answer and writes it as a fact, or asks the operator and writes the answer in. A thing the implementer must find out, such as the cause of a bug, is an expected outcome with a `review` deliverable that names what the handoff note must show.
+15. When an outcome changes existing behaviour, state what happens to what already exists (existing rows, in-flight work, and rollback). Give it a `command` deliverable that runs the real code path, without mocking or faking the boundary under test.
 
 Name implementation paths only where the contract fixes them.
 

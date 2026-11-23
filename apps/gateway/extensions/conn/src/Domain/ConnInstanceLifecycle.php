@@ -77,6 +77,12 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         ConnEnvironment::query()->where('instance_id', $instance->id)->update(['label' => $label]);
     }
 
+    /** Records the container server's reported version after a server switch or wake, keeping its address and pairings. */
+    public function projectServerVersion(Instance $instance, string $serverVersion): void
+    {
+        ConnEnvironment::query()->where('instance_id', $instance->id)->update(['server_version' => $serverVersion]);
+    }
+
     /** A reserved clone's create issues the reserving device's pairing link with its sessions ([Reserve a clone](/reference/conn#reserve-a-clone)). */
     public function createPairing(Operation $operation): ?array
     {

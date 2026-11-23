@@ -34,7 +34,10 @@
             "error": null,
             "current_step_started_at": null,
             "current_step_observed_at": null,
-            "steps": []
+            "steps": [],
+            "overdue_since": null,
+            "hold_wait_reason": null,
+            "ready_at": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

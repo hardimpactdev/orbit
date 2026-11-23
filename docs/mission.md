@@ -1,39 +1,49 @@
 ---
 title: "Mission"
-description: "What Orbit is for, where it stops, and the principles every decision must fit."
+description: "Why Orbit exists, how it works with Conn and coding agents, what it manages, and the principles behind its design."
 ---
 
 # Mission
 
-Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it. You steer.
+Orbit is a self-hosted platform for developing, running, and maintaining software on machines you own. It brings your servers, application environments, automated agent tasks, and [Conn](/reference/conn) workspaces under one control plane.
+
+## Why Orbit exists
+
+Developing, deploying, and maintaining software usually splits the same project across disconnected tools: local setups, CI runners, hosting panels, monitoring dashboards, and separate agent workspaces. Orbit connects those pieces on your own hardware so your machines, applications, tasks, and change history live in one place.
+
+## How Orbit works
+
+One central Gateway stores fleet state, checks permissions, and coordinates changes over a private WireGuard network. Your Linux and macOS machines (called [Nodes](/concepts#fleet)) run the applications, databases, and background work.
+
+Humans and coding agents operate Orbit through the same CLI, API, and MCP server with the same permissions. Orbit also integrates tightly with [Conn](/reference/conn), the companion agent development environment. You plan, chat, and steer agents in Conn across your devices, while Orbit handles identity, shared profiles, server pairing, and isolated container workspaces behind the scenes.
 
 ## What Orbit does
 
-Orbit does two jobs on the machines you add.
+Orbit covers three areas on the machines you add.
 
-- It manages your machines, called Nodes, and the applications on them. That covers development Instances, production releases, Routes, Processes, Schedules, and certificates.
-- It runs planned work with coding agents through the optional [Tasks](/reference/tasks) extension. The work runs in isolated Instances and passes checks. It arrives as a pull request.
+- **Machines and applications.** Runs development containers, production releases, domains, databases, background processes, scheduled jobs, metrics, and certificates on your Nodes.
+- **Planned agent work.** Through [Tasks](/reference/tasks), Orbit runs coding agents in isolated project copies, verifies each subtask against your checks, and opens a pull request.
+- **Conn integration.** Through the [Conn layer](/reference/conn), Orbit signs devices in as Nodes, syncs profiles and settings, and launches threads in project containers.
 
 ## Where Orbit stops
 
-These boundaries keep Orbit small and neutral.
+Orbit focuses on running machines and workloads rather than replacing the tools where you think and review.
 
-- Your agentic development environment (ADE) is where you think, plan, and steer.
-- Orbit is where work runs. It has no IDE, chat, or planning interface. Plans arrive through the CLI or MCP.
-- The plain-text editor for [Project Documents](/reference/project-documents) is a narrow exception for Project-owned notes. Agents use the same document API.
-- Orbit manages only the machines and resources you add.
-- Each Project defines its own way of working in its repository. The Orbit engine stays generic.
+- **No built-in IDE or chat UI.** You plan and review in [Conn](/reference/conn) or your own tools; Orbit runs the environments and executes the work.
+- **Shared notes only.** The plain-text editor in [Project Documents](/reference/project-documents) is a narrow exception for project notes, backed by the same API agents use.
+- **Only what you add.** Orbit manages only the machines and resources you register.
+- **Project-owned workflows.** Each project defines its own setup, checks, and agent rules in its repository, keeping Orbit independent of your stack.
 
 ## Principles
 
-Every architecture decision must fit these principles.
+Every architecture decision in Orbit follows these principles.
 
-1. **Agents operate, humans steer.** Every action is a command that an agent can run and a human can read.
-2. **One way, one name.** Each task has one supported path. Each concept has one term in the CLI, API, database, and documentation.
-3. **No exceptions and no legacy.** Orbit refuses an unsupported combination instead of making it work. Orbit removes old paths instead of keeping them for compatibility.
-4. **Deterministic first.** Code and checks decide what they can. Models judge only what code cannot.
-5. **Lean.** A feature earns its place. Orbit deletes the parts that nothing uses.
-6. **The documentation describes the present.** It is the current agreed truth. Orbit absorbs each decision into it once the decision is built.
-7. **Security fits the real threat model.** Orbit adds no defense layer against an attacker who is already past the boundary.
+- **Agents operate, humans steer.** Every action is a command that an agent can run and a human can inspect.
+- **One way, one name.** Each task has one supported path, and each concept uses the same name in the CLI, API, database, and docs.
+- **No exceptions and no legacy.** Orbit refuses unsupported combinations instead of patching around them, and removes replaced paths rather than keeping compatibility layers.
+- **Deterministic first.** Use code and automated checks wherever possible; leave only judgment calls to language models.
+- **Lean.** Every feature has to earn its place, and unused parts get deleted.
+- **The documentation describes the present.** The docs are the current source of truth, and completed design decisions are folded into them.
+- **Security fits the real threat model.** Orbit defends real trust boundaries and avoids adding layers against an attacker who is already inside.
 
-See [Architecture](/architecture) for how the parts work together.
+Next, read [Architecture](/architecture) to see how Orbit's components fit together.

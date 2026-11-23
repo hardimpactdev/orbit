@@ -10,6 +10,15 @@ const text = (result: Deno.CommandOutput) =>
     new TextDecoder().decode(result.stdout) +
     new TextDecoder().decode(result.stderr);
 
+/** The PHP that runs the listener and its release: a Gateway host's `php8.5`, else the `php` on PATH, such as a task container's runtime PHP. */
+const php =
+    ["php8.5", "php"].map((name) =>
+        new Deno.Command("sh", { args: ["-c", 'command -v "$1"', "sh", name] })
+            .outputSync()
+    ).map((result) => new TextDecoder().decode(result.stdout).trim()).find((
+        path,
+    ) => path !== "") ?? "php";
+
 const fixtureOwner = ["-un", "-gn"].map((flag) =>
     new TextDecoder().decode(
         new Deno.Command("id", { args: [flag] }).outputSync().stdout,
@@ -58,7 +67,9 @@ function sandbox(task: Task, folder: string): Task {
                 "/etc/wireguard/orbit.dns-link",
                 `${folder}/peer-dns-link`,
             )
-            .replaceAll("/etc/wireguard", `${folder}/wireguard`),
+            .replaceAll("/etc/wireguard", `${folder}/wireguard`)
+            // The Gateway host's PHP: the fixture runs the listener on the PHP it finds here.
+            .replaceAll("/usr/bin/php8.5", php),
     );
 }
 
@@ -76,7 +87,7 @@ function prepareStockRoles(folder: string) {
     const socket = Deno.listen({ hostname: "127.0.0.1", port: 0 });
     const dnsPort = (socket.addr as Deno.NetAddr).port;
     socket.close();
-    const release = new Deno.Command("php8.5", {
+    const release = new Deno.Command(php, {
         args: [
             "-r",
             `require $argv[1].'/app/Infrastructure/AppDev/PrivateDnsListenerRelease.php'; $r = new App\\Infrastructure\\AppDev\\PrivateDnsListenerRelease($argv[1]); echo json_encode(['id'=>$r->id(),'files'=>$r->files()]);`,
@@ -105,7 +116,7 @@ function prepareStockRoles(folder: string) {
         requesters: {},
     });
     const service =
-        `[Service]\nExecStart=/usr/bin/php8.5 ${releasePath}/serve.php --listen=127.0.0.1 --port=${dnsPort} --catalog=${folder}/private-dns/catalog.json --upstream=127.0.0.55:53\n`;
+        `[Service]\nExecStart=${php} ${releasePath}/serve.php --listen=127.0.0.1 --port=${dnsPort} --catalog=${folder}/private-dns/catalog.json --upstream=127.0.0.55:53\n`;
     Deno.writeTextFileSync(
         `${folder}/dns-runtime.json`,
         JSON.stringify({
@@ -122,7 +133,7 @@ function prepareStockRoles(folder: string) {
                 records: "host-record=gateway.orbit,10.45.0.1\n",
                 catalog,
                 catalog_sha256: new TextDecoder().decode(
-                    new Deno.Command("php8.5", {
+                    new Deno.Command(php, {
                         args: ["-r", "echo hash('sha256', $argv[1]);", catalog],
                     }).outputSync().stdout,
                 ),
