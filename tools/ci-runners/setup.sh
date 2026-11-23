@@ -13,6 +13,7 @@
 #   tools/ci-runners/setup.sh proof_hook             # the same hook for the orbit-proof runner on this host (sudo)
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #   tools/ci-runners/setup.sh move NAME              # drain the runner on GitHub (gh), move it onto the orbit-ci pool
+#   tools/ci-runners/setup.sh drop_dir_pool          # after every move: profiles to orbit-instances, delete the dir default pool
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
 # and expires after an hour. The script never stores or prints it. Prefer ORBIT_RUNNER_TOKEN: an argument shows in
@@ -433,6 +434,31 @@ move() {
   echo "$name: on $POOL"
 }
 
+# The host's old `default` pool is dir, which the fleet refuses. Once `move` emptied it of runners, only profiles may use
+# it: each profile's root goes to the Node's orbit-instances pool, the CI project's to orbit-ci, then the pool goes.
+# Anything else on it refuses before any change.
+drop_dir_pool() {
+  local pool profiles profile project target
+  pool=$(incus query /1.0/storage-pools/default 2>/dev/null) || { echo "no default pool"; return 0; }
+  profiles=$(python3 -c 'import json,sys; from urllib.parse import urlsplit, parse_qs
+p=json.loads(sys.argv[1])
+if p["driver"] != "dir": sys.exit("the default pool is " + p["driver"] + ", not dir; it stays")
+others=[u for u in p["used_by"] if not u.startswith("/1.0/profiles/")]
+if others: sys.exit("the default pool still holds " + " ".join(others) + "; move each runner with move first")
+for u in p["used_by"]:
+    url=urlsplit(u); print(url.path.removeprefix("/1.0/profiles/"), parse_qs(url.query).get("project", ["default"])[0])' "$pool") ||
+    return 1
+  incus query /1.0/storage-pools/orbit-instances >/dev/null || { echo "the orbit-instances pool is missing" >&2; return 1; }
+  while read -r profile project; do
+    [ -n "$profile" ] || continue
+    target=orbit-instances
+    [ "$project" != "$PROJECT" ] || target=$POOL
+    incus profile device set "$profile" root "pool=$target" --project "$project" || return 1
+  done <<<"$profiles"
+  incus storage delete default
+  echo "default: removed"
+}
+
 user_manager() {
   local name=$1
   # Apply only this prerequisite to existing runners; no packages or listener restart.
@@ -463,6 +489,6 @@ verify() {
 
 case "${1:-}" in
   runtime_device | container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
-  move) "$@" ;;
-  *) sed -n '2,21p' "$0" >&2; exit 2 ;;
+  move | drop_dir_pool) "$@" ;;
+  *) sed -n '2,22p' "$0" >&2; exit 2 ;;
 esac
