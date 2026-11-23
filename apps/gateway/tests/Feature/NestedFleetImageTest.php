@@ -36,10 +36,11 @@ it('pins the normal image definition and its complete digest', function (): void
 
     // The app-account script belongs to both definitions. Its repair of an older nested firewall's global reset changes both
     // aliases, including the normal image's, from orbit-instance-89a1010b15e0 and orbit-instance-nested-2321a5d7292b.
-    // The release must announce both new aliases; only an approved Node converge builds them.
-    expect($normal['alias'])->toBe('orbit-instance-0139a556d054')
+    // The release must announce both new aliases; only an approved Node converge builds them. `bind9-dnsutils` (dig) changed them
+    // again from orbit-instance-0139a556d054 and orbit-instance-nested-0ef94d86a37f.
+    expect($normal['alias'])->toBe('orbit-instance-eb38ba07f824')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('c5d726411700c432544c5b89fc7da24297d0cce9964fa80df445c3b145e8987b');
+        ->toBe('c3247c4ab1e542cb0b76ecd84efccdf77c534173515acccece312cbcd3495138');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -67,7 +68,7 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
 
 it('pins the nested image definition for a planned Node converge', function (): void {
     // The script repair is also in the nested image. This pins the definition a later approved Node converge must build.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-0ef94d86a37f');
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-44da5f4b694f');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
@@ -99,7 +100,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $files = array_column($nested['files'], null, 'path');
 
     expect($nested['alias'])->toStartWith('orbit-instance-nested-')->toHaveLength(strlen('orbit-instance-nested-') + 12)
-        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'])
+        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'bind9-dnsutils', 'wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'])
         ->and(array_column($nested['incus'], 'name'))->toBe(['incus-base', 'incus-client'])
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         // The inner fleet keeps `orbit` (1000) and `work` (2760), which the ID map gives its guests' `orbit`; `agent` is in both groups.

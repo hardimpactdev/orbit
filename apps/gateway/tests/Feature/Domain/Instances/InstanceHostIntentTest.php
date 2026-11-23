@@ -463,7 +463,7 @@ describe('the Instance image', function (): void {
         )
             // ADR 0268, second amendment: the app account is the stock `www-data`; the normal image makes no `orbit`, `work` or gid 1000.
             ->and($image['prepare'])->not->toMatch('/(?:\s|g:)(?:orbit|work)(?::|\s|$)|--gid 1000\b/m')
-            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo'])
+            ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'bind9-dnsutils'])
             // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `www-data` has none.
             ->and($files[InstanceImage::SudoGrant])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true])
             ->and(array_values(array_filter(array_keys($files), static fn (string $path): bool => str_starts_with($path, '/etc/sudoers'))))->toBe([InstanceImage::SudoGrant])

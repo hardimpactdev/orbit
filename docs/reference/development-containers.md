@@ -51,6 +51,10 @@ Converging an `app-dev` Node leaves existing host-checkout Instances untouched a
 
 Each unprivileged container receives 4 CPUs, 4,096 processes, 40 GiB root disk (80 GiB default for nested-fleet defaults via `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`), 8 GiB RAM (12 GiB nested), `hidepid=invisible`, and `user.max_user_namespaces=0` (non-nested).
 
+### Image packages
+
+The container image adds `acl`, `git`, `nftables`, `sudo`, and `bind9-dnsutils` (`dig`, which the Swamp fixtures run, as CI runners have it) to the stock Ubuntu image. A nested-fleet image adds `wireguard-tools`, `sqlite3`, `zstd`, and `btrfs-progs`. A change to the list is a new image alias that a Node converge builds.
+
 ### Isolated ID ranges
 
 `IsolatedIdRanges` assigns each container an isolated block of subordinate UIDs and GIDs on the host (`65,536` IDs for normal containers) so two containers never share host UIDs.
