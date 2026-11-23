@@ -11,6 +11,13 @@ cases = [
   "the checkout reads the release commit and the force flag from the load intent",
   "retained rollback checks out the sealed commit with an unavailable origin",
   "a resumed load checks the exact Gateway target before changing the staging checkout",
+  "the load runs under pipefail on dash",
+  "a refused serve-driver token names the expired token and its renewal, not a bare jq exit",
+  "another swamp failure prints its stderr without blaming the token",
+  "every load swamp call sources the Swamp Club credential env through swamp-env, silently",
+  "a load without the credential env fails closed and names it, not the token",
+  "a Swamp Node without swamp-env yet runs swamp as before, sourcing the env file itself, and says to converge",
+  "a Swamp Node without swamp-env and without the env file reaches swamp, which names the account gate",
 ]
 file = "swamp/tests/gateway_swamp_load_test.ts"
 host_programs = ["jq"]
@@ -19,6 +26,7 @@ inputs = [
   "bin/swamp-shape-gate",
   "bin/gateway-release-phase",
   "swamp/ansible/ansible.cfg",
+  "swamp/ansible/files/swamp-env.sh",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",

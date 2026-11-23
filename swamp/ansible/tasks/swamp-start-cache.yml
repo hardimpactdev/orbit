@@ -3,8 +3,14 @@
 # It writes a new one beside the old and renames it, and `/tmp` is sticky: the swamp account can not replace a file another owner left.
 # A file it can not read costs every dispatch about 0.35 s. This repairs a file that exists and checks it; it never creates one.
 - name: Read the Swamp start cache
+  when: not swamp_cache_check_only
   ansible.builtin.stat: { path: "{{ swamp_start_cache }}" }
   register: swamp_start_cache_file
+# A check reads the file in check-files.yml's one read.
+- name: Keep the Swamp start cache of the check read
+  when: swamp_cache_check_only
+  ansible.builtin.set_fact:
+    swamp_start_cache_file: { stat: "{{ check_read.paths[swamp_start_cache] }}" }
 - name: Give the Swamp start cache to the swamp account
   when: not swamp_cache_check_only and swamp_start_cache_file.stat.exists
   ansible.builtin.file:

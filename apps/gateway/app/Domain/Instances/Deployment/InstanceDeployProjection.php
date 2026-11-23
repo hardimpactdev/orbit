@@ -124,6 +124,15 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if (isset($payload['fleet_refresh'])) {
                 $facts['fleet_refresh'] = $payload['fleet_refresh'];
             }
+            $alreadyNewer = $status === 'succeeded' && ($payload['already_newer'] ?? false) === true;
+            if ($alreadyNewer) {
+                $facts = [...$facts, 'already_newer' => true, 'outcome' => ContainerDeployOutcome::AlreadyNewer,
+                    'kept_commit' => $payload['kept_commit'], 'target_commit' => $payload['target_commit'],
+                    'message' => 'The Instance is already at a newer commit; the deployment kept it.'];
+            }
+            if (isset($payload['workspace_cleaned'])) {
+                $facts['workspace_cleaned'] = $payload['workspace_cleaned'];
+            }
             $receipt = ExecutorPowerIntent::lifecycleReceipt($locked, $payload['executor'] ?? null);
             if ($status !== 'running') {
                 $ownError = is_string($data['error_code'] ?? null) ? $data['error_code'] : (is_string($payload['error_code'] ?? null) ? $payload['error_code'] : null);
@@ -146,7 +155,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 // What this nested-fleet start did with its Club key, from the run's own word.
                 $facts['nested_fleet_club_key'] = NestedFleetClubKey::outcome($payload['club_key'] ?? null, $data['error_code'] ?? null);
             }
-            if ($status === 'succeeded' && ValidatedData::object($locked->input['deployment'])['variant'] === 'container') {
+            if ($status === 'succeeded' && ! $alreadyNewer && ValidatedData::object($locked->input['deployment'])['variant'] === 'container') {
                 // A replayed terminal result repeats the names the first one recorded, so it matches the stored result.
                 if (! $terminal) {
                     $facts['processes_removed'] = app(ContainerProcesses::class)->removeRetired($instance);
@@ -169,13 +178,16 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $this->vp->recordReference($instance, $path, VpEnvironment::fromArray($runtime), ValidatedData::string($runtime['status']));
             }
             if ($variant === 'container') {
-                // A deployment starts a stopped container; clones start at the snapshot a passed deployment took.
+                // A deployment starts a stopped container; clones start at the snapshot a passed deployment took. A checkout already
+                // past the commit took no snapshot and installed no Process, so the seed and the Processes stay as they are.
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
-                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit'], 'seed_taken_at' => now()] : []]);
-                app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
-                    $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null),
-                    inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));
+                    ...$status === 'succeeded' && ! $alreadyNewer ? ['seed_commit' => $facts['commit'], 'seed_taken_at' => now()] : []]);
+                if (! $alreadyNewer) {
+                    app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
+                        $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null),
+                        inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));
+                }
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
@@ -202,7 +214,11 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $this->members->project($locked, ValidatedData::object($payload['runtime_definitions']));
             }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
-            $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
+            // A container deployment's row is written at the run's end: it takes the Operation's own start and end, and how each step ended.
+            [$steps, $run] = $variant === 'container' && $projected->started_at !== null && $projected->finished_at !== null
+                ? [ContainerDeployOutcome::stepEvents($data, is_array($admitted['steps'] ?? null) ? $admitted['steps'] : []), [$projected->started_at, $projected->finished_at]]
+                : [[], null];
+            $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts, $steps, $run);
 
             return $projected;
         });

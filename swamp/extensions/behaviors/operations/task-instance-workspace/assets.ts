@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { checkParts } from "../tasks/check.ts";
 
 const Hash = z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/);
 const Digest = z.string().regex(/^[0-9a-f]{64}$/);
@@ -46,6 +47,9 @@ const Evidence = z.union([
     // refusal, which would drop them.
     z.object({
         error_code: z.literal("tasks.check_conflict"),
+        // HEAD and the tree of the work as the implementer handed it off (docs/reference/tasks.md#handoffs).
+        handed_head: Hash,
+        handed_tree: Hash,
         default_commit: Hash,
         conflicting_paths: z.array(z.string().min(1)).max(100).refine(
             (paths) => new TextEncoder().encode(JSON.stringify(paths)).length <= 3000,
@@ -55,11 +59,15 @@ const Evidence = z.union([
     }).strict(),
     // Its merge: nothing when HEAD holds the head, else the merge commit.
     z.object({
+        handed_head: Hash,
+        handed_tree: Hash,
         default_commit: Hash,
         merged_default: z.null(),
         changed: z.literal(false),
     }).strict(),
     z.object({
+        handed_head: Hash,
+        handed_tree: Hash,
         default_commit: Hash,
         merged_default: Hash,
         commit: Hash,
@@ -69,6 +77,8 @@ const Evidence = z.union([
     z.object({
         error_code: z.string().regex(/^tasks\.[a-z_]+$/),
         reason: z.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/).optional(),
+        // A check phase that failed after it collected its part table keeps the table.
+        parts: z.unknown().optional(),
     }),
     Snapshot,
     z.object({
@@ -175,6 +185,30 @@ type Context = {
 
 // Core command/shell cannot turn the private JSON file into typed child evidence.
 // All machine work stays in Ansible; this method only bounds and validates its result.
+/**
+ * The evidence with each part table redacted before it is first stored (docs/reference/tasks.md#the-delivery-gate): a check's `parts`
+ * step and a failed check's `parts`. A table that is not one, also after redaction, is dropped.
+ */
+function redactedParts(evidence: z.infer<typeof Evidence>): z.infer<typeof Evidence> {
+    if ("parts" in evidence && evidence.parts !== undefined) {
+        const { parts, ...rest } = evidence;
+        const table = checkParts(parts);
+        return table === null ? rest : { ...rest, parts: table };
+    }
+    if (!("check" in evidence) || evidence.check.steps.parts === undefined) return evidence;
+    const { parts, ...steps } = evidence.check.steps;
+    let table = null;
+    try {
+        table = checkParts(JSON.parse(parts.outputs.stdout ?? ""));
+    } catch {
+        table = null;
+    }
+    return {
+        ...evidence,
+        check: { steps: table === null ? steps : { ...steps, parts: { outputs: { ...parts.outputs, stdout: JSON.stringify(table) } } } },
+    };
+}
+
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
     version: "2026.11.16.1",
@@ -211,7 +245,7 @@ export const behavior = {
                         ),
                     ),
                 );
-                const result = Result.parse({ phase: args.phase, evidence });
+                const result = Result.parse({ phase: args.phase, evidence: redactedParts(evidence) });
                 await ctx.writeResource("result", "result", result);
                 return result;
             },

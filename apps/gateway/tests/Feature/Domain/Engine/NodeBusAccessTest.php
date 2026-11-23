@@ -5,9 +5,11 @@ declare(strict_types=1);
 use App\Domain\Engine\NodeBusAccess;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
+use Basis\Nats\NKeys\Base32;
 use Basis\Nats\NKeys\SecretKey;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -57,6 +59,16 @@ it('gives an executor only the Gateway\'s address, never a credential', function
     expect(NodeBusAccess::url())->toBe('nats://10.44.0.1:4222');
 });
 
+it('listens on the Gateway\'s WireGuard address alone, so the bus is never public', function (): void {
+    expect(GatewayBus::config())->toContain("\nlisten: 10.44.0.1:4222\n")
+        ->and(GatewayBus::config())->not->toContain('0.0.0.0');
+
+    $this->gateway->forceFill(['wireguard_ip' => ''])->saveQuietly();
+
+    expect(GatewayBus::config())->toBeNull()
+        ->and(NodeBusAccess::url())->toBeNull();
+});
+
 it('sends every connection but the Gateway\'s user to the auth callout', function (): void {
     $config = (string) GatewayBus::config();
     $gateway = NatsCredentials::publicKey(GatewayBus::gatewaySeed());
@@ -103,4 +115,34 @@ it('lets only root on a Node reach the bus, with the guard loaded before every e
         ->toContain("ip daddr 10.44.0.1 tcp dport 4222 meta skuid != 0 reject with tcp reset\n")
         ->and(NodeExecutorInput::unit(busGuard: true))
         ->toContain("[Service]\nExecStartPre=/usr/sbin/nft -f /etc/orbit/executor/bus-guard.nft\nExecStart=/usr/local/libexec/orbit-executor serve\n");
+});
+
+it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, and no other user', function (): void {
+    $manifest = tempnam(sys_get_temp_dir(), 'agent-');
+    file_put_contents($manifest, json_encode(['commit' => str_repeat('a', 40), 'version' => '0.18.0', 'artifacts' => [
+        'executor-linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/executor'],
+    ]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, '/unused'));
+    config(['orbit.executor.public_keys' => ['k']]);
+    foreach ([$this->gateway, $this->node] as $node) {
+        $node->forceFill(['architecture' => 'x86_64'])->saveQuietly();
+        $node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    }
+
+    $gateway = NodeExecutorInput::for($this->gateway->refresh());
+    $vpn = NodeExecutorInput::for($this->node->refresh());
+
+    expect($gateway['bus_guard'])->toContain("ip daddr 10.44.0.1 tcp dport 4222 meta skuid != { 0, \"orbit\" } reject with tcp reset\n")
+        ->and($gateway['unit'])->toContain('ExecStartPre=/usr/sbin/nft')
+        ->and($vpn['bus_guard'])->toContain('meta skuid != 0 reject')
+        ->and($vpn['unit'])->toContain('ExecStartPre=/usr/sbin/nft');
+    @unlink($manifest);
+});
+
+it('reads back a seed whose last byte, the CRC high byte, is zero', function (): void {
+    // The case of basis-company/nats.php#148, whose Base32 decoder dropped trailing zero bytes before 1.2.8.
+    $seed = 'SUANHX7HCQRNFZF74KIQOS6AS7WMUG6O3EZLRAJSQ2QM4EUANLQRL24XAA';
+
+    expect(bin2hex((new Base32)->decode($seed)))->toBe('9500d3dfe71422d2e4bfe291074bc097ecca1bced932b8813286a0ce12806ae115eb9700')
+        ->and(strlen(SecretKey::fromSeed($seed)->value))->toBe(SODIUM_CRYPTO_SIGN_SECRETKEYBYTES);
 });

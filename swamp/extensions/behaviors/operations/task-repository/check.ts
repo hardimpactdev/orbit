@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     CheckInput,
+    checkParts,
     classifyCi,
     deliverableResults,
     Local,
@@ -243,6 +244,18 @@ function stepRefusal(input: Input, steps: Steps): string | null {
 }
 
 /**
+ * The part table of the delivery receipt that the Project check wrote, as the guest validated it field by field and removed the file:
+ * each part's redacted name, its result and its seconds; null without a usable table.
+ */
+export function receiptParts(text: string | undefined) {
+    try {
+        return checkParts(JSON.parse(text ?? ""));
+    } catch {
+        return null;
+    }
+}
+
+/**
  * The local check evidence. `outputs` is the private worker directory that
  * holds the downloaded command output files; each is deleted after it is read.
  */
@@ -252,14 +265,17 @@ export async function localResult(
     steps: Steps,
     outputs: string,
 ) {
+    // A part table the Project check left is kept whatever fails after it.
+    const parts = receiptParts(run(steps, "parts").stdout) ?? checkParts(prepared.parts);
     if (prepared.error_code) {
         return {
             error_code: String(prepared.error_code),
             check_id: input.check_id,
+            parts,
         };
     }
     const refusal = stepRefusal(input, steps);
-    if (refusal) return { error_code: refusal, check_id: input.check_id };
+    if (refusal) return { error_code: refusal, check_id: input.check_id, parts };
     const before = snapshot(steps, "before"),
         after = snapshot(steps, "after"),
         setup = setupResult(input, steps);
@@ -288,6 +304,7 @@ export async function localResult(
         return {
             error_code: "tasks.repository_execution_unknown",
             check_id: input.check_id,
+            parts,
         };
     }
     const commands = Object.fromEntries(
@@ -305,7 +322,16 @@ export async function localResult(
             }]];
         }),
     );
-    const changed = before.head !== after.head || before.tree !== after.tree;
+    // The work as it stood when the phase started, before any command. At the delivery gate a setup or Project command that moved it
+    // moved the workspace too, so the check never pins a tree other than the one handed off (docs/reference/tasks.md#the-delivery-gate).
+    // A baseline or an ungated check keeps the post-Project snapshot: its formatters' edits belong to the checked tree.
+    const started = {
+        head: (run(steps, "original").stdout ?? "").trim(),
+        tree: (run(steps, "handed-tree").stdout ?? "").trim(),
+    };
+    const moved = input.handoff_gate &&
+        ((started.head !== "" && started.head !== before.head) || (started.tree !== "" && started.tree !== before.tree));
+    const changed = before.head !== after.head || before.tree !== after.tree || moved;
     const local = Local.parse({
         outcome: changed
             ? "changed"
@@ -331,6 +357,9 @@ export async function localResult(
             : null,
         subtask_start_commit: input.base ||
             (run(steps, "original").stdout ?? "").trim(),
+        parts,
+        handed_off_head: started.head || undefined,
+        handed_off_tree: started.tree || undefined,
     });
     const deliverables = deliverableResults(input, local);
     const failed = local.outcome === "passed"
@@ -579,6 +608,9 @@ export function baseFields(
     }
     const merge = ObjectValue.parse(base.merge ?? {});
     const fields = {
+        // HEAD and the tree of the work the implementer handed off, before the base-merge (docs/reference/tasks.md#handoffs).
+        ...(typeof merge.handed_head === "string" ? { handed_off_head: merge.handed_head } : {}),
+        ...(typeof merge.handed_tree === "string" ? { handed_off_tree: merge.handed_tree } : {}),
         base: "current",
         default_commit: typeof merge.default_commit === "string"
             ? merge.default_commit

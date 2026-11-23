@@ -3,21 +3,27 @@ name: writing-documentation
 description: Use when writing, updating, or auditing Orbit documentation and ADRs.
 ---
 
-# Writing Documentation
+# Writing documentation
 
-Write or check maintained pages under `docs/` against the feature's intended behavior, ADRs, code, and tests.
+Write or audit maintained pages under `docs/` against intended behavior, ADRs, code, and tests.
 
-This is Orbit's single documentation-writing skill. Other skills link here for writing rules and documentation checks; they keep only guidance specific to their task.
+This is Orbit's single documentation-writing skill. Other skills link here for writing rules and checks and keep only task-specific guidance.
 
-## Find and check the pages
+## Find and check pages
 
-Use existing pages and links, or `composer docs-context` filtered by component or concept. Check accuracy, missing coverage, terminology, and consistency. During a review, return findings to the author. For requested edits, fix the affected pages.
+Use existing pages and links, or run `composer docs-context` filtered by component or concept. Check accuracy, missing coverage, terminology, and consistency. During a review, return findings to the author. For requested edits, update the affected pages directly.
 
-## Write
+- **Verify against code and sibling docs.** Never blindly polish outdated prose. Check every claim, option, error code, default, and behavior against the actual codebase (starting with the files in the page's `covers:` frontmatter) and current sibling pages. When rewriting existing docs, the code is the source of truth for current behavior.
+- **Preserve heading anchors.** Before renaming or removing a heading, search `docs/` for `#<anchor>` references and check `docs/site.json` redirects so existing links and ADR redirects stay valid.
 
-Use the least text that remains factually and technically correct. Answer the reader's question early. Use common words, short sentences, clear actors, and the terms in `docs/concepts.md`. Describe the behavior delivered by the branch in the present tense.
+## Structure pages for the reader
 
-Remove repetition, filler and implementation details that do not help the reader use or understand the feature. Omit advice already implied by an error, such as "fix the problem and try again"; document recovery only when it requires a specific action or has a non-obvious consequence. Keep required conditions, defaults, limits, failure behavior and distinctions that affect the outcome. If shortening a sentence changes its meaning or hides a condition, keep the necessary detail. Explain a shared rule once on its owning page and link to it.
+Lead with what the reader wants to do, not how Orbit is built internally.
+
+- Open with a clear, concrete summary of what the feature does and when to use it.
+- Show the common path and a working example early, then cover options, configuration, limits, and error cases.
+- Explain shared rules once on their owning page and link to them.
+- Keep change history in Git and contributor workflow in contributor guides.
 
 | Location | Content |
 | --- | --- |
@@ -26,15 +32,42 @@ Remove repetition, filler and implementation details that do not help the reader
 | `solutions/` | Reusable lessons and their verification |
 | `decisions/` | Architectural choices, alternatives, and consequences |
 
-On a command page, name Orbit and the Node, never the machinery behind them: Swamp, workflows, runs, SSH steps, planners. The chart's step panel carries that detail. Say "Orbit refuses", not "the Gateway refuses", unless the reader must know which component answers.
+## Writing style
 
-Do not name people or approval dates in maintained docs, such as "agreed with Nick on 2026-11-04". The PR records approval and a chart's `%% status: reviewed` marks it. Write the decision as a rule, and its reason where it helps.
+Write clear, direct, natural prose in the present tense. Aim for the clarity and flow of the Laravel documentation: warm, specific, easy to scan, and free of filler. Every sentence should earn its place, without sounding choppy or telegraphic. Vary sentence length naturally.
 
-Do not state behavior nobody has decided. If a page needs a sentence about an edge case, such as what the sibling command does or what a repeat does, decide it first. Check that every example on a page passes the page's own refusals.
+- **Use plain language.** Choose everyday words over jargon. Introduce a technical or Orbit-specific term only when accuracy requires it and it helps the reader understand. Use the terms in `docs/concepts.md` and explain or link unfamiliar ones on first use.
+- **Stay concrete.** Describe what a feature actually does, not what it resembles. Be specific enough that the sentence could not describe any other product. Let real facts speak for themselves.
+- **Keep user docs free of internal machinery.** Name Orbit and the Node, not Swamp, workflows, runs, SSH steps, planners, or internal classes and storage mechanics unless the reader must know them to use or debug the feature. Say "Orbit refuses" rather than "the Gateway refuses" unless the component distinction matters.
+- **Be accurate, never speculative.** Never state behavior nobody has decided. Resolve edge cases first. Verify that every example passes the page's own rules and refusals. Keep required conditions, defaults, limits, and failure behavior intact; never shorten a sentence if it hides a condition or changes the meaning.
+- **Keep docs timeless.** Do not name people or approval dates. Write the decision as a rule and give the reason where it helps.
 
-Link to the page that owns an explanation. Use tables for command options, fields, and error codes. Keep change history in Git, and contributor workflow in contributor guidance.
+### Headings
 
-Write each Markdown paragraph on one line for the prose linter. Use root-relative Mintlify links without `.md` or `.mdx`, such as `/reference/apps`. Use GitHub URLs for repository files outside `docs/`.
+Write headings like email subject lines, not movie trailers. Use sentence case.
+
+- Avoid eyebrow labels above headings.
+- Only number sections when order matters.
+- Avoid rhythmic or contrasting titles (such as "Hard to describe. Easy to recognize."), metaphorical headings, and vague labels ("A closer look", "Why it matters").
+- Do not write a heading that merely restates the list beneath it.
+
+### Unslop and condense pass
+
+Before finishing a draft or rewrite, make a tightening pass to strip AI-sounding patterns and dead weight:
+
+- **Cut slogans, clichés, and puffery:** no marketing copy ("Built for teams that ship", "Unlock your potential"), promotional adjectives ("vibrant", "pivotal", "seamless"), or hollow `-ing` openers ("Leveraging…").
+- **Cut AI vocabulary and inflated verbs:** avoid "delve", "landscape", "tapestry", "underscore", "nuanced", "ecosystem" (metaphorical), "substrate", "flywheel", "leverage" (as a verb). Prefer plain verbs ("is" over "serves as", "use" over "utilize", "help" over "facilitate").
+- **Cut filler and repetition:** remove "in order to" → "to", "it's worth noting that", "not just X, but Y", forced lists of three, synonym cycling, and sentences that restate the previous sentence or summarize the intro.
+- **Keep punctuation and emphasis clean:** use active voice where natural, use bold structurally (such as term definitions) rather than decoratively, never use em dashes, and omit emojis.
+- **Omit obvious recovery advice:** skip "fix the problem and try again"; document recovery only when it requires a specific action or has a non-obvious consequence.
+
+## Formatting and links
+
+- Write each Markdown paragraph on one line for the prose linter.
+- Use tables for command options, fields, and error codes.
+- Use root-relative Mintlify links without `.md` or `.mdx` (such as `/reference/apps`).
+- Use GitHub URLs for repository files outside `docs/`.
+- Keep `##` sections under 5 unbroken paragraphs (break them up with `###` subheadings, lists, tables, or examples), keep bullet lists to at most 8 consecutive items, avoid `if`/`when`/`unless`/`whenever`/`while` inside bullets of 15 or more words, and lead non-obvious sections with a short prose sentence before a list, table, or code block.
 
 ## Architectural decisions
 
@@ -44,6 +77,6 @@ The pull request that completes a decision absorbs it. Write the behavior into t
 
 ## Check
 
-Run `composer docs-build` when pages, titles, components, concepts, or ADR links change. The generated context index stays out of Git. Run `composer docs-lint` and fix its findings.
+Run `composer docs-build` when pages, titles, components, concepts, or ADR links change. Keep the generated context index out of Git. Run `composer docs-lint` and fix every finding.
 
-Add each new page through its own `docs/navigation/*.json` fragment; `composer docs-lint` fails for a page that is missing from it. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.
+Register each new page in its owning `docs/navigation/*.json` fragment; `composer docs-lint` fails if a page is missing. For navigation, link, or MDX changes, run `npx mint validate` and `npx mint broken-links` from `docs/`. Return the changed pages or findings and check results.

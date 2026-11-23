@@ -18,7 +18,9 @@ import { helperCalls, installPowerHelper } from "./_support/power_helper.ts";
 // Chromium's trust adds six tasks: the folder gathers its one Debian package part (the trust module), the image checks the module's
 // library (one exec) and writes agent's NSS store (one exec and one push), and the container step keeps its list of containers
 // without the store for the Operation result; the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 69, tasks: 192, digest: "c05e054ea8ee3804fc633a38ddd2f3987a81b116b6550cc1f8f347aac4991200"};
+// The runtime folder's temporary btrfstune wrapper adds six tasks: the folder writes its own programs, and the converge writes incusd's
+// PATH drop-in and its file and restarts incusd when they changed; the Incus calls stay the same.
+const MAIN_NORMAL_HOST = {calls: 69, tasks: 198, digest: "f86b9234aef1e5e73ba32f183f77667d2edf514652397747fdd857397bbe8a4c"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -98,7 +100,8 @@ function fixture() {
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py", "instance_root_disk.py",
-    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
+    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml", "instance_default_clean.py",
+    "instance_seed_files.py"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -216,6 +219,10 @@ function fixture() {
     /** One play of several phases, in order, as a merged deploy step runs them: `--tags` and `phases` name the same list. */
     phases(list: string[], extra: Record<string, string> = {}) {
       return this.run(list.join(","), extra, ["-e", `phases=${list.join(",")}`]);
+    },
+    /** "Start the container": the start and the probe in one play, which leaves the Project's PHP to the `php` phase. */
+    probe() {
+      return this.run("start,probe", {}, ["-e", "phases=start,probe", "-e", "checkout_probe=true"]);
     },
     state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
     result: () => JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
@@ -470,7 +477,8 @@ Deno.test({
       assert(f.run("fetch").ok);
       assertEquals(sent()!.prerequisites, [first]);
       assert(!f.run("checkout").ok);
-      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      // The test reuses one run folder: the earlier checkout's clean stays in its result, as a later phase of one run keeps it.
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged", workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
       assertEquals(f.workspace("rev-parse", `refs/remotes/origin/${f.container.branch}`), moved);
       // A local commit that the mirror does not hold: the whole branch, and the same refusal.
@@ -480,7 +488,7 @@ Deno.test({
       assert(f.run("fetch").ok);
       assertEquals(sent()!.prerequisites, []);
       assert(!f.run("checkout").ok);
-      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged", workspace_cleaned: { removed: [], removed_count: 0 } });
     } finally {
       f.cleanup();
     }
@@ -616,7 +624,8 @@ Deno.test({
           assertEquals(names.filter((name) => name.startsWith("tmp_")), ["tmp_pack_new"]);
         }
       }
-      assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"] });
+      // The checkout's clean is carried to the later phases' result, as the Club key's word is.
+      assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"], workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
       // Only what the workspace lacks travelled: the bundle's prerequisite is the workspace's HEAD before the fetch.
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
@@ -650,7 +659,7 @@ Deno.test({
       assertEquals(f.result(), { error_code: "deployment.commit_not_on_branch", failed_phase: "fetch", phases_passed: ["start"] });
 
       // Tracked changes in the workspace refuse the checkout and stay.
-      f.container.commit = first;
+      f.container.commit = second;
       f.write();
       assert(f.run("fetch").ok);
       Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`, "<?php echo 3;\n");
@@ -660,13 +669,112 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`), "<?php echo 3;\n");
       f.workspace("checkout", "--", "index.php");
 
-      // An older commit does not fast-forward the branch.
-      const refetch = f.run("fetch");
-      assert(refetch.ok, refetch.output);
+      // An older commit of the branch, which the checkout is already past: the probe right after the start decides it, only reading,
+      // before the Project's PHP, the seed hold, the fleet check, the seed or the bundle. The older intent has no PHP: neither case
+      // removes the newer checkout's PHP or restarts a unit.
+      f.container.commit = first;
+      Object.assign(f.container, { php: null, php_cli_ini: null });
+      f.write();
+      const snapshots = f.state().containers["instance-7"].snapshots;
+      const bundles = f.state().bundles.length;
+      const phpLink = `${f.folder}/containers/instance-7/usr/local/bin/php`;
+      const restarts = () => (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").length;
+      const restarted = restarts();
+      const untouched = () => {
+        assertEquals(f.workspace("rev-parse", "HEAD"), second);
+        assertEquals(Deno.readLinkSync(phpLink), "/opt/orbit-runtime/current/php/8.5/bin/php");
+        assertEquals(restarts(), restarted);
+        assertEquals(f.state().containers["instance-7"].snapshots, snapshots);
+        assertEquals(f.state().bundles.length, bundles);
+      };
+      // A deployment by hand refuses it by its own code and says why.
+      const behind = f.probe();
+      assert(!behind.ok);
+      assertEquals(f.result(), { error_code: "deployment.commit_behind_checkout", failed_phase: "probe", phases_passed: ["start"],
+        detail: `The requested commit ${first} is older than the checkout HEAD ${second} of main; deploy the newer commit instead.` });
+      untouched();
+
+      // A deployment that a release admitted (as Operation 31729) keeps the newer checkout: the play passes, names the real HEAD it
+      // kept, and prints the line on which the workflow skips every later step.
+      Object.assign(f.container, { keep_newer: true });
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`, "kept\n");
+      const kept = f.probe();
+      assert(kept.ok, kept.output);
+      assertStringIncludes(kept.output, "orbit-checkout=already_newer");
+      assertEquals(f.result(), { commit: second, outcome: "already_newer", kept_commit: second, target_commit: first, phases_passed: ["start", "probe"] });
+      untouched();
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`), "kept\n");
+      Deno.removeSync(`${f.folder}/containers/instance-7/srv/workspace/untracked.txt`);
+
+      // The checkout's rules come first, in its order, for a release deployment too: tracked changes refuse before the ancestry.
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/index.php`, "<?php echo 3;\n");
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.checkout_dirty");
+      f.workspace("checkout", "--", "index.php");
+      untouched();
+
+      // A commit off the updated source branch's first-parent chain refuses as the fetch does, before the probe reads HEAD: a side
+      // commit that the branch never merged, and one that the branch reaches only through a merge's second parent, even when the
+      // workspace's own first-parent chain holds it behind HEAD.
+      git(f.source, "checkout", "--quiet", "-b", "side", second);
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "side");
+      const side = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "checkout", "--quiet", "main");
+      f.container.commit = side;
+      f.write();
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
+      git(f.source, "merge", "--quiet", "--no-ff", "-m", "merge side", "side");
+      f.workspace("fetch", "--quiet", f.source, side);
+      f.workspace("reset", "--quiet", "--hard", side);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const ahead = f.workspace("rev-parse", "HEAD");
+      const secondParent = f.probe();
+      assert(!secondParent.ok, secondParent.output);
+      assert(!secondParent.output.includes("orbit-checkout=already_newer"));
+      assertEquals(f.result().error_code, "deployment.commit_not_on_branch");
+      assertEquals(f.workspace("rev-parse", "HEAD"), ahead);
+      git(f.source, "reset", "--quiet", "--hard", second);
+      git(f.source, "branch", "--quiet", "-D", "side");
+
+      // A commit of the branch that HEAD has diverged from refuses as diverged, for a release deployment too.
+      f.workspace("reset", "--quiet", "--hard", first);
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      f.container.commit = second;
+      f.write();
+      assert(!f.probe().ok);
+      assertEquals(f.result().error_code, "deployment.branch_diverged");
+      f.workspace("reset", "--quiet", "--hard", second);
+      untouched();
+
+      // The checkout's commit itself is the normal deployment: the probe passes with no line and leaves the live PHP as it is; only the
+      // `php` phase after the seed hold applies the intent's PHP.
+      const current = f.probe();
+      assert(current.ok, current.output);
+      assert(!current.output.includes("orbit-checkout=already_newer"));
+      assertEquals(f.result(), { commit: null, phases_passed: ["start", "probe"] });
+      untouched();
+      assert(f.run("php").ok);
+      assertThrows(() => Deno.readLinkSync(phpLink));
+      Object.assign(f.container, { php: "/opt/orbit-runtime/current/php/8.5/bin/php", php_cli_ini: "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n" });
+      f.write();
+
+      // A branch that moved away from HEAD is no older commit: even a release deployment refuses it as diverged at the checkout.
+      f.workspace("commit", "--quiet", "--allow-empty", "-m", "local");
+      const local = f.workspace("rev-parse", "HEAD");
+      assert(f.run("fetch").ok);
       const diverged = f.run("checkout");
       assert(!diverged.ok);
       assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
-      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(f.workspace("rev-parse", "HEAD"), local);
+      f.workspace("reset", "--quiet", "--hard", second);
+
+      // The newest commit still fast-forwards a release deployment as before, with no `already_newer`.
+      const same = f.run("fetch");
+      assert(same.ok, same.output);
+      assert(f.run("checkout").ok);
+      assertEquals((f.result() as Record<string, unknown>).outcome, undefined);
     } finally {
       f.cleanup();
     }
@@ -705,7 +813,7 @@ Deno.test({
         assert(done.ok, `${phases}: ${done.output}`);
       }
       // Both paths must reach this independently known state, rather than merely agree with each other's bundle count.
-      assertEquals(f.result(), { commit, ...(merged ? { phases_passed: ["processes", "seed", "check"] } : {}) });
+      assertEquals(f.result(), { commit, ...(merged ? { phases_passed: ["processes", "seed", "check"] } : {}), workspace_cleaned: { removed: [], removed_count: 0 } });
       assertEquals(f.workspace("rev-parse", "HEAD"), commit);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
@@ -1136,11 +1244,12 @@ function cloneFixture() {
         t3: { title: "Tool", port: 3800, listen: "10.44.0.7", device: "t3", unit: "t3.service", internal_port: 3773, ready_seconds: 20,
           url: "http://10.44.0.7:3800", label: "tool / feature", t3: "/opt/orbit-agent/current/agent/bin/t3",
           project_mark: "/home/agent/.config/orbit/t3-project" },
-        model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+        model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600", key_value: "#orbit-model-key" },
         files: [
           { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
           { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
-          { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+          // The Conn Server's Antigravity instance names the key's place; the agent part puts the vault's model key there.
+          { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true, ...antigravity("#orbit-model-key") } },
           // A folder the image lacks: the push makes it (a migrate builds the container from the image).
           { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
           // The runtime's container server (docs/reference/development-containers.md#container-server).
@@ -1155,6 +1264,11 @@ function cloneFixture() {
     f.cleanup();
     throw error;
   }
+}
+
+/** The Antigravity provider instance of a Conn Server container's T3 settings, with the given API key. */
+function antigravity(apiKey: string) {
+  return { providerInstances: { antigravity: { driver: "antigravity", enabled: true, config: { authMethod: "gemini-api-key", apiKey } } } };
 }
 
 Deno.test({
@@ -1195,7 +1309,7 @@ Deno.test({
       // The agent part wrote the drop-ins into a running container: systemd reads them before the unit starts.
       const units = state.systemctl.map((call: string[]) => call.join(" "));
       assertEquals(units[units.indexOf("start -- t3.service") - 1], "daemon-reload");
-      assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true });
+      assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true, ...antigravity("placeholder") });
       assertEquals(Deno.statSync(`${clone}/home/agent/.t3/userdata`).mode! & 0o777, 0o700);
       assertEquals(Deno.readTextFileSync(`${clone}/home/agent/.config/orbit/model.env`), "ORBIT_MODEL_KEY=placeholder\n");
       assertEquals(state.files["/home/agent/.config/orbit/model.env"], { uid: "2750", gid: "2750", mode: "0600" });
@@ -1269,9 +1383,9 @@ Deno.test({
         clone: {
           files: [
             { path: claude, uid: 2750, gid: 2750, mode: "0600", json: { hasCompletedOnboarding: true } },
-            { path: t3, uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+            { path: t3, uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true, ...antigravity("#orbit-model-key") } },
           ],
-          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600" },
+          model_environment: { path: "/home/agent/.config/orbit/model.env", uid: 2750, gid: 2750, mode: "0600", key_value: "#orbit-model-key" },
           links: [],
         },
       });
@@ -1280,7 +1394,7 @@ Deno.test({
       const first = f.run("agent");
       assert(first.ok, first.output);
       assertEquals(read(claude), { hasCompletedOnboarding: true });
-      assertEquals(read(t3), { linkedEnvironmentsEnabled: true });
+      assertEquals(read(t3), { linkedEnvironmentsEnabled: true, ...antigravity("placeholder") });
       for (const path of [claude, t3]) {
         assertEquals(Deno.statSync(rootfs + path).mode! & 0o777, 0o600);
         assertEquals(f.state().files[path], { uid: "2750", gid: "2750", mode: "0600" });
@@ -1289,10 +1403,13 @@ Deno.test({
       // T3 and Claude add their identity, migration state and preferences after the first start.
       const runtimeClaude = { machineID: "machine-7", userID: "user-7", firstStartTime: "2026-11-10T10:00:00Z",
         firstStartVersion: "2.1", migrationVersion: 4, pluginUsage: {}, seenNotifications: ["welcome"] };
-      const runtimeT3 = { idleCompaction: { enabled: true }, projectSettingsFolded: { tool: false } };
+      // The agent's own provider instances stay beside Orbit's.
+      const own = { myClaude: { driver: "claudeAgent" }, myCodex: { driver: "codex" } };
+      const runtimeT3 = { idleCompaction: { enabled: true }, projectSettingsFolded: { tool: false }, providerInstances: own };
+      const managedT3 = { linkedEnvironmentsEnabled: true, providerInstances: { ...own, ...antigravity("placeholder").providerInstances } };
       const populated = [
         { path: claude, value: { ...runtimeClaude, hasCompletedOnboarding: true } },
-        { path: t3, value: { ...runtimeT3, linkedEnvironmentsEnabled: true } },
+        { path: t3, value: { ...runtimeT3, ...managedT3 } },
       ];
       for (const { path, value } of populated) Deno.writeTextFileSync(rootfs + path, JSON.stringify(value, null, 4));
       const unchanged = f.run("agent");
@@ -1313,6 +1430,14 @@ Deno.test({
       const again = f.run("agent");
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
+
+      // The Conn Server moved the key into its store and left its mark: the entry stays, and no write puts the key back.
+      const imported = { ...runtimeT3, ...managedT3, providerInstances: { ...own, ...antigravity("\u2022".repeat(6)).providerInstances } };
+      Deno.writeTextFileSync(rootfs + t3, JSON.stringify(imported));
+      const afterImport = f.run("agent");
+      assert(afterImport.ok, afterImport.output);
+      assertEquals(afterImport.changed, 0, afterImport.output);
+      assertEquals(read(t3), imported);
 
       // A damaged runtime file fails the phase rather than replacing the runtime's state with defaults.
       Deno.writeTextFileSync(rootfs + claude, '{"machineID":');
@@ -1754,7 +1879,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      (f.container as Record<string, unknown>).clone = { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service" } };
+      (f.container as Record<string, unknown>).clone = { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service",
+        t3: "/opt/orbit-agent/current/agent/bin/t3", version_pattern: "^t3 v?(\\d+\\.\\d+\\.\\d+)\\b" } };
       let sleeping = asleep(f, { web: [200], t3: false });
       Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
       f.write();
@@ -1802,12 +1928,13 @@ Deno.test({
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
   options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown>;
-    outcomes?: string; workerResumed?: boolean; kernelFrozen?: boolean; thawFails?: boolean } = {}) {
+    outcomes?: string; workerResumed?: boolean; kernelFrozen?: boolean; thawFails?: boolean; t3?: boolean; asleep?: () => void } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
   }
-  const sleeping = asleep(f, { web: options.web ?? [200] });
+  const sleeping = asleep(f, { web: options.web ?? [200], ...(options.t3 ? { t3: true } : {}) });
+  options.asleep?.();
   // Only a nested-fleet container's intent has `allowed_devices`; the container exists already, so its create path is not involved.
   if (options.nested) (f.container as Record<string, unknown>).allowed_devices = {};
   if (options.marker === false) Deno.removeSync(sleeping.marker);
@@ -1932,6 +2059,56 @@ Deno.test({
       assertEquals(f.result().wake, "restarted_after_resume");
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+const DROP_IN = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+const T3_DROP_IN = "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n";
+const CONN_DROP_IN = "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\n";
+
+/** A clone whose runtime records the Conn Server after a deferred switch, while the container's unit still holds T3's drop-in. */
+function switchedClone(f: ReturnType<typeof fixture>, files: Record<string, unknown>[]) {
+  Object.assign(f.container, { clone: { files, links: [], t3: { internal_port: 3773, ready_seconds: 2,
+    t3: "/opt/orbit-agent/current/agent/bin/conn-server", version_pattern: "^conn-server \\S+ \\(T3 server (\\d+\\.\\d+\\.\\d+) contract\\b" } } });
+  const rootfs = `${f.folder}/containers/instance-7`;
+  Deno.mkdirSync(`${rootfs}/etc/systemd/system/t3.service.d`, { recursive: true });
+  Deno.writeTextFileSync(`${rootfs}${DROP_IN}`, T3_DROP_IN);
+  return rootfs;
+}
+
+Deno.test({
+  name: "a silent resume after a server switch boots on the recorded server's drop-in, and a wake whose server is not the recorded one fails",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // The frozen container is force-stopped, so the drop-in is written to the stopped container before its boot.
+      const rootfs = `${f.folder}/containers/instance-7`;
+      let callsBefore = 0;
+      const woken = wakeFrom(f, "Frozen", { silent: true, t3: true, asleep: () => {
+        switchedClone(f, [{ path: DROP_IN, uid: 0, gid: 0, mode: "0644", content: CONN_DROP_IN }]);
+        callsBefore = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).length;
+      } });
+      assert(woken.run.ok, woken.run.output);
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).slice(callsBefore).map((line) => JSON.parse(line) as string[]);
+      const push = calls.findIndex((call) => call.includes("push") && call.at(-1) === `instance-7${DROP_IN}`);
+      const start = calls.findIndex((call) => call.includes("start") && call.includes("instance-7") && !call.includes("exec"));
+      assert(push >= 0 && start > push, JSON.stringify(calls));
+      assertEquals(Deno.readTextFileSync(`${rootfs}${DROP_IN}`), CONN_DROP_IN);
+      assertEquals([f.result().wake, f.result().server_version], ["restarted_after_resume", "0.1.10"]);
+    } finally {
+      f.cleanup();
+    }
+
+    const g = fixture();
+    try {
+      // A unit that still runs T3 while the record names the Conn Server: the wake refuses, so the Gateway keeps the switch pending.
+      const woken = wakeFrom(g, "Stopped", { t3: true, asleep: () => switchedClone(g, []) });
+      assert(!woken.run.ok, woken.run.output);
+      assertStringIncludes(woken.run.output, "instance.container_server_version_mismatch");
+    } finally {
+      g.cleanup();
     }
   },
 });
@@ -2242,6 +2419,8 @@ Deno.test({
       const calls = () => f.state().workspace_calls as string[];
       assertEquals([...new Set(calls())].sort(), ["agent git", "agent python3", "agent test"]);
 
+      // A Project ignores its dependencies, so a deployment's clean keeps them.
+      Deno.writeTextFileSync(exclude, Deno.readTextFileSync(exclude) + "/node_modules/\n");
       // An install as `orbit` asks for 0755 folders and 0644 files, as Bun does in node_modules.
       Deno.mkdirSync(`${workspace}/node_modules/react`, { recursive: true, mode: 0o755 });
       Deno.chmodSync(`${workspace}/node_modules`, 0o755);
@@ -2264,7 +2443,7 @@ Deno.test({
       assert(checkout.ok, checkout.output);
       assertEquals(mode("node_modules/.vite"), 0o775);
       // The checkout's Git calls, the repack and its clean-up run as `agent` too; root's pass runs outside the workspace's cwd.
-      assertEquals([...new Set(calls().slice(beforeCheckout))].sort(), ["agent find", "agent git"]);
+      assertEquals([...new Set(calls().slice(beforeCheckout))].sort(), ["agent find", "agent git", "agent python3"]);
     } finally {
       f.cleanup();
     }
@@ -2619,6 +2798,54 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a create refused at an unresolved Docker publication names the failed task and its refusal in its result",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.bridge_endpoints = [{host: "10.44.0.7", port: 5434, docker: true}];
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/nat.txt`, "");
+      const result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_endpoint_unresolved",
+        detail: "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved"}, result.output);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a create's failed container task keeps its name and phase code: a private one only its name, a long one its head and stderr tail",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // Run the real phase rescue for a task of the container phase.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Write the read token\n  tags: [container]\n  no_log: true\n  ansible.builtin.command: { argv: [sh, -c, "echo private-fixture-value >&2; exit 1"] }\n`);
+      let result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_container_failed", detail: "Write the read token"});
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Install the packages\n  tags: [container]\n  ansible.builtin.fail:\n    msg: "{{ 'm' * 5000 }}"\n`);
+      result = f.run("container");
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_container_failed", detail: "Install the packages: " + "m".repeat(1000)});
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-container-phase.yml`,
+        `- name: Install the packages\n  tags: [container]\n  ansible.builtin.command:\n    argv: [sh, -c, "printf '%05000d the last stderr line\\\\n' 0 >&2; exit 1"]\n`);
+      result = f.run("container");
+      assert(!result.ok, result.output);
+      const detail = f.result().detail as string;
+      assert(detail.startsWith("Install the packages: non-zero return code: "), detail);
+      assert(detail.endsWith("the last stderr line"), detail);
+      assertEquals(detail.length, 4096);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a copied seed with an unguarded extra local NIC refuses before the clone starts",
   ignore: !hasAnsible,
   fn() {
@@ -2925,7 +3152,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/nested-image.json`, JSON.stringify(record));
       const result = f.run("container");
       assert(!result.ok, result.output);
-      assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable"});
+      assertEquals(f.result(), {error_code: "instance.nested_fleet_image_unavailable",
+        detail: "Refuse a nested-fleet create while its image build has failed: instance.nested_fleet_image_unavailable"});
       // Only the read of the container ran: no ACL, no container, no init.
       assertEquals(incusCalls(f).map((call) => call.slice(0, 2)), [["query", "--"]]);
       assertEquals(f.state().containers?.["instance-7"], undefined);
@@ -3417,7 +3645,8 @@ for (const unsafe of unsafeTransfers) {
         nestedClub(f);
         const result = f.run("container", {ORBIT_CLUB_KEY: CLUB, ...unsafe.env}, unsafe.extra);
         assert(!result.ok, result.output);
-        assertEquals(f.result(), {error_code: "instance.nested_club_key_unsafe_transfer"});
+        assertEquals(f.result(), {error_code: "instance.nested_club_key_unsafe_transfer",
+          detail: "Refuse a key transfer that writes the module arguments on the Node: instance.nested_club_key_unsafe_transfer"});
         assertEquals(f.state().club_key_runs, undefined);
         assertEquals(filesHolding(f, CLUB), []);
       } finally { f.cleanup(); }
@@ -3435,7 +3664,8 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({...f.state(), run_fstype: "zfs"}));
       const result = f.run("container", {ORBIT_CLUB_KEY: CLUB});
       assert(!result.ok, result.output);
-      assertEquals(f.result(), {error_code: "instance.nested_club_key_not_tmpfs"});
+      assertEquals(f.result(), {error_code: "instance.nested_club_key_not_tmpfs",
+        detail: "Refuse a /run that a snapshot would hold: instance.nested_club_key_not_tmpfs"});
       assertEquals(f.state().club_key_runs, undefined);
     } finally { f.cleanup(); }
   },
@@ -3463,7 +3693,7 @@ Deno.test({
 /** The `fleet` of a nested-fleet default's deployment intent (NestedFleetIntent). */
 const fleetIntent = () => ({
   guests: { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" },
-  layout: { gateway: { address: "10.232.2.11", memory: "4GiB" }, "app-dev": { address: "10.232.2.12", memory: "5GiB" }, "app-prod": { address: "10.232.2.13", memory: "2GiB" } },
+  layout: { gateway: { address: "10.232.2.11", wireguard: "10.45.0.1", memory: "4GiB" }, "app-dev": { address: "10.232.2.12", wireguard: "10.45.0.2", memory: "5GiB" }, "app-prod": { address: "10.232.2.13", wireguard: "10.45.0.3", memory: "2GiB" } },
   host: false,
   operator: { address: "10.45.0.10", hub: "10.45.0.1", network: "10.45.0.0/24" },
   checkout: { path: "/home/orbit/orbit" },
@@ -3853,7 +4083,7 @@ Deno.test({
       const failed = f.run("seed");
       assert(!failed.ok);
       assertEquals(f.result(), { error_code: "instance.seed_volume_snapshot_failed",
-        detail: "Snapshot the inner volume: Failed to create volume snapshot. The old seed stays." });
+        detail: "Snapshot the inner volume: Failed to create volume snapshot. The old seed stays.", workspace_cleaned: { removed: [], removed_count: 0 } });
       // No half pair: the new container snapshot is gone, and the older pair stays for a restore.
       assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
       // The Processes run again after the failure.

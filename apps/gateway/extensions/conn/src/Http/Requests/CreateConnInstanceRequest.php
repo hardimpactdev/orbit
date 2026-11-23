@@ -21,7 +21,7 @@ use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
 use UnexpectedValueException;
 
 /** The name of a thread's clone. A name that means the Project's default Instance is refused: a thread always starts in a new clone. */
-final class CreateConnInstanceRequest extends FormRequest
+class CreateConnInstanceRequest extends FormRequest
 {
     private ?Instance $default = null;
 

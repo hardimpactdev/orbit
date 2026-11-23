@@ -4,548 +4,198 @@ description: "How Orbit runs Processes for an Instance or a Node, and how a Proj
 covers:
   - apps/gateway/app/{Actions,Data}/{Processes,ProjectDefinitions}/**
   - apps/gateway/app/Domain/{Processes/**,Instances/InstanceNodeService*.php}
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_06_000000_create_instance_node_service_targets_table,2027_03_19_000000_create_process_artifacts}.php
   - apps/gateway/{app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver,ContainerProcessInspection}.php,resources/processes/container-process-read.py}
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
-  - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
+  - apps/gateway/app/Models/{Process,ProcessArtifact,ProcessDefinition,ScheduleDefinition}.php
 ---
 
 # Processes and schedules
 
-A Process is one long-running systemd service or Docker container that Orbit manages. It belongs to exactly one owner: an Instance or a managed Node. A Project can also hold Process and Schedule definitions. Production preparation copies them into each new production Instance. [`process`](/cli/process) lists the commands. [Schedules](/reference/schedules) describes Schedules themselves.
-
-An Instance container’s Process start and restart use nonblocking systemd jobs with bounded readiness checks. The [container Process contract](/reference/development-containers#processes) defines their network ordering and runtime.
-
-A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. On a container default, the next deployment removes the Process of a removed definition and names it in `processes_removed`; until then, `process:start`, `process:stop` and `process:restart` refuse it with `process.removing`. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
-
-A clone has no deployment. On a clone, and for a container Process recorded without a definition, [`process:destroy --instance`](/cli/process/destroy#a-process-in-an-instance-container) removes a Process that no current definition owns. It stops and removes only that Process's unit and folder in the container, then deletes the record. The id must belong to the named Instance.
-
-When a Conn launch's application completion needs a Process definition change, Orbit compares the current definition with the unit recorded by the failed completion. The application can retry after the definition changes, even if another operation has already applied the change to the Process. [Durable launches](/reference/conn#durable-launches-v1)
-
-## Execution
-
-Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
-
-Create and destroy run on Node 209 workers with the canonical public SSH target and stored host pins. The Gateway supplies the complete public unit or container definition as run inputs. Only actual environment content enters a named execution copy. Steps resolve that copy through `vault.get` into a root-owned 0600 cfgmgmt file; there is no private-material callback for these Operations. Analytics supplies the same canonical Docker env-file content and a Process-specific private path when it composes the Process-create workflow. Its database initialization reads that same content from protected stdin.
-
-For systemd, official cfgmgmt file and systemd behaviors publish the unit and converge boot and running policy. SSH runs individual commands as argv, including daemon-reload and EnvironmentFile delivery from vault stdin. Environment files remain root-owned `0600`. A failed run retains applied changes; rerun the command to converge. There are no runtime ownership checks, backups or rollback chains. Destroy disables and stops the unit, removes its files and reloads systemd.
-
-Docker creation is one SSH argv command. It preserves command arguments, working directory, labels, ports and mounts. Private values arrive through a 0600 env file written by the official file behavior; a completed dependency removes that file even if creation fails. Systemd keeps its immutable EnvironmentFile. Q-SECRET proved that vault-backed file content is absent from native data, the file change list and logs. Official cfgmgmt behaviors pull images and remove containers. A changed spec replaces the container and preserves volumes. No Process script is shipped to a Node.
-
-Create and update share one convergence workflow. Start, stop and restart have separate workflows whose step names match their own charts. cfgmgmt checks and native assertions accept the end state. The Gateway projects that accepted state without a result-printing step or callback. Vite preparation keeps the native Caddy publication and awake-marker ordering. Hibernation retains its separate stop-only behavior and preserves boot policy.
-
-Gateway release Horizon handoff also runs entirely on Node 209. The Gateway captures its public rendered unit and pinned SSH target at admission. Official systemd behaviors check unit drift, write and enable the unit, and start inactive Horizon. One SSH argv command asks active Horizon to terminate gracefully. A successful termination does not wait for its current jobs or systemd restart. A native assertion accepts that handoff or the checked started state. No Horizon scripts are copied, staged or shipped.
-
-Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
-
-When a Process runs on the configured Swamp Services Node or on a Node that runs an executor worker, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
-
-Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
-
-The SDK exposes the mutation's Process or Operation result through `ProcessMutationResponse.result`. The CLI prints the completed Process for synchronous responses and follows the Operation for HTTP 202.
-
-Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record. [`tasks.provision`](/reference/tasks#provision-an-external-group) captures a task workspace's development Process definitions the same way, and a provisioning task VM guest is a valid Process target.
-
-### Instance Process definition installation
-
-`process.install_instance_definitions` captures the uninstalled definition copies and sends their full public systemd or Docker definitions to one native parent on Node 209. Native `forEach` runs the existing Process-create child workflow for each member. Official cfgmgmt and pinned SSH perform the installation. Desired running or stopped state is preserved. No member Operation is created, and steps do not read intent or installation material from the Gateway.
-
-Only environment bytes use native execution copies. Each key includes the parent Operation ID and the member Process ID, so members cannot overwrite each other's environment. Public unit content, container definitions, hashes and SSH targets remain workflow inputs. Admission still refuses changed definitions or foreign member ownership before publishing that member's environment.
-
-The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart controls keep their separate paths. Deploy and transfer installation use the native children below.
-
-[Instance cloning](/reference/instance-cloning#processes-and-schedules) installs the same members inside its own run. Its `Add Processes, Schedules` step runs the Process-create and Schedule-create children for the production definitions copied at admission, enabled but not started. The clone's terminal result completes the members as this kind does.
-
-### Deploy and transfer installation
-
-Deploy and transfer compose the existing Process-create workflow as native children on Node 209. Each member supplies its public unit or container definition, desired state, content or specification hash, and pinned SSH target at root submission. Only environment bytes enter execution copies. Copy keys include the parent Operation, placement Node and member Process, so source and destination cannot overwrite each other.
-
-Production deployment pauses after PHP refresh, installs the captured Processes, then continues Schedule installation and restart-on-deploy. Transfer installs the prospective destination after its existing cutover and publication steps. Its existing recovery branch installs the captured source through the same native children. There is no Process installation private-material callback, local installer loop, or member Operation in either path. Other deployment and transfer phases retain their separate execution paths. Only native submission publishes execution copies. Public reads keep the existing intent view and perform no effects.
-
-Transfer validates both captured placements before native submission while the Instance still belongs to its origin. A changed origin, member ownership, member set or specification refuses submission. Public definitions use the existing renderers and account placeholders; official SSH resolves the account on the target. Native failure retains applied state for forward convergence.
-
-Run the sibling Deno unit tests for Orbit's Process and Schedule logic. Workflow validation checks the declarative definitions; disposable topology receipts prove deployment and transfer execution.
+A Process is a long-running systemd service or Docker container that Orbit manages for one owner: an Instance or a managed Node. A Project can also declare Process and Schedule definitions that Orbit copies into new Instances. [`process`](/cli/process) lists the CLI commands, and [Schedules](/reference/schedules) covers scheduled jobs.
 
 ## Owners
 
-An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
+Each Process belongs to either an Instance or a Node:
 
-An Instance in a container runs its Processes as units of the app user `www-data` in the container, in the group `www-data` and with the home `/var/www`. New Instances use the Project's development definitions; a clone keeps a Process stopped that is stopped on its default; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
+- **Instance Process:** serves one Instance using its derived Node, systemd user, and working directory (Docker keeps `WORKDIR`). [Instance removal](/reference/instance-removal) cleans it up.
+- **Container Instance Process:** runs inside the [Instance container](/reference/development-containers#processes) as `www-data:www-data` with home `/var/www` (or `Group=<user>` and `HOME=/home/orbit` in production containers). [`process:destroy --instance`](/cli/process/destroy#a-process-in-an-instance-container) removes unowned container Processes.
+- **Node Process:** serves the Node itself as the Node's managed user or `user`. It never reads an Instance `.env` and blocks Node removal (`node.has_processes`).
 
-A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
-
-### Node service target records
-
-An Instance can explicitly attach a standalone Docker Node Process through `POST /api/v1/instances/{instance}/node-service-targets`, using `process_id`, `host_env_key` and `port_env_key`. The Process must be active, desired running, and publish a TCP port. Same-Node targets bind to `0.0.0.0` or the Instance bridge address. Remote targets have exactly one publication of the selected port at the service Node's recorded private IPv4 WireGuard address. Supply `port` when the Process publishes several TCP ports. Orbit refuses infrastructure-reserved ports, every registered Database server port on the service Node, and Processes owned by another service. Attachment requires authority for both the Instance Node and the service Node.
-
-The record stores the Instance, Node, Process, TCP port and explicit environment key names. For a container it grants only the recorded endpoint through the Instance own ACL and bridge endpoint union. Same-Node targets use a root-owned socket proxy on IPv4 loopback at the same port. Remote targets use their real WireGuard address and exact TCP port, with the same forward-rule builder as attached databases; they install no loopback proxy.
-
-The selected remote host joins managed upper- and lower-case NO_PROXY. One builder makes that value. For a container that runs a nested fleet, it also holds the inner fleet, so a detach never drops the fleet ([Proxy settings in a container](/reference/development-containers#proxy-settings-in-a-container)). It changes no environment values. Repeating the same attachment returns the existing record; overlapping key names refuse with `instance.node_service_environment_conflict`. This cut keeps attach checkout-only. Migration applies and probes the recorded target before quiesce; a running container can detach its existing targets through a bounded Operation. Stopped containers refuse detach without starting.
-
-Use [`instance:node-service:list`](/cli/instance/node-service-list) to read one Instance's recorded attachment identities and environment key names. The read uses the same Node authority, returns no credentials or environment values, and contacts no Node.
-
-`DELETE /api/v1/instances/{instance}/node-service-targets/{target}` takes the numeric attachment ID and returns an Operation. A checkout removes only the record. A running container withdraws its owned NIC rule, unused bridge endpoint, forward rule and NO_PROXY host, or its local proxy, first; it retains paths still used by another attachment; only successful withdrawal deletes the record. It changes no environment values or Node Process runtime. A running lifecycle operation or an unfinished failed migration with a retained runtime still refuses detach; the record stays.
-
-`process.node_service_endpoint_in_use` refuses a stop that changes desired state or an update that changes or removes an attached TCP publication. This rule covers both same-Node and remote targets, names the dependent Instances, and requires detach first. Restart and updates that preserve every attached publication remain available.
-
-`process.required_by_instance_node_service` refuses Process removal before runtime changes and names the dependent Instances. `process.node_service_ownership_conflict` likewise refuses a role or service claiming that Process. Detach dependent records before destroying or assigning the Process. When a non-default Instance is destroyed successfully, its attachment records are removed. The shared Node Process and other Instances' attachments remain. Container defaults cannot currently be destroyed; use detach to release their dependencies.
+`process:create` and `process:list` take one owner (`--instance`, `--node`, or `--project` for a definition). Update, start, stop, restart, logs, and destroy take the Process ID.
 
 ### Node account
 
-A Node systemd Process accepts `user`. The CLI flag is `--user`, and the API field is `user`. The name is one letter or underscore, then at most 31 letters, digits, underscores, or hyphens. The unit's `User=` is that name. When `user` is omitted, `User=` stays the derived account. `user` is part of the specification: a second create with the same name and a different account returns `process.name_taken`.
+A Node systemd Process accepts `user` (`--user` in the CLI): a letter or underscore followed by up to 31 letters, digits, underscores, or hyphens. Orbit resolves the account from the Node's live [`accounts` fact](/reference/node-agent#facts) and defaults the working directory to that account's home. Orbit does not create accounts, refuses `root` or UID 0, and returns `process.user_unavailable` (422) if the account or fact is missing.
 
-On create and update, Orbit resolves the named account from the Node's stored [`accounts` fact](/reference/node-agent#facts) while the Node agent is online by agent liveness. It defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. Orbit does not create the account. The API rejects invalid names and `root` with HTTP 422 `validation.failed` on `user`. An absent or non-current fact, an unlisted user, an invalid account home, or an account with UID zero returns `process.user_unavailable` (HTTP 422), without contacting the Node.
+Instance Processes, Docker Processes, presets, and Project definitions reject `user` (HTTP 422). macOS targets return `process.platform_unsupported` (422).
 
-Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process/create) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. For example, `--user=deploy` runs the unit as the existing account `deploy`. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
+### Node service target records
 
-`process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Update, start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
+An Instance can attach a standalone Docker Node Process via `POST /api/v1/instances/{instance}/node-service-targets` with `process_id`, `host_env_key`, and `port_env_key` (plus `port` when the Process publishes multiple TCP ports). The Process must be active, desired running, and publish a TCP port on `0.0.0.0`, the Instance bridge address (same-Node), or the service Node's WireGuard IPv4 address (remote). Reserved infrastructure ports, registered Database server ports, and role-owned Processes are refused.
+
+- **Same-Node container targets:** Orbit installs a loopback `systemd-socket-proxyd` unit (`orbit-node-service-<port>.socket` and `.service`, 256-connection limit) on `127.0.0.1:<port>` and probes it before starting application Processes (`instance.node_service_unreachable` on failure).
+- **Remote container targets:** Orbit opens a container NIC ACL rule and firewall forward rule directly to the WireGuard IP and port and adds the host to managed `NO_PROXY`.
+- **Inspect and detach:** [`instance:node-service:list`](/cli/instance/node-service-list) lists attachments without exposing values. `DELETE /api/v1/instances/{instance}/node-service-targets/{target}` removes the record (and withdraws container rules first for running containers; stopped containers refuse detach).
+
+While an Instance attaches a Node Process, `process.node_service_endpoint_in_use` blocks stopping it or changing the attached port, `process.required_by_instance_node_service` blocks destroying it, and `process.node_service_ownership_conflict` blocks assigning it to a role or service. Overlapping environment key names return `instance.node_service_environment_conflict`.
 
 ## Runtimes
 
-A Process uses one of two runtimes. Each runtime takes a complete specification.
+A Process uses either `systemd` or `docker`:
 
 | Runtime | Required | Optional | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Name, and an absolute executable with its arguments; development container definitions also accept supported runtime command names | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance's application directory in its checkout on `app-dev`, or under `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
-| Docker | Name, image, and command arguments | Working directory, environment, published ports, volumes, restart policy, keep-alive, initial start | The image's `WORKDIR` |
+| `systemd` | Name, absolute executable and arguments (container definitions also accept runtime command names) | Working directory, restart policy, `keep_alive`, `restart_on_deploy`, `start`, `required_mount_paths`, `user` (Node only) | Instance [application directory](/reference/projects#application-directory), or selected Node account home |
+| `docker` | Name, image, command arguments | Working directory, environment, published ports, volumes, restart policy, `keep_alive`, `restart_on_deploy`, `start` | The image's `WORKDIR` (`null` omits `--workdir`) |
 
-For Docker, an omitted or null `working_directory` means no Orbit override. The Gateway stores null and omits Docker's `--workdir` option, so the image's `WORKDIR` takes effect. If the image declares no `WORKDIR`, Docker uses its own default. An explicit absolute directory is stored and passed as `--workdir`; Orbit never substitutes `/app`. Systemd keeps its owner-derived default.
-
-Existing Docker Processes keep their stored working directory, including `/app`. A schema migration does not clear that value or reinterpret it as the image default. A Gateway release or Node convergence does not rewrite units or replace or restart containers whose specification has not changed. This also applies to the collector when its script and environment are unchanged. Choosing the image default for an existing Process is an explicit operator update, not an automatic repair.
-
-The command has at most 64 arguments of 4,096 bytes each. The restart policy is `never` (the default), `on-failure`, `always`, or `unless-stopped`. The API accepts `environment` only for Docker.
-
-The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker container is `orbit-process-{id}-{name}`. Before the Gateway replaces or removes one, it checks the exact Orbit Process ID marker. It never overwrites, adopts, or deletes a unit or container with another marker.
+Commands allow up to 64 arguments of 4,096 bytes each. Restart policy is `never` (default), `on-failure`, `always`, or `unless-stopped`. Systemd units are named `orbit-process-{id}-{name}.service` and Docker containers `orbit-process-{id}-{name}`. Orbit verifies its Process ID ownership marker before replacing or removing any unit or container.
 
 ### Move data before removing an override
 
-Keeping a Process ID and its named volumes does not preserve files in the container's writable layer. Updating a Docker specification can replace that container and discard those files, even if the working directory is unchanged. With Valkey's image `WORKDIR` of `/data`, an Orbit override of `/app` can put AOF and RDB files in `/app` instead of the volume mounted at `/data`. Removing the override alone would start Valkey against a different, possibly empty directory.
+Updating a Docker specification can replace the container and discard its writable layer, even when the Process ID and named volumes stay the same. For example, an explicit `/app` working directory override on Valkey (whose image `WORKDIR` is `/data`) may have stored AOF/RDB files inside the container layer rather than the `/data` volume.
 
-Before updating any stateful Docker Process, use this procedure on its Node with the application's backup and restore tools:
+Before updating a stateful Docker Process:
 
-#### 1. Inspect the current data paths
-
-Inspect the stored specification, container mounts, image `WORKDIR`, and the application's actual data paths. Record the Process ID, desired state, image, complete command, environment, ports, and volumes. Do not infer the data path from the intended volume mount.
-
-#### 2. Quiesce writers and back up
-
-Stop clients and writers, flush or checkpoint the application using its documented procedure, and make an application-consistent backup outside the container layer. Stop the Process with `process:stop` to prevent further writes. Copy any remaining files needed for recovery from the stopped container before any update; Docker's `docker cp` can read a stopped container. For Valkey, include the RDB and the complete AOF directory, manifest, and segments when enabled, not just one file.
-
-#### 3. Test restoration
-
-Verify the backup is readable and test restoration in a separate disposable environment. Keep the original backup until the migrated service is verified. An untested copy or an empty volume is not evidence that data is safe.
-
-#### 4. Restore into persistent storage
-
-Restore into a new named volume or bind-mounted directory at the image's expected data path, such as `/data` for Valkey. Use the application's restore instructions and preserve the required ownership and permissions. Do not overwrite a shared volume or another service's data. Confirm the restored data is present before replacing the container.
-
-#### 5. Update and verify before admitting clients
-
-Run `process:update` with the restored mount. Send `working_directory: null` through the API to choose the image default. Because the Process was stopped for migration, update leaves it stopped. Start it explicitly, verify the effective working directory and mounts, and check the restored records and application health before admitting clients again.
-
-#### 6. Recover from the backup if needed
-
-If verification fails, stop the service and restore from the verified backup with the previous image, mounts, command, and explicit working directory. Do not rely on the old container layer still existing after update. Retain backups until the recovery window closes.
+1. Inspect the stored specification, container mounts, image `WORKDIR`, and actual data paths.
+2. Stop writers, flush data, run `process:stop`, and back up files outside the container (using `docker cp` for remaining container files).
+3. Test restoring the backup in a disposable environment.
+4. Restore data into a named volume or bind mount at the image's expected data path.
+5. Run `process:update` with the mount (and `working_directory: null` to use the image default), start the Process, and verify health before admitting clients.
 
 ## Environment contract
 
-`environment` is a name-to-value map everywhere: CLI parsing, SDK requests, API input and output, OpenAPI and MCP tool schemas, Project definition specifications, stored runtime configuration, Gateway-owned Processes, and runtime rendering. For example, `{"CACHE_HOST":"10.44.0.20","CACHE_PORT":"6379"}` maps each name to one string value. It is not a list of `NAME=VALUE` strings or a list of objects with `name` and `value` fields. The CLI accepts repeated `--environment=NAME=VALUE` flags as input syntax and converts them to the map before sending a request. Split each flag at the first `=` so the value can contain `=`.
-
-Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty string. Invalid shapes and names are refused rather than silently converted. An empty environment serializes as `{}`, not `[]`. Responses and Activity retain the names and map shape but replace every value with `[REDACTED]`; errors and logs must not disclose values. This representation does not expand which runtimes accept public environment input: public create and update accept it for Docker, while Gateway-owned systemd Processes can store it internally.
+`environment` is always a string-to-string map (for example `{"CACHE_HOST":"10.44.0.20"}`), never a list of `NAME=VALUE` strings. The CLI accepts repeated `--environment=NAME=VALUE` flags and splits at the first `=`. Keys match `[A-Za-z_][A-Za-z0-9_]*`, values are strings, and an empty map serializes as `{}`. Public create and update accept `environment` for Docker Processes; API responses and Activity replace every value with `[REDACTED]`.
 
 ## Environment of a systemd Process
 
-### Private managed values
+Systemd Processes receive managed private values through an immutable root-owned `0600` file at `/etc/orbit/processes/{id}/{sha256}.env` referenced by `EnvironmentFile=` in the unit. No private value is written inline in `/etc/systemd/system` or passed in public Operation inputs.
 
-Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text. A unit with no managed values after derived keys are removed has no managed `EnvironmentFile` reference. In particular, Gateway Horizon starts from its cached application configuration without requiring an empty private environment generation.
+Every systemd unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process also reads the Instance's `.env` file from its application directory (except dev-server presets, where Vite loads `.env` itself).
 
-A systemd Process on a Node whose command is `artisan horizon` also carries the [Horizon stop policy](/reference/gateway-queue#releases) in its unit: `KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no` and `TimeoutStopSec`, set to the longest supervisor job plus 30 seconds, and an `ExecStop` that kills the unit's processes only during a system shutdown. A stop waits for running jobs; a shutdown does not. An existing unit gets the policy when the Process is updated. The update restarts a running Horizon, and that stop waits for running jobs.
+Derived keys always take precedence: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, `ORBIT_DEV_SERVER_*`, `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`, `ORBIT_SSR_PORT`, and `INERTIA_SSR_URL`.
 
-### Runtime environment
-
-The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker keeps the image's `WORKDIR`, and Node systemd Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
-
-A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the ai-router collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [ai-router](/reference/ai-router) collector. The public create API does not accept one for systemd.
-
-The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the SSR keys when the Instance has an SSR port.
-
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` and `vite` presets do not receive them, and their units unset both names. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. The `vite` preset never receives `ORBIT_DEV_SERVER_PORT`. It also receives `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when it has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
-
-Orbit adds the generic `DEV_SERVER_ORIGIN` alias only to the `vp-dev` dev-server preset. Orbit adds it beside `ORBIT_DEV_SERVER_ORIGIN` in the unit directives and command prefix when the Process has a Route and its own environment does not supply the generic name. The Project's own value wins, including an empty value: Orbit leaves its unit and managed Process environment file unchanged. The generic name is not reserved or filtered. Ordinary Route-backed, Node and Route-less Processes keep their existing rendering and `ORBIT_*` values.
-
-For an existing container default without a supplied value, its next deployment adds the alias and rewrites and restarts only the dev-server unit for this change. An existing clone gets it only when recreated; an existing checkout preset gets it only when its unit is reinstalled. Other deployment or runtime changes retain their normal restart behavior. A release, wake or ordinary Process restart does not refresh installed units. Existing container application `.env` files are not re-rendered for this change.
+- Development Processes receive `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` (unset on `vp-dev` and `vite` presets).
+- Route-backed development Processes receive `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` (omitted on `vite`). `vp-dev` also adds `DEV_SERVER_ORIGIN` by default.
+- Instances with an [assigned SSR port](/reference/assigned-ssr-ports) receive `ORBIT_SSR_PORT` and `INERTIA_SSR_URL`.
+- A Node systemd Process running `artisan horizon` automatically receives the [Horizon graceful-stop policy](/reference/gateway-queue#releases) (`KillMode=mixed`, `KillSignal=SIGTERM`, `SendSIGKILL=no`, `TimeoutStopSec`).
 
 ## Presets
 
-A preset configures a development Instance Process. It sets the command, the runtime, the working directory, and the environment, and it refuses those options from the caller.
+Presets configure a development Instance dev server without manual runtime, command, or environment flags. An Instance may have at most one Process per preset (`process.preset_exists` otherwise), and presets refuse Node or non-development targets (`validation.failed` / `process.preset_target_invalid`). A container Instance runs at most one dev-server preset (`process.container_port_conflict` if a second is added).
 
-| Preset | Result |
-| --- | --- |
-| `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
-| `vite` | Runs the Project's own Vite on port 5173 in an Instance container. Browsers reach it at `https://<Route domain>:5173`. See [The vite preset](#the-vite-preset). |
+| Preset | Where allowed | Result |
+| --- | --- | --- |
+| `vp-dev` | `POST /api/v1/processes` (and captured definitions) | Runs Vite+ on an [assigned Vite port](/reference/assigned-vite-ports) with default restart policy `on-failure`. |
+| `vite` | Project `development` definitions only | Runs the Project's `vite` on port `5173` inside a container clone, reachable at `https://<Route domain>:5173`. |
 
-Both presets supply the Instance's [Vite host allowance](/reference/assigned-vite-ports#application-setup) in their unit environment. Neither unit loads the application `.env` as an `EnvironmentFile`; Vite loads it. An Instance container runs at most one dev-server preset Process, `vp-dev` or `vite`. A second one fails the container's units with `process.container_port_conflict` and the message `Process [<id>:<name>] cannot run in the container: another dev-server preset Process owns the same port.`
-
-A preset needs a development Instance target. The Gateway refuses a Node target with `validation.failed` on `target_type`, and any other Instance with `process.preset_target_invalid`. An Instance has at most one Process of each preset. Another name for the same preset fails with `process.preset_exists`. The same request again returns the existing Process and keeps its desired state. A Process name alone never selects a preset.
-
-A [hibernation wake](/reference/app-dev-runtime-hibernation#wake) starts Vite on its recorded port without changing the assignment or publishing Caddy. A port conflict keeps the site asleep, and the request gets a plain-text `503` with the failure. [`process:start`](/cli/process/start) remains the explicit operation that rechecks the port and publishes its handler.
+Both presets supply `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` and omit the application `.env` from systemd `EnvironmentFile` so Vite loads `.env` directly.
 
 ### The vite preset
 
-The `vite` preset runs a plain Vite dev server, such as `"dev": "vite"`, in a development Instance container. It needs no change in the Project's repository and no Vite+.
-
-It comes only from a Project Process definition for `development`. Create one with the API behind the MCP tool `project-process-definition-create`:
-
-```json
-{"name": "vite", "environments": ["development"],
- "spec": {"runtime": "systemd", "preset": "vite", "preset_version": 1,
-          "command": ["vite", "--host=0.0.0.0", "--port=5173", "--strictPort"],
-          "restart_policy": "on-failure"}}
-```
-
-The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container clone created after that gets the Process. A container default never gets it: see below. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `www-data`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
-
-The unit sets `VITE_APP_URL` to the Instance's Route URL, `https://<Route domain>`, beside the host allowance. The definition's own `VITE_APP_URL` wins, including an empty value; Orbit then adds none. Orbit does not read the Project's `.env` for it.
-
-- The preset works for a Project whose Vite config reads `VITE_APP_URL`, for example to write `public/hot` as `https://<Route domain>:5173`.
-- A stock `laravel-vite-plugin` config does not read it. Such a Project needs `server.origin` instead.
-- The unit's value beats a `VITE_APP_URL` in the Project's `.env`, because Vite gives the process environment priority over `.env` files.
-
-The Instance's PHP unit gets `INERTIA_SSR_HOT_URL=http://127.0.0.1:5173`, so Inertia's development SSR requests reach this Vite inside the container. See [Processes in a container](/reference/development-containers#processes). An app that does not use Inertia's SSR never reads it.
-
-The preset has no assigned Vite port, no `/__orbit/vite` path and no `DEV_SERVER_ORIGIN`. Browsers reach port 5173 through the container's [development ports](/reference/development-containers#agent-development-servers). That way in has its limits:
-
-- Only a container clone with a private Route has development ports. A container default runs no T3 and has none.
-- Only WireGuard clients reach them. A client that resolves the domain to the Node's LAN address does not.
-- The page at `https://<Route domain>` loads its modules from port 5173, another origin. Whether Vite allows that depends on the Project's Vite config.
-- A program on the Node that listens on port 5173 or publishes it takes the port from every clone on that Node.
-
-A container default never runs the `vite` preset. Vite there would write `public/hot` with port 5173. The default's own pages would then load their CSS and JavaScript from an address that no browser reaches. So a container default's create and deployment skip the definition. A deployment also removes a `vite` Process that a default recorded earlier, and stops and removes its unit. `laravel-vite-plugin` removes `public/hot` when Vite stops. Run the dev server in a clone. A checkout Instance still refuses the definition.
-
-A supported `vp-dev` Process also moves during [Instance migration](/cli/instance/migrate). It keeps its preset identity, assigned port and desired state, uses the shared runtime in the container, and follows the ordinary container Process controls after cutover.
-
-## Create a Process
-
-Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process/update), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
-
-On a Node with the active `app-dev` role, a systemd Instance Process installs without a boot start. A Docker Instance Process there maps restart policy `always` to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. Node Processes on the same Node keep the normal behavior. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
-
-An Instance on `app-prod` with no selected release accepts a stopped Process. A start fails with `process.release_unavailable` until [a deployment](/reference/deployments) selects a release. A later start uses the release that `current` selects then. After production activation and PHP refresh, a deployment or rollback restarts active Processes desired `running` before after-activation steps. `restart_on_deploy` defaults to `true`; set it to `false` in a complete create or update specification to opt out. Stopped Processes stay stopped. Restart results appear in deployment events, and a failure fails the deploy or rollback with its selected release still active. See [Deploy](/reference/deployments#deploy) to remove a hand-made step that terminates Horizon.
-
-## Operate a Process
-
-On a container Gateway, commands for the Node’s Horizon and scheduler Processes operate on the serving release. Their definitions and requested state survive a release switch. A command naming a superseded release refuses the change.
-
-The Gateway exposes these Process endpoints.
-
-Without a target, the list returns only Processes on Nodes the caller may reach, including their Instance-owned Processes. [Gateway authority](/cli/node#authority) permits the fleet-wide list.
-
-| Request | Result |
-| --- | --- |
-| `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
-| `POST /api/v1/processes` | Creates one Process. |
-| `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. A Valkey [Database server](/reference/database-servers#update-a-valkey-servers-image) follows its image-update rule and validation order, keeping its ACL command, mounts and health check. |
-| `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
-| `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines, answered from the Node agent's log stream. See [Live logs](/reference/live-logs) to follow new lines. |
-| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
-
-Creating or starting an Instance Process needs an active Instance on an active Node. Creating or starting a Node Process needs an active managed Node. Otherwise the Gateway refuses with `process.target_inactive` before it changes anything. Removal can use the recorded placement of a failed or removing Instance while its Node is active.
-
-`cpu` is a ratio of one core and `memory_bytes` is bytes. Both come from the [Metrics role](/reference/metrics#cadvisor) and are null when the Process is not running or no sample exists. Responses, Activity, and errors show every stored environment value, Docker or systemd, as `[REDACTED]`.
-
-Removing a systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and resets the unit's failed state. A crashed unit therefore leaves no `failed` entry in `systemctl list-units`.
-
-Process removal runs the tagged [Process removal guards](/reference/extensions#plug-in-points) before changing the record or stopping its runtime. Analytics, Database servers, and AI router keep their ownership checks through this point. A refusal leaves the Process in place.
-
-### Update in place
-
-JSON requests for ordinary systemd Processes accept `required_mount_paths`, a public list of up to 64 unique absolute paths. Each path is at most 4096 UTF-8 bytes and must have no control characters, `.` or `..` components, repeated slashes or trailing slash except `/`. Orbit renders these literal paths in one `RequiresMountsFor` directive, which gives systemd mount dependencies and ordering. Native installation checks that the captured directive matches the admitted list and that each path exists before running activation.
-
-Create defaults to an empty list; update omission preserves the stored list, and explicit `[]` clears it. Null is invalid. Docker accepts only an empty list; presets own their configuration and reject this explicit field. The list does not create mounts or prove that a mounted directory contains the intended state. State migration needs a separate admitted mount definition, identity check and ordered handoff; this option does not authorize a Serve self-update.
-
-[`process:update`](/cli/process/update) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, `user`, and `required_mount_paths` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
-
-The resulting specification must satisfy the runtime rules. The Process ID, name, owner, and desired state stay the same; identity, preset, and initial-start fields cannot be changed. A supplied environment map or list replaces that whole field. An empty map or list clears it. Explicit `working_directory: null` restores the Docker image default or the systemd owner default; omission keeps the current directory. Create defaults do not apply to updates. The CLI, PHP SDK, and MCP use the same partial-update contract.
-
-An owning maintenance parent can call `UpdateProcessAction::recordIntent(Process, UpdateProcessData)` to save that same validated intent without admitting a native run. It uses the same Process lease and transaction as ordinary update, preserves desired state and omitted fields, and leaves the Process provisioning. The normal API still calls `admit()` and starts Swamp. Record-only capture adds no execution endpoint or alternate runtime.
-
-The parent captures the saved definition through `ProcessOperationAdmission::inputForTarget` and the existing `ProcessOperationSecrets::materialFor`. Its existing foreground execution can compose the shared one-action Process command files. After verifying its terminal outcome, it calls `ProcessOperationCompletion::completeRecordedUpdate(Process, capturedInput, OperationOutcome)`. This reuses the normal Process lifecycle, activation hash and status projection without inventing a native run or child Operation. Failure retains the staged definition and prior activation metadata. The parent owns its real Operation and records its terminal outcome separately; an outer transaction rolls back the saved intent when Operation creation fails.
-
-A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard an omitted field. For example, switching Docker to systemd requires explicit `image: null`, `ports: []`, and `volumes: []` for populated Docker fields. The SDK uses `clearImage: true` for an explicit null image and `clearWorkingDirectory: true` for an explicit null directory.
-
-The Gateway validates and stores the new specification, then starts the same Node209 cfgmgmt/SSH convergence workflow as create. Its inputs contain the public unit or Docker definition; only environment values use the named `process-update-operation-{id}` execution copy. The shared terminal reader projects completion without an intent, private-material or result callback. Swamp verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
-
-Update does not delete named volumes, but replacing a container discards its writable layer. Follow [Move data before removing an override](#move-data-before-removing-an-override) before replacing a stateful container; preserving its ID and links is not a backup.
-
-A runtime failure is reported with the Process lifecycle status, failed step, and error code; the caller must not treat it as success or assume the old runtime is still running. The response uses the same Process data and redaction as create and list, including nullable `working_directory` for a Docker Process without an override. The SDK preserves this null instead of converting it to an empty string. Updating a Project definition remains separate and affects later copies only.
-
-For example, `PATCH /api/v1/processes/41` can change only the published ports with `{"ports":["10.44.0.20:6380:6379"]}`. It can also change several fields with this body:
+The `vite` preset runs a Project's standard Vite server in a development container clone without Vite+ or repository changes. Declare it as a Project `development` Process definition:
 
 ```json
 {
-  "runtime": "docker",
-  "image": "valkey/valkey:8",
-  "command": ["valkey-server"],
-  "working_directory": null,
-  "environment": {"CACHE_LABEL": "shared"},
-  "ports": ["10.44.0.20:6379:6379"],
-  "volumes": [{"source": "valkey-data", "target": "/data", "read_only": false}],
-  "restart_policy": "unless-stopped",
-  "keep_alive": false
+  "name": "vite",
+  "environments": ["development"],
+  "spec": {
+    "runtime": "systemd",
+    "preset": "vite",
+    "preset_version": 1,
+    "command": ["vite", "--host=0.0.0.0", "--port=5173", "--strictPort"],
+    "restart_policy": "on-failure"
+  }
 }
 ```
 
-This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and its Process follows the [server image-update rule](/reference/database-servers#update-a-valkey-servers-image).
+The command must match that exact form. The unit runs `<application directory>/node_modules/.bin/vite` as `www-data`, sets `VITE_APP_URL=https://<Route domain>` (unless the definition sets its own `VITE_APP_URL`), and sets `INERTIA_SSR_HOT_URL=http://127.0.0.1:5173` on the container's PHP unit. It has no assigned Vite port, no `/__orbit/vite` proxy path, and no `DEV_SERVER_ORIGIN`.
 
-The response keeps `id: 41`, returns `working_directory: null`, and exposes the environment only as `{"CACHE_LABEL":"[REDACTED]"}` under `runtime_config.environment`. Invalid fields return HTTP 422 before runtime mutation. An ownership conflict or competing operation returns the existing Process error code, not a successful replacement. A failed runtime operation uses the same failure contract as create, start, and restart.
+Container defaults skip the `vite` preset (and deployments remove any earlier one) so `public/hot` never points a default Instance at an unreachable port. Host checkouts refuse the definition with `process.container_command_unsupported`.
 
-A public or private custom proxy Route does not block an environment-only or image-only update. Before runtime work, Orbit checks the merged specification against each targeting Route's stored upstream. It must still resolve exactly one TCP listener to the same address and host port. The container port may change while that upstream stays the same. Dropping the listener, changing its address or host port, switching away from Docker, or adding an ambiguous listener returns `process.route_upstream_changed` (409). The error names the blocking Route and includes `route_id` and `domain` in `details`; the stored Process and runtime stay unchanged.
+## Operate a Process
 
-| Route-related error code | Meaning |
+Process create, update, start, stop, restart, and destroy return an [Operation](/reference/operations) with HTTP 202. On a non-container executor Node, `start` and `restart` execute synchronously and return HTTP 200 with Process data so an operator can recover executor services directly; `update`, `create`, `stop`, and `destroy` always return HTTP 202. Pass `--idempotency-key` to replay an admitted Operation safely.
+
+## Upgrade a Process
+
+A systemd Process running a downloaded GitHub release can carry a release artifact ([ADR 0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version)). Configure it with [`process:artifact:set`](/cli/process/artifact-set) (or remove it with [`process:artifact:unset`](/cli/process/artifact-unset)) and upgrade on demand with [`process:upgrade`](/cli/process/upgrade). Orbit checks GitHub daily via `process:artifacts:check-latest` (`latest_version`, `latest_checked_at`) and never upgrades a Process automatically.
+
+| Field | Meaning |
 | --- | --- |
-| `process.route_upstream_changed` | An update would remove, change, or make a targeting Route's resolved TCP listener ambiguous. |
-| `process.has_routes` | Destroy is refused while any Route targets the Process. |
+| `source`, `repository` | `github_release` and `OWNER/REPO`. |
+| `asset`, `binary` | Asset filename pattern containing `{version}`, and executable path inside the archive. |
+| `checksums`, `version_args` | Optional checksum asset (defaults to GitHub's SHA-256 digest) and version-check arguments. |
+| `version`, `previous_version`, `sha256` | Installed version (without leading `v`), retained previous version, and installed asset SHA-256. |
 
-The Route stays active through an allowed update, without certificate or firewall activation. Container replacement can briefly interrupt the listener. Caddy reconnects to the unchanged upstream, and [Route Doctor checks](/reference/routes#public-process-hostnames) report an unreachable listener.
+The Process executable must run `<folder>/current/<binary>` with releases stored under `<folder>/releases/<version>/` and no other Process on the Node sharing `<folder>`.
 
-A Docker Process that publishes a TCP port from 5173 to 5199 on every address or on the Instance bridge address is refused at create and update. That band is the [development band](/reference/development-containers#the-own-site-from-inside) of Instance containers. A publication on another address, such as the WireGuard address, is allowed.
-
-| Publication error code | Meaning |
+| Request | Result |
 | --- | --- |
-| `instance.dev_band_reserved` | A Docker publication uses the development band, 5173 to 5199, on every address or on the Instance bridge address (HTTP 422). |
+| `GET /api/v1/processes` | Lists Processes on reachable Nodes (`target_type` and `target_id` filter to one owner), including desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. |
+| `POST /api/v1/processes` | Creates a Process (202). An identical request returns the existing Process; a different spec with the same name returns `process.name_taken` (409). |
+| `PATCH /api/v1/processes/{process}` | Partially updates the specification and reconverges the runtime (202). |
+| `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes runtime state and updates `desired_state` (`running` or `stopped`). |
+| `GET /api/v1/processes/{process}/logs?lines=N` | Returns 1 through 1,000 recent lines. See [Live logs](/reference/live-logs) to follow. |
+| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, resets any systemd failed state, and deletes the record (202). Refuses Database server, Analytics, AI router, Route-targeted, and node-service-attached Processes. |
+
+Creating or starting a Process requires an active Instance and Node (`process.target_inactive` otherwise). On `app-dev` Nodes, systemd Instance Processes install without boot enablement so they stay down after a reboot until `process:start` or an HTTP [wake](/reference/app-dev-runtime-hibernation), and Docker Instance Processes map `always` to `unless-stopped`. On `app-prod`, a Process can be created stopped before the first release, but starting requires a selected release (`process.release_unavailable`). Production deploys and rollbacks restart active Processes with `restart_on_deploy: true` (the default).
+
+### Direct Process controls
+
+`process.start`, `process.stop`, and `process.restart` verify the release directory (on production), prepare Vite Caddy routing when needed, apply systemd boot policy (skipping enablement on on-demand dev units), run the start/stop/restart action, and verify the resulting state. For `vp-dev`, if Vite has not yet bound its port during the immediate check, start fails with `vite.listener_unavailable` (or `vite.not_ready` on checkout readiness failure); stop the Process or retry `process:start` once Vite is ready.
+
+### Update in place
+
+[`process:update`](/cli/process/update) (`PATCH /api/v1/processes/{process}`) updates only the fields you send, keeping the Process ID, name, owner, and desired state intact. Omitted fields keep their stored values; send `working_directory: null` to restore the default, or an empty map/list (`{}` / `[]`) to clear a collection. Switching runtimes returns `process.option_invalid` (422) if an omitted field from the old runtime would be discarded.
+
+Ordinary systemd Processes also accept `required_mount_paths` (up to 64 unique normalized absolute paths), rendered as a `RequiresMountsFor=` directive and checked for existence before activation.
+
+Updates that preserve a targeting Route's exact resolved TCP listener succeed without re-provisioning TLS or firewall rules. Changing or removing a targeting Route's upstream returns `process.route_upstream_changed` (409). Publishing TCP ports `5173` through `5199` on `0.0.0.0` or the Instance bridge address returns `instance.dev_band_reserved` (422) because that band is reserved for [container development ports](/reference/development-containers#the-own-site-from-inside).
 
 ### Persisted intent and retry recovery
 
-Updating the Gateway record and changing a remote runtime are not one atomic transaction. The Gateway validates the request and acquires the operation locks before accepting new intent. Invalid input, an admission failure, or a detected ownership conflict before acceptance leaves the stored specification and runtime unchanged. Once accepted, the new specification and an incomplete convergence state are persisted before remote changes begin. The desired state remains unchanged. A later runtime failure does not roll the specification back or restore the old container layer.
+Orbit validates the request, acquires locks, and persists the new specification before mutating the Node. If convergence fails or is interrupted, applied files remain in place and no automatic rollback runs. Inspect the Process and repeat the same create or update request to converge; retries preserve ownership checks, named volumes, and desired state.
 
-The Gateway records pending systemd activation before publishing changed bytes, and clears that intent only after reload and desired-state activation succeed. It also records the successfully activated unit hash. Pending activation requires reload and activation on retry even when published bytes and service state match. A lost activation response can cause one extra restart of a pending update, but cannot falsely complete it. Explicit restart always activates the service, also when the unit is unchanged and active.
-
-Only the native terminal acceptance marks the update successful. A failed native run records its error on the Operation and keeps applied changes; detailed failed-step evidence stays in native history. If the Gateway crashes after saving intent, its stored specification remains the recovery source; an incomplete update is not treated as successfully applied. A crash can leave the old runtime, a partially changed runtime, or the new runtime running before completion was recorded. Inspect the Process and retry after the lock is available; do not infer completion from a cached runtime status alone.
-
-When an update switches runtime kind, the Gateway also saves which old runtime needs removal. An interrupted retry removes that owned footprint before converging the saved specification. Updating a systemd Process without a runtime switch does not require Docker to be installed.
-
-An identical update retry uses the same Process ID and reconverges an incomplete or stale runtime even when the stored specification already equals the request. Equality alone is not a reason to skip unfinished work. A retry after verified completion returns the same Process without replacing or restarting an unchanged runtime. Recovery may repeat a remote operation whose completion was not recorded, so these guarantees do not promise exactly one restart. Retries preserve the ownership checks, named volumes, links, and desired state; they cannot recover discarded container-layer files.
-
-A lost response does not prove failure or rollback. Read the current Process and compare its specification and lifecycle state before retrying the identical request. If another operator has changed the specification meanwhile, do not blindly replay the older request and overwrite that intent. Ordinary release and Node convergence leave unchanged, completed specifications alone; repairing a pending update is distinct from changing the working-directory default on an existing Process.
+Competing Process mutations return `operation.target_busy` (409). Competing Instance Process operations wait up to 30 seconds before returning `process.operation_busy`, and competing Instance lifecycle operations return `instance.lifecycle_busy` (409).
 
 ### Process runtime state
 
-Desired state is stored intent: `running` after start or restart, and `stopped` after stop. Runtime status is an observation, not a health guarantee. Container Process lists include `observed_at` and `runtime_error_code` from the bounded direct state read in that request. Lists use the [runtime status index](/reference/metrics#process-runtime-status), which can show a systemd unit as `active` between crashes. Doctor inspects the runtime on the Node rather than treating a cached list status as proof of health.
+`desired_state` is stored intent (`running` or `stopped`), whereas `runtime_status` is an observation from the [runtime status index](/reference/metrics#process-runtime-status) (or a direct container read for container Instances).
 
-Container Process logs and runtime status reach the container in the Incus project that its runtime records: `orbit-instances`, or `orbit-instances-nested` for a [nested-fleet](/reference/development-containers#nested-fleet) Instance. The reader refuses any other project with `process.target_unavailable`. It never derives the project from the Project setting.
-
-For a systemd Process desired `running`, a crash loop means either `ActiveState=activating` with `SubState=auto-restart`, or an `NRestarts` count that increases between observations during the same bounded inspection. An `active` sample does not cancel evidence of repeated restarts. A nonzero restart count left by earlier restarts alone does not qualify. Ordinary startup in `activating` without `auto-restart` or an increasing restart count is not a crash loop, though it can still differ from the desired running state. A Process desired `stopped` uses the ordinary state comparison instead. This crash-loop rule does not apply to Docker Processes.
-
-Doctor reports `process.crash_loop` as `drift`, with the Process ID and name and `expected=running`. Its bounded `observed` evidence carries the unit's active state and sub-state, plus the restart counts when available. For example, `activating` / `auto-restart` explains a restart wait, while an `active` / `running` sample with `NRestarts` increasing from 3 to 4 explains a restart observed between samples. Doctor emits this finding instead of an additional `process.state_mismatch` for that observation. It reads only and never starts, stops, or restarts the unit.
-
-## Locks
-
-The Gateway holds the admission lock while it records intent. The Process Operation holds the target until Swamp completes it. A competing Process mutation gets `operation.target_busy` and changes nothing. Public and private Process Route creation takes the same lock before reading the current Process, resolving its listener, and reserving the Route. Route creation waits up to 30 seconds, bounded by the remaining command deadline, then returns `process.runtime_lock_failed` if the lock stays busy. It takes the Process lock before the projection lock, so it never waits for a Process while holding the projection lock.
-
-Create, update, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
-
-Direct create and update converge through official cfgmgmt and SSH. A failure leaves applied changes in place. Repeat the normal create or update request to converge; there is no hand-written rollback chain.
-
-## On the Node
-
-Direct Process create, update, destroy, start, stop and restart use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
-
-Some shared paths still have other callers:
-
-| Path | Remaining caller |
-| --- | --- |
-| Native `processAction` and local Process installer | Retained control, restart and retirement phases, TaskVM enrollment, Node role and Analytics callers. Deploy and transfer installation use Process-create children on 209. |
-| Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
-| Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |
-| Agent release/status/control/log commands | Runtime reads, admission and hibernation. |
-
-The unused Pi bootstrap, synchronous Instance cascade, Swamp agent launcher and agent Docker container convergence command are removed. Docker create/destroy use the Node209 lifecycle workflows; their public definitions and environment delivery do not pass through a Gateway executor. Retained shared callers keep their existing contracts until their owning kind is converted.
+For a systemd Process desired `running`, Doctor reports `process.crash_loop` drift when the unit is in `activating` / `auto-restart` or its `NRestarts` count increases during inspection. A stopped non-`keep_alive` Process on a sleeping development Instance is not reported as drift while its hibernation awake marker is absent.
 
 ## Project definitions
 
-[Registering an existing checkout](/cli/instance/register) with `--setup` creates and starts its development Process definitions after setup succeeds. Plain registration creates no Processes. A later Route failure keeps completed Processes recorded and running.
+A Project can store Process and Schedule definitions under `/api/v1/projects/{project}/process-definitions` and `/schedule-definitions`. Each definition has a UUID, a unique slug `name` (1–63 lowercase letters, digits, or hyphens), `environments` (`production`, `development`, or both; Schedule definitions allow `production` only), and a `spec`.
 
-A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `environments` list, and a `spec`.
-
-| Field | Contract |
-| --- | --- |
-| `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
-| `environments` | `production`, `development` or both; Schedule definitions accept only `production`. Production preparation copies definitions that include `production`. A development `instance:create` creates and starts definitions that include `development`, after its setup steps. |
-| `spec` | Process runtime fields, without owner, start or user. Development-only extensions are listed below. Schedule: `command`, `calendar` and `timeout_seconds`, with Schedule limits. |
-
-For systemd, definitions that apply only to development also accept `restart_on_deploy`, `environment_file`, `required_mount_paths` and private `environment`. Captured `vp-dev` definitions retain their preset name, version and canonical command. A new definition may name the [`vite` preset](#the-vite-preset) with its canonical command; a new `vp-dev` definition is refused. An edit keeps the definition's preset.
-
-A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
-
-| Kind | Collection | Item |
-| --- | --- | --- |
-| Process | `GET`, `POST /api/v1/projects/{project}/process-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/process-definitions/{name}` |
-| Schedule | `GET`, `POST /api/v1/projects/{project}/schedule-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/schedule-definitions/{name}` |
-
-These routes need an access grant to one Node that runs an Instance of the Project, or to the Gateway Node when the Project has no Instance. Process `PUT` updates merge supplied specification fields with stored values; full specifications from existing clients remain accepted. The request still requires `name`, `environments` and a `spec` object. [The API reference](/reference/api-reference) defines null removal, collection clearing, redaction-marker refusal and protected fields. Schedule `PUT` replaces the whole definition.
-
-Omission now keeps fields that full replacement used to clear. Today’s CLI always sends command, runtime, restart policy and keep-alive, but omits working directory, environment, ports and volumes unless their options are supplied; those omitted fields now remain stored for development and production definitions. SDK transport sends the caller’s JSON unchanged; MCP uses the same endpoint. External callers that used omission to clear must use explicit clear forms.
-
-Changing a development systemd definition to production while omitting a stored environment now refuses instead of clearing it. Even `environment: {}` leaves an environment member, which production systemd forbids; this scope transition has no direct field-removal form.
-
-This contract needs only a Gateway release. Today’s CLI still sends `command: []` when no command is supplied, so `orbit process:update <name> --keep-alive` with Project targeting still refuses for a captured definition. Supply the canonical argv or use a sparse API/MCP edit. A separate CLI change can make the natural form work and must be released only after this Gateway contract is live.
-
-The API refuses unknown or duplicate members. Lists omit `spec.command`. Item responses include the command and UUID but redact private environment values as `[REDACTED]`. Process updates keep the existing per-key replay rule for environment values equal to `[REDACTED]`: an existing key keeps its stored value, an unknown key refuses, and keys omitted from a sent map are removed. Other supplied strings containing the redaction marker refuse; omit redacted fields and send only changes. Responses keep their existing shape and redaction rules.
-
-A definition edit records Project intent without a remote call. A later deployment of the default development container reconciles that Instance's linked Processes. New clones inherit the edited definition; existing clones retain their Processes. Production copies keep their captured specification. [Migration](/cli/instance/migrate) captures moved direct Processes and defines compatible same-name adoption. Removing an Instance keeps the definitions. Removing a Project deletes them.
+- Development `instance:create` (and `instance:register --setup`) creates and starts `development` Process definitions after setup finishes. Container defaults reconcile edited or removed definitions on their next deployment.
+- Production cloning copies `production` Process and Schedule definitions into the new Instance.
+- Process definition `PUT` merges supplied `spec` fields with stored values (preserving `[REDACTED]` environment keys). Schedule definition `PUT` replaces the whole definition.
+- Editing a definition never mutates existing production copies or existing clones; deleting a Project deletes its definitions.
 
 ## Production copies
 
-[Cloning](/reference/instance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores every other definition and the candidate's own Processes and Schedules.
+[Cloning](/reference/instance-cloning) a production Instance copies every `production` Process and Schedule definition from the Project (ignoring the candidate's own Processes and Schedules). Each Process installs stopped and each Schedule installs disabled so workers and cron jobs never run before the new Instance's data is ready. Start them with [`process:start`](/cli/process/start) and [`schedule:enable`](/cli/schedule/enable) when ready.
 
-Each Process definition becomes a new Instance Process with its own ID, installed stopped. Each Schedule definition becomes a new Instance Schedule with its own UUID, installed with its timer disabled. The copies do not need a selected release, and preparation runs no application code. Start them with [`process:start`](/cli/process/start) and [`schedule:enable`](/cli/schedule/enable) when the Instance is ready.
-
-A copy that the Instance already has by name stops preparation with `process.name_taken` or `schedule.retry_conflict`. The Gateway does not adopt the existing record. A retry installs only the unfinished copies from the captured set. It does not read the definitions again, rewrite a finished copy, or stop a copy that an operator started.
-
-A copy is independent. Changing or removing a copy does not change the definition. Changing a definition does not change existing copies.
-
-## Inspect with Doctor
-
-[Doctor](/cli/doctor/doctor#what-each-family-checks) reads each registered Process with a focused `systemctl show` or filtered Docker state command. It compares presence and running/stopped state with intent. A systemd `activating/auto-restart` snapshot is crash-loop evidence; a cumulative restart count alone is not. Doctor takes no timed samples. A stopped non-keep-alive Process desired running is healthy only when its managed hibernation marker is proven absent. The owning native Process operations retain configuration validation.
+A copy is independent of its definition after creation. A name conflict stops preparation with `process.name_taken` or `schedule.retry_conflict`, and retries install only unfinished copies.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
 ### Node Processes
 
-Shared services, such as a Docker database, have no Instance. A synthetic Instance would give them the Instance removal lifecycle, which does not fit. So a Process can belong to a Node. Workspace owners do not exist.
+Shared infrastructure services such as Docker databases belong to a Node rather than an Instance, so they stay out of Instance removal and deployment lifecycles.
 
 ### Definitions on the Project, copies on the Instance
 
-A candidate can run test options or a development-only server, such as Vite. Those choices must not become production defaults. So production copies come from the Project's definitions, not from the candidate. Live inheritance is a rejected alternative: one definition edit would change every running production Instance.
+Development candidates often run ad hoc workers or dev servers that do not belong in production. Copying from Project definitions keeps production predictable, and keeping copies independent ensures editing a definition never alters running production Instances unexpectedly.
 
 ### Copies start stopped
 
-A copied worker or Schedule can run before the new Instance's data is ready, for example with copied queue jobs. So preparation installs every copy stopped, and the operator starts each one.
+Installing copied workers and Schedules stopped prevents them from processing copied queue jobs or firing against unfinished data before an operator is ready.
 
 ### Managed environment in private files
 
-Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
-
-The `vp-dev` and `vite` presets apply only to development Instance Processes. Process definitions with `development` are copied to each new development Instance; Schedule definitions are copied only to production Instances.
-
-### A Node Process can name its account
-
-The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. Account resolution follows [Node account](#node-account).
-
-`process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime.
-
-`schedule.install_instance_definitions` passes each captured public Schedule definition to the native Schedule-create workflow on Node209. Native `forEach` owns the member fan-out; each child run has distinct model identities and uses official cfgmgmt over pinned SSH. Timers remain disabled. Installation needs no command bytes, private-material callback or member Operation. The root terminal outcome applies to every captured member; failed convergence keeps applied files and marks the captured set failed so a normal request can converge it again.
-
-Instance transfer captures a Process installation batch for each admitted placement. Capture uses supplied Process targets without discovering accounts or checking ports. Working-directory and environment-file paths within the original checkout move with that checkout. Paths outside it are refused; null values stay null. Swamp resolves the admitted system user to fill certificate-path templates before installation.
-
-The parent binds `source_installations` and `destination_installations` to their owning Nodes. Native submission checks current Instance placement, Process ownership, captured membership and specification before rendering public definitions and publishing per-placement environment copies. The root remains on its source Node after placement changes.
-
-Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
-
-An Instance's Process members install only under a parent that targets that Instance on its own Node: `instance.create`, `instance.clone`, `instance.register` or `process.install_instance_definitions`. Any other parent, such as an old `tasks.provision`, is refused with `operation.execution_forbidden`.
-
-
-Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Instance composition uses native member steps in the owning run.
-
-## Direct Process controls
-
-`process.start`, `process.stop` and `process.restart` use `operation-process-control` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions then run in the legacy order:
-
-1. Start and restart of a production Process check the admitted release directory.
-2. A Vite Process runs the shared `operation-process-vite` child, which create also uses: it suspends traffic, writes the Vite environment file and publishes Caddy.
-3. Boot policy. Stop disables the systemd unit. Start and restart enable it, except for an on-demand Process. Docker skips this step.
-4. One start, stop or restart of the exact unit or container.
-5. Verification of the running or stopped state. Its output is the projected result.
-6. For Vite, one listener ownership check. An explicit start then sets the awake marker.
-
-The approved existing 209 identity and captured host-key pins select the connection. A successful run removes its run directory. A failed run keeps it, so a resumed run finds the scripts. Python runs with `-B`, so it creates no root-owned bytecode files. The kinds install no target worker or Swamp binary and mint no worker token. They need no private material, Gateway callback or agent digest. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
-
-Three Vite steps differ from legacy.
-
-A Vite restart writes the environment and publishes Caddy, then restarts the unit once. Legacy stopped the unit first and started it after the environment write. The unit reads its environment file on restart, so the result is the same.
-
-The listener check runs once, right after the start. Legacy polled the listener for up to 15 seconds. The Swamp shape allows a bounded poll only for external HTTPS state. A Vite start can therefore fail with `vite.listener_unavailable` before Vite binds its port.
-
-A failed listener check leaves the Process running with its traffic suspended. Legacy stopped it and refused with `vite.not_ready`. Run `process:stop`, or start the Process again once Vite is ready.
-
-Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#the-schedule-workflow). The landed direct kinds have no polled discovery or executor registration.
-
-When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
-
-The control workflow runs on the swamp role's workers (`labels: {role: swamp}`); its admitted Node ID remains the SSH target and Operation owner.
-
-### Native Process create
-
-Process creation records its owned definition and starts one native Process DAG. Its safe input contains the admitted artifact identity, desired state, agent digest and specification hash. The exact owning Node reads installation material through the shared private endpoint; the Gateway checks that the stored definition still matches the admitted hash. Unit content and container command or environment values do not enter public workflow input, output or logs.
-
-A newly admitted Process starts with `systemd_activation_pending=false` in memory as well as in storage. The first public installation input therefore carries a boolean before any refresh. The Gateway admission test and native create schema use the same captured public shape.
-
-Swamp installs the captured definition with direct Node-local system commands. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
-
-### Native Process start and restart
-
-`process.start` and `process.restart` record intent and start one `operation-process-control` run, as [Direct Process controls](#direct-process-controls) describes. Admission takes no Gateway runtime lease or execution lock. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. The Gateway projects only the final bounded runtime result. It keeps the existing synchronous recovery path for Processes on a Swamp executor Node, so it can recover Swamp when Swamp is down.
-
-### Native installation input
-
-A native Process installation step receives only the admitted Process ID, owned artifact name, runtime, desired state, agent digest and content or container-spec digest. The shared private-material callback supplies rendered systemd unit content or the complete Docker definition. The `process.installation` source checks the recorded Process, Node, runtime and admitted digest before returning those bytes.
-
-A parent native DAG selects its own admitted material and calls the local installation export; it starts no child Operation and projects only its root result. When a Process changes runtime, the local action removes its recorded artifact from the previous runtime. It stages and conditionally activates systemd or converges Docker, then reads bounded status. Command and environment bytes stay inside the callback and sudo stdin.
-
-Ordinary Process creation records one direct intent and uses the same native root for Vite preparation, canonical Caddy publication, installation and readiness. Its old Gateway run descriptors, receipt proof and admission lease are removed. Rollback is a revert PR.
-
-### Internal bootstrap completion
-
-Process creation through HTTP and MCP always admits the direct `process.create` intent, including executor Nodes. Admission returns HTTP 202 and leaves installation and completion to the native root. Record-only composition uses `RecordProcessIntentAction` inside its owning transaction and performs no runtime work.
-
-Three internal callers still require synchronous bootstrap completion: AI Router clears source activation and completes credential cutover; Plausible waits for container health before publication; Task VM preparation marks Pi ready for work. These callers use closed bootstrap methods for their fixed Node Process names, runtimes, and commands. They cannot install arbitrary Processes. The next Process change removes these temporary methods together with their completion dependencies. Gateway releases drain and start the existing Horizon unit in the Swamp run.
-
-### Native Process update
-
-Ordinary Process update records the changed definition and uses the same `operation-process-create` convergence workflow as creation, on Node209. It preserves omitted fields, validates route listeners, and retains the prior desired state. The Gateway supplies the full public unit or Docker definition; only environment bytes use an Operation-scoped execution copy. There is no direct-update private-material callback or agent prerequisite.
-
-Native steps prepare Vite traffic when needed, publish Caddy in the same root, remove the admitted artifact from a previous runtime, and converge the saved definition. Official cfgmgmt writes the systemd unit and applies boot policy and desired state. A changed Docker specification pulls the new image before stopping and removing the exact owned container, then recreates it with the same Process identity and named-volume mounts. An unchanged specification reuses the container. Removal does not delete volumes. Failed convergence keeps applied changes; repeat a normal update to converge. The Gateway projects only the native terminal result.
-
-### Placed Process command components
-
-The `@nckrtl/process-command-assets` metadata method resolves shipped Python scripts and serializes the public `control` and optional `installation` descriptors. It performs no host action and reads no private material. Parents run each script in a separate placed `command/shell` step on the same worker.
-
-The control script performs one start, stop or restart. The enable script changes only systemd boot policy. Hibernation stop therefore preserves boot policy and recorded desired state. Inspect returns bounded owned state; verify asserts the requested state once. Native dependency conditions, guards and resume control execution. A parent never hides these actions in a TypeScript installer.
-
-Each command checks the exact Process identity. Systemd files must be regular, root-owned, in the root group, singly linked and not writable by other users; their owner marker must match. Docker commands use the local Unix socket and verify the canonical managed Process labels before acting. Refusals return fixed error codes without command output.
-
-Parents can also compose the shipped Process installation and retirement scripts. Each file performs one action: protected environment publication, unit staging, validation, backup, publication, reload, control, verification, restoration or cleanup. Docker creation, rename, control and removal remain distinct native steps. Existing installation material arrives through a vault environment value; public Process descriptors stay in workflow history. The parent owns all ordering, guards, recovery and final projection.
-
-Docker creation uses one detached `docker run` argv with the admitted name, exact command arguments, private env file and working directory. Official cfgmgmt pulls the image and checks the container. Control Operations freeze the public image in their intent so their official check uses the admitted image. A create that requests a stopped state stops the new container after that run. Runtime retirement runs only for Process update.
-
-The `vp-dev` preset leaves application `.env` loading to Vite. Its private managed Process environment and Orbit's unit settings remain; other Processes keep their application `EnvironmentFile` behavior. Unit changes take effect at the next deployment or intentional convergence. List, inspect, development environment sync, wake and ordinary restart do not install new unit bytes.
-
-Migration capture of existing Processes requires exact admitted-unit and activation proof. A pre-change admission that cannot match the current unit becomes a repeatable recorded skip. A release before migration input materialization refuses changed intent before downtime. An already submitted migration finishes with its admitted units and activation hash.
-
-Container targets use `orbit-node-service-PORT.socket` and `.service`. Sockets bind only `127.0.0.1:PORT`, are enabled at boot, and use `systemd-socket-proxyd` with an explicit 256-connection limit per service and a dynamic unprivileged user. Unit files remain root-owned. Create and migrate prove an accepted loopback connection and a new established upstream connection owned by the active proxy before application Processes start; migration refuses before quiesce on failure.
-
-The probe polls every 50 ms for up to three seconds per target, including unit readiness and the connection to the Node. `instance.node_service_unreachable` retains the target identity, `reason`, `waited_ms` and each unit’s `ActiveState`, `SubState`, `UnitFileState` and `Result` in the Operation.
-
-An observed acceptance stays recorded if the proxy closes its client before the upstream connects; the reason remains `upstream_not_established` and `client_closed` is true. The probe also checks its own client with a nonblocking peek: EOF or a reset records the same refusal even if the accepted socket closed between kernel samples. Values are public classes; no command output or connection content is retained.
-
-Clone does not inherit attachment records and strips inherited target units before boot. The shared bridge helper persists and refreshes Docker translations; destroy removes the Instance own ACL, while shared tuples follow host reconciliation as database/mail endpoints do.
-
-| Probe reason | Meaning |
-| --- | --- |
-| `proxy_not_running` | The proxy has no active, running process. |
-| `proxy_job_pending` | The proxy has an unfinished systemd job. |
-| `socket_not_ready` | The socket is inactive or listens at a different address. |
-| `socket_not_enabled` | The socket is not enabled at boot. |
-| `accept_not_seen` | The proxy has not accepted this probe’s client connection. |
-| `upstream_not_established` | No unambiguous new established connection to the exact Node endpoint was observed. |
-| `connect_failed` | The probe could not connect to the loopback socket. |
-
-The accepted socket must match the probe’s client address and port. Only one new upstream socket may appear beside that accepted socket; an observed competing client cannot satisfy the check. Kernel socket tables do not expose the proxy’s internal pairing. A competing connection that opens and closes between samples cannot be ruled out. Start or restart command failures retain the observed reason and unit states without retrying the failed command.
-
-A pending activation record in `/var/lib/orbit/instance-node-services/INSTANCE/activation.json` allows the next run to finish after a partial unit write. Network admission precedes every guest write. A foreign unit or listener refuses without stopping a Project Process. The reusable phase does not read or write the workspace and does not restart application Processes. New optional `container.node_services` intent defaults to an empty list for already-admitted runs.
-
-The batched Incus phase uses one reusable Python converger because Ansible has no transaction for an Incus guest socket proxy and its Node ACL. On fixture Instance 2138 it took 0.87 seconds to apply and 0.22 seconds unchanged; application UID 1000 reached fixture Process 2075, which observed Docker bridge gateway source `172.17.0.1`. The connection survived 62 seconds idle. The control Instance could not reach the endpoint. These are branch-helper measurements; release proof checks the Gateway lifecycle.
+Keeping systemd environment values in root-owned `0600` `EnvironmentFile` files keeps secrets out of world-readable `/etc/systemd/system` unit files and public Operation history.

@@ -13,7 +13,8 @@ final readonly class OperationKinds
 {
     /**
      * Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks, the proof run, which closes when its
-     * runs (`proof.command`) have ended, and the executor proof, which closes when its no-op result reaches its waiter.
+     * runs (`proof.command`) have ended, the executor proof, which closes when its no-op result reaches its waiter, and a nested-fleet
+     * clone's fleet wait, which runs only on the engine (InstanceFleetOperation).
      */
     private const array GatewayJobs = [
         'websocket.sync' => ['executor' => 'gateway'],
@@ -24,6 +25,8 @@ final readonly class OperationKinds
         self::ConnLaunch => ['executor' => 'gateway'],
         'executor.proof' => ['executor' => 'gateway'],
         'executor.power_proof' => ['executor' => 'gateway'],
+        'instance.fleet' => ['executor' => 'gateway'],
+        'instance.finalize' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */

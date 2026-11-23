@@ -35,6 +35,11 @@ sequenceDiagram
     %%> Result:
     %%> - nothing changes; no Operation starts
     %%> - a held Instance lock refuses with `operation.target_busy`
+  else nothing is left on the Node
+    %% path: engine
+    Note over GW: End at once on the engine<br/>clone active, no Swamp run
+    %%> When: the create said `services: seed` (the seed holds the services part), and there is no database, Valkey user, Route publication or fleet start
+    %%> The engine runs it with no step; its projection makes the clone `active` as a succeeded run does
   else the clone can be completed
     %% path: main
     GW->>SW: Start run, full intent<br/>operation-instance-complete
@@ -48,9 +53,10 @@ sequenceDiagram
       %%> On failure:
       %%> - `failed_step: database`
     end
-    opt a nested-fleet clone
+    opt a nested-fleet clone whose fleet does not start in the background
       SW->>N: Start the fleet<br/>clone-fleet · Ansible
       %%> What it does:
+      %%> - runs only when the create's result has no `fleet_start: background`: a Swamp create, or a seed without the tunnel's boot unit
       %%> - starts the nested containers and waits for Doctor and the three agents
       %%> - runs under `ic-clone-fleet-<node>-<instance id % 64>`, one of 64 names per Node; copies started at once start their fleets side by side, because Swamp fails a step that waits 60 s for a name another run holds
       %%> On failure:

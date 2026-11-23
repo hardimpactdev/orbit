@@ -27,11 +27,12 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--preview : Keep the parent sandbox running during review}
         {--no-preview : Allow the parent sandbox to park during review}
         {--position= : Child position, starting at 1}
-        {--deliverables= : JSON file replacing the child deliverables}
+        {--deliverables= : JSON file replacing the deliverables of a subtask, or of a task with no subtask}
+        {--work-status= : Subtask status for the work of a task with no subtask, such as completed}
         {--reason= : Why a correction after a failed check replaces the deliverables of a started subtask in a task copy}
-        {--implementer-provider= : Implementer provider in a task copy, such as claude}
+        {--implementer-provider= : Implementer provider in a task copy, such as claude; the Gateway refuses a provider, model and effort it cannot run together}
         {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
-        {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max}
+        {--implementer-effort= : Implementer effort in a task copy, such as high; each provider and Antigravity model takes its own efforts}
         {--reviewer-provider= : Reviewer provider in a task copy}
         {--reviewer-model= : Reviewer model in a task copy}
         {--reviewer-effort= : Reviewer effort in a task copy}
@@ -49,6 +50,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
         $title = $this->optionalText($this->option('title'), 'Title', 'title', self::TITLE_MAX);
         $brief = $this->optionalText($this->option('brief'), 'Brief', 'brief', self::BRIEF_MAX);
         $status = $this->option('status');
+        $workStatus = $this->option('work-status');
         $position = $this->option('position') === null ? null : $this->idOption('position', 'Position', 'position');
         $deliverables = $this->deliverablesFile();
         $reason = $this->optionalText($this->option('reason'), 'Reason', 'reason', self::REASON_MAX);
@@ -60,11 +62,14 @@ final class UpdateTaskGroupCommand extends TaskCommand
         if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
             return $this->renderGatewayFailure('task.status_invalid', 'Unknown task status.');
         }
+        if ($workStatus !== null && ! in_array($workStatus, self::WORK_STATUSES, true)) {
+            return $this->renderGatewayFailure('task.work_status_invalid', 'Work status must be one of '.implode(', ', self::WORK_STATUSES).'.');
+        }
         if ($this->option('preview') && $this->option('no-preview')) {
             return $this->renderGatewayFailure('task.preview_conflict', 'Use either --preview or --no-preview.');
         }
         $preview = $this->option('preview') ? true : ($this->option('no-preview') ? false : null);
-        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null || $position !== null || $deliverables !== null || $agents !== null || $prMode !== null;
+        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null || $position !== null || $deliverables !== null || $agents !== null || $prMode !== null || $workStatus !== null;
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
             return $this->renderGatewayFailure('task.update_required', 'Provide at least one task update.');
         }
@@ -78,6 +83,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
         }
         $task = $this->sendWithProgress($connector, new UpdateTaskRequest(
             $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $agents, $prMode, $reason,
+            is_string($workStatus) ? $workStatus : null,
         ), TaskRecordResponse::class, ['Update task', 'Updating task', 'Updated task']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : ($task instanceof TaskGroupResponse ? $this->renderGroup($task) : self::FAILURE);

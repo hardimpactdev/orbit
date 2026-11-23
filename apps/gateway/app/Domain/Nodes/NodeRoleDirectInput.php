@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
@@ -26,8 +27,11 @@ final readonly class NodeRoleDirectInput
         private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint,
         private CliConvergePlan $cli, private NodeRoleRuntimeInput $runtime, private ToolManagerIntent $managers) {}
 
-    /** @return array<string,mixed> */
-    public function capture(Node $node, NodeRole $assignment, bool $created, bool $includeCli = true): array
+    /**
+     * @param  DesiredCliReleaseData|null  $cli  The CLI release a caller already resolved, such as the fleet pass's preflight pin.
+     * @return array<string,mixed>
+     */
+    public function capture(Node $node, NodeRole $assignment, bool $created, bool $includeCli = true, ?DesiredCliReleaseData $cli = null): array
     {
         if ($assignment->node_id !== $node->id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot requires its admitted Node assignment.', 422);
@@ -55,7 +59,7 @@ final readonly class NodeRoleDirectInput
             'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($node, $role),
             'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
             'gateway_dns' => $role === RoleName::Gateway ? app(GatewayPrivateDnsInput::class)->capture($node) : null,
-            'cli' => $includeCli ? $this->cli->input($node) : null, 'runtime' => $this->runtime->capture($node, $assignment)];
+            'cli' => $includeCli ? $this->cli->input($node, $cli) : null, 'runtime' => $this->runtime->capture($node, $assignment)];
     }
 
     /** Canonical read-only ownership check for the role root and its protected hash source. */

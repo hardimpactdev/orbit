@@ -17,12 +17,18 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
+        // No run yet. Basis: a 300 s download and unpack, the binary check, two restarts with their 10 s run checks (the upgrade and a
+        // rollback), plus input, result and cleanup, rounded up to five minutes. Replace with the 14-day p95 after the first successes.
+        'process.upgrade' => 600,
         // The 30 s marker phase and the 90 s freeze phase (a 30 s clean stop when swap is full), plus input, result and cleanup.
         // Measured by hand on a fixture clone: the pause and the reclaim of a frozen container take under 0.5 s.
         'instance.sleep' => 150,
-        // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus input, result and cleanup.
-        // Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start. No live run of the kind yet.
-        'instance.wake' => 300,
+        // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus the 600 s wait for the Conn
+        // Server's import when the wake applies a deferred server switch (InstanceServerSwitch::ImportSeconds): the 840 s phase,
+        // plus input, result and cleanup. Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start.
+        'instance.wake' => 900,
+        // The 780 s switch phase (100 s restart, the 600 s wait for the Conn Server's import, and the checks), plus input, result and cleanup.
+        'instance.server_switch' => 900,
         // A nested-fleet clone's start: the 240 s start phase with the Club key, the 300 s fleet check and the 600 s fleet start with
         // its Doctor wait, plus input, result and cleanup. Expected about 110 s: a clone's fleet start took 91 s (Operation 20180).
         'instance.start' => 1200,
@@ -45,6 +51,10 @@ final class OperationBudgetTable
         // No run yet. Basis: the database fill's 600 s and the nested fleet start's 900 s, with margin for the stage, services, check
         // and the Route beside them (docs/reference/development-containers.md#complete-a-clone). Replace with the 14-day p95.
         'instance.complete' => 1800,
+        // The fleet step's own budget, the readiness bound plus 120 s (InstanceFleetEngineFlow), and the start and the end.
+        'instance.fleet' => 450,
+        // A reserved clone's finalize: the fetch's 200 s, the names step's T3 label wait and restart, and the start and the end.
+        'instance.finalize' => 420,
         // The removal steps, teardown timeouts, withdrawn Routes and owned databases, captured at admission.
         'instance.destroy' => 'run_budget_seconds',
         'instance.unregister' => 'run_budget_seconds',

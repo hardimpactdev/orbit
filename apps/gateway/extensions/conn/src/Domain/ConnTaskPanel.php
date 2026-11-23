@@ -9,14 +9,18 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskType;
+use App\Domain\Tasks\TaskWorkReview;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use Illuminate\Database\Eloquent\Collection;
 use Orbit\Extensions\Conn\Data\ConnTaskData;
 use Orbit\Extensions\Conn\Data\ConnTaskDetailData;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Spatie\LaravelData\Optional;
 
 /**
  * The read model of the Conn Tasks panel ([Tasks panel](/reference/conn#tasks-panel)). It reads the tasks the task list and show read
@@ -44,7 +48,10 @@ final readonly class ConnTaskPanel
         return array_values($groups->map(fn (Task $group): ConnTaskData => $this->row($group, $instances, $environments, $current, $activity[$group->id] ?? null))->all());
     }
 
-    /** One top-level task with its subtasks, metrics and agents. The task's metrics must be refreshed (TaskGroupMetricsRefresher). */
+    /**
+     * One top-level task with its subtasks, or the work of a task with no subtask, its metrics and agents. The task's metrics must be
+     * refreshed (TaskGroupMetricsRefresher).
+     */
     public function detail(Node $caller, Task $group): ConnTaskDetailData
     {
         $groups = new Collection([$group]);
@@ -54,27 +61,38 @@ final readonly class ConnTaskPanel
         $current = $threads->keyBy('id');
         $environment = $group->taskable_type === (new Instance)->getMorphClass() ? $environments->get($group->taskable_id) : null;
         $row = $this->row($group, $instances, $environments, $current, TaskGroupActivity::of([$group->id])[$group->id] ?? null);
+        $work = self::work($group);
+        $subtasks = self::subtasks($group);
 
         return new ConnTaskDetailData(
             row: $row,
             brief: $group->brief,
-            execution: ['implementer_mode' => 'per_subtask'],
+            // A task without subtasks does its own work: with its work row, or before its draft has one.
+            execution: ['implementer_mode' => $subtasks->isEmpty() ? 'task' : 'per_subtask'],
             metrics: ['duration_ms' => $group->duration_ms, 'tokens' => $group->tokens, 'lines_added' => $group->lines_added, 'lines_deleted' => $group->lines_deleted],
-            subtasks: array_values($group->tasks->map(static fn (Task $task): array => [
+            subtasks: array_values($subtasks->map(static fn (Task $task): array => [
                 'id' => $task->id,
                 'position' => $task->position,
                 'title' => $task->title,
                 'brief' => $task->brief,
-                'deliverables' => array_map(static fn (TaskDeliverable $deliverable): array => [
-                    'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
-                ], $task->deliverableList()),
+                'deliverables' => self::deliverables($task),
                 'status' => $task->status->value,
                 'attention' => self::attention($task, [$task->implementer_agent_thread_id], $current),
                 'current_implementer_agent_id' => $task->implementer_agent_thread_id,
                 // Orbit records no line change per subtask: the task's lines are one snapshot of its whole branch.
                 'metrics' => ['duration_ms' => $task->duration_ms, 'tokens' => $task->tokens, 'lines_added' => null, 'lines_deleted' => null],
             ])->all()),
-            agents: $this->agents($group, $threads, $environment),
+            agents: $this->agents($group, $threads, $environment, $work),
+            work: $work instanceof Task ? [
+                'status' => $work->status->value,
+                'review' => TaskWorkReview::of(new Collection([$group]))[$group->id],
+                'deliverables' => self::deliverables($work),
+                'current_implementer_agent_id' => $work->implementer_agent_thread_id,
+                'check' => ($check = $work->latestCheck) instanceof TaskCheck ? [
+                    'id' => $check->id, 'kind' => $check->kind->value, 'status' => $check->status->value, 'started_at' => $check->started_at->toIso8601String(),
+                    'finished_at' => $check->finished_at?->toIso8601String(), 'exit_code' => $check->exit_code, 'failed_step' => $check->failed_step,
+                ] : null,
+            ] : new Optional,
         );
     }
 
@@ -86,8 +104,10 @@ final readonly class ConnTaskPanel
     private function row(Task $group, Collection $instances, Collection $environments, Collection $current, ?string $lastActivity): ConnTaskData
     {
         $instance = $group->taskable_type === (new Instance)->getMorphClass() ? $instances->get($group->taskable_id) : null;
-        $counts = ['total' => $group->tasks->count(), 'todo' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'cancelled' => 0];
-        foreach ($group->tasks as $task) {
+        $work = self::work($group);
+        $subtasks = self::subtasks($group);
+        $counts = ['total' => $subtasks->count(), 'todo' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'cancelled' => 0];
+        foreach ($subtasks as $task) {
             $counts[match ($task->subtaskStatus()) {
                 TaskStatus::Todo => 'todo',
                 TaskStatus::Reserved, TaskStatus::Running, TaskStatus::Reviewing => 'running',
@@ -101,7 +121,8 @@ final readonly class ConnTaskPanel
             id: $group->id,
             title: $group->title,
             status: $group->status->value,
-            attention: self::attention($group, self::currentThreadIds($group), $current),
+            // The work of a task with no subtask asks as the task: its own call for help follows the task's.
+            attention: self::attention($group, self::currentThreadIds($group), $current) ?? ($work instanceof Task ? self::attention($work, [], $current) : null),
             project: ['id' => $group->project->id, 'slug' => $group->project->slug, 'name' => $group->project->name, 'code' => $group->project->code],
             workspace: $instance instanceof Instance ? [
                 'instance_id' => $instance->id,
@@ -117,16 +138,20 @@ final readonly class ConnTaskPanel
             createdAt: $group->created_at?->toIso8601String(),
             updatedAt: $group->updated_at?->toIso8601String(),
             lastActivityAt: $lastActivity,
+            prOpenedAt: $group->pr_opened_at?->toIso8601String(),
+            deployedAt: $group->deployed_at?->toIso8601String(),
+            workStatus: $work instanceof Task ? $work->status->value : new Optional,
         );
     }
 
     /**
-     * Every started thread of the task, oldest first. A thread's attempt counts the started threads of its role on its subtask.
+     * Every started thread of the task, oldest first. A thread's attempt counts the started threads of its role on its subtask. A
+     * thread on the work of a task with no subtask names no subtask: the work's ID is no route member.
      *
      * @param  Collection<int, AgentThread>  $threads
      * @return list<array<string, mixed>>
      */
-    private function agents(Task $group, Collection $threads, ?ConnEnvironment $environment): array
+    private function agents(Task $group, Collection $threads, ?ConnEnvironment $environment, ?Task $work): array
     {
         $implementers = $group->tasks->pluck('implementer_agent_thread_id')->filter()->all();
         $attempts = [];
@@ -137,7 +162,7 @@ final readonly class ConnTaskPanel
             $agents[] = [
                 'id' => $thread->id,
                 'role' => $thread->role,
-                'subtask_ids' => $thread->task_id === null ? [] : [$thread->task_id],
+                'subtask_ids' => $thread->task_id === null || $thread->task_id === $work?->id ? [] : [$thread->task_id],
                 'current' => in_array($thread->id, $implementers, true) || $thread->id === $group->reviewer_agent_thread_id,
                 'attempt' => $attempts[$slot],
                 'provider' => self::provider($thread),
@@ -178,6 +203,26 @@ final readonly class ConnTaskPanel
             : null;
     }
 
+    /** The work of a task with no subtask ({@see TaskType::Work}), or null for a task with subtasks. */
+    private static function work(Task $group): ?Task
+    {
+        return $group->tasks->first(static fn (Task $task): bool => $task->type === TaskType::Work);
+    }
+
+    /** @return Collection<int, Task> the subtasks a read lists, in position order: never the work of a task with no subtask */
+    private static function subtasks(Task $group): Collection
+    {
+        return $group->tasks->reject(static fn (Task $task): bool => $task->type === TaskType::Work)->values();
+    }
+
+    /** @return list<array{id: string, type: string, description: string}> */
+    private static function deliverables(Task $task): array
+    {
+        return array_map(static fn (TaskDeliverable $deliverable): array => [
+            'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
+        ], $task->deliverableList());
+    }
+
     private static function asks(AgentThread $thread): bool
     {
         return is_array($thread->questions) && $thread->questions !== [];
@@ -202,18 +247,13 @@ final readonly class ConnTaskPanel
         return ['number' => preg_match('~/pull/(\d+)~', $group->pr_url, $match) === 1 ? (int) $match[1] : null, 'url' => $group->pr_url, 'state' => null];
     }
 
-    /** The provider of the copy instance the thread started on, else the one its model names. */
+    /**
+     * The provider of the copy instance the thread started on (InstanceContainer::instanceProvider), else the one its model names: a
+     * thread with no instance is from before Orbit recorded one, when a copy ran Claude and Codex only.
+     */
     private static function provider(AgentThread $thread): ?string
     {
-        foreach (InstanceContainer::CopyProviders as $provider => $efforts) {
-            foreach ($efforts as $effort) {
-                if ($thread->provider_instance === InstanceContainer::providerInstance($provider, $effort)) {
-                    return $provider;
-                }
-            }
-        }
-
-        return match (true) {
+        return InstanceContainer::instanceProvider($thread->provider_instance) ?? match (true) {
             str_starts_with((string) $thread->model, 'claude-') => 'claude',
             str_starts_with((string) $thread->model, 'gpt-') => 'codex',
             default => null,

@@ -44,7 +44,8 @@ final readonly class ProofSeeds
 
     /**
      * The bound of one target's copy step, the `timeout` of "Copy the seed" in the workflow: its two pushes, plus 100 s for the
-     * remote and snapshot reads, the renames and the SSH set-up. The steps run one target at a time (docs/cli/instance/seed-copy.mmd).
+     * remote and snapshot reads, the renames and the SSH set-up. The steps run side by side but share the default Node's uplink,
+     * so the run budget still counts one per target (docs/cli/instance/seed-copy.mmd).
      */
     public const int CopySeconds = 2 * self::PushSeconds + 100;
 
@@ -64,7 +65,7 @@ final readonly class ProofSeeds
 
     /**
      * The bound of a deployment's wait for the seed hold, the step "Hold the seed": one seed copy, which sends a refresh to each CI Node
-     * one at a time, ends well within it; the deployment's run budget counts it.
+     * side by side, ends well within it; the deployment's run budget counts it.
      */
     public const int HoldWaitSeconds = 1800;
 
@@ -364,7 +365,8 @@ final readonly class ProofSeeds
     /**
      * The proof Nodes currently eligible for this exact seed, with the Operations that published it.
      * A missing admission is recoverable. The existing copy policy leaves a failed target for its next
-     * converge or the next seed.
+     * converge or the next seed. A default whose release deployment kept a newer checkout (`already_newer`) publishes the seed it kept,
+     * which descends from the release commit; any other seed off the release commit has moved.
      *
      * @param  array<int, array<string, mixed>>  $defaults
      * @return array<string, mixed>
@@ -379,6 +381,10 @@ final readonly class ProofSeeds
         }
         $takenAt = ValidatedData::string($proof[$id]['taken_at']);
         $identity = ['instance_id' => $id, 'commit' => $commit, 'taken_at' => $takenAt];
+        if (($proof[$id]['already_newer'] ?? false) === true) {
+            $commit = ValidatedData::string($proof[$id]['commit']);
+            $identity = [...$identity, 'commit' => $commit, 'already_newer' => true];
+        }
         $source = $this->source();
         if ($source === null || $source->instance_id !== $id || $source->seed_commit !== $commit
             || $source->seed_taken_at?->toIso8601String() !== $takenAt) {

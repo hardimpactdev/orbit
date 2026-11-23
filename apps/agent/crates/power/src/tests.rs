@@ -268,7 +268,20 @@ impl orbit_executor_core::executor::Run for Runner {
             orbit_executor_core::action::Action::ProofNoop
             | orbit_executor_core::action::Action::UfwEnsureRule
             | orbit_executor_core::action::Action::TlsEnsureCsr
-            | orbit_executor_core::action::Action::RoutePublishSite => {
+            | orbit_executor_core::action::Action::RoutePublishSite
+            | orbit_executor_core::action::Action::DnsPublishRecords
+            | orbit_executor_core::action::Action::InstanceClone
+            | orbit_executor_core::action::Action::InstancePrepare
+            | orbit_executor_core::action::Action::InstanceStart
+            | orbit_executor_core::action::Action::InstanceFetchBranch
+            | orbit_executor_core::action::Action::InstanceCheckout
+            | orbit_executor_core::action::Action::InstanceT3
+            | orbit_executor_core::action::Action::InstanceClubKey
+            | orbit_executor_core::action::Action::InstanceCopyVolume
+            | orbit_executor_core::action::Action::InstanceStop
+            | orbit_executor_core::action::Action::InstanceSpareVolume
+            | orbit_executor_core::action::Action::InstanceFleetReady
+            | orbit_executor_core::action::Action::InstanceNames => {
                 panic!("power actions only")
             }
         }

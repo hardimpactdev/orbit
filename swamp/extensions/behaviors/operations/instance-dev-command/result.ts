@@ -82,6 +82,49 @@ export function containerFailure(raw: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * The public part of a container default's failed `container` phase, from the run's result.json, or null: what containerFailure
+ * keeps, else the phase's own code (a refusal's, or the generic `instance.container_container_failed`) and its detail, the failed task
+ * with its message and the end of its stderr. A detail above 4096 UTF-8 bytes keeps its head, which names the task, and its tail, whole code
+ * points only, so the Gateway gets it whole and can decode it. The
+ * command step keeps no stderr of a failed playbook, so the Gateway records the detail as the failure's stderr and redacts it again.
+ */
+export function defaultContainerFailure(raw: unknown): Record<string, unknown> | null {
+    const kept = containerFailure(raw);
+    const failure = z.object({ error_code: z.string().regex(/^[a-z]+\.[a-z0-9_]+$/), detail: z.string().optional() }).safeParse(raw);
+    if (!failure.success) return kept;
+    const { error_code, detail } = failure.data;
+    const bounded = detail === undefined ? detail : headAndTail(detail, 4096, 1000);
+    return { ...(kept ?? { error_code }), ...(bounded ? { detail: bounded } : {}) };
+}
+
+/** UTF-8 bytes of a text. */
+const bytes = (text: string) => new TextEncoder().encode(text).length;
+
+/**
+ * A text within `limit` UTF-8 bytes: whole when it fits, else its head of at most `head` bytes, a `...` line and its tail. It cuts
+ * between code points only, never inside a character or a surrogate pair.
+ */
+export function headAndTail(text: string, limit: number, head: number): string {
+    if (bytes(text) <= limit) return text;
+    const points = Array.from(text);
+    const take = (from: string[], room: number) => {
+        const kept: string[] = [];
+        let used = 0;
+        for (const point of from) {
+            const size = bytes(point);
+            if (used + size > room) break;
+            kept.push(point);
+            used += size;
+        }
+        return kept;
+    };
+    const start = take(points, head).join("");
+    const separator = "\n...\n";
+    const end = take([...points].reverse(), limit - bytes(start) - bytes(separator)).reverse().join("");
+    return start + separator + end;
+}
+
+/**
  * The public part of a nested-fleet clone's failed `fleet` phase, from the run's result.json, or null: the fleet phase's own code
  * (`instance.container_fleet_drift`, `instance.container_fleet_check_failed` or `instance.container_fleet_resume_failed`), why it
  * failed in the phase's own safe words (the Doctor body for a readiness wait), and each drift line. The Gateway redacts the detail again.
@@ -311,7 +354,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const failed = outcomes.find(([, , failure]) => failure) ??
         outcomes.find(([, finished]) => !finished);
     const server = failed === undefined && container?.server ? JSON.parse(container.server) : null;
-    const mail = (intent.container as {mail?: unknown} | null)?.mail != null
+    // The mail work runs inside the container step: a step that did not succeed says nothing about mail, so no mail result is reported.
+    const mail = (intent.container as {mail?: unknown} | null)?.mail != null && container?.launch === "succeeded"
         ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
         : null;
     const environment = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneEnvironment(container?.workspace) : null;
@@ -334,6 +378,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const warnings = [
         ...(mail?.status === "failed" ? [{code: "instance.mail_update_failed", step: "mail"}] : []),
         ...(publication === "failed" ? [{code: "instance.create_route_failed", step: "route"}] : []),
+        // A container default runs no Project setup steps; with no development deploy steps either, nothing installed its code.
+        ...(intent.setup_steps_ignored === true ? [{code: "instance.setup_steps_ignored", step: "setup"}] : []),
     ];
     const result = {
         instance_id: intent.instance_id,

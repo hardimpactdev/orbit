@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,7 +17,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects the native check metadata onto the existing board. No execution or evidence judgment. */
-final readonly class TaskCheckProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class TaskCheckProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationWorkflowInput
 {
     public function input(Operation $operation): array
     {
@@ -60,7 +61,12 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
             if ($operation->status->terminal()) {
                 return $operation;
             }
-            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
+            $result = self::receipt(ValidatedData::object($data['result'] ?? []));
+            // Only a valid part table is kept: anything else, such as seconds beyond any float, reads as none and never stops settlement.
+            if (array_key_exists('parts', $result)) {
+                $result['parts'] = TaskHandoffs::parts($result['parts']);
+            }
+            $data['result'] = $result;
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
                 $data['error_code'] = $result['error_code'];
             }
@@ -101,6 +107,9 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
                 if ($projected->status === OperationStatus::Succeeded && ($result['outcome'] ?? null) === 'passed' && ($operation->input['phase'] ?? null) === TaskCheckKind::Handoff->value) {
                     self::recordMode(ValidatedData::integer($operation->input['check_id']), $operation->target_id);
                 }
+                if (! $pending && $projected->status !== OperationStatus::Cancelled) {
+                    TaskHandoffs::delivery($projected, $result, $projected->status === OperationStatus::Succeeded && ($result['outcome'] ?? null) === 'passed');
+                }
                 if (is_string($result['subtask_start_commit'] ?? null)) {
                     Task::query()->whereKey($operation->input['subtask'])->whereNull('subtask_start_commit')->update(['subtask_start_commit' => $result['subtask_start_commit']]);
                 }
@@ -108,6 +117,19 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
 
             return $projected;
         });
+    }
+
+    /**
+     * Swamp refused to start the check: the check ends failed, as its Operation did, and the definitively failed delivery gate rejects
+     * the delivery it would have judged.
+     */
+    public function refused(Operation $operation): void
+    {
+        $check = TaskCheck::query()->find(ValidatedData::integer($operation->input['check_id']));
+        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running) {
+            self::record($check, 'failed', ['failed_step' => null]);
+        }
+        TaskHandoffs::delivery($operation, [], false);
     }
 
     /**
@@ -149,7 +171,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection, D
             'head_after' => $result['head'] ?? null, 'tree_after' => $result['tree'] ?? null,
             'exit_code' => $result['exit_code'] ?? null, 'changed_paths' => $result['changed_paths'] ?? [],
             'output' => $result['output'] ?? '', 'failed_step' => $result['failed_step'] ?? null,
-            'deliverable_evidence' => $result['evidence'] ?? null, 'commit_sha' => $result['commit'] ?? null,
+            'deliverable_evidence' => $result['evidence'] ?? null, 'parts' => is_array($result['parts'] ?? null) ? $result['parts'] : null, 'commit_sha' => $result['commit'] ?? null,
             'pushed_at' => $ci['pushed_at'] ?? null, 'finished_at' => $pending ? null : now(),
         ]);
     }

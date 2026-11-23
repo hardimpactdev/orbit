@@ -20,7 +20,8 @@ use App\Support\ValidatedData;
  * The model router's task VM guard ([Credentials in task VMs](/reference/tasks#credentials-in-task-vms)): its own Caddy on the router's
  * Node, on the WireGuard address at port 8318. It passes a request on only when it comes from the task VM WireGuard range or a
  * [forwarder Node](/reference/ai-router#container-model-forwarder), is a POST to exactly one of the inference routes, with no query or
- * Claude Code's `beta=true` on the messages routes, and carries the task key; it then swaps in the anchor key. Any other request from
+ * Claude Code's `beta=true` on the messages routes, and carries the task key, or a POST to one of Antigravity's Gemini routes with its
+ * key header; it then swaps in the anchor key. Any other request from
  * those sources gets 401, and every request from elsewhere 403. The unit loads both keys as systemd credentials, so its Caddyfile holds no secret and no other user reads them; UFW admits port
  * 8318 from those sources only.
  */
@@ -44,6 +45,25 @@ final readonly class AiRouterTaskGuard
 
     /** The routes where Claude Code's fixed `?beta=true` passes; it sends it on every call and has no setting to drop it. */
     public const array BetaPaths = ['/v1/messages', '/v1/messages/count_tokens'];
+
+    /**
+     * The Gemini routes Antigravity calls, model name then method, as RE2 patterns of the whole path: a model name is letters and digits
+     * joined by single `.`, `_` or `-`, so `..`, `/` and an empty name do not pass. Streaming takes exactly `alt=sse`, the other two no query.
+     */
+    public const string GeminiModel = '[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*';
+
+    public const string GeminiStreamPath = '^/v1beta/models/'.self::GeminiModel.':streamGenerateContent$';
+
+    public const string GeminiPath = '^/v1beta/models/'.self::GeminiModel.':(?:generateContent|countTokens)$';
+
+    /**
+     * The playbooks that apply the guard, both for a guard run and for a forwarder run's guard phase. Their bytes move the
+     * {@see self::digest()}, so a release that changes how the guard is applied applies it again.
+     */
+    public const array Playbooks = ['swamp/ansible/ai-router-task-guard.yml', 'swamp/ansible/tasks/address-node.yml', 'swamp/ansible/tasks/firewall.yml'];
+
+    /** The parts of an intent the guard phase applies on the router's Node. The SSH target and a forwarder's own part stay out. */
+    private const array Applied = ['state', 'origin', 'directory', 'unit', 'caddyfile', 'firewall'];
 
     /** Guard and forwarder runs share it: two at once could each drop the other's forwarder Node from the guard. */
     public const string LockPrefix = 'ai_router_guard:';
@@ -78,6 +98,8 @@ final readonly class AiRouterTaskGuard
         $betaPaths = $list(self::BetaPaths);
         $credentials = self::Credentials;
         $upstream = '127.0.0.1:'.$this->routerPort();
+        $streamPath = self::GeminiStreamPath;
+        $geminiPath = self::GeminiPath;
 
         return <<<CADDY
             # Managed by Orbit: the ai-router task VM guard (/reference/tasks#credentials-in-task-vms).
@@ -85,6 +107,14 @@ final readonly class AiRouterTaskGuard
             	admin off
             	persist_config off
             	auto_https off
+            }
+
+            (router) {
+            	reverse_proxy {$upstream} {
+            		header_up Authorization "Bearer {file.{$credentials}/anchor.key}"
+            		header_up -X-Api-Key
+            		header_up -X-Goog-Api-Key
+            	}
             }
 
             http://:{$port} {
@@ -96,12 +126,18 @@ final readonly class AiRouterTaskGuard
             		expression {http.request.orig_uri.path} in [{$paths}] && ({http.request.orig_uri.query} == "" || ({http.request.orig_uri.query} == "beta=true" && {http.request.orig_uri.path} in [{$betaPaths}]))
             		header Authorization "Bearer {file.{$credentials}/task.key}"
             	}
+            	# Antigravity's Gemini routes, with the task key in X-Goog-Api-Key, the one header it sends a key in.
+            	@gemini {
+            		remote_ip {$sources}
+            		method POST
+            		expression ({http.request.orig_uri.path}.matches('{$streamPath}') && {http.request.orig_uri.query} == "alt=sse") || ({http.request.orig_uri.path}.matches('{$geminiPath}') && {http.request.orig_uri.query} == "")
+            		header X-Goog-Api-Key "{file.{$credentials}/task.key}"
+            	}
             	handle @task {
-            		reverse_proxy {$upstream} {
-            			header_up Authorization "Bearer {file.{$credentials}/anchor.key}"
-            			header_up -X-Api-Key
-            			header_up -X-Goog-Api-Key
-            		}
+            		import router
+            	}
+            	handle @gemini {
+            		import router
             	}
             	# An admitted source with a refused request: a forwarder run's end check tells this from a source the guard refuses.
             	@source remote_ip {$sources}
@@ -219,10 +255,43 @@ final readonly class AiRouterTaskGuard
      */
     public function applied(Node $node): bool
     {
-        $last = Operation::query()->whereIn('kind', ['ai_router.task_guard', AiRouterModelForwarder::Kind])->where('node_id', $node->id)
-            ->where('status', OperationStatus::Succeeded)->latest('id')->first();
+        $last = $this->last($node);
 
         return $last !== null && (ValidatedData::object($last->input['intent'])['state'] ?? null) === 'present';
+    }
+
+    /**
+     * The digest of the guard the last succeeded guard or forwarder run applied, or null when the guard is off or the run recorded none,
+     * as a run admitted before digests were recorded.
+     */
+    public function appliedDigest(Node $node): ?string
+    {
+        return $this->applied($node) ? ValidatedData::nullableString($this->last($node)?->input['guard_digest'] ?? null) : null;
+    }
+
+    /**
+     * What the guard phase applies, without a secret: the guard's parts of the intent (its Caddyfile with its routes and sources, its UFW
+     * rules, its state) and the bytes of the playbooks that apply them. Each run records it, so the [release
+     * pass](/reference/ai-router#the-guard-follows-its-config) can tell a guard that no longer matches its config.
+     *
+     * @param  array<string, mixed>  $intent
+     */
+    public function digest(array $intent): string
+    {
+        $root = dirname(base_path(), 2);
+        $playbooks = [];
+        foreach (self::Playbooks as $file) {
+            $playbooks[$file] = hash_file('sha256', $root.'/'.$file)
+                ?: throw new ResourceOperationException('ai_router.guard_inputs_unavailable', "Cannot read the guard playbook [{$file}].", 503);
+        }
+
+        return 'sha256:'.hash('sha256', json_encode([array_intersect_key($intent, array_flip(self::Applied)), $playbooks], JSON_THROW_ON_ERROR));
+    }
+
+    private function last(Node $node): ?Operation
+    {
+        return Operation::query()->whereIn('kind', ['ai_router.task_guard', AiRouterModelForwarder::Kind])->where('node_id', $node->id)
+            ->where('status', OperationStatus::Succeeded)->latest('id')->first();
     }
 
     /**

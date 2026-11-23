@@ -45,10 +45,9 @@ const PackageFields = Input.omit({ materialize: true, intent_only: true })
         ),
         package: z.string().min(1).max(255),
     });
-/** apt and Composer exist only on Linux, casks only on macOS. */
+/** apt and Composer exist only on Linux. */
 export const platformSupports = (v: { platform: string; manager: string }) =>
-    !(v.platform === "macos" && ["apt", "composer"].includes(v.manager)) &&
-    !(v.platform === "linux" && v.manager === "brew-cask");
+    !(v.platform === "macos" && ["apt", "composer"].includes(v.manager));
 /** One package change on one Node: install, update or removal. */
 export const PackageInput = PackageFields.refine(platformSupports);
 export const ManagerFields = PackageFields.pick({
@@ -118,6 +117,8 @@ export function normalizeVersion(
         if (dash >= 0) version = version.slice(0, dash);
         if (version.includes("+")) return null;
     }
+    // A cask version carries its build after a comma, such as `1.5.13,5253791805734912`; SemVer reads the part before it.
+    if (manager === "brew-cask") version = version.split(",")[0];
     const match =
         /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
             .exec(version);
@@ -126,6 +127,15 @@ export function normalizeVersion(
             match[5] ?? ""
         }`
         : null;
+}
+
+/** The installed version Orbit reports: a cask version without its comma build. Package reads compare the raw coordinate. */
+export function publicVersion(
+    raw: string,
+    manager: ToolInput["manager"],
+): string {
+    const comma = raw.indexOf(",");
+    return manager === "brew-cask" && comma > 0 ? raw.slice(0, comma) : raw;
 }
 
 export function validateConstraint(input: ToolInput): void {

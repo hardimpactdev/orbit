@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Instances\ContainerModelRoute;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -1294,11 +1295,13 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 // clone-register, and its database, fleet, Process and Route steps are the completion's; the container intent carries its presented
 // `machine_name`, and its boot files the `/etc/machine-info` that T3's first start reads; a clone links its agents to its own agent folder,
 // which its create fills from the type note (InstanceAgentInstructions); the container intent carries `php_cli_ini` after `php`, null for a Project
-// without PHP (InstanceContainer::phpCliIni); it carries `web_port` after `web_config`, null without a web app. Conn maps only its four stable stage names
+// without PHP (InstanceContainer::phpCliIni); it carries `web_port` after `web_config`, null without a web app. The clone job runs no `clone-seed-wait`: the copy step waits for its seed itself. Conn maps only its four stable stage names
 // (docs/reference/conn.md). Admission and the result also carry `model_route`; the card's stages stay unchanged.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
+    // The recorded client snapshot is of a T3 Project.
+    $default->project->update(['container_server' => ContainerServer::T3]);
     $response = threadCall($this->phone, 'POST', "projects/{$default->project->id}/instances", ['name' => 'fix-login'])
         ->assertAccepted()->assertJsonPath('data.status', 'queued');
     $operation = Operation::query()->findOrFail($response->json('data.id'));

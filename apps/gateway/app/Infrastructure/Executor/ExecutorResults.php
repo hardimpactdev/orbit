@@ -98,8 +98,10 @@ final readonly class ExecutorResults
         if ($operation === null) {
             return null;
         }
+        $held = ExecutorFence::heldAfterRun($operation);
         $action = match (true) {
             ExecutorWake::owns($operation) => ExecutorPowerIntent::action($operation) ?? 'wake',
+            $held => ExecutorFence::runActions($operation)[0],
             $operation->kind === OperationKinds::ExecutorProof && $operation->target_type === 'node' && $operation->target_id === $nodeId => 'proof.noop',
             $operation->kind === OperationKinds::ExecutorPowerProof && $operation->target_type === 'instance' => $operation->input['action'] ?? null,
             default => null,
@@ -123,11 +125,12 @@ final readonly class ExecutorResults
             return null;
         }
         $managed = ExecutorPowerIntent::managed($operation);
-        $line = $managed ? [...$line, 'delivery' => $route] : $line;
+        $line = $managed || $held ? [...$line, 'delivery' => $route] : $line;
         $recorded = $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
-        if ($recorded === 1 && $managed) {
+        if ($recorded === 1 && ($managed || $held)) {
             // A signed power Operation that ended under its fence completes through the on-time completion (ExecutorWake::complete).
-            // The journal's reader runs it itself; a late WebSocket receipt queues it. A Swamp recovery run settles through its projection.
+            // The journal's reader runs it itself; a late WebSocket receipt queues it. A Swamp recovery run settles through its projection,
+            // and a held lifecycle Operation (a start or a deploy) is freed here once its run is over, keeping its status, code and end.
             if (! ExecutorWake::owns($operation) || isset($operation->state[ExecutorWake::Recovery])) {
                 ExecutorFence::resolve($operation);
             } elseif ($route !== 'journal' && ExecutorWake::endedUnknown($operation)) {

@@ -25,6 +25,9 @@ final readonly class ListTaskGroupsAction
 
     public const int MaxLimit = 100;
 
+    /** A GitHub `owner/name`, as the pull request filter takes it. */
+    public const string RepositoryRule = 'regex:/\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/[A-Za-z0-9._-]{1,100}\z/';
+
     public function __construct(private RequireTasksExtensionAction $requireExtension, private TaskGroupMetricsRefresher $metrics) {}
 
     /**
@@ -32,10 +35,14 @@ final readonly class ListTaskGroupsAction
      *
      * @param  int|null  $before  the cursor: only groups with a lower ID
      * @param  int|null  $instanceId  only the groups whose task workspace is this Instance
+     * @param  array{repository: string, number: int}|null  $pullRequest  only the groups whose published or watched pull request this is,
+     *                                                                    with the repository matched in any case
      * @return array{groups: Collection<int, Task>, next_cursor: ?string}
      */
-    public function execute(?int $projectId, ?TaskGroupStatus $status, int $limit = self::DefaultLimit, ?int $before = null, ?int $instanceId = null): array
+    public function execute(?int $projectId, ?TaskGroupStatus $status, int $limit = self::DefaultLimit, ?int $before = null, ?int $instanceId = null, ?array $pullRequest = null): array
     {
+        // Both URL columns have an index on their lower-case form, so the filter reads only the matching rows.
+        $url = $pullRequest === null ? null : strtolower('https://github.com/'.$pullRequest['repository'].'/pull/'.$pullRequest['number']);
         $this->requireExtension->execute();
         $rows = Task::topLevel()
             ->select(TaskGroupData::ListColumns)
@@ -54,6 +61,8 @@ final readonly class ListTaskGroupsAction
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->when($instanceId !== null, static fn ($query) => $query->where('taskable_type', (new Instance)->getMorphClass())->where('taskable_id', $instanceId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))
+            ->when($url !== null, static fn ($query) => $query->whereIn('id', Task::topLevel()->select('id')->whereRaw('lower(pr_url) = ?', [$url])
+                ->union(Task::topLevel()->select('id')->whereRaw('lower(watched_pr_url) = ?', [$url]))))
             ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))
             ->orderByDesc('id')
             ->limit($limit + 1)
@@ -76,7 +85,7 @@ final readonly class ListTaskGroupsAction
             return new Collection;
         }
 
-        return $group->tasks()
+        return $group->tasks()->listedSubtasks()
             ->select(TaskData::ListColumns)
             ->with(['latestCheck' => static fn ($query) => $query->select(self::qualified('task_checks', TaskCheckData::ListColumns))])
             ->when($status instanceof TaskStatus, static fn ($query) => $query->where('status', $status))

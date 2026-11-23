@@ -22,6 +22,15 @@ export function stdout(step: Step, absent = false): string {
     ) throw new ToolRefusal("tool.version_probe_failed");
     return z.string().parse(step.outputs?.stdout);
 }
+/** The Linux cask API refresh succeeded: exit 0 and no warning that Homebrew fell back to its cached API data. */
+export function refreshed(step: Step): void {
+    const output = step?.status === "succeeded" && step.outputs?.exitCode === 0
+        ? String(step.outputs.stdout ?? "") + String(step.outputs.stderr ?? "")
+        : null;
+    if (output === null || /falling back to cached/i.test(output)) {
+        throw new ToolRefusal("tool.candidate_version_probe_failed");
+    }
+}
 /** Public argv only. Scope ownership is admission's concern, not a Node phase. */
 export function commands(input: Input) {
     const brew = input.manager.startsWith("brew"),
@@ -55,7 +64,8 @@ export function commands(input: Input) {
                 "HOMEBREW_NO_INSTALL_CLEANUP=1",
                 "HOMEBREW_NO_AUTOREMOVE=1",
                 "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1",
-                ...(input.platform === "macos"
+                // Casks refresh the API metadata on Linux too, so Orbit sees a new cask build without `brew update`.
+                ...(input.platform === "macos" || cask
                     ? ["HOMEBREW_FORCE_API_AUTO_UPDATE=1"]
                     : []),
             ]
@@ -114,7 +124,9 @@ export function commands(input: Input) {
                 },
             },
         version: run("--version"),
-        refresh: [
+        // Linux `brew info` reads the cached cask API; `outdated` is an auto-update command, so it refreshes that
+        // API first (HOMEBREW_FORCE_API_AUTO_UPDATE) without `brew update`.
+        refresh: cask ? run("outdated", "--cask", "--quiet") : [
             ...env,
             "/usr/bin/apt-get",
             ...aptOptions,

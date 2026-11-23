@@ -69,6 +69,7 @@ cases = [
   "test_workspace_of_a_create_admitted_before_hosts_keeps_the_defaults_url",
   "test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units",
   "test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys",
+  "test_agent_puts_the_model_key_in_place_of_its_value_keeps_other_providers_and_an_imported_key",
   "test_the_create_writes_exactly_its_files_and_links_both_agents_to_them",
   "test_a_rerun_with_the_same_content_changes_nothing_and_new_content_replaces_the_folder",
   "test_a_path_out_of_the_folder_is_refused",

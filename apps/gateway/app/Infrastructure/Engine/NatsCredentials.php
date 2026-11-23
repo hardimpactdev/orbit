@@ -101,6 +101,7 @@ final readonly class NatsCredentials
         return $signing.'.'.self::base64url(sodium_crypto_sign_detached($signing, $secret));
     }
 
+    /** The encoded seed: two prefix bytes, the 32 raw bytes and the CRC. */
     private static function seed(int $prefix, #[SensitiveParameter] string $raw): string
     {
         if (! in_array($prefix, [self::PrefixAccount, self::PrefixUser], true) || strlen($raw) !== SODIUM_CRYPTO_SIGN_SEEDBYTES) {

@@ -99,7 +99,8 @@ final readonly class AdmitFleetRolloutAction
 
     public static function open(): bool
     {
-        return Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+        // The status index reaches the few open rows before the input JSON of the whole ledger is read.
+        return Operation::query()->whereIn('status', OperationStatus::openValues())
             ->where(fn ($query) => $query->where('kind', 'fleet.rollout')->orWhere('input->_converge->intent->automatic', true))->exists();
     }
 }

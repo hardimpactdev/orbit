@@ -73,7 +73,9 @@ Deno.test("project findings retain reports and blocked reasons and create one de
     const findings = await projectFindings(original, "source", reports, plans);
     const receipt = await batchReceipt(original, findings);
     assertEquals(receipt.targets?.length, 2);
-    assertEquals((receipt.request.tasks as unknown[]).length, 1);
+    // A task with no subtask holds its own deliverables.
+    assertEquals(receipt.request.tasks, undefined);
+    assertEquals((receipt.request.deliverables as unknown[]).length > 0, true);
     assertStringIncludes(
         String(receipt.request.brief),
         "Apply the entire admitted Swamp batch in one task copy and one PR.",

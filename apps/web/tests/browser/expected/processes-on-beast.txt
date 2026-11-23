@@ -3,7 +3,7 @@
 │  Nodes │ 4
 │› Projects │ 3
 │  Databases │ 2
-│  Tasks │ 2
+│  Tasks │ 3
 │  Activity │
 │  Runners │
 ╰─

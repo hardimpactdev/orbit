@@ -148,6 +148,18 @@ describe('a clone of the container default', function (): void {
             ->and(substr_count($metadata, "\n"))->toBe(8);
     });
 
+    it('names a Laravel application\'s folder below the workspace in the Instance file, where laravel-lsp starts', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $default->project->update(['type' => ProjectType::Monorepo, 'root' => 'apps/shop/public', 'php_version' => '8.5', 'is_laravel' => true]);
+        $laravel = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'shop'))['clone']['files'][0]['content']);
+        $default->project->update(['is_laravel' => false]);
+        $other = Dotenv::parse(containerIntentOf(containerCreate($default->project->fresh(), $node, 'other'))['clone']['files'][0]['content']);
+
+        expect($laravel['ORBIT_APPLICATION'])->toBe(InstanceHostIntent::Workspace.'/apps/shop')
+            ->and($other)->not->toHaveKey('ORBIT_APPLICATION');
+    });
+
     it('takes the next address, the lowest free T3 port and the default as its clone source', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -233,6 +245,8 @@ describe('a clone of the container default', function (): void {
     it('hands the run the seed snapshot, T3\'s port and files, its firewall rules and no deploy step', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
+        // The T3 server's files: a Project that chose T3.
+        $default->project->update(['container_server' => ContainerServer::T3]);
 
         $operation = containerCreate($default->project, $node, 'feature');
 
@@ -286,7 +300,8 @@ describe('a clone of the container default', function (): void {
             ->and($clone['files'][5])->toBe(['path' => '/etc/systemd/system/t3.service.d/20-orbit-server.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"])
             ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
-            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
+            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment',
+                'key_value' => '#orbit-model-key'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'])
             // WireGuard peers reach T3; no rule refuses the reserved range.
             ->and($container['firewall'])->toBe([
@@ -389,6 +404,7 @@ it('starts the run with the placeholder model key in the vault and the template 
     $node = containerDefaultNode();
     databaseServerOn($node, 'pg', DatabaseDriver::Pgsql, 5432);
     $default = Instance::query()->findOrFail(containerCreate(containerDefaultProject(), $node, 'default', 'pg')->target_id);
+    $default->project->update(['container_server' => ContainerServer::T3]);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('c', 40)]);
     $operation = containerCreate($default->project, $node, 'feature');
@@ -404,6 +420,8 @@ it('starts the run with the placeholder model key in the vault and the template 
     $fill = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($complete['intent'])['server_database'])['fill']);
     expect(array_keys($run['execution_secrets']))->not->toContain('model_environment')
         ->and($put['value'])->toContain("ANTHROPIC_BASE_URL=http://10.253.0.1:8319\n")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
+        // Stock T3 gets no Gemini endpoint: its own Antigravity driver would send a personal key to the forwarder.
+        ->not->toContain('GOOGLE_GEMINI_BASE_URL')
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and($fill[13])->toStartWith('DROP DATABASE IF EXISTS')
         ->and($fill[14])->toContain(' TEMPLATE ');
@@ -1257,6 +1275,53 @@ it('renders database removal fence recovery with PostgreSQL boolean keywords', f
         ->not->toContain("format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections)");
 });
 
+it('records a default container phase refusal from its written result as the failure stderr', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $operation = containerCreate($project, $node);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+    $detail = 'Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved';
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.container_endpoint_unresolved',
+        'failure' => ['failed_step' => 'container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'container',
+            'error_code' => 'instance.container_endpoint_unresolved', 'detail' => $detail],
+    ]);
+    $operation->refresh();
+    expect($operation->error_code)->toBe('instance.container_endpoint_unresolved')
+        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'container', 'detail' => $detail, 'stderr_recorded' => true])
+        ->and($operation->result)->not->toHaveKey('detail')
+        ->and($operation->result['recovery']['destroy']['available'])->toBeTrue()
+        ->and(Instance::query()->findOrFail($operation->target_id)->error_code)->toBe('instance.container_endpoint_unresolved');
+});
+
+it('keeps the failed task\'s name and whole UTF-8 characters in a long written container failure', function (string $unit): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $operation = containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'failure-run']])->save();
+    $head = 'Install the packages: non-zero return code: ';
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'failure-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.container_container_failed',
+        'failure' => ['failed_step' => 'container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false],
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'container',
+            'error_code' => 'instance.container_container_failed', 'detail' => $head.str_repeat($unit, 3000)."\nthe last line"],
+    ]);
+    $failure = $operation->refresh()->state['native_failure'];
+    expect($failure['stderr_recorded'])->toBeTrue()
+        ->and($failure['detail'])->toStartWith($head)->toEndWith("\nthe last line")
+        ->and(strlen($failure['detail']))->toBeLessThanOrEqual(NativeStepFailure::MaximumBytes)
+        ->and(mb_check_encoding($failure['detail'], 'UTF-8'))->toBeTrue()
+        ->and(json_encode($failure, JSON_THROW_ON_ERROR))->toBeString();
+})->with(['accented' => 'é', 'emoji' => '😀']);
+
 it('names retained create resources and proves the advertised recovery paths', function (bool $clone, string $phase, bool $hasCommit, string $status): void {
     $node = containerDefaultNode();
     $node->update(['tld' => 'beast.test']);
@@ -1291,11 +1356,13 @@ it('names retained create resources and proves the advertised recovery paths', f
         'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
             'reuse_original_options' => true, 'new_idempotency_key' => true],
         'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
-            'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-            ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+            'available' => true, 'options' => ['yes' => true, 'force' => true]],
     ])->and($instance->fresh()->status)->toBe($hasCommit ? InstanceState::SourceResolved : InstanceState::Reserved)
         ->and($instance->fresh()->failed_step)->toBe($phase)
         ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending');
+
+    // The advertised destroy is admitted while no create owns the Instance.
+    expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))->toBe('admitted');
 
     // The command is a real new admission: it reuses the exact reservation, Route and runtime.
     $repeat = containerCreate($project, $node, $name);
@@ -1303,8 +1370,15 @@ it('names retained create resources and proves the advertised recovery paths', f
         ->and($repeat->target_id)->toBe($instance->id)
         ->and($repeat->input['route_id'])->toBe($routeId)
         ->and($instance->runtime()->firstOrFail()->id)->toBe($runtime->id);
-    expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))
+    // A retry owns a default again: its earlier failure no longer admits a removal that would cancel it.
+    $before = Operation::query()->where('kind', 'like', 'instance.destroy%')->count();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance->fresh(), true)))
         ->toBe($clone ? 'admitted' : 'operation.kind_unavailable');
+    if (! $clone) {
+        expect($repeat->refresh()->status->terminal())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'like', 'instance.destroy%')->count())->toBe($before)
+            ->and($instance->fresh()->status)->toBe($hasCommit ? InstanceState::SourceResolved : InstanceState::Reserved);
+    }
 })->with([
     'clone-container' => [true, 'clone', false, 'failed'],
     'clone-t3, its checkout' => [true, 'workspace', false, 'failed'],
@@ -1352,8 +1426,7 @@ it('names retained resources when a container create is cancelled before its run
             'retry' => ['command' => 'instance:create', 'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
                 'reuse_original_options' => true, 'new_idempotency_key' => true],
             'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id,
-                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable'])],
+                'available' => true, 'options' => ['yes' => true, 'force' => true]],
         ]])
         ->and($instance->fresh()->status)->toBe(InstanceState::Reserved)
         ->and(Route::query()->findOrFail($routeId)->status->value)->toBe('pending')
@@ -1365,6 +1438,45 @@ it('names retained resources when a container create is cancelled before its run
         ->and($retry->input['route_id'])->toBe($routeId)
         ->and($instance->runtime()->firstOrFail()->id)->toBe($runtimeId);
 })->with(['clone' => true, 'default' => false]);
+
+it('admits the destroy that a create cancelled before its run starts advertises', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $operation = containerCreate(containerDefaultProject(ProjectType::LaravelApp, '8.5'), $node);
+    app(CancelOperationAction::class)->execute($operation);
+    $destroy = $operation->refresh()->result['recovery']['destroy'];
+    expect($destroy['available'])->toBeTrue();
+
+    $removal = app(StartInstanceDestroyAction::class)->execute(Instance::query()->findOrFail($destroy['instance_id']), $destroy['options']['force']);
+    expect($removal->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$operation->target_id])
+        ->and(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Removing);
+});
+
+it('keeps a clone create failure detail, such as the CI hold guidance, in its result', function (): void {
+    $node = containerDefaultNode();
+    $node->update(['tld' => 'beast.test']);
+    Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $seed = containerCreate($project, $node);
+    $seed->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'seed-run']])->save();
+    app(DevelopmentInstanceCreateProjection::class)->apply($seed, [
+        'status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $seed->target_id, 'ready' => true, 'commit' => str_repeat('c', 40)],
+    ]);
+    $operation = containerCreate($project, $node, 'proof-copy');
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'hold-run']])->save();
+    $detail = 'The Node ci-shark has no hold script of its ci-runner role. Converge the role on the Node.';
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, [
+        'status' => 'failed', 'run_id' => 'hold-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => 'instance.ci_hold_unavailable',
+        'result' => ['instance_id' => $operation->target_id, 'ready' => false, 'failed_step' => 'ci_hold', 'error_code' => 'instance.ci_hold_unavailable', 'detail' => $detail],
+    ]);
+    expect($operation->refresh()->error_code)->toBe('instance.ci_hold_unavailable')
+        ->and($operation->result['detail'])->toBe($detail);
+});
 
 it('keeps another Operation kind cancellation result unchanged', function (?array $result): void {
     $operation = Operation::query()->create([
@@ -1846,14 +1958,17 @@ describe('a Process that is stopped on the default', function (): void {
 
 // The container server a clone records (docs/reference/development-containers.md#container-server).
 describe('the server a container records', function (): void {
-    it('records the Project\'s server on a clone and none on the default, and the clone runs T3 by default', function (): void {
+    it('records the Project\'s server on a clone and none on the default: the Conn Server by default, T3 when the Project chose it', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
 
-        $clone = containerCreate($default->project, $node, 'feature');
+        $conn = containerCreate($default->project, $node, 'feature');
+        $default->project->update(['container_server' => ContainerServer::T3]);
+        $clone = containerCreate($default->project, $node, 'other');
 
         $intent = containerIntentOf($clone);
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->value('container_server'))->toBeNull()
+            ->and(InstanceRuntime::query()->where('instance_id', $conn->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::Conn)
             ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3)
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
@@ -1876,7 +1991,13 @@ describe('the server a container records', function (): void {
             // An intent built after the Project changed back still names the container's own server.
             ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
             ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
-            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n")
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\nEnvironment=CONN_SERVER_BROWSER_PATH=/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\nEnvironment=AGY_CLI_DISABLE_AUTO_UPDATE=true\n")
+            // The Conn Server hands Antigravity the forwarder as its Gemini endpoint.
+            ->and(app(InstanceContainer::class)->modelEnvironment($runtime, 'placeholder-model-key'))->toContain("GOOGLE_GEMINI_BASE_URL=http://10.253.0.1:8319\n")
+            // Only the Conn Server has the Antigravity driver: its instance holds the place of the model key, never the key.
+            ->and(collect($intent['clone']['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true,
+                'providerInstances' => ['antigravity' => ['driver' => 'antigravity', 'enabled' => true,
+                    'config' => ['authMethod' => 'gemini-api-key', 'apiKey' => InstanceContainer::ModelKeyValue]]]])
             ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 
@@ -1892,13 +2013,13 @@ describe('the server a container records', function (): void {
             ->and(['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last])->toBe($before);
     });
 
-    it('keeps a runtime\'s server: no update changes it', function (): void {
+    it('refuses a conn runtime\'s switch back to t3', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         $clone = containerCreate($default->project, $node, 'feature');
 
-        expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 'conn']))
-            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+        expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 't3']))
+            ->toThrow(QueryException::class, 'An Instance runtime can only switch its container server from t3 to conn.');
     });
 });
 

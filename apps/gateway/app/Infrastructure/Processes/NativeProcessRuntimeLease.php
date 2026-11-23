@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\Shared\StoredValue;
@@ -76,6 +77,8 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
             if ($relocatedKey !== $key) {
                 return $this->relocate($fresh, $operation, $wait, $relocations, $key, $lock);
             }
+            // Every synchronous Process mutation runs under this lease, so an open upgrade holds them all here.
+            ProcessOperationAdmission::assertNotUpgrading($fresh);
 
             return $operation($fresh);
         } finally {

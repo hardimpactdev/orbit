@@ -25,6 +25,9 @@ final readonly class GitHubTokenCache
 
     public const int InstallationSeconds = 3600;
 
+    /** Cache namespace for repository-scoped, scope-verified `contents: read` tokens minted for engine fetches. */
+    public const string ScopedReadPermission = 'contents:scoped';
+
     /** The cache store is resolved when it is used, so building a reader never touches the cache. */
     public function __construct(private Factory $caches, private StringEncrypter $encrypter) {}
 
@@ -76,7 +79,7 @@ final readonly class GitHubTokenCache
     {
         $this->cache()->forget($this->key('installation', $repository));
 
-        foreach ([...CachedGitHubApi::Permissions, 'actions'] as $permission) {
+        foreach ([...CachedGitHubApi::Permissions, self::ScopedReadPermission, 'actions'] as $permission) {
             $this->cache()->forget($this->key('token:'.$permission, $repository));
         }
     }

@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { containerFailure, createResult, fleetFailure } from "./result.ts";
+import { containerFailure, createResult, defaultContainerFailure, fleetFailure } from "./result.ts";
 import { vpInstallSteps } from "../instance-vp-command/steps.ts";
 const intent = {
     instance_id: 7,
@@ -361,6 +361,67 @@ Deno.test("container mail skips retain their reason and missing mail observation
         assertEquals(result.failed_step, undefined);
         assertEquals(result.mail, {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]});
         assertEquals(result.warnings, [{code: "instance.mail_update_failed", step: "mail"}]);
+    }
+});
+
+Deno.test("a container step that did not succeed reports no mail result and no mail warning", () => {
+    const admitted = {...intent, setup_steps: [], route: null, container: {mail: {host: "10.253.0.1", port: 1025}}};
+    for (const launch of ["failed", "skipped"]) {
+        const result = JSON.parse(createResult(admitted, {...phases, container: {mail: launch === "failed" ? {status: "failed"} : null, launch,
+            workspace: null, deploy: [], processes: "skipped", seed: "skipped"}}).stdout);
+        assertEquals([result.ready, result.failed_step, result.error_code], [false, "container", "instance.create_container_failed"]);
+        assertEquals("mail" in result, false);
+        assertEquals("warnings" in result, false);
+    }
+});
+
+Deno.test("a container default whose Project has setup steps and no development deploy steps warns that they were ignored", () => {
+    const container = {mail: null, launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "succeeded", seed: "succeeded"};
+    const admitted = {...intent, setup_steps: [], route: null, container: {}};
+    const warned = JSON.parse(createResult({...admitted, setup_steps_ignored: true}, {...phases, container}).stdout);
+    assertEquals(warned.ready, true);
+    assertEquals(warned.warnings, [{code: "instance.setup_steps_ignored", step: "setup"}]);
+    assertEquals("warnings" in JSON.parse(createResult({...admitted, setup_steps_ignored: false}, {...phases, container}).stdout), false);
+});
+
+Deno.test("a default's failed container phase keeps its written refusal and the failed task as its detail", () => {
+    const detail = "Refuse an unresolved bridge endpoint: instance.container_endpoint_unresolved";
+    assertEquals(defaultContainerFailure({error_code: "instance.container_endpoint_unresolved", detail}),
+        {error_code: "instance.container_endpoint_unresolved", detail});
+    // The phase's generic code stays the create's own code; its detail still says why.
+    assertEquals(defaultContainerFailure({error_code: "instance.container_container_failed", detail: "Start the container: non-zero return code: boom"}),
+        {error_code: "instance.container_container_failed", detail: "Start the container: non-zero return code: boom"});
+    // A private task's failure keeps its phase code and the task's name.
+    assertEquals(defaultContainerFailure({error_code: "instance.container_container_failed", detail: "Write the read token"}),
+        {error_code: "instance.container_container_failed", detail: "Write the read token"});
+    // What containerFailure keeps stays, now with the detail.
+    assertEquals(defaultContainerFailure({error_code: "instance.nested_fleet_image_unavailable", detail: "Refuse: x"}),
+        {error_code: "instance.nested_fleet_image_unavailable", detail: "Refuse: x"});
+    assertEquals(defaultContainerFailure({error_code: "instance.container_network_unsafe"}), {error_code: "instance.container_network_unsafe"});
+    assertEquals(defaultContainerFailure({error_code: "Not A Code", detail: "y"}), null);
+    assertEquals(defaultContainerFailure({detail: "no code"}), null);
+    assertEquals(defaultContainerFailure(null), null);
+    // An oversized detail keeps its head, the task's name, and the end of its stderr, in 4096 characters.
+    const long = defaultContainerFailure({error_code: "instance.container_container_failed",
+        detail: "Install the packages: non-zero return code: " + "x".repeat(5000) + "the last stderr line"})?.detail as string;
+    assertEquals(new TextEncoder().encode(long).length, 4096);
+    assertEquals(long.startsWith("Install the packages: non-zero return code: "), true);
+    assertEquals(long.endsWith("the last stderr line"), true);
+});
+
+Deno.test("an oversized container failure detail stays within 4096 UTF-8 bytes, keeps its task name and never splits a character", () => {
+    const lone = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    for (const [name, unit] of [["accented", "é"], ["emoji", "😀"], ["mixed", "aé😀"]] as const) {
+        const raw = "Install the packages: non-zero return code: " + unit.repeat(4096) + "the last line";
+        const detail = defaultContainerFailure({error_code: "instance.container_container_failed", detail: raw})?.detail as string;
+        const encoded = new TextEncoder().encode(detail);
+        assertEquals(encoded.length <= 4096, true, name);
+        assertEquals(new TextDecoder("utf-8", {fatal: true}).decode(encoded), detail, name);
+        assertEquals(lone.test(detail), false, name);
+        assertEquals(detail.startsWith("Install the packages: non-zero return code: "), true, name);
+        assertEquals(detail.endsWith("the last line"), true, name);
+        // The receipt is JSON the Gateway decodes whole.
+        assertEquals(JSON.parse(JSON.stringify({detail})).detail, detail, name);
     }
 });
 

@@ -147,11 +147,12 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
             'directory' => '/etc/orbit/ai-router-forwarder', 'unit' => 'orbit-ai-router-forwarder.service'])
         ->and($intent['forwarder']['caddyfile'])->toContain("bind 10.251.33.1\n")->toContain("\thandle {\n\t\treverse_proxy http://10.44.0.3:8318\n\t}\n")
         ->not->toContain('credentials')
-        // The two Orbit routes of a task copy: each exact path to its fixed Gateway path, trusting only the Orbit root certificate.
+        // The Orbit routes of a task copy: each exact path to its fixed Gateway path, trusting only the Orbit root certificate.
         ->toContain("\thandle /orbit/v1/copy/whoami {\n\t\trewrite * /api/v1/copy/whoami\n\t\treverse_proxy https://10.6.0.2 {\n\t\t\theader_up Host 10.6.0.2\n"
             ."\t\t\ttransport http {\n\t\t\t\ttls_trust_pool file /etc/orbit/agent/ca.pem\n")
         ->toContain("\thandle /orbit/v1/copy/pull-request {\n\t\trewrite * /api/v1/copy/pull-request\n")
-        ->and(substr_count($intent['forwarder']['caddyfile'], 'reverse_proxy https://'))->toBe(2)
+        ->toContain("\thandle /orbit/v1/copy/handoff {\n\t\trewrite * /api/v1/copy/handoff\n")
+        ->and(substr_count($intent['forwarder']['caddyfile'], 'reverse_proxy https://'))->toBe(3)
         ->and($intent['forwarder']['firewall'])->toBe(['desired' => [
             ['ufw', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
         ], 'remove' => []])
@@ -387,7 +388,7 @@ it('sends exactly the two Orbit routes to their fixed Gateway paths, and every o
     $caddies = [];
     try {
         expect($adapted->exitCode())->toBe(0, $adapted->errorOutput())
-            ->and(substr_count($forwarder, 'reverse_proxy http://127.0.0.1:'.$gatewayPort))->toBe(2);
+            ->and(substr_count($forwarder, 'reverse_proxy http://127.0.0.1:'.$gatewayPort))->toBe(3);
         foreach (['forwarder' => $forwarder, 'upstreams' => $upstreams] as $name => $content) {
             file_put_contents("{$directory}/{$name}.Caddyfile", $content);
             $caddies[$name] = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/{$name}.Caddyfile"]);
@@ -416,6 +417,7 @@ it('sends exactly the two Orbit routes to their fixed Gateway paths, and every o
 
         expect($send('GET', '/orbit/v1/copy/whoami'))->toBe('gateway GET host=10.6.0.2 uri=/api/v1/copy/whoami auth=Bearer copy-key')
             ->and($send('POST', '/orbit/v1/copy/pull-request'))->toBe('gateway POST host=10.6.0.2 uri=/api/v1/copy/pull-request auth=Bearer copy-key')
+            ->and($send('POST', '/orbit/v1/copy/handoff'))->toBe('gateway POST host=10.6.0.2 uri=/api/v1/copy/handoff auth=Bearer copy-key')
             // Nothing else of the Gateway API: a near path, an encoded escape and the API path itself all go to the guard.
             ->and($send('GET', '/orbit/v1/copy/whoami/x'))->toBe('guard uri=/orbit/v1/copy/whoami/x')
             ->and($send('GET', '/orbit/v1/copy/whoami%2F..%2F..%2Ftasks'))->toStartWith('guard ')

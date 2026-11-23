@@ -1,0 +1,124 @@
+# laravel-lsp go-to-definition proof
+started: 2026-11-23T21:56:22+00:00
+checkout commit: e6c39bb3e0768009b8ff8748cfe5d8a2b0dbbfc8
+
+## The pinned laravel/lsp in the recipe and in the runtime folder of the app-dev Node
+recipe instances.runtime.laravel-lsp: {"version": "0.0.32", "artifacts": {"amd64": {"url": "https://github.com/laravel/lsp/releases/download/v0.0.32/laravel-lsp", "sha256": "86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51"}}, "bin": {"laravel-lsp": "laravel-lsp"}}
+runtime folder laravel-lsp: /opt/orbit-runtime/5fc8ff6f7732/laravel-lsp/laravel-lsp
+sha256: 86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51
+PASS: the runtime folder holds the PHAR the recipe pins, by its sha256
+
+## Prepare the default
+$ orbit project:show 2 --json
+Project 2 webtest: https://github.com/laravel/laravel.git, default branch 13.x, root public
+$ orbit instance:list --json
+$ orbit instance:show 2 --json
+default Instance 2, checkout /var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace
+$ orbit instance:deploy 2 --json
+deploy Operation: {"id": 296, "kind": "instance.deploy", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null}
+PASS: the default deploy succeeded at commit f32d7019cbd0ab0c378b3154c551d0c60c553ebc
+default snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/23 21:56 UTC
+PASS: the default holds the seed of the deployed commit
+[instance-2 as agent]$ find / -xdev -iname "*laravel*lsp*" -not -path "/proc/*" 2>/dev/null; true
+  (exit 0)
+PASS: the default holds no laravel-lsp install or index of its own: the runtime folder serves it
+
+## Create a fresh disposable clone
+$ orbit instance:create 2 3 lsp-proof-1123215707 --json
+create Operation: {"id": 297, "kind": "instance.create", "target_type": "instance", "target_id": 5, "status": "succeeded", "failed_step": null, "error_code": null}
+clone Instance 5, completion Operation 298
+$ orbit instance:show 5 --json
+$ orbit instance:show 5 --json
+$ orbit operation:show 298 --json
+completion Operation: {"id": 298, "kind": "instance.complete", "target_type": "instance", "target_id": 5, "status": "succeeded", "failed_step": null, "error_code": null}
+PASS: clone 5 (lsp-proof-1123215707) is active on branch lsp-proof-1123215707 at f32d7019cbd0ab0c378b3154c551d0c60c553ebc
+
+## Nothing set up in the clone: no per-clone install, no editor settings, no running server
+[instance-5 as agent]$ command -v laravel-lsp laravel-lsp-root
+  /opt/orbit-runtime/current/bin/laravel-lsp
+  /opt/orbit-runtime/current/bin/laravel-lsp-root
+  (exit 0)
+PASS: laravel-lsp and laravel-lsp-root come from the shared runtime folder on agent's PATH
+[instance-5 as agent]$ find / -xdev -iname "*laravel*lsp*" -not -path "/proc/*" 2>/dev/null; true
+  (exit 0)
+PASS: the clone holds no laravel-lsp install or index of its own
+[instance-5 as agent]$ ls -d /srv/workspace/.zed /srv/workspace/.vscode /srv/workspace/.idea ~/.config/zed 2>/dev/null; true
+  (exit 0)
+PASS: the clone holds no editor settings
+[instance-5 as agent]$ ps -u agent -o pid=,args= | grep "/[l]aravel-lsp$" || echo "no laravel-lsp process"
+  no laravel-lsp process
+  (exit 0)
+PASS: no laravel-lsp server runs before a client starts one
+
+## The application root and the versions the server runs with
+[instance-5 as agent]$ sed -n 's/^\(ORBIT_INSTANCE_ID\|ORBIT_APPLICATION\)=/&/p' /etc/orbit/instance
+  ORBIT_INSTANCE_ID=5
+  ORBIT_APPLICATION="/srv/workspace"
+  (exit 0)
+[instance-5 as agent]$ cd /srv/workspace && laravel-lsp-root
+  /srv/workspace
+  (exit 0)
+[instance-5 as agent]$ test -f /srv/workspace/artisan
+  (exit 0)
+PASS: laravel-lsp-root names /srv/workspace, a folder with artisan
+[instance-5 as agent]$ cd /srv/workspace && laravel-lsp --version && command -v php && php -r "echo PHP_VERSION, PHP_EOL;" && php artisan --version && test -f vendor/autoload.php && echo "vendor/autoload.php present"
+  Laravel LSP v0.0.32
+  /usr/local/bin/php
+  8.5.13
+  Laravel Framework 13.43.0
+  vendor/autoload.php present
+  (exit 0)
+PASS: laravel-lsp and the Project's PHP and vendor/ answer at the root
+
+## A PHP file that calls view() with a real named view
+[instance-5 as agent]$ cd /srv/workspace && grep -rn --include=*.php "view('" routes app | head -5
+  routes/web.php:6:    return view('welcome');
+  (exit 0)
+[instance-5 as agent]$ test -f /srv/workspace/resources/views/welcome.blade.php
+  (exit 0)
+PASS: the view 'welcome' is the real file /srv/workspace/resources/views/welcome.blade.php in the clone
+definition position: routes/web.php line 6 character 20 (inside 'welcome')
+
+## laravel-lsp over stdio at the root, as agent in the clone
+[instance-5 as agent]$ cd /srv/workspace && exec laravel-lsp
+  -> {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"processId": null, "clientInfo": {"name": "orbit-laravel-lsp-proof"}, "rootUri": "file:///srv/workspace", "rootPath": "/srv/workspace", "workspaceFolders": [{"uri": "file:///srv/workspace", "name": "workspace"}], "capabilities": {"textDocument": {"definition": {"linkSupport": true}, "synchronization": {"didSave": true}}, "workspace": {"configuration": true, "workspaceFolders": true}}}}
+  <- {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {"textDocumentSync": {"openClose": true, "change": 1}, "documentLinkProvider": {"resolveProvider": false}, "completionProvider": {"triggerCharacters": ["\"", "'", ".", "|", "x", "-", ":", "@"]}, "codeActionProvider": {"codeActionKinds": ["quickfix"]}, "definitionProvider": true, "hoverProvider": true}, "serverInfo": {"name": "Laravel LSP", "version": "v0.0.32"}, "laravel": {"phpEnvironment": "auto", "phpCommand": ["/opt/orbit-runtime/5fc8ff6f7732/php/8.5/bin/php"], "memoryLimit": "512M"}}}
+PASS: initialize answered with a definition provider: {"name": "Laravel LSP", "version": "v0.0.32"}
+  -> {"jsonrpc": "2.0", "method": "initialized", "params": {}}
+  -> {"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {"textDocument": {"uri": "file:///srv/workspace/routes/web.php", "languageId": "php", "version": 1, "text": "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\nRoute::get('/', function () {\n    return view('welcome');\n});\n"}}}
+  -> {"jsonrpc": "2.0", "id": 2, "method": "textDocument/definition", "params": {"textDocument": {"uri": "file:///srv/workspace/routes/web.php"}, "position": {"line": 5, "character": 20}}}
+  <- {"jsonrpc": "2.0", "id": 0, "method": "client/registerCapability", "params": {"registrations": [{"id": "file-watching", "method": "workspace/didChangeWatchedFiles", "registerOptions": {"watchers": [{"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "app/Providers/{,*,**/*}.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "public/**/*"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "app/Models/{,*,**/*}.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "app/Policies/{,*,**/*}.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "**/{resources,Modules/*/resources}/views/**/*.blade.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "app/View/Components/{,*,**/*}.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "config/{,*,**/*}.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": ".env"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/workspace", "pattern": "app/Http/Controllers/*.php"}, "kind": 7}, {"globPattern": {"baseUri": "file:///srv/worksp... (3000 bytes)
+  -> {"jsonrpc": "2.0", "id": 0, "result": null}
+  <- {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///srv/workspace/routes/web.php", "diagnostics": []}}
+  <- {"jsonrpc": "2.0", "id": 2, "result": [{"originSelectionRange": {"start": {"line": 5, "character": 17}, "end": {"line": 5, "character": 24}}, "targetUri": "file:///srv/workspace/resources/views/welcome.blade.php", "targetRange": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "targetSelectionRange": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}}]}
+definition URIs: ["file:///srv/workspace/resources/views/welcome.blade.php"]
+PASS: the definition is the clone's own Blade file, file:///srv/workspace/resources/views/welcome.blade.php
+[instance-5 as agent]$ test -f /srv/workspace/resources/views/welcome.blade.php && head -n 2 /srv/workspace/resources/views/welcome.blade.php
+  <!DOCTYPE html>
+  <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+  (exit 0)
+PASS: the URI names a file that exists in the clone
+
+## The clone, not the default: the server and its file on the app-dev Node
+laravel-lsp processes on the Node (pid, cgroup): 21490 0::/lxc.payload.orbit-instances_instance-5/user.slice/user-2750.slice/session-c13.scope
+PASS: the only laravel-lsp process on the Node runs in the clone's container instance-5
+the URI on the Node: /var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-5/rootfs/srv/workspace/resources/views/welcome.blade.php; the default's file: /var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-2/rootfs/srv/workspace/resources/views/welcome.blade.php
+PASS: the URI's file is the clone's own copy under its checkout, not the default's path
+
+## Shut the server down
+  -> {"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": null}
+  <- {"jsonrpc": "2.0", "id": 3, "result": null}
+  -> {"jsonrpc": "2.0", "method": "exit", "params": null}
+server exit status: 0
+server stderr (last lines): [2026-11-23T21:57:29.859827+00:00] Laravel LSP.INFO: Initialized Laravel LSP. {"rootUri":"file:///srv/workspace","processId":null,"clientInfo":{"name":"orbit-laravel-lsp-proof"},"initializationOptions":[],"phpEnvironment":"auto","phpCommand":["/opt/orbit-runtime/5fc8ff6f7732/php/8.5/bin/php"],"memoryLimit":"512M"} []
+[instance-5 as agent]$ ps -u agent -o pid=,args= | grep "/[l]aravel-lsp$" || echo "no laravel-lsp process"
+  no laravel-lsp process
+  (exit 0)
+PASS: the server exited 0 and left no process behind
+
+## Destroy the clone
+$ orbit instance:destroy 5 --yes --force --json
+destroy Operation: {"id": 299, "kind": "instance.destroy", "target_type": "instance", "target_id": 5, "status": "succeeded", "failed_step": null, "error_code": null}
+PASS: clone 5 and its container instance-5 are gone
+
+RESULT: PASS

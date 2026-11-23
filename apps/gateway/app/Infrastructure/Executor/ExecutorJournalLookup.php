@@ -51,13 +51,14 @@ final readonly class ExecutorJournalLookup
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $knownHosts) {}
 
     /**
-     * The order's result line as the executor would have sent it, or Open, or Absent.
+     * The order's result line as the executor would have sent it, or Open, or Absent. `$publishedAtMs` bounds the order's expiry from
+     * above; `$signedSinceMs`, when the signing time is known only to lie between two bounds, bounds its age from below for retention.
      *
      * @return array<string, mixed>|self::Open|self::Absent
      *
      * @throws RuntimeException when the Node cannot be read.
      */
-    public function find(Operation $operation, string $action, int $publishedAtMs): array|string
+    public function find(Operation $operation, string $action, int $publishedAtMs, ?int $signedSinceMs = null): array|string
     {
         $node = $operation->node_id === null ? null : Node::query()->find($operation->node_id);
         if ($node === null || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
@@ -105,7 +106,7 @@ final readonly class ExecutorJournalLookup
             return self::Open;
         }
         $outlived = (int) $startedAt > $expiresAt;
-        if (! ($marker === 'accepts' || $outlived) || (int) $nodeNow - $publishedAtMs >= self::RetentionMs) {
+        if (! ($marker === 'accepts' || $outlived) || (int) $nodeNow - ($signedSinceMs ?? $publishedAtMs) >= self::RetentionMs) {
             throw new RuntimeException('The Node executor journal cannot prove that the order never acted.');
         }
 

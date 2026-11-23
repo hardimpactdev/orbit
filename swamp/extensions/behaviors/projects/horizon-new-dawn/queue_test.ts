@@ -105,12 +105,98 @@ Deno.test("one candidate becomes one ordered backlog task through the Gateway, n
     await enqueue(plan, 123, project.repository, s.deps);
     assertEquals(s.posts.length, 1);
 });
-Deno.test("baseline is one task and repeated scans create no second baseline", async () => {
+// The Gateway starts this payload: apps/gateway/tests/Feature/Tasks/TaskWithoutSubtaskTest.php creates it, moves it to todo and
+// starts its copy.
+const baselineFixture = new URL(
+    "./fixtures/baseline-task.json",
+    import.meta.url,
+);
+Deno.test("baseline is one task with no subtask and repeated scans create no second baseline", async () => {
     const s = setup(), plan = baselinePlan(project);
     await enqueue(plan, 123, project.repository, s.deps);
     await enqueue(plan, 123, project.repository, s.deps);
     assertEquals(s.posts.length, 1);
-    assertEquals((s.posts[0].subtasks as unknown[]).length, 1);
+    // The Gateway refuses a task with one subtask: the task holds the baseline's brief and deliverables itself.
+    assertEquals(s.posts[0].subtasks, undefined);
+    assertEquals(s.posts[0].deliverables, plan.tasks[0].deliverables);
+    assertEquals(s.posts[0].brief, plan.tasks[0].brief);
+    assertEquals(
+        s.posts[0],
+        JSON.parse(await Deno.readTextFile(baselineFixture)),
+    );
+});
+Deno.test("a tag with one candidate is one task with no subtask", async () => {
+    const s = setup(),
+        plan = taskPlan({
+            ...detection,
+            candidates: detection.candidates.slice(0, 1),
+        }, project);
+    await enqueue(plan, 123, project.repository, s.deps);
+    assertEquals(s.posts[0].subtasks, undefined);
+    assertEquals(s.posts[0].deliverables, plan.tasks[0].deliverables);
+    assertEquals(s.posts[0].brief, plan.tasks[0].brief);
+});
+Deno.test("a one-task plan whose brief is at the Gateway limit posts a brief within it", async () => {
+    const s = setup(), plan = baselinePlan(project);
+    plan.tasks[0].brief = "x".repeat(8000);
+    await enqueue(plan, 123, project.repository, s.deps);
+    assertEquals(String(s.posts[0].brief).length, 8000);
+});
+Deno.test("queued one-task work keeps its identity: a receipt or a group from before tasks with no subtask is adopted", async () => {
+    for (
+        const plan of [
+            baselinePlan(project),
+            taskPlan({
+                ...detection,
+                candidates: detection.candidates.slice(0, 1),
+            }, project),
+        ]
+    ) {
+        const key = plan.baseline
+            ? "baseline"
+            : `${plan.synced_tag}-${plan.tag}`;
+        const brief = `Swamp Horizon sync: ${project.repository}:${key}\n\n${
+            plan.baseline
+                ? "Record the one-time parity baseline before upstream detection."
+                : `Implement every candidate from laravel/horizon ${plan.synced_tag} to ${plan.tag} in order. Only the last task advances synced_tag.`
+        }\n\nPull requests wait for Nick. Never merge.`;
+        for (const state of ["created", "uncertain"] as const) {
+            const s = setup();
+            if (state === "uncertain") {
+                s.groups.push({
+                    id: 456,
+                    project_id: 123,
+                    orchestration: "external",
+                    brief,
+                });
+            }
+            await s.deps.save({
+                key,
+                projectId: 123,
+                brief,
+                state,
+                groupId: state === "created" ? 456 : null,
+            });
+            assertEquals(
+                (await enqueue(plan, 123, project.repository, s.deps))?.groupId,
+                456,
+            );
+            assertEquals(s.posts.length, 0);
+        }
+        // No receipt, and the group the earlier shape created: adopted, not posted again.
+        const s = setup();
+        s.groups.push({
+            id: 456,
+            project_id: 123,
+            orchestration: "external",
+            brief,
+        });
+        assertEquals(
+            (await enqueue(plan, 123, project.repository, s.deps))?.groupId,
+            456,
+        );
+        assertEquals(s.posts.length, 0);
+    }
 });
 Deno.test("lost create reply is adopted by exact brief and never posted twice", async () => {
     const s = setup(), plan = taskPlan(detection, project);

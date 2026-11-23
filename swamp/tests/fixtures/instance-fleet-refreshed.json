@@ -6,10 +6,14 @@
       "files": {
         "/etc/wireguard/wg-nested.key": "operator-private-key",
         "/run/orbit-club/swamp-club-api-key": "club-key-value-that-never-leaves-the-file",
-        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"2a7ed694b7d0caca0976cc862e0007ca6654c361d350696e47ba27041f18fa57\",\"converge_app_prod\":\"6e5f08a07f9792f6955be6a276084faf558150946f5aff752b30a3d5a1862eb5\",\"converge_gateway\":\"8992d60fc536641cf05c450bf856c9803c80223095e61289b67a844019c44a3a\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c\",\"rules\":\"5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1\",\"tokens\":\"@TOKENS@\"}"
+        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"2d44e7494817855c1f38b826ab2895822cea6d6913330367b3bcf6298beb71c0\",\"converge_app_prod\":\"c36065fe029a52fa3ba090b652ad1ab4d27e14a3d79a1c56bbc4e5afbdadd7fa\",\"converge_gateway\":\"216937fbd9c15cbaa0c5fecb92ad74baaf5245f09c7a67cacb60f9a608b4cd21\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c\",\"rules\":\"5754a5161e518699faf8bc973b18e92189d21b25ed578a56ac10cf1a0e91f84e\",\"tokens\":\"@TOKENS@\"}"
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
+      },
+      "tunnelBoot": {
+        "script": "#!/bin/sh\n# Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.\nset -eu\nip link show wg-nested >/dev/null 2>&1 || ip link add wg-nested type wireguard\nwg set wg-nested private-key /etc/wireguard/wg-nested.key listen-port 51821 peer HUBKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= endpoint 10.232.2.11:51820 allowed-ips 10.45.0.0/24 persistent-keepalive 25\nip address replace 10.45.0.10/24 dev wg-nested\nip link set wg-nested up\nresolvectl dns wg-nested 10.45.0.1\nresolvectl domain wg-nested ~nested-dev ~nested-prod\n",
+        "unit": "# Managed by Orbit: the operator tunnel to this Instance's nested fleet, at each boot.\n[Unit]\nDescription=Operator tunnel to this Instance's nested fleet\nAfter=network-online.target systemd-resolved.service\nWants=network-online.target\n[Service]\nType=oneshot\nExecStart=/etc/orbit/wg-nested-up\nRemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n"
       }
     },
     "containers": {
@@ -66,15 +70,24 @@
           "/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+          "/etc/systemd/system/orbit-gateway-engine.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf": "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\nenv[HTTP_PROXY] = \"http://10.253.0.1:3128\"\nenv[HTTPS_PROXY] = \"http://10.253.0.1:3128\"\nenv[http_proxy] = \"http://10.253.0.1:3128\"\nenv[https_proxy] = \"http://10.253.0.1:3128\"\nenv[NO_PROXY] = \"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nenv[no_proxy] = \"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/orbit/instance-fleet": "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n",
           "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+          "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
           "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
-          "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins"
+          "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins",
+          "/usr/local/lib/orbit/nested-handshake.sh": "#!/bin/sh\n# Managed by Orbit: the hub starts the handshake with each nested Node as soon as its WireGuard is up.\npeer() { wg show orbit allowed-ips | awk -v ip=\"$1\" '{for (i = 2; i <= NF; i++) if ($i == ip) print $1}'; }\nkey=$(peer 10.45.0.2/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.12:51820 persistent-keepalive 25\nkey=$(peer 10.45.0.3/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.13:51820 persistent-keepalive 25\nexit 0\n",
+          "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: the hub starts the handshake with each nested Node.\n[Service]\nExecStartPost=/bin/sh /usr/local/lib/orbit/nested-handshake.sh\n",
+          "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
         },
         "status": "Running",
         "snapshots": {
@@ -131,15 +144,24 @@
               "/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/orbit-gateway-horizon.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+              "/etc/systemd/system/orbit-gateway-engine.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/php/8.5/fpm/pool.d/zz-orbit-nested-egress.conf": "; Managed by Orbit: the fleet's egress proxy for the Gateway's pool (docs/reference/development-containers.md#fleet-rules).\n[orbit-gateway]\nenv[HTTP_PROXY] = \"http://10.253.0.1:3128\"\nenv[HTTPS_PROXY] = \"http://10.253.0.1:3128\"\nenv[http_proxy] = \"http://10.253.0.1:3128\"\nenv[https_proxy] = \"http://10.253.0.1:3128\"\nenv[NO_PROXY] = \"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nenv[no_proxy] = \"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/orbit/instance-fleet": "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n",
               "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+              "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
               "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
-              "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins"
+              "/home/orbit/.orbit/ssh/known_hosts": "recorded-node-pins",
+              "/usr/local/lib/orbit/nested-handshake.sh": "#!/bin/sh\n# Managed by Orbit: the hub starts the handshake with each nested Node as soon as its WireGuard is up.\npeer() { wg show orbit allowed-ips | awk -v ip=\"$1\" '{for (i = 2; i <= NF; i++) if ($i == ip) print $1}'; }\nkey=$(peer 10.45.0.2/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.12:51820 persistent-keepalive 25\nkey=$(peer 10.45.0.3/32)\n[ -n \"$key\" ] && wg set orbit peer \"$key\" endpoint 10.232.2.13:51820 persistent-keepalive 25\nexit 0\n",
+              "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: the hub starts the handshake with each nested Node.\n[Service]\nExecStartPost=/bin/sh /usr/local/lib/orbit/nested-handshake.sh\n",
+              "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
             },
             "links": {
               "/home/orbit/.config/swamp/api-key": "club/swamp-club-api-key"
@@ -205,9 +227,16 @@
           "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+          "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+          "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: a fixed port, so the hub starts the handshake.\n[Service]\nExecStartPost=/usr/bin/wg set orbit listen-port 51820\n",
+          "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
         },
         "status": "Running",
         "snapshots": {
@@ -265,9 +294,16 @@
               "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+              "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+              "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: a fixed port, so the hub starts the handshake.\n[Service]\nExecStartPost=/usr/bin/wg set orbit listen-port 51820\n",
+              "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
             },
             "links": {},
             "taken": "Stopped"
@@ -326,9 +362,16 @@
           "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+          "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+          "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+          "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: a fixed port, so the hub starts the handshake.\n[Service]\nExecStartPost=/usr/bin/wg set orbit listen-port 51820\n",
+          "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+          "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
         },
         "status": "Running",
         "snapshots": {
@@ -384,9 +427,16 @@
               "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
+              "/etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
-              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n"
+              "/etc/gitconfig": "# Managed by Orbit.\n[safe]\n\tdirectory = /home/orbit/orbit\n",
+              "/etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf": "# Managed by Orbit: a fixed port, so the hub starts the handshake.\n[Service]\nExecStartPost=/usr/bin/wg set orbit listen-port 51820\n",
+              "/etc/systemd/system/systemd-udev-trigger.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-control.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/systemd-udevd-kernel.socket.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n",
+              "/etc/systemd/system/e2scrub_reap.service.d/zz-orbit-nested.conf": "# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n"
             },
             "links": {},
             "taken": "Stopped"
@@ -463,54 +513,54 @@
   "records": {
     "default": {
       "code": "0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4",
-      "converge_app_dev": "2a7ed694b7d0caca0976cc862e0007ca6654c361d350696e47ba27041f18fa57",
-      "converge_app_prod": "6e5f08a07f9792f6955be6a276084faf558150946f5aff752b30a3d5a1862eb5",
-      "converge_gateway": "8992d60fc536641cf05c450bf856c9803c80223095e61289b67a844019c44a3a",
+      "converge_app_dev": "2d44e7494817855c1f38b826ab2895822cea6d6913330367b3bcf6298beb71c0",
+      "converge_app_prod": "c36065fe029a52fa3ba090b652ad1ab4d27e14a3d79a1c56bbc4e5afbdadd7fa",
+      "converge_gateway": "216937fbd9c15cbaa0c5fecb92ad74baaf5245f09c7a67cacb60f9a608b4cd21",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
       "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
-      "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
+      "rules": "5754a5161e518699faf8bc973b18e92189d21b25ed578a56ac10cf1a0e91f84e",
       "tokens": "@TOKENS@"
     },
     "code": {
       "code": "7d8659a12b3665484999e2bec8e78ab05f8487edb8b5d1b29d49e2aef3776f1a",
-      "converge_app_dev": "2a7ed694b7d0caca0976cc862e0007ca6654c361d350696e47ba27041f18fa57",
-      "converge_app_prod": "6e5f08a07f9792f6955be6a276084faf558150946f5aff752b30a3d5a1862eb5",
-      "converge_gateway": "8992d60fc536641cf05c450bf856c9803c80223095e61289b67a844019c44a3a",
+      "converge_app_dev": "2d44e7494817855c1f38b826ab2895822cea6d6913330367b3bcf6298beb71c0",
+      "converge_app_prod": "c36065fe029a52fa3ba090b652ad1ab4d27e14a3d79a1c56bbc4e5afbdadd7fa",
+      "converge_gateway": "216937fbd9c15cbaa0c5fecb92ad74baaf5245f09c7a67cacb60f9a608b4cd21",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "3e570ac3341366ec573092da6c3c9c1ee0b9e120a4f2cfb9076a9b7947379dd2",
       "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
-      "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
+      "rules": "5754a5161e518699faf8bc973b18e92189d21b25ed578a56ac10cf1a0e91f84e",
       "tokens": "@TOKENS@"
     },
     "swamp": {
       "code": "0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4",
-      "converge_app_dev": "8fbf927c890e5c299d3ef718d92249ee056745639040c10b5f54429a76271c06",
-      "converge_app_prod": "034d97d1423a450f642dc69af628584e17139e60bc535d4b0e811900053c2085",
-      "converge_gateway": "cfc509ed789dcaeb7a6bd4c667a222cbe55e9dc8ea09f609ae860b95b9f4bcb4",
+      "converge_app_dev": "1369f6bf23e1b5667d9f8a04dc148b52d0fb00bf64fd47a901317b657947d20e",
+      "converge_app_prod": "926e737cbe744b5d8186ba7f3d442d72f51dc1f29c270e82ef0f5ae7c2353758",
+      "converge_gateway": "e45f6b850526b5532bed8ebee68e7767d0228bb7030ce025df3e7b2bbf7229b1",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
       "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
-      "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
+      "rules": "5754a5161e518699faf8bc973b18e92189d21b25ed578a56ac10cf1a0e91f84e",
       "tokens": "@TOKENS@"
     },
     "agent": {
       "code": "85739e596b3f7e518947df628ef8e05d87f3191ad0f4154b67f5b91c8cea1533",
-      "converge_app_dev": "2a7ed694b7d0caca0976cc862e0007ca6654c361d350696e47ba27041f18fa57",
-      "converge_app_prod": "6e5f08a07f9792f6955be6a276084faf558150946f5aff752b30a3d5a1862eb5",
-      "converge_gateway": "8992d60fc536641cf05c450bf856c9803c80223095e61289b67a844019c44a3a",
+      "converge_app_dev": "2d44e7494817855c1f38b826ab2895822cea6d6913330367b3bcf6298beb71c0",
+      "converge_app_prod": "c36065fe029a52fa3ba090b652ad1ab4d27e14a3d79a1c56bbc4e5afbdadd7fa",
+      "converge_gateway": "216937fbd9c15cbaa0c5fecb92ad74baaf5245f09c7a67cacb60f9a608b4cd21",
       "converged_app_dev": "@CONVERGED@",
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
       "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
-      "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
+      "rules": "5754a5161e518699faf8bc973b18e92189d21b25ed578a56ac10cf1a0e91f84e",
       "tokens": "@TOKENS@"
     }
   }

@@ -9,220 +9,105 @@ covers:
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedNodeFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
   - apps/gateway/bootstrap/providers.php
   - apps/gateway/extensions/*/src/*ServiceProvider.php
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
 # Extensions
 
-Task VM firewall contributions describe Incus guests. Their Node rules use the same contribution path as other managed Nodes.
-
-An extension is an optional Gateway feature with one switch. [`extension`](/cli/extension) describes the switch, the commands, and what each client does while an extension is off. This page describes how an extension is built: where its code lives, how it adds behavior to core, and the rule that keeps core independent of it.
-
-ADR [0210](/decisions/0210-give-each-extension-its-own-code-boundary) is moving the extensions behind this boundary one at a time. Documents, Vault, Conn, and the AI router have moved. Tasks has a switch and provider, but its code is still in core. The Tasks provider also binds its read-only Swamp history client; the [task output route](/reference/tasks#swamp-run-output) stays behind the Tasks switch.
+An extension is an optional Gateway feature controlled by a single runtime switch. [`extension`](/cli/extension) documents the CLI commands and client behavior. This page explains how extensions are structured, how they plug into core, and how the code boundary is enforced.
 
 ## The extensions
 
-The Gateway has five extensions. This table shows where each one's code lives today.
+The Gateway ships five extensions (Analytics remains a core role):
 
-| Extension | Code | Depends on |
+| Extension | Code location | Depends on |
 | --- | --- | --- |
-| `documents` | `apps/gateway/extensions/documents`. See [Project Documents](/reference/project-documents). | nothing |
-| `tasks` | Core, in the `Tasks` and `TaskVms` namespaces. See [Tasks](/reference/tasks). | `ai-router` |
-| `ai-router` | `apps/gateway/extensions/ai-router`. See [AI router](/reference/ai-router). | nothing |
-| `vault` | `apps/gateway/extensions/vault`. See [Vaultwarden](/reference/vaultwarden). | nothing |
-| `conn` | `apps/gateway/extensions/conn`. See [Conn layer](/reference/conn). | nothing |
-
-Analytics is still a core role, not a sixth extension. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) keeps its persisted role identity in core and moves behavior through narrow typed contributions, after explicit Process ownership is proved. Its proposed disabled behavior preserves serving and data; no Analytics switch or migration is delivered by the proposal.
-
-Task work on one group runs one operation at a time through the group's Operation lock. A disabled extension does not erase an existing operation record.
+| `documents` | `apps/gateway/extensions/documents` ([Project Documents](/reference/project-documents)) | none |
+| `ai-router` | `apps/gateway/extensions/ai-router` ([AI router](/reference/ai-router)) | none |
+| `tasks` | Core `Tasks` / `TaskVms` namespaces ([Tasks](/reference/tasks)) | `ai-router` |
+| `vault` | `apps/gateway/extensions/vault` ([Vaultwarden](/reference/vaultwarden)) | none |
+| `conn` | `apps/gateway/extensions/conn` ([Conn layer](/reference/conn)) | none |
 
 ## Layout
 
-An extension lives in `apps/gateway/extensions/<name>/`.
+Each extracted extension lives in `apps/gateway/extensions/<name>/` under PSR-4 namespace `Orbit\Extensions\<Name>\`:
 
-| Path | Holds |
+| Path | Contents |
 | --- | --- |
-| `src/` | PHP code under `Orbit\Extensions\<Name>\`: the provider, models, actions, data classes, controllers, form requests, console commands, and infrastructure. |
-| `database/migrations/` | New extension migrations, when needed. The Gateway baseline includes the squashed extension schema. |
-| `routes/api.php` | The extension's API routes. |
+| `src/` | Service provider, models, actions, data classes, controllers, form requests, commands, and infrastructure. |
+| `database/migrations/` | New extension migrations (existing schema lives in the Gateway baseline). |
+| `routes/api.php` | Extension API routes. |
 
-The Gateway's `composer.json` maps each namespace with one PSR-4 entry, and `bootstrap/providers.php` lists each provider. Pint, Rector, and PHPStan check `extensions/` like `app/`. The tests stay under `apps/gateway/tests/Feature/Extensions/<Name>` and `apps/gateway/tests/Unit/Extensions/<Name>`.
+Providers are listed in `bootstrap/providers.php`. Pint, Rector, and PHPStan check `extensions/` alongside `app/`, and tests live under `apps/gateway/tests/{Feature,Unit}/Extensions/<Name>`.
 
 ## The provider
 
-Each extension has one service provider. It extends `App\Providers\ExtensionServiceProvider` and implements `App\Domain\Extensions\Extension`.
+Each extension registers one provider extending `App\Providers\ExtensionServiceProvider` and implementing `App\Domain\Extensions\Extension`:
 
 | Method | Purpose |
 | --- | --- |
-| `name()` | The switch slug. |
-| `description()` | One sentence that describes the extension. |
-| `dependencies()` | The slugs that must be enabled before this extension. The default is none. |
-| `enable()` | Runs before the switch turns on. The default does nothing. |
-| `disable()` | Runs after the switch turns off. The default does nothing. |
+| `name()` | Switch slug (`ExtensionRegistry` builds the authoritative slug list from registered providers). |
+| `description()` | One-sentence description. |
+| `dependencies()` | Extension slugs that must be enabled first (default none). |
+| `enable()`, `disable()` | Optional hooks run before enabling or after disabling (used by `tasks` to broadcast `tasks.updated`; unused by `documents`, `vault`, `conn`, and `ai-router`). |
 
-The provider registers what the extension owns: its routes with `loadRoutesFrom()`, its console commands, its schedule entries, and its plug-in contributions. The `conn` provider registers the hourly `conn:environments:renew` ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)). The `ai-router` provider registers no schedule entry: its collector converge waits for a Swamp publication ([Follow the cache connection](/reference/ai-router#follow-the-cache-connection)). It uses `loadMigrationsFrom()` only when the extension has a migration directory. The Gateway baseline includes the existing Documents, Vault, Conn, and AI router schema.
-
-`ExtensionRegistry` lists the registered providers that implement `Extension`. That list is the set of known slugs: `extension:list`, `extension:enable`, and `extension:disable` accept only those. No other list of slugs exists in the Gateway.
+The provider registers its routes, commands, scheduled work (for example `conn:environments:renew` hourly and `conn:threads:read` every minute on `conn`), and plug-in contributions via `$this->contribute(Interface::class, Implementation::class)`.
 
 ## Add a plug-in point
 
-Compiled Node services use the shared Rust `Service` trait in `orbit-agent-contract`. An extension registers its service through the same composition call as its commands. Core dispatches `orbit-agent service <name>` to that contribution, with its declared platform gate; the extension owns configuration validation and the service loop. The AI router contributes `ai-router-collector`, supervised by its existing Process. Disabling the Gateway extension preserves that Process; teardown stops it. Core contains no AI router behavior. Rust composition and service-dispatch tests enforce this boundary.
+Follow this checklist when adding a new core plug-in interface:
 
-Use this checklist when core adds a place for extensions to contribute:
-
-- Define a small typed interface and tag each implementation with the interface name in its provider.
-- Inject contributions through the constructor with Laravel's `#[Tag]` attribute. Trusted in-repo implementations need no runtime interface or duplicate-class validation.
-- State when the contribution runs and what happens while its extension is disabled.
-- Add one unit test per contribution to prove its production wiring, and test the behavior at its caller.
-- Keep the architecture test in `tests/Unit/Architecture/ExtensionBoundaryTest.php` passing so core never imports extension classes.
-
-The core firewall catalog derives DHCP/DNS rules from task-host settings. They use no extension plug-in point. The base refresh applies them, and settings removal or reachable Node removal withdraws them through the same Ansible phase.
-
-The `ci-runner` role is a core Node role. Its host boundary uses the existing role baseline and firewall catalog. It introduces no extension contribution or plug-in point.
-
+- Define a narrow typed interface in core and tag implementations in each extension provider.
+- Inject tagged implementations via Laravel's `#[Tag(Interface::class)]` attribute (`iterable<Interface>`).
+- Document whether the contribution runs while its extension is disabled.
+- Add a unit test verifying production wiring and caller behavior.
+- Keep `tests/Unit/Architecture/ExtensionBoundaryTest.php` green so `App\` never imports `Orbit\Extensions\`.
 
 ## Plug-in points
 
-Core defines an interface for each place where an extension can add behavior. The provider tags its implementation with the interface name:
+Core calls extensions exclusively through these typed interfaces:
 
-```php
-$this->contribute(ProjectRemovalHook::class, DocumentsProjectRemoval::class);
-```
-
-Core receives tagged implementations through constructor parameters marked with Laravel's `#[Tag(Interface::class)]` attribute and typed as `iterable<Interface>`. Each caller uses the typed interface directly.
-
-| Interface | Called by | Methods |
+| Interface | Caller | Purpose |
 | --- | --- | --- |
-| `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | `lock()` and `remove()` |
-| `App\Domain\Projects\ProjectAgentInstructionSource` | A clone's create and `project:show` ([Agent instructions](/reference/development-containers#agent-instructions)) | `files()` returns each file's size and a reader of its body; `summary()` reads the records only. Documents answers as if no Project had instructions while it is off |
-| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | The [release cleanup command](/reference/gateway-recovery#release-as-a-swamp-run) | `configured()`, `status()`, `reconcile()`, and `resume()` |
-| `App\Domain\Activity\ActivityInputRedaction` | The [Activity](/cli/activity) recorder | `commands()` and `input()` |
-| `App\Infrastructure\Firewall\ContributedNodeFirewallRules` | The desired firewall of a Node: `firewall:list --managed` and the live match | `forNode()` returns the UFW rules the extension's own operation keeps on the Node |
-| `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | The [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | `sites()`, `order()`, and `certificateSlug()` |
-| `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) and the fleet rollout | `name()`, `applies()`, and `digest()` |
-| `App\Domain\Routes\ContributedPrivateHostnames` | Route and analytics hostname checks, and private DNS publication | `hostnames()` returns each reserved hostname with its current address, or `null` when it must not be published |
-| `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process/destroy) | `assertRemovable()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database/update) | `validate()` and `afterCommit()` |
-| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | `assertRemovable()` |
-| `App\Domain\Operations\DirectOperationContribution` | The shared direct-start registry | `definitions()` |
-| `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
-| `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
-| `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
-| `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
-| `App\Domain\Nodes\NodeAccessRemovalTransactionHook` | [`node:access:remove`](/cli/node/access-remove), in the transaction that deletes an edge, with the edge row | `edgeDeleted()` |
-| `App\Domain\Nodes\NodeAccessRemovalHook` | [`node:access:remove`](/cli/node/access-remove), in the transaction that deletes an edge | `removed()` |
-| `App\Domain\Nodes\NodeRemovalHook` | [`node:remove`](/cli/node/remove), in its last transaction before it deletes the Node row | `removing()` |
+| `App\Domain\Processes\Artifacts\ProcessArtifactPreset` | [`process:artifact:set --preset`](/cli/process/artifact-set) ([Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process)) | `name()` and `fields()` |
+| `App\Domain\Projects\ProjectRemovalHook` | `project:destroy` | Lock and remove extension resources before deleting a Project. |
+| `App\Domain\Projects\ProjectAgentInstructionSource` | Container clone create, `project:show` | Supply Project agent instructions (`documents` returns none when off). |
+| `App\Domain\GatewayReleases\GatewayReleaseCleanup` | `gateway:release:cleanup` | Reconcile and resume extension cleanup after release switch. |
+| `App\Domain\GatewayReleases\GatewayReleaseFollowUp` | Post-fleet release pass | Advance release follow-up phases (`ai-router` guard). |
+| `App\Domain\Activity\ActivityInputRedaction` | Activity recorder | Redact or skip request body parsing before authorization (`conn`, `documents`). |
+| `App\Infrastructure\Firewall\ContributedNodeFirewallRules` | Desired firewall catalog | Declare UFW rules managed by an extension (`ai-router`). |
+| `App\Infrastructure\Caddy\Build\ContributedCaddySiteSource` | [Node Caddy build](/reference/caddy-configuration#node-caddy-build) | Render extension Caddy sites and Orbit CA certificate slugs (`ai-router`). |
+| `App\Domain\Fleet\NodeFootprintArtifact` | [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) | Contribute footprint artifact digests (`ai-router`, core `php-runtime`). |
+| `App\Domain\Routes\ContributedPrivateHostnames` | Route checks, private DNS | Reserve `.orbit` hostnames and publish DNS addresses (`collector.ai-router.orbit`). |
+| `App\Domain\Processes\ProcessRemovalGuard` | [`process:destroy`](/cli/process/destroy) | Refuse deleting Processes owned by an extension or core feature. |
+| `App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook` | [`database:update`](/cli/database/update) | Validate updates and run post-commit hooks (`ai-router` cache, core SQL guard). |
+| `App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard` | [`database:destroy`](/cli/database/destroy) | Refuse deleting connections owned by an extension or core feature. |
+| `App\Domain\Operations\DirectOperationContribution` | Direct-start Operation registry | Contribute workflow and projection declarations (`conn`, `vault`, `ai-router`). |
+| `App\Domain\Operations\OperationSecretSource` | Private Operation secret resolver | Resolve extension-owned execution secrets (`vault`, `conn`). |
+| `App\Domain\Operations\OperationRecordCoordinator` | Operation admission & lifecycle | Coordinate extension-owned Operation records (`conn`). |
+| `App\Domain\Gateway\ExactRequestBody` | Request body size middleware | Exempt specific routes from PHP post-size trimming so routes bound bodies after auth (`documents`, core `mcp`/`mcp/search`). |
+| `App\Domain\Instances\InstanceLifecycleContribution` | Container create, complete, migrate, destroy, wake | Manage T3 environments, reserved-clone `createPairing()` hints (returning `{label, scopes}` for the engine `t3` step while Conn is on, passed into `projectCreate()` as `pairing`), held sessions, and cleanup (`conn`). |
+| `App\Domain\Instances\Power\InstanceAgentActivity` | Runtime hibernator sweep | Report live agent activity before sleeping a container clone (`conn`). |
+| `App\Domain\Instances\InstanceThreadContribution` | Task copy turn, container sleep | Record threads and refresh thread index before sleep (`conn`). |
+| `App\Domain\Nodes\NodeAccessRemovalTransactionHook`, `NodeAccessRemovalHook`, `NodeRemovalHook` | `node:access:remove`, `node:remove` | Record managed revocations, rotate profile event keys, and hand off held sessions (`conn`). |
 
-`DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
-
-The issuer checks its admitted repository and current run before and after minting, returns only native vault descriptors, and revokes a fresh credential if authority changes. An omitted issuer keeps the fixed-grant mint policy. This adds no endpoint or private-input reader.
-
-`InstanceLifecycleContribution::assertCreateAvailable()` runs before any change when creating a container clone or migrating a non-default checkout; either operation without a contribution refuses with `operation.kind_unavailable`. `projectCreate()` receives the clone's T3 server from the run's result inside the create or migration projection transaction, so a refusal leaves the Instance unfinished. Conn contributes it even while the extension is off: the container run creates T3 and its admin session, and recording the result needs no enabled Conn service. Admission therefore does not require the Conn switch. Completion still requires the recorded server.
-
-`registered()` says whether the contribution holds the clone's T3 server; [`instance:complete`](/cli/instance/complete) admits a clone only when every contribution holds it, and refuses with `instance.complete_unavailable` when none exists. Conn answers from its environment row, also while it is off.
-
-Destroy calls `projectDestroy()` after native success, inside the projection transaction. This method stays available while Conn is disabled. It removes Conn execution copies, its environment and pairings before core deletes the Instance. Deleting the container retires all T3 sessions and links.
-
-`InstanceAgentActivity::read()` runs in each runtime hibernator sweep, once per container clone that is otherwise idle. Conn contributes the read of the clone's T3 server. While Conn is off, its contribution returns nothing, and no clone sleeps: the idle sleep treats a clone it cannot read as active.
-
-A successful wake calls `projectWake()` after its projection commits. The executor calls it from a durable job. With `retryQueueFailure: true`, a contribution can report a recoverable queue failure so the job retries before recording delivery. The wake itself remains successful. Conn admits the renewal of a session that ends within seven days or has ended, renews the [held sessions](/reference/conn#held-sessions) that end within seven days, and does nothing while it is off. `projectCreate()` also admits the held sessions of the creating Node's profile after its transaction commits, while Conn is on.
-
-`NodeAccessRemovalTransactionHook::edgeDeleted()` runs inside the IMMEDIATE transaction of `node:access:remove`, after it deleted the edge and before `NodeAccessRemovalHook::removed()`, also while the extension is off; a removal of an absent edge calls nothing. It receives the deleted edge row, whose ID it can record. A failure rolls the delete back. Work outside the database waits for `DB::afterCommit()`. Conn records the [managed revocation](/reference/conn#revision-order) of every managed target of the serving Node and publishes its notice after the commit.
-
-`NodeAccessRemovalHook::removed()` runs in the database transaction that deletes the edge, before any fallible side effect such as the Metrics access revoker, also while the extension is off; a removal of an absent edge calls nothing. Conn replaces the consumer's [profile event key](/reference/conn#profile-events) there. Conn withdraws the consumer's held sessions on the servers that the consumer now cannot reach, and admits their revoke after the commit. A revoke that cannot start is logged, and the hourly renewal tick admits it again.
-
-`NodeRemovalHook::removing()` runs in the last transaction of `node:remove`, before it deletes the Node row, also while the extension is off. Conn withdraws the Node's unsettled held sessions, hands each to the Gateway Node, and admits their revoke after the commit. With no active Gateway Node it logs `conn.held_handover_skipped`, and the pairings go with the Node.
-
-`InstanceThreadContribution::recordThread()` receives the T3 thread that a task copy's turn started, with the turn's title, after the turn's projection commits. `beforeSleep()` runs when a sleep of a container is asked for, from the idle sleep or `instance:sleep`: after the replay of a repeated request and the sleep's refusals, which run once without the lock for it, and before the Instance lock. Neither may fail its caller: the contribution catches and reports its own errors. Conn contributes its [thread index](/reference/conn#thread-index): it records the thread, and reads the server one last time while the index's switch is on. While Conn is off, both do nothing.
-
-`ProcessOwnershipClaim::forNode()` checks a named Node Process before a service claims it; `assertClaimable()` checks explicitly selected Processes. Both call the core Instance attachment dependency guard before owner state or runtime changes, including while extensions are off. This shared admission introduces no plug-in point. Analytics checks its collector and selected storage Processes; the AI router checks its collector before enabling owner state or adopting its runtime. A dependent Node service target refuses with `process.node_service_ownership_conflict`, naming every affected Instance. A refusal preserves ownership, Process configuration and attachment records.
-
-AI router owner publication and Instance attachment admission each hold one immediate SQLite transaction across their dependency check and writes.
-
-`ProcessRemovalGuard::assertRemovable()` runs under the Process runtime lease before removal changes the record or the runtime. A guard may refuse with a `ResourceOperationException`. Core tags the Analytics and Database server guards; the AI router tags its collector guard from its provider. The action receives all guards through `#[Tag]` and calls each one. Guard order is not part of the contract: a guard must not depend on another guard running first. The owning feature can still remove its own Process through the existing internal removal path.
-
-`ProjectRemovalHook::lock()` runs first in the removal transaction, before the guards, so the extension's writers wait for the removal. `remove()` runs after every guard passed and before the Project row is deleted. It may refuse with a `ResourceOperationException`, which rolls back the whole removal.
-
-`DatabaseConnectionUpdateHook::validate()` receives the proposed connection inside the update transaction, before the write. A refusal changes neither the connection nor the collector. `afterCommit()` receives the saved connection only after the outer transaction commits; rollback skips it. A reconvergence failure leaves the connection saved, so repeating the update retries it. `DatabaseConnectionRemovalGuard::assertRemovable()` runs before any database drop or record deletion.
-
-Core tags `ManagedSqlConnectionUpdateHook` to protect managed MySQL and PostgreSQL identity and credentials, and `AnalyticsDatabaseConnectionGuard` to protect the analytics owner connection from `database:destroy`. They run through these existing callers and add no plug-in point. Vault publication is unchanged. Contributions must not depend on their order. The AI router contributes its cache validation, collector reconvergence, and cache ownership guard, even while the extension switch is off.
-
-After the release switch restarts the scheduler, `gateway:release:cleanup` waits for each configured `GatewayReleaseCleanup` to report a new generation. It then reconciles and resumes that cleanup. A cleanup that stays paused fails its own step; it does not fail the release.
-
-`ActivityInputRedaction::commands()` names the route names whose input the extension decides. For those commands, Activity stores only what `input()` returns, then sanitizes it like any other input. `input()` receives a closure that returns the request input. Activity runs before authorization, so the request body is parsed only when the extension calls that closure. Conn uses it so that a T3 admin session and the content of a settings document never enter Activity. Documents never calls the closure, so document bytes are never parsed or recorded before authorization.
-
-The Node Caddy build renders core's sources first, then each `ContributedCaddySiteSource` in provider order. Every source renders from stored state only. For an Orbit CA certificate, `certificateSlug()` names its slug for `CaddySiteCertificates`; the site renders only after its publisher records the certificate on the Node. The [Caddy footprint digest](/reference/node-provisioning#converge-the-orbit-footprint) covers the source and its dependencies, so template changes reach the Node at the next fleet rollout. The AI router contributes the collector site. Switching it off keeps the deployed site; teardown withdraws that site and certificate without changing other site blocks.
-
-A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
-
-A `ContributedNodeFirewallRules` contribution lists the UFW rules that the extension's own operation applies, so `firewall:list --managed` shows them and the live check matches them instead of reporting them as drift. It returns no rules for a Node it does not run on. It keeps returning them until its own operation took them off, as a contributed Caddy site stays until its extension removes it.
-
-The AI router contributes the rules of its [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node: the task VM range, the deny, and one allow per [forwarder Node](/reference/ai-router#container-model-forwarder), while the last guard or forwarder run left the guard in place. On each forwarder Node it contributes the forwarder's bridge rule, while that Node's last succeeded forwarder run left the forwarder in place. With the extension switched off, it keeps returning them, as the rules stay on the Nodes.
-
-The Node footprint captures core's artifact digests first, then each contributed `NodeFootprintArtifact` in provider order. Native Swamp actions execute supported artifacts. An applicable artifact without a native action refuses before effects. Core owns the `php-runtime` artifact for [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits); it uses this existing interface and adds no plug-in point. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
-
-`ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. AI router publishes the collector Node's stored `wireguard_ip`.
-
-`Ipv4Subnet::containsUsableAddress()` defines usable IPv4 hosts in the configured VPN subnet, excluding network and broadcast addresses. `WireGuardAddressAllocator::forProvisioning()` applies this rule during Node provisioning and macOS enrollment; `GatewayBootstrapIdentityValidator` applies it during Gateway bootstrap, before either path stores the address. The contribution does not validate that address again. Its test checks that the hostname is unique, lowercase, under `.orbit`, and free of commas and whitespace, and that publication follows the Node's stored address.
-
-The digest of the `private-dns` [footprint artifact](/reference/node-provisioning#converge-the-orbit-footprint) covers each contribution and the classes it uses.
-
-The reserved hostnames are core's names, then the keys of each contribution's map. New Routes and Route domain changes cannot take a reserved name. Existing Routes remain published; Doctor reports them as `route.domain_reserved`. An operator must change or remove each conflicting Route. Analytics tracking hosts cannot use any name under `.orbit`. AI router reserves `collector.ai-router.orbit` even while it is off or not set up, and publishes it while setup holds the collector.
-
-The [gateway role convergence](/cli/node/role-add) removes the Documents PHP-FPM start hook that older Gateways installed. Documents keeps its [scheduler startup gate](/reference/project-documents#local-state-and-startup-ordering).
-
-`ExactRequestBody::matches()` receives the request path, never the body. For a matching path, the Gateway skips PHP's `post_max_size` check and does not trim strings or turn empty strings into null. The body stays exact and is not parsed before authorization, so the route must bound it after authorization. Contribute a matcher only for a route that bounds its body itself after authorization. Core keeps the two MCP envelopes exact itself. Documents matches its document routes, which accept up to 15 MiB of JSON. The Gateway asks the matchers once per request.
-
-A plug-in contribution runs whether or not the switch is on. Removing a Project must also remove its documents, a scheduled deletion must finish, and a request to a disabled extension still records Activity, so its secrets must still stay out. Each PHP-FPM start must also close the document cleanup gate. A Caddy build renders every site that is placed, so a site stays live until the extension removes it. A reserved hostname stays reserved, so no Route can take it while the extension is off.
-
-## The boundary
-
-`tests/Unit/Architecture/ExtensionBoundaryTest.php` fails when a class under `App\` uses a class under `Orbit\Extensions\`. An extension may use core models, actions, data classes, and plug-in interfaces. Core reaches an extension only through a plug-in interface.
+Most extension contributions stay active while an extension is disabled so cleanup, secret redaction, reserved hostnames, deployed Caddy sites, and active Operations remain consistent. Contributions that implement the feature itself (such as `orbit:vault-sync` or `InstanceAgentActivity` reads) pause while the switch is off.
 
 ## The runtime switch
 
-The boundary decides who owns code, not what loads. Routes, migrations, console commands, and MCP tools are always registered, and migrations always run, so every install has the same schema.
+Routes, migrations, console commands, and MCP schemas always register so route caching, OpenAPI generation, and database schemas stay deterministic. Extension routes apply `RequireEnabledExtension:<name>`, returning HTTP 409 `extension.disabled` while off, and MCP hides disabled tools.
 
-An extension's route group adds the middleware `RequireEnabledExtension:<name>`. While the switch is off, each of its operations refuses with HTTP 409 `extension.disabled` and changes nothing. `bin/docs-openapi` marks those operations with `x-orbit-extension`. The MCP server leaves them out of its tool list while the switch is off.
-
-Background work that finishes recorded work keeps running while the switch is off. Work that is the feature itself stops: the Vaultwarden sync, `orbit:vault-sync`, runs only while `vault` is on. Its first run after the switch turns on again publishes, rewrites, and deletes whatever changed meanwhile.
-
-### Enable and disable
-
-`extension:enable` refuses with HTTP 409 `extension.dependency_disabled` while a dependency is off. `extension:disable` refuses with HTTP 409 `extension.required` while an enabled extension depends on the one being disabled. Both name the other extension in `error.details`.
-
-`extension:enable` runs the extension's `enable()` hook first and turns the switch on only after the hook returns. A failed enable leaves the switch off: when the hook throws, the switch keeps its earlier state and the API returns the hook's error code, message, and details. The hook runs while the switch is still off, so it must not rely on the switch. `extension:disable` turns the switch off, then runs `disable()`. Both run in the same request. Enabling an enabled extension runs `enable()` again, so a hook must be safe to repeat. Tasks uses its hooks to broadcast the [`tasks.updated`](/reference/events#tasks) event. Documents, Vault, and Conn use neither.
-
-Tasks depends on `ai-router`, because task containers reach models through its guard. Container code calls the core interface `App\Domain\Instances\ContainerModelRoute`, and the `ai-router` provider binds it. The Tasks `enable()` hook calls `ContainerModelRoute::assertReady()`, so `extension:enable tasks` refuses with `ai_router.disabled` until ai-router is set up. `ai-router:destroy` refuses while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
-
-`App\Domain\Extensions\ExtensionDependencies::assertNotRequired()` is the `extension.required` check. `extension:disable` uses it, and so does a command that removes what another extension needs, such as `ai-router:destroy`.
+`extension:enable` refuses with HTTP 409 `extension.dependency_disabled` if a required dependency is off, runs `enable()` before flipping the switch, and leaves the switch off if the hook throws (for example `extension:enable tasks` refuses with `ai_router.disabled` until AI router is configured). `extension:disable` refuses with HTTP 409 `extension.required` while another enabled extension depends on it, flips the switch off, and runs `disable()`.
 
 ### Defaults
 
-A new install starts with every extension off. When an existing install updates, a migration turns an extension on if the install already uses it:
+New installs start with every extension disabled. Upgrades enable an extension automatically if data already exists:
 
-| Extension | Turned on when the install has |
+| Extension | Enabled on upgrade when |
 | --- | --- |
-| `documents` | A document storage configuration, or at least one document entry. |
-| `vault` | A stored Vaultwarden setup, or at least one published item in `vault_items`. |
-| `conn` | At least one registered T3 server or one profile. |
-
-A current user keeps the feature without action, and a new install does not carry a feature it has not asked for.
+| `documents` | Document storage is configured or at least one document exists. |
+| `vault` | Vaultwarden is configured or at least one published item exists. |
+| `conn` | At least one T3 server or profile is registered. |
 
 ## Why it works this way
 
-An optional feature should cost core nothing when it is off, and Orbit should be able to delete it when nothing uses it. Both need core to stay free of extension code. A directory per extension makes the code easy to find, and the architecture test keeps core from reaching back. Its source scanner checks namespace imports without loading every core class. The measured boundary case took 9.80 seconds with stock `arch()` and 0.12 seconds with the scanner. Keeping extension code in core folders with only a provider around it would leave the boundary in a reviewer's head.
-
-Each plug-in point is a typed interface. It states what an extension may change and what core expects back. A generic event bus would hide that contract and the order of calls. Core adds a point only when an extension needs it.
-
-Routes and migrations load on every install. The Gateway caches its routes, and the OpenAPI document and the MCP tools are generated from them. Loading them from a database switch would make those artifacts and the schema depend on runtime state.
-
-An extension is not a Composer package, a separate process, or something to install at runtime. Nothing outside this repository installs one, so a package for each extension would add lock file and tooling churn for no gain.
-
-### Public captures at native termination
-
-A native family may declare `terminal_result.captures` beside its fixed terminal step. Each named capture selects one fixed job and step, and optionally one output field. The shared terminal reader includes only successful selected outputs from the same bound run. Existing terminal fields take precedence. This preserves public source and environment-key facts when cancellation skips the final aggregate. Private values remain in their named vault output; no family history reader or progress callback runs.
-
-A family with a result-reporting step may declare `terminal_result.fallback`: one step of the same job whose status and stdout are the result when the reporting step was skipped. A native declaration takes none ([Swamp command steps](/reference/swamp-command-steps#terminal-outputs)).
-
-The `tasks` extension registers the singular [`task:*` family](/cli/task). Its `task` route binding resolves parent and child IDs from the same table. The extension slug stays `tasks`.
+Giving each optional feature its own directory and typed core interfaces keeps core clean, makes every contract explicit, and lets `ExtensionBoundaryTest` enforce the boundary automatically without packaging extensions as separate Composer packages. Always loading routes and migrations keeps schemas and generated OpenAPI/MCP specs independent of runtime switches.

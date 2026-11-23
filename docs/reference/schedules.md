@@ -14,247 +14,154 @@ covers:
 
 # Schedules
 
-Migrated Schedule journal reads keep their existing workflow and request-bound vault result. The Schedule family owns that result grant independently of container Process state and journal reads.
+A Schedule runs one command on a recurring calendar for a Node or an Instance. By default, Orbit stores each Schedule as a cron-triggered workflow (`schedule-<uuid>`) that executes the command on the target Node over SSH without installing unit files on the Node. Schedules that use a systemd calendar expression (such as per-minute production schedulers) run as [Node timers](#node-timers) instead.
 
-[`schedule:logs`](/cli/schedule/logs) returns retained journal lines. `--follow` refuses until the fixed Agent release is pinned; see [Schedule logs](/cli/schedule/logs).
-
-A Schedule runs one command on a calendar for one Node or one Instance. The Gateway stores the Schedule. Swamp serve on Node 209 holds one small workflow per Schedule, `schedule-<uuid>`, with the Schedule's cron trigger and its intent fixed inside. Each fire runs the shared `task-command-run` workflow, which reaches the Node over SSH. Nothing is installed on the Node (ADR 0244). macOS is not a Schedule target. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422).
-
-Per-minute schedulers on production Instances, such as `laravel-scheduler` and `powersync-health`, keep a systemd timer on their Node until the serve load and outage test passes. The calendar's form picks the path: a cron expression makes a native Schedule, and a systemd calendar keeps the [Node timer](#node-timers). Production preparation copies each Project definition this way; a native copy starts active and disabled, and its workflow is written when it is first enabled. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
-
-An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, batch and failed-job pruning, and the minute [reconciler](/reference/swamp-command-steps#reconciler) that settles Operations with their Swamp runs. Hourly `problems:file` stays in the Gateway scheduler with its lock. Every minute the Gateway scheduler also checks the container defaults against their branch heads; it starts a Swamp policy run only for the defaults behind, independently of the production policy schedule and its pause. See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
-
-Every five minutes the scheduler runs `operations:repair-fence` itself, not on the Gateway queue, also when Tasks is disabled. The serving release rewrites the [Operation-version fence](/reference/operations#operation-versions-across-a-gateway-release) from its own policy. Cleanup Tasks are filed only by the release workflow.
-
-The Gateway also checks for [executor wake handoffs](/reference/gateway-queue#scheduled-work) every five seconds. This check does not run an Orbit Schedule or a Swamp workflow.
-
-The shared native `automatic-production-deploy` producer schedules [automatic deployments](/reference/deployments#automatic-development-defaults) at second 30 of each minute, subject to its enabled and paused policy setting. The PHP `orbit:auto-deploy` command and schedule are removed. This producer installs no timer on an app-dev Node. Every hour at minute 41, `automatic-deploy-memory-refresh` keeps that producer's [policy memory](/reference/deployments#automatic-deployments) inside Swamp data retention, also while the producer is paused. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
-
-The Gateway schedules no task VM job: the [host sweep](/reference/compute-drivers#sweep-task-vm-hosts), the [idle release](/reference/tasks#release-an-idle-task-vm) and the observation of parked VMs are removed with the [task VM runtime](/reference/tasks#task-runtime).
-
-No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
-
-The Gateway queues the [fleet and seed continuation](/reference/gateway-recovery#fleet-rollout) right after verification, at any hour, and daily at 03:05 Europe/Amsterdam when fleet rollout or default refresh is enabled. The daily pass catches membership changes, agent drift and late CLI releases between releases; it is not a window. The job revisits pending default refresh and seed publication each minute.
-
-Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
-
-No schedule or release step builds a recipe image: the [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) is the only way a host gets a new base.
-
-The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. The [documents extension](/reference/extensions) registers this entry and the cleanup worker below from its provider, and both run whether or not its switch is on. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
-
-The Gateway runs `orbit:vault-sync` every minute without overlap while the `vault` [extension](/reference/extensions#the-runtime-switch) is on. It does nothing until [Vaultwarden](/reference/vaultwarden#sync) is set up, and it contacts Vaultwarden only when a credential changed or the hourly check is due.
-
-The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
-
-The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
-
-A recurring Schedule for a containerized AppProd Instance resolves its serving release at each fire. A manual change or fire binds to the confirmed release under the same lock as cutover. A queued host fire cannot start on a checkout after migration.
-
-## Execution
-
-Retained Schedule log reads and Node-timer account resolution read the Node's stored [`accounts` fact](/reference/node-agent#facts) while its agent is online. An absent or non-current fact, an unlisted user, or an invalid account entry returns `schedule.target_unavailable`. Account resolution contacts no Node.
-
-Create, enable, disable and destroy touch no Node. The Gateway changes the Schedule's workflow or trigger on serve, waits for serve to confirm, and answers at once: HTTP 202 with an Operation that has already succeeded (R1). When serve does not confirm, the request fails with `swamp.schedule_publish_unavailable` (503) and records no Operation; repeat the same request. A manual run starts `task-command-run` and returns its running Operation with HTTP 202. An Idempotency-Key replays the original Operation.
-
-An [Instance transfer](/reference/instance-transfer) moves the Instance's Schedules. It removes their triggers when its run starts. When the run ends, the Gateway rewrites each published workflow for the recorded Node and sets the trigger again if `desired_timer_state` is `enabled`.
-
-The SDK exposes the Operation through `ScheduleMutationResponse.result`; the CLI follows the HTTP 202 Operation, which has already ended for create, enable and destroy. Schedules stay immutable. `schedule:update` changes only a Project definition in Gateway state.
+[`schedule`](/cli/schedule) lists the CLI commands, and [Processes and schedules](/reference/processes-and-schedules) covers Project Schedule definitions. macOS Nodes are not valid Schedule targets (`schedule.platform_unsupported`, 422). Orbit Schedules are separate from the Gateway's internal scheduled maintenance (such as daily `process:artifacts:check-latest` for [Process upgrades](/reference/processes-and-schedules#upgrade-a-process)); see [Gateway queue: Scheduled work](/reference/gateway-queue#scheduled-work).
 
 ## Fields
 
-The Schedule UUID is its public identity. It is also the only value that names the host artifacts.
+Each Schedule is identified publicly by an immutable UUID.
 
 | Field | Contract |
 | --- | --- |
-| `id` | An immutable UUID. |
-| `target_type`, `target_id` | Exactly one `node` or `instance` target. |
-| `name` | Unique within the target. 1 through 63 lowercase ASCII letters or digits, with hyphens only between them. |
-| `calendar` | A cron expression that Swamp accepts, such as `0 3 * * *`, `20 * * * * *` or `@daily`. |
-| `command` | One non-empty UTF-8 line of at most 4,096 bytes, without NUL, carriage return, or line feed. |
-| `timeout_seconds` | 1 through 86,400. The default is 3,600. |
-| `desired_timer_state` | `enabled` or `disabled`: whether the Schedule's trigger is set. |
-| `status` | `provisioning`, `active`, `failed`, or `removing`. `failed_step` and `error_code` name a failure. |
-| `last_run_at`, `last_run_status` | The end of the latest fire or manual run, and `success` or `error`. Both are null before the first run. |
+| `id` | Immutable UUID. |
+| `target_type`, `target_id` | Either `node` or `instance` with its numeric ID. |
+| `name` | Unique within the target: 1–63 lowercase ASCII letters or digits, with single hyphens between them. |
+| `calendar` | Standard 5-field or 6-field (seconds first) cron expression, or shorthand such as `@daily` (UTC). Node-timer Schedules use a systemd `OnCalendar` expression. |
+| `command` | One non-empty UTF-8 line of at most 4,096 bytes, with no NUL, CR, or LF. |
+| `timeout_seconds` | 1 through 86,400 (default 3,600). |
+| `desired_timer_state` | `enabled` or `disabled`. |
+| `status` | `provisioning`, `active`, `failed`, or `removing` (with `failed_step` and `error_code` on failure). |
+| `last_run_at`, `last_run_status` | Timestamp and outcome (`success` or `error`) of the latest fire or manual run, or `null` before the first run. |
 
-The calendar has 5 fields, or 6 with seconds first, or is a shorthand such as `@hourly`. It fires in serve's time zone (UTC), because a trigger carries no time zone: serve drops a `timezone` key and refuses a `CRON_TZ=` or `TZ=` prefix, and the Gateway answers that refusal with `schedule.calendar_invalid` (422). A [Node timer](#node-timers) Schedule keeps a systemd calendar.
-
-A Schedule has no edit operation. An identical create returns the existing Schedule and keeps its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict` (409). To change a Schedule, destroy it and create it again.
+Cron triggers fire in UTC; `CRON_TZ=` and `TZ=` prefixes return `schedule.calendar_invalid` (422). Schedules are immutable: an identical create returns the existing Schedule, and a different spec with the same target and name returns `schedule.retry_conflict` (409). To change a Schedule, destroy and recreate it (`schedule:update` edits only Project definitions).
 
 ## API
 
-Every endpoint is under `/api/v1/schedules` and needs an access grant to the Node that owns the target. For an Instance target, that is the Instance's Node.
+All routes under `/api/v1/schedules` require an access grant to the target's Node.
 
 | Operation | Request | Result |
 | --- | --- | --- |
-| List | `GET /api/v1/schedules` | The Schedules whose target Node the caller may address, ordered by name, without `command`. |
-| Create | `POST /api/v1/schedules` | Records one Schedule, writes its workflow and trigger, and returns its succeeded Operation with HTTP 202. |
-| Show | `GET /api/v1/schedules/{uuid}` | One Schedule, with `command`. |
-| Run | `POST /api/v1/schedules/{uuid}/run` | Starts one `task-command-run` and returns its Operation with HTTP 202. The trigger does not change. |
-| Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | The newest observed Schedule journal lines. |
-| Enable | `POST /api/v1/schedules/{uuid}/activate` | Sets the trigger of a Schedule and returns its succeeded Operation with HTTP 202. |
-| Disable | `POST /api/v1/schedules/{uuid}/disable` | Removes the trigger of a native Schedule and returns its succeeded Operation with HTTP 202. |
-| Destroy | `DELETE /api/v1/schedules/{uuid}` | Removes the trigger and the workflow, deletes the record, and returns its succeeded Operation with HTTP 202. |
-| Complete | `POST /api/v1/schedules/{uuid}/complete` | A Node timer reports a run result. Returns 204. |
+| List | `GET /api/v1/schedules` | Lists Schedules on reachable Nodes, ordered by name, omitting `command`. |
+| Create | `POST /api/v1/schedules` | Records the Schedule, publishes its workflow and trigger, and returns an Operation (202). |
+| Show | `GET /api/v1/schedules/{uuid}` | Shows one Schedule, including `command`. |
+| Run | `POST /api/v1/schedules/{uuid}/run` | Starts one immediate run and returns its Operation (202) without changing trigger state. |
+| Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | Returns recent journal lines (1–1,000, default 100). |
+| Enable | `POST /api/v1/schedules/{uuid}/activate` | Enables the trigger and returns an Operation (202). |
+| Disable | `POST /api/v1/schedules/{uuid}/disable` | Removes the trigger of a cron-workflow Schedule and returns an Operation (202). |
+| Destroy | `DELETE /api/v1/schedules/{uuid}` | Removes the trigger, workflow (or timer units), and record (202). |
+| Complete | `POST /api/v1/schedules/{uuid}/complete` | Node-timer completion callback (204). |
 
-Create takes `target_type`, `target_id`, `name`, `calendar`, and `command`, and optionally `timeout_seconds` and `start`. `start` defaults to `true`. A Node or Instance target can start disabled, without a trigger. Run, enable, and destroy take an empty body. The Gateway refuses unknown, duplicate, or wrongly typed members with 422 before it changes anything.
-
-Each Schedule API request except Complete records one operator Activity entry. The entry names the Schedule and its target, including a destroy request that admits an Operation. It never holds the command, calendar, journal lines, paths, users, or unit text. Executor requests have their own worker audit entries.
+Create accepts `target_type`, `target_id`, `name`, `calendar`, `command`, and optional `timeout_seconds` and `start` (default `true`). Activity logs record the Schedule and target without exposing the command, calendar, or journal output.
 
 ## Execution context
 
-The caller picks only the target. The Gateway derives the host Node, the user, the working directory, and the shell from the target's placement.
+Orbit derives the host Node, user, working directory, and shell from the target:
 
 | Target | User | Working directory | Shell |
 | --- | --- | --- | --- |
-| Node | The Node's managed user | That user's home | The user's login shell, with login mode and protected stdin |
-| Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with login mode and protected stdin |
-| Instance in a development container | `orbit` | The application directory under `/srv/workspace` | `/bin/bash`, with login mode and protected stdin |
-| Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -s`, without a login |
+| Node | Node's managed user | That user's home | User's login shell (login mode, protected stdin) |
+| Instance on `app-dev` | Node's managed user | Instance [application directory](/reference/projects#application-directory) in checkout | User's login shell (login mode, protected stdin) |
+| Instance in a development container | `orbit` | Application directory under `/srv/workspace` | `/bin/bash` (login mode, protected stdin) |
+| Instance in a production container | `orbit` | Application directory under `/home/orbit` | `/bin/bash` |
+| Instance on `app-prod` | Instance's production user | Application directory under `<production-home>/current` | `/bin/bash -s` (non-login) |
 
-For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
+The target Node must be an active Linux Node with a WireGuard address, and an Instance target must be active. Production Instances require a selected release before creating a Schedule, even when `start` is `false`. Production Schedules resolve `current` (or the confirmed serving release in a production container) on every fire so new releases take effect automatically.
 
-The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can take a Schedule, even one that starts disabled.
-
-A Schedule does not follow its target to another Node. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/instance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
-
-## Checkout migration
-
-[`instance:migrate`](/cli/instance/migrate) carries registered Node-timer Schedules into the container. Each keeps its UUID, name, calendar, timeout and desired state. The service runs as `orbit`, independently of the old host account, in the mapped application directory under `/srv/workspace`. Orbit still checks literal commands, paths and ownership of the host units. Native Swamp Schedules cannot yet migrate.
-
-Migration captures the host timers' observed activation, disables their timers and stops their services before copying. After copying the workspace it installs the container pairs disabled. A failure before cutover removes the container before restoring the host timers' captured activation; their source files stay unchanged. At cutover the container timers are activated according to desired state, then the host pairs and obsolete scripts are removed during retirement. A Schedule problem after cutover never rolls back or fails an otherwise completed migration: its result names the Schedule's `id`, `name`, `outcome: not_activated` and `cause`.
-
-### Container timers
-
-The container's system manager owns `orbit-schedule-<uuid>.timer` and `.service`; the service uses `User=orbit`, the Instance's runtime PATH and its application environment file. Values in the environment file use systemd syntax; Orbit never sources them as shell code. The stored calendar is unchanged; the installed timer makes its source timezone explicit, preserving its meaning. An unreadable source timezone refuses before downtime. `Persistent=false` prevents catch-up after stop, hibernation or wake. A tick while the same service is still running is skipped; DeferReactivation=true prevents an immediate delayed invocation when that run ends. The Schedule timeout bounds each invocation; stopping the container terminates it.
-
-Automatic fires create no Operation. The service journal and observed latest-run status are their record. `schedule:list` and `schedule:show` retain the stored desired state and report an inactive timer for a stopped container. When the container read fails, at Swamp or on the Node, they still answer: they show the stored record with `timer_state: unreadable` and the stored `last_run_at` and `last_run_status`. `schedule:logs` reads the container journal through the bounded, redacted reader; a stopped container refuses with `schedule.target_inactive` without waking. Old host journal entries remain on the Node but are not combined with the container snapshot. Schedule follow remains unsupported.
-
-A container Schedule run executes in the Incus project that the Instance runtime records, `orbit-instances` or `orbit-instances-nested`. The run workflow admits only these two names and uses the captured value; it never derives the project from the Project setting.
-
-Clones do not inherit ad hoc Schedules. Before a copied container boots, Orbit strips inherited Schedule unit files, timer activation links and private Schedule scripts. Development Schedule definitions and new container Schedule mutations are separate work.
-
-### Why the timer lives in the container
-
-A container timer stops with its container, requires no Node-side trigger, and cannot wake it or queue a missed fire. Its service executes locally; it needs no container-to-Gateway callback or new privilege. Orbit installs and reads it from the Node using the existing Incus boundary of ADR 0250. This is the container exception to ADR 0244's native Schedule triggers. Host Schedules keep their existing trigger paths.
-
-A timer fire received while migration holds admission is recorded as a waiting Schedule Operation with the timer’s idempotency key. Every migration terminal transition settles its waiting fires in the same transaction, under the Instance lock. After rollback, Orbit rebuilds each fire’s context for the checkout and queues it after commit. Successful cutover marks waiting host fires skipped; it never replays them into the container. Cancelling or expiring an unstarted migration, or a failure proven to precede native submission, frees its new reservation and queues fires against the checkout. This includes failed execution-copy preparation.
-
-A failed or cancelled native start event leaves its runtime unverified, so the reservation stays. Expiry of a started or uncertain migration also keeps its reservation. If admission stays closed, waiting fires immediately record failed Operations with `instance.lifecycle_busy`. Expiry keeps the migration’s timeout result and also settles its fires immediately.
-
-If the Instance was deleted, waiting fires fail with `schedule.target_unavailable`, even if their Schedule was also deleted. Native receipts, stale hold release and recovery cannot replay them. Waiting time does not consume a fire’s run budget.
-
-The command must be one literal invocation of `php`, `node`, `bun`, `vp`, `composer`, `git`, `true`, `false`, `echo`, `printf` or an executable inside the checkout. Arguments may be whole quoted strings. Assignment prefixes refuse. PHP and Node need a direct script operand, even when its name has no extension; options before that operand refuse. Bun needs an explicit script path containing `/`; ambiguous subcommands refuse. PHP and Composer need a selected PHP build in the container runtime. An optional `> /dev/null` or `>> /dev/null` may end the command, followed by `2>&1`. Shell operators, patterns, expansion, inline evaluation and executable configuration flags refuse; Orbit does not interpret a shell program to guess which paths it uses.
-
-The host account's login shell does not matter. In the container, `/bin/bash` runs the command with the container's PATH and the application environment file; the host shell and its profile files never run there. Because the command is one literal invocation, bash and zsh read it the same way. One zsh form differs: an unquoted word that starts with `=` expands to a command path, so it refuses until you quote it.
-
-A command that starts with a host install path of one of the names above, in `/usr/bin`, `/usr/local/bin` or `/bin`, loses that path, so `/usr/bin/composer` becomes `composer`. The container has no `/usr/bin/php*`. `/usr/bin/php` and `/usr/bin/phpX.Y` become `php`, which runs the Project's PHP version; `phpX.Y` of another version refuses and names both versions. For example, `/usr/bin/php8.5 artisan schedule:run` moves as `php artisan schedule:run` when the Project uses PHP 8.5. The stored command changes to that form at cutover.
+While a Schedule exists, Node removal is refused with `schedule.target_in_use` (409). During an [Instance transfer](/reference/instance-transfer), Orbit pauses the Instance's Schedule triggers while the transfer runs, then rewrites each published workflow for the destination Node and restores enabled triggers when the transfer completes. [Instance removal](/reference/instance-removal) removes the Instance's Schedules automatically.
 
 ## The Schedule workflow
 
-Create writes the command to the vault key `schedule-command-<uuid>` in `orbit-control-inputs`, then creates `schedule-<uuid>` with `workflow.create` and writes its content with `workflow.edit`. The workflow has one step, `Run the Schedule`, that calls `task-command-run` as a nested workflow. Its inputs are fixed: the Schedule UUID, the command hash, the user, group, home, shell, working directory, login mode and timeout, the Node's SSH address and host keys, and the vault key name. The command itself never enters the workflow, its inputs or its output. Its tags name the Schedule, its Node and its target, so the Gateway can record a fire after the Schedule is gone.
+For cron-triggered Schedules, create stores the command in a private vault key (`schedule-command-<uuid>`), publishes workflow `schedule-<uuid>` with the fixed target context, and sets its cron trigger. If publishing fails, the request returns `swamp.schedule_publish_unavailable` (503) without recording an Operation so you can retry.
 
-Serve stores the workflow as an untracked file in its `workflows/` directory beside the checked-in workflows. A release load checks out the next commit and keeps it, and so do a serve reload and a restart; a fresh clone or `git clean` would drop it. The Gateway's record stays the source: an identical create writes the workflow and its trigger again. Changed SSH host keys reach the workflow only through destroy and create.
+When a trigger fires (or when you call `run`), Orbit starts a transient `systemd-run --pipe --wait --collect` unit on the target Node with the admitted user, working directory, and `RuntimeMaxSec`. The command arrives on standard input so it never appears in command arguments or public workflow history, and output goes to the Node journal under `orbit-schedule-{uuid}`. A Schedule never overlaps itself; a due fire waits if the previous run is still active.
 
-The trigger is the workflow's trigger override on serve, set with `workflow.trigger.set` and removed with `workflow.trigger.remove`. The Gateway's credential needs run, read and write on `workflow:schedule-*`.
+### Enable and disable
 
-## Each fire
+Enable publishes the trigger and records `enabled` (creating the workflow first for copied Project definitions that start disabled). Disable removes the trigger and records `disabled` while letting any active run finish.
 
-Serve fires the trigger and starts one root run of `schedule-<uuid>`. Serve runs a limited number of scheduled runs at once, and a Schedule never overlaps itself, so a fire can start late, and a fire that is due while the last one runs waits. Commands must allow for a late or extra run.
-
-`task-command-run` has one step, `Run the command`, using official `@swamp/ssh` exec argv from Node 209. It runs a transient `systemd-run --pipe --wait --collect` unit with the admitted user, working directory and `RuntimeMaxSec`. The unit enforces its user and directory as it starts; no separate context probe or script is shipped.
-
-The command arrives on stdin from `vault.get` and runs in the user's shell, or the Schedule's fixed shell. `systemd-cat` sends output to the Node journal under `orbit-schedule-{uuid}`; it stays out of native history. A failed setup, transport or command records `schedule.run_failed`, with the native failed-step diagnostic. Admission still refuses a missing or moved target with `schedule.target_unavailable`.
-
-A Gateway job asks Swamp once a minute which root runs finished. For each finished `schedule-<uuid>` run it reads the nested command's native history and records one `schedule.run` Operation, `last_run_at` and `last_run_status`. The trigger is `schedule`, and the budget is the Schedule timeout plus 120 seconds. A fire becomes a task when it ends, up to a minute later. An unreadable fire is not recorded. Decided by the orchestrator, for Nick's review: polling replaces the commit feed until a v3 datastore is planned. A manual run starts `task-command-run` directly with its Operation ID. Swamp never reports the result back to the Gateway.
-
-## Enable
-
-Enable sets the Schedule's trigger and stores `enabled` after serve confirms; a repeat sets it again and keeps the existing workflow. A copied Project definition with no workflow gets its command copy and workflow first. That first enable uses the same `schedule-command-<uuid>` vault key as create.
-
-Disable removes the trigger and stores `disabled`; the workflow stays, and a fire that already started finishes. If serve does not confirm, the desired state stays unchanged. A Node timer Schedule refuses enable with `schedule.target_invalid`, because its timer is always on. Production Schedules resolve `current` each time they run, so a new release changes later runs.
+- **Node-timer enable:** Instance-targeted Node-timer Schedules enable and start their systemd timer. Node-timer Schedules targeting a Node refuse enable with `schedule.target_invalid` (409).
+- **Disable:** Only cron-workflow Schedules support `disable`; Node-timer Schedules return `schedule.state_invalid` (409).
 
 ## Node timers
 
-A Node timer Schedule owns two public files on its Node, named only by its UUID.
+A Node-timer Schedule installs two root-owned `0644` unit files on its Node:
 
-| Artifact | Path | Owner and mode |
-| --- | --- | --- |
-| Admission service | `/etc/systemd/system/orbit-schedule-{uuid}.service` | `root:root`, `0644` |
-| Timer | `/etc/systemd/system/orbit-schedule-{uuid}.timer` | `root:root`, `0644` |
+| Artifact | Path |
+| --- | --- |
+| Admission service | `/etc/systemd/system/orbit-schedule-{uuid}.service` |
+| Timer | `/etc/systemd/system/orbit-schedule-{uuid}.timer` |
 
-The service sends an authenticated Node request to the Gateway run endpoint. Its systemd invocation ID is the idempotency key. The service contains public execution context and the command hash, without command bytes or credentials. The timer uses `Persistent=true`. Each admitted run uses `task-command-run`.
+The service sends an authenticated request to the Gateway run endpoint using the systemd invocation ID as the idempotency key and contains no command bytes or credentials. The timer sets `Persistent=true`. Standalone removal refuses while a run is active (`schedule.run_active`, 409); Instance removal stops and cleans up all Instance Schedules automatically.
 
-Definition installation creates the timer files through `operation-schedule-install-instance-definitions`, disabled. Its shared create child checks both unit files, the absence of obsolete files and the captured timer state, then uses a native assertion. The Gateway records readiness from that check rather than a reporting shell. Its native end check confirms every captured member, including an empty set, in the same history read. No parent shell prints a completion marker.
+## Checkout migration
 
-Enable uses `operation-schedule-control` to enable and start the timer, check systemd compliance and enforce it with a native assertion, and destroy uses `operation-schedule-destroy` to check for active work, stop the timer, remove the files and reload systemd. These workflows run on the `swamp` Node (`labels: {role: swamp}`) and reach the Node through official cfgmgmt models and `@swamp/ssh`. A failed step records `operation.native_failed`; completed host actions stay, and a repeat converges. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after the command ends.
+[`instance:migrate`](/cli/instance/migrate) carries registered Node-timer Schedules into the Instance container with their UUID, name, calendar, timeout, and desired state intact. Schedules backed by cron workflows cannot migrate yet.
+
+During migration, Orbit captures each host timer's state, disables and stops the host units, installs the container units disabled, and activates them at cutover before retiring the host files. Any host timer fire received while migration holds admission is queued under the Instance lock: if migration rolls back, waiting fires run against the checkout; if cutover succeeds, waiting host fires are marked skipped rather than replayed into the container.
+
+Commands migrated into a container must be a single literal invocation of `php`, `node`, `bun`, `vp`, `composer`, `git`, `true`, `false`, `echo`, `printf`, or a checkout executable, with optional `> /dev/null` (`>> /dev/null`) and `2>&1` redirection. Shell operators, variable expansion, and inline evaluation are refused. Host binary prefixes (`/usr/bin/php8.5`, `/usr/bin/composer`) are normalized to `php` or `composer` (mismatched PHP versions are refused).
+
+### Container timers
+
+Inside a container, `orbit-schedule-<uuid>.timer` and `.service` run as `User=orbit` with `/bin/bash`, the container `PATH`, and the application environment file, preserving the source timezone explicitly. `Persistent=false` prevents catch-up runs after sleep or stop, and `DeferReactivation=true` skips overlapping ticks.
+
+Automatic container fires do not create Gateway Operations; `schedule:list`, `schedule:show`, and `schedule:logs` read observed state and journal lines from the container. Stopped containers report an inactive timer and return `schedule.target_inactive` for `schedule:logs` without waking. Clones do not inherit ad hoc container Schedules.
 
 ## Logs
 
-Logs read only the Schedule's service, through the Node agent's [log stream](/reference/live-logs#one-shot-reads-use-the-stream-path), with a fixed `journalctl --output short-iso --utc` read. `lines` is 1 through 1,000, and the default is 100. The read waits at most 5 seconds and returns at most 256 KiB. The response holds `output` with the newest complete lines, oldest first, and sets `truncated` to `true` when a limit removed older lines. Logs need an `active` Schedule; otherwise the Gateway returns `schedule.state_invalid`. Orbit stores no journal output. The agent and the Gateway redact credential-shaped text and stored environment values, but keep secrets out of command output. The host Node's journal settings decide how long lines stay.
+`schedule:logs` reads retained journal entries for an `active` Schedule (`schedule.state_invalid` otherwise) and redacts credential-shaped text and stored environment values:
 
-A migrated development Schedule reads both its retained service entries and later command entries from the Node journal. This bounded read uses the existing runtime inspection path, waits at most 120 seconds and keeps at most 4 MiB of UTF-8 bytes. The Node also bounds the JSON-encoded transport below the Gateway’s 8 MiB frame limit, allowing 16 KiB for the response envelope.
-
-The read keeps complete journal entries, including multiline messages and fields longer than 4,096 bytes. Non-UTF-8 messages use replacement characters for invalid bytes; a null message is empty. Either size limit excluding an entry sets `truncated` to `true`. The journal output travels through a private vault copy and receives the same Gateway redaction.
-
-The CLI rejects every `schedule:logs --follow` locally with `schedule.follow_unavailable`, before it makes an API request. A direct API request for a migrated Schedule’s live stream returns `schedule.target_unsupported`. Read without `--follow`.
+- **Host Schedules:** reads `journalctl --output short-iso --utc` via the Node agent (1–1,000 lines, default 100, 5-second timeout, 256 KiB cap, sets `truncated: true` on truncation).
+- **Migrated container Schedules:** reads retained service and command journal entries (120-second timeout, 4 MiB UTF-8 cap).
+- **Live follow:** `--follow` is unsupported for Schedules. The CLI rejects it locally with `schedule.follow_unavailable`, and direct API live-stream requests for migrated Schedules return `schedule.target_unsupported`.
 
 ## Latest run
 
-The Gateway stores only the latest run, from a recorded fire or a manual run's terminal result. A removing Schedule receives no new latest run. Each fire and manual run is also an Operation.
+The Gateway stores only the latest run timestamp and status (`last_run_at`, `last_run_status`) from recorded fires and manual runs. Removing Schedules receive no new updates.
 
 ## Remove
 
-Destroy marks the Schedule `removing`, removes its trigger, then deletes its workflow, and deletes the record. Removal addresses the workflow by its stable `schedule-<uuid>` name, so authorization still applies after it is gone. Removing a trigger or a workflow that is gone is safe, so a disabled Schedule takes the same path. A fire that already started runs to its end, and the Gateway still records it. When serve does not confirm, the Schedule stays `removing` with `swamp.schedule_publish_unavailable`; repeat destroy. Destroy also deletes the command's vault key with `vault.delete`; a fire that already started read it when it began.
-
-[Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It removes a native Schedule's trigger, workflow and vault key before it admits the removal run. It leaves Node Schedules and the Schedules of other Instances in place.
+`schedule:destroy` marks the Schedule `removing`, removes its trigger, workflow, and command vault key (or systemd timer files for Node timers), and deletes the record. Any fire already in progress finishes cleanly. If publishing fails, the Schedule stays `removing` so you can repeat `schedule:destroy`.
 
 ## Error codes
 
-Schedule operations return these codes in the Orbit error envelope. The CLI checks input before it sends a request. The API answers malformed input with `validation.failed` (422).
+Malformed input returns `validation.failed` (422).
 
 | Error code | Meaning |
 | --- | --- |
-| `operation.native_failed` | A Node timer change failed. Completed host work remains; fix the cause and repeat to converge. |
-| `swamp.schedule_publish_unavailable` | Serve did not confirm a workflow or trigger change. Repeat the request. |
-| `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form, or Swamp refuses the calendar. |
-| `schedule.target_invalid` | The target does not exist, or the operation does not apply to it. The Gateway also uses it with 403 when a completion report comes from another Node. |
-| `schedule.target_unsupported` | A migrated Schedule has no live log stream; use `schedule:logs` without `--follow`. |
-| `schedule.target_unavailable` | The target, its Node, its user, its working directory, or the command copy cannot run the operation. |
-| `schedule.retry_conflict` | The target already has a Schedule with this name and a different specification. |
-| `schedule.state_invalid` | The Schedule status does not allow the operation, or another operation on the Instance is running. |
-| `schedule.target_in_use` | The change would move or remove the target of an existing Schedule. |
-| `schedule.artifact_conflict` | A file at a Node timer's owned path is not the Schedule's own file. |
+| `operation.native_failed` | A Node-timer host change failed; fix the cause and retry to converge. |
+| `swamp.schedule_publish_unavailable` | Workflow or trigger publish was not confirmed (503); retry. |
+| `schedule.platform_unsupported` | The target Node is macOS (422). |
+| `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | Field violates the Schedule contract or calendar syntax. |
+| `schedule.target_invalid` | Target does not exist, operation does not apply (such as enabling a Node-targeted Node timer), or completion callback came from the wrong Node (403). |
+| `schedule.target_inactive` | The target container is stopped; logs cannot be read without waking. |
+| `schedule.target_unsupported` | Live log streaming is not supported for this Schedule. |
+| `schedule.follow_unavailable` | `schedule:logs --follow` is not supported. |
+| `schedule.target_unavailable` | Target Node, user, working directory, or command copy is unavailable. |
+| `schedule.retry_conflict` | Target already has a Schedule with this name and a different specification (409). |
+| `schedule.state_invalid` | Schedule status or kind does not allow the operation (409). |
+| `schedule.run_active` | Standalone destroy refused while a Node-timer run is still active (409). |
+| `schedule.target_in_use` | Cannot remove a Node that still owns a Schedule (409). |
+| `schedule.artifact_conflict` | An existing file at a Node timer's path is not owned by this Schedule. |
+| `schedule.logs_failed` | Reading Schedule journal logs failed. |
 | `schedule.install_failed`, `schedule.rollback_failed`, `schedule.run_failed`, `schedule.activation_failed`, `schedule.remove_failed` | The operation did not finish. |
-| `schedule.node_unreachable` | The host Node has no WireGuard address, or SSH to it failed. |
-
-## Inspect Schedule drift
-
-Schedule creation, enable/disable and native run results own Schedule validation. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not read Schedule command files, timers, credentials or orphan inventories.
+| `schedule.node_unreachable` | Host Node has no WireGuard address or SSH failed. |
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
 ### One workflow per Schedule
 
-A Swamp workflow holds one trigger. One small workflow per Schedule gives each Schedule its own cron trigger and fixed intent, while every fire runs the same shared `task-command-run`. Serve owns the timing, so a fire needs neither the Node's systemd nor the Gateway, and nothing is installed on the Node.
+Giving each Schedule its own small cron-triggered workflow lets every Schedule keep an independent calendar and fixed target intent while sharing one execution path, without installing systemd units on Nodes.
 
 ### Private command bytes use stdin
 
-The command is operator input that runs as the selected account. Keeping it in the admitted private source and sending it through stdin avoids putting it in root argv, public units or native output. Infrastructure commands use fixed arguments. Command output remains operator-controlled journal content, so commands must keep secrets out of their output.
+Sending the command on standard input keeps operator commands out of process argument lists, public unit files, and native workflow history. Keep secrets out of command stdout/stderr, as journal output is stored on the Node.
 
-### No edit and no automatic move
+### Immutable Schedules
 
-A Schedule changes only through destroy and create. When its target moves, an existing workflow would keep firing at the old Node. So a Schedule never moves by itself, and the operator recreates it on the new placement.
+Requiring destroy and recreate instead of in-place edits keeps Schedule workflows and unit identities predictable.
 
-### Only the latest run
+### Disabled start for copied production Schedules
 
-The native result projection records the latest run time and success or failure. Detailed native run history belongs to Swamp.
-
-### A disabled start for copied Schedules
-
-A copied Schedule on a new production Instance can run before the data of that Instance is ready. So an Instance Schedule can start disabled, and enable is a separate step. A manual run is not an enable, because one run does not start the calendar.
-
-Retained Instance timer removal uses official file and systemd checks. Its native end assertion confirms four managed paths are absent and the timer is stopped, disabled and unloaded. A standalone removal refuses an active service before mutation; Instance cascade removal stops it. The Gateway deletes the copy only after native success.
-
-The Gateway task PR gate runs as the internal Artisan command `task:pr-gate`. This schedule keeps its existing timing and overlap guard; the public task commands are under [`task:*`](/cli/task). The [automatic publish](/reference/tasks#publish-by-itself) of task copies runs beside it as `task:pr-when-done`, every minute, with the same guard. The [settle on merge](/reference/tasks#a-copy-group-settles-on-merge) of task copy groups runs beside them as `task:copy-settle`, every five minutes, with the same guard. The [merge round](/reference/tasks#the-merge-round) of a task copy whose publish conflicted runs as `task:merge-round`, every minute, with the same guard.
+Production copies start disabled so newly cloned Instances do not fire recurring jobs against incomplete data. A manual `schedule:run` tests a command without enabling the recurring trigger.

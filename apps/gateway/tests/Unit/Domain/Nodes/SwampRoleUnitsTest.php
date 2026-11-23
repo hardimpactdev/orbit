@@ -53,6 +53,15 @@ it('renders one renewal service and one timer for three permanent workers', func
     expect(NodeRoleRuntimeInput::SwampWorkers)->toBe(['a', 'b', 'c']);
 });
 
+it('renders a daily token renewal that runs soon after boot and restarts neither serve nor a worker', function (): void {
+    $units = SwampRoleUnits::for('orbit', 209);
+
+    expect($units['token_renewal_service'])->toContain("/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -c local /usr/local/lib/orbit-swamp/token-renewal.yml -e orbit_user=orbit\n")
+        ->toContain("After=orbit-swamp-serve.service\n")->toContain("Type=oneshot\n")
+        ->not->toContain('systemctl')->not->toContain('Requires=')
+        ->and($units['token_renewal_timer'])->toContain("OnBootSec=10min\nOnCalendar=daily\n")->toContain("Persistent=true\n");
+});
+
 it('lets a system shutdown kill serve and each worker at once, while a normal stop still drains', function (): void {
     $units = SwampRoleUnits::for('orbit', 209);
     $guard = "ExecStop=-+/bin/sh -c '[ \"$$(/usr/bin/systemctl is-system-running)\" != stopping ] || exec /usr/bin/systemctl kill --kill-whom=all --signal=SIGKILL %n'\n";

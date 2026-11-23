@@ -59,7 +59,7 @@ class OpenApiPresetRulesTest(unittest.TestCase):
                      'GW': ROOT / 'apps/gateway', 'enum_cases': {}, 'enums': {}}
         functions = {'run_json', 'resolve_rule_constants', 'strip_closures',
                      'resolve_route_ternaries', 'tokens_for', 'schema_from_tokens'}
-        assignments = {'RULE_CONSTANT', 'ROUTE_TERNARY', 'TYPE_RULES'}
+        assignments = {'RULE_CONSTANT', 'STANDALONE_SELF_CONSTANT', 'ROUTE_TERNARY', 'TYPE_RULES'}
         nodes = [node for node in SOURCE.body
                  if (isinstance(node, ast.FunctionDef) and node.name in functions)
                  or (isinstance(node, ast.Assign)

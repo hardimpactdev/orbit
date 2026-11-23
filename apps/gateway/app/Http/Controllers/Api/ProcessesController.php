@@ -8,10 +8,13 @@ use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
 use App\Actions\Processes\RestartProcessAction;
+use App\Actions\Processes\SetProcessArtifactAction;
 use App\Actions\Processes\ShowProcessLogsAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
+use App\Actions\Processes\UnsetProcessArtifactAction;
 use App\Actions\Processes\UpdateProcessAction;
+use App\Actions\Processes\UpgradeProcessAction;
 use App\Data\Operations\OperationData;
 use App\Data\Processes\ProcessData;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -24,8 +27,10 @@ use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Processes\DestroyProcessRequest;
 use App\Http\Requests\Processes\ListProcessesRequest;
 use App\Http\Requests\Processes\ProcessLogsRequest;
+use App\Http\Requests\Processes\SetProcessArtifactRequest;
 use App\Http\Requests\Processes\StoreProcessRequest;
 use App\Http\Requests\Processes\UpdateProcessRequest;
+use App\Http\Requests\Processes\UpgradeProcessRequest;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -92,6 +97,25 @@ final class ProcessesController extends Controller
         }
 
         return $this->operationResponse($request, $action->admit($process, $this->caller($request), $request->attributes->getString('orbit.request_id')));
+    }
+
+    #[StartsOperation('process.upgrade')]
+    public function upgrade(UpgradeProcessRequest $request, Process $process, UpgradeProcessAction $action): JsonResponse
+    {
+        return $this->operationResponse($request, $action->admit($process, $request->version(), $this->caller($request), $request->attributes->getString('orbit.request_id')));
+    }
+
+    /** A Gateway record only: it changes nothing on the Node and starts no Operation. */
+    public function setArtifact(SetProcessArtifactRequest $request, Process $process, SetProcessArtifactAction $action): JsonResponse
+    {
+        $artifact = $action->execute($process, $request->fields());
+
+        return response()->json(['data' => ['id' => $process->id, 'name' => $process->name, 'artifact' => $artifact->toPublicArray()], 'meta' => $this->meta($request)]);
+    }
+
+    public function unsetArtifact(Request $request, Process $process, UnsetProcessArtifactAction $action): JsonResponse
+    {
+        return response()->json(['data' => ['id' => $process->id, 'name' => $process->name, 'removed' => $action->execute($process)], 'meta' => $this->meta($request)]);
     }
 
     public function logs(

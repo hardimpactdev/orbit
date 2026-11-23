@@ -11,6 +11,7 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -32,6 +33,7 @@ final readonly class ProcessOperationAdmission
     public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null, ?int $namedInstanceId = null): Operation
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId, $namedInstanceId): Operation {
+            self::assertNotUpgrading($process);
             if (in_array($verb, ['start', 'stop', 'restart'], true) && $process->status === LifecycleStatus::Removing
                 && $this->targets->forInspection($process)->container !== null) {
                 // Its definition is gone; the default's next deployment removes it (docs/reference/development-containers.md#processes).
@@ -51,6 +53,15 @@ final readonly class ProcessOperationAdmission
 
             return $operation;
         });
+    }
+
+    /** An open `process.upgrade` holds its Process: no other mutation starts until it ends (docs/reference/processes-and-schedules.md#upgrade-a-process). */
+    public static function assertNotUpgrading(Process $process): void
+    {
+        if (Operation::query()->where('kind', 'process.upgrade')->where('target_type', 'process')->where('target_id', $process->id)
+            ->whereIn('status', OperationStatus::openValues())->exists()) {
+            throw new ResourceOperationException('operation.target_busy', "An upgrade holds Process [{$process->name}].", 409);
+        }
     }
 
     /** @return array<string, mixed> */

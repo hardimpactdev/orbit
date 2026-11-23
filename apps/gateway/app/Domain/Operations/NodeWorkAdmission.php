@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -68,26 +70,33 @@ final readonly class NodeWorkAdmission
             && array_intersect($lineage, $wait['holders']) === [])) {
             throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
         }
-        $open = Operation::query()->where(static fn (Builder $query) => $query
-            ->whereNotIn('status', OperationStatus::terminalValues())
-            ->orWhereNotNull('lock_key')
-            ->orWhere(static fn (Builder $unsettled) => $unsettled->where('error_code', 'operation.timed_out')
+        // Each way an Operation stays open is read through its own index, so the JSON predicates run on the few open rows only.
+        $open = collect([
+            static fn (): Builder => Operation::query()->whereIn('status', OperationStatus::openValues()),
+            // SQLite would read every row of the Node's kinds for this one; the unique index holds only the few set lock keys.
+            static fn (): Builder => Operation::query()->forceIndex('operations_lock_key_unique')->whereNotNull('lock_key'),
+            static fn (): Builder => Operation::query()->where('error_code', 'operation.timed_out')
                 ->where('state->native_cancel_requested_at', '>', now()->subMinutes(NativeRunCancellation::ForwardMinutes)->toISOString())
-                ->whereNull('state->native_cancel_confirmed_at')));
-        if ($roles) {
-            $open->where(static fn (Builder $query) => $query->where('node_id', $nodeId)->orWhereJsonContains('input->participant_node_ids', $nodeId))
-                ->where(static function (Builder $query) use ($patterns): void {
-                    foreach ($patterns as $pattern) {
-                        $query->orWhere('kind', 'like', $pattern);
-                    }
-                })->whereNotIn('kind', self::PowerKinds);
-        } else {
-            $open->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->automatic', true);
-        }
+                ->whereNull('state->native_cancel_confirmed_at'),
+        ])->flatMap(static function (Closure $unsettled) use ($roles, $nodeId, $nodes, $patterns) {
+            $query = $unsettled();
+            if ($roles) {
+                return $query->where(static fn (Builder $query) => $query->where('node_id', $nodeId)->orWhereJsonContains('input->participant_node_ids', $nodeId))
+                    ->where(static function (Builder $query) use ($patterns): void {
+                        foreach ($patterns as $pattern) {
+                            $query->orWhere('kind', 'like', $pattern);
+                        }
+                    })->whereNotIn('kind', self::PowerKinds)->get();
+            }
+
+            return $query->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->automatic', true)->get();
+        })->unique('id')->sortBy('id')->values();
         $cancel = app(NativeRunCancellation::class);
-        // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did.
-        $holders = $open->get()->filter(static fn (Operation $operation): bool => (! $operation->status->terminal()
-            || $operation->lock_key !== null || $cancel->awaitsForwarding($operation))
+        // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did. A deployment that the
+        // release itself admitted holds no Node once it has ended, however it ended: the release's own fleet pass never waits for it
+        // (docs/reference/deployments.md#development-defaults). Any other ended Operation that keeps its lock still holds the Node.
+        $holders = $open->filter(static fn (Operation $operation): bool => (! $operation->status->terminal()
+            || (! ContainerDeployOutcome::releaseAdmitted($operation) && ($operation->lock_key !== null || $cancel->awaitsForwarding($operation))))
             && ($roles || array_intersect($lineage, ValidatedData::integerList($operation->state['admitted_beside'] ?? [])) === []));
         $ids = array_values($holders->map(static fn (Operation $operation): int => $operation->id)->all());
         if ($roles) {

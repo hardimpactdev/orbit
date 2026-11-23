@@ -32,6 +32,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceLifecycleContribution;
@@ -108,6 +109,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
+use Tests\TestCase;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -238,6 +240,15 @@ function copyRefusal(Closure $start): string
 }
 
 /** The copy as its successful create leaves it: active on its branch, its group running. */
+/** The Gateway's own Node as the caller of the API, for a test that changes a group or its Project over HTTP. */
+function copyApiCaller(TestCase $test): void
+{
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $test->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+}
+
 function finishedCopy(Task $group, Operation $operation): Instance
 {
     $operation->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
@@ -1724,6 +1735,7 @@ describe('a turn of a group that owns a copy', function (): void {
     it('runs a t3 Project\'s copy on the Conn Server through a completed implementer and reviewer turn, while its dev clone runs T3', function (): void {
         Storage::fake('local');
         $source = copySource();
+        $source->project->update(['container_server' => ContainerServer::T3]);
         $group = copyGroup($source->project);
         $copy = finishedCopy($group, startCopy($group));
 
@@ -1767,7 +1779,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
             ->and(Arr::except($turn->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
+                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'base_model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // Capture sets the new thread's ID and marks it admitted: T3 does not hold it yet.
                 't3_thread_id' => $thread->external_id, 'admission' => 'admitted', 'answered' => [], 'answered_run' => null, 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
@@ -1964,7 +1976,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->toBe(['model' => 'claude-fable-5-2', 'effort' => 'xhigh', 'provider_instance' => 'claudeXhigh']);
     });
 
-    it('refuses a new thread whose provider and effort the copy\'s T3 has no instance for, with what it offers, before anything is recorded', function (Closure $set): void {
+    it('refuses at admission a role its provider cannot honour, as a stored value or a default changed since, before anything is recorded', function (Closure $set, string $field, string $message): void {
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $set($group);
@@ -1974,25 +1986,286 @@ describe('a turn of a group that owns a copy', function (): void {
             copyTurn($group);
             $this->fail('The turn was admitted.');
         } catch (ResourceOperationException $error) {
-            expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
-                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
+            expect($error->errorCode.' '.$error->status)->toBe('tasks.agent_unsupported 422')
+                ->and($error->getMessage())->toBe($message)
+                ->and($error->details)->toMatchArray(['role' => 'implementer', 'field' => $field]);
         }
         expect(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     })->with([
-        'a Gateway effort Claude Code has no instance for' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal'])],
-        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'pi'])],
-        'a Codex effort Claude Code has no instance for' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'ultra'])],
-        'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
-        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi'])],
+        'a Gateway effort no provider has' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal']), 'implementer_effort',
+            'The implementer effort minimal (from the Gateway) is no claude effort; claude accepts low, medium, high, xhigh, max.'],
+        'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'pi']), 'implementer_provider',
+            'The implementer provider pi (from the Gateway) is no task copy provider; the providers are claude, codex, antigravity.'],
+        'a Codex effort stored with Claude' => [static fn (Task $group) => $group->update(['implementer_agent_provider' => 'claude', 'implementer_agent_effort' => 'ultra']), 'implementer_effort',
+            'The implementer effort ultra (from the group) is no claude effort; claude accepts low, medium, high, xhigh, max.'],
+        'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'pi']), 'implementer_provider',
+            'The implementer provider pi (from the Project) is no task copy provider; the providers are claude, codex, antigravity.'],
+        'Antigravity stored alone, the Gateway\'s Claude model left' => [static fn (Task $group) => $group->update(['implementer_agent_provider' => 'antigravity']), 'implementer_model',
+            'The implementer model claude-opus-5-5 (from the Gateway) is no Antigravity model; antigravity accepts gemini-4-neon, gemini-4-hydrogen, gemini-4-carbon, '
+            .'gemini-4-argon, gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.1-pro. Set the implementer model.'],
+        'a Project effort changed since to one the group\'s Antigravity model lacks' => [static function (Task $group): void {
+            $group->update(['implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-3.1-pro']);
+            $group->project->update(['task_implementer_effort' => 'medium']);
+        }, 'implementer_effort', 'The implementer effort medium (from the Project) is not offered for gemini-3.1-pro on antigravity; it accepts low, high.'],
     ]);
+
+    it('starts an Antigravity implementer on the antigravity instance with the tiered model of its effort, and records the model and effort as set', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->project->update(['task_implementer_model' => 'claude-sonnet-5-5', 'task_implementer_effort' => 'low']);
+        copyApiCaller($this);
+        $this->patchJson('/api/v1/tasks/'.$group->id, ['implementer_provider' => 'antigravity', 'implementer_model' => 'gemini-4-neon', 'implementer_effort' => 'medium'])
+            ->assertOk();
+
+        $turn = copyTurn($group);
+
+        expect(TaskAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
+            'provider' => ['value' => 'antigravity', 'source' => 'group'],
+            'model' => ['value' => 'gemini-4-neon', 'source' => 'group'],
+            'effort' => ['value' => 'medium', 'source' => 'group'],
+        ])
+            // T3 gets the tiered model, which agy sends as gemini-4-neon at thinking level MEDIUM; its catalog check uses the base.
+            ->and($turn->input['turn'])->toMatchArray(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'thread' => 'new', 'provider' => 'antigravity',
+                'model' => 'gemini-4-neon-medium', 'base_model' => 'gemini-4-neon', 'options' => []])
+            ->and(AgentThread::query()->findOrFail($turn->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
+            ->toBe(['model' => 'gemini-4-neon', 'effort' => 'medium', 'provider_instance' => 'antigravity']);
+        $ended = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-4-neon-medium']);
+        expect(Arr::only($ended->result ?? [], ['model', 'effort']))->toBe(['model' => 'gemini-4-neon', 'effort' => 'medium']);
+    });
+
+    it('continues an Antigravity thread that started on its tiered model, and refuses one that started on its bare model until a new thread starts', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->update(['implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-3.8-flash', 'implementer_agent_effort' => 'high']);
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-3.8-flash-high']);
+
+        $continued = copyTurn($group);
+        expect($continued->input['turn'])->toMatchArray(['thread' => 'continue', 'model' => 'gemini-3.8-flash', 'base_model' => 'gemini-3.8-flash']);
+        copyTurnEnded($continued, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-3.8-flash-high']);
+
+        // A thread admitted before the tiered model: its first turn sent the bare model, which agy runs at its default thought level.
+        $first->update(['input' => [...$first->input, 'turn' => Arr::except([...$first->input['turn'], 'model' => 'gemini-3.8-flash'], ['base_model'])]]);
+        $thread = AgentThread::query()->findOrFail($first->input['thread_id']);
+        $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+            $refused = null;
+        } catch (ResourceOperationException $error) {
+            $refused = $error;
+        }
+
+        expect($refused?->errorCode)->toBe('tasks.copy_thread_untiered')->and($refused?->status)->toBe(422)
+            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-3.8-flash with no high effort tier, so agy does not run it at its high effort. Start a new thread with --thread=new.")
+            ->and(Operation::query()->count())->toBe($before)
+            ->and($thread->refresh()->only(['model', 'effort', 'provider_instance']))->toBe(['model' => 'gemini-3.8-flash', 'effort' => 'high', 'provider_instance' => 'antigravity'])
+            ->and(copyTurn($group, ['thread' => 'new'])->input['turn'])->toMatchArray(['thread' => 'new', 'model' => 'gemini-3.8-flash-high']);
+    });
+
+    it('continues a thread admitted before the tiered model on its stored model when that is its model at the recorded effort, and refuses another tier', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $group->update(['implementer_agent_provider' => 'antigravity', 'implementer_agent_model' => 'gemini-4-neon', 'implementer_agent_effort' => 'high']);
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-4-neon-high']);
+        // As main admitted it: the stored model was already the tier, and its first turn sent that exact id.
+        $first->update(['input' => [...$first->input, 'turn' => Arr::except([...$first->input['turn'], 'model' => 'gemini-4-neon-high'], ['base_model'])]]);
+        $thread = AgentThread::query()->findOrFail($first->input['thread_id']);
+        $thread->update(['model' => 'gemini-4-neon-high']);
+
+        $continued = copyTurn($group);
+        expect($continued->input['turn'])->toMatchArray(['thread' => 'continue', 'model' => 'gemini-4-neon-high'])
+            ->and($thread->refresh()->only(['model', 'effort']))->toBe(['model' => 'gemini-4-neon-high', 'effort' => 'high']);
+        copyTurnEnded($continued, 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'antigravity', 'model' => 'gemini-4-neon-high']);
+
+        // A tier that is not the recorded effort runs at another thought level than the thread records.
+        $thread->update(['effort' => 'medium']);
+        $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+            $refused = null;
+        } catch (ResourceOperationException $error) {
+            $refused = $error;
+        }
+
+        expect($refused?->errorCode)->toBe('tasks.copy_thread_untiered')->and($refused?->status)->toBe(422)
+            ->and($refused?->getMessage())->toBe("The implementer thread {$thread->id} runs on the Antigravity model gemini-4-neon-high with no medium effort tier, so agy does not run it at its medium effort. Start a new thread with --thread=new.")
+            ->and(Operation::query()->count())->toBe($before)
+            ->and($thread->refresh()->only(['model', 'effort']))->toBe(['model' => 'gemini-4-neon-high', 'effort' => 'medium']);
+    });
+
+    it('sends each Claude and Codex model as set, and each Antigravity model at each of its efforts as its tiered model', function (): void {
+        foreach (['claude' => 'claude-opus-5-5', 'codex' => 'gpt-6.1-sol'] as $provider => $model) {
+            foreach (InstanceContainer::copyProviders()[$provider] as $effort) {
+                expect(InstanceContainer::providerModel($provider, $model, $effort))->toBe($model);
+            }
+        }
+        $tiered = [];
+        foreach (InstanceContainer::AntigravityModels as $model => $efforts) {
+            foreach ($efforts as $effort) {
+                $tiered[] = InstanceContainer::providerModel('antigravity', $model, $effort);
+            }
+        }
+        expect($tiered)->toContain('gemini-4-neon-medium', 'gemini-4-hydrogen-xhigh', 'gemini-3.1-pro-low')->not->toContain('gemini-3.1-pro-medium', 'gemini-4-carbon-xhigh')
+            ->and(InstanceContainer::antigravityEfforts())->toBe(['low', 'medium', 'high', 'xhigh'])
+            ->and(InstanceContainer::copyProviders()['antigravity'])->toBe(InstanceContainer::antigravityEfforts());
+    });
+
+    it('offers Antigravity only in a copy whose create settings hold its instance; an older copy refuses it and can change back to Claude', function (string $role): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $runtime = $copy->runtime()->firstOrFail();
+        $clone = Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole();
+        expect(array_keys(InstanceContainer::offered($runtime)))->toBe(['claude', 'codex', 'antigravity']);
+        copyApiCaller($this);
+        $review = [];
+        if ($role === 'reviewer') {
+            copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
+            $review = ['role' => 'reviewer', 'check' => copyCandidate($group)->id];
+        }
+        $turn = fn () => copyTurn($group, $review);
+        // A copy made before Antigravity: the settings its create wrote hold Claude and Codex only.
+        $input = $clone->input;
+        foreach ($input['direct_provisioning']['container']['clone']['files'] as $index => $file) {
+            if ($file['path'] === InstanceContainer::T3Settings) {
+                unset($input['direct_provisioning']['container']['clone']['files'][$index]['json']['providerInstances']['antigravity']);
+            }
+        }
+        $clone->forceFill(['input' => $input])->save();
+        $group->update([$role.'_agent_provider' => 'antigravity', $role.'_agent_model' => 'gemini-3.8-flash', $role.'_agent_effort' => 'high']);
+        $threads = AgentThread::query()->count();
+        $before = Operation::query()->count();
+
+        try {
+            $turn();
+            $this->fail('The turn was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode.' '.$error->status)->toBe('tasks.copy_turn_unoffered 422')
+                ->and($error->details['offered'])->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']]);
+        }
+        expect(AgentThread::query()->count())->toBe($threads)->and(Operation::query()->count())->toBe($before);
+
+        // No thread was made, so the role is not locked: back on Claude it runs.
+        $this->patchJson('/api/v1/tasks/'.$group->id, [$role.'_provider' => 'claude', $role.'_model' => null, $role.'_effort' => null])->assertOk();
+        expect($turn()->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => $role === 'reviewer' ? 'claudeHigh' : 'claudeMedium']);
+    })->with(['implementer', 'reviewer']);
+
+    it('offers Claude and Codex in a copy whose create input holds no settings, as every copy did before Antigravity', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        Operation::query()->where('kind', 'instance.create')->where('target_id', $copy->id)->sole()->forceFill(['input' => []])->save();
+
+        expect(InstanceContainer::offered($copy->runtime()->firstOrFail()))
+            ->toBe(['claude' => ['low', 'medium', 'high', 'xhigh', 'max'], 'codex' => ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']])
+            ->and(copyTurn($group)->input['turn'])->toMatchArray(['provider' => 'claudeMedium']);
+    });
+
+    it('resolves an Antigravity role as set, never with a model or effort of its own, and refuses one it cannot honour', function (string $role): void {
+        $group = copyGroup(copySource()->project);
+        $roleCase = TaskThreadRole::from($role);
+        // A Claude alias the Project names stays as it is under Antigravity: nothing replaces it.
+        $group->project->update(['task_'.$role.'_model' => 'opus']);
+        $group->update([$role.'_agent_provider' => 'antigravity']);
+        expect(TaskAgent::resolve($group, $roleCase)['model'])->toBe(['value' => 'opus', 'source' => 'project'])
+            ->and(TaskAgent::refusal($roleCase, TaskAgent::resolve($group, $roleCase)))->toMatchArray(['value' => 'model', 'source' => 'project']);
+
+        // The Gateway names Antigravity with a model and effort it does not take: they stay, refused.
+        $group->update([$role.'_agent_provider' => null]);
+        $group->project->update(['task_'.$role.'_model' => null]);
+        config(['orbit.tasks.copy_agents.'.$role => ['provider' => 'antigravity', 'model' => 'gemini-3.1-pro', 'effort' => 'medium']]);
+        expect(TaskAgent::resolve($group, $roleCase))->toBe([
+            'provider' => ['value' => 'antigravity', 'source' => 'gateway'],
+            'model' => ['value' => 'gemini-3.1-pro', 'source' => 'gateway'],
+            'effort' => ['value' => 'medium', 'source' => 'gateway'],
+        ])
+            ->and(TaskAgent::refusal($roleCase, TaskAgent::resolve($group, $roleCase)))->toMatchArray(['value' => 'effort', 'source' => 'gateway']);
+
+        // Every model at each of its efforts is honoured, from any level.
+        foreach (InstanceContainer::AntigravityModels as $model => $efforts) {
+            foreach ($efforts as $effort) {
+                $group->update([$role.'_agent_model' => $model, $role.'_agent_effort' => $effort]);
+                expect(TaskAgent::refusal($roleCase, TaskAgent::resolve($group, $roleCase)))->toBeNull();
+            }
+        }
+    })->with(['implementer', 'reviewer']);
+
+    it('resolves Claude and Codex exactly by the group, Project and Gateway chain, whatever provider each level names', function (): void {
+        $group = copyGroup(copySource()->project);
+        $values = ['provider' => [null, 'claude', 'codex'], 'model' => [null, 'claude-sonnet-5-5', 'gpt-6.2-astra'], 'effort' => [null, 'low', 'xhigh', 'ultra']];
+        $gateways = [['provider' => 'claude', 'model' => 'claude-opus-5-5', 'effort' => 'medium'], ['provider' => 'codex', 'model' => 'gpt-6.1-sol', 'effort' => 'high']];
+        $cases = 0;
+        foreach ($gateways as $gateway) {
+            config(['orbit.tasks.copy_agents.implementer' => $gateway]);
+            foreach ($values['provider'] as $groupProvider) {
+                foreach ($values['provider'] as $projectProvider) {
+                    foreach ($values['model'] as $groupModel) {
+                        foreach ($values['model'] as $projectModel) {
+                            foreach ([[null, 'low'], ['ultra', 'xhigh'], [null, null]] as [$groupEffort, $projectEffort]) {
+                                $group->project->forceFill(['task_implementer_provider' => $projectProvider, 'task_implementer_model' => $projectModel,
+                                    'task_implementer_effort' => $projectEffort])->save();
+                                $group->forceFill(['implementer_agent_provider' => $groupProvider, 'implementer_agent_model' => $groupModel,
+                                    'implementer_agent_effort' => $groupEffort])->save();
+                                // origin/main's rule: each value on its own, the group's, else the Project's, else the Gateway's.
+                                $main = static fn (?string $grouped, ?string $projected, string $gatewayValue): array => match (true) {
+                                    $grouped !== null => ['value' => $grouped, 'source' => 'group'],
+                                    $projected !== null => ['value' => $projected, 'source' => 'project'],
+                                    default => ['value' => $gatewayValue, 'source' => 'gateway'],
+                                };
+                                expect(TaskAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
+                                    'provider' => $main($groupProvider, $projectProvider, $gateway['provider']),
+                                    'model' => $main($groupModel, $projectModel, $gateway['model']),
+                                    'effort' => $main($groupEffort, $projectEffort, $gateway['effort']),
+                                ]);
+                                $cases++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        expect($cases)->toBe(2 * 3 * 3 * 3 * 3 * 3);
+    });
+
+    it('refuses a provider-only switch to Antigravity at the Project or the group while a Claude model resolves, and starts Gemini as set', function (string $role): void {
+        $group = copyGroup(copySource()->project);
+        $runtime = finishedCopy($group, startCopy($group))->runtime()->firstOrFail();
+        copyApiCaller($this);
+        $roleCase = TaskThreadRole::from($role);
+        $agent = static fn (): array => TaskAgent::forNewThread($group->refresh(), $roleCase, $runtime);
+        $this->patchJson('/api/v1/projects/'.$group->project_id, ['task_'.$role.'_provider' => 'claude', 'task_'.$role.'_model' => 'claude-sonnet-5-5',
+            'task_'.$role.'_effort' => 'medium'])->assertOk();
+
+        // The provider alone, at the Project and on the group: the Claude model is refused, never replaced, and nothing changes.
+        $this->patchJson('/api/v1/projects/'.$group->project_id, ['task_'.$role.'_provider' => 'antigravity'])
+            ->assertUnprocessable()->assertJsonValidationErrors('task_'.$role.'_model', 'error.details');
+        $this->patchJson('/api/v1/tasks/'.$group->id, [$role.'_provider' => 'antigravity'])
+            ->assertUnprocessable()->assertJsonValidationErrors($role.'_model', 'error.details');
+        expect([$group->project->refresh()->getAttribute('task_'.$role.'_provider'), $group->refresh()->getAttribute($role.'_agent_provider')])->toBe(['claude', null]);
+
+        // With a model and effort Antigravity takes, the thread starts on them as set.
+        $this->patchJson('/api/v1/projects/'.$group->project_id, ['task_'.$role.'_provider' => 'antigravity', 'task_'.$role.'_model' => 'gemini-3.1-pro',
+            'task_'.$role.'_effort' => 'low'])->assertOk();
+        expect($agent())->toBe(['provider' => 'antigravity', 'instance' => 'antigravity', 'model' => 'gemini-3.1-pro', 't3_model' => 'gemini-3.1-pro-low',
+            'effort' => 'low', 'options' => []]);
+        $this->patchJson('/api/v1/tasks/'.$group->id, [$role.'_effort' => 'medium'])
+            ->assertUnprocessable()->assertJsonPath('error.details.'.$role.'_effort.0', 'The '.$role.' effort medium (from the group) is not offered for gemini-3.1-pro on antigravity; it accepts low, high.');
+        $this->patchJson('/api/v1/tasks/'.$group->id, [$role.'_model' => 'gemini-4-neon', $role.'_effort' => 'xhigh'])->assertOk();
+        expect($agent())->toMatchArray(['model' => 'gemini-4-neon', 't3_model' => 'gemini-4-neon-xhigh', 'effort' => 'xhigh']);
+    })->with(['implementer', 'reviewer']);
 
     it('refuses a new thread whose Gateway model is no model name, and records nothing', function (): void {
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         config(['orbit.tasks.copy_agents.implementer.model' => 'claudeAgent/claude-opus-5-5']);
         $before = Operation::query()->count();
+        try {
+            copyTurn($group);
+        } catch (ResourceOperationException $error) {
+            expect($error->getMessage())->toBe('The implementer model claudeAgent/claude-opus-5-5 (from the Gateway) is no model name. A model name starts with a letter or digit '
+                .'and has up to 128 letters, digits, dots, underscores, colons and hyphens.');
+        }
 
-        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_model_invalid 503')
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.agent_unsupported 422')
             ->and(AgentThread::query()->count())->toBe(0)->and(Operation::query()->count())->toBe($before);
     });
 
@@ -2003,7 +2276,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         $instances = $files['/home/agent/.t3/userdata/settings.json']['json']['providerInstances'];
         expect(array_keys($instances))->toBe(['claudeLow', 'claudeMedium', 'claudeHigh', 'claudeXhigh', 'claudeMax',
-            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra'])
+            'codexLow', 'codexMedium', 'codexHigh', 'codexXhigh', 'codexMax', 'codexUltra', 'antigravity'])
             ->and($instances['claudeMedium'])->toBe(['driver' => 'claudeAgent', 'displayName' => 'Claude, medium effort',
                 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => 'medium']]])
             // Codex takes its effort from the thread's model options, not from its instance (InstanceContainer::providerOptions).
@@ -2027,7 +2300,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($next->input['thread_id'])->toBe($first->input['thread_id'])
             ->and(Arr::except($next->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
+                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'base_model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // The CLI driver reported its own thread ID over the admitted one: its provenance is not proven.
                 't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'answered_run' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['message_id'])->not->toBe($first->input['turn']['message_id'])
@@ -2330,6 +2603,26 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(array_map(static fn (array $entry): array => Arr::only($entry, ['id', 'label', 'text']), $read['data']['entries'] ?? $read['entries'] ?? []))
             ->toBe([['id' => 'run:1:0', 'label' => 'user', 'text' => ''], ['id' => 'run:1:1', 'label' => 'assistant', 'text' => 'Committed d867aba2.']])
             ->and(json_encode($read, JSON_THROW_ON_ERROR))->not->toContain('Run Doctor.');
+    });
+
+    it('records the T3 thread\'s token use on its agent thread, replacing the stored total, and leaves unknown use null', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $usage = ['tokens' => 1370, 'input_tokens' => 500, 'cached_input_tokens' => 800, 'output_tokens' => 70, 'model_calls' => 2];
+        $metrics = static fn (): array => Arr::only(AgentThread::query()->where('task_group_id', $group->id)->sole()->getAttributes(), array_keys($usage));
+
+        copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), 'usage' => null]);
+        expect($metrics())->toBe(array_fill_keys(array_keys($usage), null));
+
+        AgentThread::query()->where('task_group_id', $group->id)->update(['tokens' => 9]);
+        copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), 'usage' => $usage]);
+        expect($metrics())->toBe($usage);
+
+        // An older worker's result without usage, and a usage that is not a set of non-negative counts, change nothing.
+        foreach ([[], ['usage' => [...$usage, 'tokens' => -1]], ['usage' => [...$usage, 'tokens' => '5']], ['usage' => Arr::except($usage, 'model_calls')]] as $change) {
+            copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:66105c2c'), ...$change]);
+            expect($metrics())->toBe($usage);
+        }
     });
 
     it('names the agent thread and the agent\'s last reply in the result, so a driver reads the turn in one call', function (): void {
@@ -2797,7 +3090,8 @@ describe('a copy group whose watched pull request merged settles itself', functi
     function settleTick(string $state, ?Throwable $branch = null): int
     {
         $reads = 0;
-        $pull = new GitHubPullRequest(GitHubPullRequestState::from($state), null, null, str_repeat('a', 40), 'main', mergedAt: $state === 'merged' ? '2026-11-16T20:00:00Z' : null);
+        $pull = new GitHubPullRequest(GitHubPullRequestState::from($state), null, null, str_repeat('a', 40), 'main', mergedAt: $state === 'merged' ? '2026-11-16T20:00:00Z' : null,
+            createdAt: '2026-11-16T18:00:00Z');
         app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $branch, &$reads): void {
             $github->shouldReceive('repositoryInstallation')->andReturn(7);
             $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('read-token');
@@ -2843,6 +3137,18 @@ describe('a copy group whose watched pull request merged settles itself', functi
         destroySucceeded($destroy);
         expect(Instance::query()->find($copy->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBeNull();
     });
+
+    it('records when GitHub opened the watched pull request, and never moves a time already recorded', function (?string $recorded, string $expected): void {
+        [$group] = watchedCopy();
+        $group->update(['pr_opened_at' => $recorded]);
+
+        settleTick('open');
+
+        expect($group->refresh()->pr_opened_at?->toIso8601ZuluString())->toBe($expected);
+    })->with([
+        'none recorded' => [null, '2026-11-16T18:00:00Z'],
+        'one recorded' => ['2026-11-16T17:00:00Z', '2026-11-16T17:00:00Z'],
+    ]);
 
     it('records a pull request that closed without a merge, and leaves the group and its copy for a person', function (): void {
         [$group, $copy] = watchedCopy();

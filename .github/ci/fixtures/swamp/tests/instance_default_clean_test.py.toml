@@ -1,0 +1,14 @@
+order = 1533
+cases = [
+  "test_untracked_files_go_and_the_env_ignored_and_tracked_files_stay",
+  "test_a_clean_tree_reports_nothing",
+]
+file = "swamp/tests/instance_default_clean_test.py"
+cost = 2
+# A default's clean after its deployment's checkout.
+inputs = [
+  "swamp/ansible/instance_default_clean.py",
+]
+[case_costs]
+"test_untracked_files_go_and_the_env_ignored_and_tracked_files_stay" = 1
+"test_a_clean_tree_reports_nothing" = 1

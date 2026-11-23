@@ -173,11 +173,14 @@ describe('Instance runtimes', function (): void {
         'an unknown server' => [['container_server' => 'pi']],
     ]);
 
-    it('keeps a runtime\'s container server once it is recorded', function (): void {
+    it('only allows switching a runtime\'s container server from t3 to conn', function (): void {
         $runtime = recordsRuntime(recordsInstance($this->project, $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);
 
-        expect(fn () => InstanceRuntime::query()->whereKey($runtime->id)->update(['container_server' => 'conn']))
-            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+        expect(InstanceRuntime::query()->whereKey($runtime->id)->update(['container_server' => 'conn']))->toBe(1)
+            ->and(fn () => InstanceRuntime::query()->whereKey($runtime->id)->update(['container_server' => 't3']))
+            ->toThrow(QueryException::class, 'An Instance runtime can only switch its container server from t3 to conn.')
+            ->and(fn () => InstanceRuntime::query()->whereKey($this->defaultRuntime->id)->update(['container_server' => 'conn']))
+            ->toThrow(QueryException::class, 'An Instance runtime can only switch its container server from t3 to conn.');
     });
 
     it('refuses a second runtime with the same container, address or port on the Node', function (array $overrides): void {

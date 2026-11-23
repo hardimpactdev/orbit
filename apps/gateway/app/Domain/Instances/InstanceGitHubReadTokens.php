@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\GitHub\GitHubAccessToken;
+use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubTokenGrant;
@@ -14,6 +15,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Infrastructure\GitHub\GitHubTokenCache;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
@@ -25,7 +27,13 @@ use Illuminate\Support\Facades\Log;
 /** Owner-checked read scope at the existing numeric Operation mint primitive. */
 final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
 {
-    public function __construct(private DirectOperation $direct, private GitHubAppStore $store, private HttpGitHubApi $github, private SwampCommandStep $step) {}
+    public function __construct(
+        private DirectOperation $direct,
+        private GitHubAppStore $store,
+        private HttpGitHubApi $github,
+        private SwampCommandStep $step,
+        private GitHubTokenCache $tokens,
+    ) {}
 
     /** @return array{vault:string,key:string} */
     public static function reference(Operation $operation): array
@@ -61,6 +69,29 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
 
         return ['git_read' => $this->copy($operation, $authority['repository'],
             fn () => $this->authorize($operation, $callerNodeId, $runId) === $authority)];
+    }
+
+    /**
+     * The admitted repository's read credential as one git credential-store line, for an engine step that carries it as a blob to
+     * the Instance's Node alone. Reuses the repository's scope-verified token from {@see GitHubTokenCache} so repeated creates
+     * do not stall the engine consumer on GitHub HTTPS calls. A public repository gets an empty line and fetches anonymously.
+     */
+    public function line(Operation $operation): string
+    {
+        $authority = $this->repository($operation);
+        $token = $this->cachedReadToken($authority['repository']);
+
+        return $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
+    }
+
+    /** Drops any cached installation and scoped read token for the Operation's repository, so the next fetch mints fresh ones. */
+    public function forget(Operation $operation): void
+    {
+        $origin = $operation->input['repository'] ?? null;
+        $repository = is_string($origin) ? GitHubRepository::fromOrigin($origin) : null;
+        if ($repository instanceof GitHubRepository) {
+            $this->tokens->forget($repository);
+        }
     }
 
     /**
@@ -123,10 +154,11 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         try {
             $credentials = $this->store->credentials();
             $app = $credentials->slug ?? '(not configured)';
-            if ($credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null) {
+            if ($credentials !== null && ($installationId = $this->github->repositoryInstallation($credentials, $repository)) !== null) {
                 try {
                     return $this->github->scopedRepositoryToken($credentials,
-                        GitHubTokenGrant::from(['repository' => $name, 'permissions' => ['contents' => 'read']]));
+                        GitHubTokenGrant::from(['repository' => $name, 'permissions' => ['contents' => 'read']]),
+                        $installationId);
                 } catch (ResourceOperationException $exception) {
                     if ($exception->errorCode !== 'dependency_token.refused') {
                         throw $exception;
@@ -144,6 +176,73 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
 
         throw new ResourceOperationException('source.github_app_denied',
             self::accessDeniedMessage($app, $repository), 403);
+    }
+
+    /** A scope-verified Contents read token from {@see GitHubTokenCache}, or anonymous access for a confirmed public repository. */
+    private function cachedReadToken(string $origin): ?string
+    {
+        $repository = GitHubRepository::fromOrigin($origin);
+        if ($repository === null) {
+            return null;
+        }
+        $name = $repository->owner.'/'.$repository->name;
+        try {
+            $credentials = $this->store->credentials();
+            $app = $credentials->slug ?? '(not configured)';
+            if ($credentials !== null) {
+                $token = $this->cachedAppReadToken($credentials, $repository);
+                if ($token !== null) {
+                    return $token;
+                }
+            }
+            if ($this->github->repositoryIsPublic($repository)) {
+                return null;
+            }
+        } catch (\Throwable $exception) {
+            throw new ResourceOperationException('source.github_unavailable',
+                "GitHub could not supply a source credential for {$name}.", 502, $exception);
+        }
+
+        throw new ResourceOperationException('source.github_app_denied',
+            self::accessDeniedMessage($app, $repository), 403);
+    }
+
+    private function cachedAppReadToken(GitHubAppCredentials $credentials, GitHubRepository $repository): ?string
+    {
+        $name = $repository->owner.'/'.$repository->name;
+        $grant = GitHubTokenGrant::from(['repository' => $name, 'permissions' => ['contents' => 'read']]);
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $resolvedInstallation = false;
+            $installationId = $this->tokens->installation($credentials->appId, $repository, function () use ($credentials, $repository, &$resolvedInstallation): ?int {
+                $resolvedInstallation = true;
+
+                return $this->github->repositoryInstallation($credentials, $repository);
+            });
+            if ($installationId === null) {
+                return null;
+            }
+            try {
+                return $this->tokens->token(
+                    $credentials->appId,
+                    $installationId,
+                    $repository,
+                    GitHubTokenCache::ScopedReadPermission,
+                    fn (): string => $this->github->scopedRepositoryToken($credentials, $grant, $installationId)->reveal(),
+                );
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode !== 'dependency_token.refused') {
+                    throw $exception;
+                }
+                $this->tokens->forget($repository);
+                if ($resolvedInstallation) {
+                    // A fresh installation lookup was refused: the App does not cover this repository or permission.
+                    return null;
+                }
+                // A cached installation may have gone stale after a reinstall; try once with a fresh lookup.
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -86,7 +86,7 @@ class InstanceContainerNamesTest(unittest.TestCase):
 class ConvergeRunsNamesTest(unittest.TestCase):
     def test_the_check_tag_of_every_converge_writes_the_names(self):
         playbook = (ANSIBLE / "operation-node-converge.yml").read_text()
-        task = playbook[playbook.index("- name: Apply the presented machine names"):playbook.index("- name: Check the managed agent files")]
+        task = playbook[playbook.index("- name: Apply the presented machine names"):playbook.index("- name: Check the managed agent file")]
         self.assertIn("file: tasks/instance-container-names.yml", task)
         self.assertIn("apply: { tags: [check] }", task)
         self.assertIn("'mode': 'names'", (ANSIBLE / "tasks/instance-container-names.yml").read_text())

@@ -24,7 +24,7 @@ final class ConnTasksController extends Controller
 {
     public function index(ListConnTasksRequest $request, ListTaskGroupsAction $action, ConnTaskPanel $panel): JsonResponse
     {
-        $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor(), $request->instanceId());
+        $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor(), $request->instanceId(), $request->pullRequest());
 
         return response()->json([
             'data' => array_map(static fn (ConnTaskData $row): array => $row->toArray(), $panel->rows($this->caller($request), $page['groups'])),

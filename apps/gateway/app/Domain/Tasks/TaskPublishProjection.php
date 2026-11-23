@@ -17,6 +17,7 @@ use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 /** Projects native publication metadata onto the board. No GitHub calls or execution. */
@@ -134,8 +135,10 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
             $terminal = $operation->status->terminal();
             $native = ValidatedData::object($data['result'] ?? []);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
+            $openedAt = null;
             if ($status === OperationStatus::Succeeded) {
                 $pull = isset($native['pull_receipt']) ? ValidatedData::object(json_decode(ValidatedData::string($native['pull_receipt']), true, flags: JSON_THROW_ON_ERROR)) : [];
+                $openedAt = is_string($pull['pull_request_created_at'] ?? null) ? CarbonImmutable::parse($pull['pull_request_created_at'])->utc() : null;
                 $result = ['branch' => $operation->input['branch'], 'commit' => $operation->input['commit'],
                     'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null, ...self::base($native['base'] ?? null),
                     ...(isset($operation->input[self::Withheld]) ? [self::Withheld => $operation->input[self::Withheld]] : [])];
@@ -163,6 +166,10 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
                     'pr_url' => $result['pull_request_url'], 'watched_pr_url' => $result['pull_request_url'],
                     'watched_pr_number' => $result['pull_request_number'], 'watched_pr_state' => 'open',
                 ]);
+                // When GitHub opened the pull request; a time already recorded stays (docs/reference/tasks.md#task-insights).
+                if ($openedAt !== null) {
+                    Task::topLevel()->whereKey($operation->target_id)->whereNull('pr_opened_at')->update(['pr_opened_at' => $openedAt]);
+                }
             }
 
             return $projected;

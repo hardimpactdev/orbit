@@ -2,10 +2,7 @@ version: 2
 
 # One pull request a day bundles every update, so the self-hosted runners
 # see one CI run instead of a burst of one run per package.
-# Automatic updates propose only releases that are at least seven days old.
-# Security updates are not delayed. Manual updates take only releases that
-# are at least three days old, through Vet and bunfig.toml. See the
-# Dependencies section of docs/contributor-guide.md.
+# See the Dependencies section of docs/contributor-guide.md.
 multi-ecosystem-groups:
   daily:
     schedule:
@@ -16,26 +13,18 @@ updates:
     directory: /apps/cli
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: composer
     directory: /apps/gateway
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: composer
     directory: /apps/docs
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: composer
     directory: /packages/php-sdk
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: bun
     directory: /apps/web
     # Version bumps must also move the Vite core alias and runner overrides.
@@ -44,17 +33,11 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: bun
     directory: /apps/desktop
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7
   - package-ecosystem: github-actions
     directories: ["/", "/.github/actions/*"]
     patterns: ["*"]
     multi-ecosystem-group: daily
-    cooldown:
-      default-days: 7

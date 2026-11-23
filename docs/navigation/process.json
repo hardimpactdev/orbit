@@ -16,6 +16,9 @@
             "cli/process/start",
             "cli/process/stop",
             "cli/process/restart",
+            "cli/process/upgrade",
+            "cli/process/artifact-set",
+            "cli/process/artifact-unset",
             "cli/process/logs",
             "cli/process/destroy"
           ]

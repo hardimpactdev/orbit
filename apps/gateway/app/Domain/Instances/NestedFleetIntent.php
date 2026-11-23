@@ -84,7 +84,7 @@ final readonly class NestedFleetIntent
         $size = $instance->runtime()->value('idmap_size');
         $layout = [];
         foreach (NestedFleetLayout::Layout as $role => $guest) {
-            $layout[$role] = ['address' => $guest['address'], 'memory' => self::Memory[$role]];
+            $layout[$role] = ['address' => $guest['address'], 'wireguard' => $guest['wireguard'], 'memory' => self::Memory[$role]];
         }
 
         return [

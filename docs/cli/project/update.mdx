@@ -14,7 +14,7 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--name=NAME` | New display name, at most 255 characters. Applies at once; the slug, domains, and code stay. |
 | `--type=TYPE` | New Project type. A change to `laravel-app` or `symfony-app` is refused while an active Instance has no Route. |
 | `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
-| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins and re-binding production homes. The current URL repairs a home left on an older URL. See [Production Instances](/reference/projects#production-instances). |
+| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins and re-binding production homes. The current URL repairs a home left on an older URL. See [Repository changes](/reference/projects#repository-changes). |
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
 | `--source-access=VALUE` | `github_app` or `gh_cli`. Applies at once after the Gateway reads the remote with the new value. |
 | `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
@@ -27,9 +27,9 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--container-server=SERVER` | `t3` or `conn`: the [server](/reference/projects#container-server) that runs in the Project's dev containers that Orbit reserves after the change. Existing containers keep theirs, and task copies always run the Conn Server. Any other value returns `project.container_server_invalid` before a request. A server whose program the recipe's agent folder does not pin returns `project.container_server_unavailable` (409). |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
-| `--task-implementer-provider=NAME` | The default implementer provider of the Project's [task copies](/reference/tasks#copy-turn-agents): `claude` or `codex`. A task that names its own value keeps it. |
-| `--task-implementer-model=MODEL` | The default implementer model, such as `claude-opus-5-5`. |
-| `--task-implementer-effort=LEVEL` | The default implementer effort: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--task-implementer-provider=NAME` | The default implementer provider of the Project's [task copies](/reference/tasks#copy-turn-agents): `claude`, `codex` or `antigravity`. A task that names its own value keeps it. |
+| `--task-implementer-model=MODEL` | The default implementer model, such as `claude-opus-5-5`. A task that names no model of its own takes it, whatever provider the task resolves to. |
+| `--task-implementer-effort=LEVEL` | The default implementer effort: `low`, `medium`, `high`, `xhigh` or `max`. Codex adds `ultra`. Each Antigravity model takes [its own efforts](/reference/tasks#copy-turn-agents). When the update sets any implementer default, it checks the whole implementer role as it resolves from the Project and the Gateway, and refuses one its provider cannot honour (see [copy turn agents](/reference/tasks#copy-turn-agents)). It changes no task: a task its new default leaves unhonoured is refused at its next new thread. |
 | `--task-reviewer-provider=NAME` | The default reviewer provider. |
 | `--task-reviewer-model=MODEL` | The default reviewer model. |
 | `--task-reviewer-effort=LEVEL` | The default reviewer effort. |

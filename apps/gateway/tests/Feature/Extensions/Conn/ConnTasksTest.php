@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
@@ -15,6 +18,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -98,6 +102,21 @@ describe('conn:task:list', function (): void {
         panelCall($this->phone, 'tasks?limit=101')->assertStatus(422);
     });
 
+    it('finds the tasks of one pull request by repository and number, watched or published, in any case', function (): void {
+        $published = panelTask('Published', attributes: ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/12', 'pr_opened_at' => '2026-11-17T10:00:00Z']);
+        $watched = panelTask('Watched', attributes: ['watched_pr_url' => 'https://github.com/HardImpactDev/Orbit/pull/34', 'watched_pr_number' => 34]);
+        panelTask('Other number', attributes: ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/123']);
+        $find = fn (string $query): array => panelCall($this->phone, 'tasks?'.$query)->assertOk()->json('data');
+
+        expect(array_column($find('repository=hardimpactdev/orbit&pull_request=12'), 'id'))->toBe([$published->id])
+            ->and($find('repository=hardimpactdev/orbit&pull_request=12')[0]['pr_opened_at'])->toBe('2026-11-17T10:00:00+00:00')
+            ->and(array_column($find('repository=hardimpactdev/ORBIT&pull_request=34'), 'id'))->toBe([$watched->id])
+            ->and($find('repository=hardimpactdev/other&pull_request=12'))->toBe([])
+            ->and($find('repository=hardimpactdev/orbit&pull_request=99'))->toBe([]);
+        panelCall($this->phone, 'tasks?pull_request=12')->assertStatus(422);
+        panelCall($this->phone, 'tasks?repository=hardimpactdev/orbit/pull&pull_request=12')->assertStatus(422);
+    });
+
     it('shows a row\'s project, workspace, pull request, subtask counts and times', function (): void {
         $group = panelTask('Row', 'row', ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3990']);
         foreach ([TaskStatus::Completed, TaskStatus::Reviewing, TaskStatus::Running, TaskStatus::Todo] as $status) {
@@ -115,12 +134,15 @@ describe('conn:task:list', function (): void {
             'pull_request' => ['number' => 3990, 'url' => 'https://github.com/hardimpactdev/orbit/pull/3990', 'state' => null],
             'subtask_counts' => ['total' => 4, 'todo' => 1, 'running' => 2, 'completed' => 1, 'failed' => 0, 'cancelled' => 0],
             'created_at' => '2026-11-17T12:00:00+00:00', 'updated_at' => '2026-11-17T12:00:00+00:00', 'last_activity_at' => null,
+            'deployed_at' => null, 'pr_opened_at' => null,
         ]);
 
         $group->update(['watched_pr_number' => 4000, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/4000', 'watched_pr_state' => 'open']);
         Operation::query()->forceCreate(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'succeeded',
             'input' => [], 'state' => [], 'started_at' => '2026-11-17 12:05:00', 'finished_at' => '2026-11-17 12:09:00']);
+        $group->update(['deployed_at' => '2026-11-17 12:30:00']);
         $row = panelCall($this->phone, 'tasks')->json('data.0');
+        expect($row['deployed_at'])->toBe('2026-11-17T12:30:00+00:00');
         expect($row['pull_request'])->toBe(['number' => 4000, 'url' => 'https://github.com/hardimpactdev/orbit/pull/4000', 'state' => 'open'])
             ->and($row['last_activity_at'])->toBe('2026-11-17T12:09:00+00:00');
     });
@@ -169,7 +191,7 @@ describe('conn:task:show', function (): void {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-17 12:00:00'));
         $second->update(['status' => TaskStatus::Running, 'started_at' => now()->subMinutes(3)]);
         panelEnvironment($group, 'env-detail');
-        $earlier = panelThread($group, $first, 'implementer', 'orbit:first-1', ['provider_instance' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'effort' => 'medium',
+        $earlier = panelThread($group, $first, 'implementer', 'orbit:first-1', ['provider_instance' => 'antigravity', 'model' => 'gemini-4-neon', 'effort' => 'medium',
             'state' => 'failed', 'tokens' => 100, 'created_at' => now()->subMinutes(9), 'observed_at' => now()->subMinutes(8)]);
         $replaced = panelThread($group, $first, 'implementer', 'orbit:first-2', ['provider_instance' => 'codexHigh', 'model' => 'gpt-6.1-sol', 'effort' => 'high',
             'state' => 'done', 'tokens' => 200, 'created_at' => now()->subMinutes(8)]);
@@ -198,8 +220,8 @@ describe('conn:task:show', function (): void {
                     'current_implementer_agent_id' => $asking->id, 'metrics' => ['duration_ms' => 180000, 'tokens' => null, 'lines_added' => null, 'lines_deleted' => null]],
             ])
             ->and($task['agents'])->toBe([
-                ['id' => $earlier->id, 'role' => 'implementer', 'subtask_ids' => [$first->id], 'current' => false, 'attempt' => 1, 'provider' => 'claude',
-                    'model' => 'claude-opus-5-5', 'effort' => 'medium', 'state' => 'failed', 'needs_input' => false,
+                ['id' => $earlier->id, 'role' => 'implementer', 'subtask_ids' => [$first->id], 'current' => false, 'attempt' => 1, 'provider' => 'antigravity',
+                    'model' => 'gemini-4-neon', 'effort' => 'medium', 'state' => 'failed', 'needs_input' => false,
                     'created_at' => '2026-11-17T11:51:00+00:00', 'observed_at' => '2026-11-17T11:52:00+00:00', 'conn' => ['environment_id' => 'env-detail', 'thread_id' => 'orbit:first-1']],
                 ['id' => $replaced->id, 'role' => 'implementer', 'subtask_ids' => [$first->id], 'current' => true, 'attempt' => 2, 'provider' => 'codex',
                     'model' => 'gpt-6.1-sol', 'effort' => 'high', 'state' => 'done', 'needs_input' => false,
@@ -227,6 +249,76 @@ describe('conn:task:show', function (): void {
         expect($conn($this->phone))->toBeNull();
         Instance::query()->whereKey($group->taskable_id)->delete();
         expect($conn($this->phone))->toBeNull();
+    });
+
+    it('reads a task with no subtask with its work in place of subtasks, and the work\'s call for help as the task\'s', function (): void {
+        $group = panelTask('Alone', 'alone', ['tokens' => 120, 'started_at' => now()->subMinutes(4)]);
+        $work = CreateTaskGroupAction::openWork($group, [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass', 'command' => 'vendor/bin/pest']]);
+        $work->update(['status' => TaskStatus::Reviewing, 'started_at' => now()->subMinutes(4)]);
+        panelEnvironment($group, 'env-alone');
+        $implementer = panelThread($group, $work, 'implementer', 'orbit:alone-1', ['model' => 'claude-opus-5-5', 'state' => 'done']);
+        $reviewer = panelThread($group, $work, 'reviewer', 'orbit:alone-review', ['model' => 'claude-opus-5-5', 'state' => 'working']);
+        $work->update(['implementer_agent_thread_id' => $implementer->id]);
+        $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
+        $check = TaskCheck::query()->create(['task_id' => $work->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1,
+            'process_started' => 'x', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('2', 40), 'exit_code' => 0, 'output' => 'ok',
+            'started_at' => now()->subMinute(), 'finished_at' => now()]);
+
+        $row = panelCall($this->phone, 'tasks')->assertOk()->json('data.0');
+        $task = panelCall($this->phone, 'tasks/'.$group->id)->assertOk()->json('data');
+
+        expect($row['subtask_counts'])->toBe(['total' => 0, 'todo' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'cancelled' => 0])
+            ->and($row['work_status'])->toBe('reviewing')
+            ->and($row['attention'])->toBeNull()
+            ->and($task['execution'])->toBe(['implementer_mode' => 'task'])
+            ->and($task['subtasks'])->toBe([])
+            ->and($task['work'])->toBe([
+                'status' => 'reviewing',
+                'review' => 'not_approved',
+                'deliverables' => [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass']],
+                'current_implementer_agent_id' => $implementer->id,
+                'check' => ['id' => $check->id, 'kind' => 'handoff', 'status' => 'passed', 'started_at' => '2026-11-17T11:59:00+00:00',
+                    'finished_at' => '2026-11-17T12:00:00+00:00', 'exit_code' => 0, 'failed_step' => null],
+            ])
+            ->and(array_map(static fn (array $agent): array => [$agent['id'], $agent['role'], $agent['subtask_ids'], $agent['current'], $agent['attempt']], $task['agents']))
+            ->toBe([[$implementer->id, 'implementer', [], true, 1], [$reviewer->id, 'reviewer', [], true, 1]]);
+
+        // A reviewer turn runs while the work stays running: the review state reads the turn, not the work's status.
+        $work->update(['status' => TaskStatus::Running]);
+        $turn = Operation::query()->forceCreate(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'running',
+            'input' => ['thread_id' => $reviewer->id, 'subtask' => $work->id], 'state' => [], 'started_at' => now()]);
+        expect(panelCall($this->phone, 'tasks/'.$group->id)->json('data.work'))->toMatchArray(['status' => 'running', 'review' => 'reviewing']);
+        $turn->update(['status' => 'succeeded', 'finished_at' => now()]);
+        $work->update(['status' => TaskStatus::Completed]);
+        // A completion is no approval without a reviewer turn on the done check.
+        expect(panelCall($this->phone, 'tasks/'.$group->id)->json('data.work'))->toMatchArray(['status' => 'completed', 'review' => 'not_approved']);
+
+        $work->update(['status' => TaskStatus::Running]);
+        TaskAssistance::apply($work->refresh(), AssistanceKind::Failure, null, 'The handoff check failed twice.');
+        expect(panelCall($this->phone, 'tasks')->json('data.0.attention'))->toBe(['kind' => 'failure', 'question' => null, 'reason' => 'The handoff check failed twice.'])
+            ->and(panelCall($this->phone, 'tasks/'.$work->id)->assertNotFound()->json('error.code'))->toBe('http.404');
+    });
+
+    it('shows a draft with no subtask and no deliverables as a task that does its own work, with no work yet', function (): void {
+        $draft = panelTask('Draft', attributes: ['status' => TaskGroupStatus::Backlog]);
+
+        $task = panelCall($this->phone, 'tasks/'.$draft->id)->assertOk()->json('data');
+
+        expect($task['execution'])->toBe(['implementer_mode' => 'task'])
+            ->and($task['subtasks'])->toBe([])
+            ->and($task)->not->toHaveKey('work');
+    });
+
+    it('keeps the panel of a task with subtasks free of the work fields', function (): void {
+        $group = panelTask('Split', 'split');
+        $group->tasks()->create(['position' => 1, 'title' => 'A', 'brief' => 'A']);
+        $group->tasks()->create(['position' => 2, 'title' => 'B', 'brief' => 'B']);
+
+        $task = panelCall($this->phone, 'tasks/'.$group->id)->assertOk()->json('data');
+
+        expect($task)->not->toHaveKey('work')->not->toHaveKey('work_status')
+            ->and($task['execution'])->toBe(['implementer_mode' => 'per_subtask'])
+            ->and(panelCall($this->phone, 'tasks')->json('data.0'))->not->toHaveKey('work_status');
     });
 
     it('answers 404 for a subtask or an unknown task, and refuses while the tasks extension is off', function (): void {

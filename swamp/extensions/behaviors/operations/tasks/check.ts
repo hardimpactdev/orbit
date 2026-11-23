@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { globToRegExp } from "jsr:@std/path@1/glob-to-regexp";
+import { redactText } from "../../_lib/public_output.ts";
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
 const Deliverable = z.object({
@@ -35,6 +36,8 @@ export const CheckInput = z.object({
     repository: z.string().nullable(),
     check_name: z.string().nullable(),
     branch: z.string().regex(/^task-[1-9][0-9]*-handoff$/),
+    // The delivery gate of a gated group's handoff check (docs/reference/tasks.md#the-delivery-gate).
+    handoff_gate: z.boolean().default(false),
 });
 const Evidence = z.object({
     start: z.string().nullable(),
@@ -51,6 +54,23 @@ const Evidence = z.object({
         }).passthrough(),
     ),
 });
+/** One part of `bin/task-check` as its delivery receipt names it (docs/reference/tasks.md#handoffs). */
+export const CheckPart = z.object({
+    name: z.string().min(1).max(200),
+    result: z.enum(["passed", "FAILED", "skipped", "not selected"]),
+    seconds: z.number().nonnegative(),
+}).strict();
+/**
+ * A part table as every reader keeps it: a non-empty list of valid parts, each name redacted, and valid again after redaction, so a
+ * name that redaction empties is no table. Null for anything else.
+ */
+export function checkParts(value: unknown) {
+    const parts = z.array(CheckPart).min(1).safeParse(value);
+    if (!parts.success) return null;
+    const redacted = z.array(CheckPart).safeParse(parts.data.map((part) => ({ ...part, name: redactText(part.name) })));
+    return redacted.success ? redacted.data : null;
+}
+
 export const Local = z.object({
     outcome: z.enum(["passed", "failed", "changed"]),
     exit_code: z.number().int(),
@@ -63,6 +83,11 @@ export const Local = z.object({
     failed_step: z.string().nullable(),
     evidence: Evidence.nullable(),
     subtask_start_commit: Sha,
+    // The part table of the Project check's delivery receipt; null when its command wrote none.
+    parts: z.array(CheckPart).nullable().optional(),
+    // HEAD and the tree of the work as the implementer handed it off, before any command ran.
+    handed_off_head: Sha.optional(),
+    handed_off_tree: Sha.optional(),
 });
 export type CheckIntent = z.infer<typeof CheckInput>;
 export type LocalCheck = z.infer<typeof Local>;

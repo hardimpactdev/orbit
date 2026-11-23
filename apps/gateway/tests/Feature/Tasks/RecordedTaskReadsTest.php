@@ -205,9 +205,27 @@ it('breaks insights down by the model of each task\'s first implementer thread, 
     $thread($ended('One implementer'), 'implementer', 'claude-sonnet-5-5');
     $ended('No thread');
 
-    $model = app(TaskInsights::class)->report(7, $project->id, CarbonImmutable::now())->breakdowns->model;
+    $model = app(TaskInsights::class)->report('7d', $project->id, CarbonImmutable::now())->breakdowns->model;
 
     // The task VM column never counts; a reviewer thread does not either.
     expect(array_map(static fn ($row): array => [$row->key, $row->label, $row->tasks], $model))
         ->toBe([['', 'Unknown', 1], ['claude-sonnet-5-5', 'claude-sonnet-5-5', 2]]);
+});
+
+it('takes the median merge wait from PR opened over the merged tasks that know both times, and null without one', function (): void {
+    $project = Project::query()->create(['name' => 'app', 'slug' => 'app', 'repository_url' => 'https://github.com/example/app.git', 'default_branch' => 'main', 'root' => 'public']);
+    $ended = static fn (?string $opened, ?string $merged): Task => Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Ended', 'brief' => 'Brief',
+        'status' => TaskGroupStatus::Completed, 'ended_at' => now(), 'settled_at' => now()->subHour(), 'pr_opened_at' => $opened, 'merged_at' => $merged]);
+    $insights = static fn (): array => app(TaskInsights::class)->report('7d', $project->id, CarbonImmutable::now())->toArray()['current'];
+    $ended(null, now()->subMinutes(30)->toIso8601String());
+    $ended(now()->subHours(9)->toIso8601String(), null);
+
+    expect($insights()['pr_merge_wait_ms'])->toBeNull();
+
+    $ended(now()->subHours(3)->toIso8601String(), now()->subHour()->toIso8601String());
+    $ended(now()->subHours(5)->toIso8601String(), now()->subHour()->toIso8601String());
+    $ended(now()->subHours(7)->toIso8601String(), now()->subHour()->toIso8601String());
+
+    // Only merged tasks with an opened time count.
+    expect($insights())->toMatchArray(['merged' => 4, 'pr_merge_wait_ms' => 4 * 3_600_000]);
 });

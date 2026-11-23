@@ -44,6 +44,23 @@ final readonly class TaskTurn
         .'Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.';
 
     /**
+     * How a reviewer in a gated group's copy posts its review receipt (docs/reference/tasks.md#the-review-receipt): its verdict and the
+     * category of each blocking finding, with each category's meaning, through its copy key. The reviewer's prompt holds it after its
+     * review rules (TaskTurnPrompt::reviewer).
+     */
+    public static function reviewReceiptRule(): string
+    {
+        $categories = implode("\n", array_map(static fn (TaskFindingCategory $category): string => "- {$category->value}: {$category->meaning()}",
+            TaskFindingCategory::cases()));
+
+        return 'Before this turn ends, post your review receipt: your verdict and the category of each blocking finding you reported, '
+            .'one entry per finding, none for approve and at least one for changes. . ~/.config/orbit/model.env && curl -sS --fail-with-body '
+            .'-H "Authorization: Bearer $ORBIT_COPY_KEY" -H "Content-Type: application/json" -d \'{"verdict": "changes", "findings": ["regression", "docs"]}\' '
+            .'"$ORBIT_COPY_API/handoff" (set the verdict, approve or changes, and the categories first; approve posts "findings": []). '
+            ."A second post replaces the first. Without a receipt the review does not count. The categories:\n{$categories}";
+    }
+
+    /**
      * How a copy thread's external_id came to be (docs/reference/development-containers.md#admission). Capture sets a UUID and marks it
      * `admitted`: T3 may not hold it yet. A turn that reports that same ID back makes it `confirmed`. A reported ID that replaced the row's
      * ID, or any report on a row made before the mark, makes it `overwritten`.
@@ -92,13 +109,24 @@ final readonly class TaskTurn
             throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must be the role\'s thread that this turn continues in the task copy.', 422);
         }
         $thread = $data->thread === 'new' ? null : $current;
+        if ($thread !== null) {
+            self::requireTiered($thread);
+        }
         // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
         // A reviewer's turn names the task branch its checkout goes back to, should the copy still hold its detach.
         $settle = array_map(self::earlier(...), self::unsettled($group));
         $candidate = null;
         $review = null;
+        if ($role === TaskThreadRole::Implementer) {
+            // An accepted delivery waits for its review before the implementer goes on (docs/reference/tasks.md#the-review-gate).
+            TaskHandoffs::requireReview($group, $task);
+        }
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
+            // The delivery gate comes first (docs/reference/tasks.md#handoffs): only an accepted delivery for this commit is reviewed.
+            if ($check instanceof TaskCheck) {
+                TaskHandoffs::requireDelivery($group, $task, $check);
+            }
             $owner = $check instanceof TaskCheck ? $this->candidates->owner($group, $check) : null;
             if (! $check instanceof TaskCheck || ! $owner instanceof Operation || ! $this->candidates->eligible($group, $check)) {
                 throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
@@ -107,10 +135,13 @@ final readonly class TaskTurn
             $review = TaskTurnReview::of($group, $task, $check, $owner);
         }
         $provider = null;
+        $model = null;
         $options = [];
+        $copyRuntime = $instance->runtime()->firstOrFail();
         if ($thread === null) {
-            $agent = TaskAgent::forNewThread($group, $role);
+            $agent = TaskAgent::forNewThread($group, $role, $copyRuntime);
             $provider = $agent['instance'];
+            $model = $agent['t3_model'];
             $options = $agent['options'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
@@ -137,8 +168,11 @@ final readonly class TaskTurn
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
+            'turn' => ['t3' => $copyRuntime->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider,
+                // A new thread's model as T3 takes it, Antigravity's tiered with its effort (InstanceContainer::providerModel), and the
+                // role's model the thread records, which T3's catalog lists; and its model options: T3 runs its every turn with them
+                // (InstanceContainer::providerOptions).
+                'model' => $model ?? $thread->model, 'base_model' => $thread->model,
                 'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
                 // The thread as T3 is to know it, and the turn's own message ID, fixed before any send (docs/reference/development-containers.md#stable-ids).
                 't3_thread_id' => $thread->external_id, 'admission' => self::admission($thread), 'message_id' => (string) Str::uuid(),
@@ -279,6 +313,34 @@ final readonly class TaskTurn
 
         return array_values($turns->filter(static fn (Operation $turn): bool => ($turn->state['swamp_run_id'] ?? null) !== null
             && ($turn->result['ended'] ?? null) !== true && ! in_array($turn->id, $settled, true))->all());
+    }
+
+    /**
+     * Refuses to continue an Antigravity thread that started on no tier of its recorded effort, as a turn admitted before the tiered model
+     * did: `agy` runs it at its own default thought level, not at the effort the thread records (InstanceContainer::providerModel). A thread
+     * admitted before then whose stored model already is `<model>-<effort>`, at its recorded effort and one its model offers, started on
+     * that tier and continues on it. The model it started on is its first turn's; the thread stays as recorded, and a new thread starts on
+     * the tiered model.
+     */
+    private static function requireTiered(AgentThread $thread): void
+    {
+        if ($thread->provider_instance !== InstanceContainer::AntigravityInstance) {
+            return;
+        }
+        $model = (string) $thread->model;
+        $effort = (string) $thread->effort;
+        $base = str_ends_with($model, '-'.$effort) ? substr($model, 0, -strlen('-'.$effort)) : '';
+        $tiered = in_array($effort, InstanceContainer::AntigravityModels[$base] ?? [], true) ? $model : InstanceContainer::providerModel('antigravity', $model, $effort);
+        $first = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $thread->task_group_id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->orderBy('id')->get(['id', 'input'])
+            ->map(static fn (Operation $turn): array => ['thread_id' => $turn->input['thread_id'] ?? null, 'turn' => is_array($turn->input['turn'] ?? null) ? $turn->input['turn'] : []])
+            ->first(static fn (array $turn): bool => $turn['thread_id'] === $thread->id && ($turn['turn']['thread'] ?? null) === 'new');
+        $started = $first['turn']['model'] ?? null;
+        if ($started !== $tiered) {
+            throw new ResourceOperationException('tasks.copy_thread_untiered',
+                "The {$thread->role} thread {$thread->id} runs on the Antigravity model ".(is_string($started) ? $started : $model)." with no {$effort} effort tier, so agy does not run it at its {$effort} effort. Start a new thread with --thread=new.", 422,
+                details: ['thread_id' => $thread->id, 'model' => $thread->model, 'effort' => $thread->effort]);
+        }
     }
 
     /**

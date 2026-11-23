@@ -1,6 +1,6 @@
 ---
 title: "MCP server"
-description: "The Gateway's Model Context Protocol server: operator API actions as tools, with WireGuard identity and a search variant for small contexts."
+description: "The Gateway's Model Context Protocol server: operator API actions as typed tools over WireGuard, with a search endpoint for small contexts."
 covers:
   - apps/gateway/app/Http/Mcp/**
   - apps/gateway/routes/ai.php
@@ -10,176 +10,92 @@ covers:
 
 # MCP server
 
-The `instance-logs`, `process-logs` and `schedule-logs` tools return bounded snapshots. Viewer lease endpoints stay outside the tool catalogue. Use the CLI with `--follow` for a [live log stream](/reference/live-logs).
-
-`task-swamp-runs` reads one task group's latest five Swamp runs, step states, bounded output, and log tails. It returns a snapshot, not a stream. Poll every five seconds and inspect `availability` and `observed_at` before treating output as current. [Swamp run output](/reference/tasks#swamp-run-output) defines the read and credential boundary.
-
-The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way. The [Swamp executor signer](/reference/swamp-command-steps#node-execution-through-official-ssh) is not a tool.
-
-The Project's [development deploy steps](/reference/deployments#development-deploy-steps) are available as `project-dev-deploy-step-list`, `project-dev-deploy-step-create`, `project-dev-deploy-step-update`, and `project-dev-deploy-step-destroy`. Supply the numeric `project`; updates and removal also take the step name as `step`. Create and update accept `required` as a JSON boolean, so `false` stays false through MCP dispatch. They accept `inputs` as a list of paths; on update, `null` or `[]` clears it.
-
-`process-update` replaces an installed Process specification. Supply its numeric ID as `process` and the complete replacement fields; it keeps the Process identity and desired state. Both `process-create` and `process-update` accept Docker `environment` as an object such as `{"EMPTY":"","LABEL":"  literal  "}`, with string values preserved. Omit or set `working_directory` to null to use the Docker image default. Responses expose environment names with redacted values. [Update in place](/reference/processes-and-schedules#update-in-place) defines omitted fields, refusals, and retry recovery.
-
-`node-update` takes `apps`, the [apps root](/reference/node-settings#set-the-apps-root). An absent member stays unchanged. The removed `task_vms` and `image_refresh_hold` members are unknown members, and the API refuses them.
-
-`node-wireguard-key` takes the numeric `node` ID and `wireguard_public_key`, a canonical base64 encoding of exactly 32 bytes. It dispatches `PATCH /api/v1/nodes/{node}/wireguard-key` to set an unmanaged peer's desired public key and reconverge the hub. The API refuses Gateway Nodes, managed peers, missing WireGuard addresses, and collisions with another peer or the configured hub key. Activity input is empty. A projection failure can leave the new key stored; replaying the same key retries convergence rather than skipping it. Follow [WireGuard key recovery](/cli/node/wireguard-key) if the change interrupts the caller's management path.
-
-The `gateway-release-rollback` tool takes the retained release selector without a `force` input. It switches code only; database restore follows [Gateway recovery](/reference/gateway-recovery#roll-back).
+The Gateway serves a Model Context Protocol (MCP) server so AI agents can operate Orbit directly without shelling out to the CLI. Every tool call dispatches through Laravel's HTTP kernel as the matching API request, enforcing the same WireGuard identity, access grants, validation, redaction, and [Activity](/cli/activity) logging.
 
 ## Endpoints
 
-Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.
+Both endpoints speak streamable HTTP and expose the same operator catalogue, protected by [Browser access to the Gateway](/reference/browser-access):
 
-| Endpoint | Tools it lists | Use it when |
+| Endpoint | Listed tools | Use when |
 | --- | --- | --- |
-| `https://gateway.orbit/mcp` | The full operator tool catalogue, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
-| `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. |
+| `https://gateway.orbit/mcp` | Full operator catalogue on one page (limit 500) | Client loads tool definitions on demand or has room for the full list |
+| `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools` | Client loads every listed tool into context |
 
-Both endpoints use the Gateway's [browser access rules](/reference/browser-access), which allow the Gateway's own HTTPS node hostname as a browser origin.
+JSON-RPC request envelopes are limited to 15 MiB (`15,728,640` bytes), checked after active-peer authorization (HTTP 413 on overflow) so full 10 MiB [Project Document uploads](/reference/project-documents#content-and-versions) fit.
 
-`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. A nested empty object in a tool argument, such as `{"options":{}}`, stays an object through a direct `tools/call` and through `execute_tools`, and an empty list stays a list. The tool result text keeps that shape. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
+`search_tools` returns matching tool names and input schemas (an empty query browses the catalogue). `execute_tools` runs up to 25 calls in order (`{"calls": [{"name": "...", "arguments": {...}}]}`), preserves empty JSON objects (`{}`), stops on the first error, and caps combined output at 65,536 bytes.
 
-One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools as separate requests. `instance-deploy` and `instance-rollback` return at once, as [Operations](#operations) describes.
-
-## Tool list changes
-
-A client fetches the tool list when it connects and keeps it. A release that adds, removes, or changes a tool in `tools.json`, or an extension switch, changes the list on the Gateway at once. The server declares `tools.listChanged` as `false`, because it never sends `notifications/tools/list_changed`. A connected client keeps its list until it lists the tools again, which most clients do only when they connect.
-
-The Gateway never ends a session because the list changed. Every request is served against the current list:
-
-- A call to a tool that still exists runs as usual.
-- A call to a tool that was removed or renamed receives HTTP 400 with the JSON-RPC error `-32602` `Tool [name] not found`. The message tells the client to list the tools again. The Gateway runs nothing. This applies to the removed `annotation-list`, `annotation-create`, `annotation-update`, and `annotation-retry` tools.
-- A call whose arguments a changed operation rejects receives the operation's usual tool error, such as `validation.failed`.
-
-To see a new tool, reconnect the MCP server or start a new session. In Claude Code, use `/mcp` and reconnect `orbit`. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue.
+Each MCP HTTP request shares one 570-second command deadline (under the 600-second PHP-FPM limit) with a 20-second cleanup reserve. Any `execute_tools` call starting after the forward deadline expires returns `command.deadline_exceeded` (status 504) and stops the batch.
 
 ## Identity and access
 
-The caller is the Node whose WireGuard address the connection comes from. There is no token and no login.
+Callers are identified by their WireGuard IP address with no token or OAuth login:
 
-- A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown`, before it can list tools.
-- `gateway-desired-fleet-state` needs no access grant. Any active Node may read the [desired fleet state](/reference/self-update#where-it-is-served).
-- Each tool call runs as an internal API request with the caller's address. The API checks the caller and its [access grants](/cli/node/access-add) again. A missing grant returns the API's `403` with `node_access.required`, the code that the server's own instructions name as the tool error.
-- The Gateway certificate chains to the Orbit root certificate authority (CA). Orbit installs that root in the system trust store only on a Node where it converges an Instance, Route, router, ingress, or custom proxy certificate. On any other machine, run `orbit gateway:trust` first, or point the client at the root CA file.
+- Unknown or inactive peers receive HTTP `403 peer.identity_unknown` before listing tools.
+- `gateway-desired-fleet-state` is open to any active WireGuard peer without an access grant.
+- All other tools enforce standard [Node access grants](/cli/node/access-add) (`403 node_access.required`).
+- Clients must trust the Orbit root CA (via `orbit gateway:trust` or `NODE_EXTRA_CA_CERTS` for Node.js clients).
+
+## Tool list changes
+
+The server declares `tools.listChanged: false` and never pushes list-change notifications or kills sessions when a release or extension toggle changes the catalogue:
+
+- Calls to active tools continue working normally.
+- Calls to removed or renamed tools return HTTP 400 with JSON-RPC error `-32602` (`Tool [name] not found`), prompting the client to reconnect or re-list tools.
+- Calls to tools belonging to a disabled extension return `isError: true` with `status: 409` and `error.code: extension.disabled` (both directly and inside `execute_tools`).
+
+`/mcp/search` always searches the live catalogue without reconnecting.
 
 ## Tools
 
-A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path, query, and header parameters and JSON body fields. Every header parameter travels in a request header, including `Idempotency-Key` for operation starts and WebSocket app changes. An input the API validates as a boolean is a JSON `boolean` in the tool schema. The caller sends that value as a JSON boolean. The Gateway serves each tool's input schema exactly as `bin/mcp-tools` generated it in `resources/mcp/tools.json`, with empty schemas encoded as JSON objects (`{}`), not lists (`[]`). The server puts each value where the operation expects it. If the OpenAPI operation carries `x-orbit-bodyless`, its tool sends the request without a body. A `GET` tool is marked read-only. A tool whose operation carries `x-orbit-destructive` is marked destructive: every `DELETE`, and the `POST` routes that `bin/docs-openapi` lists in `DESTRUCTIVE_POSTS`, today only `instance-unregister`.
+Tool names match the [API reference](/api/overview) operation IDs (`<family>-<verb>`, such as `node-list`, `instance-show`, `process-restart`). Path, query, header (including `Idempotency-Key`), and JSON body parameters flatten into one input object. For example, `instance-rename` maps `POST /api/v1/instances/{instance}/rename`: Send `instance` and at least one of `branch` or `domain`. `GET` tools are marked read-only, and `x-orbit-destructive` operations (`DELETE` routes plus `instance-unregister`) are marked destructive.
 
-`project-document-storage-show` and `project-document-storage-update` expose the Gateway-wide [Project Documents storage configuration](/reference/project-documents#private-s3-boundary). Both require Gateway access and take no Project selector. Update accepts `endpoint`, `region`, `bucket`, and the paired write-only fields `access_key_id` and `secret_access_key`. Omitting both credential fields preserves them. Results contain only redacted configuration and cleanup status; show does not probe the provider. Update verifies access before saving and returns `project_documents.storage_unavailable` without provider diagnostics on failure.
-
-`tool-scan` lists one Node's Homebrew formulae, casks, Vite+ global packages and apt packages from the Node agent's latest reports. Its only input is `node_id`. The call does not create a Tool row.
-
-`tool-adopt` records ownership of one installed package from the Node agent's latest report, at once. Its inputs are `node_id`, `manager`, `package`, optional `version_constraint` and optional `repository`. The call does not install, update, or remove the package.
-
-`websocket-app-create`, `websocket-app-list`, `websocket-app-show`, and `websocket-app-destroy` manage [Reverb apps](/reference/websocket-apps). `instance-websocket-add` and `instance-websocket-remove` write or clear an app's keys in stored Instance configuration. They accept `instance` as a positive ID or an exact Route domain, and `websocket_app` as the app name. Results omit the secret and environment values. Run `env-sync` to write the Instance's `.env`.
-
-A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns a successful MCP transport response whose tool result has `isError: true`. Its `content` carries the API error envelope with the status added; the HTTP response itself is not the API's error status:
+Successful calls return the API JSON as text. API errors return a normal MCP response with `isError: true` and the error envelope plus HTTP status:
 
 ```json
-{"isError": true, "content": [{"type": "text", "text": "{\"status\":422,\"error\":{\"code\":\"validation.failed\",\"message\":\"...\",\"details\":{\"slug\":[\"...\"]}}}"}]}
+{"isError": true, "content": [{"type": "text", "text": "{\"status\":422,\"error\":{\"code\":\"validation.failed\",\"message\":\"...\"}}"}]}
 ```
 
-For a disabled extension, a direct `tools/call` returns `isError: true` and content containing `status: 409` and `error.code: extension.disabled`; HTTP 409 is reserved for the underlying API request, not the MCP transport. The same tool error is returned by `execute_tools` when a stale call names a tool that was filtered from the catalogue, and execution stops at that call. The server checks the generated tool's extension metadata before catalogue filtering can turn a stale direct call into a generic not-found error.
-
-`instance-rename` records the branch that a development checkout or linked worktree Instance already has checked out. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the Node agent's latest report of the checkout before it changes its records, and answers at once. The tool never runs `git branch -m`. A `domain` is refused with `operation.kind_unavailable`, and the Route does not move. See [Instance rename](/cli/instance/rename).
-
-`instance-update` accepts `shared_paths` for a production Instance. Supply the numeric `instance` and a directory list; `[]` disables sharing and `null` restores the default. The [shared paths contract](/reference/deployments#shared-paths) describes seeding, public storage, and replacing a hand-made link step.
-
-`instance-update` sets the deployment branch, the shared paths, or both, of a production Instance. Send `instance` and at least one of `branch` or `shared_paths`. Automatic deployment has its own commands, `instance-auto-deploy-enable` and `instance-auto-deploy-disable`, and enabling it also resumes [automatic deployment](/reference/deployments#automatic-deployments) after a manual deployment or a rollback paused it. `instance-show` returns the state under `auto_deploy` and the stored branch override under `deployment_branch`. `selected_branch` describes the source checkout.
-
-`database-create` accepts optional `locale` when creating a database on a PostgreSQL server: `C` or `C.UTF-8`. Send `slug`, `server`, and `locale` together. The API applies the same validation as the CLI; external registration, MySQL, and Valkey refuse `locale`. Without it, PostgreSQL uses the server image default.
-
-`task-update` selects a parent or child by `task`. Each level accepts its own update fields, including `status` for external work. The API enforces the [allowed moves](/reference/tasks#tasks-and-subtasks); a refused move returns `tasks.status_move_refused`. Repeating the current status needs no key. `task-comment-create` records subtask-owned assistance and resolution comments. An external resolution clears assistance without sending a turn. `task-cancel` interrupts external work without starting a successor or settling its group.
-
+Machine callbacks, streaming endpoints, browser pages, direct Swamp internal endpoints (`operation-direct-*`), Conn launch HTTP endpoints, internal WebSocket registry hooks, and the OpenAPI document itself (`gateway-openapi`) are excluded from the catalogue in `bin/mcp-tools`. Log tools (`instance-logs`, `process-logs`, `schedule-logs`) and `task-swamp-runs` return bounded snapshots rather than streams.
 
 ### Operations
 
-`instance-deploy` and `instance-rollback` start an [operation](/reference/operations) and return at once. They never hold the request open and never stream:
+Operation-starting tools (`x-orbit-operation: start`, such as `instance-deploy` and `instance-rollback`) return immediately without streaming:
 
 ```json
 {
-  "operation": { "id": 42, "kind": "instance.deploy", "status": "queued", "sequence": 1, "...": "..." },
+  "operation": { "id": 42, "kind": "instance.deploy", "status": "queued", "sequence": 1 },
   "poll": { "tool": "operation-show", "after_seconds": 2 },
   "meta": { "request_id": "..." }
 }
 ```
 
-Call `operation-show` with the numeric `operation` ID after `poll.after_seconds`. Each reply returns the parent record, its status, result and error code. `poll.after_seconds` is the record's `poll_after_seconds`; each `operation-show` reply carries the next interval in the same field. It is null when the Operation has already ended, such as a keyed replay of a finished one. Repeat reads until `status` is `succeeded`, `failed`, or `cancelled`. Replies carry the current parent record, never step deltas or an output tail. Each call is one database read.
-
-`task-check` keeps `{ subtask, phase }` and its existing optional idempotency key. The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) adds `result.ci`, null for baseline/no-policy, without a new tool or caller-selected CI option. The Gateway still refuses external review-and-merge groups. A required-CI handoff waits for its push and hosted check; `result.commit` is the candidate HEAD, not the pre-commit `result.head`. Only a completed passed operation with passed CI on that check/commit supplies a candidate for reviewer or publish admission. Cancellation after push stops observation, not GitHub workflows, and preserves evidence. The generated tool input remains unchanged; [Tasks](/reference/tasks#check-an-external-group) owns the result fields and eligibility rule.
-
-After a lost context, `operation-list` with an unfinished status finds Operations still at work. It returns 20 rows by default, without `input`, `result` or `steps`; pass `meta.next_cursor` back as `cursor` for the next page ([Page the list](/reference/operations#page-the-list)). `operation-cancel` asks one to stop. `laravel/mcp` does not support the experimental MCP Tasks primitive yet, so the tools carry the follow hint.
-
-`instance-rollback` takes `instance` and `release`. A release the Instance does not retain returns the tool error `rollback.release_not_retained` (status 422), and nothing changes. Its operation is an `instance.rollback`, which cancels a deploy of the Instance that no worker has started ([One operation at a time](/reference/deployments#one-operation-at-a-time)). Each step keeps the last 8 KiB of its output. To read the full output of a deploy or rollback, call `instance-deployment-show` with the `deployment_id` from `result`; it returns the [stored deployment log](/cli/instance/deployment-show).
-
-Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the runtime activation check, the Schedule completion report, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
-
-Conn launch admission, progress, and controls are available over the Conn HTTP API. Clients use the same profile and target Node checks for all three. [Durable launches](/reference/conn#durable-launches-v1)
-
-The `task-*` tools belong to the Gateway-switched [tasks](/reference/tasks) extension, except `task-status`, which is a core assistance view that remains available while tasks is off. Each `task-status` entry carries `assistance_kind` and `assistance_question` ([Direction requests](/reference/tasks#direction-requests)). `task-question-list` accepts any authorized peer. `task-insights` also accepts any authorized peer and returns the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. `task-question-close` needs Gateway access and closes a stale question as `answered` or `superseded` ([Close a question](/reference/tasks#execution-ownership)). `task-agent-show` needs Gateway access and reads an agent thread, because the task agent stream has no tool ([Read a thread](/reference/tasks#read-a-thread)). The first call returns the whole transcript and a `cursor`. To follow the thread, call it again with that cursor as `after_sequence`. When the Pi server can resume from it, the answer has `kind` `delta` and holds only the later entries. Otherwise it has `kind` `snapshot` and replaces the transcript. A snapshot of a long thread can pass the `/mcp/search` output limit and still work through `/mcp`. While the tasks extension is off, the API refuses these operations with HTTP 409 `extension.disabled`. The `ai-router-*` tools belong to [ai-router](/reference/ai-router). The `project-document-*` and `project-document-storage-*` tools belong to the [documents](/reference/project-documents) extension. The `vault-*` tools belong to the `vault` extension ([Vaultwarden](/reference/vaultwarden)) and need Gateway access; no `vault-*` result contains a secret. The `conn-*` tools belong to the `conn` extension ([Conn layer](/reference/conn)); they follow the node access edges like the API: a server's tools need an edge to the Node that registered it, and profile, settings and operation tools need an edge to at least one Node ([Identity](/reference/conn#access)). Registration needs no edge. A disabled extension is omitted from both `tools/list` and `/mcp/search`; a direct `tools/call` or stale `execute_tools` call returns an MCP tool error with `isError: true`, content carrying `status: 409` and `error.code: extension.disabled`, and does not execute the API route. `task-create` requires Gateway access. `task-update` and the `task-*` tools need access to the Node that holds the task's Instance, or to the Gateway for a task without one. `task-create` and `task-update` take each subtask's typed [deliverables](/reference/tasks#deliverables) as a `deliverables` array, and `task-show` returns them.
-
-`task-complete` takes the numeric `group` ID and requires Gateway access. It completes a settling task, or a running or reviewing task whose watched pull request has merged or closed. On the latter path it cancels open subtasks and stops their running agents and checks before workspace removal. Other tasks return `tasks.not_settling`; a failed stop returns `tasks.subtask_interrupt_failed`. The [completion contract](/reference/tasks#complete-and-cleanup) defines the durable receipt and cleanup retries.
-
-`task-comment-create` and `task-comment-list` use a numeric `group` and require Gateway access. Create accepts only `type` (`assistance_requested` or `resolution`), nonblank `body`, and `author`; list accepts optional `type` and `limit` filters and returns an array. These are [group-owned assistance comments](/reference/tasks#group-assistance-after-all-children-end), separate from child comments, with the same guards and no-work semantics as the API. A successful create returns 201, not an exact-retry 200 receipt.
-
-`task-status` returns whether the extension is on, the groups asking for assistance and the open review-and-merge pull requests.
+Poll `operation-show` after `poll.after_seconds` (then `poll_after_seconds` on each reply) until `status` is terminal (`succeeded`, `failed`, or `cancelled`). Use `operation-list` (with cursor pagination) to recover open Operations after a context reset, and `operation-cancel` to stop one.
 
 ## Connect a client
 
-Claude Code, from a Node or a WireGuard peer that trusts the Orbit CA:
+Add the HTTP MCP server in Claude Code from any WireGuard peer that trusts the Orbit CA:
 
 ```bash
 claude mcp add --transport http orbit https://gateway.orbit/mcp
 ```
 
-A client that takes a JSON server entry:
+For clients configured via JSON that prefer the compact search endpoint:
 
 ```json
 {"mcpServers": {"orbit": {"type": "http", "url": "https://gateway.orbit/mcp/search"}}}
 ```
 
-A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orbit root CA file when the client does not use the system trust store.
-
-[GitHub feedback consumption](/reference/tasks#trusted-github-feedback) runs in the Tasks scheduler, not through a new tool. Existing task tools return its fixup identity and findings in the ordinary subtask fields. The reviewer allowlist is Gateway configuration, not an MCP input. Feedback adds no review-submission, dismissal, re-review-request, or merge tool. Regenerating the catalogue and task-action manifest must preserve that boundary.
-
 ## Keep the catalogue current
 
-`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. `--check` fails when the manifest is stale. Tool descriptions also come from the OpenAPI document. The `task-create` and `task-update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks), with Project ownership and the status, subtask, and deliverable requirements. The `task-cancel` description follows [cancelling a stuck task](/reference/tasks#cancel-a-stuck-task): forced workspace removal also removes an eligible pending or failed exclusive Route of a `source_resolved` workspace, while an active or shared Route still refuses. A repeated cancel removes the unattached workspace the task [owns](/reference/tasks#workspace-ownership). Each generated operation records its extension slug, or `null` for an untagged (core) operation. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. Each catalogue reads a switch once per extension, not once per tool. It reads the switches again for the next catalogue, so a switch change takes effect without restarting the server. The `node-update` tool's `platform` takes `linux`, `macos`, or `ipados` and sets the platform of an unmanaged Node only, as [iPadOS peers](/reference/node-provisioning#ipados-peers) describes. The `route-create` tool accepts either `instance_id` and `domain` for an app Route or `node_id`, `domain`, and one of `upstream` or `process_id` for a custom proxy. It does not accept `project_id` or `cluster_id` on creation. After a change to a route, form request, data class, or operation description, regenerate both:
+`bin/build-api` runs `bin/docs-openapi` and `bin/mcp-tools` to regenerate `docs/openapi.json` and `apps/gateway/resources/mcp/tools.json` (preserving `oneOf`/`anyOf` input variants, `x-orbit-extension`, `x-orbit-bodyless`, `x-orbit-destructive`, and empty object schemas `{}`).
 
 ```bash
-bin/docs-openapi
-bin/mcp-tools
+bin/build-api
 ```
 
-Continuous integration and the local candidate gate run `bin/docs-openapi` and `bin/mcp-tools`. Both write ignored build outputs. A Gateway test fails when an API route has no tool or a tool has no route. The inputs to `bin/docs-openapi` are on [API reference generation](/reference/api-reference).
+CI runs `bin/mcp-tools --check` and verifies every public API route has a matching tool.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-For a request with alternative object shapes, the manifest keeps the full `oneOf` or `anyOf` branches. Each flattened branch includes the operation's path, query, and header parameters, so a closed body shape accepts its selector. A field shared by branches accepts each distinct field schema through `anyOf`; the last branch must not replace earlier types or bounds. For example, `database-create` accepts a string database name when registering MySQL or PostgreSQL, and an integer database index when creating a Valkey ACL user. The full branches still reject a string index in Valkey user creation and an integer database name in registration.
-
-### Tools generated from the API description
-
-More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request, the data class, or the CLI command text that [API reference generation](/reference/api-reference) copies into the operation.
-
-### Tool calls go through the HTTP kernel
-
-Identity, access grants, validation, redaction, and Activity live at the HTTP boundary. A tool that called Actions directly would need a second copy of each. An internal request with the caller's address gets them all.
-
-### No token or OAuth
-
-The API identifies a caller by WireGuard address. A second credential would create a second authorization model for the same actions.
-
-### No MCP server in the CLI
-
-An MCP server that wraps CLI commands keeps the process start and the CLI install on the agent's machine, and parses output that the API already returns as JSON.
-
-### No pushed or forced tool list refresh
-
-A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. Sending the notification inside the reply to an ordinary request needs no held stream, but the stateless server would then send it on every later request of that session. Ending a session with HTTP 404 makes a spec-compliant client initialize again and list the tools, but a client that does not handle the 404 fails every call until it restarts. A stale list costs a client at most a reconnect; a failing session stops its work. The Gateway therefore serves every session and explains a missing tool in the error.
-
-### Typed tools, not one command tool
-
-One tool that takes a command string would discard the input schemas, which are the main benefit of MCP for an agent. A client with a small context uses `/mcp/search` instead.
+Generating tools from `docs/openapi.json` keeps over a hundred endpoints in sync with validation and descriptions automatically. Dispatching through Laravel's HTTP kernel reuses WireGuard identity, grants, redaction, and Activity without duplicating security logic, while keeping the server stateless avoids tying up PHP-FPM workers with long-lived SSE notification streams.

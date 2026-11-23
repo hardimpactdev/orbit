@@ -24,6 +24,7 @@ additionalFiles:
   - ansible/library/orbit_route_site.py
   - ansible/library/orbit_artifact.py
   - ansible/library/orbit_schedule_journal.py
+  - ansible/library/orbit_swamp_token_renewal.py
   - ansible/library/orbit_static_php.py
   - ansible/library/orbit_migrate_env.py
   - ansible/tasks/artifact-fetch.yml
@@ -73,6 +74,8 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-ci-start.yml
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
+  - ansible/files/swamp-gateway-token.sh
+  - ansible/files/swamp-env.sh
   - ansible/files/instance-container-wake.sh
   - ansible/files/gateway-release-guest.py
   - ansible/files/gateway-release-infrastructure.py
@@ -113,6 +116,9 @@ additionalFiles:
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
   - ansible/instance_root_disk.py
+  - ansible/instance_seed_files.py
+  - ansible/instance_default_clean.py
+  - ansible/instance_fleet_tunnel.py
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/gateway-container-process.yml
@@ -193,6 +199,7 @@ additionalFiles:
   - ansible/tasks/metrics.yml
   - ansible/tasks/websocket.yml
   - ansible/tasks/check-files.yml
+  - ansible/tasks/check-read.yml
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
   - ansible/tasks/private-dns-listener.yml
@@ -202,6 +209,7 @@ additionalFiles:
   - ansible/tasks/gateway-retire.yml
   - ansible/tasks/firewall-port.yml
   - ansible/tasks/firewall.yml
+  - ansible/tasks/ci-read.yml
   - ansible/tasks/ci.yml
   - ansible/files/ci-host-pool.py
   - ansible/task-host-firewall-remove.yml
@@ -224,7 +232,10 @@ additionalFiles:
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml
   - ansible/instance-container-power.yml
+  - ansible/instance-server-switch.yml
   - ansible/conn-environment-restart.yml
+  - ansible/operation-process-upgrade.yml
+  - ansible/tasks/process-upgrade-verify.yml
   - ansible/conn-launch.yml
   - ansible/templates/t3-service-processes.j2
   - ansible/tasks/instance-container-power.yml
@@ -270,10 +281,12 @@ additionalFiles:
   - ansible/tasks/node-converge-javascript.yml
   - ansible/tasks/node-converge-deno.yml
   - ansible/swamp-worker-renewal.yml
+  - ansible/swamp-token-renewal.yml
   - ansible/tasks/swamp-worker-renew-slot.yml
   - ansible/tasks/swamp-worker-connections.yml
   - ansible/tasks/swamp-worker-renew-verify.yml
   - ansible/tasks/swamp-worker-renewal.yml
+  - ansible/tasks/swamp-token-renewal-start.yml
   - ansible/tasks/swamp-start-cache.yml
   - ansible/requirements.txt
   - ansible/requirements.yml

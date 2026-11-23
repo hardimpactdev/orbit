@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
+use App\Domain\Tasks\TaskInsightObserver;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -140,9 +141,12 @@ use LogicException;
  * @property string|null $fixup_head_sha
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
+ * @property bool $handoffs_gated whether the handoff gates hold for this group: it left backlog after they shipped ([Handoffs](/reference/tasks#handoffs))
  * @property CarbonImmutable|null $ready_at
  * @property CarbonImmutable|null $ended_at
  * @property CarbonImmutable|null $merged_at
+ * @property CarbonImmutable|null $pr_opened_at
+ * @property CarbonImmutable|null $deployed_at when a production deploy first carried the merge commit (docs/reference/tasks.md#task-insights)
  * @property-read Task $parent
  * @property-read Collection<int, Task> $children
  * @property-read Collection<int, Task> $tasks
@@ -150,7 +154,7 @@ use LogicException;
  * @property-read Instance|Model|null $taskable
  * @property-read AgentThread|null $reviewerThread
  */
-#[ObservedBy([TaskBroadcastObserver::class])]
+#[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class Task extends Model
 {
     /** @var list<string> */
@@ -194,6 +198,8 @@ final class Task extends Model
         'ready_at',
         'ended_at',
         'merged_at',
+        'pr_opened_at',
+        'deployed_at',
     ];
 
     /** @var list<string> */
@@ -280,6 +286,7 @@ final class Task extends Model
         'copy_correction_check_id',
         'deliverable_correction_resume',
         'settled_at',
+        'handoffs_gated',
         'completion_attempt',
         'completion_handoff_comment_id',
         'completion_reminder_attempt',
@@ -308,6 +315,8 @@ final class Task extends Model
         'merge_reason',
         'merged_sha',
         'merged_at',
+        'pr_opened_at',
+        'deployed_at',
         'preview',
         'current_recipe',
         'review_mode',
@@ -415,10 +424,14 @@ final class Task extends Model
         $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::FinalReview->value));
     }
 
-    /** Whether the task's pull request merged, by Orbit or by a person ([Task insights](/reference/tasks#task-insights)). */
-    public function pullRequestMerged(): bool
+    /**
+     * Subtasks a read lists as subtasks: all but the work row of a task with no subtask ({@see TaskType::Work}).
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeListedSubtasks(Builder $query): void
     {
-        return $this->merged_at !== null;
+        $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::Work->value));
     }
 
     /** @param  Builder<Task>  $query */
@@ -484,6 +497,16 @@ final class Task extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * The work row of a task with no subtask ({@see TaskType::Work}); none for a task with subtasks.
+     *
+     * @return HasOne<Task, $this>
+     */
+    public function work(): HasOne
+    {
+        return $this->hasOne(self::class, 'parent_id')->where('type', TaskType::Work->value);
     }
 
     /** @return BelongsTo<Project, $this> */
@@ -634,6 +657,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
+            'handoffs_gated' => 'boolean',
             'current_recipe' => 'boolean',
             'review_mode' => TaskReviewMode::class,
             'pr_mode' => TaskPrMode::class,
@@ -658,6 +682,8 @@ final class Task extends Model
             'ready_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'merged_at' => 'immutable_datetime',
+            'pr_opened_at' => 'immutable_datetime',
+            'deployed_at' => 'immutable_datetime',
             'deliverables' => 'array',
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',

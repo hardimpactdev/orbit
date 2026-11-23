@@ -16,8 +16,9 @@ slice_seconds = 60
 slice_startup_seconds = 6
 pr_shards = 20
 # Maximum planned fixture jobs across both classes, independent of available runner slots. The shorter shared lane of
-# [runner-pool] needs two more jobs than the former 18 and 8 for the largest plans of 17 November 2026.
-runner_shards = 20
+# [runner-pool] needs two more jobs than the former 18 and 8 for the largest plans of 17 November 2026. #4156's plan, the
+# whole fleet fixture beside the container fixture's mandatory cases, needs one more.
+runner_shards = 21
 # Extra spreading target, not a wave count. Retain jobs needed for admission up to runner_shards.
 spread_shards = 16
 # Tool-dependent shards keep a separate per-class limit and also count against runner_shards.
@@ -376,6 +377,8 @@ inputs = [
 # An estimate until a hosted run replaces it.
 cost = 119
 ceiling = 120
+# Lint shares shape selection but pays for cold Galaxy setup (55–90 s) before lint.
+job_ceilings = { "swamp/lint" = 240 }
 
 [check.swamp-validate]
 inputs = [
@@ -513,5 +516,5 @@ inputs = ["swamp/**"]
 default = ["swamp-shape"]
 
 [roots."."]
-inputs = [".editorconfig", ".gitattributes", ".gitignore", ".mcp.json", ".node-version", "composer.json", "composer.lock", "vet.json", "LICENSE", "*.md", "*.mdx", "*.mmd"]
+inputs = [".editorconfig", ".gitattributes", ".gitignore", ".mcp.json", ".node-version", "composer.json", "composer.lock", "LICENSE", "*.md", "*.mdx", "*.mmd"]
 default = []

@@ -1,0 +1,36 @@
+sequenceDiagram
+  %% A reserved clone takes its name and branch when its user submits (docs/reference/conn.md#reserve-a-clone, docs/reference/gateway-engine.md#instancefinalize). The clone runs already: the reservation's create made it under a draft name while the user typed, and deferred its completion.
+  %% status: draft
+  %% command: none · POST /conn/reservations/{id}/finalize
+  %% kind: instance.finalize
+  autonumber
+  %% lane DEV icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant DEV as Conn device<br/>the reserving Node
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway · NATS
+  participant N as app-dev Node<br/>executor
+  DEV->>GW: Finalize<br/>name · branch · key
+  Note over GW: Check and rename<br/>Instance lock · reservation lock
+  %%> Requirements:
+  %%> - the device that reserved it; the reservation is open, not expired, and its create succeeded (else `reservation.not_ready`, `reservation.failed`, `reservation.expired`)
+  %%> - the name and branch checks of a Conn create: `instance.name_taken`, `branch.*`
+  %%> What it does:
+  %%> - renames the Instance at once, so the name is held; the reservation is finalized in the same transaction, so its expiry can no longer destroy the clone
+  GW-->>DEV: 202 Accepted<br/>Operation
+  opt a selected branch
+    EN->>N: Fetch the branch<br/>fetch · instance.fetch_branch
+    %%> Into the Node's mirror; a new branch fetches its base.
+  end
+  EN->>N: Rename the copy<br/>names · instance.names
+  %%> What it does:
+  %%> - renames the draft branch, or switches the workspace to the fetched branch
+  %%> - writes the hostname, /etc/hosts, /etc/machine-info and /etc/orbit/instance
+  %%> - sends SIGHUP to reload T3 live without dropping connections, falling back to a restart for older servers, until its label is the new machine name; its id, sessions and pairings stay
+  %%> On failure:
+  %%> - the finalize fails with the step's code and lets go of the lock; the clone keeps its new name for a retry or a removal
+  Note over GW: Record and complete<br/>branch · label · completion
+  %%> The Gateway records the branch and the server's label, lets go of the Instance lock, and admits the clone's completion.
+  %%> The reconciler's pass ends a finalize past its 420 s budget as `operation.timed_out`.

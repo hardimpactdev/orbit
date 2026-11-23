@@ -1,209 +1,198 @@
 ---
 title: "Gateway engine"
-description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
+description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
-  - apps/gateway/database/migrations/2027_03_10_000000_create_operation_engine_steps_table.php
+  - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
   - swamp/ansible/tasks/gateway-nats.yml
 ---
 
 # Gateway engine
 
-The Gateway engine runs an Operation as a state machine in the Gateway. Each step is a typed primitive that the [executor](/reference/executor) runs on its Node. NATS JetStream carries the orders, the receipts and the engine's own events. [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) records why.
+The Gateway engine runs an Operation as a state machine inside the Gateway. Each step is a typed primitive that the [executor](/reference/executor) runs on its target Node, with NATS JetStream carrying orders, receipts, and engine events ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats)).
 
-Operation kinds move off Swamp one at a time, per Operation ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N4). Each Operation runs entirely on the engine or entirely on Swamp, never half on each. Once the switch for a kind is proven, a separate pull request removes the kind's Swamp workflows.
+Operation kinds move off Swamp one at a time, per Operation. Each Operation runs entirely on the engine or entirely on Swamp, never split across both.
 
 ## Which kinds run on the engine
 
-A kind runs on the engine when all of these hold:
+For Operations started through `StartSwampRun` (`firewall.*`, `route.create`, `instance.create`, and `instance.complete`), `EngineKinds::routes()` chooses the engine when all of these hold:
 
-- the engine has a definition for the kind (`EngineKinds`);
-- the kind is listed in `ORBIT_ENGINE_KINDS`, a comma-separated list in the Gateway environment;
-- every Node that one of its steps targets has reported the step's primitive;
-- the kind's definition can run this Operation's intent: a definition that meets a part it does not run yet throws `EngineUnsupported`.
+- The engine defines a flow for the kind (`EngineKinds`).
+- The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
+- Every Node targeted by its steps has reported the required primitive.
+- The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
-Otherwise the kind starts its Swamp workflow as before. `StartSwampRun` makes this choice after it admits the Operation, so admission, locks and the API stay the same for both paths.
+When any condition fails, those four kinds fall back to their Swamp workflows. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback.
 
-Kinds with a definition today:
+For `instance.fleet`, the parent `instance.create` checks `EngineKinds::routes()` on a draft before admitting the wait. A failed check creates no fleet Operation; a passing check admits it and calls `Engine::start()` directly.
 
-| Kind | Steps | Primitive |
+An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engine::start()` directly. `Engine::start()` commits step rows (finalize always records `names`) before publishing the start event, so `engine.start_failed` applies only when no steps were recorded. On a NATS publish outage, the finalize sweep keeps nudging until recovery or `operation.timed_out`. The table below lists all kinds with engine definitions:
+
+| Kind | Steps | Primitives |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
-| `route.create` | `csr-<i>` on each leaf's Node, `sign-<i>` on the Gateway, `site-<node>` on each Node with Route work, `probe-<i>` on the Gateway | `tls.ensure_csr`, `route.publish_site` |
+| `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
+| `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
+| `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
+| `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
+| `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
 
 ### route.create
 
-The engine runs the plan the Gateway admitted (`route_create`). Route holds work as before, and so does the refresh of a waiting create's Caddyfiles at its start. The steps:
+The engine runs the admitted `route_create` plan while preserving Route holds and waiting-create Caddyfile refreshes. Its steps run in this order:
 
-1. `csr-<i>`: the leaf's Node makes its key once and answers a certificate request. The key never leaves the Node.
-2. `sign-<i>`: the Gateway signs the request through the action that `operation:direct:certificate-sign` uses. That action checks the admitted leaf, the root and the run. It refuses once a cancel is pending.
-3. `site-<node>`: `route.publish_site` places the Node's part: Caddy access, `APP_URL`, links, PHP-FPM pools, the leaf and its account copy, the Orbit root's trust, and the Caddyfile.
-4. `probe-<i>`: the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
+1. `csr-<i>`: The leaf Node creates its private key once and returns a certificate signing request. The key never leaves the Node.
+2. `sign-<i>`: The Gateway signs the request using `operation:direct:certificate-sign`. It refuses any pending cancellation.
+3. `site-<node>`: `route.publish_site` configures Caddy access, `APP_URL`, symlinks, PHP-FPM pools, leaf certificates, Orbit root trust, and the Caddyfile.
+4. `dns-<i>`: `dns.publish_records` updates changed private DNS records on each VPN Node alongside site publication.
+5. `probe-<i>`: The Gateway completes a TLS handshake with each serving Node over its WireGuard address, trusting only the Orbit root.
 
-A failed step records the chart's step name, such as `Install cert, publish site-3`, so the Route gets the same `failed_step` and error code as on Swamp.
+Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-A Route that needs private DNS, the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `instance.create` and `route.update`, keep their Swamp flows.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do other Route kinds such as `route.update`.
 
-An executor reports its primitives when it joins the bus, and again every minute: it writes `{actions, version}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
+### instance.create
 
-Today only `app-dev` Nodes enable the `firewall` and `route` families, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, and `route` from 0.17.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+The engine runs container clone creation (including task copies, Conn clones, Processes, and nested-fleet clones) from its admitted `direct_provisioning.container` intent using the executor's [instance family](/reference/executor#the-instance-family). Its steps run in this order:
+
+| Step | After | What it does |
+| --- | --- | --- |
+| `clone` | | Copies the default's seed snapshot with its ACL, NIC, T3 proxy, and route rules. |
+| `fetch` | | Fetches the branch into the Node's mirror using a short-lived read credential blob. |
+| `copy_volume` | | Creates the inner volume for a nested-fleet copy, taking a [spare volume](/reference/development-containers#spare-volumes) when available. |
+| `prepare` | `clone` | Writes only the files that differ from the [seed manifest](/reference/development-containers#the-seed-manifest), delivered as one blob. |
+| `start` | `prepare`, `copy_volume` | Verifies both copies match the seed, attaches the volume, checks the network guard, starts the copy, and sets hostnames. |
+| `club_key` | `start` | Writes the Club key for a nested-fleet copy into `/run`. |
+| `checkout` | `start`, `fetch` | Checks out the branch, cleans a task copy when needed, and merges `.env`. |
+| `spare` | `start` | Prepares the default's next spare inner volume in parallel. |
+| `t3` | `checkout` | Starts T3 or the Conn Server and returns two sessions (plus an optional reserved-clone pairing link when `instance.t3_pairing` is in `features`) sealed to the Gateway's key. |
+| `stop` | `clone` | Failure step that runs only when an earlier step fails. |
+
+The Gateway unseals the sessions without using a vault and records `route_publication: deferred` (`engine_completion`), leaving Route publication to `instance.complete` on Swamp.
+
+### instance.fleet
+
+`instance.fleet` waits for the inner fleet of a nested-fleet clone (`instance.fleet_ready`) in the background alongside `instance.complete`, updating `fleet_ready_at`, `fleet_failed_at`, and `fleet_error_code` on the Instance without holding an Operation lock ([A clone starts its fleet](/reference/development-containers#a-clone-starts-its-fleet)).
+
+### instance.complete
+
+When `instance.create` recorded `services: seed` and no database, Valkey ACL user, deferred Route, custom Process, or nested fleet start remains on the Node, `instance.complete` settles immediately on the engine with zero steps ([A completion with nothing left](/reference/development-containers#a-completion-with-nothing-left)).
+
+### instance.finalize
+
+For a [reserved clone](/reference/conn#reserve-a-clone), `instance.finalize` runs `fetch` (`instance.fetch_branch`) when switching branches, then `names` (`instance.names`) to update the copy's branch and machine names. `names` sends `SIGHUP` first to live-reload Conn Server and preserve active connections, restarting T3 once only if reload fails, then polls until the new label appears.
+
+### Capability reporting
+
+An executor reports `{actions, node_targets, features, version, clock_synchronized}` to key `n<node>` in the `NODES` bucket when it connects and every minute after (`node_targets` lets actions like `instance.club_key` run beside `checkout` and `t3` under `<node>:<part>` targets, and `features` advertises optional action inputs such as `instance.t3_pairing`). Entries expire after five minutes, so a stopped executor stops receiving engine Operations. `EngineBus::client()` opens publish connections with `reconnect: false`, pings connections idle for 10 seconds, and replaces failed sockets immediately.
+
+If the Gateway cannot read the bucket (for example during a `nats-server` restart), Operations with Node steps routed through `StartSwampRun` fall back to Swamp and `instance.fleet` checks admit no wait. A zero-step `instance.complete` never reads `KV_NODES`, so with `instance.create` in `ORBIT_ENGINE_KINDS` it still selects the engine and fails through `StartSwampRun` if publishing its start event fails, with no Swamp fallback. An already-admitted `instance.finalize` also bypasses the bucket read and keeps nudging through its sweep until the bus recovers or `operation.timed_out`.
+
+`clock_synchronized` comes from `adjtimex`. Doctor warns `node.clock_unsynchronized` when it is false because clock drift causes the executor to reject signed orders.
 
 ## Steps and transitions
 
-`Engine::start` records one row per step in `operation_engine_steps` and sets `state.swamp_run_id` to `engine-<id>`. It then publishes a start event. Every transition happens in `advance`, inside one transaction that locks the Operation and its steps:
+`Engine::start` inserts one row per step in `operation_engine_steps`, sets `state.swamp_run_id` to `engine-<id>`, and publishes a start event. Every state transition runs inside `advance` under a single database transaction locking the Operation and its steps:
 
-- a pending step whose `after` steps are done is sent;
-- a sent step past its deadline is sent again with a new order;
-- a sent step past its budget fails with `engine.step_budget_exceeded`;
-- the Operation fails as soon as one step failed;
-- the Operation succeeds once all steps are done;
-- the Operation ends as cancelled at the first transition after a cancel request.
+- A pending step whose dependencies are done is dispatched.
+- A sent step past its resend deadline is dispatched again with a fresh order.
+- A sent step past its budget fails with `engine.step_budget_exceeded`.
+- The Operation fails as soon as any step fails, and succeeds once all steps finish.
+- A cancel request ends the Operation at the next transition, except after all steps finish.
 
-The steps' real result beats a cancel: when every step already ended, their result counts.
+Orders publish after the transaction commits. For each dispatched step, the engine schedules its deadline first and then publishes the order. An unbuildable order or one exceeding 4 KB fails with `engine.order_invalid`. A publish error resets the step to pending and negatively acknowledges the event for retry after one second.
 
-Orders are published after the transaction commits. For each step the engine first schedules its deadline, then publishes its order:
-
-- an order it cannot make, such as an input the kind cannot build or an order over 4 KB, fails its step with `engine.order_invalid`;
-- a publish that fails puts its step back to pending and throws, so the event is negatively acknowledged and comes back after a second.
-
-If the projection at the end throws, the event comes back too, and the engine runs the projection again.
-
-The engine mirrors its steps into `state.native_progress`, so `operation:show` shows them like a Swamp run's steps. At the end it calls the kind's own projection with the status, error code, failed step and times, as a Swamp run's end did.
+The engine mirrors step state into `state.native_progress` so `operation:show` matches Swamp output. At completion, it calls the kind's domain projection; if that throws, the event redelivers and retries.
 
 ### Orders and receipts
 
-Each step is one signed order. Its `operation` is `<id>:<step>`, so each step has its own journal record on the Node. Its `target` is the real resource the primitive changes. For `ufw.ensure_rule` that is the Node, so firewall changes on one Node run one at a time.
+Each step is one signed order with `operation` set to `<id>:<step>` and `target` set to the resource being mutated. For `ufw.ensure_rule`, the target is the Node, serializing firewall writes per Node.
 
-An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. So does a `failed` receipt with `executor.order_expired`: the order expired while it waited for the executor's lock, so it never acted. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
+Engine orders expire 8 seconds after signing, and the executor refuses expiries more than 10 seconds ahead. A `refused` receipt with `expired` or a `failed` receipt with `executor.order_expired` resets the step to pending for resend. A `replayed_nonce` receipt applies the original result when present.
 
-The engine takes a receipt's Node from its subject, `orbit.receipts.<node>`, never from its body, and applies it only to a step on that Node. A receipt it cannot read is terminated, so it never comes back.
-
-A receipt with `output` carries public text a later step reads, such as a certificate request. The engine keeps it as the step's output.
-
-A receipt with `applied` reports how many changes the primitive made. For a firewall kind, zero changes records the result as skipped with `firewall.rule_exists`.
+The engine reads the Node ID from the receipt subject (`orbit.receipts.<node>`), never from the payload, and terminates unreadable receipts. A receipt's `output` field carries public text needed by later steps, such as a CSR. Its `applied` count reports changes made: for firewall kinds, zero changes records a skip with `firewall.rule_absent` for `firewall.remove` and `firewall.rule_exists` for allow or deny.
 
 ### Content
 
-An order is at most 4 KB. Larger or secret content, such as a Caddyfile or a certificate, travels as a blob: a step's input names `{"blob": {"content": …}}`, and `EngineContent` puts the content into the Node's own content key `$KV.CONTENT.n<node>.<sha256>` before the order is signed. The order then names only `{"blob": {"sha256": …}}`. The executor reads each blob its order names into a root-only cache and checks its hash before the primitive runs. Only that Node may read its content keys.
+Orders are capped at 4 KB. Larger or sensitive payloads, such as Caddyfiles, certificates, or credentials, travel as blobs: `EngineContent` writes the bytes to `$KV.CONTENT.n<node>.<sha256>` before signing, and the order references only `{"blob": {"sha256": "..."}}`. The executor fetches each blob into a root-only cache and verifies its hash before running the primitive.
 
 ### Deadlines
 
-A deadline is a NATS message schedule, not a poller. After each send, the engine publishes to `orbit.engine.schedule.<id>.<step>.<sends>` with the headers `Nats-Schedule: @at <time>` and `Nats-Schedule-Target: orbit.engine.deadline`. JetStream delivers the deadline to the engine at that time. A deadline for a step that already moved on changes nothing.
+Deadlines use NATS message schedules rather than polling. After sending a step, the engine publishes to `orbit.engine.schedule.<id>.<step>.<sends>` with `Nats-Schedule: @at <time>` and `Nats-Schedule-Target: orbit.engine.deadline`. Stale deadlines for steps that already moved on are ignored.
 
-The firewall step re-sends after 10 seconds and fails after 120 seconds. The reconciler ends an engine Operation whose whole budget ran out.
+Each flow sets its own resend interval and step budget:
 
-A start or an order can be lost when the Gateway stops between a commit and its publish. The reconciler covers that: each minute it sends a nudge, an immediate deadline event, to an unfinished engine Operation with a pending step or a sent step more than 30 seconds past its re-send time.
+| Flow | Resend interval | Step budget |
+| --- | --- | --- |
+| Firewall (`ufw.ensure_rule`) | 10 seconds | 120 seconds |
+| Route (`csr`, `site`, `dns`) | 15–30 seconds | 60–180 seconds |
+| Instance create (`clone`, `fetch`, `prepare`, `start`, `checkout`, `t3`) | 30–120 seconds | 120–600 seconds |
+
+Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step or a sent step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
 
 ### Cancel
 
-`operation:cancel` sets `cancel_requested_at` and sends a nudge with its own message id. The next transition ends the Operation as cancelled and sends nothing more. An order already on its Node still runs to its end, and when every step has ended, their result counts instead. If the bus is down, the cancel waits for the next receipt, deadline or nudge.
+`operation:cancel` sets `cancel_requested_at` and sends a nudge. The next transition ends the Operation as `cancelled` (`operation.cancelled`) and dispatches no further steps. Orders already on a Node still finish, and if every step has already ended, their real result wins over the cancel.
 
 ## The machine bus
 
-`nats-server` runs on the Gateway and listens on port 4222. The Gateway firewall allows that port on the WireGuard interface only. JetStream keeps these streams; `orbit:engine-setup` and the consumer make them, and both are idempotent:
+`nats-server` runs on the Gateway and listens only on the Gateway's WireGuard address on `ORBIT_NATS_PORT` (default `4222`). Both `orbit:engine-setup` and the consumer create these JetStream streams idempotently:
 
 | Stream | Subjects | Retention | Consumers |
 | --- | --- | --- | --- |
-| `ORDERS` | `orbit.node.<node>.orders` | work queue, 1 h | `node-<node>`, pulled by that Node's executor |
-| `RECEIPTS` | `orbit.receipts.<node>` | work queue, 1 h | `gateway-receipts`, pushed to the engine |
-| `ENGINE` | `orbit.engine.>` | limits, 24 h, message schedules | `gateway-engine`: start and deadline events |
-| `KV_CONTENT` | `$KV.CONTENT.n<node>.<sha256>` | one per key, 1 h | direct get by the Node |
-| `KV_NODES` | `$KV.NODES.n<node>` | one per key, 5 min, no rollup | direct get by the Gateway |
+| `ORDERS` | `orbit.node.<node>.orders` | Work queue, 1 h | `node-<node>`, pulled by that Node's executor |
+| `RECEIPTS` | `orbit.receipts.<node>` | Work queue, 1 h | `gateway-receipts`, pushed to the engine |
+| `ENGINE` | `orbit.engine.>` | Limits, 24 h, message schedules | `gateway-engine` for start and deadline events |
+| `KV_CONTENT` | `$KV.CONTENT.n<node>.<sha256>` | One per key, 1 h | Direct get by the Node |
+| `KV_NODES` | `$KV.NODES.n<node>` | One per key, 5 min, no rollup | Direct get by the Gateway |
 
-The Gateway makes a Node's `node-<node>` consumer before its first order. Until then the executor waits for it.
-
-Publishes wait for JetStream's acknowledgement. An order uses its nonce as `Nats-Msg-Id`, so a repeated publish lands once.
+The Gateway creates a Node's `node-<node>` consumer before publishing its first order. Publishes wait for JetStream acknowledgement, and orders use their nonce as `Nats-Msg-Id` so retries land once.
 
 ### The consumer process
 
-`orbit-gateway-engine.service` runs `orbit:engine-consume`. It applies receipts and engine events from two push consumers. Each handler returns its verdict, and the client sends it as the one reply:
+`orbit-gateway-engine.service` runs `php artisan orbit:engine-consume` to process receipts, engine events, and auth callout requests. Each message handler returns one verdict: acknowledge on completion, negatively acknowledge with a 1-second delay on exception, or terminate an unreadable message.
 
-- an acknowledgement when the handler ended;
-- a negative acknowledgement with a one-second delay when the handler threw;
-- a termination for a message it cannot read.
-
-The PHP client answers the server's pings only while it reads. A request connection that sits unused in a long-running process can therefore be closed by the server. `EngineBus::client()` pings a connection that was unused for 10 seconds and replaces it when the ping fails.
+Because the PHP client only answers server pings while reading, `EngineBus::client()` pings any connection idle for 10 seconds and replaces it if the ping fails.
 
 ## Authentication
 
-A Node holds no bus credential. The bus admits a Node by its WireGuard address, the same rule the Gateway API applies to a Node's requests.
+Nodes hold no NATS credentials. The bus admits each Node by its WireGuard address, matching the Gateway API trust boundary.
 
-The Gateway environment holds one nkey account seed, `ORBIT_NATS_SEED`. `orbit:engine-keys` prints a new one as an environment line. A Gateway without it runs no `nats-server`, opens no port 4222 and gives no Node a bus address.
+The Gateway environment stores one nkey account seed in `ORBIT_NATS_SEED`, generated with `php artisan orbit:engine-keys`. Without `ORBIT_NATS_SEED`, the Gateway runs no `nats-server` and exposes no bus address. `nats.conf` contains only public keys: the Gateway's derived nkey user (full subject access) and the auth callout issuer.
 
-`nats.conf` holds only public keys:
+When any other client connects, `nats-server` sends an authorization request to `$SYS.REQ.USER.AUTH` and the consumer process answers it:
 
-- the Gateway's own nkey user, derived from the seed, which may use every subject;
-- the auth callout's issuer, the seed's public key.
+1. Read the client's IP address from the request.
+2. Look up the active Node with that WireGuard address; refuse unknown or inactive addresses with `peer.identity_unknown`.
+3. Sign a user JWT named `node-<id>` valid for one hour and scoped to that Node's subjects.
 
-Every other connection goes to the auth callout. `nats-server` sends an authorization request to `$SYS.REQ.USER.AUTH`, and the consumer process answers it:
+When the JWT expires, the server disconnects the client and it re-authenticates, so a removed Node loses bus access within an hour. Rotating `ORBIT_NATS_SEED` requires no changes on Nodes.
 
-1. It reads the connection's address from the request.
-2. It looks for the active Node with that WireGuard address.
-3. It answers with a user JWT that the issuer signs. The user is named `node-<id>`, lasts one hour and may use only that Node's subjects.
+Because all processes on a Node share its WireGuard address, each Node also loads an nftables table (`orbit_bus_guard`) that rejects connections to the Gateway's NATS port from any user except `root` (plus the Gateway runtime user on the Gateway Node). A Node's user JWT allows only:
 
-An address with no active Node gets a refusal with `peer.identity_unknown`.
+- Reading, pulling, and acknowledging its own `node-<id>` consumer.
+- Publishing receipts to `orbit.receipts.<id>`.
+- Direct gets of its own content keys `n<id>.*`.
+- Writing its own capability key `$KV.NODES.n<id>`.
+- Subscribing to its own inbox prefix `_INBOX.node-<id>.>`.
 
-WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour. When its WireGuard peer goes, its connection also ends once the server's pings go unanswered. Replacing the seed changes nothing on the Nodes.
-
-Every process on a Node shares the Node's WireGuard address. So each Node also runs a guard: an nftables table, `orbit_bus_guard`, that rejects a connection to the Gateway's NATS port from any user but root. The bus boundary is therefore root on the Node. An app or an agent shell on the Node cannot join as its executor.
-
-The callout runs in the consumer process, between receipts and events. While that process is down, new Node connections fail and retry; connected Nodes keep their users until they expire.
-
-A Node's user may publish only:
-
-- the JetStream API calls to read and pull its own `node-<id>` consumer, and acknowledgements for it;
-- receipts on `orbit.receipts.<id>`;
-- direct gets of its own content keys `n<id>.*`;
-- its own capability key `$KV.NODES.n<id>`.
-
-It may subscribe only to its own inbox prefix, `_INBOX.node-<id>.>`, so it never sees another Node's replies or content. The order signature stays the boundary: a NATS server or another Node cannot forge an order.
+Order signatures remain the execution boundary: neither the bus nor another Node can forge an order.
 
 ### Delivery to a Node
 
-The Node converge writes two files from the executor intent:
-
-- `/etc/orbit/executor/nats.json` with the bus URL only;
-- `/etc/orbit/executor/bus-guard.nft`, the guard, which `orbit-executor.service` loads before each start.
-
-Without the engine's key the converge removes both files and drops the guard table, and the executor serves its socket alone.
+Node convergence writes `/etc/orbit/executor/nats.json` (containing only the bus URL) and `/etc/orbit/executor/bus-guard.nft` (loaded by `orbit-executor.service` before start). Without `ORBIT_NATS_SEED`, convergence removes both files and drops the nftables table so the executor serves only its local socket.
 
 ## Install
 
-The Gateway role converge installs the bus when the Gateway holds the key:
+Converging the `gateway` role installs the bus whenever `ORBIT_NATS_SEED` is set: `gateway-nats.yml` installs the SHA-256 pinned `nats-server` binary under the `nats` user, `GatewayRuntimeFiles` renders `/etc/nats/nats.conf`, `nats-server.service`, and `orbit-gateway-engine.service`, and `NodeFirewallRuleCatalog` opens `orbit:gateway-nats` on the `orbit` WireGuard interface.
 
-- `gateway-nats.yml` makes the `nats` user and installs the pinned `nats-server` release, checked by SHA-256;
-- `GatewayRuntimeFiles` writes `/etc/nats/nats.conf`, `nats-server.service` and `orbit-gateway-engine.service`;
-- `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface.
+To enable the engine on a fleet:
 
-To turn the engine on for a fleet:
+1. Generate `ORBIT_NATS_SEED` with `php artisan orbit:engine-keys` and add it to the Gateway environment.
+2. Converge the `gateway` role, then converge the target Nodes.
+3. Add the desired kinds to `ORBIT_ENGINE_KINDS`.
+4. Reload the Gateway configuration and services (`gateway:release:configure`, web workers, `orbit-gateway-engine.service`, and Horizon).
 
-1. Pin an agent delivery of 0.16.0 or newer.
-2. Add the seed from `orbit:engine-keys` to the Gateway environment.
-3. Converge the Gateway role, then the Nodes.
-4. List the kinds in `ORBIT_ENGINE_KINDS`.
-
-To turn it off, empty `ORBIT_ENGINE_KINDS` first. Removing the seed stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
-
-## Proof
-
-The foundation was proven in a task copy's nested fleet:
-
-- `firewall:allow`, a repeat and `firewall:remove` on app-dev ran on the engine, and each ufw table matched;
-- an Operation took 0.55–0.67 seconds from request to result, against 2.8–3.7 seconds on Swamp; the step itself took 0.2–0.3 seconds, and a repeat 62 ms;
-- an executor stopped for 12 seconds: its first order expired and the engine re-sent it;
-- a `nats-server` restart: the executor and the Gateway reconnected;
-- the first Operation after that restart ran on Swamp, since its capability read failed, and succeeded;
-- a Node whose executor did not report `ufw.ensure_rule` ran its firewall Operations on Swamp, in 2.8–7.8 seconds each;
-- the consumer process stopped for 5 seconds: the start event waited in its durable consumer and ran on restart.
-
-The authentication was proven there too:
-
-- the executor joined with no credential;
-- a connection from a non-Node address was refused;
-- the Node was refused while marked `removing`;
-- the Node could publish its own receipts but not another Node's;
-- with the guard loaded, root on the Node reached the bus and the `orbit` user was refused.
-
-The shared fixture `apps/agent/contract/fixtures/ufw-ensure-rule-input.json` keeps both sides in step. A Pest test checks that the Gateway signs that input for its intent, and a Rust test checks that the primitive reads and accepts it.
+Running workers keep the `ORBIT_ENGINE_KINDS` list read at startup, so skipping step 4 leaves them routing to Swamp. To disable the engine, clear `ORBIT_ENGINE_KINDS` and repeat step 4. Removing `ORBIT_NATS_SEED` stops rendering bus files, but you must stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.

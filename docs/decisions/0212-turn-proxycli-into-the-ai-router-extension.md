@@ -61,7 +61,7 @@ The AI router runs its backend through a **driver**, as Tasks runs agents throug
 | Report quota and accounts | Supplies the collector program, which writes the shared snapshot of provider pools, windows, and models, and toggles one account. |
 | Report the installed version | Reports the version that runs on the Node, for adoption and for [ADR 0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades). |
 
-The Process specification holds the command, user, port, and restart policy. Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. The driver keeps today's layout: versions under `~orbit/.local/share/cliproxyapi/`, the `current` link, the configuration in `~orbit/.config/cliproxyapi/config.yaml`, and port 8317. Adoption therefore moves no file.
+The Process specification holds the command, user, port, and restart policy. Every driver step is idempotent. A driver never overwrites configuration that the router changes at run time, such as its key list and its account files. Amendment, 2026-11-20: one exception, the `antigravity` list of the model alias map, is Orbit desired state. The collector edits only that list in `config.yaml` in place, as [Model aliases](/reference/ai-router#model-aliases) describes. The driver keeps today's layout: versions under `~orbit/.local/share/cliproxyapi/`, the `current` link, the configuration in `~orbit/.config/cliproxyapi/config.yaml`, and port 8317. Adoption therefore moves no file.
 
 ### Tasks requires the AI router
 

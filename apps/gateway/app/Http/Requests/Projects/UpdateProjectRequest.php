@@ -25,6 +25,12 @@ use UnexpectedValueException;
 
 final class UpdateProjectRequest extends FormRequest
 {
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return TaskAgent::messages('task_');
+    }
+
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {

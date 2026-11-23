@@ -12,6 +12,7 @@ use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHandoffs;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
@@ -84,6 +85,7 @@ final readonly class UpdateTaskAction
                     TaskTurn::refuseSubtaskMoveWhileRunning($locked);
                 }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
+                    TaskHandoffs::requireApproval($locked, $task, 'Completing a subtask');
                     TaskAssistance::resolveExternalSubtask($task, $locked);
                 }
                 if ($data->title === null && $data->brief === null && $data->position === null

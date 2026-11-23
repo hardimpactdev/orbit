@@ -74,7 +74,7 @@ final readonly class TaskSettle
     }
 
     /**
-     * Reads the watched pull request and records its state. A merged one also records the merge and when it happened, under the group's
+     * Reads the watched pull request and records its state and, once, when it was opened. A merged one also records the merge and when it happened, under the group's
      * lock, so a crash before the complete leaves it for the next tick. A closed one is recorded only: a person decides. Null when GitHub
      * cannot be read.
      */
@@ -99,7 +99,7 @@ final readonly class TaskSettle
                 return;
             }
             $merged = $state === 'merged' && in_array($locked->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true);
-            $locked->update(['watched_pr_number' => $number, 'watched_pr_state' => $state,
+            $locked->update(['watched_pr_number' => $number, 'watched_pr_state' => $state, 'pr_opened_at' => $locked->pr_opened_at ?? $pull->createdAt,
                 ...($merged ? ['watched_pr_completion' => 'merged', 'merged_at' => $locked->merged_at ?? $pull->mergedAt] : [])]);
         });
 
@@ -109,7 +109,7 @@ final readonly class TaskSettle
     /** An open Operation of the group (a turn, a check or a publish), or one that holds the copy (a destroy that runs): the next tick retries. */
     private function busy(Task $group): bool
     {
-        $open = static fn (string $type, ?int $id): bool => Operation::query()->where('target_type', $type)->where('target_id', $id)
+        $open = static fn (string $type, ?int $id): bool => Operation::query()->exceptFleetWait()->where('target_type', $type)->where('target_id', $id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists();
 
         return $open(OperationKinds::TaskGroupTarget, $group->id) || $open('instance', $group->taskable_id);

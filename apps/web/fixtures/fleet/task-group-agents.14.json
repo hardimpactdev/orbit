@@ -1,0 +1,58 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/tasks/{task}/agents",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 42,
+                "task_group_id": 14,
+                "task_id": 40,
+                "node_id": 2,
+                "role": "implementer",
+                "model": "claude-sonnet-5-5",
+                "effort": "medium",
+                "driver": "t3",
+                "external_id": "thread-impl-14",
+                "state": "done",
+                "observed_at": "2026-09-23T09:43:10+00:00",
+                "observation_error": null,
+                "error": null,
+                "tokens": 58300,
+                "input_tokens": 8200,
+                "cached_input_tokens": 121400,
+                "output_tokens": 16500,
+                "model_calls": 11,
+                "peak_context_tokens": 118000,
+                "lines_added": 142,
+                "lines_deleted": 46
+            },
+            {
+                "id": 41,
+                "task_group_id": 14,
+                "task_id": 40,
+                "node_id": 2,
+                "role": "reviewer",
+                "model": "claude-opus-5-5",
+                "effort": "high",
+                "driver": "t3",
+                "external_id": "thread-review-14",
+                "state": "working",
+                "observed_at": "2026-09-23T09:44:00+00:00",
+                "observation_error": null,
+                "error": null,
+                "tokens": 38100,
+                "input_tokens": null,
+                "cached_input_tokens": null,
+                "output_tokens": null,
+                "model_calls": null,
+                "peak_context_tokens": null,
+                "lines_added": null,
+                "lines_deleted": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

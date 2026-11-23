@@ -75,6 +75,21 @@ final class FakeMachineBus implements MachineBus
         return $this->actions;
     }
 
+    public function nodeFeatures(int $node): array
+    {
+        return [];
+    }
+
+    public function nodeTargetActions(int $node): array
+    {
+        return [];
+    }
+
+    public function nodeClock(int $node): ?bool
+    {
+        return null;
+    }
+
     /** @return array<string, mixed> */
     public function payload(int $index): array
     {

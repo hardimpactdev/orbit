@@ -108,6 +108,18 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
     else:
         assert git in (['checkout', '--quiet', '--detach', 'c' * 40], ['reset', '--quiet', '--hard'], ['clean', '--quiet', '-fd'], ['checkout', '--quiet', 'task-4970']), git
     sys.exit(0)
+# The delivery receipt the turn left: T3_RECEIPT_DELIVERY holds its text, also an empty one; unset, the turn left none and the read
+# exits 3. The phase reads it once and removes it.
+if rest[:4] == ['/usr/bin/timeout', '20', '/bin/sh', '-c']:
+    assert rest[5:6] == ['sh'] and 'rm -rf -- "$f"' in rest[4] and '[ -L "$d" ]' in rest[4], rest
+    # Before the launch the phase clears the receipt; after the turn it reads and removes it.
+    if rest[6:] == []:
+        sys.exit(int(os.environ.get('T3_RECEIPT_CLEAR', '0')))
+    assert rest[6:] == ['delivery'], rest
+    if 'T3_RECEIPT_DELIVERY' not in os.environ:
+        sys.exit(3)
+    print(os.environ['T3_RECEIPT_DELIVERY'], end='')
+    sys.exit(0)
 if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     catalog = os.environ.get('T3_CATALOG', 'cached')
     if rest[3] == '/home/agent/.t3/userdata/settings.json':
@@ -115,7 +127,8 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
             sys.exit(1)
         print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
                                                 'codexHigh': {'driver': os.environ.get('T3_CODEX_DRIVER', 'codex'),
-                                                              'displayName': 'Codex, high effort'}}}))
+                                                              'displayName': 'Codex, high effort'},
+                                                'antigravity': {'driver': 'antigravity', 'enabled': True}}}))
         sys.exit(0)
     assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
     if catalog == 'missing':
@@ -128,7 +141,8 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         models = {'claude-opus-5-5': {}}
     if catalog == 'noentry':
         models = [{'name': 'No slug'}, 'claude-fable-5-2']
-    print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}, {'slug': 'gpt-6.1-sol'}]}}}}))
+    print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}, {'slug': 'gpt-6.1-sol'}]},
+                                                                  'antigravity': {'models': [{'slug': 'gemini-4-neon'}, {'slug': 'gemini-3.1-pro'}]}}}}))
     sys.exit(0)
 if rest[:4] == ['/usr/bin/timeout', '25', '/usr/bin/python3', '-']:
     assert rest[4:] == [os.environ['T3_MODEL']], rest
@@ -177,6 +191,12 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
             sys.stderr.write('T3 refused a WebSocket ticket (HTTP 401).')
             sys.exit(1)
         print(json.dumps({'thread_id': thread, 'error': None} if create == 'made' else {'thread_id': None, 'error': 'Unknown provider instance codexHigh.'}), end='')
+        sys.exit(0)
+    if rest[5:] == ['usage', thread]:
+        # T3_USAGE 'fail' is a usage read that fails: the turn goes on with its use unknown.
+        if os.environ.get('T3_USAGE') == 'fail':
+            sys.exit(1)
+        print(json.dumps({'turns': [{'usageStatus': 'complete', 'inputTokens': 1000, 'cachedInputTokens': 800, 'outputTokens': 50}]}), end='')
         sys.exit(0)
     if rest[5:] == ['read', thread]:
         ask = os.environ.get('T3_ASK', 'questions')
@@ -236,9 +256,31 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
+// The local connection, except that it loses the connection to the copy Node for every command of the task named by
+// `T3_UNREACHABLE`, as a dropped SSH connection would: Ansible then reports that task's host unreachable.
+const UNREACHABLE = `import importlib.util, inspect, os
+import ansible.plugins.connection
+from ansible.errors import AnsibleConnectionFailure
+
+# This file takes the built-in plugin's module name, so the built-in is loaded from its own file.
+_spec = importlib.util.spec_from_file_location('orbit_builtin_local', os.path.join(os.path.dirname(ansible.plugins.connection.__file__), 'local.py'))
+_builtin = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_builtin)
+DOCUMENTATION = _builtin.DOCUMENTATION
+Local = _builtin.Connection
+
+class Connection(Local):
+    def exec_command(self, cmd, in_data=None, sudoable=True):
+        for frame in inspect.stack():
+            task = getattr(frame.frame.f_locals.get('self'), '_task', None)
+            if getattr(task, 'name', None) == os.environ['T3_UNREACHABLE']:
+                raise AnsibleConnectionFailure('The copy Node dropped the connection.')
+        return super().exec_command(cmd, in_data, sudoable)
+`;
+
 type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; model: Record<string, unknown> | null; detached: boolean; launched: boolean;
     start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null;
-    stop: Record<string, unknown> | null; read: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[];
+    stop: Record<string, unknown> | null; read: Record<string, unknown> | null; usage: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[];
     // The turn as the result step reads this run folder.
     result: Turn };
 async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions", settle = "", copy: Record<string, string> = {}): Promise<Phase> {
@@ -250,15 +292,17 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         Deno.mkdirSync(run);
         Deno.writeTextFileSync(`${folder}/calls`, "");
         Deno.writeTextFileSync(`${folder}/bin/incus`, SHIM);
+        Deno.mkdirSync(`${folder}/connection`);
+        if (copy.T3_UNREACHABLE) Deno.writeTextFileSync(`${folder}/connection/local.py`, UNREACHABLE);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
-        Deno.writeTextFileSync(`${run}/intent.json`, JSON.stringify({ runtime: intent.runtime, ssh_execution: ssh, turn: { ...turn, ...change } }));
+        Deno.writeTextFileSync(`${run}/intent.json`, JSON.stringify({ runtime: intent.runtime, ssh_execution: ssh, turn: { ...turn, base_model: change.model ?? turn.model, ...change } }));
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
             env: { ORBIT_RUN: run, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 T3_MODEL_HELPER: `${shipped}/task_copy_codex_model.py`,
-                ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+                ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_CONNECTION_PLUGINS: `${folder}/connection`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
         const json = (name: string) => { const text = read(`${run}/${name}`); return text === null ? null : JSON.parse(text); };
@@ -276,6 +320,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             interrupt: json("interrupt.json"),
             stop: json("stop.json"),
             read: json("read.json"),
+            usage: json("usage.json"),
             restore: json("restore.json"),
             calls: (read(`${folder}/calls`) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line)),
             result: (await behavior.methods.result.execute({ folder: run }, { writeResource: () => Promise.resolve() })).turn,
@@ -289,11 +334,12 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
 Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back", ignore: !available, async fn() {
     const done = await phase("completed");
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 7);
+    assertEquals(done.calls.length, 10);
     // The new thread is made first with its title, instance, model and model options; its first turn is a send to it.
-    const create = done.calls[3];
+    // The receipts of an earlier run go first (calls[3]).
+    const create = done.calls[4];
     assertEquals(create.args.slice(20), ["create", turn.title, "claudeMedium", "claude-opus-5-5", "[]"]);
-    const start = done.calls[4];
+    const start = done.calls[5];
     assertEquals(start.stdin, turn.prompt);
     assertEquals(start.args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
     // An implementer's turn leaves the checkout to the agent: no Git command, no review or restore evidence.
@@ -304,13 +350,61 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
     assertEquals(done.output.includes("Subtask: Doctor note"), false);
 } });
 
+Deno.test({ name: "a turn reads and removes the handoff receipts it left, and returns their text", ignore: !available, async fn() {
+    const receipt = { commit: "a".repeat(40), tree: "b".repeat(40), parts: [{ name: "pest", result: "passed" as const, seconds: 1.5 }] };
+    const delivery = JSON.stringify(receipt);
+    const done = await phase("completed", {}, "clean", "questions", "", { T3_RECEIPT_DELIVERY: delivery });
+    assert(done.ok, done.output);
+    const receipts = (call: { args: string[] }) => call.args.slice(15, 19).concat(call.args.slice(20));
+    // The receipt is cleared before the launch, so only what this turn's run writes counts.
+    const send = done.calls.findIndex((call) => call.args.includes("send"));
+    const clear = done.calls.findIndex((call) => receipts(call).join(" ") === "/usr/bin/timeout 20 /bin/sh -c sh");
+    assert(clear >= 0 && clear < send, JSON.stringify(done.calls.map(receipts)));
+    // One read-and-remove, in the copy as agent, after the turn.
+    assertEquals(done.calls.slice(-1).map(receipts), [["/usr/bin/timeout", "20", "/bin/sh", "-c", "sh", "delivery"]]);
+    assertEquals(done.result.receipts, { delivery: receipt });
+    // A receipt file that is there but empty is a receipt, an invalid one; an absent file is none.
+    const empty = await phase("completed", {}, "clean", "questions", "", { T3_RECEIPT_DELIVERY: "" });
+    assertEquals(empty.result.receipts, { delivery: "invalid" });
+    const absent = await phase("completed", {}, "clean", "questions", "");
+    assertEquals(absent.result.receipts, { delivery: null });
+    // The phase never prints the receipt.
+    assertEquals(done.output.includes(delivery), false);
+    // A copy whose earlier receipts cannot go launches nothing.
+    const stuck = await phase("completed", {}, "clean", "questions", "", { T3_RECEIPT_CLEAR: "1" });
+    assert(!stuck.ok, stuck.output);
+    assertEquals([stuck.launched, stuck.start], [false, null]);
+} });
+
+Deno.test({ name: "the read-back reads the thread's token use through the helper; a failed read leaves it unknown and fails nothing", ignore: !available, async fn() {
+    const done = await phase("completed");
+    assertEquals(done.calls[8].args.slice(15), ["/usr/bin/timeout", "60", turn.node, "-", turn.t3, "usage", "mcp:66105c2c"]);
+    assertEquals([done.usage!.usage_exit, done.result.usage], [0, { tokens: 1050, input_tokens: 200, cached_input_tokens: 800, output_tokens: 50, model_calls: 1 }]);
+    const failed = await phase("completed", {}, "clean", "questions", "", { T3_USAGE: "fail" });
+    assert(failed.ok, failed.output);
+    assertEquals([failed.usage!.usage_exit, failed.result.state, failed.result.ended, failed.result.usage], [1, "done", true, null]);
+    // A connection lost at the usage read alone changes only the usage: the turn keeps its transcript, and a reviewer's checkout is
+    // still restored.
+    const lost = { T3_UNREACHABLE: "Read the token use of the thread's provider turns" };
+    const dropped = await phase("completed", {}, "clean", "questions", "", lost);
+    assert(dropped.ok, dropped.output);
+    assert(dropped.output.includes("The copy Node dropped the connection."), dropped.output);
+    const { usage: _, ...kept } = done.result;
+    assertEquals([dropped.usage, dropped.result.usage, { ...dropped.result, usage: undefined }], [null, null, { ...kept, usage: undefined }]);
+    assertEquals(dropped.result.transcript.length > 0, true);
+    const reviewer = await phase("completed", { candidate }, "clean", "questions", "", lost);
+    assert(reviewer.ok, reviewer.output);
+    assertEquals([reviewer.usage, reviewer.restore, reviewer.result.state, reviewer.result.error_code, reviewer.result.ended, reviewer.result.usage],
+        [null, { restored: true }, "done", undefined, true, null]);
+} });
+
 Deno.test({ name: "a continued turn finds its thread by title and sends the prompt to it, with no model and no title", ignore: !available, async fn() {
     // An intent admitted before answered was added omits it; JSON serialization drops undefined.
     const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-5-5", answered: undefined });
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 5);
+    assertEquals(done.calls.length, 8);
     assertEquals(done.calls[1].args.slice(18), ["thread", "list", "--project", "/srv/workspace", "--json"]);
-    assertEquals([done.calls[2].args.slice(19), done.calls[2].stdin], [["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"], turn.prompt]);
+    assertEquals([done.calls[3].args.slice(19), done.calls[3].stdin], [["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"], turn.prompt]);
     assertEquals([done.resumed, done.launched, JSON.parse(done.start!.start as string).status, done.read!.found], [{ list_exit: 0, found: 1 }, true, "completed", 1]);
 } });
 
@@ -387,7 +481,7 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 6]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 8]);
     // T3 refuses a start on stderr only; the evidence keeps it.
     assertEquals(refused.start!.error, 'Provider instance "claudeMedium" is disabled for project p.');
     // A copy the phase cannot reach launches nothing, so no turn can hold its group.
@@ -400,12 +494,12 @@ Deno.test({ name: "a turn cut by its bound stops no run, since Orbit cannot name
     const cut = await phase("timeout");
     assert(cut.ok, cut.output);
     // The start printed nothing, so no run ID is known: no stop runs, and the thread T3 still lists running holds the turn.
-    assertEquals([helper(cut.calls), cut.stop], [[], null]);
+    assertEquals([helper(cut.calls), cut.stop], [["usage mcp:66105c2c"], null]);
     assertEquals([cut.read!.status, cut.result.state, cut.result.error_code, cut.result.ended], ["running", "failed", "tasks.turn_timeout", false]);
     // Rule (c): a cut reviewer whose thread T3 still lists running may still write. Its checkout is not touched and its detach mark
     // stays, so no later write lands on a restored branch; the turn stays unrestored and held.
     const reviewer = await phase("timeout", { candidate });
-    assertEquals([helper(reviewer.calls), reviewer.restore, reviewer.result.ended, reviewer.result.error_code], [[], { restored: false }, false, "tasks.copy_review_unrestored"]);
+    assertEquals([helper(reviewer.calls), reviewer.restore, reviewer.result.ended, reviewer.result.error_code], [["usage mcp:66105c2c"], { restored: false }, false, "tasks.copy_review_unrestored"]);
     assertEquals(git(reviewer.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", `update-ref refs/orbit/review-detach ${"a".repeat(40)}`,
         `checkout --quiet --detach ${candidate}`]);
     // The next turn finds that reviewer's run-less turn by its captured thread: while T3 lists it running, the dirty checkout and the
@@ -427,7 +521,7 @@ Deno.test({ name: "rule (a): the turn's thread is read back and continued by its
     const known = { thread: "continue", provider: null, t3_thread_id: "mcp:66105c2c", admission: "overwritten" };
     const continued = await phase("completed", known, "clean", "questions", "", { T3_TITLE: "Renamed by a person" });
     assert(continued.ok, continued.output);
-    assertEquals([continued.resumed, continued.calls[2].args.slice(19)], [{ list_exit: 0, found: 1 }, ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]]);
+    assertEquals([continued.resumed, continued.calls[3].args.slice(19)], [{ list_exit: 0, found: 1 }, ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]]);
     // The admitted UUID that T3 never received names no thread in T3: the title still finds the thread, and a renamed one is missing.
     const admitted = await phase("completed", { ...known, t3_thread_id: "0b1c", admission: "admitted" }, "clean", "questions", "", { T3_TITLE: "Renamed by a person" });
     assertEquals([admitted.ok, admitted.resumed, admitted.launched], [false, { list_exit: 0, found: 0 }, false]);
@@ -447,7 +541,7 @@ Deno.test({ name: "a thread list that is not JSON reads as no thread, and the st
     const garbled = await phase("garbled");
     assert(garbled.ok, garbled.output);
     assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
-        ["completed", null, 0, null, 6]);
+        ["completed", null, 0, null, 8]);
 } });
 
 Deno.test({ name: "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start", ignore: !available, async fn() {
@@ -560,6 +654,55 @@ Deno.test({ name: "without T3's cached catalog the check is skipped and the turn
     assertEquals([done.model, done.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
 } });
 
+Deno.test({ name: "a turn admitted before the base model, with none in its intent, starts a Claude, Codex or Antigravity thread on its model", ignore: !available, async fn() {
+    const options = [{ id: "reasoningEffort", value: "high" }];
+    for (const [change, copy] of [
+        [{ provider: "claudeMedium", model: "claude-opus-5-5", options: [] }, {}],
+        [{ provider: "codexHigh", model: "gpt-6.1-sol", options }, { T3_INSTANCE: "codexHigh", T3_MODEL: "gpt-6.1-sol", T3_OPTIONS: JSON.stringify(options) }],
+        [{ provider: "antigravity", model: "gemini-3.8-flash", options: [] }, { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-3.8-flash", T3_CATALOG: "missing" }],
+    ] as [Record<string, unknown>, Record<string, string>][]) {
+        // The old intent shape: no `base_model` key at all.
+        const done = await phase("completed", { ...change, base_model: undefined }, "clean", "questions", "", copy);
+        assert(done.ok, done.output);
+        assertEquals(done.launched, true, JSON.stringify(change));
+        const create = done.calls.find((call) => call.args[20] === "create")!;
+        assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, change.provider, change.model, change.options]);
+        assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
+    }
+} });
+
+Deno.test({ name: "an Antigravity thread starts on its tiered model, which the catalog's base model confirms; a base it does not list is refused", ignore: !available, async fn() {
+    const agy = { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-4-neon-medium" };
+    const done = await phase("completed", { provider: "antigravity", model: "gemini-4-neon-medium", base_model: "gemini-4-neon", options: [] }, "clean", "questions", "", agy);
+    assert(done.ok, done.output);
+    assertEquals([done.model, done.launched], [{ model: "gemini-4-neon-medium", offered: ["gemini-4-neon", "gemini-3.1-pro"], accepted: true }, true]);
+    const create = done.calls.find((call) => call.args[20] === "create")!;
+    assertEquals(create.args.slice(20, 24), ["create", turn.title, "antigravity", "gemini-4-neon-medium"]);
+    const unlisted = await phase("completed", { provider: "antigravity", model: "gemini-4-carbon-high", base_model: "gemini-4-carbon", options: [] }, "clean", "questions", "",
+        { T3_INSTANCE: "antigravity", T3_MODEL: "gemini-4-carbon-high" });
+    assert(!unlisted.ok && unlisted.output.includes("tasks.copy_turn_model_unoffered"), unlisted.output);
+    assertEquals([unlisted.launched, unlisted.start], [false, null]);
+} });
+
+Deno.test({ name: "only the Antigravity instance takes a model that differs from its base model, and only as the base and one effort", ignore: !available, async fn() {
+    for (const change of [
+        { model: "claude-opus-5-5-high", base_model: "claude-opus-5-5" },
+        { provider: "codexHigh", model: "gpt-6.1-sol-high", base_model: "gpt-6.1-sol", options: [{ id: "reasoningEffort", value: "high" }] },
+        { provider: "antigravity", model: "gemini-4-neon", base_model: "gemini-4-carbon", options: [] },
+        // A bare Antigravity model with its base named runs at agy's default thought level.
+        { provider: "antigravity", model: "gemini-4-neon", base_model: "gemini-4-neon", options: [] },
+        { provider: "antigravity", model: "gemini-4-neon-medium-high", base_model: "gemini-4-neon", options: [] },
+        // Only one effort of an Antigravity model follows its base.
+        { provider: "antigravity", model: "gemini-4-neon-ultra", base_model: "gemini-4-neon", options: [] },
+        { provider: "antigravity", model: "gemini-4-neon-max", base_model: "gemini-4-neon", options: [] },
+        { provider: "antigravity", model: "gemini-4-neon-", base_model: "gemini-4-neon", options: [] },
+    ]) {
+        const refused = await phase("completed", change);
+        assert(!refused.ok && refused.output.includes("tasks.copy_turn_invalid"), refused.output);
+        assertEquals([refused.launched, refused.calls.length], [false, 0], JSON.stringify(change));
+    }
+} });
+
 Deno.test({ name: "a continued thread keeps its model: the catalog is not read", ignore: !available, async fn() {
     const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-9" });
     assert(done.ok, done.output);
@@ -598,7 +741,7 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
     const asked = await phase("waiting");
     assert(asked.ok, asked.output);
     // The stop names the stored request, so the helper stops the run only while it waits for exactly that one.
-    assertEquals(helper(asked.calls), ["read mcp:66105c2c", "interrupt mcp:66105c2c run:1 request:1"]);
+    assertEquals(helper(asked.calls), ["read mcp:66105c2c", "interrupt mcp:66105c2c run:1 request:1", "usage mcp:66105c2c"]);
     assertEquals([asked.start!.start_exit, asked.ask!.ask_exit, asked.interrupt!.interrupt_exit], [2, 0, 0]);
     assertEquals(JSON.parse(asked.ask!.ask as string).requests[0].questions[0].question, "Which color?");
     assertEquals(JSON.parse(asked.interrupt!.interrupt as string).interrupted, true);
@@ -609,8 +752,8 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
     // The turn as Orbit records it: the question stored with its owner run, its run stopped and over, and no error.
     assertEquals([asked.result.state, asked.result.error, asked.result.error_code, asked.result.ended], ["asking_for_input", null, undefined, true]);
     assertEquals(asked.result.questions.map((question) => [question.request_id, question.run_id, question.question]), [["request:1", "run:1", "Which color?"]]);
-    // A turn that ends other than at a question runs no helper.
-    assertEquals(helper((await phase("completed")).calls), []);
+    // A turn that ends other than at a question runs the helper only for its token use.
+    assertEquals(helper((await phase("completed")).calls), ["usage mcp:66105c2c"]);
     // The confirmed interrupt of the run that asks ends the turn, also when the list after it fails.
     const unlisted = await phase("waiting", {}, "clean", "questions", "", { T3_LISTFAIL: "1" });
     assertEquals([unlisted.ok, unlisted.read!.list_exit, unlisted.result.state, unlisted.result.error, unlisted.result.ended, unlisted.result.questions.length],
@@ -622,7 +765,7 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
     for (const ask of ["fail", "none", "approval", "large"]) {
         const unread = await phase("waiting", {}, "clean", ask);
         assert(unread.ok, unread.output);
-        assertEquals([helper(unread.calls).length, unread.ask!.ask_exit, unread.interrupt, unread.read!.found], [1, ask === "fail" ? 1 : 0, null, 1], ask);
+        assertEquals([helper(unread.calls).length, unread.ask!.ask_exit, unread.interrupt, unread.read!.found], [2, ask === "fail" ? 1 : 0, null, 1], ask);
     }
     const reviewer = await phase("waiting", { candidate });
     assert(reviewer.ok, reviewer.output);
@@ -650,7 +793,7 @@ Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the
         const settled = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
         assert(settled.ok, settled.output);
         // Rule (b): the thread's state is no proof of the recorded run; the helper reads that exact run over and stops nothing.
-        assertEquals([settled.settle, settled.launched, helper(settled.calls)], [{ list_exit: 0, settled: [9], open: [], stopped: [] }, true, ["stop earlier run:earlier"]], status);
+        assertEquals([settled.settle, settled.launched, helper(settled.calls)], [{ list_exit: 0, settled: [9], open: [], stopped: [] }, true, ["stop earlier run:earlier", "usage mcp:66105c2c"]], status);
     }
     // T3 does not list the captured thread: that proves nothing, so the turn holds and nothing launches.
     const gone = await phase("completed", { settle: [earlier] });
@@ -658,9 +801,9 @@ Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the
     // A turn with no captured thread or run is found by title alone: T3 holds no thread of the title, so no run can go on.
     const untitled = await phase("completed", { settle: [{ operation_id: 9, title: earlier.title, branch: null }] });
     assertEquals([untitled.ok, untitled.settle!.settled], [true, [9]]);
-    // A turn that sent nothing has no run: it is settled without a read of T3's run.
+    // A turn that sent nothing has no run: it is settled without a read of T3's run; only this turn's token use is read.
     const unsent = await phase("completed", { settle: [{ ...earlier, sent: false }] });
-    assertEquals([unsent.ok, unsent.settle!.settled, helper(unsent.calls)], [true, [9], []]);
+    assertEquals([unsent.ok, unsent.settle!.settled, helper(unsent.calls)], [true, [9], ["usage mcp:66105c2c"]]);
     // A list that fails settles nothing and stops nothing.
     const unread = await phase("listfail", { settle: [earlier] });
     assertEquals([unread.ok, unread.settle, unread.launched, helper(unread.calls)], [false, { list_exit: 1, settled: [], open: [9], stopped: [] }, false, []]);
@@ -688,7 +831,7 @@ Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, 
         const stopped = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
         assert(stopped.ok, stopped.output);
         assertEquals([stopped.settle, stopped.launched, helper(stopped.calls)],
-            [{ list_exit: 0, settled: [9], open: [], stopped: [{ operation_id: 9, run: "run:earlier" }] }, true, ["stop earlier run:earlier"]], status);
+            [{ list_exit: 0, settled: [9], open: [], stopped: [{ operation_id: 9, run: "run:earlier" }] }, true, ["stop earlier run:earlier", "usage mcp:66105c2c"]], status);
         const order = stopped.calls.map((call) => call.args.slice(15).join(" "));
         assert(order.findIndex((args) => args.includes(" stop earlier")) < order.findIndex((args) => args.includes("--kill-after=30")), "the stop precedes the launch");
         assertEquals([stopped.result.state, stopped.result.settled], ["done", [9]]);
@@ -704,7 +847,7 @@ Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, 
     // Two turns of one thread: its run is stopped once, and both are settled.
     const two = await phase("completed", { settle: [earlier, { ...earlier, operation_id: 10 }] }, "clean", "questions", "running");
     assertEquals([two.ok, helper(two.calls), two.settle!.settled, two.settle!.stopped],
-        [true, ["stop earlier run:earlier"], [9, 10], [{ operation_id: 9, run: "run:earlier" }, { operation_id: 10, run: "run:earlier" }]]);
+        [true, ["stop earlier run:earlier", "usage mcp:66105c2c"], [9, 10], [{ operation_id: 9, run: "run:earlier" }, { operation_id: 10, run: "run:earlier" }]]);
     // Rule (b): T3 accepted the interrupt, but its readback omits the still-active run. That is no proof: nothing is settled, touched or launched.
     const vanished = await phase("completed", { settle: [{ ...earlier, branch: "task-4970" }] }, "dirty", "questions", "running", { T3_STOP: "vanish", T3_MARK: "a".repeat(40), T3_DETACHED: "1" });
     assertEquals([vanished.ok, vanished.settle, vanished.launched, git(vanished.calls)], [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false, []]);
@@ -761,7 +904,7 @@ Deno.test({ name: "a continued answer resolves its stored requests before the se
     assert(done.ok, done.output + JSON.stringify(done.calls.map(({ args }) => args)));
     assertEquals([done.result.state, done.launched, done.result.ended], ["done", true, true]);
     assertEquals(done.calls[2].args.slice(20), ["answered", "mcp:66105c2c", "run:1", "request:1", "request:2"]);
-    assertEquals(done.calls[3].args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
+    assertEquals(done.calls[4].args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
 } });
 
 Deno.test({ name: "an answered request that stays pending refuses the turn before launch or reviewer checkout", ignore: !available, async fn() {

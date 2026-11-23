@@ -1,6 +1,6 @@
 ---
 title: "Routes"
-description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
+description: "What a Route records, how Orbit projects private and public traffic through a Node, Router, or Ingress, and which changes Orbit coordinates or refuses."
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
@@ -14,466 +14,236 @@ covers:
 
 # Routes
 
-A Route is a domain that reaches an Instance or a Node service. This page explains the Route record, domain selection, private and public traffic, and the changes that Orbit coordinates or refuses. [`route`](/cli/route) lists the commands.
+A Route maps a domain to an Instance or a Node service. This page explains the Route record, domain and scope selection, private and public traffic, multi-root serving, custom proxies, and how Orbit coordinates updates and removals. See [`route`](/cli/route) for the CLI commands.
 
-The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
-
-Route creation and updates use Node phases and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation removes its candidate, leaves the live Caddyfile unchanged and stops reload. A successful validation permits atomic publication, then reload; a later reload failure retains the validated new file for retry.
-
-The site phase converges certificates, their current links and account copies, root trust and the Caddyfile in one Node call. Private keys are copied only within their Node. Workspace access, `APP_URL`, shared environment links and PHP-FPM pool publication keep their existing order. Caddy validation precedes reload; the TLS probe still runs afterwards.
-
-The site module writes a candidate with final owner and mode, validates that file, then atomically renames it over the live Caddyfile. A repeated publication retains the existing account-copy and Caddy reload behavior, so a retry completes activation even when its files already match. See [candidate publication](/reference/caddy-configuration#native-publication).
-
-This site module is an accepted exception to rule 22 because it batches the stock modules’ Node round trips. On Beast, the isolated site phase fell from 3.260–3.308 seconds to 1.067–1.272 seconds. This includes Ansible startup and real Caddy validation/reload. This is not a general pattern: another custom module needs the same measurement.
-
-An Instance create shares its already-written Route intent and shipped assets with the site child. The child reads that input and keeps its own scratch folder, SSH pins and cleanup. It cannot remove the parent's input. Standalone Route calls and other callers prepare their own child input. Both entry forms run the same site phase.
-
-The Node CSR action creates its certificate directory as `root:caddy` with mode `0750`, then creates the private key and sets `root:caddy` ownership and mode `0640` before it returns the public request. Signing stays a separate Gateway behavior. The key never leaves its Node.
-
-"Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
-
-Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
-
-The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
-
-An Instance removal withdraws its Route with the `route-withdraw` workflow, not the Route mutation. Each Node it touches runs `route-withdraw-node`, in parallel: one Ansible `read`, one composition and one Ansible `apply`.
-
-- The composition is the same pool, Caddyfile and private DNS merge as the Route mutation, with the same revision checks.
-- The captured states apply in order against what the Node holds, so each file is written once.
-- A live file that matches none of the states stops the phase before it writes.
-- The private DNS records leave in the same step as the Caddy site of another Node, not after it.
-
-A pending domain replacement and an unchanged request change no Node, so their Operation has already succeeded and no run starts. Instance rename records its own Operation and composes the Route update.
-
-A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Wait the DNS grace` or `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
-
-| Error code | Step |
-| --- | --- |
-| `app-dev.certificate_request_failed` | `Make a CSR on the Node` |
-| `app-dev.certificate_sign_failed` | `Sign the CSR` |
-| `route.publish_failed` | `Install cert, publish site` |
-| `route.app_url_failed` | `Write the new APP_URL` |
-| `route.probe_failed` | `Probe the site over TLS` |
-| `route.ingress_firewall_failed` | `Open or close the edge` |
-| `private_dns.publication_failed` | `Move private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
-| `route.withdraw_failed` | `Withdraw the old site` |
-| `route.update_failed` | A failure outside these steps |
-
-Caddy convergence starts `operation-route-caddy` after intent commits. It reads the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. Rollback is a revert PR.
-
-Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last.
-
-The end check uses the `check` of the same official behaviors and a native assertion that each result is compliant: no site, scope or rule of the Route is left. A successful check command with a `non_compliant` result fails the removal.
-
-With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failed removal leaves the Route as it was, and its Operation records the failed step:
-
-| Error code | Step |
-| --- | --- |
-| `private_dns.publication_failed` | `Remove private DNS` |
-| `route.dns_grace_failed` | `Wait the DNS grace` |
-| `route.withdraw_failed` | `Withdraw site, remove cert` |
-| `route.pool_converge_failed` | `Converge PHP-FPM pools` |
-| `route.lan_firewall_failed` | `Remove unused LAN rules` |
-| `route.removal_check_failed` | `Check nothing is left` |
-| `route.withdrawal_failed` | A failure outside these steps |
-
-Every composing workflow that forwards an environment execution copy declares `orbit-control-inputs`. This includes both Route mutation phases and the Cluster Router root and publication phases.
-
-Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
-
-Private DNS publication runs as `route-dns-publish` inside its owning native parent. Neither direct workflow uses the scheduled result read, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
-
-A Route has one of three kinds. The kind never changes.
+A Route has one of three immutable kinds:
 
 | Kind | Owner | Serves |
 | --- | --- | --- |
-| `app` | A Project | One Instance, or an ordered pool of production Instances. Orbit creates one for every Instance of a web-serving Project. |
-| `custom_proxy` | A Node or Cluster | A service on that Node's loopback or a Node Process. See [custom proxy Routes](#custom-proxy-routes). |
-| `analytics_tracking` | One Instance | Plausible's script and event paths. See [Analytics](/reference/analytics#publish-a-tracking-host). |
+| `app` | A Project | One Instance, or an ordered pool of production Instances. Created automatically for web-serving Projects (`laravel-app`, `symfony-app`). |
+| `custom_proxy` | A Node or Cluster | A service on a Node's loopback address or a Node Process. See [Custom proxy Routes](#custom-proxy-routes). |
+| `analytics_tracking` | One Instance | Plausible script and event paths. See [Analytics](/reference/analytics#publish-a-tracking-host). |
 
-Each active Instance of a web-serving Project has exactly one Route without a web root: the Instance's own Route. An Instance can be without it only while Orbit creates it, after a failed activation, or while Orbit removes it. A development Instance can also have Routes with a web root, which [serve other directories](#serve-several-web-roots) of its checkout.
-
-A visitable development `default` serves its web root from its checkout, which each [deployment](/reference/deployments#development-defaults) updates in place. Defaults without a Route are also kept current.
-
-A successful update of a development Instance's authoritative Route clears its pending publication marker. This completion belongs to the Route, so a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
-
-On a containerized AppProd Instance, the Node’s Caddy site routes to the Instance’s selected release. Deploying or rolling back one Instance preserves its sibling Routes on the Node. See [production containers](/reference/production-containers#switch).
-
-## Route record
-
-The Gateway stores these fields for each Route. `route:show` returns them.
-
-| Field | Meaning |
-| --- | --- |
-| `kind` | `app`, `custom_proxy`, or `analytics_tracking`. |
-| `project_id` | The Project that owns an `app` Route and every one of its targets. Null for the other kinds. |
-| `node_id` or `cluster_id` | Exactly one Node or Cluster. App Cluster scope requires an active Cluster. Private custom proxies use Node scope; public Process Routes derive Cluster scope from their Ingress. |
-| `domain` | One normalized domain that no other Route owns. It never changes. A domain change creates a replacement Route. |
-| `web_root` | Null, or a repository-relative web root such as `apps/docs/public`. Null serves the Instance's effective root. See [Serve several web roots](#serve-several-web-roots). |
-| `provenance` | `generated` or `explicit`. It never changes, and Orbit does not infer it from the domain. |
-| `generation_basis_node_id` | For a generated Route, the Node whose TLD the domain uses: the current target's Node, or the last one after the target was cleared. |
-| `publication` | `private` or `public`. The Route keeps it even when it has no target. Public-edge readiness shows on `status`, `replacement_step`, `failed_step`, and Doctor. |
-| `status` | `pending`, `active`, `activating`, `retiring`, or `failed`. |
-| `failed_step`, `error_code` | The step to retry and the code that stopped it. |
-| `replaces_route_id`, `replaced_by_route_id`, `replacement_step` | A replacement pair during a domain or placement change. |
-| `target_set_step` | The recorded step of a production target-set change. |
-| `targets` | The ordered Instance targets. Only an explicit production Route can hold more than one. `target` repeats the first one. |
-| `analytics_instance_id` | The Instance of an `analytics_tracking` Route. Null for the other kinds. |
-| `upstream`, `process_id` | The loopback URL or Node Process of a custom proxy Route. |
-
-Route responses show target IDs and positions. They never show infrastructure addresses.
-
-### Check Route status with Doctor
-
-Use the native Route Operation result for Route status. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat Route lifecycle or configuration validation.
-
-## Select a domain and scope
-
-Supply a domain when you create an Instance to get an explicit Route. Otherwise Orbit generates the domain from the effective top-level domain (TLD):
-
-1. The TLD of the Node's active Cluster, when that Cluster has one.
-2. The Node TLD.
-
-When neither exists, creation stops before any source or runtime change. An `app-dev` Node must have a Node TLD or belong to an active Cluster with a TLD. An `app-prod` Node can have no TLD, because production creation supplies an explicit domain.
-
-| Instance name | Generated domain with effective TLD `test` |
-| --- | --- |
-| `default` | `<project>.test` |
-| Any other name | `<instance>.<project>.test` |
-
-The Conn [Project directory and name check](/reference/conn#threads-in-an-orbit-project) preview this same effective TLD without creating a Route.
-
-The source branch does not change the generated domain. `instance:create <project> <node> default --branch=release` still generates `<project>.test`.
-
-Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns app Routes needs exactly one active Router. Public Process Routes select their edge independently, as [public Process hostnames](#public-process-hostnames) describes.
-
-A Node keeps its own TLD while it belongs to a Cluster. [cluster](/cli/cluster#placement-and-tlds) lists which Node or Cluster may own a TLD.
-
-### Generated domains after a Project slug update
-
-A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/projects#update-a-project) owns the update lifecycle.
-
-## Create and change targets
-
-Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
-
-Creation reserves a `pending`, unpublished Route and starts one native Swamp workflow. Swamp prepares and publishes it before the Gateway records it active. An unchanged pending reservation can be retried. Failed or retiring Routes refuse a creation retry; their retained intent is available for explicit convergence. An unchanged active retry changes no Node: its Operation has already succeeded when the request returns, and no run starts. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
-
-The workflow, `operation-route-create`, has the seven steps of the [route:create chart](/cli/route/create). Each Node makes its key and CSR, and 209 has each CSR signed. A Cluster Route then allows the Router on LAN. One `route-create-site` child per Node installs the certificate and publishes the site. Then 209 probes the site over TLS, and a public Route opens the Ingress edge. A domain outside the TLD gets its private DNS beside the site install, because it needs nothing from the site.
-
-Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/ansible/route-create-site.yml`: the account, the Caddy access ACLs, PHP-FPM pools (each unit is reloaded and enabled; a stopped one starts), certificate, trust store, Caddyfile, APP_URL lines and awake markers. A production `.env` is written by its own steps after it. The other Node changes are official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
-
-The phase updates the system trust store only when it wrote a new Orbit root.
-
-With `route.create` in `ORBIT_ENGINE_KINDS`, the [Gateway engine](/reference/gateway-engine#routecreate) runs a Route that only needs the site steps instead of this workflow. It runs the same steps as typed executor actions: the Node's key and request, the Gateway's signature, one `route.publish_site` per Node and the Gateway's TLS probe. A Route that needs private DNS, the Ingress edge or a LAN rule runs this workflow. So does a Route whose Nodes have no executor with the `route` family.
-
-The Gateway builds the Caddy access ACLs as five commands for one site: two that deny the checkout, one that opens passage above the served roots, and two that grant read on the roots. Each command names every path it covers, because each command is one Ansible task on the Node.
-
-A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
-
-[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` beside its setup steps in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
-
-[Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. [`tasks.provision`](/reference/tasks#provision-an-external-group) runs the same child for a routed task workspace and signs under the same rule. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
-
-Registration captures the pending Instance's prospective site, PHP pool and TLS probe without activating its stored record. The ordinary site catalog excludes reserved Instances. The Route must answer over TLS before registration activates the Instance. The owning Instance parent can ask the site child to mark a newly prepared development runtime awake after publication. Standalone Route creation preserves the current awake state. A completed registration retry can mark it awake only after setup verifies all required Processes.
-
-[Instance cloning](/reference/instance-cloning#preview-route) runs the same CSR, sign and site children for its pending preview Route inside the clone run. The clone writes the whole `.env` itself, so the preview Route's site step writes no second copy. The clone's success activates the Route.
+Each active Instance of a web-serving Project has exactly one Route without a `web_root` (its own Route). It can also have extra Routes with a `web_root` to [serve additional directories](#serve-several-web-roots).
 
 ```bash
 orbit route:create 12 shop.example.test
 orbit route:create 14 shop.example.com --publication=public
+orbit route:create executor.orbit --node=7 --upstream=http://127.0.0.1:4788
 ```
 
-The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`, and an optional `web_root`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. A public custom proxy instead supplies `domain`, `process_id`, `publication: public`, and optional `ingress_node_id`, without `node_id`, `cluster_id`, or `upstream`. The Gateway derives routing scope from the selected Ingress; the Process keeps its own Node and Cluster membership.
+## Route record
+
+The Gateway stores these fields for each Route (`route:show` returns them without exposing infrastructure IP addresses):
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `app`, `custom_proxy`, or `analytics_tracking`. |
+| `project_id` | Owning Project for `app` Routes (`null` for other kinds). |
+| `node_id` or `cluster_id` | Exactly one Node or active Cluster scope. |
+| `domain` | Unique normalized domain. Immutable; domain changes create a replacement Route. |
+| `web_root` | `null` (Instance's effective root) or a repository-relative path such as `apps/docs/public`. |
+| `provenance` | Immutable `generated` or `explicit`. |
+| `generation_basis_node_id` | For generated Routes, the Node whose TLD derives the domain. |
+| `publication` | `private` or `public` (kept even when targetless). |
+| `status` | `pending`, `active`, `activating`, `retiring`, or `failed`. |
+| `failed_step`, `error_code` | The step and code that stopped an incomplete Operation. |
+| `replaces_route_id`, `replaced_by_route_id`, `replacement_step` | Replacement pair links and progress during a domain or placement change. |
+| `target_set_step` | Progress step of a production target-set change. |
+| `targets` | Ordered Instance targets (only explicit production Routes allow more than one). `target` repeats the first entry. |
+| `analytics_instance_id` | Target Instance for `analytics_tracking` Routes (`null` otherwise). |
+| `upstream`, `process_id` | Loopback URL or Node Process for `custom_proxy` Routes. |
+
+### Check Route status with Doctor
+
+Use the Route Operation result to inspect publication and lifecycle errors. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks role and Process liveness only; it does not repeat Route lifecycle, site, certificate, DNS, firewall, forwarding, or configuration validation.
+
+## Select a domain and scope
+
+Pass `--domain` when creating an Instance to create an explicit Route. Otherwise Orbit generates a domain from the effective top-level domain (TLD):
+
+1. The TLD of the Node's active Cluster, if set.
+2. Otherwise the Node's own TLD.
+
+If neither exists, creation stops before changing anything (`app-prod` Nodes do not need a TLD because production clones supply explicit domains). The source branch never changes the generated domain:
+
+| Instance name | Generated domain (TLD `test`) |
+| --- | --- |
+| `default` | `<project>.test` |
+| Any other name | `<instance>.<project>.test` |
+
+The Conn [Project directory and name check](/reference/conn#threads-in-an-orbit-project) previews this same effective TLD. Cluster membership decides routing scope independently of TLD: a Node in an active Cluster uses Cluster scope (requiring one active Router), and any other Node uses Node scope. See [cluster](/cli/cluster#placement-and-tlds).
+
+### Generated domains after a Project slug update
+
+Updating a Project's `slug` recomputes every generated development Route domain from the new slug, Instance name, and effective TLD by creating replacement Routes. Explicit domains never change, and default-branch updates change no Routes. See [Update a Project](/reference/projects#update-a-project).
+
+## Create and change targets
+
+Create an explicit app Route with `route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]` (API `POST /api/v1/routes` with `instance_id`, `domain`, optional `publication`, and optional `web_root`). Publication defaults to `private`, and the Instance determines the Project and Node/Cluster scope.
+
+Creation reserves a `pending` Route and starts an Operation. It generates a Node key and CSR, signs it with the Gateway CA (keys never leave the Node), configures LAN rules if clustered, installs certificates and Caddy config, probes TLS, opens public Ingress if `public`, and publishes private DNS. A failed step leaves the Route `pending` with `failed_step` and `error_code` (there is no rollback); repeat the identical request to retry. An identical retry on an active Route returns it with no Node changes. Retrying a `failed` or `retiring` Route returns `route.activation_unsupported` (409).
+
+When `route.create` is enabled in `ORBIT_ENGINE_KINDS` and the Route needs only site publication and private DNS (no Ingress edge or LAN rules), the [Gateway engine](/reference/gateway-engine#routecreate) executes it directly via typed Node executor actions.
 
 | Creation refusal | Meaning |
 | --- | --- |
-| `route.domain_invalid` | The domain is not a valid domain. |
-| `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.ai-router.orbit`. |
-| `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
-| `route.scope_required` | A private custom proxy needs a Node; a public custom proxy needs a Process and optional Ingress. |
-| `route.target_inactive` | The Instance is not active. |
-| `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
-| `route.target_conflict` | The target Instance already has a Route without a web root. |
-| `route.web_root_release_missing` | A `web_root` names a production Instance that has no selected release. |
-| `route.web_root_unsafe` | A production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
-| `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
-| `route.router_required` | The Cluster has no active Router. |
-| `route.instance_inactive` | The Instance is neither being provisioned nor active. |
-| `route.node_inactive` | The custom proxy's Node is not active, or has no WireGuard address. |
-| `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
-| `route.upstream_unresolved` | The Process has no single supported listener for this publication. |
-| `route.process_conflict` | The Process is not a Node Process on the serving Node. |
-| `process.runtime_lock_failed` | Process Route creation could not acquire the Process runtime lock within its bounded wait. No Route was reserved. |
+| `route.domain_invalid` | Invalid domain (HTTP validation also returns `422 validation.failed`). |
+| `route.domain_conflict` | Domain is already owned or reserved (`gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, `collector.ai-router.orbit`). |
+| `route.retry_conflict` | Domain already exists with a different Instance, publication, or custom proxy configuration. |
+| `route.activation_unsupported` | Retrying creation on a `failed` or `retiring` Route. |
+| `route.scope_required` | Private custom proxy requires a Node; public custom proxy requires a Process and optional Ingress. |
+| `route.target_inactive` | Target Instance is not active. |
+| `route.target_web_root_unsupported` | Target Instance has no supported relative web root (such as `.`). |
+| `route.target_conflict` | Target Instance already has a Route without a web root. |
+| `route.web_root_release_missing` | Production `web_root` Route requested before the Instance has a selected release. |
+| `route.web_root_unsafe` | Production web root would expose `.env` or sits in the default directory without matching the Instance root. |
+| `app-prod.web_root_invalid` | Production release is missing the web root or application directory, or contains a symlink. |
+| `route.router_required` | Cluster has no active Router. |
+| `route.instance_inactive` | Instance is neither provisioning nor active. |
+| `route.node_inactive` | Custom proxy Node is inactive or lacks a WireGuard address. |
+| `route.upstream_invalid` | Upstream is not a loopback HTTP URL. |
+| `route.upstream_unresolved` | Process has no single supported TCP listener for this publication. |
+| `route.process_conflict` | Process is not a Node Process on the serving Node. |
 
-A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
+Single-target updates (`route:target:set` and `route:target:unset`) follow these rules:
 
 | Change | Result |
 | --- | --- |
-| Set the current target again | The unchanged Route. On a Route that is not `active`, the Gateway grants the target's source access again. |
-| Clear an empty Route | The unchanged Route; the CLI reports `Skipped — no target (route.target_unchanged)`. |
-| Set an Instance that belongs to another Route | `route.target_conflict`. Both associations stay. |
-| Replace or clear a target, or remove the Route, when that detaches an active Instance | `route.target_conflict`. Nothing changes. |
-| Clear the target of a replacement Route that never activated | `route.target_conflict`. Remove the replacement with `route:destroy` instead. |
+| Set the current target again | Returns the unchanged Route with no Node run. |
+| Clear an empty Route (`route:target:unset`) | Record-only; returns the unchanged Route with no Operation. |
+| Set an Instance owned by another Route | `route.target_conflict`. |
+| Detach an active Instance or unset a pending replacement | `route.target_conflict` (use `route:destroy` to abandon a pending replacement). |
 | Change the target of an `active` Route | `route.reconciliation_required`. |
-| Set an Instance of another Project, or an inactive Instance | `route.target_app_conflict` or `route.target_inactive`. |
+| Set another Project's or an inactive Instance | `route.target_app_conflict` or `route.target_inactive`. |
 | Set a generated target without an effective TLD | `route.tld_required`. |
-| Change a Route of another kind | `route.kind_unsupported`. |
-| Set a target while another operation holds the projection lock | `app-dev.projection_busy`. Nothing changes. |
-| Set a development target on a published Route when the publish step fails | `route.publish_failed` at step `Install cert, publish site`. The target stays set. |
+| Change a non-`app` Route | `route.kind_unsupported`. |
+| Set a target while another Instance environment operation runs | `env.operation_busy`. |
+| Publish step fails on a published development Route | `route.publish_failed`; new target stays recorded for retry. |
 
-Setting a target on a generated Route moves its generation basis, scope, and domain with the target. When the domain changes, a replacement Route takes the target.
-
-Setting a development target on a Route whose sites are published moves the site to the target's checkout with `route:create`'s publish step. `instance:create` already gave Caddy access to that checkout. A Route whose sites are not published only records the target: its Operation has already succeeded, and the Route publishes when it converges. [Native Route targets](/reference/native-route-targets) describes the run.
-
-The Gateway takes the [projection lock](#coordinate-publication) before it reads the Route, so `app-dev.projection_busy` returns before anything changes. The target is stored before the run starts. When the run fails, the new target stays set. Set the same target on that Route again.
+Setting a target on a generated Route moves its generation basis, scope, and domain with the target (creating a replacement Route if the domain changes). On unpublished Routes, `route:target:set` only records the target; on published development Routes, it republishes the site. See [Native Route targets](/reference/native-route-targets).
 
 ### Change a production target set
 
-An operator sends the complete ordered Instance set for one explicit, Cluster-scoped production Route. Every target must be an active production Instance of the Route's Project, on a distinct active `app-prod` Node in the same Cluster. The Cluster needs no TLD. The request can take an Instance from another Route in that Cluster.
+Send the complete ordered Instance list for an explicit, Cluster-scoped production Route. Every target must be an active production Instance of the same Project on distinct active `app-prod` Nodes in that Cluster.
 
-A change that detaches an Instance must name it in `dispositions`, also when the Instance is not active. Each disposition either reassigns the Instance to a compatible explicit Route or authorizes its removal. A `pending` destination Route becomes `active` when it receives a reassigned Instance. No request removes an Instance unless `remove` is true for it. The Gateway refuses caller-supplied backend URLs, Node addresses, Caddy directives, and balancing fields.
-
-One run stages each added target's runtime, certificates, Caddy site and `.env`, and probes it over TLS before the target joins the Router pool. Then it switches the Router pool and retires what no Route needs. An identical completed request changes nothing. [Native Route targets](/reference/native-route-targets) lists the steps and their error codes.
-
-The Gateway records the requested set before it starts, and writes the new associations from the run's result. A failure before the Router switch keeps the original associations; staged sites serve no traffic. A failure after the switch writes the new associations, because the new pool serves, and keeps the recorded set and `failed_step`. The recorded set stays until the change completes, so the same request runs again and a different request returns `route.target_set_conflict`. There is no rollback.
+Any detached Instance must appear in `dispositions` (either reassigned to a compatible explicit Route or marked `remove: true`). Orbit stages each added target's runtime, certificates, Caddy site, and `.env`, probes TLS, switches the Router pool, and retires unused targets. There is no rollback: failures before the Router switch keep original associations; failures after the switch commit the new associations and record `failed_step` for an identical retry.
 
 | Error code | Meaning |
 | --- | --- |
-| `route.pool_unsupported` | The Route or a target cannot own or join a production pool, such as a generated Route or an `app-dev` target. |
-| `route.target_conflict` | The set holds a duplicate Instance or two targets on one Node. |
-| `route.target_app_conflict` | A target or reassignment destination belongs to another Project. |
-| `route.target_scope_conflict` | A target or destination is outside the Route's Cluster or not on an active `app-prod` Node. |
-| `route.target_inactive` | A target Instance is missing or not active. |
-| `route.target_web_root_unsupported` | A target Instance has no supported relative web root. |
-| `route.target_disposition_required` | A detached active Instance has no disposition. |
-| `route.target_disposition_invalid` | A disposition names an invalid destination or both reassigns and removes. |
-| `route.target_set_conflict` | Another target-set change is recorded on the Route. |
-| `route.web_root_unsupported` | The Route has a web root. It keeps one target. |
+| `route.pool_unsupported` | Route or target cannot join a production pool (such as generated or `app-dev`). |
+| `route.target_conflict` | Duplicate Instance or two targets on the same Node. |
+| `route.target_app_conflict` | Target or reassignment Route belongs to another Project. |
+| `route.target_scope_conflict` | Target or destination is outside the Cluster or not on an active `app-prod` Node. |
+| `route.target_inactive` | Target Instance is missing or inactive. |
+| `route.target_web_root_unsupported` | Target Instance lacks a supported relative web root. |
+| `route.target_disposition_required` | Detached Instance has no disposition. |
+| `route.target_disposition_invalid` | Disposition names an invalid destination or both reassigns and removes. |
+| `route.target_set_conflict` | Another target-set change is already in progress on the Route. |
+| `route.target_set_recovery_required` | Previous target-set failure must be retried or recovered first. |
+| `route.web_root_unsupported` | Routes with a `web_root` keep a single target. |
 
 ### Serve a production pool
 
-Router Caddy publishes one site for the Route domain and spreads requests over the targets with round-robin. It never replays a failed request on another target. A connection or TLS failure excludes that target for 10 seconds, and then the target is eligible again. An application HTTP error, such as a 500, does not exclude a target or change Instance state.
+Router Caddy load-balances production pools with round-robin and never replays failed requests. A connection or TLS failure marks that target unhealthy for 10 seconds; application HTTP errors (such as 500) do not exclude a target. Empty pools and backend connection errors return HTTP `503` with `Orbit Route unavailable` (never exposing backend IPs). Round-robin has no sticky sessions, so pooled apps must share a session store.
 
-An empty pool answers HTTP 503 with `Orbit Route unavailable`. A failed connection to a target, which Caddy reports as 502, gets the same 503 answer. When every target is excluded, Caddy answers 503 with an empty body. No answer shows a backend address. A new request never goes to a removed target once the new pool is published. A request in progress does not delay target or Instance removal.
-
-Orbit does not change session, cookie, or encryption settings when it builds a pool. Shared sessions need the application to use one shared session store and compatible cookie settings. Round-robin does not pin a client to one target.
-
-An Instance in a container is served by FrankenPHP in the container. Its Route's site proxies to port 8080 of the container's bridge address, with no PHP pool or checkout access on the Node. See [the default Instance](/reference/development-containers#the-default-instance). The site of a development container first checks the Instance's asleep marker; a request that finds it goes to the runtime activation endpoint, as [Sleep and wake](/reference/development-containers#sleep-and-wake) describes. The site also writes an access log, whose time is the Instance's HTTP activity for the idle sleep; a probe and a request that meets the marker are not logged.
-
-The activation endpoint holds the request while the Instance wakes. A woken Instance answers 307 to the visitor's own path and query, which the awake app then serves. A failed or late wake answers a plain-text 503. Caddy returns either answer to the visitor unchanged.
-
-The activation proxy takes its upstream, its method (GET) and its `Host` from `DevelopmentCaddyConfigRenderer::activationTarget()`. `orbit:executor-parity` checks each Node's loaded config against it ([Activation proxy](/reference/executor#activation-proxy)).
-
-A private Route of a clone also gets a development site on port 444 of the Node's WireGuard address. The Node redirects WireGuard connections to its free ports from 1024 to this site, which proxies to the port the client named in the container, such as `https://<domain>:5173`. A public Route gets none. See [Agent development servers](/reference/development-containers#agent-development-servers).
+Containerized Instances are served by FrankenPHP inside the container, proxied by Node Caddy over the container bridge on port 8080. Development container sites check the asleep marker and forward sleeping requests to the wake endpoint (holding until awake and redirecting `307`, or returning `503` on wake failure). Private clone Routes also open a port-444 development proxy for container dev ports (see [Agent development servers](/reference/development-containers#agent-development-servers)).
 
 ## Serve several web roots
 
-A Project has one repository. An Instance is one checkout of it, and it can serve several sites: one Route for each web root. A Route's `web_root` names a directory relative to the repository, such as `apps/docs/public`. Null serves the Instance's effective root, as every Route did before.
+One Instance checkout or release can serve multiple sites by creating extra Routes with `--web-root=PATH` (API `web_root`; `null` clears it):
 
 ```bash
 orbit route:create 12 docs.shop.test --web-root=apps/docs/public
 orbit route:update 14 --web-root=apps/admin/public
 ```
 
-The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{route}`; `null` clears it. A web root follows the [Project root](/reference/projects#fields) rules: a normalized relative path, without `.` or `..` segments, and not absolute. A bad value fails with HTTP 422 `validation.failed` on `web_root`. Serving refuses a web root that is missing or holds a symlink, with `app-dev.source_access_failed` in development, as in [Node scope](#node-scope), and `app-prod.web_root_invalid` in production. In development, Caddy may read the checkout's web roots and nothing else of it, not `.git`; [Caddy configuration](/reference/caddy-configuration) describes the access grant.
+A `web_root` follows [Project root](/reference/projects#fields) validation rules (relative path, no `.` or `..`, no symlinks). Missing or symlinked roots fail with `app-dev.source_access_failed` in development or `app-prod.web_root_invalid` in production.
 
-| Rule | Result |
+| Aspect | Behavior |
 | --- | --- |
-| Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
-| Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
-| PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
-| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
-| Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
-| Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
-| Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#placement-and-publication). |
-| Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
-| Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
-| Production | Served from the selected release. See [Web roots on production](#web-roots-on-production). |
+| Own Route | Each `laravel-app` or `symfony-app` keeps one Route without `web_root` (`route.web_root_conflict` if altered). |
+| Certificates | Each web-root Route gets its own leaf (`route-<id>`). |
+| PHP-FPM | One pool per application directory (`orbit-app-instance-<id>-<suffix>`), shared across Routes serving that directory. |
+| `APP_URL` | Written into directories containing `artisan`, using the oldest Route serving that directory. |
+| Lifecycle | Instance removal deletes web-root Routes first; transfers move them with the Instance (public ones stay in their Cluster); any Route wakes a hibernated Instance. |
 
-The default directory keeps its pool, `orbit-app-instance-<id>`. Another directory gets `orbit-app-instance-<id>-<suffix>`, where the suffix is a stable hash of its relative path. When the last Route of a directory leaves, its pool retires and its `.env` stays. Orbit writes `APP_URL` only into a directory that holds `artisan`, and a new `.env` there gets its own key.
-
-A Route with a web root keeps its domain, so a domain change returns `route.web_root_domain_immutable`. Send `web_root` on its own; combined with another field it returns `route.web_root_update_separate`.
-
-Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
+A Route with a `web_root` cannot change its domain (`route.web_root_domain_immutable`), and `web_root` must be updated alone (`route.web_root_update_separate`). Invalid transitions for `web_root` also refuse with `route.web_root_unsupported` or `route.target_conflict`.
 
 ### Web roots on production
 
-A production Instance serves each web root from its selected release, `<home>/current/<web root>`. Deploy the Instance first. Before Orbit stores the Route, it checks the selected release: without `current`, creation fails with `route.web_root_release_missing`; a missing web root or application directory, or a link in the web root, fails with `app-prod.web_root_invalid`. Creation and a web-root change wait for a deployment or rollback of the Instance.
-
-| Part | Production behavior |
-| --- | --- |
-| PHP-FPM | One more pool under the Instance's dedicated master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock`. See [PHP runtimes](/reference/php-runtime#production-runtime). |
-| `.env` | A stable file, `<home>/env/<directory>/.env`. Each release links its `<directory>/.env` to that file. Orbit writes `APP_URL` there, and a new file gets its own key. |
-| Create or change | Orbit links the `.env` and grants Caddy access in the selected release before the pool starts. |
-| Deploy and roll back | A new release gets links before deploy steps, or fails preparation without the directory. Activation checks each web root, links, and grants Caddy access before the switch. See [releases](/reference/deployments#the-production-home). |
-| Failed creation | The Route becomes `failed`, and Orbit withdraws its pool and site. Deployments, pools, and Doctor count only active Routes. Remove it with `route:destroy`. |
-| Own Route | The only Route without a web root keeps it. A web root on it returns `route.web_root_conflict`, also for a `monorepo` Instance. |
-| Removal | The pool leaves with the Route. `<home>/env/` stays. Instance removal first removes these Routes, as in development. |
-| Target set | The Route keeps one target. A target-set change, or a move to a production Instance, returns `route.web_root_unsupported`. |
-
-A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`.
-
-A Route that repeats the Instance root reuses the primary application, PHP pool and stable `<home>/.env`. Its preparation does not add that root to the list of separate applications or relink its existing `.env`, including before the Route target association is published. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
-
-Follow-up: a transfer that moves a public Route with a web root to another Cluster.
+Production web roots serve from `<home>/current/<web_root>`. Deploy the Instance first (`route.web_root_release_missing` if `current` is absent). Each directory gets its own pool under the Instance's PHP-FPM master (`orbit-<user>-<suffix>`) and stable `<home>/env/<directory>/.env` linked into each release. No web root may contain a `.env` or nest inside the primary web root (`route.web_root_unsafe`). A Route repeating the primary Instance root reuses the primary pool and `<home>/.env`. Failed creations become `failed` and must be removed with `route:destroy`.
 
 ## Custom proxy Routes
 
-A custom proxy Route publishes an exact domain for a service that already runs on one managed Node. It creates no Project, PHP handler, or document root.
+A custom proxy Route exposes a domain for a service already running on a managed Node, without creating a Project or PHP-FPM pool:
 
 ```bash
 orbit route:create executor.orbit --node=7 --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=7 --process=21
 ```
 
-The first form stores a loopback URL. The second form stores a Node Process and resolves its listener to a loopback or Node-local address.
-
-| Rule | Result |
+| Rule | Behavior |
 | --- | --- |
-| Domain | Any unique DNS domain, such as `executor.orbit`, `grafana.internal`, or `something.test`. No Cluster TLD, Node TLD, or `.orbit` suffix is required. |
-| Uniqueness | Fleet-wide, across every Route kind and the reserved platform names. Core reserves its own names, and an [extension](/reference/extensions#plug-in-points) can reserve more, such as `collector.ai-router.orbit`. `cli-proxy-api.orbit` is not reserved. |
-| Owner and scope | Private: the serving Node. Public: the selected active Ingress, with scope derived from its Cluster. The Process Node can be outside that Cluster and needs no role. |
-| Publication | Private with Node scope; public with a Process ID and optional Ingress selection. |
-| Upstream | Private: HTTP on `127.0.0.1`, `localhost`, or `::1`, or the listener of a Node Process on the serving Node. A remote URL is refused. |
-| Caddy | Private: the serving Node's site terminates Orbit CA TLS and proxies HTTP to the upstream. It keeps `Host` and admits streaming and WebSocket upgrades. |
-| DNS | Private: an exact private record answers with the serving Node. The Cluster Router is not a hop. The record wins over a Cluster TLD answer for the same name. |
-| Create | Private: stores the Route, issues the Orbit CA leaf, builds Caddy, then publishes DNS. Success returns an `active` Route. An identical retry returns the stored Route and converges nothing. |
-| Destroy | Withdraws the site and DNS record. Private Routes remove the leaf; public Routes reconcile the Ingress firewall. Destroy again to retry a failure. |
-| Node removal | Refused while the Node serves a custom proxy Route, with `node.has_routes` or `route.reconciliation_required`. |
-| Process update | Allowed when the resulting specification keeps every targeting Route's single resolved TCP listener at the same address and host port. Otherwise refused with `process.route_upstream_changed` (409), naming the Route. |
-| Process removal | Refused while a custom proxy Route targets the Process, with `process.has_routes`. |
+| Domain | Any fleet-unique DNS domain (no `.orbit` or TLD required; reserved platform names are blocked). |
+| Scope | Private uses the serving Node; public uses the selected Ingress's Cluster. |
+| Upstream | Private accepts loopback HTTP (`127.0.0.1`, `localhost`, `::1`) or a Node Process listener on that Node. |
+| Caddy & DNS | Terminates Orbit CA TLS (private) or Let's Encrypt (public), keeps `Host`, supports streaming and WebSockets, and publishes an exact private DNS record. |
+| Guards | Refuses Node removal (`node.has_routes`), Process removal (`process.has_routes`), and Process updates that move the resolved listener (`process.route_upstream_changed` 409). |
 
-To recover a `failed` private custom proxy create, destroy the Route and create it again. Repeat the identical public Process creation request to resume activation. Destroy withdraws its public site and reconciles the Ingress firewall; repeat destroy after a failure.
+To recover a `failed` private custom proxy, destroy and recreate it; for a public Process Route, repeat the create command. Create a custom proxy Route before the first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) if you have hand-placed Caddy sites (see [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname)).
 
 ### Stored private TLS upstreams
 
-A managed service relocation can retain its private Route and DNS on the serving Node while forwarding over TLS to another active Node's WireGuard listener. This is a stored recovery intent, not an additional `route:create` input: the public API still accepts only loopback HTTP URLs. An approved relocation records the backend Node in the custom proxy's `node_id` and an HTTPS URL with an explicit port in its `upstream` field. The Route's `node_id` still identifies the serving Node, and both Nodes remain protected from removal.
-
-The renderer requires that the address belongs to an active managed Node and that the serving Node already has access to it. It refuses public addresses, hostnames, credentials, paths, query strings and fragments. Caddy verifies the upstream against the Orbit CA, sends the Route domain as Host and TLS SNI, uses HTTP/1.1, and preserves streaming and WebSocket upgrades. Rebuilds derive this configuration from stored Route state. This operation creates no access edge, firewall opening, certificate or DNS change.
-
-The Doctor probe for custom proxies accepts only loopback addresses. For this remote variant it reports `route.inspection_failed`. Verify the rendered site and authenticated service response during recovery.
+During a managed service relocation, a private custom proxy can store a backend Node ID and HTTPS WireGuard URL with an explicit port. The serving Node keeps its private domain while forwarding over Orbit CA TLS (preserving `Host`, SNI, streaming, and WebSockets). This is an internal relocation state, not a public `route:create` option, and keeps both Nodes protected from removal.
 
 ### Public Process hostnames
 
-Give a Node Process its own public hostname through a selected Cluster Ingress.
+Expose a Node-owned Docker Process publicly through a Cluster Ingress:
 
 ```bash
 orbit route:create sync.example.com --process=267 --publication=public
 ```
 
-The API body is `{"domain":"sync.example.com","process_id":267,"publication":"public"}`. Add `ingress_node_id` or CLI `--ingress=<node>` to select an active Ingress by ID (the CLI takes only numeric IDs). By default, Orbit selects the public Ingress of the Process Node's Cluster. For a Process Node outside a Cluster, Orbit selects the single active Ingress serving existing active public app Routes. No candidate returns `route.ingress_required`; multiple candidates return `route.ingress_ambiguous`. An explicit Ingress must be active with an active `ingress` role.
+Pass `--ingress=<node>` (Node name or numeric ID; API `ingress_node_id`; `--process` takes a numeric ID) to pick the Ingress explicitly. Otherwise Orbit picks the Process Node's Cluster Ingress, or the sole active public Ingress if outside a Cluster (missing returns `route.ingress_required`, multiple returns `route.ingress_ambiguous`).
 
-The stored Route has that Ingress's Cluster scope. Orbit never changes the Process Node's Cluster membership or Caddy sites. The caller needs command access to the selected Ingress and the Process Node; unrelated Cluster members need no grant.
+If both Nodes share a recorded IPv4 `/24` LAN, Orbit selects the Process Node's LAN address (requiring an active managed `orbit:` TCP allow rule for that Ingress LAN source and port, or refusing with `route.upstream_firewall_mismatch`); otherwise it uses WireGuard. The Process must publish exactly one TCP listener on that address (`route.upstream_unresolved` otherwise; loopback, wildcard, and UDP listeners are ineligible). Activation probes the listener with HTTP HEAD (10-second timeout; failure returns `route.upstream_unreachable`).
 
-The Process must be an active Node-owned Docker Process on an active Linux Node. When both Nodes have recorded IPv4 LAN addresses in the same /24, Orbit selects the Process Node's LAN address; otherwise it selects WireGuard. Cluster membership does not affect address selection.
-
-The Process must publish exactly one TCP listener on that selected address. A missing or ambiguous listener returns `route.upstream_unresolved` before storing intent. Orbit never rewrites published ports or falls back from a missing LAN listener to WireGuard. Add the LAN publication with `process:update` first. Loopback, wildcard, and UDP listeners are ineligible. A raw `upstream` stays private and loopback-only. Public Process IDs are numeric. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
-
-The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
-
-Private DNS answers with the Ingress's WireGuard address, also for a requester on the Router's LAN. The Router serves no site for the hostname, so the name never gets the Router LAN answer.
-
-Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
-
-The Gateway supplies the selected address, port, Route domain and eligible managed firewall shapes to the native workflow. Swamp checks the Process Node firewall and sends HEAD from the Ingress with the Route's Host header, bypasses HTTP proxies, and waits at most ten seconds. Any HTTP status proves reachability; it does not follow redirects or require application success.
-
-It keeps the activation for retry and Doctor reports the blocked path. Orbit adds no hidden firewall opening or Process port rewrite. Use the managed [firewall commands](/cli/firewall) to allow the selected LAN source before retrying. Docker publications bypass UFW, as that page explains; this check requires recorded firewall intent and does not make UFW an isolation boundary for Docker.
-
-Node convergence restores the WireGuard member rule; Ingress convergence rebuilds the public site and HTTP rules. Removing the last public Route closes the public Ingress rules, including after offline residue cleanup. Process removal stays refused with `process.has_routes`.
-
-Configuration and image updates are allowed when they preserve the Route's resolved upstream; see [Process updates](/reference/processes-and-schedules#update-in-place). The Route keeps its ID, active state, site, certificate, DNS, and firewall rules. A container replacement can briefly interrupt requests while the listener restarts. Caddy reconnects to the same upstream; no Route activation or rebuild is needed.
-
-Process Route creation and Process updates serialize their admission transactions in the Gateway database. Creation reads and resolves the current Process listener inside that transaction. If creation reserves the Route first, an update must preserve that Route's listener.
-
-The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on a Node backs up and stops serving any hand-placed Caddy site. Create a custom proxy Route for such a site before that build. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) shows an example.
+Ingress terminates public Let's Encrypt TLS, proxies directly to the Process listener with a 1-hour read/header timeout (supporting streaming and WebSockets), and needs no Router hop. Private DNS points at the Ingress WireGuard address; configure public DNS yourself. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
 
 ## Set up private traffic
 
-Route publication, withdrawal, and rollback send private DNS children only to active Nodes with an active `vpn` role. A separate Gateway is a DNS client, so its `gateway` role does not make it a publication target. When both roles share a Node, that Node receives one child. The Node footprint stages the listener release and units; the publication child validates and writes its catalog before activating an installed but inactive socket. A missing socket remains a refusal.
-
-The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules of a new Route before it publishes private DNS. It publishes DNS last and then marks the Route and Instance active. It does not wait for the application to answer successfully.
+Orbit prepares runtimes, certificates, Caddy sites, and firewall rules before publishing private DNS to active `vpn` Nodes last, then marks the Route active without waiting for an HTTP 200 from the app.
 
 ### Certificate request forms
 
-The Node workflows and the remaining agent certificate command use the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. Instance create and the name check keep their 64-character domain limit while this producer release becomes the rollback target. The domain rule and existing responses are unchanged.
-
-The Gateway accepts two CSR forms: common name equal to the admitted domain, with either no SAN or exactly that DNS SAN; or the fixed short common name `Orbit` with exactly one DNS SAN equal to the admitted domain. It always signs the admitted domain into the leaf SAN. Caddy, TLS probes and certificate reuse check SAN, so existing leaves remain valid.
-
-Remove the old request form only when no Node, queued or in-flight run, or supported rollback release can send it. The producers are `route-create-csr`, `route-certificate-publish`, `node-role-certificate-publish` and the remaining agent producer in [dev_certificates.rs](https://github.com/hardimpactdev/orbit/blob/main/apps/agent/src/commands/dev_certificates.rs#L313). Refreshing workflows alone does not retire that agent or old rollback releases. The agent source release needs a separate binary pin promotion and verified installation on the affected Nodes before the Instance domain limit can rise. A supported rollback target must retain both the SAN-capable workflows and the fixed agent pin.
+Node workflows and the agent generate CSRs with common name `Orbit` and a single DNS SAN matching the admitted domain. The Gateway signs the domain into the leaf SAN and accepts both legacy domain-CN and `Orbit`-CN CSRs so rolling upgrades stay compatible.
 
 ### Node scope
 
-Private DNS points the domain at the workload Node. Its Caddy terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the Instance's web root.
-
-Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Route publication skips missing optional Laravel storage paths, including their missing parents; it creates no checkout directories. A missing web root still fails. The site phase records Ansible failure text on stderr; secret-bearing tasks keep their output private.
-
-Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
-
-This preparation walks only the Instance's checkout and served checkouts nested in it. Other checkouts on the Node keep the access their own Route granted.
+Private DNS points at the workload Node, where Caddy terminates Orbit CA TLS and serves the web root. Development site preparation grants Caddy read access to the web root and traversal to parent directories while denying the rest of the checkout and `.git` (symlinks inside the web root are refused except Laravel's `public/storage`). Failures restore prior permissions and report `app-dev.source_access_failed`.
 
 #### Caddy access
 
-Swamp publishes development TLS leaves under `/etc/caddy/orbit-certificates/<scope>`. It creates the shared `orbit-certificates` directory on first publication. That directory, the scope directory, its `versions` directory, and each certificate version belong to `root:caddy` with mode `0750`. Caddy can traverse the complete path to the certificate and its group-readable private key.
-
-Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The Node agent's `instance.grant-development-caddy-access` runs it. Its ACL tools run as the managed user, in this order:
-
-1. Deny Caddy the whole checkout and its Git directory, including the default ACL of every directory, so new files stay closed too.
-2. Grant Caddy read access to the web root and to the Laravel public storage target.
-3. Grant Caddy execute access on each directory above the web root that it cannot enter yet. Caddy can pass through those directories but cannot list them.
-
-Every deny comes before any grant, so a served checkout nested in another keeps its own web root. No change follows a symlink. The managed user changes its own entries. An entry that the managed user does not own fails the preparation with "Operation not permitted"; the walk never skips it. The agent acts as root only on a directory above every checkout that root owns, on a path that root owns from `/` down, such as an apps root's parent. Root never changes anything at or below a checkout.
-
-The grants keep each entry's mask. A file or directory whose mode hides it from the group class, such as a mode 0600 environment file, stays hidden from Caddy even when it lies in the web root. Only the passage grant on a directory adds execute to its mask. When Caddy still cannot read the web root or the public storage target, the preparation fails with `instance.caddy_access_failed` and names it. When Caddy cannot read some entries in them, the preparation succeeds, and the agent's result lists up to 100 of those entries.
-
-Setup can run while the walk runs, for a task VM workspace whose Route follows its baseline start. An entry that vanishes during the walk needs no change, and the walk does not fail for it. A new entry inherits the default ACL of its directory.
-
-Before it changes access, the walk saves the ACLs of what it grants: the web root, the public storage target, the directories above them, and the Git directory. The saved ACLs live in a private directory under `/var/tmp`, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. Only the managed user can enter that directory. Root-owned directories go in a separate file that only root restores.
-
-When the preparation fails, the walk restores the saved ACLs, and the deny on the rest of the checkout stays. So a failure never widens access. When the restore fails, the saved directory stays, and the error `instance.caddy_access_recovery_failed` names it in `snapshots`. The next walk removes the managed user's saved directories that are older than three days.
+Development TLS leaves live under `/etc/caddy/orbit-certificates/<scope>` (`root:caddy`, mode `0750`). For host checkouts, the Node agent updates ACLs as the managed user. It denies the checkout and `.git` first, grants read on the web root and Laravel public storage target, and grants traverse on parent directories while preserving masks so `0600` `.env` files stay private. Saved ACL snapshots live under `/var/tmp` and restore automatically on failure (`instance.caddy_access_failed` / `instance.caddy_access_recovery_failed`).
 
 ### Cluster scope
 
-Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets. A Route change names a Route in those answers only while the fleet it captures has a site for it. So a withdrawn Route, or a failed create that is undone, loses its answer in the same Operation.
-
-A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
-
-Router Caddy forwards Orbit CA HTTPS to the workload Node and keeps the domain as the HTTP `Host` value and the TLS server name. The Router and the workload Node get separate private keys. The Router uses the workload Node's LAN address when the Node has one, and its WireGuard address otherwise. A configured LAN address that does not answer fails publication. Orbit never falls back to WireGuard, also not per target in a pool.
-
-Route LAN rules keep the source-only tuple shape: allow TCP443 from the recorded Router LAN source on the workload Node, without a destination or Route comment. The Gateway captures the complete Node-wide set of unique tuples. Identical tuples are shared by Routes: withdrawal keeps one while another published Route still needs it. Route listeners and the Router's selected LAN upstream stay unchanged.
-
-Route parents withdraw LAN tuples through the shared `route-lan-apply` child on Node209, using official SSH with the admitted host pins. The captured public input contains the desired tuples and existing target connection. It removes only tuples that no published Route still needs; every Node finished the one-time migration to these rules. LAN withdrawal starts no separate Operation. See [Route LAN firewall](/reference/route-lan-command).
-
-Before publication, `route.verify-certificate` checks the admitted workload or Router endpoint from the control worker. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by the control worker. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway records the validated placement and public error mapping; Swamp drives the activation order. Router replacement uses the same commands.
-
-Native Route parents run their captured TLS or HTTP probes inside their own workflow. A failed probe fails its parent run; verification starts no separate Operation. The admitted protocol, endpoint and Route domain stay fixed for that run.
-
-Caddy and private DNS publication use direct workflows. The direct kinds expose no `/operation-executor` run allowlist. Caddy runs locally on its exact admitted Node; private DNS retains its existing publication primitive. Residue and Instance cleanup still use the shared transports until their owning cutover. The old `/route-publications` relay URLs are removed; callers use the shared bound Operation API.
-
-The workflow uses the shared direct Operation read/result endpoints and no Gateway execution relay. Certificate mutations retain their current executor until their workflow uses sudo from the Node account and passes its cutover proof; verification needs no privilege change.
-
-When the Router and the workload share one Node, one Caddy service serves the Route and sends the request to the local runtime. It never proxies to its own HTTPS listener. A pool that mixes a local and a remote target serves the local target through an internal Unix listener.
+Private DNS points the Route domain and Cluster TLD at the Cluster Router (see [Private DNS](/reference/private-dns#cluster-router-addresses)). Router Caddy forwards Orbit CA HTTPS to each workload Node (using LAN if configured, otherwise WireGuard, with no silent fallback) and opens TCP 443 LAN rules scoped by Router source on workload Nodes (see [Route LAN firewall](/reference/route-lan-command)). When Router and workload share a Node, one Caddy instance serves locally without proxying to itself.
 
 ### Development-server endpoint
 
-The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) on the Route's HTTPS domain, on port 443. For a checkout Instance, workload Caddy proxies that path to the assigned `vite_port` on loopback and keeps the path prefix. For a container with a migrated `vp-dev` Process, it uses the container’s bridge address and assigned port. When the Instance has no assigned `vite_port`, Caddy does not proxy that path. Router Caddy forwards it like any other path. HTTPS and WSS terminate with the Route's Orbit CA certificates.
-
-Each development Instance on a Node has its own port, and separate Nodes can reuse a port. See [Assigned Vite ports](/reference/assigned-vite-ports). When nothing listens on the port, Caddy returns a proxy error for that path only, and never picks another Instance.
-
-A development systemd Process gets these values from the Route domain:
+The reserved path `/__orbit/vite` proxies frontend dev assets and HMR over the Route's HTTPS origin (port 443) to the Instance's assigned `vite_port` (see [Assigned Vite ports](/reference/assigned-vite-ports)). Development systemd Processes receive these environment variables:
 
 | Variable | Value |
 | --- | --- |
 | `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-domain>/__orbit/vite` |
-| `DEV_SERVER_ORIGIN` | The same address, for the `vp-dev` preset only when its own Process environment does not supply this name |
-| `ORBIT_DEV_SERVER_HOST` | The Route domain |
+| `DEV_SERVER_ORIGIN` | Same URL for the `vp-dev` preset unless overridden in Process env |
+| `ORBIT_DEV_SERVER_HOST` | Route domain |
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
-| `ORBIT_DEV_SERVER_PORT` | The Instance's assigned port |
+| `ORBIT_DEV_SERVER_PORT` | Assigned `vite_port` |
 
-The `vp-dev` preset supplies `DEV_SERVER_ORIGIN` so Project configuration can read the public address without an Orbit-specific environment name. A value supplied in the Process environment wins; Orbit adds nothing in that case.
-
-`DEV_SERVER_ORIGIN` has no `VITE_` prefix, so Vite does not expose it to client code by default. [Process runtime environment](/reference/processes-and-schedules#runtime-environment) describes Project precedence and when existing units receive it. The preset supplies the host, assigned port, strict-port flag and base path: a checkout binds loopback, and a container binds `0.0.0.0` so the Node can reach it.
+Configure Vite to use `DEV_SERVER_ORIGIN` with `hmr.path: 'hmr'` so `@vite` loads assets from `/__orbit/vite/` over WSS on port 443:
 
 ```js
 import { defineConfig } from 'vite'
@@ -497,542 +267,199 @@ export default defineConfig({
 })
 ```
 
-Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain the public address from `DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
-
 ### Private network trust
 
-Every active WireGuard member may reach every other active member on its WireGuard address, over every protocol and port. Each Node keeps the firewall rule `orbit:wireguard-members` for this. An access grant never limits ordinary private traffic. It authorizes only Orbit commands and Gateway API calls. `metrics.orbit` is the exception: it checks Gateway authority, as [Metrics](/reference/metrics#grafana-access) describes.
-
-On its LAN address, a Router admits HTTPS on TCP port 443 and DNS on UDP and TCP port 53 from eligible members of its active Cluster. Each source is an active registered Node with LAN and WireGuard IPv4 addresses and a WireGuard public key, excluding the Router itself. The [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) owns exact destination scope, transition ordering, Doctor checks, and rollout. An overlapping operator or unmanaged allow must be narrowed before member-only DNS isolation can be claimed. Adding firewall rules does not install Cluster DNS, switch member resolvers, or change Route answers.
-
-Public traffic enters only through Ingress, on HTTP and HTTPS. The firewall never makes a Router or workload Node a direct public endpoint. A standalone production Route is private and terminates Orbit CA TLS on its workload Node.
+Every active WireGuard member can reach every other active member over WireGuard (`orbit:wireguard-members`). Access grants authorize Orbit commands and API calls, not private network traffic (except `metrics.orbit`; see [Metrics](/reference/metrics#grafana-access)). On LAN, a Cluster Router admits TCP 443 and DNS (TCP/UDP 53) only from active Cluster members (see [Router LAN firewall](/cli/firewall#router-lan-member-rules)). Public traffic enters only through `ingress` Nodes.
 
 ## Publish a public Route
 
-A public app Route terminates HTTPS on the Cluster's Ingress, forwards privately to the Cluster's Router, and reaches the `app-prod` workload. [Public Process Routes](#public-process-hostnames) use the same Ingress and send HTTP directly to their Process. The public endpoint never shows which Node runs the workload.
+A public app Route terminates Let's Encrypt HTTPS (`tls force_automate`) on the Cluster's sole active `ingress` Node, forwards privately over Orbit CA HTTPS to the Cluster Router, and reaches `app-prod` workloads. Public DNS is managed outside Orbit. Never share `ingress` and `gateway` on the same Node.
 
-A Cluster has at most one active Ingress. The database refuses a second one. The public app edge exists only when all of these hold: the Route is Cluster-scoped, the Cluster is active, the Cluster has an active Router, and its Ingress serves. An Ingress serves while its role is active, while it converges, and after a failed convergence step. A new public activation, or its repeat on deploy, starts only while the Ingress role is active. When a condition is missing, the Route keeps `publication=public` but gets no public listener, certificate, or firewall opening.
-
-A public edge is live when the Route is `active` or `activating`, its Cluster is eligible, and its `replacement_step` is at or past `public-activated`. A finished public Route stores `ingress-firewall`, a later step. A public Route whose `replacement_step` is empty has not finished activation and has no live public site.
-
-The public app Ingress site names the domain and forwards to the Router. It never names an Instance, a workload Node, or a backend pool, so the Router keeps backend selection. Ingress forwards Orbit CA HTTPS to the Router's LAN address when the Router has one, and to its WireGuard address otherwise. It keeps the original `Host`, the HTTPS scheme, and the client address.
-
-Public TLS terminates on the Ingress with a Let's Encrypt certificate that Caddy obtains through `tls force_automate`. Orbit never pins an Orbit CA leaf on a public site, and a Let's Encrypt failure never falls back to Orbit CA. [Caddy configuration](/reference/caddy-configuration#public-ingress-certificates) describes the site block. Create the public DNS record yourself. Orbit calls no DNS provider API and stores no public IP address.
-
-When Ingress shares a Node with the Router, with `app-prod`, or with both, one Caddy service serves the public Route and never proxies to its own public listener. When the Ingress Node runs a target of the Route, its public site serves that target directly and replaces the target's private site for that host. A Router on another Node then accepts the public certificate, because the Node's system roots include the Orbit root. Until Let's Encrypt issues the certificate, that host does not complete TLS on the Node.
-
-An Ingress on its own Node reaches the Router with the system bundle, which Caddy reads each time it loads its configuration. The bundle holds the Orbit root that the `ingress` role installs, and the public roots, which an [Ingress relocation](#ingress-relocation) needs while the source still serves.
-
-On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` and `node:role:relocate` refuse `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
-
-The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-https` (port 443) only while the Cluster has at least one live public Route. When the last one leaves the public edge, the Ingress firewall step closes both rules. A new Ingress Node without a public Route has ports 80 and 443 closed to public traffic: UFW denies incoming traffic by default, and neither `orbit:ingress-http` nor `orbit:ingress-https` is present. Its only managed firewall rule is `orbit:wireguard-members`, which allows private WireGuard traffic.
+The public edge is live only when the Route is `active` or `activating`, Cluster-scoped in an active Cluster with an active Router and serving Ingress, and at or past `replacement_step: public-activated` (finished Routes store `ingress-firewall`). Otherwise the Route keeps `publication: public` without opening public listeners. UFW rules `orbit:ingress-http` (80) and `orbit:ingress-https` (443) stay open only while the Cluster has at least one live public Route.
 
 ### Publish the public edge
 
-A publication-only change keeps the Route ID and the domain. To publish, the Gateway verifies the private hops, stores `public-activated`, and builds the Ingress Node, so Caddy can obtain the certificate. Then it opens the Ingress firewall and stores `ingress-firewall`. The public site stays unreachable until those steps succeed, also when another Route already keeps the Ingress ports open. A failed step returns its error to the caller. On a Route that is not `active`, it also stores `failed_step` and `error_code`.
-
-Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
-
-A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). An app Route can be public only when its targets are production Instances. A [public Process Route](#public-process-hostnames) has no Instance targets.
-
-The Gateway refuses to remove an Ingress while any Route in its Cluster has `publication=public`.
+A publication-only change keeps the Route ID and domain: Orbit verifies private hops, records `public-activated`, rebuilds Ingress Caddy so Let's Encrypt can issue a certificate, and opens the Ingress firewall (`ingress-firewall`). Orbit never falls back to Orbit CA on public sites and does not block on ACME issuance. Changing both domain and publication creates a replacement Route.
 
 ### Ingress removal
 
-`node:role:remove NODE ingress --force` is refused with reason `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks this again when it claims the assignment. To move the Ingress to another Node, relocate it instead: a [public Process Route](#public-process-hostnames) can't become private, so it would block the removal.
-
-Making a public app Route private on a Node that holds `ingress` with `router` or `app-prod` is a known limit: the intermediate build puts the Ingress site and the private site on the same address and fails with `caddy.render_failed`. Relocate the Ingress first; the private change then works on the remaining Node.
-
-The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node's Caddyfile: the public sites leave, and the Node's other sites stay on their private addresses. Then it closes `orbit:ingress-http` and `orbit:ingress-https` and reconciles service metrics. Caddy stays installed. When Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
-
-The same command removes an Ingress whose convergence failed. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and an `error_code`. Run the same command again to retry. A failure in the build uses `ingress.caddy_config_failed`, as [When a build fails](/reference/caddy-configuration#when-a-build-fails) describes. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists what stays on the Node under `retained_on_node`.
+`node:role:remove NODE ingress --force` refuses with `public_routes_attached` while any Route in its Cluster has `publication: public` (make them private, remove them, or relocate the Ingress instead). Note: making a public app Route private while `ingress` shares a Node with `router` or `app-prod` fails with `caddy.render_failed`; relocate `ingress` first. Removal strips public sites, closes ports 80 and 443, and reopens public SSH if `ingress` was the Node's last role (`--offline` removes on the Gateway side and reports `retained_on_node`).
 
 ### Ingress relocation
 
-`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate.
+`node:role:relocate TARGET ingress --force` moves a Cluster's active Ingress to another Cluster member without changing Route IDs, domains, or public status. The target cannot be the Router or host a target of a public Route; if the source hosts a public target, the source must also be the Router (`source_serves_public_route`).
 
-When the source runs a target of a public Route, the Router must be the source too (reason `source_serves_public_route`). A separate Router would get a hop that trusts only the Orbit certificate, while the source still answers with Let's Encrypt until its removal.
+Admission checks every live public Process Route's firewall and listener (`route.upstream_firewall_mismatch`, `route.upstream_unresolved`, `route.upstream_listener_changed`) and acquires the [Route publication hold](#coordinate-publication) across the Cluster (`route.publication_held` if busy). Orbit prepares Caddy and firewall rules on the target, probes Router and Process upstreams, waits up to 300 seconds for valid public TLS certificates on every public hostname, switches private DNS, waits the [withdrawal grace period](#withdrawal-grace-period), and cleans up the source.
 
-Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
-
-Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded. The listener the target selects must also be the one the Route recorded. `process:update` protects the recorded listener, so a move to another listener is refused with `route.upstream_listener_changed`.
-
-The move takes the [Route publication hold](#coordinate-publication) on every Node of the Cluster at admission and keeps it until it ends. The run writes Caddyfiles that the Gateway rendered at admission, also when it gives the role back. So a Route write started during the move waits, and one that holds a Node already refuses the move with `route.publication_held`.
-
-Until private DNS switches, the run prepares the target:
-
-1. Admission moves the assignment to the target. Every later build renders the target as the Cluster's Ingress.
-2. The target sends an HTTP HEAD request to each public Process listener. A refused or timed-out connection fails the move.
-3. The target gets the Ingress role as `node:role:add --converge` gives it, without private DNS. It installs Caddy and the Orbit root.
-4. The target builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
-5. A Router on another Node gets its Caddyfile again. Its site trusts the Ingress by where the Ingress runs.
-6. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-7. For each public app Route, the target sends an HTTPS HEAD request to the Router address its sites use. A refused connection or a bad certificate fails the move.
-8. The target must serve a valid public certificate for every public name. It asks itself over HTTPS and retries for at most 300 seconds. An answer of 500 or more fails the move.
-
-Then the run switches and cleans up:
-
-9. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
-10. A public app Route keeps its Router answer, because its Router serves it privately.
-11. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
-12. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
-13. Public SSH reopens on the source if Ingress was its last role.
-
-Until step 12 both Nodes serve the public sites. The target's sites reach the Router over HTTPS with the system bundle, `/etc/ssl/certs/ca-certificates.crt`, which holds the Orbit root and the public roots. So the hop works while the source still answers with its Let's Encrypt certificate, and after it answers with its Orbit certificate.
-
-The grace in step 11 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
-
-- Lower the TTL of each public record well before the move, or front the hostnames with a proxy that switches its origin at once.
-- Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 6.
-- Let's Encrypt issues the target's certificates only for names that public DNS points at the target. [Publish the public edge](#publish-the-public-edge) describes issuance.
-- Step 8 fails for a name that still has no valid certificate after 300 seconds.
-- Every public name counts, also one whose DNS points elsewhere on purpose.
-- A client can still hold the source's public answer after step 12. It fails until that answer expires.
-
-A failure in step 2, 3, 4, 7 or 8, before step 9 ran, gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 9 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
-
-A first move cancelled before its run starts also gives the Ingress back to the source before the Cluster's Nodes are freed for Route writes. A cancelled `--from` retry keeps the target.
-
-A `--from` retry never gives the Ingress back. Its earlier run may already have switched private DNS to the target, so the target stays the Ingress whatever step fails.
-
-A failure in step 12 keeps the target `active`, because it already serves every public site and private DNS names it. The result has `source_cleanup_failed: true`, and the source keeps its public sites and rules until the retry with `--from=SOURCE` removes them.
+Lower public DNS TTLs (or use a proxy) and point public DNS at the target at the start of the move so Let's Encrypt can issue certificates within the 300-second window. Failures before private DNS switches restore the source (`source_kept: true`); failures from DNS switch onward keep the target active for retry with `--from=SOURCE` (including `source_cleanup_failed: true`).
 
 ## Change an existing Route
 
-A Route change never changes Instance source, Nodes, Clusters, or checkouts. Changes that move a Route between placements or domains follow these rules:
+Route updates never modify checkout source, Nodes, or Clusters. Orbit prepares new certificates, sites, `APP_URL` / production `.env`, and probes before cutover, then updates DNS, waits the grace period, and withdraws the old site. There is no rollback: failures before cutover leave the old Route serving (`failed` replacement); failures after cutover keep the replacement active and the old Route `retiring` for an identical retry.
 
-- The Gateway verifies the new Caddy sites, certificates, firewall rules, and Laravel URL before it publishes the new domain or scope.
-- A failure before publication leaves the old Route authoritative and the replacement `failed`; nothing is rolled back.
-- A failure after cutover recovers forward, so a Route never has two authoritative domains or scopes.
-- Each failure records `failed_step` and `error_code`. A retry with the same request checks the finished steps and resumes at the first unverified step.
-- A conflicting request is refused.
-
-For a development Laravel source, the Gateway sets `APP_URL` in the environment file and the cached configuration without Composer, Artisan, or application bootstrap. For a production source, it renders the stored environment against the new Route and replaces only the home's `.env`. It runs no deployment or restart commands. A stale cache or an HTTP error does not block a valid change. See [Instance environment variables](/reference/environment-variables#synchronize-during-a-domain-change).
+| Update error code | Step |
+| --- | --- |
+| `app-dev.certificate_request_failed`, `app-dev.certificate_sign_failed` | CSR generation or signing |
+| `route.publish_failed` | Certificate install and Caddy publication |
+| `route.app_url_failed` | Writing new `APP_URL` or production `.env` |
+| `route.probe_failed` | TLS probe |
+| `route.ingress_firewall_failed` | Opening or closing Ingress firewall |
+| `private_dns.publication_failed` | Updating private DNS |
+| `route.dns_grace_failed` | Waiting DNS withdrawal grace |
+| `route.withdraw_failed` | Withdrawing old site |
+| `route.update_failed` | Any other update failure |
 
 ### Change a TLD, Cluster state, or Cluster membership
 
-These changes reconcile every private Route that depends on the affected Node or Cluster before the change becomes authoritative: a Node TLD change, a Cluster TLD change, Cluster activation or deactivation, and a Node attach or detach. The Gateway checks every affected Route, and a Node's LAN address against the Cluster, before the first Route moves. It compares each proposed domain with every Route domain in the fleet. One invalid or occupied result refuses the whole change and leaves every Route in place.
-
-A change that would alter the domain or scope of an active public Route is refused with `route.reconciliation_required`. That covers Cluster activation and deactivation, a Cluster TLD change, and a Node attach or detach.
-
-| Route | Result |
-| --- | --- |
-| Generated | Takes the domain from its target name, or its generation basis when it has no target, and the new effective TLD. |
-| Explicit | Keeps its domain. |
-| Custom proxy | Keeps its Node scope and keeps serving. |
-| Analytics tracking host | Moves with its Instance's Route. |
-
-A domain change creates a replacement Route. A scope-only change keeps the Route ID. Old projections leave only after the new domain or scope is authoritative.
-
-Some examples follow from the TLD rules. When a Node joins an active Cluster with a TLD, its generated domains move into the Cluster namespace, and detach falls back to the Node TLD. A Node TLD change does not rename a generated Route that uses an active Cluster TLD. Removing a Cluster TLD keeps Cluster routing and falls back to Node TLDs. The Gateway refuses that removal when a generated Route would have no effective TLD.
+Node/Cluster TLD changes, Cluster activation/deactivation, and Node attach/detach preflight every affected private Route across the fleet before moving any Route (refusing if any active public Route would change domain or scope with `route.reconciliation_required`). Generated Routes recompute domains from the new effective TLD via replacement Routes; explicit Routes keep their domain; custom proxies keep Node scope; analytics tracking hosts follow their Instance's Route.
 
 ### Replace a Cluster Router
 
-Replacing a Router prepares the new Router's sites, Route keys, firewall rules, and DNS answers before the new assignment becomes authoritative. Route IDs, domains, targets, scopes, workload sites, Laravel URLs, and Instance placement stay the same.
-
-From the Router Caddy step until cleanup, both Routers serve the Cluster's Router sites, because clients can hold a DNS answer for the old Router. After the DNS publication step, private DNS answers with the new Router. The Ingress forwards to the new Router once it becomes active. Cleanup publishes private DNS, waits out the [withdrawal grace period](#withdrawal-grace-period), and then stops serving the Router sites on the old Router. It removes the old Router's certificates and firewall rules last. When the DNS publication fails, both Routers keep serving until a retry.
-
-A failure before publication moves private DNS back to the old Router while the candidate still serves, then withdraws the candidate. When DNS cannot move back, the candidate keeps serving until a retry. Each failure records `failed_step` and `error_code` on the candidate's `router` role row.
-
-Clearing a Router while the Cluster owns Routes returns `route.reconciliation_required` or `cluster.routes_require_router`.
+Replacing a Router prepares certificates, Caddy sites, firewall rules, and private DNS on the new Router while both Routers serve simultaneously, then waits the [withdrawal grace period](#withdrawal-grace-period) before retiring the old Router. Clearing a Router while the Cluster owns Routes returns `route.reconciliation_required` or `cluster.routes_require_router`.
 
 ### Change an explicit domain
 
-`route:update ROUTE --domain=DOMAIN` changes the domain of an `active`, explicit Route. For a `pending` explicit Route, it creates the replacement Route at once, with no projection steps. The Route can be development or production. A shared production Route moves its whole ordered pool to one replacement. This is how a production clone swaps its preview domain for its real domain.
-
-The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last. When a target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing`; Orbit does not recover missing profiles on older Instances, as the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility) explains.
-
-Cutover is one database transition: the replacement becomes `activating` and the old Route `retiring`. Instance output shows only the new domain, and Route inspection shows both records. Cleanup removes the old projections, deletes the retiring Route, releases its domain, and marks the replacement `active`. A successful change therefore produces a new Route ID.
-
-Until cleanup, the new domain uses staging certificates, so the Instance's live certificate still names the old domain:
-
-| Certificate scope | Node | Issued at | Removed at |
-| --- | --- | --- | --- |
-| `app-instance-<id>-hostname-change` | Workload | Workload certificate step | Cleanup or rollback |
-| `route-<replacement id>-router-hostname-change` | Router | Router certificate step | Cleanup or rollback |
-| `app-instance-<id>` | Workload | Reissued for the new domain at cleanup | Instance removal |
-| `route-<replacement id>-router` | Router | Cleanup | Route removal |
-| `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router drops its site |
-
-Route and Cluster Router operations compose the native `route-certificate-publish` and `route-certificate-remove` children inside their parent run. There is no standalone certificate CLI, API or Operation kind. Admission records each scope, Node account, domain, version and public root hash.
-
-Node 209 reaches each admitted Node through pinned official SSH and copies no script to it. Per leaf, `route-certificate-publish` makes the version folder, runs one `openssl req` on the Node, has 209's signer post the CSR to the Gateway, and installs the signed leaf with `cfgmgmt/file` and `cfgmgmt/link`. It then installs the account copy that development servers read and trusts the Orbit root. The Node keeps its leaf private key. The Gateway signing endpoint checks the numeric Operation and its run, then returns the public leaf and root. The CA private key stays only in the Gateway.
-
-Removal follows Caddy withdrawal. It removes only the admitted scope; it does not read the Caddy configuration again. The parent Operation projects the complete native result; certificate children create no separate Operations.
-
-A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
+`route:update ROUTE --domain=DOMAIN` changes the domain of an explicit Route (immediately for `pending` Routes; via a `pending` replacement Route for `active` Routes, moving an entire production pool together). During preparation, staging certificates (`app-instance-<id>-hostname-change`, `route-<id>-router-hostname-change`) keep the live certificates untouched until cutover (`activating` / `retiring`), after which cleanup issues final certificates and deletes the retiring Route (producing a new Route ID). Missing source profiles on older Instances fail with `instance.source_profile_missing`.
 
 ### Change an Instance Route domain
 
-`instance:rename --domain` is not available: it returns `operation.kind_unavailable`, also when `--branch` is supplied, and changes nothing. The rest of this section describes the replacement path that an Instance-owned domain change will use.
-
-[`instance:rename INSTANCE --domain=DOMAIN`](/cli/instance/rename) changes the domain of an active development checkout's own single-target Project Route. The API is `POST /api/v1/instances/{instance}/rename` with `{"domain":"login-redirect.orbit-website.test"}`. It can also record a branch already checked out by supplying `branch` in the same request. This operation does not rename the Instance, move its checkout, or change its placement.
-
-Unlike an ordinary operator-requested `route:update`, Instance rename permits a domain change when the Route has `provenance=generated`. It uses the same replacement and convergence path as an [explicit domain change](#change-an-explicit-domain): reserve the new domain, prepare certificates and Caddy, synchronize the Laravel URL, publish DNS, cut over, and clean up the old projections. A successful rename returns the Instance with the new Route and URL; the old domain stops serving it. The replacement has a new Route ID.
-
-The replacement keeps the Project, scope, publication, target, provenance, and generation basis. A generated Route stays generated; a later Project slug or effective-TLD change can recompute its domain from the unchanged Instance name. A supplied readable domain is not a permanent explicit override. Explicit Routes keep their existing explicit-domain behavior.
-
-For Laravel, convergence writes the new `APP_URL` into the stored Instance environment and `.env` and refreshes cached configuration through the existing URL synchronization step. It does not just edit a Route row. A target without a recorded source profile returns `instance.source_profile_missing`.
-
-Before changing anything, the Gateway validates the Instance, any supplied branch, and the normalized domain's availability. A branch mismatch or `route.domain_conflict` in a combined request changes neither branch record nor Route. A domain request without the Instance's own single-target Project Route returns `instance.route_required`; custom proxy and analytics Routes are not candidates. The changed branch record is committed only after the requested domain converges successfully.
-
-An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response and when provenance is generated. Incomplete replacements follow the recovery rules below. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement. A changed branch is recorded only after domain convergence succeeds. Another lifecycle owner returns `instance.lifecycle_busy`, and a different requested domain while a replacement is incomplete returns `route.domain_change_conflict`. Branch-only rename leaves the Route alone. [Development branch reconciliation](/domains/applications#development-branch-reconciliation) explains the reasons for this Instance-owned path.
+`instance:rename --domain` currently returns HTTP 503 `operation.kind_unavailable` (even when paired with `--branch`) and changes nothing. Use `instance:rename --branch` for branch-only recording and `route:update --domain` for explicit Routes.
 
 ### Resume or refuse a change
 
-During a change, Route inspection shows both records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain returns `route.domain_change_conflict` and changes neither record.
-
-A failure before cutover leaves the old Route authoritative. The Gateway marks the replacement `failed`, removes its sites and staging certificates, restores the Laravel URL or production environment, and republishes private DNS. Then it deletes the replacement, and a retry starts a new change. When that cleanup is incomplete, the `failed` replacement stays inspectable. The identical request recovers it, and it starts again from the first step. To abandon the change instead, remove the replacement with `route:destroy`, as [Remove a replacement that never activated](#remove-a-replacement-that-never-activated) describes.
-
-A failure after cutover keeps the replacement authoritative. A retry continues until the replacement is `active` and the retiring Route is deleted.
-
-`route.reconciliation_required` refuses these changes to an active Route: a generated domain change that an operator requests through ordinary `route:update`, and a single-target change. The Instance-owned [`instance:rename`](#change-an-instance-route-domain) path permits its generated Route's domain change, but not an incompatible reconciliation already in progress. A Router clear gets the same refusal.
-
-Deployment, rollback, clone finalization, Instance removal, environment changes, and domain changes of the same Instance share one operation owner. A competitor waits or returns `env.operation_busy`.
+Repeat the identical request to resume an incomplete change; sending a different domain returns `route.domain_change_conflict`. Changing a generated Route's domain via `route:update` returns `route.domain_immutable` (409). Changing an active Route's single target or clearing a Cluster Router with active Routes returns `route.reconciliation_required`. Concurrent Instance lifecycle and environment operations serialize with `env.operation_busy`.
 
 ### Stored transitions
 
-Every Caddy build renders a Route's sites from stored state only. A transition stores its state before the build that needs it. A withdrawal stores its state before the build that removes a site, and before the certificate removal.
-
-| Transition | Stored state | Sites |
-| --- | --- | --- |
-| Creation | The site publication flag, set once the Route's certificate exists | The `pending` Route renders like an `active` one. A failed creation clears the flag. |
-| Domain change | The `pending` replacement Route and its `replacement_step` | Each replacement site appears after its certificate step, with staging certificates until cleanup. |
-| Placement change | `transition_node_id` and `transition_cluster_id` on the Route | The candidate placement before cutover, and the old placement after it, until the `cleanup` step. |
-| Router replacement | The candidate `router` role row and its `failed_step` | Both Routers serve the Cluster's Router sites from the Router Caddy step until cleanup. |
-| Instance removal | No targets, the site publication flag, and an open development removal member | The Router, or the workload Node when there is no separate Router, answers `503 Orbit Route unavailable`. |
-
-During a placement change, the candidate's Router sites appear after its Router certificate step and use `route-<id>-router-hostname-change`. At cutover the Route takes the candidate placement, and the transition columns take the old one. When both placements render the same site on one Node, the current site wins. Private DNS answers with the current placement, so its records move when cleanup publishes private DNS.
-
-Cleanup issues the live Router certificate for the new placement and publishes private DNS. It waits out the grace period, stores its `cleanup` step, and builds every affected Node. It removes the staging and old certificates, and clears the transition columns last, so a retry still knows the old placement. A failure before the `cleanup` step keeps both placements serving.
-
-A restore before the Router Caddy step clears the columns, builds, and removes the candidate certificates. A restore after that step first publishes private DNS for the current placement and waits out the grace period. When that DNS publication fails, both placements keep serving until a retry.
+Every Caddy build renders from stored state: creation sets the publication flag after certificates exist, domain changes track `replaces_route_id` / `replacement_step`, placement changes track `transition_node_id` / `transition_cluster_id`, Router replacements track the candidate role row, and Instance removals clear targets to serve `503 Orbit Route unavailable` before teardown.
 
 #### Withdrawal grace period
 
-Private DNS answers carry a 30-second TTL. After a transition moves a name, it waits 31 seconds, the TTL plus one second, before it stops serving the old target. One Cluster change waits once for all the Routes it moves. It does not hold the projection owner while it waits, so other commands run. It then reads each Route again before it withdraws the old placement.
-
-The wait counts from the last DNS move of that Route, which the Route stores. When another change moves the same Route during the wait, that change waits its own full period.
-
-An Instance removal (`instance:destroy`) waits no grace: it removes the name for good, and a client that still holds a cached answer reaches the Node for up to 30 seconds after the site is gone, the same as after the wait. `route:destroy` keeps the wait until its own flow is measured.
-
-The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. Caddy finishes every request in progress on the old target and closes idle keep-alive connections, so the next request resolves the name again. A client with a longer DNS cache of its own, such as a browser or a Java runtime, can still reach the old target and get a TLS error until its cache expires. Retry the request or reload the page.
+Private DNS answers carry a 30-second TTL, so transitions wait 31 seconds after moving DNS before withdrawing the old site (releasing locks during the wait). `instance:destroy` skips the grace wait because the domain is being deleted permanently.
 
 ## Publish each service on its own hostname
 
-PowerSync uses a separate hostname for each app, such as `sync.mealou.app` or `sync.hauzer.app`. Set its client endpoint to the service hostname. App Routes do not reserve `/powersync` or strip a service path prefix.
+Services such as PowerSync use their own public Process hostname (e.g. `sync.example.app`) rather than a reserved path on an app Route.
 
 ### A service owns its hostname
 
-A separate hostname for each service replaces ADR 0231, which published a Process under a reserved path on an app Route. A separate hostname keeps the service endpoint independent of the app's Laravel routes and removes the need for path-prefix inspection, rewriting, and publication state. Reverb still uses the app domain's reserved `/app` and `/apps` paths through its [public attachment](/reference/websocket-apps#add-an-app-on-an-instance).
+Dedicated hostnames keep service endpoints independent of application routes without path-prefix rewriting. Reverb remains the exception, using `/app` and `/apps` through its [public attachment](/reference/websocket-apps#add-an-app-on-an-instance).
 
 ## Remove a Route
 
-`route:destroy` removes a Route and its projections. The Gateway refuses an app Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. The one exception is a [replacement that never activated](#remove-a-replacement-that-never-activated).
+`route:destroy` removes DNS records, waits the grace period, withdraws Caddy sites, converges development PHP-FPM pools, removes certificates and unused LAN/public firewall rules, verifies no residue remains, and deletes the Route record. It refuses active public app Routes and Routes in an active replacement pair (`route.reconciliation_required`), `analytics_tracking` Routes (`route.tracking_managed` 409), and missing coordinators (`route.coordinator_required` 409).
 
-Removal runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure leaves the Route as it was, because a Route marked failed would render no site and withdraw sites the run did not reach. The task records the failed step and its error code. Repeat the same command to retry. The retry runs every step again from the start.
-
-Removal releases the domain when the task succeeds. The Node's shared runtime and Caddy service stay. `operation-route-removal` runs only for `route.destroy`; a withdrawal that keeps the Route has no kind of its own. Instance destroy and Route update withdraw sites inside their own runs.
-
-A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. It runs the same steps, so a `pending` Route that already published its sites leaves nothing live on its Nodes. A task workspace whose source resolved is an example. The Caddy and firewall steps include every target Node.
-
-The PHP-FPM step converges each Node of a development target, right after its site leaves. It converges every pool on the Node, so a PHP-FPM problem unrelated to the Route also stops the removal; fix it and retry. A pool skipped only because its working directory is missing does not stop it, as in [Instance removal](/reference/instance-removal). A production target keeps its dedicated PHP-FPM service, and every target keeps its Instance certificate, until [Instance removal](/reference/instance-removal). The Instances stay without a Route.
+| Destroy error code | Step |
+| --- | --- |
+| `private_dns.publication_failed` | Remove private DNS |
+| `route.dns_grace_failed` | Wait DNS grace |
+| `route.withdraw_failed` | Withdraw site and remove certificates |
+| `route.pool_converge_failed` | Converge PHP-FPM pools |
+| `route.lan_firewall_failed` | Remove unused LAN rules |
+| `route.removal_check_failed` | Verify no site, cert, or rule remains |
+| `route.withdrawal_failed` | Any other removal failure |
 
 ### Remove a replacement that never activated
 
-A domain change, an Instance rename, or a Project slug update reserves a `pending` replacement Route that copies the target of the Route it replaces. Until cutover, the replaced Route stays `active` and serves the Instance. `route:destroy` on such a replacement, `pending` or `failed`, abandons the change.
-
-It runs the same withdrawal as a failure before cutover. It marks the replacement `failed` and removes its sites and staging certificates. It restores the Laravel URL or production environment for the old domain and republishes private DNS. Then it clears `replaced_by_route_id` on the replaced Route and deletes the replacement with its target. The replaced Route and its target stay as they are. A failure keeps the replacement `failed`, with `failed_step` `withdrawal` when the change had recorded none. Repeat the command to retry.
-
-An open Instance transfer owns its source and destination Routes. `route:destroy` returns `instance.transfer_incomplete` for either Route, including a replacement that never activated. Retry the identical transfer request to finish or roll back the transfer first.
-
-The [offline removal](#remove-a-route-from-an-unreachable-node) rules also apply to a replacement that never activated. Skipped Nodes keep their configuration and application URL. The old Route stays authoritative. A skipped workload Node can keep its unused Instance hostname-change certificate until the next domain change or Instance removal; Route residue cleanup removes the certificates owned by Route ID.
-
-A replacement that has cut over is `activating` or `active`. `route:destroy` refuses it like any Route that an active Instance needs, with `route.target_conflict`. Finish that change by repeating its request. `route:target:unset` on a replacement that never activated is refused with `route.target_conflict`, and the message names `route:destroy`, because a replacement without its target would replace nothing.
-
-```bash
-orbit route:destroy 199
-```
+`route:destroy` on a `pending` or `failed` replacement Route abandons the change, withdraws staging sites and certificates, restores `APP_URL` / `.env` and DNS for the old domain, clears `replaced_by_route_id`, and leaves the original Route active. Replacements owned by an open Instance transfer return `instance.transfer_incomplete`, and replacements that already cut over (`activating`/`active`) return `route.target_conflict`.
 
 ### Remove a Route from an unreachable Node
 
-The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When one of those Nodes does not answer, the step fails with its own error code and the Route is unchanged. Retry with `--offline` to skip the Node.
+Pass `--offline` to skip inactive or unreachable Nodes (a VPN Node is never skipped). Orbit deletes the Route, records per-Node residue (`retained_on_nodes`), and cleans it up on the next [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) once the Node answers.
 
-`route:destroy --offline` checks each Node before it changes anything. It skips a Node that is not `active`, or that the [reachability probe](/reference/node-provisioning#remove-a-node) finds unreachable. A Node that answers keeps every step, and a failure on it still stops the removal. The Gateway runs the other steps, deletes the Route, and records a residue for each skipped Node in the same transaction. The response lists them under `retained_on_nodes`, each with `node_id`, `node`, and the `steps` the Node still needs.
-
-The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID, reconciles public firewall policy on an Ingress, and deletes the residue.
-
-A failed cleanup keeps the residue and counts the attempt. The artifact is then `skipped`, so another site's broken Caddyfile or pool never halts the fleet rollout, and the next converge tries again. Node removal deletes the residues with the Node.
-
-The fleet rollout visits a Node only when it belongs to the [rollout set](/reference/gateway-recovery#rollout-set-and-order). On another Node, such as the Gateway's own, run `orbit node:converge NODE` yourself. `node:converge` needs an `active` Linux Node whose WireGuard address and SSH host key the Gateway manages. The residue of any other Node stays until that Node qualifies again or is removed.
-
-Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/instance-removal) owns the cascade.
-
-| Removal | Guard |
+| Resource removal | Guard |
 | --- | --- |
-| Project | Refused while it owns a Route (`project.has_routes`). |
-| Cluster | Refused while it scopes a Route (`cluster.has_routes`). |
-| Node | Refused while a Route uses it as scope, target host, or generation basis (`node.has_routes`, or `route.reconciliation_required` for an active Route). |
-| `app-dev` or `app-prod` role | Refused while the Node hosts a Route target. |
-| `ingress` role | Refused while a Route in its Cluster is public. |
-| Cluster Router | Refused while the Cluster owns a Route. |
+| Project | Refused while owning Routes (`project.has_routes`). |
+| Cluster | Refused while scoping Routes (`cluster.has_routes`). |
+| Node | Refused while serving, targeting, or generating Routes (`node.has_routes` or `route.reconciliation_required`). |
+| `app-dev` / `app-prod` role | Refused while hosting a Route target. |
+| `ingress` role | Refused while the Cluster has a public Route. |
+| Cluster Router | Refused while the Cluster owns any Route. |
 
 ## Coordinate publication
 
-Each Route plan captures the control Node resolved from the Swamp role with its Node connections, including connections needed only for certificate cleanup. Certificate retirement omits this unused metadata from its child call, so older plans need no new key. The child accepts the field as an optional integer for other callers; placement uses the Swamp role and the captured SSH connection.
+The Gateway serializes Route writes per Node using publication holds (`route_publication_holds` for exclusive whole-file publishers, `route_withdrawal_holds` for up to 8 concurrent shared writers, at most 4 removals). A competing Route write queues in `waiting` status (FIFO) rather than failing with 409; waiting whole-file renders that detect catalog drift when their turn arrives return `route.publication_stale` (409) for a fresh retry.
 
-The Gateway's Route publication hold orders writers during normal work. A Node has one Caddyfile, one shared PHP-FPM pool file per PHP version (`orbit-scopes.conf`) and, on the private DNS Node, one records file and one catalog. A publisher writes these files whole, as the Gateway rendered them from its site catalog. Two publishers on one Node would lose a site, and a publisher that rendered before a removal would bring the removed site back. So a publisher holds its Nodes alone.
+On each Node, shared withdrawals and container clone site publications acquire `/etc/caddy/.orbit-publish.lock` and `/run/lock/orbit-dnsmasq.lock` (30-second wait; `caddy.publish_busy` / `dns.publish_busy`), validate candidates (`caddy validate`, `php-fpm -t`, `dnsmasq --test`), back up previous files to `/var/lib/orbit/route-previous/`, verify no foreign block changed (`route.withdraw_foreign_change` / `route.publish_foreign_change` / `route.live_changed`), and reload services atomically.
 
-A withdrawal (`route-withdraw-node`, the Route withdrawal of a development removal and of a failed development create or completion) is one Node-local transaction in one Ansible phase. Swamp checks the captured states and writes the merge plan. On the Node, `orbit_route_withdraw` takes an exclusive lock on `/etc/caddy/.orbit-publish.lock` when the Node serves Routes, and on `/run/lock/orbit-dnsmasq.lock` when it holds private DNS. The Gateway's private DNS publication takes the same lock.
-
-`route-withdraw` visits a Node that serves the Route, holds a withdrawn certificate scope, or holds private DNS lines or catalog values of the Route. The Gateway captures only the DNS lines and catalog values that differ between the four states, and equal states are one artifact.
-
-So a Route under its Cluster's TLD ([records a TLD already answers](/reference/private-dns#records-a-tld-already-answers)) captures one DNS state four times. The withdrawal does not visit the private DNS Node for it: the transaction would write nothing there. A Route that has a line there is visited: a name outside every TLD, a Node-scoped Route on the Router, a site on another Node, or a site while a Router change runs.
-
-A line that an older render wrote, and that the current render does not hold, stays either way: a withdrawal takes back only the lines its states change. The next whole private DNS publication removes it.
-
-The Node steps take one of 16 names per Node: `route-withdraw-input-<node>-<slot>`, `route-withdraw-compose-<node>-<slot>`, `route-withdraw-apply-<node>-<slot>` and `route-withdraw-cleanup-<node>-<slot>`. The slot is the withdrawn Route's ID modulo 16, or `none` without a Route. The proof step takes `forward-result-0-<slot>` and the result step `route-mutation-phase-<slot>`. Swamp keeps every behavior definition and its data, so names per Route would grow its catalog without end.
-
-Swamp fails a step that waits 60 seconds for a name another run holds. So two removals of one slot never share a Node: the second waits in the Gateway, as a removal over the cap does, until the first has withdrawn. The restore of a failed clone create is not kept apart from a removal of its slot on the same Node. The two run one after the other on that name's lock, and the later one fails if it waits 60 seconds. Each run keeps its own run folder and step outputs.
-
-It takes each with util-linux `flock` and waits at most 30 seconds for both together. Then it refuses with `caddy.publish_busy` or `dns.publish_busy`; any other `flock` failure refuses with `route.publish_lock_failed`. Both leave every file as it was. Under the locks, these steps run:
-
-1. It reads the Caddyfile and the pool files. It reads the private DNS files last, right before it writes them.
-2. It merges the captured states into them. Its own sections leave. Every other section stays as the Node holds it.
-3. It compares every other section with what it read, byte for byte, and refuses any difference (below).
-4. It tests every candidate: `caddy validate` on the Caddy candidate beside the live file, `php-fpm -t` on the written pools, and `dnsmasq --test` on the written DNS files.
-5. Once every test passed, it keeps the previous generation of each file it replaces in `/var/lib/orbit/route-previous/`, one copy each.
-6. It reloads PHP-FPM, renames the Caddy candidate, reloads Caddy and restarts dnsmasq.
-
-The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. The Route's own Caddy site groups are the groups its captured states remove, and any other group of a withdrawn scope that the Node holds: `<scope>`, `<scope>-dev`, `<scope>-bridge` and `<scope>-dev-bridge` of the same Caddy source. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
-
-The previous generations are `Caddyfile`, `php-<version>-orbit-scopes.conf`, `orbit-records.conf` and `catalog.json`. The folder is root only, mode `0700`. It sits outside `/etc/caddy`, `pool.d` and `/etc/dnsmasq.d`, so no service reads a copy.
-
-A failed test puts every written file back before any reload, and keeps no copy. Missing private DNS files refuse with `dns.current_config_missing`. A missing `caddy` group refuses with `caddy.group_missing`, a missing account with `php.account_missing`, and a file that is not UTF-8 text with `route.file_not_utf8`; each leaves every file as it was read. The Operation then fails with `caddy.validation_failed`, `php.test_failed` or `dns.test_failed`. A failed reload puts that file's previous generation back and reloads again. The Operation then fails with `php.reload_failed`, `caddy.reload_failed` or `dns.restart_failed`.
-
-Some writers take no Node lock, such as the Gateway's whole-file Caddy builds. So right before it writes a file, and again right before it renames the Caddy candidate, the withdrawal checks that the file is still as it read it. A file that changed refuses with `route.live_changed` and every file is put back; run the removal again.
-
-The withdrawal removes the Route's own Caddy site groups whatever their bytes, and counts a missing one as withdrawn. An older Orbit may have rendered them in another form, and a Node converge does not rewrite them. Global options that no step changes stay as the Node holds them, so a converge that rebuilt them does not refuse the withdrawal.
-
-A revision of the Route's own PHP scopes or DNS records that matches no captured state still refuses with `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
-
-The lock files are regular files owned by root that no group or other may write; a lock that is not refuses with `route.publish_lock_invalid`. The withdrawal sets each to mode `0600`, so only root can open it. They are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held.
-
-The module's own time bounds add up to about 250 seconds with two PHP versions, inside the 300 seconds of its Ansible phase. The certificate folders of the withdrawn scopes go after the transaction.
-
-Each withdrawal reads what the Node holds under the lock. So two withdrawals of different Routes on one Node both land, in either order, and removals share their Nodes. A container clone's create whose publication is Caddy only shares them too: its site merges its own groups under the same lock ([publish a development site](#publish-a-development-site)). The Gateway records the hold of these shared writers in `route_withdrawal_holds`, side by side.
-
-It records any other publisher's hold in `route_publication_holds`, alone. A shared writer waits or defers while a publisher holds one of its Nodes, and a publisher waits while any shared writer holds one. Each take checks the other table in the same transaction.
-
-At most eight shared writers hold one Node, and at most four of them are removals. A removal over either cap waits in the Gateway; a create over the cap leaves its address to its completion, and its result says `route_publication_reason: share_cap` ([the address during the create](/reference/development-containers#the-address-during-the-create)). A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
-
-A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
-
-A publisher other than a clone's create does not take the Node lock: the Gateway hold keeps it apart from every withdrawal.
-
-Across a release, the [release idle guard](/reference/gateway-recovery#release-idle-guard) waits for `instance.destroy` and `instance.create` before the Swamp load. A removal that the earlier release admits after that wait holds its Nodes alone in `route_publication_holds` and frees them at its end. Its intent is unchanged, so its run takes the new workflow and still holds its Nodes alone. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it.
-
-A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` and no `instance.create` of a container clone runs before a rollback.
-
-Only one operation publishes private Caddy, DNS, or Metrics configuration at a time. The Gateway takes an exclusive lock on one file, `$ORBIT_HOME/.dnsmasq-projections.lock`, before it reads Route, target, Cluster, and Router state. It holds the lock through Caddy builds, DNS publication, and activation. Nested calls in one request share it. A competitor waits up to 30 seconds, or the rest of its command time when that is shorter. Then it returns HTTP 409 `app-dev.projection_busy` before it changes anything.
-
-Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:complete`, `instance:destroy`, `instance:unregister`, `instance:clone`, `instance:transfer`, `instance:migrate` or `instance:restore`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. A removal (`instance:destroy` or `instance:unregister`) shares its hold with other removals, as described above. The task keeps the hold until it reaches a terminal state, with two exceptions. A removal gives it back after its withdrawal, below. A container clone's create is the other.
-
-A container clone's create takes the hold only when it can at its admission, and never waits. A create whose publication is Caddy only, with no PHP-FPM pool, private DNS record, Ingress site or LAN rule, takes a shared hold beside other shared writers. Any other create takes the Nodes alone. With a Node held by a publisher, an older waiting write on one of its Nodes, or eight shared writers on one Node, its intent carries no publication. Its completion then publishes the Route and holds the Nodes for its whole run, as before.
-
-A create that took the hold keeps it until its `clone-route` step ends. The Gateway sees that step succeed in the run's progress events. In one transaction it turns the Route `active` with its sites published and frees the Nodes; no step calls the Gateway. A failed step or a lost event keeps the hold until the create's terminal state.
-
-A waiting Route write that publishes the whole Caddyfile it rendered at its admission records which sites its Nodes served then. Examples are `route:update`, `route:target:set`, `instance:migrate` and `instance:transfer`. When it gains its Nodes and a site was published or withdrawn on them meanwhile, it is refused with `route.publication_stale` (409) and changes nothing; run the same command again, and it renders from the current catalog. A waiting create renders again when it starts, and a removal composes from the live file, so neither records the sites.
-
-The step-scoped holders below render at admission too, and they are not checked yet. A Route published between their admission and their Route step is left out of their publication. This holds for any Route publication, the completion's included, not only for a clone's create. A completion of a Route that the create published holds no Node.
-
-A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
-
-When a waiting `instance:create`, `instance:clone`, `instance:restore` or `route:create` gains its Nodes, the Gateway renders its whole Caddyfiles again from the current site catalog and its admitted Route. It keeps the admitted Instance, Route and certificate identities. A restore renders its retiring Route with its target active, as at its admission. The previous writer commits its accepted sites and releases its hold in the same transaction, so the next render includes them.
-
-A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed. A withdrawal merges them under `/run/lock/orbit-dnsmasq.lock`, the lock the Gateway's DNS publication also takes, and reads them right before it writes. The Swamp DNS writers (`route-create-dns`, `route-dns-publish`, `node-private-dns` and the role publication) write the files whole without that lock. One that writes in the milliseconds between the withdrawal's last check and its write can still lose the withdrawal's change or its own, as before.
-
-`instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
-
-The call is repeated for up to 2 minutes. Then the step fails (the Gateway answered `423 route_hold.busy`) and the Route step does not run. After the Route step the run calls `operation:direct:route-release`, which cannot fail the run. The hold has a 5-minute lease that only a repeated hold call renews, and the end of the Operation frees it too. A Route write that waits for a Node starts before a new hold on that Node is granted.
-
-Three cases are not held yet. A task provision that runs as a child of another Operation (a proof), and a cancel that a proof run starts, keep their Route steps unheld. The revert of a failed Cluster Router set (`Restore the before state`) is not held either.
-
-Each Cluster also has a Router lock. Setting or clearing a Router holds it through validation, setup, activation, and cleanup. Cluster state and TLD changes use it too. A competitor for the same Cluster waits up to 30 seconds and then returns HTTP 409 `cluster.router_busy`. Different Clusters use separate locks.
-
-When an operation needs several owners, it takes them in this order: Node lifecycle or role, `app-dev` source, Cluster Router, Metrics lifecycle or credential, projection, then remote host. No database transaction stays open during remote work.
+Cluster Router changes serialize per Cluster with a 30-second wait (`cluster.router_busy`), and projection builds serialize on `$ORBIT_HOME/.dnsmasq-projections.lock` (30-second wait). Operations that need multiple locks acquire them in fixed order (Node lifecycle, `app-dev` source, Cluster Router, Metrics, projection, remote host) without holding DB transactions during remote work.
 
 ### Publish a development site
 
-A container clone's create publishes its Route in its `clone-route` step ([the address during the create](/reference/development-containers#the-address-during-the-create)). Its site step does not write the Caddyfile that the Gateway rendered. In `orbit_route_site`, after the certificates, it runs the other direction of the withdrawal's Node-local transaction (`publish` in `orbit_route_withdraw`). Its states are the create's captured publication of the Node (`route_mutations.restore`, the stage that a failed create's withdrawal also reads), and they hold only the Route's own groups. Under `/etc/caddy/.orbit-publish.lock`, with the same 30-second wait, these steps run:
-
-1. It reads the Caddyfile.
-2. It puts in the Route's own groups. Each group that the captured states change takes its last state, where its first block stood.
-3. It works out the own groups again from the captured states. It compares every other block, their order and the global options with what it read.
-4. It runs `caddy validate` on the candidate beside the live file.
-5. It keeps the previous generation in `/var/lib/orbit/route-previous/Caddyfile`.
-6. It checks once more that the live file is as it read it. Then it renames the candidate and reloads Caddy.
-
-A new own group goes at the end, and an own group that the last state lacks is removed. Any difference outside the own groups refuses. Blocks compare as text without the blank lines between them, which are written as one blank line.
-
-Every group the publication may change must have the Caddy source `app-dev`, the source of every development site. A captured state that changes a production, Ingress, Gateway or any other group refuses with `route.publish_foreign_change`. A public Route's Ingress site is not part of this step: the Ingress child writes it under the exclusive hold, as before.
-
-A live own group that differs from the captured states is replaced, not refused, because a retry of the same create publishes the same groups again. A second create of the same name is a new Instance, so its groups are new. Caddy reloads even when the file is unchanged, as the publication always did, because a new certificate of the Route needs it.
-
-A refusal leaves the Caddyfile as it was read. The step names the refusal and the create does not fail: `route.publish_foreign_change`, `caddy.foreign_config`, `caddy.current_config_missing`, `caddy.publish_busy`, `route.publish_lock_invalid`, `route.publish_lock_failed`, `route.file_not_utf8`, `caddy.validation_failed`, `route.live_changed`, `caddy.reload_failed` (the previous file is put back and Caddy reloads again) and `caddy.publish_plan_missing` (the intent holds no captured publication of the Node).
-
-After a refusal the site step writes `route-deferred-<node>.json` into the create's run folder and fails, so no TLS probe runs and the Gateway does not take the Route as published. The create's result says `route_publication: deferred`, the Route stays unpublished, and the completion publishes it on every Node, as for held Nodes. A Route that is served by several Nodes is deferred when one Node refused, even when another Node published its groups or failed in another way. Any other failure stays `failed`.
-
-A shell behavior locks per name, and Swamp keeps every definition and its data. So a clone's create names its site, cleanup and TLS probe steps from a pool: `route-site-<node>-<slot>`, `route-site-cleanup-<node>-<slot>` and `route-probe-209-<node>-<slot>`, where the slot is the Route ID modulo 16. One Node can hold at most 48 such definitions. Sixteen is twice the eight shared writers a Node admits, and Route IDs are given in order, so creates started together seldom share a slot. Two that do wait for one site step, about 3.5 seconds. Every other caller keeps `route-site-<node>`, `route-site-cleanup-<node>` and `route-probe-209-<node>`, and the production environment steps keep `route-env-group-<node>` and `route-env-<node>-<i>`.
-
-Measured on Beast on 2026-11-15 at load 16, with 143 site groups: `caddy validate` 0.14 to 0.21 seconds, and `systemctl reload caddy` 30 to 41 milliseconds; the reload signals Caddy, which loads the file after the call returns. So one publication holds the Node lock for about a quarter of a second.
-
-The shared hold for Caddy-only creates came one release after this merge. In that first release the Gateway still held a create's Nodes alone, so a rollback, which loads the earlier Swamp workflows before it switches the Gateway back, never runs a whole-file `clone-route` beside a shared hold. A rollback of the shared hold lands on a Gateway that holds creates alone and reads their rows in `route_withdrawal_holds` as shared holds that exclude its publishers.
+During container clone creation, if a shared hold is available and publication is Caddy-only, Orbit merges only the Route's `app-dev` site blocks under `/etc/caddy/.orbit-publish.lock` and activates the Route immediately upon completion of the `clone-route` step. If the Node is busy or a merge guard refuses, creation succeeds with `route_publication: deferred` and the completion Operation publishes the Route normally.
 
 ## Check Routes with Doctor
 
-Native Route operations own site, certificate, DNS, firewall and forwarding validation. Their results carry the outcome. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat these checks or reads related Nodes for a Route. Its role and Process checks cover current service/runtime liveness only.
+Route Operations own site, certificate, DNS, firewall, and forwarding validation. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat those checks or read Route Nodes; it checks role and Process liveness only.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
+These design choices explain the rules above.
 
 ### Routes own domains, and Cluster membership owns scope
 
-A Route keeps its domain with zero targets or with targets on several Nodes, so the domain lives on the Route, not on the Instance. Routing scope follows active Cluster membership, not the domain or the presence of a TLD. A TLD-less Cluster can then route explicit production domains through its Router.
+A Route can have zero targets or span multiple production Nodes, so the domain belongs to the Route rather than an Instance. Scope follows active Cluster membership so TLD-less Clusters can still route explicit production domains.
 
 ### Domains and hostnames
 
-A Route owns an application domain. A machine or network identity is a hostname. The two terms stay apart in the API, SDK, CLI, and stored data, so a placement change can show which name changes. The API has no `hostname` alias for a Route domain.
+Routes own application `domain` values while machines own `hostname` values. Keeping the terms separate avoids ambiguity during placement changes.
 
 ### One own Route per active Instance
 
-An application needs one canonical URL, and Laravel's `APP_URL` must agree with it. So each Instance has one Route without a web root, and an active Instance without it would break the promise that active means reachable. A Route with a web root serves another directory of the same checkout: it is another site, not a second URL for the same application. The oldest-Route rule keeps `APP_URL` deterministic when two such Routes serve one directory.
+Every web-serving Instance needs one canonical URL for Laravel's `APP_URL`. Extra `web_root` Routes serve separate directories in the same checkout without competing for the primary URL; the oldest Route wins `APP_URL` per directory.
 
 ### Active Cluster TLD first
 
-A generated domain in an active Cluster with a TLD uses the Cluster namespace, so it names the Cluster that routes it. Node-first naming is the rejected alternative, because a Cluster member would keep a Node namespace. Explicit domains never follow TLD changes, because they are the operator's choice.
+Cluster members generate domains in the Cluster namespace so generated names reflect the Cluster routing them. Explicit domains stay fixed across TLD changes.
 
 ### Generated identity follows the target
 
-A generated Route takes its TLD from its target's Node, and it keeps the last generation basis when the target is cleared. Binding the Route to its first Node would keep an obsolete namespace and a permanent dependency on that Node. A generated Route stays single-target, because a pool has no single Node to name it.
+A generated Route tracks its target's Node TLD (retaining `generation_basis_node_id` when targetless) rather than permanently binding to its creation Node, and stays single-target.
 
 ### Domain changes create a replacement Route
 
-An immutable domain per Route makes authority and recovery explicit: the old Route stays authoritative before cutover, and the new one after. Changing the domain in place would need old, candidate, and progress fields on one record. One generic inactive state is rejected, because preparation, failure, and retirement need different retry and cleanup behavior. A shared pool moves as one, because one domain cannot cut over per target.
+Immutable domains per Route make cutover authority and recovery explicit: the old Route stays authoritative before cutover and the replacement after.
 
 ### Separate Ingress, Router, and workload
 
-Ingress owns the public listener and certificate. The Router owns backend selection. Workload Caddy owns the site that serves the Instance. A workload move or a pool change therefore never changes public DNS or the public certificate. Direct public access to a workload is rejected, because it would expose placement and split TLS and firewall ownership.
+Separating public TLS (`ingress`), backend selection (`router`), and app serving (`app-prod`) keeps public DNS and certificates stable across workload moves and pool changes.
 
 ### Round-robin without affinity or replay
 
-Round-robin spreads load without changing the public endpoint. Backend affinity is rejected, because a shared session store already keeps sessions across targets. Application-health checks are rejected, because an HTTP error does not show whether Orbit provisioned the placement. Request replay is rejected, because a failed request can already have had side effects. Waiting for requests in progress before removal is rejected, because the application would then decide when removal ends.
+Round-robin distributes load without hiding app bugs or replaying side-effecting requests; shared sessions belong in a shared session store.
 
 ### An empty Route is deleted with its last Instance
 
-A removed Instance does not need its domain, so Instance removal deletes a Route whose last target it removes and releases the domain at once. A shared Route stays while other targets remain. A retry after source cleanup cannot restore the deleted Route.
+Removing an Instance releases its domain immediately unless other targets remain in a shared production pool.
 
 ### LAN first, without fallback
 
-A configured LAN address is operator intent. A LAN path that fails shows as a visible error instead of a silent switch to WireGuard, which would hide wrong intent and make the path unclear.
+Configured LAN addresses express operator intent; failing visibly instead of silently falling back to WireGuard catches misconfigured LAN paths early.
 
 ### WireGuard membership is the private trust boundary
 
-Access grants authorize Orbit commands. They do not describe which services Nodes may reach. Applying grants to private traffic would need a per-port authorization model. Limiting private traffic to Route HTTPS would block the general connectivity that trusted Nodes need. So removing a Node from WireGuard revokes its private network trust. [Task VMs](/reference/compute-drivers#limit-fleet-traffic-on-the-hub) are untrusted peers in a reserved range. Their bridge ACL and hub filter limited private traffic; the task VM path and its Caddy guard are removed, and the WireGuard address allocator still keeps the range off every Node.
+Private traffic trusts active WireGuard membership rather than maintaining per-port ACLs, while access grants authorize Orbit API commands.
 
 ### One publication field and Let's Encrypt on public Ingress
 
-A second field for public readiness would repeat what `status`, `replacement_step`, and Doctor show. Browsers and strict proxies do not trust Orbit CA, so a public site needs a public certificate. A fallback from Let's Encrypt to Orbit CA is rejected, because that silent downgrade breaks a working public host. A public Route that is not yet eligible keeps its intent instead of failing, so operators can store public intent before an Ingress exists.
+Public sites require Let's Encrypt certificates trusted by browsers, with no silent fallback to Orbit CA. Storing `publication: public` even before an Ingress exists preserves operator intent.
 
 ### Development servers on the Route origin
 
-Cluster DNS sends the browser to the Router, not to the workload Node. So the development server shares the Route's domain and port 443 under a reserved path. A shared Cluster port, a second domain, and direct Node access are rejected: each splits the Route's single path and certificate.
+Proxying `/__orbit/vite` over port 443 on the Route's domain keeps Cluster routing, HMR, and TLS certificates on one origin.
 
 ### Custom proxy Routes for Node services
 
-A Node service that is not an application still needs a unique name, private DNS, a certificate, `route:list`, and Doctor. A synthetic Instance would attach the wrong lifecycle. A separate proxy resource would duplicate Route identity. Operator-supplied Caddy or certificate files would leave unmanaged configuration on the Node.
+Custom proxy Routes give standalone Node services unique domains, private DNS, TLS, and lifecycle guards without synthetic Instances or unmanaged Caddy files.
 
 ### Public Process Routes select an edge separately from the workload
 
-A Process can run on a service Node outside any Cluster. Selecting an Ingress independently keeps the service Node's membership and private Caddy sites unchanged. The Process Node's Cluster supplies the natural default; outside a Cluster, the existing public app Routes identify the production edge without a hard-coded Node or Cluster ID. Ambiguity requires an explicit selection. Routing scope follows the selected Ingress internally.
-
-LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
-
-Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same Node that runs the worker. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
-
-Retained Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and publishes the current whole-Node render through its native workflow. The bound public GET returns `input.caddy_publication` from `CaddyPublicationPlan::forNode()`. It includes the Node identity and agent pin, then either the Caddy content, version, listener addresses and serving flag, or a bounded render refusal. Only proven render or target validation failures include `stage: render|validate`; other failures cannot permit first-Node degradation.
-
-No Swamp model holds a publication lock. The Gateway's [Node hold](#coordinate-publication) orders the Route writes on a Node, and each apply phase refuses a file that changed since its read.
-
-Instance removal performs Route cleanup as steps in its native parent DAG. It converges shared PHP-FPM pools even when the Instance has no Route, withdraws Caddy before certificate and runtime removal, and retains every certificate still named by a stored site. Transfer retires captured source leaves and LAN rules in the same parent run, after publishing the surviving Caddy and PHP state. No `route.withdraw_instance`, `route.cleanup_instance` or `route.retire_source` child Operation is created.
-
-Node convergence cleans offline residue as a native step in its own run. The Gateway captures retained residue whose Route row is absent. Swamp publishes the surviving Caddy and PHP state, removes exact captured leaves and firewall rules, then publishes DNS. Certificate removal uses the admitted Node user and resolved home. A refusal stops later effects. The Gateway records success and removes only captured residue rows that have not changed during execution. Private DNS residue cleanup runs only on active Nodes with an active VPN role. A separate Gateway consumes private DNS and has no listener to clean.
+Choosing an Ingress independently lets standalone service Nodes expose public Processes without joining a Cluster or altering their private Caddy sites.
 
 ### Route child contracts
 
-Route publication records child intent from stored Route targets and Node placement. Development workload preparation uses `route.workload_prepare` with `{route_id, instance_id}` on the workload Node. The Gateway binds checkout roots, inspects the shared PHP pools, selects packages from that inspection, and requires pool publication proof. A changed stored-site render refuses before a Node effect.
-
-Production publication prepares PHP and served web roots as native steps on the admitted production Node. A pending Route with a web root supplies its application pool through the owning Route intent. The parent DAG synchronizes environment and URL changes before publication; it creates no Instance preparation child Operations.
-
-Shared native Route publication artifacts contain only affected Caddy groups, PHP pools and DNS entries. A Caddy artifact's `unserved` flag means it contains no affected blocks. Its `had_served_groups` flag records whether the full source snapshot had served groups, including unaffected sites. If that flag is true and `/etc/caddy/Caddyfile` is missing, forward or restore refuses with `caddy.current_config_missing` before publication. A genuinely empty Node may create its first file. Marker text inside a comment does not split the global Caddy header; only a complete Orbit marker at the start of a line does.
-
-Every PHP pool names the account's primary group by its numeric gid, so the site step that writes a pool and the delta that later withdraws it compare the same text. Pools written before route-create-site name the group instead. FPM reads both the same, so a PHP delta or withdrawal accepts a scope of its Route in either form, and a scope it writes names the gid.
-
-The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. The plan retains every admitted placement in `placements` and removed target snapshots in `detached_instances`, with `instance_id`, `node_id`, and `checkout_path` captured before association changes. A target disposition retains its previous ownership proof after associations change. Recovery preserves these snapshots after a removed Instance disappears. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
-
-An analytics tracking host is published and withdrawn with its Instance's analytics enable and disable runs; it has no Operation kind of its own. Public Ingress keeps Caddy automatic HTTPS.
-
-A `node.add` parent may update a generated Route domain with exactly `{route_id, domain}` when that Route records the parent Node as its generation basis. The tuple `{route_id, domain, node_id}` must match `state.enrollment_intent.route_changes`. The child Node follows normal Route admission: the first workload Node from target Instances ordered by Instance ID, then the Route Node, stored Router, or custom-proxy Node. The generation basis does not override current placement. The Node family retains the original TLD and Cluster until these children succeed.
-
-A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
-
-Private DNS publication inside Node and Route parents uses the captured records and requester catalog through the shared `route-dns-publish` child. Node convergence installs the serving listener before publication. Its parent owns terminal failure and task state; publication starts no separate Operation.
-
-Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
-
-`route:target:unset` is record-only. The Gateway clears eligible Project Route associations in one transaction and returns the Route. It starts no run and records no Operation. Active Instance and replacement guards still apply.
-
-Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
-
-Admission prepares the complete plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
-
-A single target binding grants development source access when the Route is not active. It preserves the Route's lifecycle and publication state and leaves the next Caddy build to its owning operation.
-
-A target pool stages workload sites under temporary certificate scopes before the Router selects them; [Native Route targets](/reference/native-route-targets) describes the steps. A new version of a certificate scope that a site still names installs only after the cutover, so the old site keeps a matching certificate until it leaves.
-
-Target-set TLS probes use pinned SSH argv commands from 209. A failed workload probe stops the Router switch. After the switch, every staged workload gets its final Caddyfile before temporary certificates are deleted, including retained workloads whose final file did not change.
-
-Cluster Router set starts one native `operation-cluster-router` run, and unset starts one `operation-cluster-router-unset` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
-
-Native certificate children own issuance, inspection, trust installation and activation. The retained Node residue cleanup path only removes an admitted certificate scope after Caddy withdrawal. It resolves the admitted user locally and refuses a supplied home that does not match that account. It cannot request, publish, trust or reload certificates.
-
-Admission records each configured Node user from the database without looking up the account on that Node. The native worker resolves its account home and group before installing prerequisites or removing old certificates.
-
-The shared `node-caddy-package` workflow installs the pinned Caddy package; official cfgmgmt `fetch` checks its SHA-256 pin. Placed steps install the role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records the result only from the terminal run; it creates no child Operations and checks no execution receipts.
-
-It commits the new Router before publishing private DNS from that stored selection. A DNS failure after this commit recovers forward. A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until Swamp waits for the DNS grace period and the Gateway confirms it elapsed. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
-
-An initial production web-root activation that fails withdraws DNS and Caddy before its pool and certificate cleanup. Removal also updates the URL of the next Route serving that application directory. A late Metrics failure stays on its Operation and leaves the completed Route state intact.
-
-A web-root update publishes the new root in the same steps. The Gateway records the new root from the result. A failed update keeps the old root recorded, and its Operation records the failed step.
-
-Route Operations request `metrics.reconcile` with an empty input only when their planned change alters the sorted public, active hostname catalog grouped by serving Ingress Node, and one active Metrics assignment has an active serving Node. Private-only changes, unchanged publication, target associations and web-root changes leave that catalog unchanged and skip Metrics. FPM monitoring selects active production Instances independently of their Route associations. The Metrics family captures its reconciliation intent when that child is requested.
-
-Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
+Route Operations capture target placements, detached Instance snapshots, and `orbit-control-inputs` at admission, hold Instance environment locks until completion, and trigger `metrics.reconcile` only when the public active hostname catalog changes. `route:target:unset` is record-only and broadcasts `route.updated` only after commit.
 
 ### Direct dispatch
 
-`route.caddy_converge` has one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
-
-These kinds retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
-
-Complete Node Caddy builds use official cfgmgmt file application and an end check, with pinned SSH argv for validation and reload. Their native end assertion replaces the reporting shell. The Gateway records the public content version captured from the input validation in the same native history response.
-
-Native Cluster Router admission captures Caddy recipe candidates through the same native-only producer as Node convergence. Its [candidate rollout](/reference/compute-drivers#the-recipe-artifact-mirror) accepts the schema before producing candidates, then activates consumers after that Gateway release is live.
-
-Site rendering uses only live Instance removal members. Abandoned history does not retain the unavailable site from a previous removal.
-
-Forward Route mutations always publish prepared private DNS through the existing live read, three-way merge, validation and service activation. They skip only the final DNS child when its records and catalog equal the prepared publication: the first child has already established that set, and the intervening steps change no DNS. Failure guards and required contribution counts still require every child that must run.
-
-This removes one DNS child per DNS Node from a same-Node move, while retaining the first child's existing repair and readiness behavior. The DNS grace still precedes withdrawal when the first publication changes an answer, even if the final publication is omitted. Restoration and withdrawal keep their existing order.
+`route.caddy_converge` dispatches directly from the Gateway without polled discovery or execution relays; complete Node Caddy builds validate and swap atomically and record their content version from the native result.

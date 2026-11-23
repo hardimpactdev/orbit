@@ -99,6 +99,29 @@ Deno.test("every Ansible file ships with the ansible-input extension", async () 
         );
     }
 });
+Deno.test("every playbook_dir source ships with the ansible-input extension", async () => {
+    // The worker runs playbooks from the extension bundle, so a literal playbook_dir source the manifest does not list is missing there.
+    const shipped = new Set(
+        (parse(Deno.readTextFileSync(`${ROOT}/manifest.yaml`)) as {
+            additionalFiles: string[];
+        }).additionalFiles,
+    );
+    for await (const path of expandGlob(`${ROOT}/ansible/**/*.yml`)) {
+        const text = await Deno.readTextFile(path.path);
+        for (
+            const [, source] of text.matchAll(
+                /\{\{ playbook_dir \}\}\/([^"' }]+)/g,
+            )
+        ) {
+            if (source.includes("{{")) continue;
+            const relative = new URL(source, "file:///ansible/").pathname.slice(1);
+            assert(
+                shipped.has(relative),
+                `${relative} is missing from manifest.yaml additionalFiles`,
+            );
+        }
+    }
+});
 Deno.test("runtime credentials and generated records are ignored", async () => {
     const paths = [
         "models/swamp/enrollment-token/example.yaml",

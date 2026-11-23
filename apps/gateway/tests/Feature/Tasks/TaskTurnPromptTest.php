@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurn;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskTurnReview;
+use App\Domain\Tasks\TaskType;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -35,6 +36,14 @@ function promptSubtask(?array $deliverables, string $groupBrief = "Add a firewal
     return $subtask->setRelation('parent', new Task(['title' => 'Firewall rules', 'brief' => $groupBrief]));
 }
 
+/** The work row of a task with no subtask: it repeats the task's title and brief and holds the deliverables. */
+function promptWork(?array $deliverables): Task
+{
+    $work = new Task(['type' => TaskType::Work, 'title' => 'Firewall rules', 'brief' => 'Add a firewall rule set.', 'deliverables' => $deliverables]);
+
+    return $work->setRelation('parent', new Task(['title' => 'Firewall rules', 'brief' => 'Add a firewall rule set.']));
+}
+
 /** @return list<array<string, string>> */
 function promptDeliverables(): array
 {
@@ -45,11 +54,25 @@ function promptDeliverables(): array
     ];
 }
 
-/** A review of check 12 on commit c… against the start b…, with the default head MERGED into it, the handoff note given. */
-function promptReview(?string $previous = null, int $round = 1, ?string $note = "Commit cccc.\n- tests: met, tests/Feature/DenyTest.php.", ?string $merged = null): TaskTurnReview
+/** A review of check 12 on commit c… against the start b…, with the default head MERGED into it, the handoff note given; the check ran the TASK CHECK. */
+function promptReview(?string $previous = null, int $round = 1, ?string $note = "Commit cccc.\n- tests: met, tests/Feature/DenyTest.php.", ?string $merged = null, bool $taskCheck = true): TaskTurnReview
 {
-    return new TaskTurnReview(12, str_repeat('c', 40), str_repeat('b', 40), $merged, $round, $previous, ['chart' => 'passed', 'tests' => 'passed', 'bar' => 'not_checked'], $note);
+    return new TaskTurnReview(12, str_repeat('c', 40), str_repeat('b', 40), $merged, $round, $previous, ['chart' => 'passed', 'tests' => 'passed', 'bar' => 'not_checked'], $note, $taskCheck);
 }
+
+/** The review receipt rule as it is today, word for word: written out here so that a change of the production text fails. */
+const PromptReviewReceipt = <<<'TEXT'
+Before this turn ends, post your review receipt: your verdict and the category of each blocking finding you reported, one entry per finding, none for approve and at least one for changes. . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" -H "Content-Type: application/json" -d '{"verdict": "changes", "findings": ["regression", "docs"]}' "$ORBIT_COPY_API/handoff" (set the verdict, approve or changes, and the categories first; approve posts "findings": []). A second post replaces the first. Without a receipt the review does not count. The categories:
+- regression: an unchanged input behaves differently than on the base
+- destructive: deletes, overwrites or stops something it must not
+- failure_state: a wrong state or result after a failure, an interruption or a rollback
+- race: the order or the lock between concurrent actions
+- contract: two components disagree on the same data or rule
+- validation: accepts input it must refuse, or refuses input it must accept
+- outcome_missing: an outcome or a deliverable of the brief is not met or not proven
+- docs: docs, fixtures or generated output are wrong
+- other: none of the above
+TEXT;
 
 /** The pull request text rule as it is today, word for word: written out here so that a change of the production text fails. */
 const PromptPrText = <<<'TEXT'
@@ -124,8 +147,9 @@ it('gives the implementer its fixed text: the briefs, the deliverables, its rule
     Before you hand off:
     1. Check each deliverable: the file change is there, each command passes, and
        each receipt shows what its deliverable asks.
-    2. Run the Project's check: `bin/task-check`. If it fails, fix the cause
-       and run it again. Leave the Project's other long gates to CI.
+    2. Commit your work, then run the Project's check: `bin/task-check`. If it fails,
+       fix the cause, commit and run it again: its receipt must name your last commit.
+       Leave the Project's other long gates to CI.
     3. Give the proof that the briefs and the deliverables ask for. Use no
        stand-in where they ask for the real thing. Fix what you can fix in this
        copy. If a proof still cannot run, or a deliverable is still not met,
@@ -140,7 +164,6 @@ it('gives the implementer its fixed text: the briefs, the deliverables, its rule
       and where the evidence is (a test, a receipt path, an Operation ID).
     - What was real and what was a stand-in.
     - Evidence from an earlier turn: say so, and name its commit.
-    - For an open question in the brief: the answer, with file and line.
     - What is not done or not proven, and why.
     - Other problems you found and did not fix.
 
@@ -221,10 +244,11 @@ it('gives the first reviewer turn the first-review lines, each deliverable\'s re
     cases of the same failure before you report. Be thorough inside the bar above,
     so that the next round only has to confirm fixes.
 
-    For each blocking finding give: the file and line, the failing case and its
-    consequence, the rule that a fix must satisfy, and every case of that rule you
-    found.
+    For each blocking finding give: its category, the file and line, the failing
+    case and its consequence, the rule that a fix must satisfy, and every case of
+    that rule you found.
 
+    Orbit ran the Project's task check on this commit. Do not run it again.
     Run commands in the foreground and let them finish. Run single test files by
     path. Remove what you created outside the checkout: records, processes,
     Instances and temporary files. Never print an environment file, a token, a key
@@ -319,10 +343,11 @@ it('gives a later reviewer turn the re-review lines with its round, the commit i
     first kind above in unchanged code, report it and mark it "missed in the first
     review".
 
-    For each blocking finding give: the file and line, the failing case and its
-    consequence, the rule that a fix must satisfy, and every case of that rule you
-    found.
+    For each blocking finding give: its category, the file and line, the failing
+    case and its consequence, the rule that a fix must satisfy, and every case of
+    that rule you found.
 
+    Orbit ran the Project's task check on this commit. Do not run it again.
     Run commands in the foreground and let them finish. Run single test files by
     path. Remove what you created outside the checkout: records, processes,
     Instances and temporary files. Never print an environment file, a token, a key
@@ -355,6 +380,31 @@ it('leaves the handoff note and its two lines out when there is none, and the de
         ->and(TaskTurnPrompt::implementer(promptSubtask(null), 'bin/task-check', 'Go.', promptStart()))->toContain("</subtask_brief>\n\n<rules>\n")->not->toContain('<deliverables>');
 });
 
+it('gives a task with no subtask one brief and its own deliverables, with no subtask part', function (): void {
+    $implementer = TaskTurnPrompt::implementer(promptWork(promptDeliverables()), 'bin/task-check', 'Implement the brief.', promptStart());
+    $reviewer = TaskTurnPrompt::reviewer(promptWork(promptDeliverables()), promptReview(), 'Review the checked commit.', promptStart());
+
+    expect($implementer)->toStartWith(<<<'TEXT'
+    You implement an Orbit task in its task copy. A separate
+    reviewer judges the commit you hand off against the briefs and the deliverables
+    below.
+
+    <task_brief title="Firewall rules">
+    Add a firewall rule set.
+    </task_brief>
+
+    <deliverables>
+    - chart (file: docs/cli/firewall/deny.mmd, created): The chart exists.
+    TEXT)
+        ->and($reviewer)->toStartWith("You review an Orbit task in its task copy.\nThis is the first review of this task: check 12,")
+        ->toContain("First review. This is the one full review of this task. Cover every outcome\nthis task owns,")
+        ->toContain("</task_brief>\n\n<deliverables>\n- chart (file: docs/cli/firewall/deny.mmd, created): The chart exists. Result: passed.")
+        ->and(TaskTurnPrompt::reviewer(promptWork(null), promptReview(previous: str_repeat('a', 40), round: 2), 'Go.', promptStart()))->toContain('This is review round 2 of this task:');
+    foreach ([$implementer, $reviewer] as $text) {
+        expect($text)->not->toContain('subtask')->and(substr_count($text, 'Add a firewall rule set.'))->toBe(1);
+    }
+});
+
 it('gives no role a rule that only the other role has', function (): void {
     $implementer = TaskTurnPrompt::implementer(promptSubtask(promptDeliverables()), 'bin/task-check', 'Go.', promptStart());
     $reviewer = TaskTurnPrompt::reviewer(promptSubtask(promptDeliverables()), promptReview(), 'Go.', promptStart());
@@ -371,6 +421,22 @@ it('names nothing of one Project in the fixed text but the task check command', 
 
 it('keeps the pull request text rule word for word: the text opens the pull request, or updates one that is open already', function (): void {
     expect(TaskTurn::PrTextRule)->toBe(PromptPrText);
+});
+
+it('gives a gated group\'s reviewer the receipt rule word for word, with the category list body and each category\'s meaning, after the review rules', function (): void {
+    $subtask = promptSubtask(promptDeliverables());
+    $subtask->parent->handoffs_gated = true;
+
+    expect(TaskTurn::reviewReceiptRule())->toBe(PromptReviewReceipt)
+        ->and(TaskTurnPrompt::reviewer($subtask, promptReview(), 'Go.', promptStart()))->toContain("</review_rules>\n\n".PromptReviewReceipt."\n\n".PromptPrText);
+});
+
+it('tells the reviewer that Orbit ran the task check only when the check ran one', function (): void {
+    $sentence = "Orbit ran the Project's task check on this commit. Do not run it again.";
+
+    expect(TaskTurnPrompt::reviewer(promptSubtask(null), promptReview(), 'Go.', promptStart()))->toContain($sentence)
+        ->and(TaskTurnPrompt::reviewer(promptSubtask(null), promptReview(taskCheck: false), 'Go.', promptStart()))
+        ->not->toContain('task check')->toContain("that rule you found.\n\nRun commands in the foreground");
 });
 
 it('refuses a composed prompt that the turn workflow would reject', function (Closure $compose): void {
@@ -426,6 +492,15 @@ describe('the values of a reviewer turn', function (): void {
             ->and(TaskTurnPrompt::reviewer($this->subtask->setRelation('parent', $this->group)->fill(['deliverables' => [
                 ['id' => 'tests', 'type' => 'command', 'description' => 'Pass.', 'command' => 'true', 'directory' => '.']]]), $review, 'Go.', promptStart()))
             ->toContain("<deliverables>\n- tests (command: `true` in .): Pass. Result: not_checked.\n</deliverables>");
+    });
+
+    it('marks the review as task checked only when the check ran the Project\'s task check command', function (): void {
+        $checked = fn (array $input): bool => TaskTurnReview::of($this->group, $this->subtask, $this->check,
+            tap($this->owner)->update(['input' => [...$this->owner->input, ...$input]]))->taskCheck;
+
+        expect($checked(['command' => 'bin/task-check']))->toBeTrue()
+            ->and($checked(['command' => null]))->toBeFalse()
+            ->and($checked(['command' => '']))->toBeFalse();
     });
 
     it('makes the first review round 1 with no earlier commit, also after reviewer turns that failed, were cancelled or asked', function (): void {

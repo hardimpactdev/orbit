@@ -6,6 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\Operation;
 use Illuminate\Container\Attributes\Tag;
 
 /**
@@ -30,6 +31,13 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
+    public function projectRename(Instance $instance, string $label): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectRename($instance, $label);
+        }
+    }
+
     public function projectDestroy(Instance $instance): void
     {
         foreach ($this->contributions as $contribution) {
@@ -41,6 +49,13 @@ final readonly class InstanceLifecycleContributions
     {
         foreach ($this->contributions as $contribution) {
             $contribution->projectWake($instance, $retryQueueFailure);
+        }
+    }
+
+    public function projectServerVersion(Instance $instance, string $serverVersion): void
+    {
+        foreach ($this->contributions as $contribution) {
+            $contribution->projectServerVersion($instance, $serverVersion);
         }
     }
 
@@ -56,6 +71,22 @@ final readonly class InstanceLifecycleContributions
         }
 
         return $present;
+    }
+
+    /**
+     * The first pairing link a contribution asks the create for.
+     *
+     * @return array{label: string, scopes: list<string>}|null
+     */
+    public function createPairing(Operation $operation): ?array
+    {
+        foreach ($this->contributions as $contribution) {
+            if (($pairing = $contribution->createPairing($operation)) !== null) {
+                return $pairing;
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $server */

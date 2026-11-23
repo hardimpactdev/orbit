@@ -1,0 +1,22 @@
+---
+# The end check of operation-process-upgrade, after the upgrade and after a rollback: the unit is active, and `verify_delay` seconds
+# later (10) still active with the same restart count. A binary that exits at once fails it, also under `Restart=always`.
+- name: Read the unit
+  ansible.builtin.command: { argv: [systemctl, show, --property=ActiveState, --property=NRestarts, --, "{{ up.name }}"] }
+  register: upgrade_unit_first
+  changed_when: false
+- name: Refuse a unit that is not active
+  ansible.builtin.assert: { that: ["'ActiveState=active' in upgrade_unit_first.stdout_lines"], fail_msg: The unit is not active., quiet: true }
+- name: Wait before the second read
+  ansible.builtin.wait_for: { timeout: "{{ verify_delay }}" }
+- name: Read the unit again
+  ansible.builtin.command: { argv: [systemctl, show, --property=ActiveState, --property=NRestarts, --, "{{ up.name }}"] }
+  register: upgrade_unit_second
+  changed_when: false
+- name: Refuse a unit that stopped or restarted
+  ansible.builtin.assert:
+    that:
+      - "'ActiveState=active' in upgrade_unit_second.stdout_lines"
+      - upgrade_unit_second.stdout_lines | select('match', '^NRestarts=') | list == upgrade_unit_first.stdout_lines | select('match', '^NRestarts=') | list
+    fail_msg: The unit restarted or stopped.
+    quiet: true

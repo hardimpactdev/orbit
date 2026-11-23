@@ -16,6 +16,8 @@ const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-
 // The shrink that the refresh starts as a transient unit (`systemd-run --unit orbit-fleet-shrink ... python3 -I -c <script> run ...`).
 const shrinkUnit = args[5] === "systemd-run" && args[7] === "orbit-fleet-shrink";
 const runtimeScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && args[9] === "/var/lib/incus/storage-pools";
+// instance_fleet_tunnel.py writes the tunnel's boot script and unit (`boot <script> <unit>`).
+const tunnelBootScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && args[9] === "boot";
 // The heal sent into a nested Instance host (`incus exec <name> -- python3 -I -c <script> ensure`) is recorded by its name too.
 const healScript = args[5] === "incus" && args[6] === "exec" && args[8] === "--" && args[9] === "python3" && args[10] === "-I" && args[11] === "-c"
   && args[13] === "ensure";
@@ -26,7 +28,8 @@ const recorded = hostCodeScript ? [...args.slice(0, 7), "<host-code-read>", ...a
   : healScript ? [...args.slice(0, 12), "<incus-network-pid-heal.py>", ...args.slice(13)]
   : args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
   : args[5] === "python3" && args[6] === "-I" && args[7] === "-c"
-  ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : runtimeScript ? "<instance_fleet_runtime.py>" : "<instance_shape_tools.py>",
+  ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : runtimeScript ? "<instance_fleet_runtime.py>"
+    : tunnelBootScript ? "<instance_fleet_tunnel.py>" : "<instance_shape_tools.py>",
     ...args.slice(9)] : args;
 Deno.writeTextFileSync(`${folder}/${args[0] === "--project" ? "calls" : "node-calls"}`, JSON.stringify(recorded) + "\n", { append: true });
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
@@ -86,6 +89,14 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+// The tunnel's boot files: `tunnelBoot` holds what the container has; changed when either differs.
+if (tunnelBootScript) {
+  if (command[5] !== "/etc/orbit/wg-nested-up" || command[6] !== "/etc/systemd/system/orbit-inner-fleet-tunnel.service") fail(`The tunnel boot got ${command.slice(5)}`);
+  const wanted = JSON.parse(await new Response(Deno.stdin.readable).text());
+  const changed = JSON.stringify(state.outer.tunnelBoot ?? null) !== JSON.stringify(wanted);
+  state.outer.tunnelBoot = wanted;
+  done({ changed });
+}
 // The refresh's best-effort resume of each target: a frozen one runs again, any other stays as it is.
 if (command[0] === "sh" && command[1] === "-c" && command[2] === 'for n do incus resume "$n" || true; done' && command[3] === "sh") {
   for (const name of command.slice(4)) if (state.containers[name]?.status === "Frozen") state.containers[name].status = "Running";

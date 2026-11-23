@@ -15,6 +15,7 @@ use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\ContainerWorkspaceRead;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -41,7 +42,13 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         return app(NativeDevelopmentInstanceInput::class)->create($operation);
     }
 
-    public function apply(Operation $operation, array $data): Operation
+    /**
+     * `$session`: the Gateway's T3 session an engine run opened from its sealed output; a Swamp run's is in the vault. `$pairing`:
+     * T3's answer to the pairing link an engine create asked for, which no record holds.
+     *
+     * @param  array<string, mixed>|null  $pairing
+     */
+    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null, #[\SensitiveParameter] ?array $pairing = null): Operation
     {
         // A clone's T3 session is read from the vault, and its workspace baseline from its Node, before the transaction, so no lock waits
         // on the network.
@@ -49,7 +56,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         $clone = $container === null ? null : (ValidatedData::object($container)['clone'] ?? null);
         $alreadyActive = (ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true;
         $handover = $clone !== null && $data['status'] === 'succeeded' && ! $alreadyActive;
-        $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? [])) : null;
+        $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? []), $session) : null;
+        if ($server !== null && $pairing !== null) {
+            $server['pairing'] = $pairing;
+        }
         $baseline = $handover && ! $operation->status->terminal() ? $this->baseline($operation) : null;
         if ($baseline === false) {
             // The run succeeded, but nothing proves what the workspace held before the user could work: the create fails, and no
@@ -66,6 +76,17 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
+            if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null)) {
+                // A default's container phase writes its failed task and its refusal or stderr tail into the run's result file, because
+                // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again. Any
+                // other step's detail, such as a proof copy's CI hold guidance, stays in the result.
+                if (trim($result['detail']) !== '') {
+                    $native = ValidatedData::object($data['failure'] ?? []);
+                    $data['failure'] = app(NativeStepFailure::class)->written(
+                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation, head: true);
+                }
+                unset($result['detail']);
+            }
             if (is_array($operation->input['model_route'] ?? null)) {
                 $result['model_route'] = $operation->input['model_route'];
             }
@@ -178,7 +199,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             }
             $ended = $operation->status->terminal();
             $operation = $this->direct->project($operation, $data, $result);
-            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id'])) {
+            // A reserved clone's completion follows its finalize, which gives it the name its database and Route take.
+            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id']) && ($operation->input['completion_deferred'] ?? false) !== true) {
                 // A Conn launch admits its own completion under the parent cancel fence.
                 // The ordinary create ends and hands its hold to completion here.
                 // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
@@ -198,6 +220,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 }
                 app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'completion_operation_id' => $completion->id]]);
                 $operation->refresh();
+            }
+            if ($handover && ! $ended && ($result['fleet_start'] ?? null) === 'background') {
+                // The clone's fleet starts beside its completion: its wait holds no lock and never fails the create.
+                app(InstanceFleetOperation::class)->admit($operation);
             }
 
             return $operation;
@@ -236,7 +262,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
         if ($retained === null) {
             return null;
         }
-        $clone = ($container['clone'] ?? null) !== null;
+
+        // The receipt names the destroy that admission takes: a clone's, or a retained default's once no create owns it
+        // (ContainerInstanceDestroy::failedDefault, docs/reference/development-containers.md#destroy).
+        $available = $retained->name !== DefaultInstanceName::Name || ContainerInstanceDestroy::failedDefault($retained, $operation);
 
         return [
             'state' => 'retained_for_retry',
@@ -247,8 +276,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             ],
             'destroy' => [
                 'command' => 'instance:destroy', 'instance_id' => $operation->target_id,
-                'available' => $clone, 'options' => ['yes' => true, 'force' => true],
-                ...($clone ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
+                'available' => $available, 'options' => ['yes' => true, 'force' => true],
+                ...($available ? [] : ['error_code' => 'operation.kind_unavailable', 'reason' => 'container_default_destroy_unavailable']),
             ],
         ];
     }
@@ -262,19 +291,21 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
-    public function server(array $t3, array $result): array
+    public function server(array $t3, array $result, #[\SensitiveParameter] ?string $opened = null): array
     {
         $server = $result['t3'] ?? null;
-        $session = is_array($server) ? ($server['gateway_session'] ?? null) : null;
+        // An engine run's session: the Gateway opened it from the sealed `t3` output; it names no vault key.
+        $session = $opened !== null ? null : (is_array($server) ? ($server['gateway_session'] ?? null) : null);
         $environment = is_array($server) ? ($server['environment_id'] ?? null) : null;
         $expires = is_array($server) ? ($server['expires_at'] ?? null) : null;
-        if (! is_array($server) || ! is_array($session) || ($session['vault'] ?? null) !== 'orbit-control-inputs'
-            || ! is_string($session['key'] ?? null) || ! str_starts_with($session['key'], 'nckrtl-instance-t3-')
+        $vaulted = $opened !== null || (is_array($session) && ($session['vault'] ?? null) === 'orbit-control-inputs'
+            && is_string($session['key'] ?? null) && str_starts_with($session['key'], 'nckrtl-instance-t3-'));
+        if (! is_array($server) || ! $vaulted
             || ! is_string($environment) || preg_match('/\A[A-Za-z0-9._-]{1,255}\z/D', $environment) !== 1
             || ! is_string($server['server_version'] ?? null) || ! is_string($expires) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/D', $expires) !== 1) {
             throw new ResourceOperationException('instance.result_invalid', 'The clone did not prove its registered T3 server.');
         }
-        $secret = app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
+        $secret = $opened ?? app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', ValidatedData::string(ValidatedData::object($session)['key']));
         if ($secret === '') {
             throw new ResourceOperationException('instance.result_invalid', 'The T3 session of the clone is missing from the vault.');
         }

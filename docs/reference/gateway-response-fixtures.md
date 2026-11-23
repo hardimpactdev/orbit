@@ -17,6 +17,8 @@ The `database-server-update` fixtures replay [`database:server:update --require-
 
 The `tasks/task-turn/consult-refused` and `model-refused` fixtures record the answer to a turn with the removed role `consult` or a `model`: HTTP 422 `validation.failed` on that field. An older CLI that still sends either replays them as a clear error.
 
+The `tasks/task-create/agent-refused` fixture records the refusal of a task that sets only `implementer_provider` `antigravity` while the Gateway's Claude model resolves: HTTP 422 `validation.failed` on `implementer_model`, with the models Antigravity accepts. The CLI shows it as the Gateway's error.
+
 The `operations/operation-show/overdue` fixture records a timed-out Operation of `tasks.check` with `overdue_since` and its existing cancel request. The CLI replays that deadline audit in human and JSON output. It is reporting only; cancellation timing is unchanged.
 
 The `operations/operation-show/fleet-reboot-unreachable` fixture records a failed Node with its redacted SSH diagnostic, a later halted Node and an unvisited Node. The `fleet-reboot-interrupted` fixture records unknown Node outcomes when the root delivered no Node report. The CLI replays both in human and JSON output. [Fleet reboot](/reference/gateway-recovery#one-node-of-the-pass) owns those outcomes.
@@ -33,7 +35,7 @@ The `nodes/node-metrics` fixture carries a retained agent snapshot with its orig
 
 The `proof-run` fixtures record a result as rows of `command`, `file` (the cases file), `case`, `verdict` and `seconds`. A refusal for a disabled execution lists the selected cases files.
 
-The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
+The web fleet includes task 14, a task with no subtask in review, with its deliverables, a passed handoff check, its two agent threads and a comment. The web fleet includes a Swamp run for task group 12, with succeeded, running, and pending steps. It proves task-panel rendering and output expansion without an agent transcript. It does not prove live Swamp connectivity or credential grants. [Swamp run output](/reference/tasks#swamp-run-output) defines the live read.
 
 The `websocket-apps` fixtures cover Reverb app create, list, show, and destroy, plus Instance add and remove. The CLI replays them in human and JSON modes. App fixtures carry the app ID and public key. Attachment fixtures carry key names only. Neither carries the secret. See [Reverb apps](/reference/websocket-apps) for the response contract.
 
@@ -159,11 +161,11 @@ Two files need a note:
 - `firewall-list.json` answers `GET /api/v1/firewall-rules` for every Node. The demo Gateway derives the one-Node, `managed` and `live` forms from it.
 - `ci-runners.json` answers `GET /api/v1/ci/runners` with one CI Node, its runners and the jobs of its window.
 
-The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
+The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` and `brew-cask` completed with no packages, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
 
 Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
 
-`task-insights.json` holds 30 days of [task insights](/reference/tasks#task-insights) with a previous period and a breakdown by model, Project, and release. The demo answers every period and Project filter with it. The recorded agent thread fixtures carry `cost_usd`.
+`task-insights.json` holds 30 days of [task insights](/reference/tasks#task-insights) with a previous period and a breakdown by model, Project, and release. Its `hourly` is empty, as in every `30d` answer. The demo answers every period and Project filter with it. The recorded agent thread fixtures carry `cost_usd`.
 
 ## Families with fixtures
 
@@ -172,6 +174,7 @@ The directories under `packages/php-sdk/fixtures` list the families that have re
 Notes for some families:
 
 - Node update fixtures under `nodes/node-update` record an unmanaged peer set to `ipados` and the `node.platform_managed` refusal. The SDK and `node:update` CLI tests replay both responses.
-- The `instances/instance-show/attached-targets` fixture records attached targets with and without the `shared` mark. The Gateway's attached-target test records it, and the `instance:show` CLI contract test replays it.
+- The `instances/instance-show/attached-targets` fixture records attached targets with and without the `shared` mark.
+- The same fixture records the Instance's fleet fields: `fleet_ready_at`, `fleet_failed_at` and `fleet_error_code`. The Gateway's attached-target test records it, and the `instance:show` CLI contract test replays it.
 - Automatic Gateway release fixtures use the `gateway-auto-release-*` directories under `gateway-releases`, matching the public commands.
 - Task publication fixtures cover deletion of the VM and its identity. The public `task:park` command has no response fixture. Node host settings expose separate VM `task_places` and `ci_places` counts. A CI Node's [CI places](/reference/node-settings#ci-places) are a separate `settings.ci` member.

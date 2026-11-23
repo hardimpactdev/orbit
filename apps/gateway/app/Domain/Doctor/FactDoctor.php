@@ -8,6 +8,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Engine\MachineBus;
 use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallSnapshot;
 use App\Domain\Fleet\FleetReboot;
@@ -27,12 +28,13 @@ use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\NodeFact;
+use App\Models\ProcessArtifact;
 use Carbon\CarbonImmutable;
 use UnexpectedValueException;
 
 /**
- * Doctor from the facts each Node's agent reported (`host`, `units`, `ufw`) and its liveness, compared with what the
- * Gateway records. It starts no run and never reaches a Node. A check whose fact has not arrived is unverifiable,
+ * Doctor from the facts each Node's agent reported (`host`, `units`, `ufw`), its liveness and its executor's report on the
+ * machine bus, compared with what the Gateway records. It starts no run and never reaches a Node. A check whose fact has not arrived is unverifiable,
  * never guessed. The families it does not check report nothing.
  */
 final readonly class FactDoctor
@@ -55,6 +57,7 @@ final readonly class FactDoctor
         private NodeRoleServiceCatalog $services,
         private RuntimeDoctorIntent $runtime,
         private FirewallInspectionInput $firewall,
+        private MachineBus $bus,
     ) {}
 
     /**
@@ -111,6 +114,15 @@ final readonly class FactDoctor
         }
         $check->observed($node->id, 'node.reboot_due');
         $this->idRanges($check);
+        // Signed orders expire seconds after the Gateway signs them, so a Node's clock must follow a time source. The Node's
+        // executor reports it on the machine bus; a Node without a fresh executor report is not checked.
+        $synchronized = $this->bus->nodeClock($node->id);
+        if ($synchronized === false) {
+            $check->issue('node.clock_unsynchronized', $node->id, $node->name, 'The Node\'s clock does not follow a time source.', 'synchronized', 'not synchronized');
+        }
+        if ($synchronized !== null) {
+            $check->observed($node->id, 'node.clock_unsynchronized');
+        }
         if ($check->agent === null) {
             return $check->report();
         }
@@ -222,10 +234,15 @@ final readonly class FactDoctor
 
     private function processFamily(DoctorFamilyInspection $check): DoctorFamilyReportData
     {
-        if (! $check->managed || $check->agent === null || $check->node->platform !== 'linux') {
+        if (! $check->managed) {
             return $check->report();
         }
-        foreach ($this->runtime->execute($check->node)['processes'] as $process) {
+        $processes = $this->runtime->execute($check->node)['processes'];
+        $this->processUpdates($check, $processes);
+        if ($check->agent === null || $check->node->platform !== 'linux') {
+            return $check->report();
+        }
+        foreach ($processes as $process) {
             $check->read($process['id'], ['process.runtime_missing', 'process.crash_loop', 'process.state_mismatch'], function () use ($check, $process): void {
                 $units = $check->fact(NodeFactKind::Units);
                 $systemd = $process['runtime'] === 'systemd';
@@ -263,6 +280,30 @@ final readonly class FactDoctor
         }
 
         return $check->report();
+    }
+
+    /**
+     * The daily release check's stored answer against the installed version; informational and without Node contact
+     * (docs/reference/processes-and-schedules.md#upgrade-a-process).
+     *
+     * @param  list<array{id: int, name: string}>  $processes
+     */
+    private function processUpdates(DoctorFamilyInspection $check, array $processes): void
+    {
+        if ($processes === []) {
+            return;
+        }
+        $names = array_column($processes, 'name', 'id');
+        $artifacts = ProcessArtifact::query()->whereIn('process_id', array_keys($names))->get(['process_id', 'version', 'latest_version'])->keyBy('process_id');
+        // Every Process is observed, so a finding retires once its artifact is gone or its version is unknown.
+        foreach ($names as $id => $name) {
+            $artifact = $artifacts->get($id);
+            if ($artifact?->version !== null && $artifact->latest_version !== null && version_compare($artifact->latest_version, $artifact->version, '>')) {
+                $check->issue('process.update_available', $id, $name, 'A newer upstream release of the Process is available.',
+                    $artifact->latest_version, $artifact->version, DoctorIssueKind::Informational);
+            }
+            $check->observed($id, 'process.update_available');
+        }
     }
 
     private function firewallFamily(DoctorFamilyInspection $check): DoctorFamilyReportData

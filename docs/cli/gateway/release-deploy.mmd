@@ -80,6 +80,11 @@ sequenceDiagram
     SW->>GN: Check the candidate<br/>FrankenPHP · health · commit
     %%> On failure:
     %%> - discard the candidate; live keeps serving and the Swamp load does not start
+    SW->>GN: Renew Swamp tokens<br/>Swamp Node and Gateway tokens
+    %%> What it does:
+    %%> - starts the Swamp Node's token renewal, renews the Gateway read and run tokens within ten days, and records the replaced names
+    %%> On failure:
+    %%> - the run fails with `gateway.release_swamp_token_expiring` while a live consumer's token still expires within three days
     Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
     %%> What it does:
     %%> - the load child checks the target on the Gateway Node before updating the checkout, grants and loaded workflows
@@ -109,6 +114,8 @@ sequenceDiagram
       AC->>GN: Switch back<br/>restore host release
     end
     AC->>GN: Resume document cleanup
+    SW->>GN: Revoke replaced tokens<br/>after processes restart
+    %%> - a failure leaves the replaced tokens valid to their expiry; the release still succeeds
     alt every step succeeded
       SW-->>GW: Run succeeded<br/>terminal result
       Note over GW: Record verified<br/>fleet rollout follows

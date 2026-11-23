@@ -20,6 +20,16 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 check = runpy.run_path(str(ROOT / 'bin/task-check'))
+
+
+def disposable_receipt(root, commit, tree, parts, write=check['write_receipt']):
+    """A test's run of main() checks no real candidate: it writes no receipt into this checkout, where it would replace the
+    receipt of a real run. A run on a disposable repository writes its own."""
+    if Path(root).resolve() != ROOT:
+        write(root, commit, tree, parts)
+
+
+check['main'].__globals__['write_receipt'] = disposable_receipt
 Part = check['Part']
 JOBS = {job: False for job in check['PEST_JOBS']}
 GATEWAY_TEST = 'apps/gateway/tests/Feature/InstanceDestroyRouteHoldReleaseTest.php'
@@ -465,6 +475,50 @@ class StartCommitTest(unittest.TestCase):
         self.assertEqual(check['changes'](self.repo, first), (True, first, first, ['seed', 'work']))
 
 
+class ReceiptTest(unittest.TestCase):
+    setUp, git, commit = StartCommitTest.setUp, StartCommitTest.git, StartCommitTest.commit
+
+    def receipt(self):
+        path = Path(self.git('rev-parse', '--path-format=absolute', '--git-path', 'orbit-handoff/delivery.json'))
+        self.assertIn('.git', path.parts)
+        return json.loads(path.read_text())
+
+    def test_the_receipt_names_the_checked_commit_and_each_part(self):
+        head = self.commit('first')
+        tree = self.git('rev-parse', 'HEAD^{tree}')
+        check['write_receipt'](self.repo, head, tree, [Part('ci-plan', 'passed', 0.52), Part('pest', 'FAILED', 12.04, 'exit 1')])
+        self.assertEqual(self.receipt(), {'commit': head, 'tree': tree, 'parts': [{'name': 'ci-plan', 'result': 'passed', 'seconds': 0.5},
+                                                                    {'name': 'pest', 'result': 'FAILED', 'seconds': 12.0}]})
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_a_run_that_stops_early_still_writes_its_receipt(self):
+        self.git('checkout', '--quiet', '--orphan', 'task')
+        head = self.commit('first')
+        with patch.dict(check['main'].__globals__, {'ROOT': self.repo}), redirect_stdout(io.StringIO()):
+            self.assertEqual(check['main']([]), 1)
+        self.assertEqual(self.receipt(), {'commit': head, 'tree': self.git('rev-parse', 'HEAD^{tree}'),
+                                          'parts': [{'name': 'start-commit', 'result': 'FAILED', 'seconds': 0.0}]})
+
+    def test_the_receipt_tree_holds_uncommitted_and_untracked_work(self):
+        self.git('checkout', '--quiet', '--orphan', 'task')
+        self.commit('first')
+        (self.repo / 'first').write_text('changed')
+        (self.repo / 'new').write_text('new')
+        with patch.dict(check['main'].__globals__, {'ROOT': self.repo}), redirect_stdout(io.StringIO()):
+            check['main']([])
+        tree = self.receipt()['tree']
+        self.assertEqual((self.git('show', tree + ':first'), self.git('show', tree + ':new')), ('changed', 'new'))
+        # The index is untouched.
+        self.assertEqual(self.git('status', '--porcelain'), 'M first\n?? new')
+
+    def test_a_stubbed_run_writes_no_receipt_into_this_checkout(self):
+        path = Path(subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', '--path-format=absolute', '--git-path',
+                                             'orbit-handoff/delivery.json'], text=True).strip())
+        before = path.read_bytes() if path.exists() else None
+        check['main'].__globals__['write_receipt'](ROOT, 'HEAD', 'HEAD', [])
+        self.assertEqual(path.read_bytes() if path.exists() else None, before)
+
+
 class ReportTest(unittest.TestCase):
     def test_one_line_per_part_then_the_result(self):
         parts = [Part('ci-plan', 'passed', 0.52, 'jobs: docs'),
@@ -554,7 +608,7 @@ class CiPolicyTest(unittest.TestCase):
     def test_a_file_that_a_policy_test_reads_runs_policy_tests_and_names_it(self):
         ran = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
-        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['.agents/skills/swamp/SKILL.md']),
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['.agents/swamp-upstream/skills/swamp/SKILL.md']),
                  'candidate_head': lambda _committed: 'HEAD', 'policy_paths': lambda _base, _committed, paths: paths, 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
         output = io.StringIO()
@@ -563,7 +617,7 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, check['CI_POLICY'])
         self.assertEqual(code, 0)
         self.assertIn('  passed       ci-policy (', output.getvalue())
-        self.assertIn('selected by .agents/skills/swamp/SKILL.md, which a policy test reads', output.getvalue())
+        self.assertIn('selected by .agents/swamp-upstream/skills/swamp/SKILL.md, which a policy test reads', output.getvalue())
 
     def test_a_docs_page_that_no_policy_test_reads_leaves_the_part_to_ci(self):
         ran = []
@@ -583,7 +637,7 @@ class CiPolicyTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}; {trees}')
         # Opened in the recorded run, or checked for existence by a policy test.
-        for path in ('swamp/ansible/tasks/instance-fleet.yml', '.agents/skills/swamp-getting-started/references/tracks.md',
+        for path in ('swamp/ansible/tasks/instance-fleet.yml', '.agents/swamp-upstream/skills/swamp-getting-started/references/tracks.md',
                      'apps/agent/src/commands/ci_runner.rs', 'apps/cli/design/Flows/node-add.json',
                      'apps/docs/composer.json', 'docs/reference/compute-drivers.md',
                      'apps/gateway/tests/.pest/shards.json', 'apps/cli/tests/Feature/CommandSurfaceTest.php',

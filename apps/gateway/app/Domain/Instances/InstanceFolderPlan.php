@@ -18,6 +18,34 @@ use App\Models\Node;
 final readonly class InstanceFolderPlan
 {
     /**
+     * Temporary: Incus re-tunes a copied btrfs filesystem with `btrfstune -f -u`, which rewrites all its metadata (4.3 s for a
+     * nested fleet's inner volume); `-f -m` changes only the metadata UUID (about 50 ms), as LXD does (canonical/lxd#15947). The
+     * runtime folder's `bin` comes first in the Node's incusd PATH, so this wrapper turns exactly that call into `-m` and passes every
+     * other call through. Remove it once Nodes run an Incus release that uses `-m` (https://github.com/lxc/incus/pull/4435).
+     */
+    public const string Btrfstune = "#!/bin/sh\n# Managed by Orbit. Temporary: remove once Incus uses btrfstune -m (lxc/incus#4435).\n"
+        ."if [ \"$#\" -eq 3 ] && [ \"$1\" = -f ] && [ \"$2\" = -u ]; then\n  exec /usr/bin/btrfstune -f -m \"$3\"\nfi\n"
+        ."exec /usr/bin/btrfstune \"$@\"\n";
+
+    /**
+     * Prints the Laravel application folder, the one with `artisan`, where a client starts `laravel-lsp` and sends its root URI
+     * (docs/reference/development-containers.md#laravel-language-server): the application folder that a clone's Instance file names,
+     * else the nearest folder at or above the given path (the working folder by default) with `artisan`, else the one folder below
+     * that path with it. It reads the Instance file and the workspace only, so a Project holds no Orbit setting.
+     */
+    public const string LaravelLspRoot = "#!/bin/sh\n# Managed by Orbit. Prints the folder with the Laravel application's artisan, where laravel-lsp starts.\nset -eu\n"
+        ."start=\${1:-.}\n"
+        ."application=\$(sed -n 's/^ORBIT_APPLICATION=\"\\(.*\\)\"\$/\\1/p' ".InstanceContainer::InstanceFile." 2>/dev/null | sed 's/\\\\\\(.\\)/\\1/g')\n"
+        ."if [ -n \"\$application\" ] && [ -f \"\$application/artisan\" ]; then\n  printf '%s\\n' \"\$application\"\n  exit 0\nfi\n"
+        ."folder=\$(cd \"\$start\" && pwd -P)\n"
+        ."while :; do\n  if [ -f \"\$folder/artisan\" ]; then\n    printf '%s\\n' \"\$folder\"\n    exit 0\n  fi\n"
+        ."  [ \"\$folder\" = / ] && break\n  folder=\$(dirname \"\$folder\")\ndone\n"
+        ."found=\$(find \"\$start\" \\( -name vendor -o -name node_modules -o -name .git \\) -prune -o -type f -name artisan -print)\n"
+        ."if [ -n \"\$found\" ] && [ \"\$(printf '%s\\n' \"\$found\" | wc -l)\" -eq 1 ]; then\n"
+        ."  cd \"\$(dirname \"\$found\")\" && pwd -P\n  exit 0\nfi\n"
+        ."echo \"laravel-lsp-root: no one Laravel application (artisan) at, above or below \$start\" >&2\nexit 1\n";
+
+    /**
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
@@ -29,7 +57,7 @@ final readonly class InstanceFolderPlan
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $runtime = [...$runtime, ...$mount];
+        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, 'laravel-lsp-root' => self::LaravelLspRoot], ...$mount];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];

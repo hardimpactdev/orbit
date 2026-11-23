@@ -38,6 +38,7 @@ use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofWarmPool;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskType;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Processes\CommandResult;
@@ -354,6 +355,8 @@ describe('proof:run in copies: admission', function (): void {
             ->and(collect($proof->input['runs'])->pluck('instance_id')->sort()->values()->all())->toBe($copies->pluck('id')->sort()->values()->all())
             ->and(app(DirectOperation::class)->workflowFor($runs->first()))->toBe('operation-proof-run-copy')
             ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->get()->every(static fn (Task $group): bool => $group->status === TaskGroupStatus::Reserved))->toBeTrue();
+        // Each proof's task has no subtask: its work holds the verdict, and the task still starts.
+        copyProofExpectNoSubtask($runs->pluck('target_id')->all());
     });
 
     it('takes the free CI places of the Node: its places minus busy runners and proof copies, within its available memory', function (int $places, int $busy, int $memoryCopies, int $runs): void {
@@ -923,7 +926,9 @@ describe('proof:run in copies: the warm pool', function (): void {
         $node = Node::query()->where('name', 'beast')->firstOrFail();
         $copies = app(ProofCopies::class);
 
+        copyProofExpectNoSubtask($groups);
         expect($groups)->toHaveCount(2)
+            ->and(Task::topLevel()->whereKey($groups)->get()->every(static fn (Task $group): bool => $group->status === TaskGroupStatus::Reserved))->toBeTrue()
             ->and(ProofWarmCopy::query()->pluck('task_id')->all())->toBe($groups)
             ->and(ProofWarmCopy::query()->pluck('seed_commit')->unique()->all())->toBe([str_repeat('c', 40)])
             ->and(Operation::query()->where('kind', 'instance.create')->where('status', '!=', 'succeeded')->count())->toBe(2)
@@ -986,6 +991,9 @@ describe('proof:run in copies: the warm pool', function (): void {
             ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates)
             ->and(ProofWarmCopy::query()->count())->toBe(0)
             ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->pluck('title')->every(static fn (string $title): bool => str_starts_with($title, 'Proof firewall:')))->toBeTrue()
+            // The work of a taken task repeats the task's new title and brief.
+            ->and(Task::query()->whereIn('parent_id', $runs->pluck('target_id'))->where('type', TaskType::Work)->get()
+                ->every(static fn (Task $work): bool => str_starts_with($work->title, 'Proof firewall:') && str_starts_with($work->brief, 'Prove firewall:')))->toBeTrue()
             // The taken copy is active, so its run is due at once.
             ->and($runs->map(fn (Operation $run): string => app(ProofCopies::class)->state($run))->unique()->all())->toBe(['ready'])
             // Two places run the proof; the third takes one new warm copy.
@@ -1092,3 +1100,20 @@ describe('proof:run in copies: the warm pool', function (): void {
             ->and(ProofWarmCopy::query()->pluck('task_id')->all())->toBe($resumed);
     });
 });
+
+/**
+ * A proof's task has no subtask: it holds its own verdict deliverable in its work (docs/reference/tasks.md#a-task-with-no-subtask).
+ *
+ * @param  list<int>  $groups
+ */
+function copyProofExpectNoSubtask(array $groups): void
+{
+    expect($groups)->not->toBeEmpty();
+    foreach (Task::topLevel()->whereKey($groups)->get() as $group) {
+        $rows = Task::query()->where('parent_id', $group->id)->get();
+        expect($rows)->toHaveCount(1)
+            ->and($rows->first()->type)->toBe(TaskType::Work)
+            ->and($rows->first()->deliverables)->toBe(ProofWarmPool::Deliverables)
+            ->and($rows->first()->brief)->toBe($group->brief);
+    }
+}

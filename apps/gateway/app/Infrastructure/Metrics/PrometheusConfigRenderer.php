@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Metrics\MetricsGatewayResolver;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Yaml\Yaml;
+use Throwable;
 
 final readonly class PrometheusConfigRenderer
 {
@@ -16,6 +20,12 @@ final readonly class PrometheusConfigRenderer
      * no reader polls faster than new samples arrive.
      */
     public const string ScrapeInterval = '10s';
+
+    /**
+     * The Gateway's [task insights](/reference/tasks#prometheus-exporter) totals change every five minutes, so one scrape a
+     * minute shows each change and costs the Gateway one small query.
+     */
+    public const string TaskInsightsScrapeInterval = '60s';
 
     /** @param list<array{name:string,address:string}> $nodes
      * @param  list<ServiceMetricsNode>  $services
@@ -29,7 +39,45 @@ final readonly class PrometheusConfigRenderer
             "global:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
             .$this->job('orbit-node-exporter', $nodes, MetricsFootprint::ExporterPort, null)
             .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, null)
-            .$this->serviceJobs($services);
+            .$this->serviceJobs($services)
+            .$this->taskInsightsJob();
+    }
+
+    /**
+     * Prometheus reaches the Gateway as the Node agent does: at the Gateway's WireGuard address, which the Gateway site
+     * also answers, with `gateway.orbit` as the TLS name and the Orbit root as the only trust. It uses no DNS: the
+     * container's resolver may not route Orbit names. The Gateway admits only the Metrics Node on this path.
+     *
+     * Without one active Gateway with a WireGuard address, or without a readable root, the job is left out, so the
+     * rest of the configuration still renders; the next render adds it.
+     */
+    private function taskInsightsJob(): string
+    {
+        $address = app(MetricsGatewayResolver::class)->find()?->wireguard_ip;
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
+            Log::warning('metrics.task_insights_job_skipped', ['reason' => 'No active Gateway with a WireGuard address.']);
+
+            return '';
+        }
+        try {
+            $root = app(LeafCertificateSigner::class)->rootCertificate();
+        } catch (Throwable $exception) {
+            Log::warning('metrics.task_insights_job_skipped', ['reason' => $exception->getMessage()]);
+
+            return '';
+        }
+        $job = [[
+            'job_name' => 'orbit-task-insights',
+            'scrape_interval' => self::TaskInsightsScrapeInterval,
+            'scrape_timeout' => '10s',
+            'sample_limit' => 20000,
+            'scheme' => 'https',
+            'metrics_path' => '/api/v1/metrics/task-insights',
+            'tls_config' => ['ca' => $root, 'server_name' => 'gateway.orbit'],
+            'static_configs' => [['targets' => [$address.':443']]],
+        ]];
+
+        return preg_replace('/^/m', '  ', rtrim(Yaml::dump($job, 10, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK)))."\n";
     }
 
     /** @param list<ServiceMetricsNode> $targets */

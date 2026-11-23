@@ -96,9 +96,13 @@ Upstream fixes go through the orchestrator to Nick. Only official Swamp versions
 
 Native behavior resources expose their attributes directly under `outputs`. The T3 registration resource named `terminal` therefore supplies `outputs.stdout`; its resource name adds no level.
 
-The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. So a playbook phase that must report its failure writes it into its result file, which a later step prints, as the container removal does with the end of its stderr ([Retry and ownership](/reference/instance-removal#retry-and-ownership)). A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
+The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. So a playbook phase that must report its failure writes it into its result file, which a later step prints, as the container removal does with the end of its stderr ([Retry and ownership](/reference/instance-removal#retry-and-ownership)).
+
+A container default's create keeps the head of its written detail as well, which names the failed task: 4,096 bytes in all, cut between whole UTF-8 characters ([Create](/reference/development-containers#create)). A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
 
 The shared subscriber calls `projectTerminal(Operation $operation, array $terminalRun, array{job:string,step:string} $selector): Operation` with the native event's `run` object and the fixed family declaration. The helper reads that exact root with `workflow.history.get`, authenticated with the existing `swamp.read_token`. It does not require the separate `swamp.run_token` used to start work. It selects the named job and step and decodes stdout. After the history request finishes, it briefly locks and reloads the Operation and checks its run binding. It releases that transaction before calling the family `projection.apply`, so native secret reads and cleanup never inherit a shared write lock.
+
+Beside the decoded result, `apply` receives the native run as `native_run`, so a projection can tell which steps ran when the result step printed nothing; `process.upgrade` uses it to decide whether `Switch current` ran.
 
 Each family commits its domain changes and terminal result in its own short transaction; the shared result writer locks and rechecks the original run binding and terminal status. No history request runs under that row lock. It does not repeat host or domain checks, poll status, resume a run or invoke an effect.
 
@@ -195,6 +199,8 @@ Operation reads do not request terminal history or expire Operations. The event 
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
 
 A run that succeeded while its end check was skipped or failed fails with `operation.result_unreadable` in the same pass, and the Operation frees its target. A timed-out Operation whose run did so within its budget ends the same way. It is not reopened each pass.
+
+An Operation that a signed-order fence ended `interrupted` with `executor.result_unknown` after its budget expired gets the same reads until its native end is recorded. Only that end is recorded; the fence keeps the lock until a receipt or the executor journal frees it ([Operations](/reference/operations)).
 
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
 

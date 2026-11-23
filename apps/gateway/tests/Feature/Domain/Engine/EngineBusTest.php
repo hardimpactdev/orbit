@@ -6,18 +6,30 @@ use App\Infrastructure\Engine\EngineBus;
 use Basis\Nats\Client;
 use Basis\Nats\Message\Payload;
 
-/** A connection that never touches the network and answers pings as told. */
+/** A connection that never touches the network and answers pings and dispatches as told. */
 final class IdleTestClient extends Client
 {
     public bool $alive = true;
 
+    public bool $throwOnPing = false;
+
     public int $pings = 0;
+
+    public ?Payload $dispatched = null;
 
     public function ping(): bool
     {
         $this->pings++;
+        if ($this->throwOnPing) {
+            throw new RuntimeException('closed socket');
+        }
 
         return $this->alive;
+    }
+
+    public function dispatch(string $name, mixed $payload, ?float $timeout = null): mixed
+    {
+        return $this->dispatched;
     }
 }
 
@@ -49,6 +61,33 @@ it('replaces a connection that sat idle and no longer answers a ping', function 
     $first->alive = false;
     $this->travel(11)->seconds();
     expect($bus->client())->not->toBe($first)->and($made)->toHaveCount(2);
+
+    $second = $made[1];
+    $second->throwOnPing = true;
+    $this->travel(11)->seconds();
+    expect($bus->client())->not->toBe($second)->and($made)->toHaveCount(3);
+});
+
+it('reads node_targets from the Node capability report and defaults to empty for older executors', function (): void {
+    $client = new IdleTestClient;
+    $bus = new EngineBus(static fn (): Client => $client);
+
+    $client->dispatched = new Payload('{"actions":["instance.club_key","instance.checkout"],"node_targets":["instance.club_key"]}');
+    expect($bus->nodeTargetActions(3))->toBe(['instance.club_key']);
+
+    $client->dispatched = new Payload('{"actions":["instance.club_key"]}');
+    expect($bus->nodeTargetActions(3))->toBe([]);
+});
+
+it('reads the optional inputs a Node executor takes from its report, and none from an older executor', function (): void {
+    $client = new IdleTestClient;
+    $bus = new EngineBus(static fn (): Client => $client);
+
+    $client->dispatched = new Payload('{"actions":["instance.t3"],"features":["instance.t3_pairing"]}');
+    expect($bus->nodeFeatures(3))->toBe(['instance.t3_pairing']);
+
+    $client->dispatched = new Payload('{"actions":["instance.t3"],"node_targets":[]}');
+    expect($bus->nodeFeatures(3))->toBe([]);
 });
 
 it('takes a receipt\'s Node from its subject and ignores the Node its body names', function (): void {

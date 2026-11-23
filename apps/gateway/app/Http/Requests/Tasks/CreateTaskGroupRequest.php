@@ -33,6 +33,12 @@ final class CreateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return TaskAgent::messages();
+    }
+
     /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|NotBlank>> */
     public function rules(): array
     {
@@ -61,6 +67,8 @@ final class CreateTaskGroupRequest extends FormRequest
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
             ...TaskAgent::rules(),
+            // A task with no subtask holds its own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+            ...array_filter((new CreateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables'), ARRAY_FILTER_USE_KEY),
             'subtasks' => ['sometimes', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -84,7 +92,7 @@ final class CreateTaskGroupRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->has('parent_id')
+            $body = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->has('parent_id')
                 ? ['parent_id', 'project_id', 'title', 'brief', 'deliverables', 'topology']
                 : [
                     'project_id',
@@ -98,15 +106,30 @@ final class CreateTaskGroupRequest extends FormRequest
                     'preview',
                     'current_recipe',
                     ...TaskAgent::fields(),
+                    'deliverables',
                     'subtasks',
                 ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+        // The body chooses the shape: subtasks, or the task's own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+        // Both are refused here, before any rule or repository read.
+        if (array_key_exists('deliverables', $body) && array_key_exists('subtasks', $body)) {
+            throw ValidationException::withMessages(['subtasks' => ['A task takes either subtasks or its own deliverables, not both.']]);
+        }
+        // A create in todo with exactly one subtask is told to fold it before any field of that subtask is validated
+        // (docs/reference/tasks.md#tasks-and-subtasks).
+        if (($body['status'] ?? null) === TaskGroupStatus::Todo->value && is_array($body['subtasks'] ?? null) && array_is_list($body['subtasks'])
+            && count($body['subtasks']) === 1) {
+            throw TaskGroupGuard::oneSubtask();
+        }
+
+        return $body;
     }
 
     public function parentPayload(): CreateTaskGroupData
     {
+        $body = $this->validationData();
         $tasks = [];
         $validatedTasks = $this->validated('subtasks');
 
@@ -129,6 +152,7 @@ final class CreateTaskGroupRequest extends FormRequest
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
+            deliverables: array_key_exists('deliverables', $body) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
             preview: $this->boolean('preview'),
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),

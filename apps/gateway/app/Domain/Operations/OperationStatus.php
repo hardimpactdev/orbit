@@ -22,6 +22,12 @@ enum OperationStatus: string
             array_filter(self::cases(), static fn (self $status): bool => $status->terminal())));
     }
 
+    /** @return list<string> */
+    public static function openValues(): array
+    {
+        return array_values(array_diff(array_map(static fn (self $status): string => $status->value, self::cases()), self::terminalValues()));
+    }
+
     public function terminal(): bool
     {
         return in_array($this, [self::Succeeded, self::Failed, self::Cancelled, self::Interrupted], true);

@@ -68,11 +68,14 @@ def load_routes():
     for r in rows:
         if not r['uri'].startswith('api/'):
             continue
+        methods = r['method'].split('|')
+        method = 'POST' if r.get('name') == 'realtime:auth' and 'POST' in methods else methods[0]
         routes.append({
-            'method': r['method'].split('|')[0],
+            'method': method,
             'uri': r['uri'],
             'name': r.get('name'),
             'action': r['action'].split('\\')[-1],
+            'middleware': r['middleware'],
             'extension': next((middleware.split(':', 1)[1] for middleware in r['middleware']
                                if middleware.startswith('App\\Http\\Middleware\\RequireEnabledExtension:')), None),
         })
@@ -230,17 +233,22 @@ def load_controllers():
 
 
 RULE_CONSTANT = re.compile(r"'([a-z_]+:)'\s*\.\s*(self|[A-Z]\w*)::(\w+)(\(\))?")
+STANDALONE_SELF_CONSTANT = re.compile(r'(?<!\.)\bself::([A-Z]\w*)\b(?!\s*\()')
 
 
 def resolve_rule_constants(source, path):
     """Inline rule strings built from a PHP constant or a static method without arguments, such as
-    `'regex:'.self::Pattern`, with the value PHP gives them."""
+    `'regex:'.self::Pattern` or standalone `self::Nonce`, with the value PHP gives them."""
     refs = RULE_CONSTANT.findall(source)
+    self_refs = sorted(set(STANDALONE_SELF_CONSTANT.findall(source)))
     in_pattern = re.compile(r'Rule::in\(\[(.*?)\]\)', re.S)
     constant_pattern = re.compile(r'\b(\w+)::(\w+)\b(?!->|\()')
     in_refs = {pair for match in in_pattern.finditer(source)
                for pair in constant_pattern.findall(match.group(1))}
-    if not refs and not in_refs:
+    # `Rule::in(Cls::Values)` names a whole array constant.
+    in_list_pattern = re.compile(r'Rule::in\((self|[A-Z]\w*)::(\w+)\)')
+    in_list_refs = set(in_list_pattern.findall(source))
+    if not refs and not in_refs and not self_refs and not in_list_refs:
         return source
     namespace = re.search(r'^namespace\s+([\w\\]+);', source, re.M).group(1)
     uses = {alias or name.rsplit('\\', 1)[-1]: name for name, alias in re.findall(r'^use\s+([\w\\]+)(?:\s+as\s+(\w+))?;', source, re.M)}
@@ -253,7 +261,8 @@ def resolve_rule_constants(source, path):
         return f"(new \\ReflectionClassConstant(\\{fqcn}::class, '{name}'))->getValue()"
 
     expressions = sorted({expression(cls, name, call) for _, cls, name, call in refs}
-                         | {expression(cls, name, '') for cls, name in in_refs})
+                         | {expression('self', name, '') for name in self_refs}
+                         | {expression(cls, name, '') for cls, name in in_refs | in_list_refs})
     script = "require 'vendor/autoload.php'; echo json_encode([" + ', '.join(expressions) + "], JSON_THROW_ON_ERROR);"
     values = dict(zip(expressions, run_json(['php', '-r', script], GW)))
 
@@ -266,6 +275,15 @@ def resolve_rule_constants(source, path):
 
     source = RULE_CONSTANT.sub(resolve, source)
 
+    def resolve_self(match):
+        name = match.group(1)
+        value = values[expression('self', name, '')]
+        if isinstance(value, str):
+            return "'" + value.replace("'", "\\'") + "'"
+        return match.group(0)
+
+    source = STANDALONE_SELF_CONSTANT.sub(resolve_self, source)
+
     def resolve_in(match):
         def literal(reference):
             cls, name = reference.groups()
@@ -277,7 +295,14 @@ def resolve_rule_constants(source, path):
             sys.exit(f'Rule::in constant {cls}::{name} in {path.name} is not a string or integer')
         return 'Rule::in([' + constant_pattern.sub(literal, match.group(1)) + '])'
 
-    return in_pattern.sub(resolve_in, source)
+    def resolve_in_list(match):
+        cls, name = match.groups()
+        value = values[expression(cls, name, '')]
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            sys.exit(f'Rule::in constant {cls}::{name} in {path.name} is not a list of strings')
+        return 'Rule::in([' + ', '.join("'" + item.replace("'", "\\'") + "'" for item in value) + '])'
+
+    return in_pattern.sub(resolve_in, in_list_pattern.sub(resolve_in_list, source))
 
 
 TASK_COPY_AGENT_RULES = re.compile(r"\.\.\.TaskAgent::rules\(\s*(?:'([a-z_]*)')?\s*\)")
@@ -309,8 +334,12 @@ def expand_task_copy_agent_rules(source):
 
 def load_form_requests():
     reqs = {}
+    parents = {}
     for f in sorted(gateway_files('app/Http/Requests', 'Http/Requests')):
         s = expand_task_copy_agent_rules(resolve_rule_constants(f.read_text(), f))
+        parent = re.search(r'class\s+\w+\s+extends\s+(\w+)', s)
+        if parent and parent.group(1) != 'FormRequest':
+            parents[f.stem] = parent.group(1)
         i = s.find('function rules(')
         if i < 0:
             continue
@@ -325,6 +354,9 @@ def load_form_requests():
         reqs[f.stem] = {'rules': block(s, i), 'requires_empty_body': requires_empty_body}
         if 'function parentRules(' in s:
             reqs[f.stem]['parent_rules'] = block(s, s.find('function parentRules('))
+    for child, parent in parents.items():
+        if child not in reqs and parent in reqs:
+            reqs[child] = dict(reqs[parent])
     def expand(name):
         rules = reqs[name]['rules']
         def shared(match):
@@ -567,7 +599,7 @@ def load_data_classes():
         props = []
         if ctor:
             for pm in re.finditer(r'public\s+(?:readonly\s+)?([\w|?\\]+)\s+\$(\w+)(\s*=\s*[^,)]+)?', ctor.group(1)):
-                props.append({'name': pm.group(2), 'type': pm.group(1), 'doc': docs.get(pm.group(2))})
+                props.append({'name': pm.group(2), 'type': pm.group(1), 'doc': docs.get(pm.group(2)), 'optional': 'Optional' in pm.group(1)})
         data[m.group(1)] = {
             'props': props,
             'snake': 'SnakeCaseMapper' in s,
@@ -705,7 +737,7 @@ INTERNAL = {'project:dependency-read-token', 'task:agent:stream', 'agent:realtim
 INTERNAL.update({'observation:plan', 'observation:health'})
 INTERNAL.add('operation:direct:executor-sign')
 # A task copy calls these through its Node's forwarder with its own key (docs/reference/ai-router.md#orbit-routes-for-task-copies).
-INTERNAL.update({'copy:whoami', 'copy:pull-request'})
+INTERNAL.update({'copy:whoami', 'copy:pull-request', 'copy:handoff'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -718,8 +750,8 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleUpdate': 'Replace a Schedule definition',
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
-# Routes whose POST removes a resource: MCP marks them destructive, as it marks every DELETE.
-DESTRUCTIVE_POSTS = {'instance:unregister'}
+# Routes whose POST removes a resource, or may with a flag such as ai-router:task-guard's remove: MCP marks them destructive, as it marks every DELETE.
+DESTRUCTIVE_POSTS = {'instance:unregister', 'ai-router:task-guard'}
 
 SUMMARIES = {
     'instance:node-service:list': 'List an Instance\'s Node service attachments',
@@ -730,7 +762,7 @@ SUMMARIES = {
     'instance:migrate': 'Move a checkout Instance into a container',
     'instance:unregister': 'Unregister an Instance and keep its folder',
     'gateway:auto-release:status': 'Show automatic Gateway release status', 'gateway:auto-release:enable': 'Enable automatic Gateway releases', 'gateway:auto-release:disable': 'Disable automatic Gateway releases', 'gateway:auto-release:resume': 'Resume automatic Gateway releases',
-    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
+    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state', 'gateway:openapi': 'Fetch the OpenAPI document',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:update': 'Update a Node',
     'node:executor:proof': 'Check the signed executor round trip on a Node',
     'operation:direct:executor-sign': 'Sign an order for a bound Swamp run',
@@ -769,16 +801,24 @@ SUMMARIES = {
     'database:server:update': 'Require a password for the default user on an adopted Valkey server.',
     'database:server:list': 'List Database servers', 'database:server:show': 'Show a Database server', 'database:server:create': 'Create a Database server', 'database:server:destroy': 'Remove a Database server',
     'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
-    'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
+    'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:upgrade': 'Upgrade a Process', 'process:artifact:set': 'Record a Process release artifact', 'process:artifact:unset': 'Remove a Process release artifact', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
     'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity', 'analytics:update': 'Pin the Plausible version', 'analytics:credentials': 'Show analytics Stats API credentials', 'analytics:credentials:set': 'Store the analytics Stats API key', 'analytics:credentials:unset': 'Clear the analytics Stats API key',
     'extension:list': 'List extensions', 'extension:enable': 'Enable an extension', 'extension:disable': 'Disable an extension',
     'conn:me': 'Show the calling Node', 'conn:me:profile': 'Bind the calling Node to a profile',
+    'conn:me:push-device:upsert': 'Register or update a Conn push device',
+    'conn:me:push-device:show': 'Show a registered Conn push device',
+    'conn:me:push-device:destroy': 'Remove a registered Conn push device',
+    'conn:attention:record': 'Report a Conn thread attention event from a native server',
+    'conn:managed:attention': 'Report a Conn thread attention event from a managed server',
+    'conn:push-credentials:show': 'Show Conn APNs push credentials status',
+    'conn:push-credentials:set': 'Store Conn APNs push credentials',
     'conn:realtime:show': 'Show the Reverb connection for profile events', 'conn:realtime:auth': 'Authorize the profile event channel',
     'conn:profile:list': 'List Conn profiles', 'conn:profile:create': 'Create a Conn profile',
     'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings sections', 'conn:profile:settings:patch': 'Patch profile settings sections',
     'conn:environment:cleanup': 'Admit stale Gateway session cleanup',
     'conn:environment:renew': "Renew the Gateway's session on an Instance's T3 server",
+    'conn:environment:unregister': 'Unregister a host T3 server',
     'conn:environment:session': "Read the calling Node's held session on a container T3 server",
     'conn:environment:restart': "Restart an idle container T3 server so that it shows its machine name",
     'conn:node:environments:restart': "Restart each idle container T3 server on a Node that does not show its machine name",
@@ -792,7 +832,7 @@ SUMMARIES = {
     'conn:operation:show': 'Show a Conn operation', 'conn:operation:cancel': 'Cancel a Conn operation', 'conn:pairing:show': 'Read a one-time pairing URL',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
     'conn:thread:list': 'List the thread index of container T3 servers', 'conn:thread:record': 'Record a thread Conn started',
-    'ai-router:setup': 'Set up ai-router', 'ai-router:destroy': 'Destroy ai-router', 'ai-router:status': 'Show ai-router status', 'ai-router:provider:list': 'List ai-router providers', 'ai-router:provider:show': 'Show an AI router provider', 'ai-router:account:enable': 'Enable an AI router account', 'ai-router:account:disable': 'Disable an AI router account', 'ai-router:model:list': 'List ai-router models',
+    'ai-router:setup': 'Set up ai-router', 'ai-router:destroy': 'Destroy ai-router', 'ai-router:status': 'Show ai-router status', 'ai-router:provider:list': 'List ai-router providers', 'ai-router:provider:show': 'Show an AI router provider', 'ai-router:account:enable': 'Enable an AI router account', 'ai-router:account:disable': 'Disable an AI router account', 'ai-router:model:list': 'List ai-router models', 'ai-router:task-guard': 'Apply or remove the task VM guard',
     'vault:status': 'Show the Vaultwarden status', 'vault:setup': 'Set up Vaultwarden', 'vault:sync': 'Sync database credentials to Vaultwarden', 'vault:destroy': 'Destroy the Orbit Vault account and its published items',
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
@@ -803,6 +843,7 @@ SUMMARIES = {
     'agent:log-streams': "List the live log streams the agent reads",
     'copy:whoami': 'Show the task copy that holds the key',
     'copy:pull-request': "Record the reviewer's pull request text",
+    'copy:handoff': "Record the reviewer's review receipt",
     'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
     'schedule:log-stream:create': 'Open a live Schedule log stream', 'schedule:log-stream:renew': 'Renew a live Schedule log stream', 'schedule:log-stream:destroy': 'Close a live Schedule log stream',
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
@@ -832,6 +873,7 @@ DESCRIPTIONS = {
     'instance:update': 'Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
+    'gateway:openapi': 'Returns this OpenAPI document as the running release built it: `bin/build-api` writes it and the MCP tool manifest in one run when the release installs its dependencies. The `X-Orbit-OpenAPI-SHA256` header is the SHA-256 of the body, so a client can pin the document it generated from. Any active WireGuard peer may read it, with or without Node access.',
     'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
     'gateway:release:deploy': 'Admits a release of one commit, named by its full SHA, as the `gateway.release` Swamp run, which builds, migrates, switches and verifies it, and switches back after a failed check. With reconcile=true it requires the exact serving container commit and reloads its workflows after offline recovery. Answers 202 with the running release record. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#release-as-a-swamp-run.',
     'instance:deployment-source:head': 'Reads the fresh credentialed head of the Instance deployment branch through the Gateway. Requires Gateway Node access. Does not read the native policy cache. See /reference/deployments#swamp-policy-contracts.',
@@ -865,6 +907,7 @@ DESCRIPTIONS = {
     'process:logs': "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
     'agent:watch': "The `orbit-agent` on a managed Node calls this endpoint at start and every 60 seconds to learn what to watch: `services`, the systemd services of the Node's roles, `workspaces`, the task checkouts that `agent:workspaces` lists, and `apps_root`, the apps path of an active app-dev Node. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret.",
     'copy:whoami': "A task copy calls this through its Node's container model forwarder, with its own copy key as the bearer. The request must come from the WireGuard address of the copy's Node. Returns the copy's `instance_id`, `project_id` and `group_id`.",
+    'copy:handoff': "The reviewer in a task copy posts its review receipt during its turn, through its Node's forwarder and with its copy key, as JSON: `verdict` (`approve` or `changes`) and `findings`, the number of blocking findings from 0 to 100, 0 for `approve` and at least 1 for `changes`; any other body answers `validation.failed`. Orbit records the receipt on the check of the running reviewer turn and answers 202; the last post of a turn counts, and the review handoff row is written when the turn ends. Refuses as the pull request text does: `tasks.pr_text_not_reviewer_turn`, `tasks.commit_not_checked`, `tasks.copy_publish_held` and `tasks.group_closed`.",
     'copy:pull-request': "The reviewer in a task copy sends its pull request title and body during its turn, through its Node's forwarder and with its copy key, as JSON or as form fields. Orbit records the text on the check of the running reviewer turn and answers 202; the publish of the done group uses it, and once the group has its pull request, the next publish of the done check updates the pull request's title and body with it. Refuses `tasks.pr_text_not_reviewer_turn` when no reviewer turn of the group runs, `tasks.commit_not_checked` when the turn's commit is no longer the checked candidate, `tasks.copy_publish_held` when the Project is not released for copy publish, and `tasks.group_closed` when the group ended.",
     'agent:facts': "The `orbit-agent` on a managed Node sends one fact it observed, of kind `host`, `units`, `checkout`, `checkouts`, `packages` or `ufw`, when it changed and every 10 minutes. The Gateway stores the latest fact per Node, kind and subject; a `checkouts` index deletes the checkouts it omits. An unchanged fact writes nothing. The answer is 204 either way.",
     'agent:log-streams': "The `orbit-agent` on a managed Node calls this endpoint to learn which logs to read for live log streams: when it joins its log channel, after each `log-streams.changed` event, and every 15 seconds while it reads a stream. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists at most 16 open streams whose source is on that Node, each with its ID, `lines`, and one `laravel`, `journal`, or `docker` source that the Gateway resolved from its own records.",
@@ -911,7 +954,7 @@ DESCRIPTIONS = {
 
 
     'task:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
-    'task:insights': 'Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.',
+    'task:insights': 'Returns task delivery numbers for the tasks that ended in the last `period` (`7d` or `30d`, default `30d`) and the period before it, optionally for one `project_id`: tokens and cost per merged pull request, lead time and its parts, delivery time and deploy wait, yield, first-pass shares, wasted tokens, review, handoff, question, and cache numbers. It also returns 12 weekly values, daily outcomes, and breakdowns by model, Project, and release. The web task board reads it; there is no CLI command. Returns `extension.disabled` while the extension is off. See /reference/tasks#task-insights.',
     'task:list': "Lists top-level Tasks by default, newest first: `limit` groups (1 to 100, default 20). `meta.next_cursor` is the `cursor` of the next page, or null on the last page; send it with the same filters. A group in the list leaves out `publication`, and a subtask `completion_summary`, `fixup_problem` and the check `output`; `task:show` returns them. Optional project_id and status filters apply to the selected level. parent_id selects one parent’s children, in position order and whole; it refuses limit and cursor. Parent reads expose ordered children as subtasks. See /reference/tasks#list-tasks.",
     'task:egress': 'Lists the outside hosts a task group\'s VM connected to, by destination, port and protocol, as the host\'s agent reported them. A name that nothing connected to has a null port and protocol. The rows stay after the VM is deleted. Requires Gateway access. Returns `extension.disabled` while the extension is off. See /reference/task-vm-egress-log.',
     'task:question:list': 'Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.',
@@ -927,9 +970,16 @@ DESCRIPTIONS = {
     'task:check': 'Selects the child directly and starts tasks.check on the Gateway with phase (baseline or handoff), returning HTTP 202 with the queued operation. Requires an open external group, its task copy, and its current subtask. Refuses tasks.not_orchestrated, tasks.group_closed, tasks.no_workspace, tasks.subtask_not_current, and tasks.baseline_done with HTTP 409; a subtask outside the group returns 404. Waits for a check lease and the detached check. Returns outcome passed, failed, or changed, deliverables, check_id, commit, head, tree, redacted output, and ci. Baseline/no-policy returns ci null. Project policy may require a fresh sanitized handoff commit, non-force handoff-branch push, and passed hosted CI before a usable candidate. Pending, missing, unreadable, infrastructure, or configuration evidence waits with delayed reads and no worker held; code/workflow failure succeeds with outcome failed. Cancellation stops observation, not GitHub workflows; started pushes reconcile before release. External review-and-merge admission remains closed; a lost local check waits until group cancellation. Supports Idempotency-Key. Direct cancellation retries an unconfirmed stop with tasks.check_unreachable (502). See /reference/tasks#check-an-external-group.',
     'task:turn': 'Starts tasks.copy_turn, one implementer or reviewer turn in the group\'s task copy, and returns HTTP 202 with the queued operation, or answers HTTP 422 tasks.vm_runtime_removed for a group that owns no copy: task VMs are removed. Selects the child directly and takes role, prompt, thread and a reviewer check. The role consult and a model answer HTTP 422 validation.failed: they belonged to the removed task VM turn. Requires an open external group and its current subtask. Another open Operation on the group answers 409 operation.target_busy. Returns the thread state and transcript without advancing work or raising assistance. Supports Idempotency-Key. See /reference/tasks#run-an-external-turn.',
     'task:start': 'Starts the task as a copy of its Project\'s default Instance and returns HTTP 202 with the queued instance.create Operation. Requires an external todo group. A Project without a default container Instance, and without nested_fleet, is refused with HTTP 422 tasks.vm_runtime_removed and nothing is recorded: task VMs are removed. Starts no subtask or check. Refuses ended groups with tasks.group_closed, backlog with tasks.not_todo, and claimed groups with tasks.already_claimed (all HTTP 409). Another open group operation returns operation.target_busy. Supports Idempotency-Key. See /reference/tasks#task-runtime and /cli/task/start.',
-    'task:complete': 'Completes a settling Task group or a group waiting for review, or a running or reviewing group whose watched pull request has merged or closed. While the group holds a workspace, origin\'s task branch must reach the latest approved commit (after GitHub deleted the branch of a merged pull request, its head stands in); otherwise, or when GitHub cannot be read, returns `tasks.approved_work_unpublished` (409) naming the commit and changes nothing. Run task:publish first. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. A group that still holds a task VM workspace completes and asks for removal assistance. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
+    'task:complete': 'Completes a settling Task group or a group waiting for review, or a running or reviewing group whose watched pull request has merged or closed. While the group holds a workspace, origin\'s task branch must reach the latest approved commit (after GitHub deleted the branch of a merged pull request, its head stands in); otherwise, or when GitHub cannot be read, returns `tasks.approved_work_unpublished` (409) naming the commit and changes nothing. Run task:publish first. Stores the ended state in watched_pr_state and watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. A group that still holds a task VM workspace completes and asks for removal assistance. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
     'conn:me': 'Returns the calling Node, the profile it is bound to and its `profile_channel`, each `null` before a binding. It renews a profile event key that is 5 minutes old or more, or ended. The caller needs node access to at least one Node, else `node_access.required` (403). See /reference/conn#access.',
     'conn:me:profile': 'Requires node access to at least one Node. Binds the calling Node to one profile, replacing an earlier binding, and issues a new `profile_channel`. Returns the Node and its profile.',
+    'conn:me:push-device:upsert': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and node access to at least one Node. Upserts the calling Node\'s iOS push device on `(node_id, device_id)`, storing the APNs token encrypted and never echoing it in the response or Activity.',
+    'conn:me:push-device:show': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and node access to at least one Node. Returns the calling Node\'s registered push device for `device_id` without the APNs token, or 404 when absent.',
+    'conn:me:push-device:destroy': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and node access to at least one Node. Removes the calling Node\'s push device for `device_id`. Idempotent: returns `removed: true` when deleted and `removed: false` when absent.',
+    'conn:attention:record': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and node access to the Node that serves the Conn server. Validates `environment_id` and thread ownership, enforces 120 events/min per server (`conn.attention_rate_limited`, 429), deduplicates by ULID `event_id` (repeat returns 200 as a no-op; new event returns 202 and queues `SendConnPushJob`), and redacts `thread_title` from Activity.',
+    'conn:managed:attention': 'Requires `orbit.conn.managed_targets` and `orbit.conn.push` enabled and managed target authentication (`AuthenticateConnManagedTarget`). Records no Activity. Validates `environment_id` and thread ownership, enforces 120 events/min per server (429), and deduplicates by ULID `event_id` (repeat returns 200; new event returns 202 and queues `SendConnPushJob`).',
+    'conn:push-credentials:show': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and Gateway access. Returns only whether APNs credentials are configured, the Key ID, and the Team ID; never returns the private key.',
+    'conn:push-credentials:set': 'Requires `orbit.conn.push` enabled (else `conn.push_disabled` 404) and Gateway access. Validates the Apple APNs Key ID, Team ID, and EC P-256 .p8 private key, stores the key encrypted, redacts it from Activity, and returns only `configured`, `key_id`, and `team_id`.',
     'conn:realtime:show': 'Returns the Reverb WebSocket URL and app key for Conn profile events, both `null` without a resolved Reverb connection. The channel comes from `GET /me`. Requires node access to at least one Node. See /reference/conn#profile-events.',
     'conn:realtime:auth': 'A Pusher-protocol channel authorization for Conn profile events. It signs only the caller\'s current, unended `profile_channel` and answers the bare `{"auth"}` body; any other channel gets `broadcast.channel_forbidden` (403). It never signs `orbit`, an operation or a presence channel. See /reference/conn#profile-events.',
     'conn:profile:list': 'Lists every Conn profile. Every Node with node access to at least one Node sees every profile.',
@@ -951,6 +1001,7 @@ DESCRIPTIONS = {
     'conn:thread:record': 'Requires node access to the Node that serves the T3 server, else `node_access.required` (403). Records a thread that Conn started on the T3 server of a container Instance, so the index lists it before the next read: `thread_id` is T3\'s thread id (at most 255 characters), `title` its title of any length, cut to 255 characters. A host server returns `conn.thread_index_unsupported` (409). Answers 201 for a new row and 200 when the thread was recorded already; a repeat updates the title. The row\'s state stays as the last read left it, null for a new row.',
     'conn:environment:cleanup': 'Requires Gateway Node access. Records conn.gateway_sessions_revoke for a pending registration cleanup revision and returns HTTP 202. Swamp revokes only non-current Orbit Gateway admin sessions through owner-bound keyed effects. A clean revision returns HTTP 204; an active cleanup returns operation.target_busy. A newer registration stays pending for a later maintenance tick. No credentials enter this request or its Operation.',
     'conn:environment:renew': 'Requires enabled Conn and node access to the Node that serves the T3 server, else `node_access.required` (403). Only for the T3 server of a container Instance; a host server returns `conn.environment_not_instance` (409). Returns HTTP 202 with conn.environment_renew, the same Operation the hourly renewal admits, at once and also for a stopped container that the hourly renewal waits on. A renewal that runs returns `operation.target_busy` (409). Swamp issues a new `Orbit Gateway` session in the container, proves it with one authenticated read, and the Gateway stores it; then a cleanup revokes the older Gateway sessions. A refusal fails with a `conn.*` code, which the server record keeps as `renewal_error_code`. No credential enters the request or its Operation. Follow conn:operation:show.',
+    'conn:environment:unregister': 'Requires enabled Conn and node access to the Node that registered the server (or Gateway access if its Node was removed), else `node_access.required` (403). Host servers only: a server bound to an Instance returns `conn.environment_is_instance` (409); destroy the Instance to remove it. A running `conn.*` Operation on the server returns `operation.target_busy` (409). Removes the server record, its pairings, held sessions, cached threads, and managed target records in one transaction without contacting the T3 server, then drops attached thread references from profiles and deletes execution secret vault copies after commit. Idempotent: returns HTTP 200 with `removed: true` when removed and `removed: false` when unknown or already removed. A still-running host T3 server that registers again reappears.',
     'conn:pairing:create': 'Requires enabled Conn and node access to the Node that registered the server, else `node_access.required` (403). Returns HTTP 202 with conn.pairing_create for Swamp. Poll conn:operation:show until succeeded, then read conn:pairing:show using result.pairing_id. Credentials never enter Operation receipts. An expired admin session returns conn.session_expired (409). With renew: true, a client renews a session that nears its end; when the calling Node\'s newest pairing on that server is revoked, it refuses with conn.pairing_revoked (409) and starts no Operation. Without renew, a pairing succeeds after a revoke. The Idempotency-Key covers the body: repeat a renewal with the same key and the same body.',
     'conn:operation:show': 'Requires node access to at least one Node. Shows only a Conn Operation, or an instance.create, requested by the calling Node, an instance.destroy it started through Conn, or an instance.complete it started or of a clone whose create it requested, including steps, safe result and poll_after_seconds. Poll after that interval until succeeded, failed or cancelled. Like core Operation show, after_sequence is accepted but currently returns all recorded steps. An Operation unclaimed for five minutes reports assistance.error_code conn.executor_unclaimed; a worker claim or terminal result clears that alert. Returns 404 for another requester or another kind. Never returns a pairing credential.',
     'conn:operation:cancel': 'Requires node access to at least one Node; checks the requester only. Requests cooperative cancellation, as core operation:cancel, of a Conn Operation requested by the calling Node, an instance.create it requested, or an instance.complete it started or of a clone whose create it requested. Returns 200 with the Operation record, without steps; cancellation may still be pending. A second cancel returns the same; for a running Operation it asks Swamp to stop again. A cancel that arrives as a clone create ends can find it succeeded: cancel result.completion_operation_id on this route. A cancelled clone create keeps the clone and an address it published; remove it with conn:instance:destroy. A cancelled completion keeps the clone for conn:instance:complete. Returns 404 for another requester, an instance.destroy, or another kind. Send an empty JSON object.',
@@ -966,6 +1017,7 @@ DESCRIPTIONS = {
     'ai-router:provider:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
     'ai-router:account:enable': 'Enables one CLIProxyAPI account and recompiles cached pools without fetching quota.',
     'ai-router:account:disable': 'Disables one CLIProxyAPI account and recompiles cached pools without fetching quota.',
+    'ai-router:task-guard': 'Starts `ai_router.task_guard`, which applies the task VM guard on the router\'s Node: its Caddy, its keys and its UFW rules. With `remove: true` the run takes them off the Node instead. The run holds the lock `ai_router_guard:<router Node>`, which forwarder runs share; while another guard or forwarder run holds it, the call refuses with `operation.target_busy` (409). Refuses with `ai_router.disabled` (409) while the ai-router is not set up. Each release applies the guard again by itself when its config changed (docs/reference/ai-router.md#the-guard-follows-its-config).',
     'ai-router:model:list': 'Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `ai_router.disabled` while the collector is not set up.',
     'vault:status': 'Returns the Vaultwarden setup and the state of the published Database items from the Gateway records. It never contacts Vaultwarden and never returns a secret.',
     'vault:setup': 'Records vault.setup and returns HTTP 202 with an Operation. Swamp logs in, unlocks and proves a writable collection before the Gateway projects encrypted setup. Follow operation:show until succeeded, failed or cancelled. The HTTPS origin must be on a .orbit host and trust only the Orbit root CA. Safe Vault errors appear on the Operation. client_secret and master_password are arguments in the caller transcript; they never enter Operation input, receipts or Swamp data. Requires the placed integration worker.',
@@ -1094,7 +1146,52 @@ def strip_closures(text):
     return out
 
 
-def parse_rule_entries(text):
+def select_route_match(text, route_name):
+    """Select the matching arm of `return match ($this->route()?->getName()) { ... };`."""
+    match = re.search(r'return\s+match\s*\(\s*\$this->route\(\)\?->getName\(\)\s*\)\s*\{', text)
+    if not match:
+        return text
+    body = block(text, match.end() - 1)
+    arms = {}
+    i = 0
+    n = len(body)
+    while i < n:
+        skipped = skip_php_token(body, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        arm = re.match(r"\s*(?:'([^']+)'|(default))\s*=>\s*", body[i:])
+        if not arm:
+            i += 1
+            continue
+        key = arm.group(1) if arm.group(1) is not None else 'default'
+        j = i + arm.end()
+        if j < n and body[j] == '[':
+            depth = 0
+            k = j
+            while k < n:
+                sk = skip_php_token(body, k)
+                if sk is not None:
+                    k = sk
+                    continue
+                if body[k] in '[({':
+                    depth += 1
+                elif body[k] in '])}':
+                    depth -= 1
+                    if depth == 0:
+                        arms[key] = body[j:k + 1]
+                        k += 1
+                        break
+                k += 1
+            i = k
+        else:
+            i = j
+    selected = arms.get(route_name, arms.get('default', '[]'))
+    return f'return {selected};'
+
+
+def parse_rule_entries(text, route_name=None):
+    text = select_route_match(text, route_name)
     arr = text[text.find('return'):]
     j = arr.find('[')
     depth = 0
@@ -1154,6 +1251,12 @@ def tokens_for(value, route_name=None):
     # this the field falls through to string, so every value the tool schema allows is rejected.
     if re.search(r'\bstrict(?:Boolean|True)\s*\(', value):
         toks.append(('rule', 'boolean'))
+    for m in re.finditer(r'\bself::strictInteger\(\s*(\d+)\s*\)', value):
+        toks.append(('rule', 'integer'))
+        toks.append(('rule', f'min:{m.group(1)}'))
+    if re.search(r'\bself::time\s*\(\s*\)', value):
+        toks.append(('rule', 'string'))
+        toks.append(('format', 'date-time'))
     for m in re.finditer(r'Rule::enum\((\w+)::class\)(?:->only\(\[(.*?)\]\))?', v, re.S):
         if m.group(2) is not None:
             cases = re.findall(r'(\w+)::(\w+)', m.group(2))
@@ -1204,6 +1307,8 @@ def schema_from_tokens(toks):
         elif kind == 'in':
             sch['enum'] = t
             type_ = type_ or ('integer' if t and all(isinstance(value, int) for value in t) else 'string')
+        elif kind == 'format':
+            sch['format'] = t
         elif kind == 'requiredIf':
             notes.append('Conditionally required.')
         elif kind == 'rule':
@@ -1306,7 +1411,7 @@ def database_update_rules(field_rules):
 def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
     body_required = False
-    for key, value in parse_rule_entries(rules_text).items():
+    for key, value in parse_rule_entries(rules_text, route_name).items():
         sch, req, required_when_sent = schema_from_tokens(tokens_for(value, route_name))
         body_required = body_required or ('.' not in key and required_when_sent)
         parts = key.split('.')
@@ -1361,15 +1466,70 @@ def comp_name(cls):
     return cls[:-4] if cls.endswith('Data') else cls
 
 
+REQUIRED_DATA_SCHEMAS = {
+    'ConnEnvironment', 'ConnHeldSession', 'ConnPairing', 'IssuedConnPairing',
+    'ConnNode', 'ConnProfile', 'ConnProfileSettings',
+    'ConnProject', 'ConnProjectCheck', 'ConnProjectBranch',
+    'ConnBranchPullRequest', 'ConnBranchInstance', 'ConnInstanceNameCheck',
+    'ConnReservation', 'ConnThread', 'ConnPushDevice', 'ConnPushCredentialsStatus',
+    'Operation', 'OperationStep',
+    'RealtimeConfig', 'Project',
+    'TaskInsights', 'TaskInsightsSummary', 'TaskInsightsBreakdowns',
+    'TaskInsightsBreakdownRow', 'TaskInsightsWeek', 'TaskInsightsDay',
+    'TaskInsightsHour', 'TaskInsightsHandoffs', 'TaskInsightsCheckPart',
+}
+
+SCHEMA_FIELD_ENUMS = {
+    ('ConnEnvironment', 'status'): ['registered', 'session_expired'],
+    ('ConnEnvironment', 'power_state'): ['running', 'stopped'],
+    ('ConnReservation', 'state'): ['preparing', 'ready', 'finalizing', 'finalized', 'failed', 'released', 'expired'],
+    ('ConnThread', 'state'): ['idle', 'preparing', 'queued', 'starting', 'running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted', 'error'],
+    ('ConnHeldSession', 'token_type'): ['Bearer'],
+    ('Operation', 'status'): None,  # filled from enums['OperationStatus']
+    ('OperationStep', 'status'): ['running', 'succeeded', 'failed', 'skipped', 'cancelled', 'interrupted'],
+    ('TaskInsights', 'period'): ['24h', '7d', '30d'],
+    ('ConnPushDevice', 'apns_environment'): ['sandbox', 'production'],
+}
+
+# PHP-array fields that serialize as `{...}` when non-empty and `[]` when empty (not cast to stdClass).
+PHP_ARRAY_OBJECT_FIELDS = {
+    ('Operation', 'input'),
+    ('Operation', 'result'),
+    ('Operation', 'error'),
+    ('Operation', 'assistance'),
+    ('ConnProfileSettings', 'settings'),
+}
+
+
 def ref(cls):
     name = comp_name(cls)
     if name not in components:
         components[name] = None
         d = gdata[cls]
+        fields = schema_fields(d)
         props = {}
-        for key, prop in schema_fields(d):
-            props[key] = prop_schema(prop)
+        for key, prop in fields:
+            sch = prop_schema(prop)
+            if (name, key) in SCHEMA_FIELD_ENUMS:
+                values = enums['OperationStatus'] if (name, key) == ('Operation', 'status') else SCHEMA_FIELD_ENUMS[(name, key)]
+                nullable = isinstance(sch.get('type'), list) and 'null' in sch['type']
+                sch['enum'] = [*values, None] if nullable else list(values)
+            if (name, key) in PHP_ARRAY_OBJECT_FIELDS:
+                nullable = (isinstance(sch.get('type'), list) and 'null' in sch['type']) or ('oneOf' in sch and {'type': 'null'} in sch['oneOf'])
+                variants = [{'type': 'object', 'additionalProperties': True}, {'type': 'array', 'maxItems': 0}]
+                if nullable:
+                    variants.append({'type': 'null'})
+                sch = {'oneOf': variants}
+            props[key] = sch
+        if name == 'ConnPushDevice':
+            props['preferences'] = closed_object({key: {'type': 'boolean'} for key in ('approval', 'input', 'turn_finished', 'turn_failed', 'hide_titles')})
+            for key in ('created_at', 'updated_at'):
+                props[key] = {'type': 'string', 'format': 'date-time'}
+        if name == 'ConnPairing':
+            props['held'] = {'type': 'boolean', 'description': 'Present when `include_held=true`: true for a held session pairing.'}
         components[name] = {'type': 'object', 'properties': props}
+        if name in REQUIRED_DATA_SCHEMAS:
+            components[name]['required'] = [key for key, prop in fields if not prop.get('optional')]
         if name in {'DependencyResults', 'DependencyAttempt', 'DependencySource', 'DependencyReport', 'DependencyPackage', 'DependencyFinding', 'DependencyReason', 'DependencyLinks', 'DependencyBatchPr', 'DependencyPullRequest'}:
             components[name].update(required=list(props), additionalProperties=False)
     return {'$ref': f'#/components/schemas/{name}'}
@@ -1431,6 +1591,9 @@ def prop_schema(p):
     if nullable:
         if '$ref' in sch:
             sch = {'oneOf': [sch, {'type': 'null'}]}
+        elif 'oneOf' in sch:
+            if {'type': 'null'} not in sch['oneOf']:
+                sch = {'oneOf': [*sch['oneOf'], {'type': 'null'}]}
         elif 'type' in sch:
             kinds = sch['type'] if isinstance(sch['type'], list) else [sch['type']]
             if 'null' not in kinds:
@@ -1745,6 +1908,27 @@ def closed_object(properties):
     return {'type': 'object', 'additionalProperties': False, 'required': list(properties), 'properties': properties}
 
 
+def conn_model_selection_schema():
+    return {
+        'type': 'object',
+        'additionalProperties': False,
+        'required': ['model'],
+        'properties': {
+            'model': {'type': 'string', 'minLength': 1, 'pattern': r'\S'},
+            'instanceId': {'type': 'string', 'pattern': r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$(?![\s\S])'},
+            'provider': {'type': 'string', 'pattern': r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$(?![\s\S])'},
+            'options': {'oneOf': [
+                {'type': 'null'},
+                {'type': 'object', 'additionalProperties': True},
+                {'type': 'array', 'items': closed_object({
+                    'id': {'type': 'string', 'minLength': 1, 'pattern': r'\S'},
+                    'value': {'oneOf': [{'type': 'boolean'}, {'type': 'string', 'minLength': 1, 'pattern': r'\S'}]},
+                })},
+            ]},
+        },
+    }
+
+
 def conn_launch_snapshot():
     number = {'type': 'integer', 'minimum': 1}
     nullable_number = {'type': ['integer', 'null'], 'minimum': 1}
@@ -1759,7 +1943,7 @@ def conn_launch_snapshot():
     })
     action = closed_object({'available': {'type': 'boolean'}, 'reason': nullable_text, 'requires': nullable_text})
     thread = closed_object({'environment_id': text, 'project_id': text, 'thread_id': uuid, 'message_id': uuid,
-                            'model_selection': {'type': 'object'}, 'accepted_at': {'type': 'string', 'format': 'date-time'}})
+                            'model_selection': {**conn_model_selection_schema(), 'additionalProperties': True}, 'accepted_at': {'type': 'string', 'format': 'date-time'}})
     return closed_object({
         'id': number, 'kind': {'type': 'string', 'const': 'conn.launch'},
         'status': {'type': 'string', 'enum': ['queued', 'running', 'waiting', 'succeeded', 'failed', 'cancelled', 'interrupted']},
@@ -1777,7 +1961,197 @@ def conn_launch_snapshot():
     })
 
 
+def register_conn_schemas():
+    text = {'type': 'string'}
+    nullable_text = {'type': ['string', 'null']}
+    integer = {'type': 'integer'}
+    nullable_integer = {'type': ['integer', 'null']}
+    timestamp = {'type': 'string', 'format': 'date-time'}
+    nullable_timestamp = {'type': ['string', 'null'], 'format': 'date-time'}
+
+    # ConnInstanceWork (GET /api/v1/conn/instances/{instance_id}/work)
+    listed = closed_object({'count': integer, 'names': {'type': 'array', 'items': text}})
+    commits = closed_object({
+        'count': integer, 'branch_count': integer, 'head': integer,
+        'branches': {'type': 'array', 'items': closed_object({'name': text, 'count': integer})},
+    })
+    components['ConnInstanceWork'] = closed_object({
+        'instance_id': integer,
+        'state': {'type': 'string', 'enum': ['clean', 'dirty', 'unknown']},
+        'reason': {'type': ['string', 'null'], 'enum': ['stopped', 'asleep', 'timeout', 'not_a_repository', 'unreachable', None]},
+        'read_at': timestamp,
+        'duration_ms': integer,
+        'baseline': {'type': ['string', 'null'], 'enum': ['recorded', 'default_now', 'none', None]},
+        'head': nullable_text,
+        'head_commit': nullable_text,
+        'uncommitted': nullable_integer,
+        'unpushed': nullable_integer,
+        'modified': {'oneOf': [{'type': 'null'}, listed]},
+        'untracked': {'oneOf': [{'type': 'null'}, listed]},
+        'commits': {'oneOf': [{'type': 'null'}, commits]},
+        'stashes': {'oneOf': [{'type': 'null'}, listed]},
+    })
+
+    # Managed target responses
+    revision_row = closed_object({'revision': {'type': 'integer', 'minimum': 1}, 'edge_ids': {'type': 'array', 'items': integer}})
+    edge_row = closed_object({'edge_id': integer, 'consumer_node_id': integer})
+    components['ConnManagedRealtime'] = closed_object({
+        'url': nullable_text, 'key': nullable_text, 'channel': text,
+    })
+    components['ConnManagedAuthority'] = {
+        'type': 'object', 'additionalProperties': False,
+        'required': ['nonce', 'environment_id', 'generation', 'head_revision', 'server_time', 'kind', 'owed'],
+        'properties': {
+            'nonce': text,
+            'environment_id': text,
+            'generation': {'type': 'integer', 'minimum': 1},
+            'head_revision': {'type': 'integer', 'minimum': 0},
+            'server_time': timestamp,
+            'kind': {'type': 'string', 'enum': ['snapshot', 'delta', 'current']},
+            'edges': {'type': 'array', 'items': edge_row},
+            'revisions': {'type': 'array', 'items': revision_row},
+            'owed': {'type': 'array', 'items': revision_row},
+        },
+    }
+    components['ConnManagedIntrospect'] = closed_object({
+        'nonce': text,
+        'environment_id': text,
+        'generation': {'type': 'integer', 'minimum': 1},
+        'token_id': {'type': 'integer', 'minimum': 1},
+        'caller_node_id': {'type': 'integer', 'minimum': 1},
+        'edge_id': {'type': 'integer', 'minimum': 1},
+        'scopes': {'type': 'array', 'items': text},
+        'expires_at': timestamp,
+        'revision': {'type': 'integer', 'minimum': 0},
+    })
+    components['ConnManagedAck'] = closed_object({
+        'environment_id': text,
+        'generation': {'type': 'integer', 'minimum': 1},
+        'revision': {'type': 'integer', 'minimum': 1},
+        'kind': {'type': 'string', 'enum': ['observed', 'recovered']},
+        'acknowledged_at': timestamp,
+    })
+    # POST /api/v1/conn/environments/{environment}/attention and /api/v1/conn/managed/attention
+    components['ConnAttentionReceipt'] = closed_object({
+        'event_id': text,
+        'accepted': {'type': 'boolean', 'const': True},
+        'deduplicated': {'type': 'boolean', 'description': 'True when the Gateway already recorded this `event_id`; the answer is then 200, else 202.'},
+    })
+    components['ConnPushDeviceRemoval'] = closed_object({
+        'device_id': {'type': 'string', 'format': 'uuid'},
+        'removed': {'type': 'boolean', 'description': 'False when the calling Node had no such device.'},
+    })
+    components['ConnManagedToken'] = closed_object({
+        'token': text,
+        'expires_at': timestamp,
+        'scopes': {'type': 'array', 'items': text},
+        'generation': {'type': 'integer', 'minimum': 1},
+        'revision': {'type': 'integer', 'minimum': 0},
+    })
+
+    # ConnTask & ConnTaskDetail (GET /api/v1/conn/tasks, GET /api/v1/conn/tasks/{task})
+    attention_kinds = ['question', *enums.get('TaskAssistanceKind', [])]
+    attention = {'oneOf': [{'type': 'null'}, closed_object({
+        'kind': {'type': 'string', 'enum': attention_kinds},
+        'question': nullable_text,
+        'reason': nullable_text,
+    })]}
+    deliverable = closed_object({
+        'id': text,
+        'type': {'type': 'string', 'enum': enums['TaskDeliverableType']},
+        'description': text,
+    })
+    metrics = closed_object({
+        'duration_ms': nullable_integer, 'tokens': nullable_integer,
+        'lines_added': nullable_integer, 'lines_deleted': nullable_integer,
+    })
+    task_row_props = {
+        'id': integer,
+        'title': text,
+        'status': {'type': 'string', 'enum': enums['TaskGroupStatus']},
+        'attention': attention,
+        'project': closed_object({'id': integer, 'slug': text, 'name': text, 'code': text}),
+        'workspace': {'oneOf': [{'type': 'null'}, closed_object({
+            'instance_id': integer, 'name': text,
+            'status': {'type': 'string', 'enum': enums['InstanceState']},
+            'power_state': {'type': ['string', 'null'], 'enum': ['running', 'stopped', None]},
+            'node': closed_object({'id': integer, 'name': text}),
+            'branch': nullable_text, 'conn_environment_id': nullable_text,
+        })]},
+        'pull_request': {'oneOf': [{'type': 'null'}, closed_object({
+            'number': nullable_integer, 'url': text,
+            'state': {'type': ['string', 'null'], 'enum': ['open', 'closed', 'merged', None]},
+        })]},
+        'subtask_counts': closed_object({k: integer for k in ('total', 'todo', 'running', 'completed', 'failed', 'cancelled')}),
+        'created_at': nullable_timestamp,
+        'updated_at': nullable_timestamp,
+        'last_activity_at': nullable_timestamp,
+        'deployed_at': nullable_timestamp,
+        'pr_opened_at': nullable_timestamp,
+        'work_status': {'type': 'string', 'enum': enums['TaskStatus']},
+    }
+    task_row_required = [k for k in task_row_props if k != 'work_status']
+    components['ConnTask'] = {
+        'type': 'object', 'additionalProperties': False,
+        'required': task_row_required, 'properties': task_row_props,
+    }
+    subtask = closed_object({
+        'id': integer, 'position': integer, 'title': text, 'brief': text,
+        'deliverables': {'type': 'array', 'items': deliverable},
+        'status': {'type': 'string', 'enum': enums['TaskStatus']},
+        'attention': attention,
+        'current_implementer_agent_id': nullable_integer,
+        'metrics': metrics,
+    })
+    agent = closed_object({
+        'id': integer,
+        'role': {'type': 'string', 'enum': ['implementer', 'reviewer']},
+        'subtask_ids': {'type': 'array', 'items': integer},
+        'current': {'type': 'boolean'},
+        'attempt': integer,
+        'provider': nullable_text,
+        'model': nullable_text,
+        'effort': nullable_text,
+        'state': {'type': ['string', 'null'], 'enum': [*enums['AgentThreadState'], None]},
+        'needs_input': {'type': 'boolean'},
+        'created_at': nullable_timestamp,
+        'observed_at': nullable_timestamp,
+        'conn': {'oneOf': [{'type': 'null'}, closed_object({'environment_id': text, 'thread_id': nullable_text})]},
+    })
+    work_check = closed_object({
+        'id': integer,
+        'kind': {'type': 'string', 'enum': enums['TaskCheckKind']},
+        'status': {'type': 'string', 'enum': enums['TaskCheckStatus']},
+        'started_at': timestamp,
+        'finished_at': nullable_timestamp,
+        'exit_code': nullable_integer,
+        'failed_step': nullable_text,
+    })
+    work = closed_object({
+        'status': {'type': 'string', 'enum': enums['TaskStatus']},
+        'review': {'type': ['string', 'null'], 'enum': ['reviewing', 'approved', 'not_approved', None]},
+        'deliverables': {'type': 'array', 'items': deliverable},
+        'current_implementer_agent_id': nullable_integer,
+        'check': {'oneOf': [{'type': 'null'}, work_check]},
+    })
+    detail_props = {
+        **task_row_props,
+        'brief': text,
+        'execution': closed_object({'implementer_mode': {'type': 'string', 'enum': ['task', 'per_subtask']}}),
+        'metrics': metrics,
+        'subtasks': {'type': 'array', 'items': subtask},
+        'agents': {'type': 'array', 'items': agent},
+        'work': work,
+    }
+    components['ConnTaskDetail'] = {
+        'type': 'object', 'additionalProperties': False,
+        'required': [*task_row_required, 'brief', 'execution', 'metrics', 'subtasks', 'agents'],
+        'properties': detail_props,
+    }
+
+
 components['ConnLaunchSnapshot'] = conn_launch_snapshot()
+register_conn_schemas()
 
 
 def envelope(data_schema, description):
@@ -1827,6 +2201,13 @@ components['TaskAgentSnapshot'] = {'type': 'object', 'required': ['thread_id', '
 }}
 
 RESPONSE_OVERRIDES = {
+    'ConnInstancesController@work': {'$ref': '#/components/schemas/ConnInstanceWork'},
+    'ConnManagedTargetsController@realtime': {'$ref': '#/components/schemas/ConnManagedRealtime'},
+    'ConnManagedTargetsController@authority': {'$ref': '#/components/schemas/ConnManagedAuthority'},
+    'ConnManagedTargetsController@introspect': {'$ref': '#/components/schemas/ConnManagedIntrospect'},
+    'ConnManagedTargetsController@ack': {'$ref': '#/components/schemas/ConnManagedAck'},
+    'ConnManagedTargetsController@issue': {'$ref': '#/components/schemas/ConnManagedToken'},
+    'ConnPushDevicesController@destroy': {'$ref': '#/components/schemas/ConnPushDeviceRemoval'},
     'AgentThreadsController@show': {'$ref': '#/components/schemas/TaskAgentSnapshot'},
     'ProjectDevelopmentDeployStepsController@index': {'$ref': '#/components/schemas/DevelopmentDeploySteps'},
     'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
@@ -1871,6 +2252,18 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
+    'ConnNodesController@show': ('ConnNodeData', False),
+    'ConnNodesController@bindProfile': ('ConnNodeData', False),
+    'ConnTasksController@index': ('ConnTaskData', True),
+    'ConnTasksController@show': ('ConnTaskDetailData', False),
+    'ConnThreadsController@index': ('ConnThreadData', True),
+    'ConnPairingsController@index': ('ConnPairingData', True),
+    'ConnPushDevicesController@upsert': ('ConnPushDeviceData', False),
+    'ConnPushDevicesController@show': ('ConnPushDeviceData', False),
+    'ConnPushCredentialsController@show': ('ConnPushCredentialsStatusData', False),
+    'ConnPushCredentialsController@update': ('ConnPushCredentialsStatusData', False),
+    'ConnPairingsController@show': ('IssuedConnPairingData', False),
+    'RealtimeConfigController@show': ('RealtimeConfigData', False),
     'ConnProjectBranchesController@index': ('ConnProjectBranchData', True),
     'InstanceNodeServiceTargetsController@index': ('InstanceNodeServiceTargetRecordData', True),
     'InstanceNodeServiceTargetsController@store': ('InstanceNodeServiceTargetData', False),
@@ -1979,13 +2372,54 @@ spec = {
         'description': 'The HTTP API of the active Orbit Gateway. The CLI and the PHP SDK send every fleet command through these endpoints over WireGuard. See [Using the API](/api/overview) for transport, authentication, envelopes, and errors.',
     },
     'servers': [{'url': 'https://gateway.orbit', 'description': 'The active Gateway on the private WireGuard network, resolved by Orbit private DNS.'}],
-    'security': [],
+    'security': [{'wireguardPeer': []}],
     'tags': [{'name': t, 'description': d} for _, t, d in TAGS],
     'paths': {},
-    'components': {'schemas': {
-        'Meta': {'type': 'object', 'properties': {'request_id': {'type': 'string', 'format': 'uuid', 'description': 'The request ID the Gateway assigned or accepted; the same value is in the `X-Orbit-Request-Id` response header and in the Activity record.'}}, 'required': ['request_id']},
-        'Error': {'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'}, 'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'}, 'details': {'type': 'object', 'additionalProperties': True, 'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule.'}, 'request_id': {'type': 'string', 'format': 'uuid'}}, 'required': ['code', 'message']}}, 'required': ['error']},
-    }},
+    'components': {
+        'securitySchemes': {
+            'wireguardPeer': {
+                'type': 'mutualTLS',
+                'description': "Active WireGuard peer identity verified by the Gateway from the peer's WireGuard source IP (`RequireActiveWireGuardPeer`).",
+            },
+            'managedTargetBearer': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'description': "Managed Conn target service credential (`Authorization: Bearer <service_credential>`), verified together with the serving Node's active WireGuard peer (`AuthenticateConnManagedTarget`).",
+            },
+            'taskKeyBearer': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'description': "Task copy key (`Authorization: Bearer <copy_key>`), verified together with the serving Node's active WireGuard peer (`RequireTaskKey`).",
+            },
+        },
+        'schemas': {
+            'Meta': {'type': 'object', 'properties': {'request_id': {'type': 'string', 'format': 'uuid', 'description': 'The request ID the Gateway assigned or accepted; the same value is in the `X-Orbit-Request-Id` response header and in the Activity record.'}}, 'required': ['request_id']},
+            'Error': {
+                'type': 'object',
+                'additionalProperties': False,
+                'required': ['error'],
+                'properties': {
+                    'status': {'type': 'integer', 'description': 'Optional HTTP status code included by `RequireEnabledExtension` (`extension.disabled`).'},
+                    'error': {
+                        'type': 'object',
+                        'additionalProperties': False,
+                        'required': ['code', 'message'],
+                        'properties': {
+                            'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'},
+                            'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'},
+                            'details': {
+                                'oneOf': [
+                                    {'type': 'object', 'additionalProperties': True},
+                                    {'type': 'array', 'maxItems': 0},
+                                ],
+                                'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule. Encodes as `[]` when empty and as a JSON object when non-empty; omitted by `GuardBrowserOrigins` (`api.origin_refused`). The request ID travels in the `X-Orbit-Request-Id` response header.',
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
 }
 BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'converge_existing', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'start', 'keep_alive', 'write'}
 nav_pages = {t: [] for _, t, _ in TAGS}
@@ -2000,6 +2434,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if '-definitions' in route['uri'] and route['name'].split(':')[0] in {'process', 'schedule'}:
         op_id = 'app-' + op_id + '-definition'
     op = {'operationId': op_id, 'summary': summary_for(route), 'tags': [tag], 'parameters': []}
+    route_middleware = route.get('middleware', [])
+    is_managed_target = 'Orbit\\Extensions\\Conn\\Http\\Middleware\\AuthenticateConnManagedTarget' in route_middleware
+    is_task_key = 'App\\Http\\Middleware\\RequireTaskKey' in route_middleware
+    if route['name'] in ('gateway:status', 'gateway:trust'):
+        op['security'] = []
+    elif is_managed_target:
+        op['security'] = [{'wireguardPeer': [], 'managedTargetBearer': []}]
+    elif is_task_key:
+        op['security'] = [{'wireguardPeer': [], 'taskKeyBearer': []}]
     if route['extension'] is not None:
         op['x-orbit-extension'] = route['extension']
     if method == 'delete' or route['name'] in DESTRUCTIVE_POSTS:
@@ -2150,7 +2593,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] == 'project:process-definition:update' and body_schema:
         body_schema['properties']['spec'].pop('required', None)
         body_schema['description'] = 'Partial specification update: omitted fields keep their stored values. Null removes scalar overrides. Supplied maps and lists replace the whole field; empty collections clear it. An environment value equal to [REDACTED] keeps the stored value for that key; unknown keys refuse. All other supplied strings containing [REDACTED] anywhere in spec refuse with their field path; send only fields to change and omit redacted fields. A different runtime replaces the runtime specification and requires its command and other required fields.'
-    if route['name'] == 'conn:instance:create' and body_schema:
+    if route['name'] in ('conn:instance:create', 'conn:reservation:finalize') and body_schema:
         branch_name = {'type': 'string', 'minLength': 1, 'maxLength': 255, 'description': 'A valid Git branch name.'}
         body_schema['additionalProperties'] = False
         body_schema['properties']['branch'] = {'oneOf': [
@@ -2159,13 +2602,27 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             {'type': 'object', 'additionalProperties': False, 'required': ['mode', 'name'],
              'properties': {'mode': {'type': 'string', 'const': 'existing'}, 'name': branch_name}},
         ], 'description': 'Optional frozen branch selection. Omit for installed-client behavior without a remote admission read.'}
+    if is_managed_target:
+        existing_props = (body_schema or {}).get('properties') or {}
+        existing_req = (body_schema or {}).get('required') or []
+        body_schema = {
+            'type': 'object',
+            'additionalProperties': False,
+            'properties': {
+                'environment_id': {'type': 'string', 'minLength': 1, 'description': 'The registered Conn environment ID of the managed target.'},
+                'generation': {'type': 'integer', 'minimum': 1, 'description': 'The current managed target generation.'},
+                **existing_props,
+            },
+            'required': ['environment_id', 'generation', *[k for k in existing_req if k not in ('environment_id', 'generation')]],
+        }
+        body_required = True
     if route['name'] == 'conn:launch:create' and body_schema:
         props = body_schema['properties']
         op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': props.pop('Idempotency-Key'),
                                  'description': 'Stable launch UUID scoped to the initiating Node.'})
         body_schema['required'].remove('Idempotency-Key')
         props['prompt'].update({'minLength': 1, 'writeOnly': True})
-        props['model_selection'] = {'type': 'object'}
+        props['model_selection'] = conn_model_selection_schema()
         selectors = props['target']['properties']
         branch = {'type': 'string', 'minLength': 1, 'maxLength': 255}
         new_target = closed_object({'kind': {'type': 'string', 'const': 'new'}, 'name': selectors['name'], 'branch': {'oneOf': [
@@ -2177,8 +2634,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         props['target'] = {'oneOf': [new_target, closed_object({'kind': {'type': 'string', 'const': 'existing'}, 'instance_id': {'type': 'integer', 'minimum': 1}})]}
     if route['name'] == 'conn:launch:retry':
         body_schema = closed_object({'target': {'type': 'string', 'enum': ['launch', 'application']}})
-    if route['name'] == 'conn:launch:cancel':
-        body_schema = {'type': 'object', 'additionalProperties': False}
+    BODYLESS_OUTCOME_3 = {
+        'conn:environment:renew', 'conn:environment:cleanup', 'conn:instance:complete',
+        'conn:operation:cancel', 'conn:reservation:create', 'conn:launch:cancel', 'instance:wake',
+    }
+    if route['name'] in BODYLESS_OUTCOME_3:
+        body_schema = None
+        body_required = False
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False
@@ -2234,7 +2696,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         })
         if route['name'] == 'task:cancel':
             op['parameters'][-1]['description'] = 'Required when cancelling a parent Task; unused when cancelling a child. ' + op['parameters'][-1]['description']
-        if body_schema is None:
+        if body_schema is None and route['name'] not in BODYLESS_OUTCOME_3:
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False}}}}
     responses = {}
     if route['name'] == 'task:agent:stream':
@@ -2319,6 +2781,22 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['200'] = {'description': 'Ephemeral credential. Cache-Control: no-store. No Activity or Operation is created.', 'content': {'application/json': {'schema': {'type': 'object', 'required': ['data'], 'properties': {'data': {'type': 'object', 'additionalProperties': False, 'required': ['project_id', 'repository', 'clone_url', 'token', 'expires_at'], 'properties': {'project_id': {'type': 'integer', 'minimum': 1}, 'repository': {'type': 'string'}, 'clone_url': {'type': 'string', 'format': 'uri'}, 'token': {'type': 'string', 'description': 'Ephemeral credential; never persist or log.'}, 'expires_at': {'type': 'string', 'format': 'date-time'}}}}}}}}
         responses['404'] = error_response('Project not found (`project.not_found`).')
         responses['503'] = error_response('Token minting unavailable or unsafe reply (`dependency_token.unavailable`).')
+    elif route['name'] == 'gateway:openapi':
+        responses['200'] = {'description': 'This OpenAPI 3.1 document, without a `data` wrapper.', 'headers': {'X-Orbit-OpenAPI-SHA256': {'description': 'The lowercase hex SHA-256 of the response body.', 'schema': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}}}, 'content': {'application/json': {'schema': {'type': 'object', 'required': ['openapi', 'info', 'paths'], 'properties': {
+            'openapi': {'type': 'string'}, 'info': {'type': 'object'}, 'paths': {'type': 'object'},
+        }}}}}
+        responses['503'] = error_response('This release has no generated OpenAPI document (`openapi.unavailable`).')
+    elif route['name'] == 'realtime:auth':
+        responses['200'] = {'description': 'The Pusher channel signature, without a `data` wrapper. Presence channels also include `channel_data`.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
+            'auth': {'type': 'string', 'description': 'The Reverb app key and the HMAC-SHA256 channel signature.'},
+            'channel_data': {'type': 'string', 'description': 'JSON-encoded presence member data, returned only for `presence-node.{id}` channels.'},
+        }, 'required': ['auth'], 'additionalProperties': False}}}}
+        responses['404'] = error_response('Realtime is not configured (`realtime.not_configured`).')
+    elif route['name'] == 'conn:managed:broadcasting-auth':
+        responses['200'] = {'description': 'The Pusher channel signature, without a `data` wrapper.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
+            'auth': {'type': 'string', 'description': 'The Reverb app key and the HMAC-SHA256 of `socket_id:channel_name`.'},
+        }, 'required': ['auth'], 'additionalProperties': False}}}}
+        responses['404'] = error_response('Managed targets are off (`conn.managed_disabled`), the environment has no managed target (`conn.managed_target_unknown`), or realtime is not configured (`realtime.not_configured`).')
     elif route['name'] == 'conn:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature, without a `data` wrapper.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'The Reverb app key and the HMAC-SHA256 of `socket_id:channel_name`.'},
@@ -2377,7 +2855,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             listed = envelope(data, 'The index rows of the covered servers, newest user message first, and every covered server in `meta.environments`.')
             server = {'type': 'object', 'required': ['environment_id', 'instance_id', 'power_state', 'read_at', 'read_error'], 'properties': {
                 'environment_id': {'type': 'string'}, 'instance_id': {'type': 'integer'},
-                'power_state': {'type': ['string', 'null'], 'description': 'The container power state: `stopped` is asleep, and its rows are the last read.'},
+                'power_state': {'type': ['string', 'null'], 'enum': ['running', 'stopped', None], 'description': 'The container power state: `stopped` is asleep, and its rows are the last read.'},
                 'read_at': {'type': ['string', 'null'], 'format': 'date-time', 'description': 'When the Gateway last read the server, or tried to; null before its first read.'},
                 'read_error': {'type': ['string', 'null'], 'description': 'Why that read failed, such as `conn.server_unreachable` or `conn.session_expired`; null after a success.'}}}
             listed['content']['application/json']['schema']['properties']['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'},
@@ -2391,6 +2869,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         elif route['name'] == 'conn:environment:cleanup':
             responses['202'] = envelope(ref('OperationData'), 'Accepted pending registration cleanup. Follow conn:operation:show.')
             responses['204'] = {'description': 'The registration cleanup revision is already complete.'}
+        elif route['name'] == 'conn:environment:unregister':
+            responses['200'] = envelope({'type': 'object', 'required': ['environment_id', 'removed'], 'additionalProperties': False, 'properties': {
+                'environment_id': {'type': 'string', 'description': 'The requested Conn environment ID.'},
+                'removed': {'type': 'boolean', 'description': 'True when a host server record was removed; false when no record existed.'},
+            }}, 'The host server record was removed, or no record existed for that environment ID.')
+            responses['403'] = error_response("node_access.required: the caller has no node access to the server's Node (or to any Node when the environment is unknown).")
+            responses['409'] = error_response('conn.environment_is_instance: the server is bound to a container Instance; destroy the Instance instead. operation.target_busy: a Conn operation is already running on this server.')
         elif route['name'] == 'conn:project:list':
             responses['200'] = envelope(data, 'Compatible ready-default Projects, or all reachable Projects with include_unavailable=true.')
             responses['422'] = error_response('validation.failed: include_unavailable must be 1, true, 0 or false.')
@@ -2415,6 +2900,13 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         elif route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):
             responses['202'] = envelope(data, 'Accepted. The release record runs as the `gateway.release` Swamp run, which ends it.')
             responses['503'] = error_response('Swamp did not start the run. The record ends as failed and retryable, or stays running when Swamp did not confirm the start (`swamp.start_uncertain`).')
+        elif route['name'] == 'conn:reservation:create':
+            responses['202'] = envelope(ref('ConnReservationData'), 'Created a new reserved clone.')
+            responses['200'] = envelope(ref('ConnReservationData'), 'Returned the caller\'s existing open reservation for this Project.')
+        elif route['name'] == 'conn:reservation:release':
+            responses['202'] = envelope(ref('ConnReservationData'), 'Released the reservation and queued its clone removal.')
+        elif route['name'] == 'conn:managed:token:create':
+            responses['201'] = envelope(data, 'Issued a short-lived managed reader token.')
         elif controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
             # Development deploy step creation refuses duplicate names, including exact retries.
@@ -2424,6 +2916,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'] in ('conn:attention:record', 'conn:managed:attention'):
+        receipt = {'$ref': '#/components/schemas/ConnAttentionReceipt'}
+        responses['200'] = envelope(receipt, 'The Gateway already recorded this `event_id`; nothing changed.')
+        responses['202'] = envelope(receipt, 'Recorded the event and queued its push.')
+        responses['429'] = error_response('More than 120 events in a minute for this server (`conn.attention_rate_limited`); `details.retry_after` names the seconds to wait.')
     if route['name'].startswith('conn:launch:'):
         data = ref('ConnLaunchSnapshot')
         if route['name'] == 'conn:launch:list':
@@ -2447,7 +2944,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['502'] = error_response('The remote branches cannot be read (`source.head_unavailable`).')
         responses['422'] = error_response('query must be a string of at most 255 characters without control characters or leading/trailing whitespace (`validation.failed`).')
         responses['409'] = error_response('The Project has no ready container default (`instance.default_missing`).')
-    if route['name'] in ('operation:list', 'task:list'):
+    if route['name'] in ('operation:list', 'task:list', 'conn:task:list'):
         meta = responses['200']['content']['application/json']['schema']['properties']
         meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'next_cursor': {'type': ['string', 'null'], 'description': 'Send as `cursor` with the same filters for the next page; null on the last page.'}}, 'required': ['next_cursor']}]}
     if route['name'].startswith('project:document:'):
@@ -2468,6 +2965,17 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['403'] = error_response('Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
+    elif is_managed_target:
+        if route['name'] == 'conn:managed:broadcasting-auth':
+            responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), the target identity or bearer service credential does not match (`conn.managed_target_identity`), or the channel is not this target\'s current channel (`conn.managed_channel_forbidden`).')
+        elif route['name'] == 'conn:managed:introspect':
+            responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), the target identity or bearer service credential does not match (`conn.managed_target_identity`), the managed token is invalid (`conn.managed_token_invalid`), or the socket peer does not match the token\'s caller (`conn.managed_peer_mismatch`).')
+        else:
+            responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or the target identity or bearer service credential does not match (`conn.managed_target_identity`).')
+        responses.setdefault('404', error_response('Managed targets are off (`conn.managed_disabled`) or the environment has no managed target (`conn.managed_target_unknown`).'))
+    elif route['name'] == 'conn:managed:token:create':
+        responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or has no direct node access edge to the serving Node (`conn.managed_direct_edge_required`).')
+        responses['404'] = error_response('Managed targets are off (`conn.managed_disabled`) or the environment has no managed target (`conn.managed_target_unknown`).')
     elif route['name'] == 'conn:realtime:auth':
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), has no node access (`node_access.required`), or named a channel other than its current profile channel (`broadcast.channel_forbidden`).')
     elif route['name'] in ('copy:whoami', 'copy:pull-request'):
@@ -2484,6 +2992,16 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
     if params and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
+    if route['name'] == 'conn:me:push-device:show':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or the calling Node has no push device with this `device_id`.')
+    elif route['name'] == 'conn:attention:record':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or no Conn environment matches the path.')
+    elif route['name'] == 'conn:managed:attention':
+        responses['404'] = error_response('Managed targets are off (`conn.managed_disabled`), the environment has no managed target (`conn.managed_target_unknown`), or Conn push is off (`conn.push_disabled`).')
+    elif route['name'] == 'conn:me:push-device:destroy':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`), or `device_id` is not a UUID.')
+    elif route['name'].startswith('conn:push-credentials:') or route['name'] == 'conn:me:push-device:upsert':
+        responses['404'] = error_response('Conn push is off (`conn.push_disabled`).')
     if starts_operation or (route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] == 'conn:environment:session':
@@ -2517,6 +3035,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['409'] = error_response(extension_error)
     if route['name'] == 'ai-router:model:list':
         responses['409'] = error_response('The collector is not set up (`ai_router.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).')
+    if route['name'] == 'ai-router:task-guard':
+        responses['409'] = error_response('The ai-router is not set up (`ai_router.disabled`), or another guard or forwarder run holds the guard (`operation.target_busy`). A disabled extension returns HTTP 409 (`extension.disabled`).')
     if route['name'] in ('extension:enable', 'extension:disable'):
         responses['422'] = error_response('The extension slug is unknown (`validation.failed`).')
     if route['name'] == 'extension:enable':

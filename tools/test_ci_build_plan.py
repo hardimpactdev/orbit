@@ -237,6 +237,9 @@ class BuildPlanTest(unittest.TestCase):
                      'new-source/main.py', 'new-tool.py'):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'Unknown CI source root'):
                 plan.select([path])
+        # A deleted file that no root names left nothing to build; a kept one still fails closed.
+        self.assertEqual(['README.md'], plan.without_rootless_deletions(['gone.json', 'README.md'], {'gone.json'}))
+        self.assertEqual(['new-tool.py'], plan.without_rootless_deletions(['new-tool.py'], set()))
         # Desktop's paused coverage is explicit, rather than an unrecognised app silently omitted.
         self.assertNotIn('project-check', plan.select(['apps/desktop/src/main.ts'])['jobs'])
 

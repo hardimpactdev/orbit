@@ -167,7 +167,7 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   };
   const clone = workflow.jobs.find((job) => job.name === "clone")!.steps;
   // The copy stages the release scripts itself; the registration is in the create job, after the publication.
-  assertEquals(clone.map((step) => step.name), ["clone-ci-hold", "clone-seed-wait", "clone-container", "clone-club-key", "clone-t3", "clone-session-copy"]);
+  assertEquals(clone.map((step) => step.name), ["clone-ci-hold", "clone-container", "clone-club-key", "clone-t3", "clone-session-copy"]);
   // Its Route is the job `publication`, which only a clone whose admission took the Route Nodes runs.
   assertEquals(workflow.jobs.map((job) => job.name), ["input", "legacy", "clone", "publication", "create"]);
   const step = (name: string) => clone.find((s) => s.name === name)!;
@@ -185,13 +185,14 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   assertEquals(create.find((s) => s.name === "finish")!.dependsOn, [{ step: "clone-register", condition: { type: "always" } }]);
   // A proof copy holds its CI place before the copy exists; every other clone skips the hold and copies at once.
   assertEquals(step("clone-ci-hold").dependsOn, []);
-  // The copy waits for its admitted seed first (docs/reference/development-containers.md#a-retake-keeps-the-seed); a wait that reached
-  // its bound fails only its own step, and the copy still runs.
-  assertEquals(step("clone-seed-wait").dependsOn,
-    [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
+  // The copy waits for its admitted seed itself, only during a retake (docs/reference/development-containers.md#a-retake-keeps-the-seed):
+  // no step of its own stands before it.
   assertEquals(step("clone-container").dependsOn,
-    [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },
-      { step: "clone-seed-wait", condition: { type: "always" } }]);
+    [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
+  // Its budget keeps the copy's 300 s of work after the copy's one 120 s wait for Incus or the seed, and SSH outlasts it.
+  const copyInputs = step("clone-container").task.inputs as unknown as { argv: string; timeoutSec: number };
+  assert(copyInputs.argv.startsWith('${{ ["timeout", "420", "python3", "-c",'));
+  assertEquals(copyInputs.timeoutSec, 430);
   const held = { already_active: false, container: { name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5 } } } };
   const holds = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").guard), { inputs: { intent } });
   const holdArgv = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").task.inputs.argv), { inputs: { intent } });
@@ -286,8 +287,6 @@ const commit = "b".repeat(40);
 // Seconds per step from timeline.md (Projects 69, 68, 76): T3, the longer of its level, 4.2 s beside the checkout.
 const cloneOutcomes = (): Record<string, Outcome> => ({
   input: { duration: 1.3 },
-  // The seed wait: one dispatch, and a normal copy finds its seed at the first request.
-  "clone-seed-wait": { duration: 0.9 },
   // The copy step stages the stage copy first: about 0.1 s more than the copy alone.
   "clone-container": { duration: 5.4 },
   // The T3 step: the checkout beside T3 (4.2 s), then the sessions check (0.2 s), in one step.
@@ -315,7 +314,7 @@ Deno.test("a clone's create ends at the registration: five dispatches, one T3 st
   const publicationJob = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: { name: string; steps: { name: string; allowFailure?: boolean }[] }[] })
     .jobs.find((job) => job.name === "publication")!;
   assertEquals(publicationJob.steps.map((step) => [step.name, step.allowFailure]), [["clone-route-input", true], ["clone-route-csr", true], ["clone-route", true]]);
-  assertEquals(sorted(steps.clone), [["clone-ci-hold"], ["clone-seed-wait"], ["clone-container"], ["clone-club-key"], ["clone-t3"], ["clone-session-copy"]]);
+  assertEquals(sorted(steps.clone), [["clone-ci-hold"], ["clone-container"], ["clone-club-key"], ["clone-t3"], ["clone-session-copy"]]);
   // A ready clone runs the first level (the registration beside the private folder's removal) and skips the rest at no cost.
   assertEquals(sorted(steps.create), [["clone-private-cleanup", "clone-register"], ["finish"], ["stop-input", "withdraw-route"], ["stop-container"], ["accepted", "cleanup"]]);
 });
@@ -323,13 +322,13 @@ Deno.test("a clone's create ends at the registration: five dispatches, one T3 st
 Deno.test("a normal clone succeeds at the registration in about 18 s: no input step, the copy stages, the registration builds the result", () => {
   const ran = runCreate(cloneIntent, cloneOutcomes());
   assertEquals([ran.input.status, ran["clone-club-key"].status, ran.finish.status], ["skipped", "skipped", "skipped"]);
-  // The seed wait is the first step after the start, then the copy; each later step starts when the one before it ends.
-  assertEquals([ran["clone-seed-wait"].status, ran["clone-seed-wait"].start], ["succeeded", 0]);
-  assertEquals(ran["clone-container"].start, ran["clone-seed-wait"].end);
+  // The copy is the first step after the start: it waits for its seed itself, only during a retake. Each later step starts when the
+  // one before it ends.
+  assertEquals([ran["clone-container"].status, ran["clone-container"].start], ["succeeded", 0]);
   assertEquals(ran["clone-t3"].start, ran["clone-container"].end);
   assertEquals(ran["clone-session-copy"].start, ran["clone-t3"].end);
   assertEquals(ran["clone-register"].start, ran["clone-session-copy"].end);
-  for (const name of ["clone-seed-wait", "clone-container", "clone-t3", "clone-session-copy", "clone-register", "clone-private-cleanup"]) {
+  for (const name of ["clone-container", "clone-t3", "clone-session-copy", "clone-register", "clone-private-cleanup"]) {
     assertEquals(ran[name].status, "succeeded", name);
   }
   // No step of the completion runs here: no Route, database or fleet step exists in the create.
@@ -341,19 +340,18 @@ Deno.test("a normal clone succeeds at the registration in about 18 s: no input s
   assertEquals([ran["stop-input"].status, ran["stop-container"].status, ran["withdraw-route"].status, ran.accepted.status], ["skipped", "skipped", "skipped", "succeeded"]);
   // The registration removed the ready create's copy of the sessions: the cleanup step skips, and the run ends with accepted.
   assertEquals(ran.cleanup.status, "skipped");
-  // Seconds per level, from timeline.md: the seed wait's dispatch 0.9 · copy with the stage 5.4 · T3 with the checkout and the sessions
-  // check 4.4 · copy 1.4 · register with the result 1.3. With 3.8 s for the Gateway's admission and the Swamp start, and the model's
-  // 1 s for the assert, the create succeeds about 18 s after the click: the input, stage and finish levels (4.6 s) are gone.
-  assertEquals(Math.round(ran["clone-register"].end * 10) / 10, 13.4);
-  assertEquals(Math.round((3.8 + ran.accepted.end) * 10) / 10, 18.2);
+  // Seconds per level, from timeline.md: copy with the stage 5.4 · T3 with the checkout and the sessions check 4.4 · copy 1.4 ·
+  // register with the result 1.3. With 3.8 s for the Gateway's admission and the Swamp start, and the model's 1 s for the assert, the
+  // create succeeds about 17 s after the click: the input, seed-wait, stage and finish levels (5.5 s) are gone.
+  assertEquals(Math.round(ran["clone-register"].end * 10) / 10, 12.5);
+  assertEquals(Math.round((3.8 + ran.accepted.end) * 10) / 10, 17.3);
 });
 
 Deno.test("a proof copy's create holds its CI place before the copy; a failed hold copies nothing", () => {
   const proofIntent = { ...cloneIntent, container: { ...cloneIntent.container, name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5, node: "ci-a" } } } };
   const ran = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { duration: 2 } });
   assertEquals([ran["clone-ci-hold"].status, ran["clone-ci-hold"].start], ["succeeded", 0]);
-  assertEquals(ran["clone-seed-wait"].start, ran["clone-ci-hold"].end);
-  assertEquals(ran["clone-container"].start, ran["clone-seed-wait"].end);
+  assertEquals(ran["clone-container"].start, ran["clone-ci-hold"].end);
   // Another clone skips the hold at no cost.
   assertEquals(runCreate(cloneIntent, cloneOutcomes())["clone-ci-hold"].status, "skipped");
   const refused = runCreate(proofIntent, { ...cloneOutcomes(), "clone-ci-hold": { status: "failed", duration: 2 } });
@@ -410,7 +408,7 @@ Deno.test("a clone's address is published beside its copy: from the first level 
   const ran = runCreate(routeIntent, publication(4, 7));
   // The publication starts with the clone steps, at the first level after input.
   assertEquals(ran["clone-route-csr-0"].start, ran.input.end);
-  assertEquals(ran["clone-route-csr-0"].start, ran["clone-seed-wait"].start);
+  assertEquals(ran["clone-route-csr-0"].start, ran["clone-container"].start);
   // Its own input (the site's run folder) runs beside the CSR, not before it.
   assertEquals([ran["clone-route-input"].status, ran["clone-route-input"].start], ["succeeded", ran["clone-route-csr-0"].start]);
   assertEquals(ran["clone-route"].start, ran["clone-route-csr-0"].end);
@@ -498,7 +496,7 @@ Deno.test("a nested-fleet clone gets its Club key before the T3 step, and starts
   // A nested copy of a web-serving Project publishes beside its copy; its Club key and the registration keep their places.
   const routed = runCreate({ ...nested, route: { leaf_indexes: [0] } }, publication(4, 7, outcomes));
   assertEquals([routed["clone-club-key"].status, routed["clone-route-csr-0"].status, routed["clone-route"].status], ["succeeded", "succeeded", "succeeded"]);
-  assertEquals(routed["clone-route-csr-0"].start, routed["clone-seed-wait"].start);
+  assertEquals(routed["clone-route-csr-0"].start, routed["clone-container"].start);
   for (const name of ["clone-club-key", "clone-t3", "clone-register"]) assertEquals(routed[name].start, ran[name].start, name);
   assertEquals(JSON.parse(String(resultOf(routed).outputs!.stdout)).route_publication, "published");
   assertEquals(ran["clone-t3"].start, ran["clone-club-key"].end);

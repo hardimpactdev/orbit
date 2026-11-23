@@ -27,9 +27,9 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; serve more web roots through Routes | In progress |
 | [0210](/decisions/0210-give-each-extension-its-own-code-boundary) | Give each extension its own code boundary | In progress |
-| [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the [task VM model proxy origin](/reference/compute-drivers#limit-fleet-traffic-on-the-hub); its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
+| [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) | Turn ProxyCli into the AI router extension | In progress; changes the task VM model proxy origin; its step 4 adds amendments A1 and A3 to [0210](/decisions/0210-give-each-extension-its-own-code-boundary) |
 | [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role) | Run CI runners through a ci-runner role | In progress; the host role is built, Gateway-owned runner records and registration remain pending |
-| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
+| [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | Withdrawn on 2026-11-20; replaced by [0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version) |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; replaces the deployment history with operations and lowers the request limit; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
 | [0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users) | Run Valkey Database servers with Orbit-owned ACL users | In progress; adds a driver to [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) |
@@ -64,6 +64,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0270](/decisions/0270-record-conn-launches-before-handoff) | Record Conn launches before handoff | In progress |
 | [0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) | Run operations on a Gateway state machine over NATS | In progress; decided by the owner on 2026-11-18; changes [0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor) P1, P3, P4 and P8 |
 | [0272](/decisions/0272-merge-through-a-github-merge-queue) | Merge through a GitHub merge queue | In progress; decided by the owner on 2026-11-19 |
+| [0273](/decisions/0273-upgrade-a-process-to-a-new-upstream-version) | Upgrade a Process to a new upstream version | In progress; decided by the owner on 2026-11-20; replaces [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) |
 
 ## Retired decisions
 
@@ -150,10 +151,10 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0079 | Publish linux-x64 from hosted GitHub Actions and macos-arm64 from mini | [CLI binaries](/reference/cli-binaries) |
 | 0080 | Add node-owned custom proxy Routes for arbitrary hostnames | [Routes: Custom proxy Routes](/reference/routes#custom-proxy-routes) |
 | 0081 | Query registered mysql, pgsql, and sqlite connections through PDO | [Database connections: Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection) |
-| 0082 | Wire Agentation watch mode through Instance Processes | [Web app: Annotations outside the Gateway](/reference/web-app#annotations-outside-the-gateway) |
+| 0082 | Wire Agentation watch mode through Instance Processes | [Web app: Annotation overlay](/reference/web-app#annotation-overlay) |
 | 0083 | Default SQLite journal_mode to WAL | [SQLite WAL default](/solutions/sqlite-wal-default) |
 | 0084 | Broadcast record changes through Reverb | [Realtime events](/reference/events) |
-| 0085 | Build orbit top as a thin TUI client (superseded) | [Web app: One live fleet view](/reference/web-app#one-live-fleet-view) |
+| 0085 | Build orbit top as a thin TUI client (superseded) | [Web app: Fleet views](/reference/web-app#fleet-views) |
 | 0086 | Offer the API as MCP tools | [MCP server: Why it works this way](/reference/mcp#why-it-works-this-way) |
 | 0087 | Run Reverb through a websocket role | [Realtime events with Reverb](/solutions/realtime-reverb) |
 | 0088 | CLI reads display metrics from Grafana | [Metrics role: Read Node metrics](/reference/metrics#read-node-metrics) |
@@ -171,16 +172,16 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0100 | Install Caddy from the pinned Caddy apt source (superseded) | [Node provisioning: Caddy from its GitHub release, not its apt source](/reference/node-provisioning#caddy-from-its-github-release-not-its-apt-source) |
 | 0101 | Keep one Route publication field and terminate public Ingress with Let's Encrypt | [Routes: Publish a public Route](/reference/routes#publish-a-public-route) |
 | 0102 | Read Instance analytics through a fleet driver | [Instance analytics stats](/reference/instance-analytics-stats) |
-| 0103 | Absorb Commander tasks as a Gateway extension | [Tasks: An optional, generic extension](/reference/tasks#an-optional-generic-extension) |
-| 0104 | Own CLIProxyAPI quota through the proxycli extension | [ai-router: Why it works this way](/reference/ai-router#why-it-works-this-way) |
+| 0103 | Absorb Commander tasks as a Gateway extension | [Tasks](/reference/tasks) |
+| 0104 | Own CLIProxyAPI quota through the proxycli extension | [ai-router: Switch and setup](/reference/ai-router#switch-and-setup) |
 | 0105 | Name applications as Project and Instance | [Projects: Project and Instance](/reference/projects#project-and-instance) |
 | 0106 | Derive instance capabilities from Project type | [Projects: Project types](/reference/projects#project-types) |
 | 0107 | Key isolation and releases to Node role | [Instance environment variables: Laravel mode](/reference/environment-variables#laravel-mode), [Production release layout](/reference/deployments), and [Instance cloning](/reference/instance-cloning) |
 | 0108 | Persist managed environment on systemd Processes | [Processes and schedules: Environment of a systemd Process](/reference/processes-and-schedules#environment-of-a-systemd-process) |
-| 0109 | Publish the proxycli collector on a subdomain | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
-| 0110 | Route task sessions with Laravel AI Jev | [Tasks: Session routing (Jev routing removed)](/reference/tasks#session-routing) |
+| 0109 | Publish the proxycli collector on a subdomain | [ai-router: Collector endpoints](/reference/ai-router#collector-endpoints) |
+| 0110 | Route task sessions with Laravel AI Jev | [Tasks: Execution ownership (Jev routing removed)](/reference/tasks#execution-ownership) |
 | 0111 | Retain completed transfer history through Instance removal | [Instance removal: Keep unfinished transfer history](/reference/instance-removal#keep-unfinished-transfer-history) |
-| 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
+| 0112 | Isolate agent threads behind drivers | [Tasks: Drivers](/reference/tasks#drivers) |
 | 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
 | 0114 | Expand the three-node Incus Cluster (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#execution-ownership) |
@@ -191,9 +192,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0119 | Share caches after bootstrap | [Feature delivery: Only main CI publishes](/reference/implementation-loop#only-main-ci-publishes) |
 | 0120 | Extract the agent annotation package | [Web app: Annotation overlay](/reference/web-app#annotation-overlay) |
 | 0121 | End agent turns with a turn receipt | [Tasks: Turn receipt](/reference/tasks#turn-receipt) |
-| 0122 | Hold tasks in Backlog until they are ready | [Tasks: Prepare a task in Backlog](/reference/tasks#prepare-a-task-in-backlog) |
+| 0122 | Hold tasks in Backlog until they are ready | [Tasks: Tasks and subtasks](/reference/tasks#tasks-and-subtasks) |
 | 0123 | Serve the web app from the Gateway origin | [Web app: Why it works this way](/reference/web-app#why-it-works-this-way) |
-| 0124 | Plan Backlog tasks with a T3 planner | [Tasks: Prepare a task in Backlog (planner removed)](/reference/tasks#prepare-a-task-in-backlog) |
+| 0124 | Plan Backlog tasks with a T3 planner | [Tasks: Tasks and subtasks (planner removed)](/reference/tasks#tasks-and-subtasks) |
 | 0125 | Run the Project check when the implementer hands off | [Tasks: Project check](/reference/tasks#project-check) |
 | 0126 | Limit browser API calls to Orbit origins | [Browser access to the Gateway](/reference/browser-access) |
 | 0127 | Share one SSH connection per Node | [Node provisioning: SSH connections](/reference/node-provisioning#ssh-connections) |
@@ -201,9 +202,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0129 | Publish Node presence and Process state on per-Node presence channels | [Realtime events: Node agent channels](/reference/events#node-agent-channels) |
 | 0130 | Publish agent binaries as GitHub releases | [Node agent: Releases](/reference/node-agent#releases) |
 | 0131 | Seed task workspace clones from the registered main cache store | [Feature delivery: Seed a checkout](/reference/implementation-loop#seed-a-checkout) |
-| 0132 | Pause a task only for its acting thread or a real question | [Tasks: Session routing](/reference/tasks#session-routing) |
+| 0132 | Pause a task only for its acting thread or a real question | [Tasks: Execution ownership](/reference/tasks#execution-ownership) |
 | 0133 | Verify typed subtask deliverables at handoff | [Tasks: Deliverables](/reference/tasks#deliverables) |
-| 0134 | Resume Pi agent streams from a cursor | [Tasks: Agent viewer](/reference/tasks#agent-viewer) |
+| 0134 | Resume Pi agent streams from a cursor | [Tasks: Read a thread](/reference/tasks#read-a-thread) |
 | 0135 | Run Incus topologies for task workspace clones through a bridge worktree (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0136 | Run long-lived topology processes as transient units (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
@@ -214,9 +215,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
 | 0143 | Record topology evidence and sync without verification (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
-| 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [ai-router: A reserved name, not a Route](/reference/ai-router#a-reserved-name-not-a-route) |
+| 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [ai-router: Collector endpoints](/reference/ai-router#collector-endpoints) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
-| 0147 | Retire orbit top | [Web app: One live fleet view](/reference/web-app#one-live-fleet-view) |
+| 0147 | Retire orbit top | [Web app: Fleet views](/reference/web-app#fleet-views) |
 | 0148 | Keep a Gateway view of Node agent state | [Node agent: Gateway view](/reference/node-agent#gateway-view) |
 | 0149 | Install the private DNS listener from the Gateway | [Private DNS: Release and sockets](/reference/private-dns#release-and-sockets) |
 | 0150 | Keep extension commands local and confirm the proxycli fleet stop | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
@@ -229,17 +230,17 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0157 | Keep private Caddy sites off the public listener | [Caddy configuration: Listener addresses](/reference/caddy-configuration#listener-addresses) |
 | 0158 | End interrupted Activity | [activity: Interrupted requests](/cli/activity#interrupted-requests) |
 | 0159 | Push Activity changes to the web app | [Realtime events: Activity](/reference/events#activity) |
-| 0160 | Push each approved subtask and remove the finished workspace clone | [Tasks: Pull request and settle metrics](/reference/tasks#pull-request-and-settle-metrics) |
+| 0160 | Push each approved subtask and remove the finished workspace clone | [Tasks: Settle metrics](/reference/tasks#settle-metrics) |
 | 0161 | Set a stale Caddyfile aside when Caddy is absent | [Caddy configuration: When Caddy is absent](/reference/caddy-configuration#when-caddy-is-absent) |
 | 0162 | Verify web UI changes with bin/web-verify | [Web verification: Why it works this way](/reference/web-verification#why-it-works-this-way) |
-| 0163 | Prove a failing test on the start commit | [Tasks: Prove a command fails on the start commit](/reference/tasks#prove-a-command-fails-on-the-start-commit) |
+| 0163 | Prove a failing test on the start commit | [Tasks: Deliverables](/reference/tasks#deliverables) |
 | 0164 | Heal a settling pull request with a fixup subtask | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0165 | Record per-thread token metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0166 | Raise PHPStan one level at a time | [Feature delivery: Findings are fixed, not silenced](/reference/implementation-loop#findings-are-fixed-not-silenced) |
 | 0167 | Resume a Pi turn interrupted by a server restart | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop) |
 | 0168 | Offload large Pi tool output | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop) |
-| 0169 | Start each subtask review in a fresh thread | [Tasks: Review a subtask](/reference/tasks#review-a-subtask) |
-| 0170 | Edit Todo subtasks after a group starts | [Tasks: Change subtasks](/reference/tasks#change-subtasks) |
+| 0169 | Start each subtask review in a fresh thread | [Tasks: The reviewer rule](/reference/tasks#the-reviewer-rule) |
+| 0170 | Edit Todo subtasks after a group starts | [task:update](/cli/task/update) |
 | 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#execution-ownership) |
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#execution-ownership) |
@@ -247,7 +248,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0175 | Keep the docs-impact check in Orbit's repository | [Contributor guide: Docs impact stays in the repository](/contributor-guide#docs-impact-stays-in-the-repository) |
 | 0176 | File recurring production problems as repro-first bug groups | [Tasks: Outer loop](/reference/tasks#outer-loop) |
 | 0177 | Remove the app compatibility surface | [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) |
-| 0178 | Run project-agnostic Tasks without a planner | [Tasks: Project-owned task policy](/reference/tasks#project-owned-task-policy) |
+| 0178 | Run project-agnostic Tasks without a planner | [Tasks: Project check](/reference/tasks#project-check) |
 | 0179 | Gate every extension surface with one Gateway switch | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |
 | 0181 | Name the domain Project and Instance everywhere | [Projects: Project and Instance](/reference/projects#project-and-instance) |
@@ -259,15 +260,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0188 | Read private GitHub repositories through the Gateway's GitHub CLI | [GitHub App: Read through the GitHub CLI](/reference/github-app#read-through-the-github-cli) |
 | 0189 | Register Instances only for existing Projects | [Projects: Registration needs a Project](/reference/projects#registration-needs-a-project) |
 | 0191 | Clone the default Instance's database for each new Instance | [Applications: Database clone](/domains/applications#database-clone); [Applications: Each new Instance copies the default database](/domains/applications#each-new-instance-copies-the-default-database) |
-| 0192 | Run task agents on Pi only | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | Run task agents on Pi only | [Tasks: Drivers](/reference/tasks#drivers) |
 | 0192 | Stop a group whose pull request ended | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#execution-ownership) |
 | 0193 | Run task agents as a dedicated user | [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 | 0193 | Record development branch renames | [Applications: Development branch reconciliation](/domains/applications#development-branch-reconciliation) |
 | 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#execution-ownership) |
 | 0195 | Request topologies for review with an operator container (superseded) | [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
-| 0199 | Post direction requests to OpsBot immediately (reversed) | [Tasks: Assistance is recorded in Activity](/reference/tasks#assistance-is-recorded-in-activity) |
-| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Compute drivers: Orbit Project](/reference/compute-drivers#orbit-project); [Compute drivers: Why task VMs work this way](/reference/compute-drivers#why-task-vms-work-this-way); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
+| 0199 | Post direction requests to OpsBot immediately (reversed) | [Tasks: Direction requests](/reference/tasks#direction-requests) |
+| 0200 | Run each task group in its own sandbox VM | [Compute drivers: Task VMs](/reference/compute-drivers#task-vms); [Old paths: The Pi task loop](/reference/old-paths#the-pi-task-loop); [Tasks: Every task group runs on its own task VM](/reference/tasks#every-task-group-runs-on-its-own-task-vm); [Task copy and nested fleet](/reference/tasks#build-a-feature-in-one-copy) |
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: Typed commands over SSH](/reference/node-agent#typed-commands-over-ssh) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#execution-ownership); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
@@ -289,11 +290,11 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0232 | Pre-create managed PostgreSQL test databases | [Database servers: PostgreSQL workers exist before tests start](/reference/database-servers#postgresql-workers-exist-before-tests-start) |
 | 0233 | Publish Node Processes through public Routes | [Routes: Public Process Routes select an edge separately from the workload](/reference/routes#public-process-routes-select-an-edge-separately-from-the-workload) |
 | 0235 | Verify release provenance on the Gateway | [Update and recover a Gateway: Release provenance](/reference/gateway-recovery#release-provenance); [Update and recover a Gateway: One small verifier for one bundle shape](/reference/gateway-recovery#one-small-verifier-for-one-bundle-shape); [CLI binaries: Provenance from the workflow identity](/reference/cli-binaries#provenance-from-the-workflow-identity); [Orbit self-update: The CLI trusts the Gateway's provenance check](/reference/self-update#the-cli-trusts-the-gateways-provenance-check) |
-| 0236 | Measure task delivery from recorded lifecycle times | [Tasks: Task insights](/reference/tasks#task-insights); [Tasks: Insights come from recorded times](/reference/tasks#insights-come-from-recorded-times) |
-| 0237 | Read Swamp task output through the Gateway | [Tasks: Swamp output stays a read](/reference/tasks#swamp-output-stays-a-read) |
+| 0236 | Measure task delivery from recorded lifecycle times | [Tasks: Task insights](/reference/tasks#task-insights); [Tasks: Lifecycle times](/reference/tasks#lifecycle-times) |
+| 0237 | Read Swamp task output through the Gateway | [Tasks: Swamp run output](/reference/tasks#swamp-run-output) |
 | 0238 | Trial two Swamp slices before a wider move | [Build a Swamp flow](/swamp/porting) |
 | 0239 | Let Swamp own dependency maintenance | [Instance dependencies: Why it works this way](/reference/instance-dependencies#why-it-works-this-way) |
 | 0241 | Firewall source allowlists (superseded by 0245) | [ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) |
-| 0256 | A clone create is two Operations | [Instance containers: A clone create is two Operations](/reference/development-containers#a-clone-create-is-two-operations) |
+| 0256 | A clone create is two Operations | [Instance containers: Complete a clone](/reference/development-containers#complete-a-clone) |
 | 0206 | Build task VM images as chains of small jobs (removed) | [Old paths: Task VM settings](/reference/old-paths#task-vm-settings) |
 | 0219 | Answer Cluster names from a DNS on the Router (superseded) | [ADR 0248: Private DNS desired state](/decisions/0248-render-private-dns-as-desired-state) |

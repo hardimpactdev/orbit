@@ -1,8 +1,10 @@
 ---
-# The native cfgmgmt step applies the worker template after this phase. It starts the timer only after all three workers are started.
-- name: Make the Swamp runtime folder
-  ansible.builtin.file: { path: /usr/local/lib/orbit-swamp/tasks, state: directory, owner: root, group: root, mode: '0755' }
-- name: Install sequential worker renewal
+# This writes the renewal units only. The role add starts worker renewal after all three workers; the role add and the converge
+# start token renewal (swamp-token-renewal-start.yml).
+- name: Make the Swamp runtime folders
+  ansible.builtin.file: { path: "/usr/local/lib/orbit-swamp/{{ item }}", state: directory, owner: root, group: root, mode: '0755' }
+  loop: [tasks, library]
+- name: Install sequential worker renewal and token renewal
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/{{ item.src }}"
     dest: "/usr/local/lib/orbit-swamp/{{ item.dest }}"
@@ -14,7 +16,25 @@
     - {src: tasks/swamp-worker-renew-slot.yml, dest: tasks/swamp-worker-renew-slot.yml}
     - {src: tasks/swamp-worker-connections.yml, dest: tasks/swamp-worker-connections.yml}
     - {src: tasks/swamp-worker-renew-verify.yml, dest: tasks/swamp-worker-renew-verify.yml}
+    - {src: swamp-token-renewal.yml, dest: token-renewal.yml}
+    - {src: library/orbit_swamp_token_renewal.py, dest: library/orbit_swamp_token_renewal.py}
   loop_control: {label: "{{ item.dest }}"}
+- name: Install the Gateway token entrypoint
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/swamp-gateway-token.sh"
+    dest: /usr/local/lib/orbit-swamp/gateway-token
+    owner: root
+    group: root
+    mode: '0755'
+# The token renewal, the Gateway token entrypoint and the Load step run swamp through swamp-env, which sources the account's Swamp
+# Club credential env.
+- name: Install the Swamp credential env wrapper
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/swamp-env.sh"
+    dest: /usr/local/lib/orbit-swamp/swamp-env
+    owner: root
+    group: root
+    mode: '0755'
 - name: Write worker renewal units
   ansible.builtin.copy:
     dest: "/etc/systemd/system/{{ item.name }}"
@@ -25,5 +45,7 @@
   loop:
     - { name: orbit-swamp-worker-renewal.service, content: "{{ rt.swamp.units.renewal_service }}" }
     - { name: orbit-swamp-worker-renewal.timer, content: "{{ rt.swamp.units.renewal_timer }}" }
+    - { name: orbit-swamp-token-renewal.service, content: "{{ rt.swamp.units.token_renewal_service }}" }
+    - { name: orbit-swamp-token-renewal.timer, content: "{{ rt.swamp.units.token_renewal_timer }}" }
   loop_control: { label: "{{ item.name }}" }
   notify: Reload units

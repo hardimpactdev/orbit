@@ -1,0 +1,9 @@
+order = 812
+cases = [
+  "the receipt phases remove a linked receipt folder or receipt itself and leave its target untouched",
+]
+file = "swamp/tests/task_copy_receipt_links_test.ts"
+cost = 1
+inputs = [
+  "swamp/ansible/task-copy-turn.yml",
+]

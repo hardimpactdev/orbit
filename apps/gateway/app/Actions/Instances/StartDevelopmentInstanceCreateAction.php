@@ -167,6 +167,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $input = [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'created' => $created,
                 ...($connLaunchId === null ? [] : ['conn_launch_operation_id' => $connLaunchId]),
+                ...($data->completionDeferred ? ['completion_deferred' => true] : []),
                 'name' => $name, 'name_converted_from' => DefaultInstanceName::convertedFrom($project, $data->name),
                 'root' => $root, 'domain' => $data->domain, 'branch_override' => $data->branch,
                 'checkout' => $instance->checkout_path, 'prepare_id' => $instance->source_prepare_id,

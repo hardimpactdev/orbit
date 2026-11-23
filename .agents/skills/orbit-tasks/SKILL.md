@@ -21,17 +21,19 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 ### Split into subtasks
 
-Plan one subtask unless a reason below calls for more. Split when:
+A task stands alone, or it has at least two subtasks; never one. By default, plan a task with no subtask: it holds its own deliverables and does its own work. Split it into two or more subtasks only when:
 
 - a later part builds on an earlier part that can be checked on its own;
 - a finding or a decision must come first, and it can change what follows;
 - the work is more than one session can finish and check.
 
+When no reason holds for a second subtask, the work is a task with no subtask. The Gateway refuses a task with exactly one subtask when it leaves Backlog, with `tasks.one_subtask`: fold that subtask into the task. The [tasks reference](../../../docs/reference/tasks.md#a-task-with-no-subtask) states the rule.
+
 Results that depend on each other, or that touch the same files, are subtasks of one group. Results that can ship alone and touch different files are separate groups.
 
-An outcome found during the task becomes an appended subtask when it must ship in the same pull request, and a new group when it can ship alone.
+In a task with subtasks, an outcome found during the task becomes an appended subtask when it must ship in the same pull request, and a new group when it can ship alone. A started task with no subtask takes no subtask: an outcome found during it is a new task.
 
-The last subtask owns the full proof. These are never a subtask: the final gate, the pull request preparation, a merge of `main`, and a split by file or by layer. Every handoff runs the task check, and the last approval proposes the pull request.
+The last subtask, or the task with no subtask itself, owns the full proof. These are never a subtask: the final gate, the pull request preparation, a merge of `main`, and a split by file or by layer. Every handoff runs the task check, and the last approval proposes the pull request.
 
 ### Choose the deliverables
 
@@ -44,7 +46,7 @@ Each deliverable checks one expected outcome. The [tasks reference](../../../doc
 | A reference page that must change | `file` |
 | A real run, a timing, or a live proof | `review` that says what the receipt must show |
 
-Never use a `file` deliverable on a doc page as a stand-in for a real run. A deliverable may name a test file: the file is the check, not the design. An investigation result that a command can print is a `command` deliverable, so the handoff check records its output.
+Never use a `file` deliverable on a doc page as a stand-in for a real run. A deliverable may name a test file: the file is the check, not the design. An investigation result that a command can print also gets a `command` deliverable, so the handoff check records its output. That output is evidence for the `review` deliverable that [writing rule 14](#writing-rules) requires, and does not replace it.
 
 ### Documentation
 
@@ -72,10 +74,13 @@ A brief states the problem and the outcome the group must reach. The implementer
 
 ### Group brief
 
-The title states the outcome. Problem, Expected outcome and Guardrails are always there. Open question is there only when the cause is not known. Proof is there only when tests cannot show the outcome.
+The title states the outcome. Problem, Expected outcome and Guardrails are always there. Proof is there only when tests cannot show the outcome.
 
 ```markdown
-**Problem:** What is wrong or missing, and why it matters now.
+**Problem:**
+- What is wrong or missing.
+  - A fact about it.
+- Why it matters now.
 
 **Expected outcome:**
 1. A rule that holds in every case.
@@ -83,27 +88,27 @@ The title states the outcome. Problem, Expected outcome and Guardrails are alway
 **Guardrails:**
 - Decided: a choice that is already made or proven.
 - Must hold: what must never break.
-- Accepted limits: what the reviewer must not block on, and why.
+- Accepted limits: what the reviewer must not block on.
+  - Why it does not block.
 - Out of scope: what the group must not touch.
 
-**Open question:** what is not known yet, and what the handoff note must name.
-
-**Proof:** the entry point, the starting state, the final observation, the
-cases that would expose a wrong answer, what must be real, what may be a
-stand-in, and the subtask that owns the full proof.
+**Proof:**
+- The entry point.
+- The starting state.
+- The final observation.
+- The cases that would expose a wrong answer.
+- What must be real.
+- What may be a stand-in.
+- The subtask that owns the full proof.
 ```
 
 Guardrails holds only those four kinds of line.
 
 ### Subtask brief
 
-Repeat nothing from the group brief. With one subtask in the group, the brief is one line:
+A task with no subtask has no subtask brief: the group brief and the task's own deliverables are the whole plan. Put its read-first paths in the group brief.
 
-```markdown
-All expected outcomes of the group. Read first: <paths>.
-```
-
-With several subtasks:
+With subtasks, repeat nothing from the group brief:
 
 ```markdown
 **Slice:** Expected outcomes <numbers>. Builds on <subtask>. After this
@@ -125,9 +130,12 @@ subtask, <what works>.
 7. Put everything the implementer needs inline or in the repository. Name no path on another machine or in another repository.
 8. Accepted limits say what the reviewer must not block on, with the reason.
 9. Leave out a section that has nothing to say, slice Guardrails included.
-10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
+10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now. No such question is left in the brief when the task leaves Backlog: rule 14 says what the owner does with it.
 11. For a removal, state what exists afterwards. Ask for the source of the removed thing to go, not for a switch that turns it off. Ask for no committed test, check or flag whose only job is to catch it coming back. To check the result once, add a `command` deliverable: the handoff check runs it, and nothing is committed.
 12. When the proof rests on a model's output, such as a brief that a new session writes, add an accepted limit that names the slips that do not block. Without it, each rerun finds a new slip.
+13. Write every criterion, outcome, guardrail and fact as its own bullet or numbered item. A sub-point is a nested bullet. No paragraph packs several criteria into one sentence. A fact together with its source or its number is one point. The operator reads briefs in the Conn task view on a phone.
+14. A brief has no open question. Before the task starts, the owner finds the answer and writes it as a fact, or asks the operator and writes the answer in. A thing the implementer must find out, such as the cause of a bug, is an expected outcome with a `review` deliverable that names what the handoff note must show.
+15. When an outcome changes existing behaviour, state what happens to what already exists (existing rows, in-flight work, and rollback). Give it a `command` deliverable that runs the real code path, without mocking or faking the boundary under test.
 
 Name implementation paths only where the contract fixes them.
 
@@ -143,9 +151,9 @@ The Gateway refuses to change a running group: a `PATCH` of its brief answers `t
 
 A task that the outer loop filed arrives in Backlog with a docs subtask and a placeholder test deliverable. Its owner rewrites it into the shape above before Todo.
 
-Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
+Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. For a task with no subtask, show its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
+Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. For a task with no subtask, pass its `deliverables` to the same call. Otherwise create its subtasks, at least two, with the same tool and `parent_id`. Select either level by its existing Task ID. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`, or a task with no subtask by its own ID.
 
 ## Implement a subtask
 

@@ -24,7 +24,8 @@
             "cli/ai-router/provider-show",
             "cli/ai-router/account-enable",
             "cli/ai-router/account-disable",
-            "cli/ai-router/model-list"
+            "cli/ai-router/model-list",
+            "cli/ai-router/task-guard"
           ]
         }
       ]

@@ -55,11 +55,11 @@ jobs:
         writes: true
         dependsOn: [{step: Read its Incus certificate, condition: {type: always}}]
         forEach: {item: target, in: '${{ inputs.intent.targets }}'}
-        # Each push snapshots the default's mounted inner volume, and Incus freezes its file system for that; a second freeze of a
-        # frozen file system fails with EBUSY. So the copies of one source run one target at a time (docs/cli/instance/seed-copy.mmd).
-        concurrency: 1
+        # The targets' copies run side by side. Each push of the default's mounted inner volume freezes and thaws it at its start; the
+        # playbook tries again a push whose freeze met another push's (docs/cli/instance/seed-copy.mmd).
         allowFailure: true
-        # ProofSeeds::CopySeconds: two pushes of up to 1,200 s and their reads; the run budget counts one per target.
+        # ProofSeeds::CopySeconds: two pushes of up to 1,200 s and their reads; the run budget counts one per target, because copies side
+        # by side share the default Node's uplink.
         task:
           type: behavior
           behaviorType: command/shell

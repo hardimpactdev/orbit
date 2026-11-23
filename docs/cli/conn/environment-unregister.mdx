@@ -1,0 +1,47 @@
+---
+title: "orbit conn:environment:unregister"
+sidebarTitle: "conn:environment:unregister"
+description: "Unregister a host T3 server from the Conn registry so it stops appearing in conn:environment:list. Owner-scoped, host servers only, and idempotent."
+covers:
+  - apps/gateway/extensions/conn/src/Actions/UnregisterConnEnvironmentAction.php
+  - apps/gateway/extensions/conn/src/Domain/ConnEnvironmentRemoval.php
+  - apps/gateway/extensions/conn/src/Http/Controllers/ConnEnvironmentsController.php
+  - apps/cli/app/Commands/Conn/UnregisterConnEnvironmentCommand.php
+  - packages/php-sdk/src/Requests/Conn/UnregisterConnEnvironmentRequest.php
+  - packages/php-sdk/src/Responses/Conn/UnregisteredConnEnvironmentResponse.php
+---
+
+Remove a host T3 server's registry entry from the Gateway so it stops appearing in `conn:environment:list`.
+
+- **Owner-scoped:** requires enabled Conn and node access to the Node that registered the server (or Gateway access when its Node was removed).
+- **Host servers only:** servers bound to a container Instance are removed by destroying the Instance and are refused with `conn.environment_is_instance` (409).
+- **Idempotent:** removing an unknown or already removed environment ID succeeds with HTTP 200 and `removed: false`.
+- **No call to T3:** the Gateway removes its own records without contacting the T3 server, which may already be gone. A still-running host T3 server that registers again reappears in the registry.
+
+## Usage
+
+```sh
+orbit conn:environment:unregister 2f6cdbde-0000-4000-8000-000000000001
+orbit conn:environment:unregister 2f6cdbde-0000-4000-8000-000000000001 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `environment` | Conn environment ID to remove from the Gateway registry. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes): `{"environment_id": "...", "removed": true\|false}`. |
+
+## How it works
+
+In one transaction, the Gateway checks access, verifies the server is not bound to an Instance and has no running `conn.*` Operation, then deletes the environment record (including its stored admin session), its pairings and held sessions, cached threads, and managed target records (targets, tokens, and revisions). After commit, it drops attached thread references from Conn profiles and deletes any execution secret vault copies held for the server's `conn.*` Operations.
+
+The API is `DELETE /api/v1/conn/environments/{environment}` (`conn:environment:unregister`), and the generated destructive MCP tool is `conn-environment-unregister`. See [Unregister a host server](/reference/conn#unregister-a-host-server).
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The Conn extension is off. |
+| `node_access.required` | The caller has no node access to the server's Node (or to any Node when the environment is unknown). |
+| `conn.environment_is_instance` | The environment is bound to an Instance; destroy the Instance instead. |
+| `operation.target_busy` | A `conn.*` Operation (such as cleanup or pairing) is currently running on this server. |
+| `conn.environment_id_invalid` | The CLI received an empty environment ID. |

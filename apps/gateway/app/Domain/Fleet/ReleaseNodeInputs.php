@@ -23,8 +23,11 @@ use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
-/** Fingerprints of the declared inputs to release-time Node work. Agent and CLI delivery have their own pins. */
-final readonly class ReleaseNodeInputs
+/**
+ * Fingerprints of the declared inputs to release-time Node work. Agent and CLI delivery have their own pins.
+ * Not final: a test decorates its reads to prove the fleet pass never runs them under the SQLite writer.
+ */
+readonly class ReleaseNodeInputs
 {
     private const string Recipe = 'apps/gateway/resources/machine-software/recipe.json';
 
@@ -314,7 +317,7 @@ final readonly class ReleaseNodeInputs
         return match ($role) {
             RoleName::AppProd => self::ProductionReleaseHostFiles,
             RoleName::Swamp => ['swamp/ansible/tasks/node-converge-deno.yml', 'swamp/ansible/tasks/swamp-start-cache.yml',
-                'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
+                'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml', 'swamp/ansible/tasks/swamp-token-renewal-start.yml'],
             RoleName::WebSocket => ['swamp/ansible/tasks/websocket.yml'],
             RoleName::Metrics => ['swamp/ansible/tasks/metrics.yml'],
             RoleName::CiRunner => ['swamp/ansible/tasks/ci.yml', 'swamp/ansible/tasks/ci-bridge-read.yml',

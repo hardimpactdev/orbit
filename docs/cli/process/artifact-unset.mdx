@@ -1,0 +1,18 @@
+---
+title: "orbit process:artifact:unset"
+sidebarTitle: "process:artifact:unset"
+description: "Remove a Process's release artifact record and leave the Node alone."
+---
+
+```bash
+orbit process:artifact:unset <process> [--json]
+```
+
+| Argument or option | Default | Meaning |
+| --- | --- | --- |
+| `process` | required | Numeric Process ID. |
+| `--json` | off | One final JSON response. |
+
+The command removes the artifact record from the Gateway. The releases on the Node stay. After it, `process:upgrade` refuses the Process with `process.artifact_missing`, and Doctor reports no `process.update_available` for it. The API is `DELETE /api/v1/processes/{process}/artifact`, and the MCP tool is `process-artifact-unset`.
+
+See [Upgrade a Process](/reference/processes-and-schedules#upgrade-a-process).

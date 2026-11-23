@@ -18,7 +18,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $action
  * @property string $target
  * @property list<string> $after
- * @property string $status pending, sent, done or failed
+ * @property bool $on_failure whether the step runs only after another step failed
+ * @property bool $optional whether its Operation neither waits for the step nor fails by it
+ * @property string $status pending, sent, done, failed or skipped
  * @property int $sends
  * @property int $budget_ms
  * @property int $resend_ms
@@ -31,7 +33,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class OperationEngineStep extends Model
 {
-    protected $fillable = ['operation_id', 'name', 'node_id', 'action', 'target', 'after', 'status', 'sends', 'budget_ms', 'resend_ms',
+    protected $fillable = ['operation_id', 'name', 'node_id', 'action', 'target', 'after', 'on_failure', 'optional', 'status', 'sends', 'budget_ms', 'resend_ms',
         'first_sent_ms', 'resend_at_ms', 'done_ms', 'output', 'error_code', 'late'];
 
     /** @return BelongsTo<Operation, $this> */
@@ -42,7 +44,7 @@ final class OperationEngineStep extends Model
 
     protected function casts(): array
     {
-        return ['after' => 'array', 'node_id' => 'integer', 'sends' => 'integer', 'budget_ms' => 'integer', 'resend_ms' => 'integer',
+        return ['after' => 'array', 'on_failure' => 'boolean', 'optional' => 'boolean', 'node_id' => 'integer', 'sends' => 'integer', 'budget_ms' => 'integer', 'resend_ms' => 'integer',
             'first_sent_ms' => 'integer', 'resend_at_ms' => 'integer', 'done_ms' => 'integer', 'late' => 'integer'];
     }
 }

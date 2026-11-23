@@ -11,6 +11,7 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Logs\LogRedaction;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Processes\ProcessArtifactResponse;
 use Orbit\Sdk\Responses\Processes\ProcessMutationResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
@@ -174,6 +175,31 @@ abstract class ProcessCommand extends GatewayCommand
             'Keep-alive' => $process->keepAlive ? 'yes' : 'no',
             'Working directory' => $process->workingDirectory,
             'Request ID' => $process->requestId,
+        ]));
+
+        return self::SUCCESS;
+    }
+
+    protected function renderArtifact(ProcessArtifactResponse $response): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($response->toArray());
+
+            return self::SUCCESS;
+        }
+
+        $artifact = $response->artifact;
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Process [{$response->name}] artifact recorded.", [
+            'ID' => $response->id,
+            'Repository' => $artifact->repository,
+            'Asset' => $artifact->asset,
+            'Binary' => $artifact->binary,
+            'Checksums' => $artifact->checksums,
+            'Version arguments' => $artifact->versionArgs === null ? null : implode(' ', $artifact->versionArgs),
+            'Version' => $artifact->version ?? 'unknown',
+            'Previous version' => $artifact->previousVersion,
+            'Latest version' => $artifact->latestVersion,
+            'Request ID' => $response->requestId,
         ]));
 
         return self::SUCCESS;

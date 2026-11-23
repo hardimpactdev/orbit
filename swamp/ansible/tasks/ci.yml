@@ -13,38 +13,63 @@
     executable: /usr/bin/python3
   register: ci_pool
   changed_when: (ci_pool.stdout | from_json).changed
-- name: Read CI collections
-  ansible.builtin.command:
-    argv:
-      - incus
-      - query
-      - /1.0/{{ item.collection }}
-  loop:
-    - collection: projects
-      name: "{{ plans.ci.project }}"
-      create:
-        - project
-        - create
-        - "{{ plans.ci.project }}"
-    - collection: network-acls
-      name: "{{ plans.ci.acl }}"
-      create:
-        - network
-        - acl
-        - create
-        - "{{ plans.ci.acl }}"
-    - collection: networks
-      name: "{{ plans.ci.network }}"
-      create:
-        - network
-        - create
-        - "{{ plans.ci.network }}"
-        - --type=bridge
-        - ipv4.address=auto
-        - ipv4.nat=true
-        - ipv6.address=none
-  register: ci_collections
-  changed_when: false
+# The CI reads batch the `incus` calls of each stage into one call. A check reads the collections, settings, profile and ACL
+# at once; an apply reads the settings and ACL after it creates missing resources, and the profile and ACL after it applies
+# settings, as one call per item did. Each read keeps its registered shape, so the changes and checks below judge every item
+# as before; a failed read names its item.
+- name: Plan the CI reads
+  ansible.builtin.set_fact:
+    ci_collection_plan:
+      - collection: projects
+        name: "{{ plans.ci.project }}"
+        create:
+          - project
+          - create
+          - "{{ plans.ci.project }}"
+      - collection: network-acls
+        name: "{{ plans.ci.acl }}"
+        create:
+          - network
+          - acl
+          - create
+          - "{{ plans.ci.acl }}"
+      - collection: networks
+        name: "{{ plans.ci.network }}"
+        create:
+          - network
+          - create
+          - "{{ plans.ci.network }}"
+          - --type=bridge
+          - ipv4.address=auto
+          - ipv4.nat=true
+          - ipv6.address=none
+    ci_setting_plan: >-
+      {{ plans.ci.projectConfig | dict2items | map('combine', {'scope': 'project', 'name': plans.ci.project}) | list +
+      plans.ci.networkConfig | dict2items | map('combine', {'scope': 'network', 'name': plans.ci.network}) | list }}
+- name: Plan the CI read stages
+  ansible.builtin.set_fact:
+    ci_read_stages:
+      collections: >-
+        {%- set out = {} -%}
+        {%- for item in ci_collection_plan -%}
+        {%- set _ = out.update({'collection ' ~ item.collection: ['incus', 'query', '/1.0/' ~ item.collection]}) -%}
+        {%- endfor -%}
+        {{ out }}
+      settings: >-
+        {%- set out = {} -%}
+        {%- for item in ci_setting_plan -%}
+        {%- set _ = out.update({item.scope ~ ' ' ~ item.name ~ ' ' ~ item.key: ['incus', item.scope, 'get', item.name, item.key]}) -%}
+        {%- endfor -%}
+        {{ out }}
+      profile:
+        profile: [incus, query, "/1.0/profiles/default?project={{ plans.ci.project }}"]
+        acl: [incus, query, "/1.0/network-acls/{{ plans.ci.acl }}"]
+- name: Read the CI collections
+  ansible.builtin.import_tasks: ci-read.yml
+  vars:
+    ci_read_commands: >-
+      {{ ci_read_stages.collections | combine(ci_read_stages.settings, ci_read_stages.profile)
+      if ci_check_only else ci_read_stages.collections }}
 - name: Create missing CI resources
   ansible.builtin.command: { argv: "{{ ['incus', '--project', 'default'] + item.item.create }}" }
   loop: "{{ ci_collections.results }}"
@@ -52,13 +77,10 @@
     - not ci_check_only
     - ('/1.0/' ~ item.item.collection ~ '/' ~ item.item.name) not in item.stdout | from_json
   changed_when: true
-- name: Read CI settings
-  ansible.builtin.command: { argv: "{{ ['incus', item.scope, 'get', item.name, item.key] }}" }
-  loop: >-
-    {{ plans.ci.projectConfig | dict2items | map('combine', {'scope': 'project', 'name': plans.ci.project}) | list +
-    plans.ci.networkConfig | dict2items | map('combine', {'scope': 'network', 'name': plans.ci.network}) | list }}
-  register: ci_settings
-  changed_when: false
+- name: Read the CI settings after creating missing resources
+  when: not ci_check_only
+  ansible.builtin.import_tasks: ci-read.yml
+  vars: { ci_read_commands: "{{ ci_read_stages.settings }}" }
 - name: Apply changed CI settings
   ansible.builtin.command: { argv: "{{ ['incus', item.item.scope, 'set', item.item.name, item.item.key, item.item.value] }}" }
   loop: "{{ ci_settings.results }}"
@@ -66,14 +88,10 @@
     - not ci_check_only
     - item.stdout | trim != item.item.value
   changed_when: true
-- name: Read the CI profile
-  ansible.builtin.command:
-    argv:
-      - incus
-      - query
-      - /1.0/profiles/default?project={{ plans.ci.project }}
-  register: ci_profile
-  changed_when: false
+- name: Read the CI profile and ACL after applying settings
+  when: not ci_check_only
+  ansible.builtin.import_tasks: ci-read.yml
+  vars: { ci_read_commands: "{{ ci_read_stages.profile }}" }
 # A runner on another pool, such as the old `default`, keeps it through its own root device before the profile root moves;
 # tools/ci-runners/setup.sh move moves it while idle.
 - name: Pin each runner on another pool before the CI profile root moves
@@ -100,14 +118,6 @@
     - (ci_profile.stdout | from_json).config != plans.ci.profile.config or (ci_profile.stdout | from_json).devices != plans.ci.profile.devices or
       (ci_profile.stdout | from_json).description != plans.ci.profile.description
   changed_when: true
-- name: Read the CI ACL
-  ansible.builtin.command:
-    argv:
-      - incus
-      - query
-      - /1.0/network-acls/{{ plans.ci.acl }}
-  register: ci_acl
-  changed_when: false
 - name: Normalize CI egress rules
   ansible.builtin.set_fact:
     ci_egress: >-

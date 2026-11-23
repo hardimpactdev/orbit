@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -30,9 +31,14 @@ final readonly class StartNodeConvergeAction
      * A release converge applies only the roles with changed inputs. An automatic converge, a release converge or the full converge
      * the release pass starts for changed host inputs, is admitted by NodeWorkAdmission's rules for automatic work.
      *
+     * The fleet pass supplies the release inputs and the CLI pin it read before it took the SQLite writer, so this admission
+     * hashes no release file under it.
+     *
      * @param  list<string>|null  $roles
+     * @param  array{roles: array<int, array{role:string,digest:string}>, host: string}|null  $releaseInputs
      */
-    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null, bool $full = false, bool $release = false, bool $automatic = false): Operation
+    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null, bool $full = false, bool $release = false, bool $automatic = false,
+        ?array $releaseInputs = null, ?DesiredCliReleaseData $cli = null): Operation
     {
         $automatic = $automatic || $release;
         $verifier = $node->agent_secret_hash;
@@ -47,10 +53,13 @@ final readonly class StartNodeConvergeAction
             return $existing;
         }
 
-        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release, $automatic): Operation {
+        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release, $automatic, $releaseInputs, $cli): Operation {
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
             // Release admission already compares its public role digest, including the workflow and materializer.
-            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full || $release);
+            $fresh = $node->fresh() ?? $node;
+            $recorded = app(NodeConvergePhaseDigest::class)->recorded($fresh, $full || $release);
+            // A scoped converge keeps the full-scope converge record it holds now (NodeConvergePhaseDigest::held()).
+            $held = $base || $roles !== null ? app(NodeConvergePhaseDigest::class)->holdable($fresh) : null;
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
@@ -61,9 +70,11 @@ final readonly class StartNodeConvergeAction
                 // never in the capture. A Node with neither releases an unused bridge.
                 app(InstanceHostIntent::class)->prepare($node, $selected);
                 $inputs = app(ReleaseNodeInputs::class);
-                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
+                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release, $cli);
                 $plans = RouteExecutionProof::objects($snapshot['intent']['roles']);
-                $roleInputs = $inputs->roles($node, $release, $selected, renderedRoles: array_column($plans, null, 'assignment_id'));
+                $roleInputs = $releaseInputs === null
+                    ? $inputs->roles($node, $release, $selected, renderedRoles: array_column($plans, null, 'assignment_id'))
+                    : array_filter($releaseInputs['roles'], static fn (array $role): bool => in_array($role['role'], $selected, true));
                 if ($release && count($roleInputs) !== count($selected)) {
                     throw new ResourceOperationException('fleet.role_scope_invalid', 'Automatic convergence requires active assignments.', 422);
                 }
@@ -79,9 +90,12 @@ final readonly class StartNodeConvergeAction
                 $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic];
                 $snapshot['release_inputs'] = [
                     'roles' => array_map(static fn (array $role): string => $role['digest'], $roleInputs),
-                    'host' => ! $release && ! $base && $roles === null ? $inputs->host(node: $node) : null,
+                    'host' => ! $release && ! $base && $roles === null ? $releaseInputs['host'] ?? $inputs->host(node: $node) : null,
                 ];
                 $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
+                if ($held !== null) {
+                    $snapshot['held_digests'] = $held;
+                }
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
                     ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],

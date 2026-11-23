@@ -34,10 +34,11 @@ final readonly class InstanceImage
     public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'];
 
     /**
-     * OS packages beyond the stock image: the firewall, ACLs on the workspace, Git for the workspace repository, and sudo for
-     * `agent`'s grant (self::SudoGrant). The stock image ships sudo too, so a container of an older image has it.
+     * OS packages beyond the stock image: the firewall, ACLs on the workspace, Git for the workspace repository, sudo for
+     * `agent`'s grant (self::SudoGrant), and `dig`, which the Swamp fixtures run as CI runners do (tools/ci-runners/setup.sh).
+     * The stock image ships sudo too, so a container of an older image has it.
      */
-    public const array Packages = ['acl', 'git', 'nftables', 'sudo'];
+    public const array Packages = ['acl', 'git', 'nftables', 'sudo', 'bind9-dnsutils'];
 
     /**
      * `agent`'s passwordless sudo in every container, normal and nested (ADR 0268, amendment): the only sudo path an image keeps.

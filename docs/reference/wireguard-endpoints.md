@@ -14,213 +14,67 @@ covers:
 
 # WireGuard endpoints
 
-This page tells an operator which WireGuard endpoint forms the Gateway accepts during bootstrap and which hub endpoint each Node gets. It also covers the hub's LAN endpoint, the address the hub sends from, and recovery from an invalid stored value. [ADR 0251](/decisions/0251-reach-the-wireguard-hub-over-the-recorded-lan) records the decision.
-
-The hub address and LAN route reads pass `-4` as a string under the [Ansible command argument rule](/reference/node-provisioning).
+Orbit validates the WireGuard hub endpoint during bootstrap and selects each peer's hub endpoint automatically from Gateway records, preferring a verified private LAN path when a peer shares the hub's private `/24`.
 
 ## Accepted endpoint forms
 
-The Gateway checks the stored endpoint before bootstrap changes anything and before it renders a peer configuration.
+Endpoints require a host and decimal port (`1`–`65535`) with no whitespace or control characters:
 
 | Host form | Example | Result |
 | --- | --- | --- |
-| IPv4 address | `192.0.2.10:51820` | Accepted with the same bytes. |
-| Hostname | `vpn.example.com:51820` | Accepted with the same bytes. |
-| IPv6 address | `[2001:db8::10]:51820` | Accepted. The square brackets are required. |
+| IPv4 address | `192.0.2.10:51820` | Accepted. |
+| Hostname | `vpn.example.com:51820` | Accepted. |
+| IPv6 address | `[2001:db8::10]:51820` | Accepted (square brackets required; bare IPv6 is rejected). |
 
-The port is a decimal integer from 1 through 65535. The Gateway rejects a bare IPv6 address, a missing or invalid port, whitespace, and control characters. An invalid explicit bootstrap endpoint stops before the Gateway writes settings, records a Node, creates files, or changes the host.
-
-## Generated defaults
-
-When `orbit:bootstrap` gets no `--wireguard-endpoint`, the Gateway combines the public host with `--wireguard-port`, which defaults to 51820. It adds square brackets only when the host is an IPv6 address.
-
-`orbit:bootstrap --operator-ip` records the operator Node at an address of the same subnet. The address must differ from the Gateway's.
+`orbit:bootstrap` defaults to `--wireguard-subnet=10.44.0.0/24`, `--wireguard-ip=10.44.0.1`, `--wireguard-port=51820`, and `--domain=orbit`. If `--wireguard-endpoint` is omitted, Orbit combines the public host with `--wireguard-port` (adding brackets for IPv6). To fix a stored invalid endpoint, re-run `orbit:bootstrap` with a valid `--wireguard-endpoint`.
 
 ## The hub endpoint of a Node
 
-A peer configuration takes the first endpoint that applies:
+Peer configurations pick the first matching endpoint (no per-Node override exists):
 
-1. For a Node on the hub's private network: the hub's LAN address with the WireGuard port. See [The LAN endpoint](#the-lan-endpoint).
+1. The hub's `lan_ip` and WireGuard port on a shared private `/24` ([The LAN endpoint](#the-lan-endpoint)).
 2. The stored Gateway endpoint.
-3. The public SSH host of the `vpn` Node with the configured WireGuard port, with the same bracket rule.
+3. The `vpn` Node's public SSH host and WireGuard port.
 
-The second and third form the hub's public endpoint. The selected value must pass the same check before the Gateway renders the peer configuration. There is no per-Node override.
-
-The hub's own peer sections name no endpoint. The hub learns each peer's address from the packets it receives, so a peer that uses the LAN endpoint is reached at its LAN address.
+The hub lists no endpoint on its own peer sections and learns each peer's source address from incoming packets. On the hub's private `/24`, `lan_ip` must be unique across every Node. Elsewhere it must be unique within its Cluster (or across non-Cluster Nodes), returning `cluster.lan_ip_conflict` (409) on collision.
 
 ## The LAN endpoint
 
-A Node is on the hub's private network when the hub and the Node both record an IPv4 `lan_ip`, both addresses are in the same IPv4 /24, and that /24 is in an RFC 1918 range. The hub sends to any other network from its public address, so a LAN endpoint there could not work. [Public Process Routes](/cli/route/create) use the same /24 rule. A Node without a `lan_ip`, or with one in another /24, such as a home Node on `192.168.6.0/24` with the hub on `10.0.0.0/24`, uses the public endpoint.
+A Node uses the hub's LAN endpoint when both the hub and the Node hold an IPv4 `lan_ip` in the same RFC 1918 `/24`. Before writing WireGuard files in [`node:add`](/cli/node/add) or [`node:converge`](/cli/node/converge), Orbit proves the LAN path:
 
-The record is a claim. Before Orbit writes a WireGuard file that names the LAN endpoint, in [`node:add`](/cli/node/add) and in the network phase of [`node:converge`](/cli/node/converge), the Node proves that the address is the hub:
+1. `ip route get` confirms a direct on-link route from the Node's `lan_ip` to the hub's `lan_ip` outside the `orbit` tunnel.
+2. `ssh-keyscan` on port 22 confirms one of the answering host keys matches the hub's pinned SSH fingerprint.
 
-1. The kernel routes the hub's LAN address directly. `ip route get` shows no gateway, the Node's recorded `lan_ip` as source, and an interface other than the `orbit` tunnel.
-2. `ssh-keyscan` reads the SSH host keys at the hub's LAN address on port 22. One of them must have the hub's pinned fingerprint.
+Failures stop before mutating WireGuard (`node.hub_lan_unreachable` or `node.hub_lan_identity_mismatch`) without falling back to the public endpoint. The hub admits scans via UFW rule `orbit:vpn-lan-ssh` (`22/tcp` from its `/24`) and forwards member traffic via `orbit:vpn-peer-forwarding`. Always converge the hub first when enabling LAN endpoints:
 
-A machine that only answers at that address does not pass the second check. `ssh-keyscan` reads a key without proving that the machine holds its private half, so the handshake after the move completes the proof: only the hub can answer it.
+1. `orbit node:update <hub> --lan-ip=<ip>` and `orbit node:converge <hub>`
+2. `orbit node:update <node> --lan-ip=<ip>` on each peer on that `/24`
+3. `orbit node:converge <node>` on each peer
 
-A failed check stops the run before any WireGuard file or peer changes. The phase fails, and the failed assertion in its log names the cause:
+### Endpoint switch and rollback
 
-| Assertion | Cause |
-| --- | --- |
-| `node.hub_lan_unreachable` | The address is not routed directly from the Node's `lan_ip`, or nothing answers SSH there. |
-| `node.hub_lan_identity_mismatch` | A machine answers, but none of its host keys is the hub's. |
+When `node:converge` detects a hub endpoint change from the peer's previous `orbit.peers`, it runs a detached move job (`async: 180`) on the peer so losing the old SSH session cannot strand the Node:
 
-Orbit does not fall back to the public endpoint. Fix the network, or clear the wrong `lan_ip` with [`node:update --lan-ip=`](/cli/node/update), and run the command again.
+1. Pins incoming WireGuard packets to the new IPv4 endpoint with a temporary `iptables` rule (`orbit-hub-move`, failing with `node.hub_switch_unpinned`; skipped for hostnames).
+2. Installs staged `orbit.conf` and `orbit.peers`, keeping the previous files for rollback.
+3. Removes the old hub peer and loads the new files (`node.hub_switch_load_failed` on error).
+4. Waits up to 60 seconds for a fresh handshake on the new endpoint (`node.hub_switch_no_handshake` on timeout).
 
-The hub admits the scan with the firewall rule `orbit:vpn-lan-ssh`: TCP port 22 from the /24 of its `lan_ip` to that address. The hub's network phase applies the rule and removes one left by an earlier LAN address. A `node:converge` of any peer runs the hub's network phase first, for whatever reason it was started; a `node:add` does not, so converge the hub before you add a Node on its private network. A failure in the hub's network phase, such as `vpn.endpoint_not_local`, therefore stops every peer converge until it is fixed; fix it over the hub's public SSH.
-
-The same phase adds the routed rule `orbit:vpn-peer-forwarding`, so one member reaches another through the hub. UFW skips the rule when the hub holds it already, by hand included ([VPN peer forwarding](/cli/firewall#vpn-peer-forwarding)).
-
-The converge decides that a Node moves to another hub endpoint from the `Endpoint` line of its previous `orbit.peers`, not from the live tunnel. `wg` shows a hostname endpoint resolved, and a peer that roamed shows the address it roamed to.
-
-Swamp reaches the Node through this tunnel, so the move runs as one detached job on the Node that does not depend on the SSH session. The converge stages the new `orbit.conf` and `orbit.peers` beside the live ones. The job then:
-
-1. pins the tunnel to the new endpoint's IPv4 address: the Node takes WireGuard packets only from that address;
-2. installs the staged files and keeps the previous ones;
-3. removes the hub peer from the live tunnel and loads the new files, so the old session ends;
-4. waits up to a minute for a hub handshake at or after the move, with the live hub endpoint equal to the rendered one.
-
-A handshake through the old endpoint does not count. Neither does one that the hub started to an old address.
-
-The pin keeps that from happening. Until the hub hears from the new address, it sends to the Node's old one. A busy peer gets that traffic at once, and the hub may also start a handshake there. Without the pin the Node roams back to the old address, both ends then stay on the old path, and the move fails (Operation 15254, the `swamp` Node, 2026-11-09).
-
-A hostname endpoint gets no pin. The pin is one `iptables` rule with the comment `orbit-hub-move`. The job removes it when it ends, removes a pin that an earlier, killed job left before it starts, and a reboot drops it. When the rule cannot be added, nothing changes and the phase fails with the assertion `node.hub_switch_unpinned`.
-
-When `wg` does not load the new files, no handshake can come: the job goes back at once, in the way described next, and the phase fails with the assertion `node.hub_switch_load_failed`.
-
-When no such handshake comes, the job puts the previous files back and sets the live configuration it saved before the move. The Node keeps the tunnel it had, also when a previous file was missing. After a cut-off move the job loads the previous files instead, because the live tunnel may already run the new ones. A new file without a previous copy is deleted, so the next converge reads no endpoint and moves again with the same rollback.
-
-A move that was cut off, for example by a reboot, leaves the files it replaced; the next converge decides the move from them and keeps them for its own rollback. The phase then fails with the assertion `node.hub_switch_no_handshake`.
-
-The job also records its outcome in `orbit.move-result` on the Node. A poll of the job that runs while the old tunnel is down can lose the SSH session; the converge then reaches the Node again through the tunnel the job left, reads the outcome, and reports `node.hub_switch_no_handshake` or `node.hub_switch_load_failed` for a rollback. Only a Node that Swamp cannot reach within four minutes fails as unreachable.
-
-This is a rollback of the move, not a fallback: the Node stays on the endpoint it used before, and the converge reports the failure.
-
-`node:add` has no such rollback. When it finds a live tunnel whose hub endpoint would move, it stops before any tunnel change with the assertion `node.hub_switch_by_converge`; run `node:converge` for that Node.
-
-Set the addresses in this order:
-
-1. `node:update <hub> --lan-ip=<address>` on the `vpn` Node, then `node:converge <hub>`. That converge opens SSH on the LAN address and installs the source unit.
-2. `node:update <node> --lan-ip=<address>` on each Node on that network.
-3. `node:converge <node>` on each of those Nodes.
+If loading or the handshake fails, the job restores the previous files and live tunnel and records the outcome in `orbit.move-result`. `node:add` refuses to move a live tunnel's endpoint (`node.hub_switch_by_converge`); use `node:converge` instead.
 
 ## The hub answers from its endpoint address
 
-A hub can hold several addresses on one interface, such as a floating address that peers use and a DHCP primary address that its default route prefers. Linux picks the source of a WireGuard packet from the route. When the hub starts a handshake and the route prefers another address, the peer roams to that address and stays there.
+When a hub holds multiple IPv4 addresses on one interface, Linux may send hub-initiated handshakes from the wrong source address. For IPv4 endpoints, the hub sets `FwMark` to its WireGuard port and runs `orbit-hub-source.service` (`/etc/orbit/wireguard/hub-source`) with a `systemd-networkd` drop-in:
 
-The hub therefore marks its WireGuard packets with `FwMark`, set to the WireGuard port, and routes marked packets with two kinds of rule:
+- Priority `31820`: marked packets to RFC 1918 ranges (and the WireGuard subnet) use the `main` routing table.
+- Priority `31821`: all other marked packets use the routing table numbered after the WireGuard port, copying the default gateway and on-link connected public prefixes with the endpoint IP as source.
 
-1. Priority 31820: marked packets to a private range look up the main table. They keep their normal route and source.
-2. Priority 31821: every other marked packet looks up the table numbered after the WireGuard port, peers in the hub's own public prefix included.
-
-The private ranges are RFC 1918, plus the WireGuard subnet if it lies outside them. The hub's table has a default route and the hub's connected public prefixes. The default route copies the gateway, device and `onlink` flag of the first main default route. Each connected prefix of that device, such as the hub's own public /22, is copied as an on-link route. Both set the source to the public endpoint address, so a peer in the hub's own prefix is still reached on-link, not through the provider's router.
-
-One Orbit-owned unit, `orbit-hub-source.service`, owns the rules and the table. It runs the Gateway-rendered script `/etc/orbit/wireguard/hub-source`, which deletes the rules at both priorities, flushes the table and adds them again. Running it twice gives the same state. The hub's network phase also writes a `systemd-networkd` drop-in that stops networkd from deleting rules and routes it did not create. The unit starts before `wg-quick@orbit` and the tunnel wants it, but does not require it, so a failing rule never stops the tunnel.
-
-Without that drop-in, `systemd-networkd` deletes rules and routes it did not create when it starts or configures a link.
-
-The drop-in takes effect at networkd's next start. Until then, a `networkctl reload`, a `netplan apply` or a networkd restart on the hub can delete the rules and the table, and the hub sends from its primary address again until the next hub converge. Restart `systemd-networkd` on the hub once at a quiet moment after its first converge, or converge the hub after any of these.
-
-The script waits up to a minute for a default route, because at boot DHCP may not have set one yet; when none comes, systemd runs the unit again after 30 seconds.
-
-`orbit.conf` holds only the mark. No writer of `orbit.conf` can drop the rules: not a converge, not either path of `node:add`, not a removal, and not the older native hub projection of [`node:wireguard-key`](/cli/node/wireguard-key).
-
-The hub's network phase writes the script and the unit. It restarts the unit when either changes, or when the live rules, the source of a marked packet or its gateway differ from the rendered rules and the main default route.
-
-The converge also restarts it when a marked packet to a connected public prefix goes through a gateway. After the unit runs, the converge requires the endpoint source for public packets and on-link routes within the connected public prefixes; otherwise it fails with `vpn.source_route_failed`. It then checks that a marked packet to a public address leaves from the endpoint address. The table copies the default gateway when the unit runs; after the hub's default gateway changes, the next converge of the hub sees it and runs the unit again.
-
-A hub whose public endpoint is a hostname or an IPv6 address gets no source unit. Its network phase stops and removes a unit that an earlier IPv4 endpoint left, with its script, its networkd drop-in, rules 31820 and 31821 and the table. In the network phase, failed assertions name these causes:
-
-- `vpn.endpoint_not_local`: the hub does not hold the IPv4 address of its endpoint.
-- `vpn.source_route_failed`: the source is still wrong after the unit ran.
-
-Every `wg syncconf` on the hub carries the mark, from the interface lines that the Gateway renders once for every hub run. `syncconf` resets an interface setting that its input leaves out, as it does with the private key.
-
-## Peer key changes
-
-[`node:wireguard-key`](/cli/node/wireguard-key) changes an unmanaged peer's desired public key and reconverges the hub. It preserves the peer's WireGuard address and does not replace the stored Gateway endpoint. Use it for peer key recovery, not to repair an invalid endpoint. Peer key assignments share collision protection with native provisioning, so no two Nodes can claim the same key through those paths.
-
-## Native peer convergence
-
-The Gateway records the full public `node.converge` network intent, including pinned SSH connections for the peer and the VPN owner. It renders every WireGuard file, and none holds a private key:
-
-- the peer's `orbit.conf`, the wg-quick file. Its `PostUp` lines load the key file and set split DNS;
-- the peer's `orbit-peers.conf`: only that `[Peer]`;
-- this Node's peer file on the hub, `orbit-peers.d/<node id>.conf`. The run puts the prepared public key in it.
-
-One Swamp run on 209 reaches both Nodes over official SSH, with no script on either:
-
-1. `@swamp/cfgmgmt/exec` creates `/etc/wireguard/orbit.key` (0600) on the peer once. One `wg pubkey` command reads its public key, and a typed step refuses a key that differs from the stored one or collides with another Node's key.
-2. `@swamp/cfgmgmt/file` writes this Node's peer file on the hub, and `wg addconf` loads it. No other peer file changes.
-3. When the stored key changed, `wg set ... remove` drops the old key from the hub.
-4. `@swamp/cfgmgmt/file` writes the peer's two files, and `@swamp/cfgmgmt/systemd` keeps `wg-quick@orbit` running and enabled.
-5. One `wg syncconf` command loads the peer list. It composes the key from the key file on the Node, and a running tunnel is not restarted.
-6. The firewall trust rule and the [resolver policy](/reference/private-dns) follow.
-
-The typed terminal result records the public key only after these steps succeed. The key and Operation result commit together in one short database transaction. When a step fails, the run stops; there is no rollback, and a rerun writes the same files again. There are no effect-time Gateway reads, callbacks, or child Operations.
-
-`fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. `@swamp/cfgmgmt/line` keeps the Gateway-rendered hook line in `orbit.conf` and leaves the rest of the file as it is, and `@swamp/cfgmgmt/file` writes the marker `/etc/wireguard/orbit.dns-link`. `@swamp/cfgmgmt/exec` sets DNS, domains and default-route; its `notIf` guard skips the command when the live `orbit` link already holds them. The end check resolves the Gateway's private name through `orbit` and `example.com` outside it. It never calls an agent action or restarts the tunnel.
-
-## Recover an invalid stored endpoint
-
-The Gateway does not guess where the host ends and the port starts in a stored bare IPv6 endpoint. Correct the value to the bracketed form, such as `[2001:db8::10]:51820`, and retry bootstrap or Node provisioning. Running `orbit:bootstrap` again with a valid `--wireguard-endpoint` replaces the Gateway setting.
-
-### Hub restoration in the same native root
-
-A removal parent admits `_wireguard` and `_wireguard_restore` through `NodeWireGuardInput::restorationSnapshot()`. The restore snapshot preserves the same hub, executor, context and pin and clears only the excluded Node. In its running result transaction, the parent restores the original Node status and calls `NodeWireGuardInput::beginRestoration($operation)` before restoration steps. The canonical bound public snapshot and existing private `configuration` field then select the admitted restore view and fresh peer data. Keep the same `wireguard-hub-ID` native model lock. No private endpoint selector or configuration renderer belongs in the parent.
-
-Before that restoration checkpoint, an exact `node.add` parent renders its context peer with the immutable enrollment candidate's WireGuard address. The peer key and all other peers come from current rows. This does not commit the candidate account or address to the Node. After the checkpoint, fresh rendering uses the restored database address and key and ignores the candidate override.
+The hub's network phase verifies that the endpoint IP is local (`vpn.endpoint_not_local`) and that marked public packets use that source (`vpn.source_route_failed`). For hostname or IPv6 endpoints, Orbit removes `orbit-hub-source.service` and its routing rules.
 
 ## Converge the hub
 
-`node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the Nodes whose files to keep, the newest Node id, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
+The hub's private key (`/etc/wireguard/orbit.key`, mode `0600`) never leaves the hub. Orbit renders `orbit.conf` (`Address`, `ListenPort`, `FwMark`, and `PostUp` hooks) and one `orbit-peers.d/<node-id>.conf` file per peer.
 
-A removal does not rewrite the list. It deletes the file of the removed Node, whether or not the Gateway recorded its key, and loads the files that remain, so the live peer goes at once. It does not prune the files of Nodes that are already gone; the next converge of the hub does. It writes no other peer and keeps none, because the intent is a snapshot and a removal admitted at the same time as another would otherwise put the other's peer back.
+During `node:converge` on the `vpn` Node, Orbit writes only changed files and prunes peer files for removed Nodes while keeping files with IDs above the snapshot's highest Node ID. It then reloads with `wg syncconf`, verifies every recorded peer is present (`vpn.hub_peer_missing`), and waits up to 60 seconds for recently live peers to handshake again.
 
-The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
-
-- `orbit.conf` is the wg-quick file. It holds no peer.
-- `orbit-peers.d/<node id>.conf` holds one `[Peer]` section.
-
-`orbit.conf` holds `Address`, `ListenPort`, `FwMark`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key` and a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`. [The source unit](#the-hub-answers-from-its-endpoint-address), not this file, owns the rules for the mark.
-
-One file per peer lets a run that adds one Node, such as `node.add`, write only its own file. Runs that overlap then never drop each other's peers.
-
-The converge's Ansible `network` phase reaches the hub over SSH as root:
-
-1. It reads the live peers: those with a handshake in the last 120 seconds, so an idle one still has a handshake for the wait in step 7.
-2. One read checks `orbit.conf`, each peer file and the forwarding file, and it writes only the files that differ (0600, root; [one read](/reference/node-provisioning#check-many-files-in-one-read)).
-3. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
-4. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port and the mark, then every peer file.
-5. The source unit's files are checked in one read and only the ones that differ are written. The unit restarts on such a change or on drift, and is checked.
-6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
-7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
-
-Step 3 also removes the [task VM hub filter](/reference/old-paths#the-task-vm-lifecycle) that the removed `task_vm.hub_converge` installed. It stops and disables `orbit-task-vms-hub.service` when its unit file exists, deletes the unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the folder `/etc/orbit/task-vms` when it is then empty. It reloads systemd only when it deleted the unit file, and deletes the nft table `inet orbit_task_vms` only when `nft list table` finds it.
-
-It then reads `ufw show added` and deletes every rule whose comment starts with `orbit:task-vm-` by that rule's spec, never by number. Those are the route rules from the range `10.44.0.128/25` that the task VM hub kept, such as `orbit:task-vm-control-ssh` and `orbit:task-vm-router-web-10-44-0-7-443`. It deletes no other rule, and reports a change only when it deleted one. A hub that never had the filter or those rules, or had them removed by an earlier converge, changes nothing.
-
-Two converges of different hub peers can run this cleanup at the same time. A number read before the other run's delete could name a live rule. A spec names only its own rule, and a rule that the other run already deleted is a no-op.
-
-The same hub tasks run when the target of `node:converge` is the hub itself and when the converge of another Node reconciles its hub first, so the converge of the vpn Node removes the filter.
-
-An offline peer, such as a laptop, has no handshake to give, so the hub does not wait for it. Waiting for every recorded peer failed the hub's converge whenever one was offline (Operation 15006, 2026-11-09). The `check` phase only requires every recorded peer on the interface; with no change it has no handshake to prove.
-
-A Node keeps its peer file even before the Gateway records its key, because its own run may have written it.
-
-The prune decides when it runs, not when the Gateway records the intent. It keeps the file of every Node in the snapshot and every file above the snapshot's newest Node id, and deletes every other `*.conf` file. The intent can be minutes old by then. A Node created meanwhile, such as a task VM claimed while the run waits, has a higher id, because Node ids only grow, so it keeps its peer. A keep-list alone deleted those peers and cut the Swamp worker off the new VM (proof runs 14547 and 14552, 2026-11-09).
-
-A gone Node whose id is above every remaining Node keeps its leftover file until a converge after a newer Node exists.
-
-`node:add` loads the peer files the hub has when it applies, not the peers of its admitted snapshot, for the same reason. The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
-
-Node removal runs one Swamp run on 209 that reaches the hub over SSH as root, with no script on the hub. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once, and skips this when the file exists. `@swamp/cfgmgmt/file` writes `orbit.conf`. One `rm -f` deletes the removed Node's file, and one `bash -c` command runs `wg syncconf` on the files that remain, composed on the Node as above.
-
-`wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history. Every such input ends the key line with one newline, whether or not the key file ends with one. `wg` prints a value that it refuses; the load drops that value from its error output, so a refused key line does not reach the run history either.
-
-The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that every admitted peer is live.
-
-When a step fails, the run stops and the hub stays as it is; there is no rollback, and a rerun writes and loads the same files again. The command changes no peer key, address, role or credential. The hub must already run its own `wg-quick@orbit`; the role's bootstrap creates it.
-
-Use `POST /api/v1/nodes/{node}/converge` or [`node:converge`](/cli/node/converge). Its network part runs last. The recorded digest and live public WireGuard state guard the apply; a matching run touches no WireGuard file or service. The Gateway reserves the Node and shared hub against another converge, and records the network digest only when the repair and handshake check pass.
+Node removal deletes only the removed Node's peer file and reloads `wg syncconf` without rewriting other peers. Unmanaged peer key recovery uses [`node:wireguard-key`](/cli/node/wireguard-key) with the same key-collision checks as provisioning.

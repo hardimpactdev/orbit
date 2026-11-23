@@ -32,6 +32,39 @@ pub enum Action {
     /// Place one Node's part of a Route: access, environment, PHP-FPM pools, certificates and the Caddyfile (ADR 0271).
     /// Its target is the Node, so the Node's Route publications run one at a time.
     RoutePublishSite,
+    /// Place a VPN Node's private DNS records and catalog, then restart dnsmasq and the listener (ADR 0271). Its target
+    /// is the Node, so the Node's DNS publications run one at a time.
+    DnsPublishRecords,
+    /// Make an Instance container from its default's seed: its ACL, the seed copy and the T3 proxy (ADR 0271). Its target
+    /// is the Node, because the container does not exist yet.
+    InstanceClone,
+    /// Place a stopped copy's files before its first start (ADR 0271). Its target is the copy.
+    InstancePrepare,
+    /// Start a prepared copy and give it its names (ADR 0271). Its target is the copy.
+    InstanceStart,
+    /// Fetch an Instance's branch into the Node's mirror of its repository (ADR 0271). Its target is the Node.
+    InstanceFetchBranch,
+    /// Check the copy's workspace out on its branch and merge its `.env` (ADR 0271). Its target is the copy.
+    InstanceCheckout,
+    /// Start the copy's T3, issue its two sessions sealed to the Gateway, and add its workspace as a project (ADR 0271).
+    /// Its target is the copy.
+    InstanceT3,
+    /// Write a nested-fleet copy's Club key into its `/run` and tell the nested Gateway's serve (ADR 0271). Its target is
+    /// the Node's part for that copy, so it runs beside checkout and T3.
+    InstanceClubKey,
+    /// Copy a nested-fleet copy's own inner volume from its default's volume seed (ADR 0271). Its target is the Node.
+    InstanceCopyVolume,
+    /// Stop a copy whose create failed, and keep it (ADR 0271). Its target is the copy.
+    InstanceStop,
+    /// Make the one spare of a default's inner volume from its current seed, beside a create (ADR 0271). Its target is the
+    /// Node's part for that default.
+    InstanceSpareVolume,
+    /// Wait until a nested-fleet copy's inner fleet runs and is ready, beside its checkout (ADR 0271). Its target is the
+    /// Node's part for that copy.
+    InstanceFleetReady,
+    /// Give a reserved copy its final name and branch, and restart its T3 for its label (docs/reference/conn.md#reserve-a-clone).
+    /// Its target is the copy.
+    InstanceNames,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -46,8 +79,28 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 7] =
-        [Self::ProofNoop, Self::Sleep, Self::Wake, Self::Discard, Self::UfwEnsureRule, Self::TlsEnsureCsr, Self::RoutePublishSite];
+    pub const ALL: [Self; 20] = [
+        Self::ProofNoop,
+        Self::Sleep,
+        Self::Wake,
+        Self::Discard,
+        Self::UfwEnsureRule,
+        Self::TlsEnsureCsr,
+        Self::RoutePublishSite,
+        Self::DnsPublishRecords,
+        Self::InstanceClone,
+        Self::InstancePrepare,
+        Self::InstanceStart,
+        Self::InstanceFetchBranch,
+        Self::InstanceCheckout,
+        Self::InstanceT3,
+        Self::InstanceClubKey,
+        Self::InstanceCopyVolume,
+        Self::InstanceStop,
+        Self::InstanceSpareVolume,
+        Self::InstanceFleetReady,
+        Self::InstanceNames,
+    ];
 
     /// The family whose crate holds this action, and which a role enables.
     pub fn family(self) -> Family {
@@ -56,14 +109,49 @@ impl Action {
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
+            Self::DnsPublishRecords => Family::Dns,
+            Self::InstanceClone
+            | Self::InstancePrepare
+            | Self::InstanceStart
+            | Self::InstanceFetchBranch
+            | Self::InstanceCheckout
+            | Self::InstanceT3
+            | Self::InstanceClubKey
+            | Self::InstanceCopyVolume
+            | Self::InstanceStop
+            | Self::InstanceSpareVolume
+            | Self::InstanceFleetReady
+            | Self::InstanceNames => {
+                Family::Instance
+            }
         }
     }
 
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {
-            Self::ProofNoop | Self::UfwEnsureRule | Self::TlsEnsureCsr | Self::RoutePublishSite => TargetKind::Node,
-            Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
+            Self::ProofNoop
+            | Self::UfwEnsureRule
+            | Self::TlsEnsureCsr
+            | Self::RoutePublishSite
+            | Self::DnsPublishRecords
+            | Self::InstanceClone
+            | Self::InstanceFetchBranch
+            | Self::InstanceClubKey
+            | Self::InstanceCopyVolume
+            | Self::InstanceSpareVolume
+            | Self::InstanceFleetReady => TargetKind::Node,
+            Self::Sleep
+            | Self::Wake
+            | Self::Discard
+            | Self::InstancePrepare
+            | Self::InstanceStart
+            | Self::InstanceCheckout
+            | Self::InstanceT3
+            | Self::InstanceStop
+            | Self::InstanceNames => {
+                TargetKind::Instance
+            }
         }
     }
 
@@ -77,6 +165,19 @@ impl Action {
             Self::UfwEnsureRule => "ufw.ensure_rule",
             Self::TlsEnsureCsr => "tls.ensure_csr",
             Self::RoutePublishSite => "route.publish_site",
+            Self::DnsPublishRecords => "dns.publish_records",
+            Self::InstanceClone => "instance.clone",
+            Self::InstancePrepare => "instance.prepare",
+            Self::InstanceStart => "instance.start",
+            Self::InstanceFetchBranch => "instance.fetch_branch",
+            Self::InstanceCheckout => "instance.checkout",
+            Self::InstanceT3 => "instance.t3",
+            Self::InstanceClubKey => "instance.club_key",
+            Self::InstanceCopyVolume => "instance.copy_volume",
+            Self::InstanceStop => "instance.stop",
+            Self::InstanceSpareVolume => "instance.spare_volume",
+            Self::InstanceFleetReady => "instance.fleet_ready",
+            Self::InstanceNames => "instance.names",
         }
     }
 }
@@ -98,6 +199,19 @@ impl FromStr for Action {
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
             "route.publish_site" => Ok(Self::RoutePublishSite),
+            "dns.publish_records" => Ok(Self::DnsPublishRecords),
+            "instance.clone" => Ok(Self::InstanceClone),
+            "instance.prepare" => Ok(Self::InstancePrepare),
+            "instance.start" => Ok(Self::InstanceStart),
+            "instance.fetch_branch" => Ok(Self::InstanceFetchBranch),
+            "instance.checkout" => Ok(Self::InstanceCheckout),
+            "instance.t3" => Ok(Self::InstanceT3),
+            "instance.club_key" => Ok(Self::InstanceClubKey),
+            "instance.copy_volume" => Ok(Self::InstanceCopyVolume),
+            "instance.stop" => Ok(Self::InstanceStop),
+            "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
+            "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
+            "instance.names" => Ok(Self::InstanceNames),
             _ => Err(UnknownActionError),
         }
     }
@@ -135,6 +249,10 @@ pub enum Family {
     Firewall,
     /// Route certificates and site publication (ADR 0271).
     Route,
+    /// A VPN Node's private DNS records (ADR 0271).
+    Dns,
+    /// Instance containers made from a seed (ADR 0271).
+    Instance,
 }
 
 /// The family name is unknown to this executor.
@@ -152,6 +270,8 @@ impl Family {
             "power" => Some(Self::Power),
             "firewall" => Some(Self::Firewall),
             "route" => Some(Self::Route),
+            "dns" => Some(Self::Dns),
+            "instance" => Some(Self::Instance),
             _ => None,
         }
     }
@@ -197,6 +317,11 @@ mod tests {
         assert_eq!("sleep".parse::<Action>(), Ok(Action::Sleep));
         assert_eq!("wake".parse::<Action>(), Ok(Action::Wake));
         assert_eq!(Action::Wake.family(), Family::Power);
+        assert_eq!("dns.publish_records".parse(), Ok(Action::DnsPublishRecords));
+        assert_eq!(Action::DnsPublishRecords.family(), Family::Dns);
+        assert!(Enabled::parse("dns\n").expect("valid file").allows(Action::DnsPublishRecords));
+        assert_eq!("instance.clone".parse(), Ok(Action::InstanceClone));
+        assert!(Enabled::parse("instance\n").expect("valid file").allows(Action::InstanceClone));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

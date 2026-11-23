@@ -91,7 +91,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | Family | Actions | Result |
 | --- | --- | --- |
 | `cluster` | `activate`, `deactivate` | The CLI makes a Cluster serve its private domains and LAN ingress, or returns its Routes to Node scope and stops the Router and its LAN ingress; see [cluster](/cli/cluster/activate). |
-| `conn` | `environment-restart`, `node-environments-restart` | The CLI restarts an idle container T3 server, or each one on a Node, so that it shows its machine name; see [conn:environment-restart](/cli/conn/environment-restart). |
+| `conn` | `environment-restart`, `node-environments-restart`, `unregister` | Restart idle container T3 servers ([conn:environment-restart](/cli/conn/environment-restart)) or unregister a host T3 server ([conn:environment:unregister](/cli/conn/environment-unregister)). |
 | `database` | `describe`, `import`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections), loads a dump into one with `database:import`, or requires a password on a Valkey server [adopted earlier](/reference/database-servers#close-an-adopted-server) with `database:server:update --require-password`. `database:server:create` creates new servers only. |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
@@ -99,12 +99,12 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` and `gateway:auto-release` commands deploy and roll back the Gateway itself, and resume paused automatic releases. |
 | `github` | `sync` | The Gateway reads the [GitHub App installations](/cli/github/app-sync) from GitHub now; no Operation. |
-| `instance` | `attach`, `clone`, `complete`, `deploy`, `detach`, `logs`, `migrate`, `register`, `rename`, `resolve`, `restore`, `rollback`, `setup`, `sleep`, `transfer`, `unregister`, `wake` | Operate Instance source and runtime, read logs, run setup, complete clones, record branches, migrate checkouts, sleep and wake containers, and attach or detach Node service targets. |
+| `instance` | `attach`, `clone`, `complete`, `deploy`, `detach`, `logs`, `migrate`, `register`, `rename`, `resolve`, `restore`, `rollback`, `setup`, `sleep`, `switch`, `transfer`, `unregister`, `wake` | Operate Instance source and runtime, read logs, run setup, complete clones, record branches, migrate checkouts, sleep and wake containers, switch container servers, and attach or detach Node service targets. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
 | `node` | `converge`, `relocate` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), or moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
-| `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
+| `process` | `logs`, `restart`, `start`, `stop`, `upgrade` | The CLI reads Process logs, changes Process runtime state, or upgrades a Process to another release of its artifact. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `inspect`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content, or [inspects](/cli/project/maintenance-inspect) a Project's dependencies. |
 | `proof` | `drain`, `proof`, `resume`, `run` | [proof](/cli/proof/proof) proves one command. [proof:run](/cli/proof/run) proves a commit. [proof:pool:drain](/cli/proof/pool-drain) and [proof:pool:resume](/cli/proof/pool-resume) stop and restart the warm copy pool. |
@@ -126,6 +126,7 @@ Six commands end in a noun.
 
 | Command | Result |
 | --- | --- |
+| `ai-router:task-guard` | The CLI applies the [task VM guard](/reference/ai-router#task-vm-guard) of the model router, or with `--remove` takes it off. |
 | `analytics:credentials` | The CLI shows whether a Plausible Stats API key is stored, stores one, or clears it. It never prints the key. |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |

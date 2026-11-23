@@ -35,14 +35,19 @@ sequenceDiagram
   %%> - refuses admission when capture or source classification fails
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   %%> - the long steps (prepare, checkout, each dev deploy step, finish, the fleet restore) lock a Swamp behavior of this Instance on its Node, so deployments of two defaults on one Node never wait for each other; the Instance lock keeps two deployments of one default apart
-  SW->>N: Prepare the container<br/>Ansible · start · fetch
+  SW->>N: Start the container<br/>Ansible · start · probe
   %%> What it does:
-  %%> - one play runs the phases `start` and `fetch`, in this order; a nested-fleet default runs its fleet check and first seed between them: container/fleet-refresh.mmd
+  %%> - one play runs the phases `start` and `probe`, in this order, before the seed hold; the Project's PHP waits for `php` in "Prepare the container"
+  %%> - `probe`: fetches the branch into the Node's mirror and refuses a pinned commit off its first-parent chain, as `fetch` does; then reads the workspace and decides a checkout already past the commit (docs/cli/instance/deploy.mmd)
   %%> - `start`: starts a stopped (asleep) default container; the start waits only for the units the container's boot starts: FrankenPHP and the enabled Process units; a new or newly running Process is the work of `processes`
   %%> - an older container's app account moves to the stock `www-data` (uid and gid 33) as soon as it runs, before any other command in it, by root's one swap file `/usr/local/libexec/orbit-app-user`; a moved container only reads, and a nested-fleet container keeps `orbit` and `work` for its inner fleet, with `www-data` in `work`; its older managed firewall's global reset becomes a reset of Orbit's table before the new guard is loaded, preserving the inner Incus tables
   %%> - `start` of a sleeping container (frozen or stopped by a sleep): resumes it through the power helper's `restore`, which reads the plan's pages back while frozen, consumes the plan and closes swap on each cgroup of `limits.json` that still exists, or discards the plan and boots a stopped one, then removes the asleep marker once the `start` part passed (the container runs and its units are active; no web probe), so the Route serves the app without a wake; the result records `power_state` `running`; the end of the deployment counts as activity, `deployed_recently`
   %%> - `start`, before the boot of a stopped container: the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - `start` of a nested-fleet container also delivers the Club key: pipelined module stdin into the container's /run (a tmpfs, never a snapshot), before any check of the inner fleet; the result's `nested_fleet_club_key` is what this write did (`written`, `written_serve_not_restarted`, `unchanged`, `refused`); without a vault copy it says `missing`
+  SW->>N: Prepare the container<br/>Ansible · php · fetch
+  %%> What it does:
+  %%> - one play runs the phases `php` and `fetch`, in this order, after the seed hold; a nested-fleet default runs its fleet check and first seed between them: container/fleet-refresh.mmd
+  %%> - `php`: the Project's PHP link and settings, and a restart of the running units when the settings changed
   %%> - `fetch`: fetches into the Node's mirror and pushes the branch into the container as a bundle; the token never enters the container
   %%> - the bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip; a workspace whose HEAD the mirror does not hold (local commits) or that has none (a first deploy) gets the whole branch; the checkout sees the same refs as with the whole branch, so its refusals stay as they are
   %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
@@ -55,7 +60,9 @@ sequenceDiagram
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
+  %%> - a checkout already past the commit never reaches it: the `probe` of "Start the container" decides that case first (docs/cli/instance/deploy.mmd)
   %%> - Orbit's Git calls, the repack, the `.env` exclude line and the deploy steps' record run as `agent` (ADR 0268)
+  %%> - after the checkout, the default's untracked files that Git does not ignore go, as the workspace's owner with the task check's Git settings, in a task copy's clean rounds; `.env` is excluded first and stays, ignored and tracked files stay; a file it cannot remove does not fail the deployment, but a clean that fails or runs past 60 s does; the result's `workspace_cleaned` names what went, names only
   %%> - after the checkout, a bounded repack in the foreground (`git repack -d --geometric=2`, 30 s): each fetch adds a pack and Orbit's Git calls start no automatic maintenance; it first removes the temporary files of an earlier repack that are an hour old; a repack that fails or times out prints one `orbit-workspace-repack=` line and never fails the deployment
   %%> - after the repack and before the steps, root's workspace pass gives the group back what the owner has and gives `agent` each entry that `www-data` owns; it never follows a link and prints only a count above 20 entries; phase `processes` runs it again after the steps
   Note over SW: Read the steps to skip<br/>run folder
@@ -93,6 +100,7 @@ sequenceDiagram
   %%> - prepares a Node/Vite default’s private Node store as www-data before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
+  %%> - right before the snapshot, the files every clone needs go into the default (the container intent's `seed_files`), and `/etc/orbit/seed-manifest.json` records what the seed holds, its Orbit units that no clone keeps, and whether its tree is clean; a clone's prepare reads it once and writes only what differs (development-containers.md#the-seed-manifest)
   %%> - every passed deployment retakes `seed-<commit>`, also at the same commit, so a clone copies the default's current caches and built files
   %%> - deletes older seed snapshots that no clone uses
   %%> - the proof default keeps its previous seed as `base-<commit>` when a CI Node that is ready for the seed copy records that seed, so the next seed copy to that Node sends only the change; the Gateway names that seed in the intent (`seed_base`, from `ProofSeeds`); every older `base-` pair goes; a rename needs no free ID range (development-containers.md#a-retake-keeps-the-seed)

@@ -17,7 +17,8 @@ final class TaskInsightsSummaryData extends Data
         public int $tasks,
         public int $merged,
         public int $excluded,
-        public int $tokens,
+        /** Null when no task group's tokens are known. */
+        public ?int $tokens,
         public ?float $costUsd,
         public ?int $tokensPerMergedPr,
         public ?float $costPerMergedPr,
@@ -25,6 +26,7 @@ final class TaskInsightsSummaryData extends Data
         public ?int $queueMs,
         public ?int $workMs,
         public ?int $mergeWaitMs,
+        public ?int $prMergeWaitMs,
         public ?float $yield,
         public ?float $prFirstPass,
         public ?float $wastedShare,
@@ -35,5 +37,10 @@ final class TaskInsightsSummaryData extends Data
         public array $questionsByCause,
         public ?float $cacheHit,
         public ?int $tokensPerHundredLines,
+        /** Ready to the first production deploy that carried the merge commit. */
+        public ?int $deliveryTimeMs,
+        /** Merge to that deploy. */
+        public ?int $deployWaitMs,
+        public TaskInsightsHandoffsData $handoffs,
     ) {}
 }

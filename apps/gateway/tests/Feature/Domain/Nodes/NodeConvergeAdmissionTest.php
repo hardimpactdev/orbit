@@ -6,16 +6,22 @@ use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Nodes\AdmitNodeEnrollmentOperationAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\CliReleaseName;
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\NestedFleetLayout;
+use App\Domain\Instances\NestedFleetRefresh;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
@@ -41,11 +47,14 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
+use Tests\Support\ObservedReleaseInputs;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -550,12 +559,13 @@ it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800
 it('sends the recorded phase digests and clears the record', function (bool $full): void {
     // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
     $recorded = ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)];
-    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded), 'converge_digests_full' => true]);
 
     $this->postJson($this->url, ['base' => true, 'full' => $full])->assertAccepted();
     $first = Operation::query()->sole();
     $intent = $first->input['_converge']['intent'];
     expect($intent['recorded_digests'])->toBe($full ? [] : $recorded)
+        ->and($first->input['_converge']['held_digests'])->toBe($recorded)
         ->and($this->node->refresh()->converge_digests)->toBeNull();
 
     $first->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
@@ -563,6 +573,23 @@ it('sends the recorded phase digests and clears the record', function (bool $ful
     $second = Operation::query()->whereKeyNot($first->id)->sole();
     expect($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
 })->with(['recorded' => false, 'full' => true]);
+
+it('holds only a full-scope converge record for a scoped converge', function (array $scope, bool $full, bool $held): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: a role Operation's record (prerequisites, tools, node,
+    // firewall) is never restored by a scoped converge, which could skip a phase that switches a service back.
+    $recorded = $full ? ['agent' => str_repeat('a', 64), 'tools' => str_repeat('d', 64)] : ['prerequisites' => str_repeat('a', 64), 'tools' => str_repeat('d', 64)];
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded), 'converge_digests_full' => $full]);
+
+    $this->postJson($this->url, $scope)->assertAccepted();
+
+    $capture = Operation::query()->sole()->input['_converge'];
+    expect($capture['held_digests'] ?? null)->toBe($held ? $recorded : ($scope === [] ? null : []))
+        ->and($this->node->refresh()->converge_digests_full)->toBeFalse();
+})->with([
+    'full scope' => [[], true, false],
+    'base after a full converge' => [['base' => true], true, true],
+    'base after a role Operation' => [['base' => true], false, false],
+]);
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
     // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.
@@ -607,7 +634,7 @@ it('takes full from the role convergence request', function (): void {
 });
 
 it('limits an automatic converge to active selected roles under the Node lock', function (): void {
-    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)]])->save();
+    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)], 'converge_digests_full' => true])->save();
     $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 
@@ -617,6 +644,7 @@ it('limits an automatic converge to active selected roles under the Node lock', 
     expect($operation->lock_key)->toBe('node:'.$this->node->id)
         ->and($capture['intent']['release_roles_only'])->toBeTrue()
         ->and($capture['intent']['recorded_digests'])->toBe([])
+        ->and($capture['held_digests'])->toBe(['roles' => str_repeat('1', 64)])
         ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
         ->and($capture['intent']['role_units'])->toBe([])
         ->and($capture['intent']['tools'])->toBe([])
@@ -989,6 +1017,55 @@ it('converges the serving Gateway Node\'s changed host inputs itself, last', fun
         ->and($release->phases['fleet']['nodes'][$this->control->id])->toMatchArray(['status' => 'current', 'host' => 'converged']);
 });
 
+it('admits a release role converge and a CI runner\'s full host converge without reading release inputs or the CLI catalog under the SQLite writer', function (bool $host): void {
+    prepareReleaseTarget();
+    $this->node->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+    $release = releaseWithRow(['status' => 'pending']);
+    $manifest = tmpfile();
+    fwrite($manifest, json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
+        'assets' => [['platform' => 'linux-x86_64', 'url' => 'https://example.test/orbit', 'sha256' => str_repeat('c', 64)]]], JSON_THROW_ON_ERROR));
+    $static = new StaticCliRelease(stream_get_meta_data($manifest)['uri']);
+    app()->instance(ReleaseHistory::class, $static);
+    $lookups = new ArrayObject;
+    app()->instance(CliReleaseCatalog::class, new readonly class($static, $lookups) implements CliReleaseCatalog
+    {
+        /** @param ArrayObject<int, int> $lookups */
+        public function __construct(private CliReleaseCatalog $catalog, private ArrayObject $lookups) {}
+
+        public function find(string $commit, CliReleaseName $release): DesiredCliReleaseData
+        {
+            $this->lookups->append(DB::transactionLevel());
+
+            return $this->catalog->find($commit, $release);
+        }
+    });
+    $cli = app(DesiredFleetState::class)->current()->cli;
+    $inputs = app(ReleaseNodeInputs::class);
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs, 'cli' => $cli->version,
+        'host' => $host ? ReleaseNodeInputs::NodeScope.str_repeat('d', 64) : $inputs->host(node: $this->node),
+        'roles' => $host ? array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->node)) : []]])->save();
+    // The cached catalog answer is gone once the pass has read its inputs, so a lookup under the writer would reach the catalog.
+    $reads = new ArrayObject;
+    app()->instance(ReleaseNodeInputs::class, new ObservedReleaseInputs($reads, static fn () => Cache::flush()));
+    $lookups->exchangeArray([]);
+    // The test database wraps each test in a transaction of its own.
+    $outside = DB::transactionLevel();
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10);
+
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->input['_converge']['intent']['release_roles_only'] ?? false)->toBe(! $host)
+        ->and(array_keys($converge->input['_converge']['release_inputs']['roles']))->toBe($host ? $this->node->roles()->where('role', '!=', RoleName::Gateway)->orderBy('id')->pluck('id')->all()
+            : $this->node->roles()->whereIn('role', [RoleName::AppProd, RoleName::CiRunner])->orderBy('id')->pluck('id')->all())
+        ->and($converge->input['_converge']['release_inputs']['host'])->toBe($host ? $inputs->host(node: $this->node) : null)
+        ->and(array_unique(array_column($reads->getArrayCopy(), 1)))->toBe([$outside])
+        ->and(array_column($reads->getArrayCopy(), 0))->toContain('host', 'roles')
+        ->and(array_filter($lookups->getArrayCopy(), static fn (int $level): bool => $level !== $outside))->toBe([]);
+    if ($host) {
+        expect($converge->input['_converge']['intent']['cli']['release']['version'] ?? null)->toBe($cli->version);
+    }
+})->with(['a role-only release converge' => false, 'a full host converge' => true]);
+
 it('admits a host converge by the automatic converge rules: task work never blocks it, Instance work queues it', function (): void {
     prepareReleaseTarget();
     $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs, 'host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
@@ -1026,3 +1103,74 @@ it('never refuses or holds power work for an automatic role converge, waiting or
         ->and($admit($kind, 101)->status)->toBe(OperationStatus::Queued)
         ->and(fn () => $admit('instance.deploy', 102))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
 })->with(['instance.wake', 'instance.sleep', 'instance.start']);
+
+it('never keeps a release row waiting for a deploy the release admitted once it ended, and drops it from waiting_for', function (string $end): void {
+    prepareReleaseTarget();
+    // As Operation 31729: the release's own refresh admitted the deploy (its input's `origin`).
+    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, ['origin' => ContainerDeployOutcome::ReleaseOrigin],
+        NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$deploy->id]);
+    $deploy->update(match ($end) {
+        // The fence keeps the Instance lock of a signed order without its receipt (ADR 0266, R2).
+        'interrupted under the fence' => ['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(),
+            'state' => [ExecutorFence::Issued => true]],
+        // Expired before it had a Swamp run, its cancellation still forwarding.
+        'timed out before its run' => ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null,
+            'state' => ['native_cancel_requested_at' => now()->toISOString()]],
+        // Expired during its run, its cancellation still forwarding.
+        'timed out awaiting its cancellation' => ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'finished_at' => now(), 'lock_key' => null,
+            'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()]],
+        'succeeded' => ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null],
+        'failed' => ['status' => OperationStatus::Failed, 'error_code' => 'deployment.branch_diverged', 'finished_at' => now(), 'lock_key' => null],
+        'cancelled' => ['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'lock_key' => null],
+    });
+
+    expect($fleet->execute($release))->toBe(10);
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->not->toHaveKey('waiting_for');
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+
+    // A wait that ended without this pass's converge, such as one an operator ran by hand, leaves no stale ID behind either.
+    $phases = $release->phases;
+    $phases['fleet']['nodes'][$this->node->id]['waiting_for'] = [$deploy->id];
+    $release->update(['phases' => $phases]);
+    $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $this->node->forceFill(['release_inputs' => [...$this->node->fresh()->release_inputs, 'roles' => []]])->save();
+    expect($fleet->execute($release))->toBeNull();
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'current'])->not->toHaveKey('waiting_for');
+})->with(['interrupted under the fence', 'timed out before its run', 'timed out awaiting its cancellation', 'succeeded', 'failed', 'cancelled']);
+
+it('still holds the Node for an ended deploy the release did not admit while its result is unknown', function (array $deploy): void {
+    prepareReleaseTarget();
+    // A deploy by hand, even from a caller named `release`: its admission recorded no release origin.
+    $held = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
+    $held->update(['status' => OperationStatus::Interrupted, 'finished_at' => now(), ...$deploy]);
+    $release = releaseWithRow(['status' => 'pending']);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$held->id]);
+})->with([
+    'fenced' => [['error_code' => 'executor.result_unknown', 'state' => [ExecutorFence::Issued => true]]],
+    'cancellation unconfirmed' => [['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'lock_key' => null,
+        'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()]]],
+]);
+
+it('treats a deploy without an admission origin as manual even when a release refresh links it', function (): void {
+    prepareReleaseTarget();
+    // Admitted before the input named its origin, or by an older binary after a rollback: only a release's `default_refresh` row names it.
+    $deploy = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], NestedFleetRefresh::Trigger, null, lockKey: 'instance:99');
+    $deploy->update(['status' => OperationStatus::Interrupted, 'error_code' => 'executor.result_unknown', 'finished_at' => now(), 'state' => [ExecutorFence::Issued => true]]);
+    GatewayRelease::query()->create(['sha' => str_repeat('b', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
+        'phases' => ['default_refresh' => ['status' => 'pending', 'defaults' => [99 => ['status' => 'pending', 'operation_id' => $deploy->id]]]]]);
+    $release = releaseWithRow(['status' => 'pending']);
+
+    // The link grants neither the release's checkout behaviour nor its exemption from the Node wait.
+    expect(ContainerDeployOutcome::releaseAdmitted($deploy))->toBeFalse()
+        ->and(ContainerDeployOutcome::keepsNewer($deploy))->toBeFalse();
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$deploy->id])
+        ->and($deploy->refresh()->lock_key)->toBe('instance:99');
+});

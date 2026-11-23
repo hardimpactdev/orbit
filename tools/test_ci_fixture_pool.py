@@ -71,7 +71,7 @@ class FixturePoolTest(unittest.TestCase):
         # Observed shared runners are a reporting denominator, not a per-run job limit.
         table = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())
         self.assertEqual(10, table['runner-pool']['slots'])
-        self.assertEqual((20, 20, 10), (budget['runner_shards'], budget['pr_shards'], budget['self_hosted_shards']))
+        self.assertEqual((21, 20, 10), (budget['runner_shards'], budget['pr_shards'], budget['self_hosted_shards']))
         self.assertEqual(16, budget['spread_shards'])
         self.assertEqual((150, 180, 210, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))

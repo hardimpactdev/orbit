@@ -92,7 +92,6 @@ return [
         // The Operation kinds that run on the state machine instead of Swamp; a kind moves as a whole.
         'kinds' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_ENGINE_KINDS', ''))))),
         'nats' => [
-            'host' => env('ORBIT_NATS_HOST', '127.0.0.1'),
             'port' => (int) env('ORBIT_NATS_PORT', 4222),
             // The account nkey seed (`orbit:engine-keys`): it signs the auth callout's answers, and the Gateway's user derives from it.
             'seed' => env('ORBIT_NATS_SEED'),
@@ -126,7 +125,7 @@ return [
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         // The Gateway's agent of a new thread in a task copy, per role: the last fallback after the group and the Project
-        // (TaskAgent). The provider and the effort pick the copy's T3 provider instance.
+        // (TaskAgent). The provider and the effort pick the copy's T3 provider instance; a role its provider cannot honour is refused.
         'copy_agents' => [
             'implementer' => [
                 'provider' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),
@@ -185,5 +184,7 @@ return [
         'managed_targets' => (bool) env('ORBIT_CONN_MANAGED_TARGETS', false),
         // How long notice publication and rotation of one managed target wait for each other before they fail safe.
         'managed_target_lock_wait_seconds' => 10,
+        // iOS push notifications for Conn threads that need attention (docs/reference/conn.md#push-notifications): off by default.
+        'push' => (bool) env('ORBIT_CONN_PUSH', false),
     ],
 ];

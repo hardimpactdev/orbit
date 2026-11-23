@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
+use App\Domain\Instances\InstanceFleetOperation;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
@@ -95,6 +96,11 @@ final readonly class OperationStore
             }
 
             return $this->idempotency->replay($kind, $parent) ?? throw OperationVersions::deprecated();
+        }
+        // A destroy or a sleep of an Instance ends its fleet wait; a start or a new create makes its recorded fleet stale. A sleep and a
+        // wake keep it: a freeze keeps the boot (InstanceFleetOperation::Resets).
+        if ($targetType === OperationKinds::InstanceTarget) {
+            InstanceFleetOperation::admitted($kind, $targetId);
         }
         $this->broadcaster->created($operation);
 

@@ -1,6 +1,6 @@
 ---
 title: "SQLite WAL default"
-description: "Why Orbit-owned SQLite connections use WAL, and how to confirm that a Laravel app opens new databases in that mode."
+description: "Why Orbit-owned SQLite connections use WAL mode and how to verify it."
 covers:
   - apps/gateway/config/database.php
 ---
@@ -9,15 +9,15 @@ covers:
 
 ## Problem
 
-A Laravel app on SQLite fails with `database is locked` when one connection holds the write lock and another needs it. DELETE journal mode, the SQLite default, blocks those concurrent connections.
+A Laravel app on SQLite fails with `database is locked` under concurrent access when SQLite opens the database in its default `DELETE` journal mode.
 
 ## Cause
 
-Laravel sets `PRAGMA journal_mode` only when `config/database.php` has a non-null `journal_mode`. A config with `journal_mode => null` creates new files in DELETE mode. Each process applies only the connection array it ships, so an app does not inherit the Gateway's setting.
+Laravel sets `PRAGMA journal_mode` only when `config/database.php` specifies a non-null `journal_mode`. Leaving `journal_mode => null` creates new databases in `DELETE` mode.
 
 ## Solution
 
-Set WAL on the SQLite connection that the process opens:
+Configure every Orbit-owned SQLite connection with these settings (matching `apps/gateway/config/database.php`):
 
 ```php
 'busy_timeout' => 5000,
@@ -26,14 +26,12 @@ Set WAL on the SQLite connection that the process opens:
 'transaction_mode' => 'IMMEDIATE',
 ```
 
-The Gateway uses this set for `gateway.sqlite`, and its connection is the reference for every Orbit-owned SQLite connection. New Laravel app templates on SQLite ship the same `journal_mode`, so the first migration never creates a DELETE-mode file. `busy_timeout` with `IMMEDIATE` transactions makes a writer wait for the lock instead of failing at once.
-
-A change to the journal mode of an existing database is an operations step. It is costly to reverse, so an application pull request never runs it on a live Node. An existing file keeps its mode until an operator changes it or the next Laravel connection with a non-null `journal_mode` opens it.
+`busy_timeout` with `IMMEDIATE` transactions makes writers wait for locks instead of failing immediately. Existing databases keep their current journal mode until an operator converts them or a connection with a non-null `journal_mode` opens them.
 
 ## Limits
 
-WAL writes `-wal` and `-shm` files next to the database. Copy, backup, and recovery must keep those files with the main file. The default applies to SQLite only. MySQL and PostgreSQL connections are unchanged.
+WAL creates `-wal` and `-shm` sidecar files alongside the database file; backups, copies, and restores must keep all three files together. MySQL and PostgreSQL connections are unaffected.
 
 ## Verification
 
-`config('database.connections.sqlite.journal_mode')` is `WAL`, and `PRAGMA journal_mode` on an open connection returns `wal`.
+Confirm `config('database.connections.sqlite.journal_mode')` equals `WAL` and `PRAGMA journal_mode` on an open connection returns `wal`.

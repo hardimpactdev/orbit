@@ -10,6 +10,8 @@ covers:
 
 # Relocate the gateway role
 
+This procedure is incomplete and unsafe for a live Gateway; see [issue #4184](https://github.com/hardimpactdev/orbit/issues/4184).
+
 ## Problem
 
 Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay put. [`node:role:relocate`](/cli/node/role-relocate) does the move, and [native role relocation](/reference/node-provisioning#native-role-relocation) lists its steps. The move leaves several things for you to do by hand.

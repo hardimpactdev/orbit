@@ -57,6 +57,8 @@
       # This program is visible in the Ansible phase and runs only as agent, never on the Node.
       import hashlib
       import json
+      import math
+      import shutil
       import os
       import stat
       import subprocess
@@ -140,6 +142,37 @@
 
       def within(base, directory):
           return base if directory in ['', '.'] else base / directory
+
+
+      # What the check phase collected before a later failure: its part table.
+      collected = {}
+
+
+      def discard(path):
+          # A receipt path holds a file, a link or, by mistake, a folder: each goes, and none fails the check.
+          if path.is_dir() and not path.is_symlink():
+              shutil.rmtree(path, ignore_errors=True)
+          else:
+              path.unlink(missing_ok=True)
+
+
+      def receipt_parts(path):
+          # The part table of the receipt at PATH: a non-empty list of parts with a name, a known result and finite seconds,
+          # field by field; None for anything else. No other field of the file leaves the guest.
+          try:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+                  return None
+              parts = json.loads(path.read_text())['parts']
+              table = [{'name': part['name'], 'result': part['result'], 'seconds': part['seconds']} for part in parts]
+              # A duration too large for a float, such as a 400-digit integer, is no table, never a failed phase.
+              valid = isinstance(parts, list) and table and all(
+                  isinstance(part['name'], str) and 0 < len(part['name']) <= 200
+                  and part['result'] in ('passed', 'FAILED', 'skipped', 'not selected')
+                  and isinstance(part['seconds'], (int, float)) and not isinstance(part['seconds'], bool)
+                  and math.isfinite(float(part['seconds'])) and part['seconds'] >= 0 for part in table)
+          except (OSError, ValueError, KeyError, TypeError, OverflowError):
+              return None
+          return table if valid else None
 
 
       def check_phase(check):
@@ -245,14 +278,27 @@
               if merged.returncode not in [0, 1]:
                   refuse('phase_failed')
               base = merged.stdout.decode().splitlines()[0].strip()
+          # The work as the implementer handed it off, before any command runs: without a base-merge, the tree its delivery
+          # receipt must name.
+          record('handed-tree', 0, capture()['tree'] + '\n')
           setup_passed = True
           for index, step in enumerate(check['setup']):
               if captured(f'setup-{index}', root, step['command'], step['timeout_seconds']) != 0:
                   setup_passed = False
                   break
+          # The delivery receipt that the Project check writes (docs/reference/tasks.md#handoffs): only this run's counts. The check
+          # keeps only its validated part table, and removes every receipt, also one a deliverable wrote, so no turn hands it off.
+          receipt = Path(text('rev-parse', '--path-format=absolute', '--git-path', 'orbit-handoff/delivery.json'))
+          discard(receipt)
           project = 0
           if setup_passed and check['command'] is not None:
               project = captured('project', root, check['command'], 3600)
+          parts = receipt_parts(receipt)
+          if parts is not None:
+              record('parts', 0, json.dumps(parts))
+              # A later failure of this phase still returns the table.
+              collected['parts'] = parts
+          discard(receipt)
           before = capture()
           record('snapshot-before-head', 0, before['head'] + '\n')
           record('snapshot-before-tree', 0, before['tree'] + '\n')
@@ -284,6 +330,7 @@
                   shutil.rmtree(tree)
               if runnable:
                   captured(f'deliverable-{index}', within(root, directory), item['command'], 3600)
+          discard(receipt)
           after = capture()
           record('snapshot-after-head', 0, after['head'] + '\n')
           record('snapshot-after-tree', 0, after['tree'] + '\n')
@@ -390,8 +437,6 @@
           target = text('rev-parse', '--verify', ref + '^{commit}')
           held = subprocess.run(git_argv + ['merge-base', '--is-ancestor', target, head], capture_output=True, env=env,
                                 check=False, timeout=60).returncode == 0
-          if held:
-              return {'default_commit': target, 'merged_default': None, 'changed': False}
           identity = {**env, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@users.noreply.github.com',
                       'GIT_COMMITTER_NAME': 'Orbit', 'GIT_COMMITTER_EMAIL': 'orbit@users.noreply.github.com'}
           # The work as it stands, uncommitted files too, as a commit object that no ref names yet: a conflict leaves the
@@ -405,6 +450,10 @@
                   git('read-tree', '--empty', index=index)
               git('add', '--all', '--', '.', index=index)
               tree = git('write-tree', index=index).decode().strip()
+              # The work as the implementer handed it off, uncommitted work included: the tree its delivery receipt must name
+              # (docs/reference/tasks.md#handoffs).
+              if held:
+                  return {'handed_head': head, 'handed_tree': tree, 'default_commit': target, 'merged_default': None, 'changed': False}
               work = head
               if tree != text('rev-parse', 'HEAD^{tree}'):
                   work = subprocess.run(git_argv + ['commit-tree', tree, '-p', head], input=request['message'].encode(),
@@ -421,7 +470,7 @@
                           break
                       shown.append(name)
                       used += size
-                  return {'error_code': 'tasks.check_conflict', 'default_commit': target, 'conflicting_paths': shown,
+                  return {'error_code': 'tasks.check_conflict', 'handed_head': head, 'handed_tree': tree, 'default_commit': target, 'conflicting_paths': shown,
                           'conflicting_more': len(names) - len(shown), 'changed': False}
               if merged.returncode != 0:
                   refuse('phase_failed')
@@ -443,7 +492,8 @@
               staged.write_bytes(index.read_bytes())
               os.replace(staged, real_index)
           git('update-ref', 'HEAD', commit, head)
-          return {'default_commit': target, 'merged_default': target, 'commit': commit, 'changed': True}
+          return {'handed_head': head, 'handed_tree': tree, 'default_commit': target, 'merged_default': target, 'commit': commit,
+                  'changed': True}
 
 
       def main():
@@ -559,7 +609,7 @@
       except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
           code = str(error)
           print(json.dumps({'error_code': code if code.startswith('tasks.workspace_') and '\n' not in code
-                            else 'tasks.workspace_phase_failed'}))
+                            else 'tasks.workspace_phase_failed', **collected}))
           sys.exit(1)
 
 - name: Run the workspace phase as agent

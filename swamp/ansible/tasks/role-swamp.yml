@@ -80,6 +80,8 @@
   loop: "{{ rt.swamp.workers }}"
 - name: Start worker renewal after all workers
   ansible.builtin.systemd: { name: orbit-swamp-worker-renewal.timer, state: started, enabled: true }
+- name: Start token renewal
+  ansible.builtin.import_tasks: swamp-token-renewal-start.yml
 # One backslash: Ansible keeps backslashes in a string inside `{{ }}` as written (unlike `{% %}` and bare conditions), so `\\1`
 # named no unit (Operation 24008, 2026-11-15); see .agents/skills/ansible-phase/SKILL.md. The command-output table renders this loop.
 - name: Check Swamp units

@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceServerSwitch;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -111,7 +112,9 @@ final readonly class InstanceWake extends InstancePower
     private function admitWake(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         $runtime = $instance->runtime()->first();
-        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
+        // A frozen clone resumes with its fleet as it was, unless that fleet is owed: its start never proved it ready, so it starts now.
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime)
+            || ($runtime !== null && self::frozen($runtime, $instance) && ! $runtime->fleet_start_pending)) {
             return parent::start($instance, $caller, $requestId);
         }
         $idempotency = app(OperationIdempotency::class);
@@ -130,13 +133,15 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function intent(Instance $instance): array
     {
-        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10]];
+        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10],
+            // The wake that applies a deferred server switch waits for the Conn Server's first-start import before T3's usual wait.
+            ...(InstanceServerSwitch::pendingForWake($instance) ? ['server_import_seconds' => InstanceServerSwitch::ImportSeconds] : [])];
     }
 
     /** The wake's path (`resumed`, `started`, `restarted_after_resume`, `already_running`), the marker it found and a resume's seconds. */
     protected function phaseKeys(): array
     {
-        return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds'];
+        return ['wake', 'marker_found', 'resume_seconds', 'web_probe_seconds', 'server_version'];
     }
 
     /**
@@ -173,6 +178,9 @@ final readonly class InstanceWake extends InstancePower
     {
         $instance = Instance::query()->with('node')->find($operation->target_id);
         if ($operation->status === OperationStatus::Succeeded && $instance !== null) {
+            if (is_string($operation->result['server_version'] ?? null) && $operation->result['server_version'] !== '') {
+                app(InstanceLifecycleContributions::class)->projectServerVersion($instance, $operation->result['server_version']);
+            }
             app(InstanceLifecycleContributions::class)->projectWake($instance);
         }
         if (isset($operation->state[self::ResumeState]) && $instance?->node !== null) {
@@ -198,6 +206,9 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
     {
+        if (InstanceServerSwitch::pendingForWake($instance)) {
+            return parent::admit($instance, $runtime, $input, $caller, $requestId);
+        }
         if (ExecutorPowerIntent::forInstance($instance, $runtime)) {
             return app(ExecutorWake::class)->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId);
         }

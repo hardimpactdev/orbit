@@ -148,6 +148,9 @@
     <<: *phase
     project_args: [--project, "{{ seed_intent.project }}", --target-project, "{{ seed_intent.project }}"]
     remote: "{{ seed_target.remote }}"
+    # Root's Incus client keeps all its remotes in one file, and `incus remote add` rewrites it without a lock: two adds side by side
+    # both pass, but one remote is lost. The copies of a run add theirs one at a time under this lock.
+    seed_remote_lock: /run/lock/orbit-proof-seed-remotes.lock
   tasks:
     - name: Push the seed
       block:
@@ -160,7 +163,8 @@
         - name: Add the remote of the CI Node
           when: remote not in (seed_remotes.stdout | from_json)
           ansible.builtin.command:
-            argv: [incus, remote, add, "{{ remote }}", "https://{{ seed_target.listen }}", --accept-certificate, --auth-type, tls]
+            argv: >-
+              {{ ['flock', seed_remote_lock, 'incus', 'remote', 'add', remote, 'https://' ~ seed_target.listen, '--accept-certificate', '--auth-type', 'tls'] }}
           changed_when: true
         - name: Read the certificate that root stored for the remote
           ansible.builtin.slurp: { src: "/root/.config/incus/servercerts/{{ remote }}.crt" }
@@ -226,6 +230,9 @@
           changed_when: true
         # An instance copy does not take its attached custom volumes, so the inner volume goes first, and the container's disk names it.
         # Each push stops after ProofSeeds::PushSeconds: a first full copy is a few GB over WireGuard; a refresh is small.
+        # The targets' copies run side by side. Each push of the mounted, block-backed inner volume first syncs it with a freeze and an
+        # immediate thaw (Incus zfs MigrateVolume), before it sends anything; a freeze while another push holds its own fails with
+        # `Device or resource busy`. Only that failure is tried again: the other push thaws within a moment.
         - name: Push the inner volume
           when: seed_intent.source.inner_volume is not none
           ansible.builtin.command:
@@ -233,6 +240,10 @@
               {{ ['timeout', '1200', 'incus', 'storage', 'volume', 'copy',
                   seed_intent.pool ~ '/' ~ seed_intent.source.inner_volume, remote ~ ':' ~ seed_intent.pool ~ '/' ~ seed_intent.holder_volume,
                   '--refresh', '--mode=push'] + project_args }}
+          register: seed_volume_push
+          until: seed_volume_push.rc == 0 or 'Failed freezing filesystem' not in seed_volume_push.stderr
+          retries: 5
+          delay: 2
           changed_when: true
         - name: Push the container
           ansible.builtin.command:

@@ -69,21 +69,21 @@ final class EngineBus implements MachineBus
         }
         $this->usedAt = $now;
 
-        return $this->client ??= ($this->connector ?? self::connect(...))();
+        return $this->client ??= ($this->connector ?? static fn (): Client => self::connect(reconnect: false))();
     }
 
     /** A connection of its own, so a subscription never shares a socket with publishes made inside its handler. */
-    public static function connect(): Client
+    public static function connect(bool $reconnect = true): Client
     {
-        $nats = config('orbit.engine.nats');
-        $host = is_array($nats) ? ($nats['host'] ?? null) : null;
-        $port = is_array($nats) ? ($nats['port'] ?? null) : null;
-        if (! is_string($host) || ! is_int($port) || ! GatewayBus::enabled()) {
+        $host = GatewayBus::address();
+        if ($host === null) {
             throw new RuntimeException('engine.bus_unconfigured');
         }
 
         // The Gateway's own nkey user skips the auth callout and may use every subject of the account.
-        return new Client(new Configuration(host: $host, port: $port, nkey: GatewayBus::gatewaySeed(), timeout: 2));
+        // Request/publish connections pass `reconnect: false` so a server-closed idle socket fails `ping()` immediately
+        // instead of silently reconnecting inside `getMessage()` and blocking for the full 2 s timeout waiting on an unsent PONG.
+        return new Client(new Configuration(host: $host, port: GatewayBus::port(), nkey: GatewayBus::gatewaySeed(), reconnect: $reconnect, timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */
@@ -96,7 +96,7 @@ final class EngineBus implements MachineBus
             'allow_msg_schedules' => true]);
         $this->stream('KV_CONTENT', [...$limits, 'subjects' => ['$KV.CONTENT.>'], 'retention' => 'limits', 'max_age' => 3600 * self::Second,
             'max_msgs_per_subject' => 1, 'max_msg_size' => 1024 * 1024, 'discard' => 'old', 'allow_direct' => true, 'allow_rollup_hdrs' => true]);
-        // What each Node's executor reports when it joins: its primitives. Kept until the Node reports again.
+        // What each Node's executor reports when it connects, also before it has a consumer: its primitives.
         // A report lasts five minutes: executors refresh it every minute, so a stopped executor stops receiving kinds. No rollup:
         // a Node's rollup header would purge every Node's report.
         $this->stream('KV_NODES', [...$limits, 'subjects' => ['$KV.NODES.>'], 'retention' => 'limits', 'max_msgs_per_subject' => 1,
@@ -157,11 +157,44 @@ final class EngineBus implements MachineBus
     }
 
     /**
-     * The primitives a Node's executor reported when it joined the bus (KV `NODES`, key `n<node>`); empty when it never did.
+     * The primitives a Node's executor last reported (KV `NODES`, key `n<node>`); empty when no report is under five minutes old.
      *
      * @return list<string>
      */
     public function nodeActions(int $node): array
+    {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['actions'] ?? null) ? array_values(array_filter($report['actions'], is_string(...))) : [];
+    }
+
+    public function nodeTargetActions(int $node): array
+    {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['node_targets'] ?? null) ? array_values(array_filter($report['node_targets'], is_string(...))) : [];
+    }
+
+    public function nodeFeatures(int $node): array
+    {
+        $report = $this->nodeReport($node);
+
+        return is_array($report['features'] ?? null) ? array_values(array_filter($report['features'], is_string(...))) : [];
+    }
+
+    public function nodeClock(int $node): ?bool
+    {
+        $clock = $this->nodeReport($node)['clock_synchronized'] ?? null;
+
+        return is_bool($clock) ? $clock : null;
+    }
+
+    /**
+     * A Node executor's last report (KV `NODES`, key `n<node>`); empty when none is under five minutes old.
+     *
+     * @return array<string, mixed>
+     */
+    private function nodeReport(int $node): array
     {
         try {
             $reply = $this->client()->dispatch("\$JS.API.DIRECT.GET.KV_NODES.\$KV.NODES.n{$node}", '');
@@ -173,7 +206,7 @@ final class EngineBus implements MachineBus
         $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
         $decoded = json_decode($body, true);
 
-        return is_array($decoded) && is_array($decoded['actions'] ?? null) ? array_values(array_filter($decoded['actions'], is_string(...))) : [];
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**

@@ -90,9 +90,37 @@ async fn consume<R: Run + 'static>(
         .connect(config.url.as_str())
         .await?;
     let context = jetstream::new(client.clone());
-    // The report comes first: the Gateway starts a kind on the state machine only for a Node that reported, and makes the
-    // Node's consumer with its first order. Until then the consumer is missing, and the bus waits for it quietly.
+    // The report comes first, and it keeps coming while the bus waits: the Gateway starts a kind on the state machine only
+    // for a Node with a fresh report, and makes the Node's consumer with its first order. Until then the consumer is
+    // missing, and the bus waits for it quietly.
     report_actions(&context, settings, &node).await?;
+    let reporter = tokio::spawn({
+        let (context, settings, node) = (context.clone(), Arc::clone(settings), node.clone());
+        async move {
+            let mut every = tokio::time::interval(REPORT_EVERY);
+            every.tick().await;
+            loop {
+                every.tick().await;
+                if let Err(error) = report_actions(&context, &settings, &node).await {
+                    log(&format!("capability report failed: {error}"));
+                }
+            }
+        }
+    });
+    let result = serve(&context, client, &node, settings, executor, log).await;
+    reporter.abort();
+    result
+}
+
+/// Waits for the Node's consumer, then pulls its orders.
+async fn serve<R: Run + 'static>(
+    context: &jetstream::Context,
+    client: async_nats::Client,
+    node: &str,
+    settings: &Arc<Settings>,
+    executor: &Arc<Executor<R>>,
+    log: Log,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut waited = false;
     let consumer: jetstream::consumer::PullConsumer = loop {
         match context.get_consumer_from_stream(format!("node-{node}"), "ORDERS").await {
@@ -109,23 +137,8 @@ async fn consume<R: Run + 'static>(
     };
     let width = slots();
     log(&format!("nats bus joined as node-{node} with {width} slots"));
-    let reporter = tokio::spawn({
-        let (context, settings, node) = (context.clone(), Arc::clone(settings), node.clone());
-        async move {
-            let mut every = tokio::time::interval(REPORT_EVERY);
-            every.tick().await;
-            loop {
-                every.tick().await;
-                if let Err(error) = report_actions(&context, &settings, &node).await {
-                    log(&format!("capability report failed: {error}"));
-                }
-            }
-        }
-    });
-    let job = Job { client, context, node };
-    let result = pull(&consumer, &job, width, settings, executor, log).await;
-    reporter.abort();
-    result
+    let job = Job { client, context: context.clone(), node: node.to_owned() };
+    pull(&consumer, &job, width, settings, executor, log).await
 }
 
 /// Pulls orders while a slot is free: an order is taken only when it can start, so a busy Node never lets a pulled order
@@ -161,19 +174,61 @@ fn consumer_missing(error: &jetstream::stream::ConsumerError) -> bool {
         if inner.error_code() == jetstream::ErrorCode::CONSUMER_NOT_FOUND)
 }
 
-/// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
-/// `n<node>`. The Gateway starts a kind on the state machine only when every Node it touches reported its primitives.
-async fn report_actions(
-    context: &jetstream::Context,
-    settings: &Settings,
-    node: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Whether the kernel's clock follows a time source, as chrony or timesyncd set it; None when the kernel cannot say. A
+/// read-only `adjtimex`: it changes nothing. Signed orders expire seconds after the Gateway signs them, so the Gateway's
+/// Doctor warns about a Node whose clock drifts unsynchronized.
+fn clock_synchronized() -> Option<bool> {
+    // SAFETY: `timex` is a plain C struct of integers, for which all zero bytes are a valid value.
+    let mut timex: libc::timex = unsafe { std::mem::zeroed() };
+    // SAFETY: `modes` is 0, so adjtimex only reads the kernel's clock state into the struct, which is a valid, exclusive
+    // reference for the call.
+    let state = unsafe { libc::adjtimex(&mut timex) };
+    if state < 0 {
+        return None;
+    }
+    Some(state != libc::TIME_ERROR && timex.status & libc::STA_UNSYNC == 0)
+}
+
+/// Builds the capability report stored in KV `NODES`: enabled actions, which of them accept `<node>:<part>` targets,
+/// the optional inputs its actions take (`features`), version, and kernel clock synchronization state.
+fn capability_report(settings: &Settings) -> serde_json::Value {
     let actions: Vec<&str> = orbit_executor_core::action::Action::ALL
         .into_iter()
         .filter(|action| settings.enabled.allows(*action))
         .map(orbit_executor_core::action::Action::name)
         .collect();
-    let body = serde_json::json!({"actions": actions, "version": env!("CARGO_PKG_VERSION")}).to_string();
+    let node_targets: Vec<&str> = orbit_executor_core::action::Action::ALL
+        .into_iter()
+        .filter(|action| {
+            settings.enabled.allows(*action)
+                && action.target_kind() == orbit_executor_core::action::TargetKind::Node
+        })
+        .map(orbit_executor_core::action::Action::name)
+        .collect();
+    // An older executor refuses an input it does not know, so the Gateway sends one only to a Node that names it here.
+    let features: Vec<&str> = if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
+        vec!["instance.t3_pairing"]
+    } else {
+        Vec::new()
+    };
+    serde_json::json!({
+        "actions": actions,
+        "node_targets": node_targets,
+        "features": features,
+        "version": env!("CARGO_PKG_VERSION"),
+        "clock_synchronized": clock_synchronized(),
+    })
+}
+
+/// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
+/// `n<node>`, with its clock's state. The Gateway starts a kind on the state machine only when every Node it touches reported
+/// its primitives.
+async fn report_actions(
+    context: &jetstream::Context,
+    settings: &Settings,
+    node: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let body = capability_report(settings).to_string();
     context.publish(format!("$KV.NODES.n{node}"), body.into()).await?.await?;
     Ok(())
 }
@@ -412,5 +467,31 @@ mod tests {
     #[test]
     fn slots_stay_between_two_and_eight() {
         assert!((2..=8).contains(&slots()));
+    }
+
+    #[test]
+    fn capability_report_lists_club_key_as_a_node_target_action() {
+        use orbit_executor_core::action::Enabled;
+        use orbit_executor_core::caller::Policy;
+        use orbit_executor_core::order::PinnedKeys;
+
+        // RFC 8032 test vector 1 public key (32 bytes, base64).
+        let pinned = PinnedKeys::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=").expect("valid key");
+        let settings = Settings {
+            policy: Policy::production(None, PathBuf::from("/usr/local/bin/orbit-agent")),
+            keys: pinned,
+            enabled: Enabled::parse("instance").expect("instance family"),
+            node: "7".parse().expect("node"),
+        };
+        let report = capability_report(&settings);
+        let node_targets: Vec<&str> = report["node_targets"]
+            .as_array()
+            .expect("node_targets array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert!(node_targets.contains(&"instance.club_key"));
+        assert!(!node_targets.contains(&"instance.checkout"));
+        assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing"]));
     }
 }

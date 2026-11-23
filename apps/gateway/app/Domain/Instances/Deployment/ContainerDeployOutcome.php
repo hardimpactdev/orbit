@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Logs\LogRedactor;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /**
@@ -20,6 +21,9 @@ final readonly class ContainerDeployOutcome
     /** The step whose first phase starts the container (docs/cli/instance/deploy.mmd). */
     public const string PrepareStep = 'Prepare the container';
 
+    /** The step that starts the container and reads its workspace before any other change. */
+    public const string StartStep = 'Start the container';
+
     /**
      * The proof default's step that waits for its seed hold before any phase (docs/reference/development-containers.md#the-seed-hold); at
      * its bound the deployment fails before it changes the container.
@@ -28,6 +32,34 @@ final readonly class ContainerDeployOutcome
 
     /** The forEach step that runs each development deploy step, one item per admitted step. */
     public const string DeployStepsStep = 'Run dev deploy steps';
+
+    /** The step that prints, as `,<name>,<name>,`, the steps whose inputs the checkout found unchanged. */
+    public const string SkipStep = 'Read the steps to skip';
+
+    /** The outcome of a deployment whose checkout was already past its commit, which kept it (docs/reference/deployments.md#development-defaults). */
+    public const string AlreadyNewer = 'already_newer';
+
+    /** The input's `origin` of a deployment that the release's nested-fleet refresh admitted. */
+    public const string ReleaseOrigin = 'release';
+
+    /** The input's `origin` of a deployment that the automatic policy admitted. */
+    public const string AutomaticOrigin = 'automatic';
+
+    /** Whether a deployment keeps a checkout that is already past its commit: one that a release or the automatic policy admitted. */
+    public static function keepsNewer(Operation $operation): bool
+    {
+        return in_array(ValidatedData::object($operation->input ?? [])['origin'] ?? null, [self::ReleaseOrigin, self::AutomaticOrigin], true);
+    }
+
+    /**
+     * Whether the release's nested-fleet refresh admitted this deployment, by its admission's own `origin`, never by `triggered_by` or a
+     * release's refresh link. A deployment admitted without an `origin` counts as manual.
+     */
+    public static function releaseAdmitted(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.deploy'
+            && (ValidatedData::object($operation->input ?? [])['origin'] ?? null) === self::ReleaseOrigin;
+    }
 
     /**
      * @param  array<string, mixed>  $data
@@ -49,6 +81,11 @@ final readonly class ContainerDeployOutcome
             $payload['executor'] = $file['executor'];
             $payload['wake'] = ($file['wake'] ?? null) === 'started' ? 'started' : null;
         }
+        // What the checkout removed from a default's tree, names only (docs/reference/development-containers.md#the-default-keeps-a-clean-tree).
+        $cleaned = self::workspaceCleaned($file['workspace_cleaned'] ?? null);
+        if ($cleaned !== null) {
+            $payload['workspace_cleaned'] = $cleaned;
+        }
         $bestEffort = self::bestEffortSteps($steps, $admittedSteps);
         if ($bestEffort !== []) {
             $payload['best_effort_steps'] = $bestEffort;
@@ -61,15 +98,21 @@ final readonly class ContainerDeployOutcome
         $status = ValidatedData::nullableString($data['status'] ?? null);
         if ($status === 'succeeded') {
             $payload['commit'] = is_string($file['commit'] ?? null) ? $file['commit'] : null;
+            // The probe found the checkout already past the commit: the run kept it as it was and changed nothing, so `commit` is the
+            // checkout's HEAD, which the probe read.
+            if (($file['outcome'] ?? null) === self::AlreadyNewer && is_string($file['kept_commit'] ?? null) && is_string($file['target_commit'] ?? null)) {
+                $payload = [...$payload, 'already_newer' => true, 'outcome' => self::AlreadyNewer, 'commit' => $file['kept_commit'],
+                    'kept_commit' => $file['kept_commit'], 'target_commit' => $file['target_commit']];
+            }
         } elseif ($status === 'failed') {
             $step = $failed[0] ?? 'native_execution';
             $payload['failed_step'] = $step;
-            // A deployment that failed before the container started leaves its power state as it was. "Prepare the container" starts
+            // A deployment that failed before the container started leaves its power state as it was. "Start the container" starts
             // it in its first phase, `start`; each phase that passed writes itself into `phases_passed` as it ends, also when a later
             // phase is killed before it can write a failure.
             $passed = is_array($file['phases_passed'] ?? null) ? $file['phases_passed'] : [];
-            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent', self::SeedHoldStep], true)
-                && ($step !== self::PrepareStep || in_array('start', $passed, true));
+            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
+                && ($step !== self::StartStep || in_array('start', $passed, true));
             $code = match (true) {
                 str_starts_with($step, self::DeployStepsStep) => 'deployment.step_failed',
                 $step === self::SeedHoldStep => 'instance.seed_hold_timeout',
@@ -106,6 +149,101 @@ final readonly class ContainerDeployOutcome
     }
 
     /**
+     * How each admitted development deploy step ended, in the admitted order (docs/reference/deployments.md#history). The steps run one
+     * after another, and the first that fails stops the rest:
+     *
+     * - `succeeded`, or `failed` when its command failed. A best-effort step never fails the deployment, so its command's exit code
+     *   decides: 0 is `succeeded`, 124 `timed_out` and any other code `failed`.
+     * - `skipped_unchanged`: the run skipped it because the checkout found its inputs unchanged ("Read the steps to skip" names it).
+     * - `interrupted`: it started, and the run ended before it did.
+     * - `not_run`: an earlier step stopped the sequence, or the run never reached it.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<mixed>  $admitted
+     * @return list<array{name:string,phase:DeploymentProgressPhase,status:string}>
+     */
+    public static function stepEvents(array $data, array $admitted): array
+    {
+        $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+        $skip = ValidatedData::object($steps[self::SkipStep] ?? []);
+        $unchanged = ($skip['status'] ?? null) === 'succeeded' && is_string($skip['stdout'] ?? null) ? $skip['stdout'] : '';
+        $items = self::items($steps);
+        $events = [];
+        $stopped = false;
+        foreach (array_values($admitted) as $index => $intent) {
+            if (! is_array($intent) || ! is_string($intent['name'] ?? null)) {
+                continue;
+            }
+            $item = $items[$index] ?? [];
+            $status = match (true) {
+                $stopped => 'not_run',
+                ($item['status'] ?? null) === 'succeeded' => ($intent['required'] ?? null) !== false ? 'succeeded'
+                    : match (self::exitCode($item['stdout'] ?? null)) {
+                        0 => 'succeeded',
+                        124 => 'timed_out',
+                        default => 'failed',
+                    },
+                ($item['status'] ?? null) === 'failed' => 'failed',
+                ($item['status'] ?? null) === 'skipped' && str_contains($unchanged, ','.$intent['name'].',') => 'skipped_unchanged',
+                in_array($item['status'] ?? null, ['running', 'interrupted', 'cancelled'], true) => 'interrupted',
+                default => 'not_run',
+            };
+            // A step that did not pass stops the ones after it; a best-effort step's own failure does not.
+            $stopped = $stopped || in_array($item['status'] ?? null, ['failed', 'running', 'interrupted', 'cancelled'], true);
+            $events[] = ['name' => $intent['name'],
+                'phase' => DeploymentProgressPhase::tryFrom(is_string($intent['phase'] ?? null) ? $intent['phase'] : '') ?? DeploymentProgressPhase::BeforeActivation,
+                'status' => $status];
+        }
+
+        return $events;
+    }
+
+    /**
+     * Each development deploy step's run data by its admitted index. Swamp names each forEach item `<step>-<index>-<index>`.
+     *
+     * @param  array<string, mixed>  $steps
+     * @return array<int, array<mixed>>
+     */
+    private static function items(array $steps): array
+    {
+        $items = [];
+        foreach ($steps as $name => $step) {
+            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', (string) $name, $match) === 1) {
+                $items[(int) $match[1]] = is_array($step) ? $step : [];
+            }
+        }
+        ksort($items);
+
+        return $items;
+    }
+
+    /**
+     * The checkout's clean of a default as it printed it, or null for any other shape: `removed_count`, the first 20 `removed` names and
+     * `left_count` when a file stayed.
+     *
+     * @return array{removed_count: int, removed: list<string>, left_count?: int}|null
+     */
+    private static function workspaceCleaned(mixed $raw): ?array
+    {
+        if (! is_array($raw) || ! is_int($raw['removed_count'] ?? null) || $raw['removed_count'] < 0 || ! is_array($raw['removed'] ?? null)
+            || ! array_is_list($raw['removed']) || count($raw['removed']) > 20 || array_filter($raw['removed'], static fn (mixed $name): bool => ! is_string($name)) !== []
+            || (array_key_exists('left_count', $raw) && (! is_int($raw['left_count']) || $raw['left_count'] < 1))) {
+            return null;
+        }
+
+        return ['removed_count' => $raw['removed_count'], 'removed' => array_map(static fn (string $name): string => mb_strcut($name, 0, 255, 'UTF-8'), $raw['removed']),
+            ...(isset($raw['left_count']) ? ['left_count' => $raw['left_count']] : [])];
+    }
+
+    /** A best-effort step's one output line, its command's exit code: an integer from 0 to 255, or null for anything else. */
+    private static function exitCode(mixed $stdout): ?int
+    {
+        $line = is_string($stdout) ? trim($stdout) : '';
+
+        return preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/D', $line) === 1 && (int) $line <= 255 ? (int) $line : null;
+    }
+
+    /**
      * The exit code of each best-effort (`required: false`) development deploy step that ran, in the admitted order
      * (docs/reference/deployments.md#development-deploy-steps). The step's wrapper sends the command's output to /dev/null and prints only the
      * command's exit code, so that line is all this reads. Anything but an integer from 0 to 255 is null; the text is never kept. A
@@ -118,24 +256,16 @@ final readonly class ContainerDeployOutcome
     private static function bestEffortSteps(array $steps, array $admitted): array
     {
         $rows = [];
-        foreach ($steps as $name => $step) {
-            // Swamp names each forEach item `<step>-<index>-<index>`.
-            if (preg_match('/\A'.preg_quote(self::DeployStepsStep, '/').'-([0-9]+)(?:-\1)?\z/D', $name, $match) !== 1) {
-                continue;
-            }
-            $intent = $admitted[(int) $match[1]] ?? null;
-            $step = is_array($step) ? $step : [];
+        foreach (self::items($steps) as $index => $step) {
+            $intent = $admitted[$index] ?? null;
             if (! is_array($intent) || ($intent['required'] ?? null) !== false || ! is_string($intent['name'] ?? null)
                 || ($step['status'] ?? null) === 'skipped') {
                 continue;
             }
-            $line = is_string($step['stdout'] ?? null) ? trim($step['stdout']) : '';
-            $rows[(int) $match[1]] = ['name' => $intent['name'],
-                'exit_code' => preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/D', $line) === 1 && (int) $line <= 255 ? (int) $line : null];
+            $rows[] = ['name' => $intent['name'], 'exit_code' => self::exitCode($step['stdout'] ?? null)];
         }
-        ksort($rows);
 
-        return array_values($rows);
+        return $rows;
     }
 
     /**

@@ -1,0 +1,81 @@
+---
+# One read of a check's paths and units instead of a stat or `systemctl is-active` call per item
+# (docs/reference/node-provisioning.md#check-many-files-in-one-read). `check_read_paths` lists paths, read like
+# ansible.builtin.stat without follow and with a SHA-256 checksum of a regular file; a path listed twice is read once.
+# `check_read_followed` lists paths read the same way through their symbolic links, kept under `followed`.
+# `check_read_units` lists units. `check_read_commands` maps a name to a read-only argv; a program that is missing gives rc 127,
+# one that cannot start gives rc 126, with the error as its stderr. `check_read` keeps each path's stat-shaped result under
+# `paths`, each unit's `systemctl is-active` exit code, state and stderr under `units`, and each command's exit code, output and
+# stderr under `commands`, so the asserts that follow judge every item as before. A path that cannot be read, other than a
+# missing one, fails at `Require every checked path` naming it, as its stat did; the paths in `check_read_private` (default none)
+# fail there without printing it. The read prints the checksums of those paths, so it stays out of the output while any is listed.
+- name: Read the checked paths, units and commands in one call
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+        import grp, hashlib, json, os, pwd, stat, subprocess, sys
+        request = json.load(sys.stdin)
+        def read(path, follow):
+            try:
+                found = os.stat(path) if follow else os.lstat(path)
+            except FileNotFoundError:
+                return {'exists': False}
+            except OSError as error:
+                return {'error': str(error)}
+            mode = found.st_mode
+            entry = {'exists': True, 'isdir': stat.S_ISDIR(mode), 'isreg': stat.S_ISREG(mode), 'islnk': stat.S_ISLNK(mode),
+                     'mode': '%04o' % stat.S_IMODE(mode), 'rusr': bool(mode & stat.S_IRUSR), 'uid': found.st_uid, 'gid': found.st_gid}
+            try:
+                entry['pw_name'] = pwd.getpwuid(found.st_uid).pw_name
+            except KeyError:
+                pass
+            try:
+                entry['gr_name'] = grp.getgrgid(found.st_gid).gr_name
+            except KeyError:
+                pass
+            if stat.S_ISREG(mode) and os.access(path, os.R_OK):
+                digest = hashlib.sha256()
+                try:
+                    with open(path, 'rb') as file:
+                        for block in iter(lambda: file.read(1 << 16), b''):
+                            digest.update(block)
+                except OSError as error:
+                    return {'error': str(error)}
+                entry['checksum'] = digest.hexdigest()
+            return entry
+        def run(argv):
+            try:
+                done = subprocess.run(argv, capture_output=True, text=True)
+            except OSError as error:
+                return {'rc': 127 if isinstance(error, FileNotFoundError) else 126, 'stdout': '', 'stderr': str(error)}
+            return {'rc': done.returncode, 'stdout': done.stdout, 'stderr': done.stderr}
+        paths = {path: read(path, False) for path in dict.fromkeys(request['paths'])}
+        followed = {path: read(path, True) for path in dict.fromkeys(request['followed'])}
+        units = {}
+        for unit in dict.fromkeys(request['units']):
+            done = run(['systemctl', 'is-active', '--', unit])
+            units[unit] = {'rc': done['rc'], 'state': done['stdout'].strip(), 'stderr': done['stderr']}
+        commands = {name: run(argv) for name, argv in request['commands'].items()}
+        print(json.dumps({'paths': paths, 'followed': followed, 'units': units, 'commands': commands}))
+    stdin: >-
+      {{ {'paths': check_read_paths | default([]), 'followed': check_read_followed | default([]),
+      'units': check_read_units | default([]), 'commands': check_read_commands | default({})} | to_json }}
+  register: check_read_output
+  changed_when: false
+  no_log: "{{ check_read_private | default([]) | length > 0 }}"
+- name: Keep the checked paths, units and commands
+  ansible.builtin.set_fact:
+    check_read: "{{ check_read_output.stdout | from_json }}"
+  no_log: "{{ check_read_private | default([]) | length > 0 }}"
+- name: Require every checked path
+  ansible.builtin.assert:
+    that: "'error' not in item.value"
+    fail_msg: "{{ item.value.error | default('') }}"
+    quiet: true
+  loop: "{{ check_read.paths | dict2items + check_read.followed | dict2items }}"
+  loop_control: { label: "{{ item.key }}" }
+  no_log: "{{ item.key in check_read_private | default([]) }}"

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Metrics/**
   - apps/gateway/app/Actions/Nodes/ShowNodeMetricsAction.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
-  - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
+  - apps/gateway/app/Http/{Controllers/Api/MetricsController,Controllers/Api/GrafanaAccessAuthorizationController,Controllers/Api/TaskInsightsMetricsController,Middleware/RequireMetricsNode}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/MetricsCaddySiteSource.php
   - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/integrations/metrics_*.ts}
@@ -14,235 +14,110 @@ covers:
 
 # Metrics role
 
-[Container Process status](/reference/development-containers#processes) comes from its units inside the container. The Node's Process metrics do not describe those units.
-
-The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. Exporters and Node-agent installation require managed Linux Nodes. SSH management on a macOS Node enables tools, not these Linux services. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
+The `metrics` role runs Prometheus and Grafana on one managed Linux Node and collects host and container metrics from selected managed Linux Nodes. Open dashboards at `https://metrics.orbit` (or `/grafana/` on the Gateway origin). [`metrics`](/cli/metrics) lists the CLI commands, and [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM monitoring on the same role.
 
 ## What runs where
 
-The role runs two containers on the Metrics Node and two units on each selected Node.
+The role runs two Docker containers on the Metrics Node and two systemd units on each selected exporter Node:
 
-| Part | Where | Listens on |
-| --- | --- | --- |
-| `orbit-metrics-prometheus` container | The Metrics Node | `127.0.0.1:9090`, with no firewall rule |
-| `orbit-metrics-grafana` container | The Metrics Node | The Node's WireGuard address, port 3000 |
-| `prometheus-node-exporter` unit | Every selected Node | The Node's WireGuard address, port 9100 |
-| `orbit-cadvisor` unit | Every selected Node | The Node's WireGuard address, port 9102 |
+| Part | Where | Listens on | Image / Binary |
+| --- | --- | --- | --- |
+| `orbit-metrics-prometheus` | Metrics Node | `127.0.0.1:9090` (no firewall rule) | `prom/prometheus:v3.5.0`, volume `orbit-metrics-prometheus-data` |
+| `orbit-metrics-grafana` | Metrics Node | WireGuard address, port `3000` | `grafana/grafana:12.1.1`, volume `orbit-metrics-grafana-data`, UID/GID `472` (`orbit-grafana`) |
+| `prometheus-node-exporter` | Selected Nodes | WireGuard address, port `9100` | Packaged `prometheus-node-exporter` |
+| `orbit-cadvisor` | Selected Nodes | WireGuard address, port `9102` | Static binary `/usr/local/bin/orbit-cadvisor` (`v0.60.5`) |
 
-Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
-
-`metrics:enable` and `metrics:disable` return an accepted native Operation. Node 209 applies captured public files, container specifications and firewall rules through official cfgmgmt models. The Gateway records the role intent and projects the terminal result. It creates the Grafana password once in its encrypted settings and pushes a names-only execution copy; native SSH writes the protected password file through stdin. No CA private key leaves the Gateway. The canonical certificate workflow creates its key on the target and submits a CSR to the existing signing primitive.
-
-The Gateway renders the container specifications, their systemd units and the owner file into the intent (`MetricsContainerPlan`). Each container carries its spec hash as a label, so an unchanged spec keeps its container.
-
-Exporter admission also captures `service.firewall_commands` as canonical UFW argument lists from the shared firewall catalog. Each rule retains its exact interface, destination and Orbit comment. Service isolation commands insert the deny first, then the Metrics allow at position 1, so newly added rules put the allow before the deny and broad WireGuard trust. The consumer must repair existing rules that have the wrong order. The existing `service.rules` tuples remain the input for the current native workflows. A phase that reads the canonical field ships after the Gateway release that adds it.
-
-Each command has its own workflow, `operation-metrics-enable` or `operation-metrics-disable`, whose steps are the chart steps. Enable installs Docker, writes the configuration, starts the containers, adds the fleet exporters, signs the `metrics.orbit` certificate, allows the Gateway Node in and publishes `metrics.orbit`. Its end check waits until `metrics.orbit` answers with its Orbit certificate.
-
-`node:role:relocate` runs `operation-metrics-enable` as a child against the new Metrics Node, with kind `node.role_relocate`. The Gateway keeps its `metrics.orbit` certificate, so the move signs none. The move removes the old Node's runtime with the `node:role:remove` workflow, not `operation-metrics-disable`: disable withdraws `metrics.orbit` and its certificate, which the moved role keeps. [Native role relocation](/reference/node-provisioning#native-role-relocation) has the order.
-
-Disable withdraws `metrics.orbit` first, so nobody reaches Grafana while it goes. Then it removes the containers, so Prometheus stops before any exporter goes, then the fleet exporters, the Grafana rule and the configuration. It preserves named volumes and credentials unless `--purge-data --force` was requested. Its end check, `Check it is gone`, is one command that fails while a Metrics container or the configuration remains. A failed run keeps its desired role state and native step history; recovery resumes the failed step. Nodes consumers retain their existing shared runtime material contract.
-
-The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
-
-Native Node role convergence checks the container image, mounts, port mappings and restart policy through official `docker_container` checks. Matching containers stay running. Grafana file changes cause replacement; Prometheus configuration is copied onto its existing bind-mounted inode and loaded with SIGHUP.
-
-Observed container state stays in the execution vault. Exporter firewall rules run sequentially within each Node to bound dispatch memory; different Nodes still run in parallel. Role resource fan-outs, including endpoint and file checks, run sequentially within one Node for the same reason. The pinned behavior cannot accept the public environment list in this workflow; the [Swamp evaluation ledger](/reference/swamp-evaluation#node-role-lifecycle-candidates) records that check limitation.
-
-Native `node:role:add <node> metrics` uses the same public container specification. It pulls images with cfgmgmt, starts each container with one Docker argv, and checks it with `docker_container check`. The cfgmgmt file behavior reads Grafana's password from the vault and writes it at mode `0600`. The host's `orbit-grafana` system account uses the container's UID and GID, `472`.
+Both containers use host networking, `json-file` logging (3 × 10 MB), and Docker health checks (`--health-start-period 30s --health-interval 5s --health-retries 12`). Prometheus scrapes node exporters and cAdvisor every 10 seconds, retains samples for 7 days, and labels each target with `node`. Grafana ships with one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. None of these create Orbit `Process` or `Tool` records.
 
 ## Enable and recover
 
-Enable the role with `orbit metrics:enable <node>`. The Node must be active. The role is a singleton and can share a Node with any other role. A second enable returns `node.role_conflict`, even when the existing assignment failed.
+Enable the singleton role on an active managed Linux Node (`metrics` can share a Node with any other role):
 
-The API returns HTTP 202 with an Operation. The CLI follows that Operation. The workflow validates a candidate Prometheus configuration with `promtool`, copies it over the live file in place, writes the Grafana password from stdin, and starts the runtime. One bounded wait each proves Prometheus `/-/ready` and a Grafana login with the stored `admin` password; curl reads that password on the Node and hides it from the process list.
+```bash
+orbit metrics:enable <node>
+```
 
-Then the workflow publishes exporters, certificates, the Grafana firewall allow, Gateway Caddy and private DNS. Each action has its own native step. The Gateway sends no firewall command to the Node agent. Official cfgmgmt owns package, file, image, container removal, systemd and firewall effects; pinned official SSH handles individual commands and the password stdin.
+The API (`POST /api/v1/metrics`) returns HTTP 202 with an [Operation](/reference/operations). Enable installs Docker, validates `prometheus.yml` with `promtool`, writes the generated Grafana `admin` password (`0600`), starts both containers, verifies Prometheus `/-/ready` and Grafana login, configures fleet exporters, signs the `metrics.orbit` certificate, updates firewall rules, and publishes `metrics.orbit` on the Gateway's Caddy and private DNS.
 
-A failed native step retains its history and the desired role assignment. Resume the failed native run through the normal Operation recovery path. The workflow does not hide retries, rollback journals or recovery loops. Publication failure keeps the runtime for recovery. The Gateway projects success only after the complete native workflow succeeds; failure records the shared native error code on the assignment.
-
-The role workflow recreates its two containers from one canonical public Docker specification. The retained Nodes runtime imports that same specification, including its ownership labels, configuration hash, host networking, mount paths and health checks. Node convergence can therefore inspect or reconcile the runtime without treating it as foreign. Exporter preference changes restart only Prometheus. A password reset uses Grafana's API and replaces no container.
-
-### Transport boundary
-
-Every Metrics Node effect is a workflow step with official `@swamp/ssh` or `@swamp/cfgmgmt` behaviors; Swamp code only plans. No local Metrics executor or Node-agent transport remains.
-
-Official cfgmgmt currently exposes no admitted host-key field. Those effects use its default transport and the control worker's managed known-hosts state. Official SSH actions consume the admitted pins directly. This is a separate transport limitation; the role conversion does not claim to close it.
-
-## Relocate
-
-Move the role with `orbit node:role:relocate <node> metrics --force`. Relocate copies missing Grafana credentials to the target. It never overwrites credentials that the target already has. It converges the target, then removes the source runtime and publication.
-
-The target convergence points every node exporter and cAdvisor firewall rule at the target's WireGuard address. It replaces an Orbit rule only when the IPv4 source is the only difference. Any other difference fails with `metrics.exporter_firewall_ownership_drift` or `metrics.cadvisor_firewall_ownership_drift`.
-
-When the target convergence fails, rollback removes the exporters and cAdvisor, and the source keeps its runtime. The command names the `--from` retry that finishes the move. Use `--from` when the target already holds `metrics` and leftovers remain on another Node. Adding or relocating the `gateway` role grants the Gateway access to the `vpn` and `metrics` Nodes, so this path can run.
+If a step fails, the role assignment and step history stay recorded so you can resume or retry. Move the role to another Node with `orbit node:role:relocate <node> metrics --force` ([Native role relocation](/reference/node-provisioning#native-role-relocation)); relocation keeps the `metrics.orbit` certificate and copies missing Grafana credentials to the target without overwriting existing ones.
 
 ## Exporter selection
 
-A Node can host an exporter only when the Gateway manages it. The Node must be active, run Linux, have a WireGuard address, and have a stored SSH host fingerprint. Within that set, the Gateway reads the Node's exporter preference and its active or provisioning roles.
+A Node can host an exporter only when it is an active managed Linux Node with a WireGuard address and stored SSH host fingerprint. Within that eligible set, Orbit combines the Node's exporter preference and active/provisioning roles:
 
-| Preference | Node | Result |
+| Preference | Node | Selected |
 | --- | --- | --- |
-| none | Has an active or provisioning role that takes part in Metrics | Selected |
-| none | Has no such role | Not selected |
-| `enabled` | Any eligible Node | Selected |
-| `disabled` | Any eligible Node except the Metrics Node | Not selected |
-| any | Not eligible | Not selected |
-| any | The Metrics Node, when eligible | Selected |
+| none | Has an active or provisioning role other than `swamp` | Yes |
+| none | Roleless or only `swamp` | No |
+| `enabled` | Any eligible Node | Yes |
+| `disabled` | Any eligible Node except the Metrics Node | No |
+| any | Eligible Metrics Node | Yes |
 
-Every role takes part in Metrics except `swamp`. Adding, converging, removing or relocating `swamp` captures no Metrics fleet, so its root skips the Metrics phases. Metrics for the swamp Node comes with the Metrics port (wave 7).
+`orbit metrics:exporter:enable <node>` and `orbit metrics:exporter:disable <node>` (`PUT`/`DELETE /api/v1/metrics/exporters/{node}`) store the preference and return HTTP 202 with an Operation. Preferences survive role changes and a disabled Metrics role. Enable installs exporters, allows the Metrics Node on ports `9100` and `9102`, checks both endpoints (up to 30 seconds), reloads Prometheus via `SIGHUP` (keeping the mounted config inode intact), and waits up to 60 seconds for the target to appear active. Disable reloads Prometheus first so scraping stops before removing exporters.
 
-`orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` return an accepted native Operation and store the desired preference. Node 209 runs the official cfgmgmt package, fetch, file, systemd and firewall models. The captured public intent fixes the target, SSH identity, unit configuration, source-scoped port rules and complete Prometheus configuration. Steps read no Gateway state. Admission refuses a second active exporter change for the same Metrics owner before writing its preference.
+Each selected Node installs `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf` binding to its WireGuard address with `Restart=always`, `RestartSec=2`, `--collector.systemd --collector.systemd.unit-include=orbit-node-worker[.]service`, and textfile directory `/var/lib/prometheus/node-exporter` (used by [`ci-runner`](/reference/node-provisioning#runner-state-for-the-runner-view)).
 
-Each command has its own workflow, `operation-metrics-exporter-enable` or `operation-metrics-exporter-disable`, built from three shared child workflows: `metrics-exporter-node` (package, binaries, units and service exporters), `metrics-exporter-allows` (the source-scoped firewall rules) and `metrics-prometheus-publish`. Enable installs the exporters and allows the Metrics Node, checks both endpoints, then publishes. Each check retries for up to 30 seconds, because the exporters were just restarted and cAdvisor needs a few seconds to listen. Disable publishes first, so Prometheus stops scraping the Node before its exporters, the `prometheus-node-exporter` package and the allows go.
-
-Publishing validates a candidate configuration with `promtool`, copies it over the live file in place and sends the running Prometheus container `SIGHUP`. Prometheus bind-mounts that one file, so a rename would leave it reading the old one. A reload keeps collection from every other Node running; only a change to the container itself, which is a role update, restarts Prometheus. The end check reads the active targets and requires the Node's exporter address there after enable, and absent after disable.
-
-A failed run retains desired preference, public configuration and native history for server-backed resume from the failed step. It creates no container replacement, rollback journal or Grafana credential copy. The Metrics role composes the same Node and allows children for each exporter.
-
-These commands store the preference. Nothing else writes one: adding or adopting a Node stores no preference. Preferences survive role changes and a disabled Metrics role. The Gateway checks eligibility before it stores an enabled preference or starts remote work.
-
-A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The drop-in also names the textfile folder `/var/lib/prometheus/node-exporter`, so the exporter reads the `.prom` files there and does not depend on a distribution default. The [`ci-runner` role](/reference/node-provisioning#runner-state-for-the-runner-view) writes its runner state in that folder. Explicit exporter changes use the official firewall model to allow the Metrics Node source address to reach the port.
-
-Explicit Metrics role and exporter Operations capture their fleet at admission and compose native workflows. Node parents retain their shared Metrics runtime material and lower contract. Gateway Node provisioning, role baselines and Route removal perform no synchronous fleet convergence.
-
-Node role and fleet reconciliation use the native Metrics exporter lowers. They receive captured Node and Metrics addresses, snapshot exporter state and manage packages, binaries, units and exact firewall rules under the existing host locks. Their recovery restores captured configuration, services and firewall sources. Explicit exporter preference Operations use the placed workflow above.
-
-Exporter listeners bind to the WireGuard address. Explicit exporter changes use the trusted WireGuard membership boundary: the broader `orbit:wireguard-members` allow still admits other peers, including to FPM port 9114. Source-scoped exporter allows do not override that rule. The official firewall model neither inserts deny rules ahead of member rules nor removes older interface-specific service rules. Existing Node and role convergence retains those older rules. See [service metrics](/reference/service-metrics#private-access) for Caddy access checks.
-
-### Exporter degradation
-
-`orbit metrics:status` asks Prometheus which scrape targets are up and reports stored degradation metadata. An exporter is `active` when the node-exporter and cAdvisor targets of its Node are both up, `inactive` when one is down or missing, and `unknown` when Prometheus did not answer through Grafana; the status then reports Prometheus and Grafana as `unhealthy`.
-
-A selected exporter that is not `active`, or that is skipped, makes `reconcile_status` degraded even when Prometheus and Grafana are healthy. A configuration that differs from Orbit's is not read here; the next exporter Operation finds it. Status reads perform no convergence. A fresh explicit exporter Operation captures current desired state; retained Node parents own their existing lower recovery.
+`orbit metrics:status` queries Prometheus through Grafana and reports each exporter as `active` (both targets up), `inactive`, or `unknown` (Prometheus unreachable). Any non-active or skipped selected exporter marks `reconcile_status` as degraded without mutating the Node.
 
 ## cAdvisor
 
-The node exporter reports systemd unit state, but not the CPU and memory of each unit. So each selected Node also runs cAdvisor `v0.60.5`. Orbit verifies its SHA-256 checksum before install. cAdvisor reads cgroups, so it covers systemd and Docker Processes. `GET /api/v1/processes` reads CPU and memory from it.
+Because exporter Nodes may not run Docker, cAdvisor `v0.60.5` runs as a checksum-verified static binary (`/usr/local/bin/orbit-cadvisor`, `orbit-cadvisor.service`, `Restart=always`) reading cgroups directly for both systemd and Docker Processes. It collects CPU and memory only and drops Docker container labels to avoid series cardinality explosions. `GET /api/v1/processes` reads `orbit-process-{id}-{name}` (Docker) and `orbit-process-{id}-{name}.service` (systemd), returning `null` rather than `0` when no series exists.
 
-cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The source-scoped firewall rule allows the Metrics Node to reach port 9102. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the source-scoped rule, and the binary. Older rules tied to an interface stay under Node and role convergence ownership.
+## Task insights scrape
 
-cAdvisor collects only CPU and memory. Its flags disable every other metric kind and drop Docker container labels, because an unfiltered cAdvisor adds thousands of series per Node. A Docker Process's series uses its container name, `orbit-process-{id}-{name}`. A systemd Process's series uses its unit name, `orbit-process-{id}-{name}.service`. A Process without a series reports null CPU and memory, never zero.
-
-## Service metrics
-
-[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Explicit role and exporter workflows capture their service catalog and compose the owning native workflows. Gateway provisioning, baseline and Route actions perform no synchronous Metrics fleet mutation. Node parents retain their shared service-metrics lower until their own conversion.
-
-## Swamp worker state
-
-The Node exporter enables its systemd collector for `orbit-node-worker.service`. Query `node_systemd_unit_state{name="orbit-node-worker.service",state="failed"} == 1` to detect a failed worker. Doctor also reports `node.worker_failed` from its read-only Node observation. Native authentication and restart errors remain in the worker journal.
+Prometheus scrapes `/api/v1/metrics/task-insights` on the active Gateway every 60 seconds (`job="orbit-task-insights"`, 10-second timeout, 20,000-sample limit) over the Gateway's WireGuard IP on port 443 with SNI `gateway.orbit` and the inline Orbit root CA. Only the active Metrics Node is authorized (`metrics.scraper_required`, 403, for any other peer). If no single active Gateway with a readable root CA exists, rendering logs `metrics.task_insights_job_skipped` and omits this job.
 
 ## Process runtime status
 
-For Horizon and the scheduler on a container Gateway, Process status reads the unit in the serving release. The probe checks the release revision, so a switch cannot attribute the former live unit to the new release.
+Process lists resolve `runtime_status` in priority order:
 
-A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Process whose Node has no fresh view, it reads Prometheus in one query.
+1. Recent `process.status` broadcast from a Gateway start, stop, or restart (valid for 30 seconds on host/checkout Processes).
+2. Fresh [Node agent view](/reference/node-agent#gateway-view).
+3. Prometheus fallback (cached 10 seconds), falling back to SSH if Prometheus is unreachable.
+4. For [container Processes](/reference/development-containers#processes), one batched `incus exec` SSH call per Node (4-second budget) returns `runtime_status`, `observed_at`, and `runtime_error_code`.
 
-In Prometheus, a systemd Process takes its state from `node_systemd_unit_state`. A missing unit is `inactive`. cAdvisor reports only running containers, so a Docker Process with a series is `running` and one without is `exited`. The Gateway caches this answer for 10 seconds.
-
-For container Processes, each list reads all units on a Node in one SSH call. The connection has two seconds and the whole call has four seconds. Twenty container Processes on one Node cost one SSH round trip and twenty local `incus exec` unit reads, without a workflow, Operation, vault copy or background refresh. Each remote batch has a three-second deadline. A Node failure affects only its Processes and does not fail the list.
-
-`runtime_status` is the returned unit state. `observed_at` is the ISO 8601 UTC time that the read attempt completed, and `runtime_error_code` is null on success or a public reason for `unknown`. A later successful read clears the reason. Host and checkout Processes keep their existing status sources and null observation fields.
-
-A running or unfinished Instance migration shows `unknown` with `instance.lifecycle_busy`, a null observation time and no remote read. A stopped unit or a missing unit in a running container shows `inactive`. A stopped or missing container, or an unreachable Node, shows `unknown` with `process.target_unavailable`. No previous state is served after a failed read.
-
-These statuses describe sampled runtime state, not health. A systemd Process can appear `active` between crashes. [Doctor](/cli/doctor/doctor#what-each-family-checks) reports `process.crash_loop` from the unit's auto-restart sub-state or an increasing restart count when the Process is desired running; the [Processes reference](/reference/processes-and-schedules#process-runtime-state) owns that rule. Doctor does not need the Metrics role to inspect this evidence on the Node.
-
-After the Gateway starts, stops, or restarts a Process, it reads the new status from the Node and broadcasts `process.status`. Lists of Node and checkout Processes show that status for 30 seconds, ahead of the view and Prometheus. When Prometheus cannot answer, the list asks each remaining Node over SSH and does not cache the answer.
+On a container Gateway, Horizon and scheduler Process status reads the serving release's unit and verifies its revision. Sampled status is not a health check; [Doctor](/cli/doctor/doctor#what-each-family-checks) detects `process.crash_loop` directly on the Node.
 
 ## Grafana access
 
-Open Grafana at `https://metrics.orbit` from the active Gateway Node, or from an active WireGuard peer with an access grant to the Gateway Node. A grant to only the Metrics Node is not enough. Grafana then asks for its own login.
+Open Grafana at `https://metrics.orbit` or `/grafana/` on the Gateway origin from the active Gateway Node or an active WireGuard peer with an access grant to the Gateway Node (a grant to only the Metrics Node is insufficient).
 
-Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. Caddy runs that check in the current Gateway release: it resolves the stable Gateway application path for each request, as the Gateway site does ([Release layout](/reference/gateway-recovery#release-layout)). It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
+Before every request, Gateway Caddy calls `GET /api/v1/metrics/grafana/authorize` using the peer's WireGuard connection IP (ignoring forwarding headers) and proxies authorized requests to port 3000 on the Metrics Node. Removing a Node or its Gateway access grant reloads Gateway Caddy so open streaming connections close immediately (`metrics.caddy_publication_failed` on reload failure). On the Metrics Node, UFW rules `orbit:metrics-grafana-upstream` (allow Gateway) and `orbit:metrics-grafana-isolation` (deny others) restrict port 3000 to the Gateway Node ahead of broad WireGuard rules.
 
-The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. When a Node or an access grant to the Gateway Node is removed while a Metrics role exists, the Gateway calls `caddy.reload` through the local agent adapter. The agent holds the shared Caddy publication lock during the reload. Later requests fail, and open streaming connections close. A failed reload reports `metrics.caddy_publication_failed`.
+## Authorization and credentials
 
-The Gateway's own origin also serves Grafana under `/grafana/`, behind the same check. The web app reads Node metrics there. On the Metrics Node, the rules `orbit:metrics-grafana-upstream` and `orbit:metrics-grafana-isolation` admit only the Gateway to port 3000. This applies also when the Gateway and Metrics roles share a Node. The `metrics` role's convergence owns this boundary. It inserts both rules from the Gateway's firewall rule catalog at the top of the rule list, the allow above the deny, so both come before broad WireGuard trust. Removal of the role deletes both rules.
+All Metrics API routes require exactly one active Gateway Node and an access grant to that Gateway Node (`node_access.required`, 403, otherwise).
 
-## Authorization
-
-Every Metrics route, reads included, needs exactly one active Gateway Node. So does every `node:role:add` and `node:role:remove` call for `metrics`. The Gateway authorizes the caller against the Gateway Node. The Gateway Node itself passes. Every other caller needs an access grant to the Gateway Node, or it gets `node_access.required` (HTTP 403). A grant to only the Metrics Node or an exporter Node is not enough.
-
-With no active Gateway, or more than one, every caller gets `node_access.required` from these routes.
-
-## Credentials
-
-The Grafana user is `admin`. The first convergence generates a random password. The Gateway stores it encrypted in the Metrics Node's settings. Later convergence reuses it.
-
-`orbit metrics:credentials` reads the Gateway's stored administrator credential without executing a host action. `--reset` admits one native Operation. The Gateway creates or reuses an encrypted pending password and stores three curl configurations in the vault; run inputs carry only their key names. On 209, official pinned SSH runs one bounded curl command per action, with its configuration on stdin. It checks the pending login, changes the password only after HTTP 401, and verifies the new login. A native assert requires HTTP 200. Only HTTP status codes enter history; response bodies are discarded. 
-
-The run has no result step: the Gateway reads success from the native assert. Terminal success promotes the pending password; failure preserves it. The CLI follows the Operation before reading the stored credential. After a failed or uncertain reset, a new `metrics:credentials --reset` reuses the pending password and checks it before another write. A direct native resume does not reopen an already-terminal Gateway Operation.
-
-Short database transactions protect credential creation, pending reuse, promotion and purge. The Gateway holds no execution-lifetime lock and performs no host verification during a read. Native workflow steps own the execution. Credential responses use `Cache-Control: no-store`; Operation results contain public reset metadata only.
-
-### Material for native parents
-
-An admitted Node parent reads existing fleet material through `MetricsFleetRuntimeMaterial::resolveFleetMaterial(plan, ownerNodeId, candidate?)`. It validates the complete public plan digest, real Metrics assignment and owner address before reading the stored password. An explicit matching enrollment candidate permits capture before that Node becomes active. The lower creates no password, Operation, endpoint or host effect. It returns the existing `OperationSecretValue`; debug and JSON serialization redact its contents.
-
-The private value has `runtime: {operation: 'converge', assignment, configuration}` and `verify: {operation: 'verify', password}`. The configuration includes the admitted public files and the existing Grafana password file. A parent captures this value under `metrics_runtime`, beside its role-specific `runtime_material`. The protected fields are `metrics_runtime.runtime.configuration` and `metrics_runtime.verify.password`. The parent owns their binding to official SSH stdin and their redaction. This data API does not activate a native parent or grant execution authority.
+The Grafana user is `admin` with a random password generated on first enable and stored encrypted on the Metrics Node. `orbit metrics:credentials` (`GET /api/v1/metrics/credentials`, `Cache-Control: no-store`) reads the stored password without contacting the Node. `orbit metrics:credentials --reset` (`POST /api/v1/metrics/credentials/reset`) starts an Operation (202) that updates the password via Grafana's API, verifies login, and promotes the new password only on HTTP 200.
 
 ## Disable and purge
 
-`orbit metrics:disable --force` returns an accepted native Operation. Force is required for removal. The workflow withdraws exporter and service monitoring, Gateway Caddy, private DNS and the published certificate. It stops the disabled runtime units, removes both containers, deletes their unit files and `/etc/orbit/metrics`, and removes its source-scoped Grafana allow. Older interface-specific rules stay under Nodes convergence ownership.
+`orbit metrics:disable --force` (`DELETE /api/v1/metrics`) requires `--force` (`metrics.force_required`, 422) and returns an Operation (202). It withdraws `metrics.orbit`, removes the Prometheus and Grafana containers, unit files, `/etc/orbit/metrics`, fleet exporters, and Grafana firewall rules, and deletes the role assignment on success.
 
-The role assignment is removed only on terminal success. Failure keeps it and the credentials for native recovery. A single active Gateway and all captured SSH targets must be available at admission; this command does not report successful partial publication cleanup.
-
-By default, removal keeps both named data volumes, the stored Grafana password, Docker, installed packages and exporter preferences. `--purge-data --force` also removes the two exact named volumes through Docker and purges stored active and pending passwords only after native success. Docker refuses volume removal while a container still uses it. Removal has no private rollback journal.
-
-The disabled runtime units have no boot target or restart policy. Docker owns reboot behavior while a container exists. Removing a container through retained Nodes paths leaves no enabled unit that can recreate it.
-
-Generic Node removal and relocation retain their separately owned workflows and recovery contracts. Their offline disposition does not prove that this role workflow cleaned an unreachable host.
+By default, named volumes, stored Grafana credentials, Docker, and exporter preferences are preserved so re-enabling keeps data. Pass `--purge-data --force` to also remove both named volumes and stored credentials after native cleanup succeeds.
 
 ## Read Node metrics
 
-[`orbit node:metrics`](/cli/node/metrics) reads the latest metrics snapshot reported by the [Node agent](/reference/node-agent#facts). It needs no Metrics role or exporter, makes no outbound query, and retains the snapshot when the Node goes offline. Its observation time, agent state and `possibly_outdated` flag describe that recorded reading.
+[`orbit node:metrics`](/cli/node/metrics) returns the latest metrics snapshot reported by the [Node agent](/reference/node-agent#facts) with `possibly_outdated` when stale (`node.metrics_unavailable`, 422, if no snapshot exists). The [web app](/reference/web-app) queries Prometheus every 10 seconds through `/grafana/` using a 40-second rate window.
 
-The [web app](/reference/web-app) reads CPU, memory, swap, load, uptime, pressure, and disk from the role's Prometheus through Grafana's datasource proxy with the stored Grafana credential. Each rate uses a 40-second window. This window survives a dropped scrape and still shows a spike.
+## Errors
 
-The web app refreshes node metrics every 10 seconds through the Gateway's `/grafana/` path. The CLI's recorded reading has no age limit: stale readings succeed with `possibly_outdated: true`, while no snapshot yet answers `node.metrics_unavailable` (HTTP 422).
+Metrics endpoints return these error codes:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `node_access.required` | 403 | Caller lacks Gateway Node access or no single active Gateway exists. |
+| `metrics.scraper_required` | 403 | Non-Metrics peer requested `/api/v1/metrics/task-insights`. |
+| `metrics.assignment_missing` | 409 | No active Metrics role assignment exists. |
+| `metrics.assignment_drift` | 409 | Recorded Metrics assignment state does not match expected state. |
+| `metrics.node_ineligible`, `metrics.node_inactive` | 409 | Target Node is inactive or ineligible for Metrics. |
+| `metrics.exporter_node_inactive`, `metrics.exporter_node_ineligible` | 409 | Target exporter Node is inactive or ineligible. |
+| `metrics.credentials_missing` | 409 / 422 | Stored Grafana credentials are missing (422 on read, 409 on reset). |
+| `node.role_conflict` | 409 / 422 | Metrics role is already assigned, or attempted to disable the Metrics Node's own exporter. |
+| `metrics.platform_unsupported` | 422 | Target Node is not Linux. |
+| `metrics.force_required` | 422 | `--force` was omitted on `metrics:disable`. |
+| `node.metrics_unavailable` | 422 | No agent metrics snapshot exists yet for the Node. |
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### One Metrics Node with plain Docker containers
-
-One Node keeps placement and private publication simple. Standalone containers keep development and upgrades simple. Do not add Docker Swarm, Compose, custom images, or a registry for this role. The cost is no high availability and no rolling Metrics updates.
-
-### One canonical runtime specification
-
-The official container model cannot express the retained multi-argument Prometheus command, ownership labels and health checks. The role therefore renders the shared Docker argv into systemd oneshot units and applies them through official cfgmgmt. Its container model still owns removal, and its image model owns image availability. This keeps one specification for Nodes and role Operations without adding a transport or supervisor.
-
-### cAdvisor as a binary
-
-Exporter Nodes, such as the Gateway Node, often have no Docker. So cAdvisor runs as a static binary, not as a container.
-
-### The Gateway Node as the authority
-
-The Gateway owns the Metrics boundary. Authorization against the Gateway Node gives one stable authority, even when Metrics runs on another Node. A grant on the Metrics Node would split that authority.
-
-### A Gateway check in front of Grafana
-
-WireGuard membership alone does not prove Gateway authority. A Grafana login alone does not prove Orbit authorization. So the Gateway checks each request, and Grafana keeps its own login as a second gate. Direct Grafana access for every peer is a rejected alternative.
-
-### Exporters only on managed Nodes
-
-A Node without Gateway SSH management has no service-management contract with the Gateway. An exporter preference must not turn such a Node into a managed Node. A roleless Linux Node that the Gateway manages can still host an exporter. A managed Mac cannot host the Linux exporter in this slice. Enabling an exporter or assigning the Metrics role on macOS returns `metrics.platform_unsupported` (HTTP 422) before SSH.
-
-### The credential in Metrics settings
-
-Metrics keeps its own encrypted settings. Orbit has no generic credential system. A fresh reset reuses the pending password after failure. Only a successful native verification promotes it; credential reads return the stored active value.
-
-### Removal that keeps data
-
-Volumes and the password survive a removal, so re-enabling is safe. Data deletion needs explicit `--purge-data --force` intent. It addresses only the two fixed Metrics volume names.
-
-### Web metrics through Grafana
-
-Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
-
-
-## Shared Node runtime material
-
-Node parents consume the retained Metrics material API and canonical runtime specification. Their existing native lower owns its execution and recovery. Metrics credential resets, role changes and exporter preference changes use their fixed native workflows. The Gateway retains state, material capture and observation; its former synchronous fleet, service, cAdvisor and exporter mutation adapters are deleted.
+Running Prometheus and Grafana as standalone Docker containers on one Node keeps placement and upgrades simple without Swarm or Compose, while running cAdvisor as a static binary lets exporter Nodes without Docker report Process usage. Authorizing Grafana through the Gateway Node keeps one access boundary even when Metrics moves, and proxying web metrics through `/grafana/` keeps Prometheus unpublished on `127.0.0.1:9090`.

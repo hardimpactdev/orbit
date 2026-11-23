@@ -8,6 +8,7 @@
 #   intent.container.workspace            The workspace in the container: the source of the `checkout` device.
 #   intent.fleet.guests                   {gateway, app-dev, app-prod}: the nested containers by role (TaskVmNestedFleet::Guests).
 #   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
+#   intent.fleet.layout.<role>.wireguard  Its address in the fleet's WireGuard network (NestedFleetLayout::Layout).
 #   intent.fleet.layout.<role>.memory     Its memory limit and its swap, owned rules (NestedFleetIntent::Memory).
 #   intent.fleet.host                     Whether the refresh builds the Instance host on nested-app-dev: the default's ID map is
 #                                         2,000,000 or more (NestedFleetIntent).
@@ -62,6 +63,9 @@
     # The transient timer that thaws a fleet frozen for `base` when the refresh's controller is lost (instance-fleet-refresh.yml).
     fleet_thaw_unit: orbit-fleet-thaw
     fleet_tunnel: wg-nested
+    # The tunnel's boot script and unit (instance_fleet_tunnel.py); the executor names the unit too (fleet.rs `TUNNEL_UNIT`).
+    fleet_tunnel_boot: /etc/orbit/wg-nested-up
+    fleet_tunnel_unit_name: orbit-inner-fleet-tunnel.service
     # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
     fleet_network: oe-nested
     fleet_tunnel_port: "51821"
@@ -132,7 +136,7 @@
           # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
-      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service'] -%}
+      {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service', 'orbit-gateway-horizon.service', 'orbit-gateway-engine.service'] -%}
       {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/50-inner-fleet-proxy.conf', 'content': fleet_unit_environment}) -%}
       {%- endfor -%}
       {{ out }}
@@ -157,6 +161,49 @@
       # registry and fails `database.server_image_pull_failed`. dockerd reads it when it starts, as the nested containers start.
       - path: /etc/systemd/system/docker.service.d/50-inner-fleet-proxy.conf
         content: "{{ fleet_unit_environment }}"
+      # The executor's engine steps reach GitHub for a clone's branch (instance.fetch_branch) and read no /etc/environment either.
+      - path: /etc/systemd/system/orbit-executor.service.d/50-inner-fleet-proxy.conf
+        content: "{{ fleet_unit_environment }}"
+    # The hub starts the WireGuard handshake with each nested Node as soon as its own WireGuard is up
+    # (docs/reference/development-containers.md#the-fleet-boots-fast). A Node that boots first sends its handshake to a hub that does not
+    # listen yet, and the kernel sends the next one only 5 s later. So each nested Node listens on the fleet's fixed port, and the hub sets
+    # each Node's address on the inner bridge and a keepalive on its peer, which sends the hub's handshake at once. The hub finds each peer by
+    # its WireGuard address, so a new key needs no new file.
+    fleet_handshake_port: "51820"
+    fleet_handshake_script: |
+      #!/bin/sh
+      # Managed by Orbit: the hub starts the handshake with each nested Node as soon as its WireGuard is up.
+      peer() { wg show orbit allowed-ips | awk -v ip="$1" '{for (i = 2; i <= NF; i++) if ($i == ip) print $1}'; }
+      key=$(peer {{ intent.fleet.layout['app-dev'].wireguard }}/32)
+      [ -n "$key" ] && wg set orbit peer "$key" endpoint {{ intent.fleet.layout['app-dev'].address }}:{{ fleet_handshake_port }} persistent-keepalive 25
+      key=$(peer {{ intent.fleet.layout['app-prod'].wireguard }}/32)
+      [ -n "$key" ] && wg set orbit peer "$key" endpoint {{ intent.fleet.layout['app-prod'].address }}:{{ fleet_handshake_port }} persistent-keepalive 25
+      exit 0
+    fleet_handshake_files:
+      gateway:
+        - path: /usr/local/lib/orbit/nested-handshake.sh
+          content: "{{ fleet_handshake_script }}"
+        - path: /etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf
+          content: |
+            # Managed by Orbit: the hub starts the handshake with each nested Node.
+            [Service]
+            ExecStartPost=/bin/sh /usr/local/lib/orbit/nested-handshake.sh
+      node:
+        - path: /etc/systemd/system/wg-quick@orbit.service.d/60-nested-handshake.conf
+          content: |
+            # Managed by Orbit: a fixed port, so the hub starts the handshake.
+            [Service]
+            ExecStartPost=/usr/bin/wg set orbit listen-port {{ fleet_handshake_port }}
+    # A nested container has no devices to manage: udev and its trigger cost a second of each boot on the way to basic.target, and the
+    # ext4 scrub reaper has no volume to reap. Each unit is skipped in a container, the way a mask would, by a condition in a drop-in.
+    fleet_boot_files: >-
+      {%- set out = [] -%}
+      {%- for unit in ['systemd-udev-trigger.service', 'systemd-udevd.service', 'systemd-udevd-control.socket', 'systemd-udevd-kernel.socket',
+                       'e2scrub_reap.service'] -%}
+      {%-   set _ = out.append({'path': '/etc/systemd/system/' ~ unit ~ '.d/zz-orbit-nested.conf',
+                                'content': '# Managed by Orbit: a nested container skips this unit.\n[Unit]\nConditionVirtualization=!container\n'}) -%}
+      {%- endfor -%}
+      {{ out }}
     # The nested containers keep their root disks small (docs/reference/development-containers.md#the-inner-machines-stay-small): apt
     # keeps no package file after an install (`apt-get` keeps each one by default; the egress proxy serves them again), and journald
     # keeps 64 MiB. This file sorts after `orbit-retention.conf`, which a Gateway role writes with 256 MiB, so its cap wins. Only the
@@ -190,15 +237,15 @@
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_memory['gateway']) }}"
-        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_unit_files + fleet_pool_files + fleet_marker_files + fleet_egress_files + fleet_size_files + fleet_git_files + fleet_handshake_files.gateway + fleet_boot_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_instance_host, fleet_memory['app-dev']) }}"
-        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files + fleet_handshake_files.node + fleet_boot_files }}"
       app-prod:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment, fleet_memory['app-prod']) }}"
-        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files }}"
+        files: "{{ fleet_egress_files + fleet_size_files + fleet_git_files + fleet_handshake_files.node + fleet_boot_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance
     # container's resolver, which has no DNS server and refuses at once; dnsmasq drops a refusal, so each such lookup waited out its

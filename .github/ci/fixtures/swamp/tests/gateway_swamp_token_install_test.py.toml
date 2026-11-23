@@ -1,0 +1,10 @@
+file = "swamp/tests/gateway_swamp_token_install_test.py"
+cost = 1
+inputs = [
+  "swamp/scripts/gateway-swamp-token-install.py",
+]
+cases = [
+  "test_empty_input_means_nothing_is_due",
+  "test_a_new_generation_replaces_only_its_three_settings_after_a_private_backup",
+  "test_a_wrong_kind_a_near_expiry_or_a_foreign_name_is_refused_and_the_env_kept",
+]

@@ -7,6 +7,8 @@ namespace App\Models;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
+use App\Domain\Tasks\TaskInsightObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -32,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $resolution_comment_id
  * @property int|null $answered_comment_id
  */
+#[ObservedBy([TaskInsightObserver::class])]
 final class TaskQuestion extends Model
 {
     #[\Override]

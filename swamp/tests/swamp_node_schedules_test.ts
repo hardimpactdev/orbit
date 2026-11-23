@@ -74,6 +74,7 @@ esac
 `,
     );
     await Deno.chmod(`${folder}/swamp`, 0o755);
+    // The fake swamp needs no Swamp Club credential env; gateway_swamp_load_test.ts proves swamp-env and its absence.
     const script = load
         .replaceAll("/usr/local/bin/swamp", `${folder}/swamp`)
         .replace(

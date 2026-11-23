@@ -32,18 +32,34 @@ enum ContainerServer: string
         return InstanceHostIntent::AgentFolder.'/current/agent/bin/'.$this->bin();
     }
 
+    /**
+     * The pattern whose first group is the T3 contract version in the program's `--version` line: the `serverVersion` its
+     * `/.well-known/t3/environment` reports, so a switch and a wake can tell which server answers.
+     */
+    public function versionPattern(): string
+    {
+        return match ($this) {
+            self::T3 => '^t3 v?(\d+\.\d+\.\d+)\b',
+            self::Conn => '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b',
+        };
+    }
+
     /** The unit's command: the program with the image's arguments. */
     public function serve(): string
     {
         return $this->program().' serve --host=0.0.0.0 --port='.InstanceHostIntent::T3Port.' --no-browser';
     }
 
-    /** The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too. */
+    /**
+     * The server command and, for Conn, the agent folder's one headless Chrome, which agent-browser opens too, and Antigravity's
+     * self-updater off: Conn hands its own environment to `agy`, which takes only `true` here.
+     */
     public function dropIn(InstanceFolders $folders): string
     {
         $browser = '';
         if ($this === self::Conn) {
-            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n";
+            $browser = 'Environment=CONN_SERVER_BROWSER_PATH='.InstanceContainer::headlessChrome($folders)."\nEnvironment=T3CODE_SERVER_BROWSER_SANDBOX=0\n"
+                ."Environment=AGY_CLI_DISABLE_AUTO_UPDATE=true\n";
         }
 
         return "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=".$this->serve()."\n".$browser;

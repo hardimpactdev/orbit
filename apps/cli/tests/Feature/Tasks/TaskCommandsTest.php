@@ -115,7 +115,7 @@ describe('omitted and invalid input', function (): void {
         'question close without reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded'], 'task.reason_required'],
         'question close with a long reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'task.reason_invalid'],
         'create without project' => ['task:create', ['title' => 'T', '--brief' => 'B'], 'task.project_required'],
-        'parent with child deliverables' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.option_invalid'],
+        'parent with an unreadable deliverables file' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.deliverables_invalid'],
         'child with parent status' => ['task:create', ['--parent' => '1', '--status' => 'todo'], 'task.option_invalid'],
         'child with parent orchestration' => ['task:create', ['--parent' => '1', '--orchestration' => 'external'], 'task.option_invalid'],
         'child with parent subtasks' => ['task:create', ['--parent' => '1', '--subtasks' => '/unused'], 'task.option_invalid'],
@@ -989,6 +989,32 @@ describe('the copy turn agent of a task group', function (): void {
             '--reviewer-effort' => 'max', '--json' => true]))->toBe(0);
         expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
             ->toBe(['project_id' => 1, 'title' => 'Agent', 'brief' => 'Work', 'implementer_model' => 'claude-sonnet-5-5', 'reviewer_effort' => 'max']);
+    });
+
+    it('sends an Antigravity model at any effort as given, and lists no provider values of its own: the Gateway names what each provider takes', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+        expect(Artisan::call('task:create', ['title' => 'Agent', '--project' => '1', '--brief' => 'Work', '--implementer-provider' => 'antigravity',
+            '--implementer-model' => 'gemini-4-neon', '--implementer-effort' => 'medium', '--reviewer-provider' => 'claude', '--reviewer-effort' => 'high', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['project_id' => 1, 'title' => 'Agent', 'brief' => 'Work', 'implementer_provider' => 'antigravity', 'implementer_model' => 'gemini-4-neon',
+                'implementer_effort' => 'medium', 'reviewer_provider' => 'claude', 'reviewer_effort' => 'high']);
+        $commands = ['task:create' => '', 'task:update' => '', 'project:update' => 'task-'];
+        foreach ($commands as $command => $prefix) {
+            foreach (['implementer', 'reviewer'] as $role) {
+                foreach (['provider', 'effort'] as $value) {
+                    $description = Artisan::all()[$command]->getDefinition()->getOption("{$prefix}{$role}-{$value}")->getDescription();
+                    expect($description)->not->toContain('antigravity')->not->toContain('codex')->not->toContain('xhigh');
+                }
+            }
+        }
+    });
+
+    it('shows the Gateway\'s refusal of a role its provider cannot honour, with the field and what the provider accepts', function (): void {
+        MockClient::global(gateway_fixture_mock('tasks/task-create/agent-refused'));
+        expect(Artisan::call('task:create', ['title' => 'Agent', '--project' => '1', '--brief' => 'Work', '--implementer-provider' => 'antigravity', '--json' => true]))->toBe(1);
+        $error = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error'];
+        expect($error['code'])->toBe('validation.failed')
+            ->and($error['details']['implementer_model'][0])->toContain('is no Antigravity model; antigravity accepts gemini-4-neon');
     });
 
     it('sets one role and clears the other on task:update', function (): void {

@@ -18,7 +18,7 @@ use SensitiveParameter;
  */
 final readonly class ExecutorOrderSigner
 {
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names'];
 
     public const int MaxWireBytes = 4096;
 
@@ -43,6 +43,31 @@ final readonly class ExecutorOrderSigner
             throw new RuntimeException('ORBIT_EXECUTOR_SIGNING_KEY is not a base64 Ed25519 secret key.');
         }
         $this->secretKey = $secretKey;
+    }
+
+    /**
+     * The X25519 key an engine step names as `seal_to`, so the executor seals secret output to this Gateway alone (ADR 0271).
+     * It derives from the signing key; base64.
+     */
+    public function sealRecipient(): string
+    {
+        return base64_encode(sodium_crypto_sign_ed25519_pk_to_curve25519(sodium_crypto_sign_publickey_from_secretkey($this->secretKey)));
+    }
+
+    /**
+     * Opens a sealed box the executor made to [sealRecipient()]. The plaintext is a secret: the caller stores it where its
+     * reader expects it and never logs it.
+     *
+     * @throws RuntimeException `executor.seal_invalid` when the box is not base64 or does not open with this key.
+     */
+    public function open(string $sealed): string
+    {
+        $box = base64_decode($sealed, true);
+        $public = sodium_crypto_sign_ed25519_pk_to_curve25519(sodium_crypto_sign_publickey_from_secretkey($this->secretKey));
+        $pair = sodium_crypto_box_keypair_from_secretkey_and_publickey(sodium_crypto_sign_ed25519_sk_to_curve25519($this->secretKey), $public);
+        $plain = is_string($box) && $box !== '' ? sodium_crypto_box_seal_open($box, $pair) : false;
+
+        return is_string($plain) ? $plain : throw new RuntimeException('executor.seal_invalid');
     }
 
     /** @throws RuntimeException when the Gateway has no usable signing key. */

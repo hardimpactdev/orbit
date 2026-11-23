@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -56,7 +58,7 @@ final readonly class NestedFleetRefresh
         foreach ($this->defaults() as $instance) {
             $label = $instance->project->slug.'/'.$instance->name.' on '.$instance->node->name;
             try {
-                $results[$label] = 'operation:'.$this->deploy->pinned($instance, self::Trigger, null, $commit)->id;
+                $results[$label] = 'operation:'.$this->deploy->pinned($instance, self::Trigger, null, $commit, release: true)->id;
             } catch (ResourceOperationException $refused) {
                 $results[$label] = $refused->errorCode;
             } catch (Throwable $failed) {
@@ -111,19 +113,37 @@ final readonly class NestedFleetRefresh
      */
     private function advanceDefault(Instance $instance, string $commit, array $previous): array
     {
+        // The release's own attempts, by the admission's `origin`, never by `triggered_by`, which any caller names.
         $attempts = Operation::query()->where('kind', OperationKinds::InstanceDeploy)
-            ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)
-            ->where('triggered_by', self::Trigger)->where('input->commit', $commit)->latest('id')->limit(self::Attempts)->get();
+            ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)->where('input->commit', $commit)
+            ->where('input->origin', ContainerDeployOutcome::ReleaseOrigin)
+            ->latest('id')->limit(self::Attempts)->get();
         $last = $attempts->first();
         $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
         $receipt = $last === null ? [] : ['operation_id' => $last->id];
         if ($failures > 0) {
             $receipt['admission_failures'] = $failures;
         }
-        if ($last !== null && (! $last->status->terminal() || $last->lock_key !== null)) {
+        if ($last !== null && ! $last->status->terminal()) {
             return ['status' => 'pending', ...$receipt];
         }
+        if ($last !== null && $last->lock_key !== null) {
+            // An ended run whose result is unknown keeps its Instance fence (docs/reference/executor.md): the refresh ends here, naming the
+            // Operation, and neither retries through the fence nor releases it, so the release cycle goes on.
+            return ['status' => 'failed', 'error_code' => 'instance.refresh_fenced', ...$receipt];
+        }
         $runtime = $instance->runtime;
+        if ($last !== null && $last->status === OperationStatus::Succeeded && ($last->result['outcome'] ?? null) === ContainerDeployOutcome::AlreadyNewer) {
+            // The default's checkout was already past the release commit: the run kept it, and its seed, as they were. Only the seed of
+            // the checkout that the run read publishes; any other seed, the release commit's included, has moved.
+            $kept = $last->result['kept_commit'] ?? null;
+            if (is_string($kept) && $runtime?->seed_commit === $kept && $runtime->seed_taken_at !== null) {
+                return ['status' => 'current', 'already_newer' => true, 'commit' => $kept, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
+                    'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
+            }
+
+            return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
+        }
         if ($runtime?->seed_commit === $commit && $runtime->seed_taken_at !== null) {
             return ['status' => 'current', 'commit' => $commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
                 'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
@@ -144,7 +164,11 @@ final readonly class NestedFleetRefresh
             return $previous;
         }
         try {
-            $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit);
+            $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit, release: true);
+            // An admission that returns an ended, unlocked Operation (a replay) is read on this pass, never waited for.
+            if ($operation->status->terminal() && $operation->lock_key === null && $operation->id !== $last?->id) {
+                return $this->advanceDefault($instance, $commit, [...$previous, 'operation_id' => $operation->id]);
+            }
 
             return [...$receipt, 'status' => 'pending', 'operation_id' => $operation->id];
         } catch (ResourceOperationException $refused) {
@@ -154,6 +178,13 @@ final readonly class NestedFleetRefresh
                 return [...$receipt, 'status' => $attempts->count() + $failures >= self::Attempts ? 'failed' : 'pending',
                     'error_code' => $refused->errorCode, 'admission_failures' => $failures,
                     'retry_at' => now()->addMinutes(self::RetryMinutes)->timestamp];
+            }
+            // The Instance lock may belong to a deployment of any commit, another release's included. One that ended and still holds
+            // it keeps it for good (docs/reference/executor.md): the refresh ends here, naming that holder, and never waits on it.
+            $holder = $refused->errorCode === 'operation.target_busy' ? Operation::query()->where('kind', OperationKinds::InstanceDeploy)
+                ->where('lock_key', OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id))->first() : null;
+            if ($holder !== null && $holder->status->terminal()) {
+                return ['status' => 'failed', 'error_code' => 'instance.refresh_fenced', ...$receipt, 'fenced_by' => $holder->id];
             }
             $status = in_array($refused->errorCode, self::DeferredRefusals, true) ? 'pending' : 'failed';
 

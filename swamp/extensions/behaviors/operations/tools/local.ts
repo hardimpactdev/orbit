@@ -8,7 +8,7 @@ export const toolProgram = toolSystemProgram + materializeProgram + String.raw`
 def dispatch(value):
  node=object_(value['node']);data=object_(value['input']);name=value['name'];manager=node['manager']
  if manager not in ('apt','composer','vp') or node['platform'] not in ('linux','macos') or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}',node['user']):refuse('tool.input_invalid')
- if node['platform']=='macos' and manager in ('apt','composer') or node['platform']=='linux' and manager=='brew-cask':refuse('tool.manager_unsupported')
+ if node['platform']=='macos' and manager in ('apt','composer'):refuse('tool.manager_unsupported')
  prefix='tool.'+manager+'-'
  materializer={'vp':'tool.materialize-vp','composer':'tool.materialize-composer'}.get(manager)
  if name==materializer:

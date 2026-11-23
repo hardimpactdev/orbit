@@ -12,6 +12,7 @@ use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
@@ -808,6 +809,33 @@ describe('the seed of the proof default on each Node that offers proof places', 
         ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
     });
 
+    it('publishes the newer seed that a release deployment kept as already_newer, and still refuses a seed that moved', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        // The release commit is older than the checkout: the deployment kept the seed at the newer commit.
+        $release = str_repeat('b', 40);
+        $kept = str_repeat('a', 40);
+        $seeds = app(ProofSeeds::class);
+        $takenAt = $default->runtime()->sole()->seed_taken_at->toIso8601String();
+        $row = ['status' => 'current', 'already_newer' => true, 'commit' => $kept, 'taken_at' => $takenAt, 'copies_to_ci' => true];
+
+        $publication = $seeds->releasePublication($release, [$default->id => $row]);
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
+        expect($publication)->toBe(['status' => 'pending', 'instance_id' => $default->id, 'commit' => $kept, 'taken_at' => $takenAt,
+            'already_newer' => true, 'operation_ids' => [$copy->id], 'published_nodes' => [], 'pending_nodes' => [$node->id]])
+            ->and($copy->input['commit'])->toBe($kept);
+
+        // Without already_newer a seed off the release commit has moved; so has a kept seed retaken after the refresh read it.
+        expect($seeds->releasePublication($release, [$default->id => ['copies_to_ci' => true, 'taken_at' => $takenAt]]))
+            ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved', 'commit' => $release]);
+        $default->runtime()->update(['seed_taken_at' => '2026-11-17 00:00:00']);
+        expect($seeds->releasePublication($release, [$default->id => $row]))
+            ->toMatchArray(['status' => 'failed', 'error_code' => 'instance.release_seed_moved', 'commit' => $kept, 'already_newer' => true]);
+    });
+
     it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that no copy has tried', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();
@@ -1414,7 +1442,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         $this->freezeTime();
         $node = containerDefaultNode();
         nestedSwitch($node, true);
-        $project = containerDefaultProject();
+        // The intents main recorded are of a T3 Project.
+        $project = tap(containerDefaultProject())->update(['container_server' => ContainerServer::T3]);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default']);
         $containers = app(InstanceContainer::class);
         $runtime = $containers->reserve($instance, $node);
@@ -1434,7 +1463,13 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             // The second change: T3 starts with the copy (development-containers.md#t3-starts-with-the-copy). The unit's condition file,
             // the model environment's frame line, and the files that go in before the first start.
             $expected['clone']['t3']['condition'] = '/etc/orbit/instance';
+            // The recorded server's version line pattern, which the wake checks the answering server against (ContainerServer::versionPattern).
+            $mark = array_search('project_mark', array_keys($expected['clone']['t3']), true);
+            $expected['clone']['t3'] = [...array_slice($expected['clone']['t3'], 0, $mark, true), 'version_pattern' => ContainerServer::T3->versionPattern(),
+                ...array_slice($expected['clone']['t3'], $mark, null, true)];
             $expected['clone']['model_environment']['frame'] = '#orbit-model-environment';
+            // The value an Antigravity instance holds in place of the model key (InstanceContainer::ModelKeyValue).
+            $expected['clone']['model_environment']['key_value'] = InstanceContainer::ModelKeyValue;
             foreach ($expected['clone']['files'] as $index => $file) {
                 $expected['clone']['files'][$index] = ['path' => $file['path'], 'before_start' => true, ...array_diff_key($file, ['path' => true])];
             }

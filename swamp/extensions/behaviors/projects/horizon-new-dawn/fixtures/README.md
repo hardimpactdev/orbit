@@ -8,6 +8,7 @@ in merged PR #5. The fixture directory names pin the tag pairs:
 - `watch`: v5.42.0 → v5.43.0, the watch config key.
 - `screens`: v5.49.0 → v5.50.0, two recent-job screens.
 - `release`: v5.50.0 → v5.50.1, no surface change.
+- `baseline-task.json`: the create body that the baseline plan posts, a task with no subtask. `queue_test.ts` pins it, and the Gateway test `TaskWithoutSubtaskTest.php` creates and starts it.
 
 `.snapshot` prevents fixture PHP and Vue files from becoming extension code.
 Tests reconstruct local Git repositories, so no network is needed.

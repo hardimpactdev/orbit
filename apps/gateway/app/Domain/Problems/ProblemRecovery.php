@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Problems;
 
 use App\Data\Doctor\DoctorReportData;
-use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\DoctorResources;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
@@ -73,7 +72,7 @@ final readonly class ProblemRecovery
                     $partial = in_array($code, $family->observedChecks[(string) $resource] ?? [], true)
                         || (isset($family->observedInventories[$code]) && ! in_array((string) $resource, array_map(strval(...), $family->observedInventories[$code]), true));
                     $checked = $partial || isset($observedResources[(string) $resource]);
-                    $failed = array_any($family->issues, static fn ($issue): bool => $issue->kind !== DoctorIssueKind::Informational
+                    $failed = array_any($family->issues, static fn ($issue): bool => ProblemCollector::records($issue)
                         && ($partial ? $issue->code === $code && (string) $issue->resourceId === (string) $resource : $issue->resourceId === null || (string) $issue->resourceId === (string) $resource));
                     if ($checked && ! $failed && is_string($observed) && $observed < $started) {
                         $this->resolve($row, 'fresh_doctor_success');
@@ -118,6 +117,14 @@ final readonly class ProblemRecovery
             }
 
             return null;
+        }
+        if (str_starts_with($resource, 'release-phase:')) {
+            // A release follow-up phase recovers when a later release, or a later pass of the same one, settles it current.
+            $phase = substr($resource, 14);
+
+            return GatewayRelease::query()->where('outcome', 'verified')->where('updated_at', '>', $row->first_seen ?? $row->filed_at)
+                ->get()->contains(static fn (GatewayRelease $record): bool => data_get($record->phases, $phase.'.status') === 'current')
+                ? 'release_phase_current' : null;
         }
         if (str_starts_with($resource, 'instance:')) {
             $instance = Instance::query()->find((int) substr($resource, 9));

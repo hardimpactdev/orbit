@@ -1,5 +1,38 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  conn-server-version-ok:
+    intent: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}
+    switch_version: {rc: 0, stdout: "conn-server 0.4.2 (T3 server 0.1.10 contract, abcdef1)\n"}
+  conn-server-version-other:
+    intent: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}
+    switch_version: {rc: 0, stdout: "t3 v0.1.7\n"}
+  wake-recorded-conn-version:
+    container: {clone: {t3: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}}}
+    wake_server_version: {rc: 0, stdout: "conn-server 0.4.2 (T3 server 0.1.10 contract, contract digest f72ee133e341)\n"}
+  wake-recorded-t3-version:
+    container: {clone: {t3: {version_pattern: '^t3 v?(\d+\.\d+\.\d+)\b'}}}
+    wake_server_version: {rc: 0, stdout: "t3 v0.1.7\n"}
+  wake-recorded-conn-unreadable:
+    container: {clone: {t3: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}}}
+    wake_server_version: {rc: 126, stdout: ""}
+  # The workspace guest prints one JSON object: its refusal with the table it collected first, its result, or, when it crashed, a
+  # traceback that names no table.
+  workspace-guest-refusal-with-parts:
+    workspace_guest: {rc: 1, stdout: '{"error_code": "tasks.workspace_phase_failed", "parts": [{"name": "pest", "result": "passed", "seconds": 1}]}'}
+  workspace-guest-result-with-parts:
+    workspace_guest: {rc: 0, stdout: '{"check": {"steps": {"parts": {"outputs": {"exitCode": 0, "stdout": "[]"}}}}, "outputs": [], "changed": false}'}
+  workspace-guest-crash:
+    workspace_guest: {rc: 1, stdout: "Traceback (most recent call last):"}
+  # dpkg-query lists each package as `<status> <architecture> <name> <version>`. As apt names it, a native or `all` package
+  # is bare and a foreign one keeps `:<arch>`; every state but `not-installed` and `config-files` has an installed version.
+  software-installed:
+    check_read:
+      commands:
+        architecture: {rc: 0, stdout: "amd64\n"}
+        dpkg:
+          rc: 0
+          stdout: "installed amd64 base-files 14ubuntu1\ninstalled amd64 libc6 2.42-0ubuntu3\ninstalled i386 libc6 2.42-0ubuntu2\n\
+            unpacked all tzdata 2025b\nconfig-files amd64 php8.3-fpm 8.3.6-0ubuntu0.24.04.1\nnot-installed amd64 git \n"
   # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
   # A failed check or any other text repairs every file.
   managed-files-check-clean:
@@ -841,6 +874,11 @@ contexts:
   instance-destroy-inner-snapshots:
     destroy_inner_snapshots:
       stdout: '[{"name":"inner-7/seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-7/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-16T05:02:17.84470215Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  instance-destroy-spares:
+    container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
+    destroy_spares:
+      stdout:
+        sample: incus-volumes-spares.json
   instance-destroy-zfs-datasets:
     container: {name: instance-7, project: orbit-instances-nested, pool: orbit-instances, inner_volume: inner-7}
     refused_container: true
@@ -1040,6 +1078,13 @@ contexts:
           parent: orbitinst0
           security.acls: ' orbitinst0-egress , instance-8 '
     item: {key: inherited, value: *inherited_nic}
+  # `systemctl show --property=ActiveState --property=NRestarts` read twice, 10 s apart, by the verify of process:upgrade.
+  process-upgrade-steady:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+  process-upgrade-restarted:
+    upgrade_unit_first: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=2]}
+    upgrade_unit_second: {rc: 0, stdout_lines: [ActiveState=active, NRestarts=3]}
   moved-process-ready:
     moved_process_ready:
       rc: 0
@@ -1487,6 +1532,56 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-conn-version
+  expected: '0.1.10'
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-t3-version
+  expected: '0.1.7'
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-conn-unreadable
+  expected: ''
+- file: instance-server-switch.yml
+  task: Parse the Conn Server contract version
+  field: ansible.builtin.set_fact.expected_server_version
+  context: conn-server-version-ok
+  expected: '0.1.10'
+- file: instance-server-switch.yml
+  task: Parse the Conn Server contract version
+  field: ansible.builtin.set_fact.expected_server_version
+  context: conn-server-version-other
+  expected: ''
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-steady
+  expected: true
+- file: tasks/process-upgrade-verify.yml
+  task: Refuse a unit that stopped or restarted
+  field: ansible.builtin.assert.that[1]
+  context: process-upgrade-restarted
+  expected: false
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-refusal-with-parts
+  expected: {error_code: tasks.workspace_phase_failed, parts: [{name: pest, result: passed, seconds: 1}]}
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-result-with-parts
+  expected: {check: {steps: {parts: {outputs: {exitCode: 0, stdout: '[]'}}}}, outputs: [], changed: false}
+- file: task-instance-workspace.yml
+  task: Record the public workspace refusal
+  field: vars.guest_result
+  context: workspace-guest-crash
+  expected: {}
 - file: release-response-wait.yml
   task: Wait for queued response bytes in the former live
   field: vars.queued
@@ -1626,6 +1721,11 @@ cases:
   field: loop
   context: instance-destroy-inner-snapshots
   expected: [seed-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
+- file: instance-container-destroy.yml
+  task: Delete the spares and the spare builder of the inner volume
+  field: loop
+  context: instance-destroy-spares
+  expected: [build-inner-7, spare-inner-7-3f9c2a7d41b0, spare-inner-7-seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
 - file: instance-container-destroy.yml
   task: Name the datasets Incus expects
   field: ansible.builtin.set_fact.destroy_datasets
@@ -3069,7 +3169,32 @@ cases:
   - /etc/wireguard/orbit.conf
   - /etc/wireguard/orbit-peers.d/3.conf
   - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/node-converge-software-check.yml
+  task: Keep the installed package versions
+  field: ansible.builtin.set_fact.software_versions
+  context: software-installed
+  expected:
+    base-files: [14ubuntu1]
+    libc6: [2.42-0ubuntu3]
+    libc6:i386: [2.42-0ubuntu2]
+    tzdata: [2025b]
 non_command_output:
+- file: operation-process-upgrade.yml
+  task: Refuse a layout without a relative current link to a release
+  field: ansible.builtin.assert.that[4]
+  reason: Matches the target of the `current` link that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Write the installed release
+  field: ansible.builtin.copy.content
+  reason: Strips `releases/` and a trailing slash from the `current` link target that the stat module read; it parses no command output.
+- file: operation-process-upgrade.yml
+  task: Keep the previous release
+  field: vars.upgrade_versions
+  reason: Keeps the release folder paths that the find module listed and whose names are versions; it parses no command output.
+- file: tasks/instance-container-phase.yml
+  task: Merge Orbit's changed JSON settings
+  field: vars.model_key
+  reason: Takes the value of `ORBIT_MODEL_KEY=` from the model environment the vault hands the run as a variable; it parses no command output.
 - file: tasks/node-role-runtime.yml
   task: Refresh the system roots
   field: when
@@ -3184,47 +3309,55 @@ non_command_output:
   reason: Validates the admitted model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[8]
-  reason: Validates the admitted option ids of a new thread's model options, not command output.
+  field: ansible.builtin.assert.that[7]
+  reason: Validates the admitted base model of a new thread, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[9]
-  reason: Validates the admitted option values of a new thread's model options, not command output.
+  field: ansible.builtin.assert.that[8]
+  reason: Compares the admitted model with its admitted base model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[10]
-  reason: Validates the admitted reviewer candidate commit, not command output.
+  reason: Validates the admitted option ids of a new thread's model options, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[11]
+  reason: Validates the admitted option values of a new thread's model options, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[12]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[13]
   reason: Validates the admitted thread title, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[16]
+  field: ansible.builtin.assert.that[18]
   reason: Validates the admitted titles of the earlier turns to settle, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[17]
+  field: ansible.builtin.assert.that[19]
   reason: Validates the admitted task branches of the earlier reviewer turns to settle, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[22]
+  field: ansible.builtin.assert.that[24]
   reason: Validates each earlier turn's admitted thread ID, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[23]
+  field: ansible.builtin.assert.that[25]
   reason: Validates each earlier turn's admitted run ID, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[24]
+  field: ansible.builtin.assert.that[26]
   reason: Validates the admitted owner run of the answered requests, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[25]
+  field: ansible.builtin.assert.that[27]
   reason: Validates each earlier turn's admitted owner run of its answered requests, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[26]
+  field: ansible.builtin.assert.that[28]
   reason: Validates the turn's admitted thread ID, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
@@ -3311,6 +3444,10 @@ non_command_output:
   field: vars.failure_code
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: conn-environment-restart.yml
+  task: Write the failure
+  field: ansible.builtin.copy.content
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
+- file: instance-server-switch.yml
   task: Write the failure
   field: ansible.builtin.copy.content
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.

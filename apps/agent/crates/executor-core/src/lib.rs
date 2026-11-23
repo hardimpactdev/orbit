@@ -9,4 +9,5 @@ pub mod ids;
 pub mod journal;
 pub mod order;
 pub mod relay;
+pub mod seal;
 pub mod server;
