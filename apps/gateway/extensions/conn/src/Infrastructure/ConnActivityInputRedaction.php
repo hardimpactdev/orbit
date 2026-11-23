@@ -20,6 +20,7 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
             'conn:thread:record',
             'conn:me:push-device:upsert',
             'conn:attention:record',
+            'conn:push-credentials:set',
         ];
     }
 
@@ -46,6 +47,10 @@ final readonly class ConnActivityInputRedaction implements ActivityInputRedactio
             return array_intersect_key($values, array_flip([
                 'event_id', 'type', 'kind', 'environment_id', 'thread_id', 'request_id', 'occurred_at',
             ]));
+        }
+        if ($command === 'conn:push-credentials:set') {
+            // The APNs .p8 private key never enters Activity.
+            return array_intersect_key($values, array_flip(['key_id', 'team_id']));
         }
 
         return $this->settingsInput($command, $values);

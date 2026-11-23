@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAccessAction;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
@@ -173,6 +174,10 @@ describe('feature flag', function (): void {
         [$target, $credential] = push_enrol_managed($this->environmentId);
         push_managed_call($this->serving, $credential, $target, push_attention_payload($this->environmentId))
             ->assertNotFound()->assertJsonPath('error.code', 'conn.push_disabled');
+        push_call($this->gateway, 'GET', 'push-credentials')
+            ->assertNotFound()->assertJsonPath('error.code', 'conn.push_disabled');
+        push_call($this->gateway, 'PUT', 'push-credentials', ['key_id' => 'KEY1234567', 'team_id' => 'TEAM123456', 'private_key' => 'invalid'])
+            ->assertNotFound()->assertJsonPath('error.code', 'conn.push_disabled');
     });
 
     it('defaults orbit.conn.push to false in config/orbit.php', function (): void {
@@ -287,6 +292,7 @@ describe('attention routes', function (): void {
             ->assertJsonPath('data.event_id', $payload['event_id'])
             ->assertJsonPath('data.deduplicated', false);
 
+        Queue::assertPushedOn(GatewayQueue::Tasks->value, SendConnPushJob::class);
         Queue::assertPushed(SendConnPushJob::class, 1);
 
         $activity = Activity::query()->where('command', 'conn:attention:record')->latest('id')->first();
@@ -313,6 +319,7 @@ describe('attention routes', function (): void {
             ->assertJsonPath('data.deduplicated', false);
 
         expect(Activity::query()->count())->toBe($activityBefore);
+        Queue::assertPushedOn(GatewayQueue::Tasks->value, SendConnPushJob::class);
         Queue::assertPushed(SendConnPushJob::class, 1);
     });
 
@@ -378,6 +385,7 @@ describe('attention routes', function (): void {
             ->assertOk()->assertJsonPath('data.deduplicated', true);
 
         expect(ConnAttentionEvent::query()->count())->toBe(1);
+        Queue::assertPushedOn(GatewayQueue::Tasks->value, SendConnPushJob::class);
         Queue::assertPushed(SendConnPushJob::class, 1);
     });
 
@@ -485,8 +493,9 @@ describe('audience resolution and SendConnPushJob', function (): void {
             ->and($this->apns->sent[1]->threadTitle)->toBeNull()
             ->and($this->apns->sent[1]->apnsEnvironment)->toBe('production');
 
-        // 2. turn_finished event: deviceVisible opted out; only deviceHidden gets priority 5 alert.
+        // 2. turn_finished event (after 30s thread cooldown): deviceVisible opted out; only deviceHidden gets priority 5 alert.
         $this->apns->reset();
+        Carbon::setTestNow(Carbon::now()->addSeconds(31));
         $finished = ConnAttentionEvent::query()->create([
             'event_id' => (string) Str::ulid(),
             'conn_environment_id' => $this->environment->id,
@@ -503,7 +512,7 @@ describe('audience resolution and SendConnPushJob', function (): void {
             ->and($this->apns->sent[0]->deviceRowId)->toBe($deviceHidden->id)
             ->and($this->apns->sent[0]->priority)->toBe(5);
 
-        // 3. attention_cleared: background push, priority 5, null title, sent to both Nick devices.
+        // 3. attention_cleared: background push, priority 5, null title, sent to both Nick devices even within 30s cooldown.
         $this->apns->reset();
         $cleared = ConnAttentionEvent::query()->create([
             'event_id' => (string) Str::ulid(),
@@ -524,6 +533,7 @@ describe('audience resolution and SendConnPushJob', function (): void {
 
         // 4. Access revoked between queue and send time: phone loses access and gets no push.
         $this->apns->reset();
+        Carbon::setTestNow(Carbon::now()->addSeconds(31));
         $this->phone->accessibleNodes()->detach($this->serving->id);
         app()->call([new SendConnPushJob($approval->id), 'handle']);
 
@@ -535,6 +545,7 @@ describe('audience resolution and SendConnPushJob', function (): void {
         config(['orbit.conn.push' => false]);
         app()->call([new SendConnPushJob($approval->id), 'handle']);
         expect($this->apns->sent)->toBe([]);
+        Carbon::setTestNow();
     });
 });
 
@@ -562,16 +573,30 @@ describe('cleanup hooks', function (): void {
         expect(ConnPushDevice::query()->where('node_id', $this->phone->id)->count())->toBe(0);
     });
 
-    it('removes device rows when a pairing revocation succeeds', function (): void {
+    it('removes device rows on pairing revocation only when no live pairing remains', function (): void {
         ConnPushDevice::query()->create(['node_id' => $this->phone->id, ...push_device_payload()]);
-        $pairing = ConnPairing::query()->create([
+        $oldHeld = ConnPairing::query()->create([
             'node_id' => $this->phone->id,
             'conn_environment_id' => $this->environment->id,
-            'pairing_link_id' => 'link-1',
-            'client_label' => 'iphone',
-            'expires_at' => Carbon::now()->addHour(),
+            'pairing_link_id' => 'link-old-held',
+            'client_label' => 'iphone-old',
+            'held' => true,
+            'session' => 'old-session',
+            'session_expires_at' => Carbon::now()->addDays(5),
+            'withdrawn_at' => Carbon::now(),
         ]);
-        $operation = Operation::query()->create([
+        $liveHeld = ConnPairing::query()->create([
+            'node_id' => $this->phone->id,
+            'conn_environment_id' => $this->environment->id,
+            'pairing_link_id' => 'link-live-held',
+            'client_label' => 'iphone-new',
+            'held' => true,
+            'session' => 'new-session',
+            'session_expires_at' => Carbon::now()->addDays(30),
+        ]);
+
+        // Routine held-session renewal revokes the old held pairing while the new one is live: device stays.
+        $renewalRevoke = Operation::query()->create([
             'kind' => 'conn.pairing_revoke',
             'target_type' => 'conn_pairing_node',
             'target_id' => $this->phone->id,
@@ -579,18 +604,33 @@ describe('cleanup hooks', function (): void {
             'status' => OperationStatus::Running,
             'input' => [
                 'conn_environment_id' => $this->environment->id,
-                'pairing_ids' => [$pairing->id],
+                'pairing_ids' => [$oldHeld->id],
                 'holding_pairing_ids' => [],
             ],
             'triggered_by' => 'operator',
         ]);
-
-        // Failed revoke keeps device rows.
-        app(ConnOperationCompletion::class)->complete($operation, OperationOutcome::failed('conn.revocation_unmatched'));
+        app(ConnOperationCompletion::class)->complete($renewalRevoke, OperationOutcome::succeeded(['revoked_sessions' => 1]));
         expect(ConnPushDevice::query()->where('node_id', $this->phone->id)->count())->toBe(1);
 
-        // Succeeded revoke removes device rows.
-        app(ConnOperationCompletion::class)->complete($operation, OperationOutcome::succeeded(['revoked_sessions' => 1]));
+        // Failed revoke of the last live pairing keeps device rows.
+        $finalRevoke = Operation::query()->create([
+            'kind' => 'conn.pairing_revoke',
+            'target_type' => 'conn_pairing_node',
+            'target_id' => $this->phone->id,
+            'node_id' => $this->gateway->id,
+            'status' => OperationStatus::Running,
+            'input' => [
+                'conn_environment_id' => $this->environment->id,
+                'pairing_ids' => [$liveHeld->id],
+                'holding_pairing_ids' => [],
+            ],
+            'triggered_by' => 'operator',
+        ]);
+        app(ConnOperationCompletion::class)->complete($finalRevoke, OperationOutcome::failed('conn.revocation_unmatched'));
+        expect(ConnPushDevice::query()->where('node_id', $this->phone->id)->count())->toBe(1);
+
+        // Succeeded revoke of the last live pairing removes device rows.
+        app(ConnOperationCompletion::class)->complete($finalRevoke, OperationOutcome::succeeded(['revoked_sessions' => 1]));
         expect(ConnPushDevice::query()->where('node_id', $this->phone->id)->count())->toBe(0);
     });
 });

@@ -164,9 +164,17 @@ Native Conn Servers report events to `POST /api/v1/conn/environments/{environmen
 
 Both attention routes verify that `environment_id` matches the authenticated server and that `thread_id` does not belong to another environment. Each server is limited to 120 events per minute (`conn.attention_rate_limited`, 429). Events are deduplicated by unique ULID `event_id`: a repeat returns 200 as a no-op, and a new event returns 202, stores a row in `conn_attention_events` (pruned after 7 days by `conn:push:prune-events`), and queues `SendConnPushJob`.
 
-### Audience and cleanup
+### Audience, delivery, and cleanup
 
-`SendConnPushJob` resolves recipients at send time through `ConnServerAccess` (`NodeAccessAuthorizer`, as `conn:thread:list`), matching profile bindings, per-kind preferences (`approval`, `input`, `turn_finished`, `turn_failed`), and `hide_titles`. It sends through `ApnsClient`, which is bound to `FakeApnsClient` until the real APNs client lands. Device rows are deleted when a Node is removed (`ConnNodeRemoval`), loses its last access edge (`ConnNodeAccessRemoval`), or has a pairing revocation succeed (`ConnOperationCompletion`).
+`SendConnPushJob` runs on the `tasks` queue ([Gateway queue](/reference/gateway-queue#queues)). At delivery time, `ConnPushDeliverer` drops events older than 1 hour, resolves recipients through `ConnServerAccess` (`NodeAccessAuthorizer`, as `conn:thread:list`), matching profile bindings, per-kind preferences (`approval`, `input`, `turn_finished`, `turn_failed`), and `hide_titles`, and enforces alert rate limits: one alert per thread per 30 seconds per device, and at most 30 alerts per device per hour followed by one summary alert. Background `attention_cleared` pushes bypass alert rate limits.
+
+`HttpApnsClient` sends HTTP/2 requests with ES256 provider JWTs (renewed every 40 minutes) to `api.sandbox.push.apple.com` or `api.push.apple.com` according to each device's `apns_environment`. One `.p8` key serves both hosts. It sends `apns-push-type` (`alert` or `background`), `apns-topic` (`bundle_id`), `apns-priority` (`10` for `approval`/`input`, `5` otherwise), `apns-expiration` (`now + 1h`), and `apns-collapse-id` (SHA-256 of `environment_id:thread_id`), with only `environment_id`, `thread_id`, and `kind` in `userInfo`. Transient `429`/`500`/`503` failures retry with backoff up to 3 tries; `403 ExpiredProviderToken` renews the JWT once; `410 Unregistered`, `400 BadDeviceToken`, and `400 DeviceTokenNotForTopic` delete the device row and record the reason in `conn_push_sends`. Every delivery is recorded in `conn_push_sends` (`event_id`, device row id, APNs status, `apns-id`, and deletion reason) without tokens, JWTs, or titles, and pruned after 7 days.
+
+Device rows are deleted when a Node is removed (`ConnNodeRemoval`), loses its last access edge (`ConnNodeAccessRemoval`), or has its last live pairing revoked (`ConnOperationCompletion`; routine held-session renewals leave a live pairing in place, so devices stay).
+
+### APNs credentials
+
+Store the Apple APNs `.p8` key in Orbit's encrypted Gateway settings with `php artisan conn:push-credentials:set --key-id <id> --team-id <id>` (key read from stdin) or `PUT /api/v1/conn/push-credentials` (Gateway access, `private_key` redacted from Activity). `php artisan conn:push-credentials:show` and `GET /api/v1/conn/push-credentials` return only `configured`, `key_id`, and `team_id`.
 
 ## API
 

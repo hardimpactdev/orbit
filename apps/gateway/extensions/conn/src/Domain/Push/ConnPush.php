@@ -16,6 +16,23 @@ final class ConnPush
 
     public const int MaxTitleLength = 64;
 
+    public const string SandboxHost = 'https://api.sandbox.push.apple.com';
+
+    public const string ProductionHost = 'https://api.push.apple.com';
+
+    /** Apple allows up to 60 minutes; renew at 40 minutes for margin. */
+    public const int JwtLifetimeSeconds = 2400;
+
+    public const int ExpirationSeconds = 3600;
+
+    public const int StaleEventMaxAgeSeconds = 3600;
+
+    public const int ThreadAlertCooldownSeconds = 30;
+
+    public const int MaxAlertsPerDevicePerHour = 30;
+
+    public const int MaxSendAttempts = 3;
+
     /** @var list<string> */
     public const array Environments = ['sandbox', 'production'];
 

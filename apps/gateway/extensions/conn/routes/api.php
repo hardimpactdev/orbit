@@ -19,6 +19,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnPushCredentialsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPushDevicesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnRealtimeController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnReservationsController;
@@ -60,6 +61,8 @@ Route::middleware([
             Route::get('me/push-device', [ConnPushDevicesController::class, 'show'])->name('conn:me:push-device:show');
             Route::delete('me/push-device/{device_id}', [ConnPushDevicesController::class, 'destroy'])->whereUuid('device_id')->name('conn:me:push-device:destroy');
             Route::post('environments/{environment}/attention', [ConnAttentionController::class, 'native'])->name('conn:attention:record');
+            Route::get('push-credentials', [ConnPushCredentialsController::class, 'show'])->name('conn:push-credentials:show');
+            Route::put('push-credentials', [ConnPushCredentialsController::class, 'update'])->name('conn:push-credentials:set');
         });
         Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
         Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');
