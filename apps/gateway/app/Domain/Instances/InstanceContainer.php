@@ -567,7 +567,7 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => $runtime->server()->program(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
+                't3' => $runtime->server()->program(), 'version_pattern' => $runtime->server()->versionPattern(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame,
                 'key_value' => self::ModelKeyValue],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py

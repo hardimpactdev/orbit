@@ -133,7 +133,9 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function intent(Instance $instance): array
     {
-        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10]];
+        return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10],
+            // The wake that applies a deferred server switch waits for the Conn Server's first-start import before T3's usual wait.
+            ...(InstanceServerSwitch::pendingForWake($instance) ? ['server_import_seconds' => InstanceServerSwitch::ImportSeconds] : [])];
     }
 
     /** The wake's path (`resumed`, `started`, `restarted_after_resume`, `already_running`), the marker it found and a resume's seconds. */

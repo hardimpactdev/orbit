@@ -35,7 +35,7 @@ sequenceDiagram
     SW->>N: Switch container server<br/>Ansible · tags switch
     %%> What it does:
     %%> - re-check `t3.service` processes with `t3-service-processes.j2`; refuse `instance.container_server_busy` if any terminal or command runs
-    %%> - read `bin/conn-server --version`, push `20-orbit-server.conf`, reload systemd, restart `t3.service`, and wait until `/.well-known/t3/environment` reports the Conn Server version
+    %%> - read `bin/conn-server --version`, push `20-orbit-server.conf`, reload systemd, restart `t3.service`, and wait up to 600 s (the import) until `/.well-known/t3/environment` reports the Conn Server version
     %%> - Conn Server imports `statev2.sqlite` into `engine.sqlite` on first start while leaving `statev2.sqlite` unchanged
     alt switched
       %% path: switched
@@ -44,8 +44,8 @@ sequenceDiagram
       Note over GW: Record conn & version<br/>runtime · ConnEnvironment
     else busy or failed
       %% path: failed
-      N--xSW: Switch failed<br/>error_code
-      SW--xGW: Run failed<br/>runtime stays t3
+      N--xSW: Switch failed<br/>error_code · container_server once written
+      SW--xGW: Run failed<br/>runtime stays t3, or records conn once the drop-in is written
     end
   end
   loop until terminal

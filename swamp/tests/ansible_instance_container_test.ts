@@ -1927,12 +1927,13 @@ Deno.test({
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
   options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown>;
-    outcomes?: string; workerResumed?: boolean; kernelFrozen?: boolean; thawFails?: boolean } = {}) {
+    outcomes?: string; workerResumed?: boolean; kernelFrozen?: boolean; thawFails?: boolean; t3?: boolean; asleep?: () => void } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
   }
-  const sleeping = asleep(f, { web: options.web ?? [200] });
+  const sleeping = asleep(f, { web: options.web ?? [200], ...(options.t3 ? { t3: true } : {}) });
+  options.asleep?.();
   // Only a nested-fleet container's intent has `allowed_devices`; the container exists already, so its create path is not involved.
   if (options.nested) (f.container as Record<string, unknown>).allowed_devices = {};
   if (options.marker === false) Deno.removeSync(sleeping.marker);
@@ -2057,6 +2058,56 @@ Deno.test({
       assertEquals(f.result().wake, "restarted_after_resume");
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+const DROP_IN = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+const T3_DROP_IN = "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n";
+const CONN_DROP_IN = "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\n";
+
+/** A clone whose runtime records the Conn Server after a deferred switch, while the container's unit still holds T3's drop-in. */
+function switchedClone(f: ReturnType<typeof fixture>, files: Record<string, unknown>[]) {
+  Object.assign(f.container, { clone: { files, links: [], t3: { internal_port: 3773, ready_seconds: 2,
+    t3: "/opt/orbit-agent/current/agent/bin/conn-server", version_pattern: "^conn-server \\S+ \\(T3 server (\\d+\\.\\d+\\.\\d+) contract\\b" } } });
+  const rootfs = `${f.folder}/containers/instance-7`;
+  Deno.mkdirSync(`${rootfs}/etc/systemd/system/t3.service.d`, { recursive: true });
+  Deno.writeTextFileSync(`${rootfs}${DROP_IN}`, T3_DROP_IN);
+  return rootfs;
+}
+
+Deno.test({
+  name: "a silent resume after a server switch boots on the recorded server's drop-in, and a wake whose server is not the recorded one fails",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // The frozen container is force-stopped, so the drop-in is written to the stopped container before its boot.
+      const rootfs = `${f.folder}/containers/instance-7`;
+      let callsBefore = 0;
+      const woken = wakeFrom(f, "Frozen", { silent: true, t3: true, asleep: () => {
+        switchedClone(f, [{ path: DROP_IN, uid: 0, gid: 0, mode: "0644", content: CONN_DROP_IN }]);
+        callsBefore = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).length;
+      } });
+      assert(woken.run.ok, woken.run.output);
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).slice(callsBefore).map((line) => JSON.parse(line) as string[]);
+      const push = calls.findIndex((call) => call.includes("push") && call.at(-1) === `instance-7${DROP_IN}`);
+      const start = calls.findIndex((call) => call.includes("start") && call.includes("instance-7") && !call.includes("exec"));
+      assert(push >= 0 && start > push, JSON.stringify(calls));
+      assertEquals(Deno.readTextFileSync(`${rootfs}${DROP_IN}`), CONN_DROP_IN);
+      assertEquals([f.result().wake, f.result().server_version], ["restarted_after_resume", "0.1.10"]);
+    } finally {
+      f.cleanup();
+    }
+
+    const g = fixture();
+    try {
+      // A unit that still runs T3 while the record names the Conn Server: the wake refuses, so the Gateway keeps the switch pending.
+      const woken = wakeFrom(g, "Stopped", { t3: true, asleep: () => switchedClone(g, []) });
+      assert(!woken.run.ok, woken.run.output);
+      assertStringIncludes(woken.run.output, "instance.container_server_version_mismatch");
+    } finally {
+      g.cleanup();
     }
   },
 });

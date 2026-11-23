@@ -23,11 +23,12 @@ final class OperationBudgetTable
         // The 30 s marker phase and the 90 s freeze phase (a 30 s clean stop when swap is full), plus input, result and cleanup.
         // Measured by hand on a fixture clone: the pause and the reclaim of a frozen container take under 0.5 s.
         'instance.sleep' => 150,
-        // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus input, result and cleanup.
-        // Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start. No live run of the kind yet.
-        'instance.wake' => 300,
-        // The 240 s switch phase (100 s restart and 30 s Conn Server readiness wait), plus input, result and cleanup.
-        'instance.server_switch' => 300,
+        // The 120 s start phase and the 120 s T3 and marker phase (31 T3 tries of up to 3 s), plus the 600 s wait for the Conn
+        // Server's import when the wake applies a deferred server switch (InstanceServerSwitch::ImportSeconds): the 840 s phase,
+        // plus input, result and cleanup. Measured on a fixture clone: T3 answered 2.6 to 3.4 s after the start.
+        'instance.wake' => 900,
+        // The 780 s switch phase (100 s restart, the 600 s wait for the Conn Server's import, and the checks), plus input, result and cleanup.
+        'instance.server_switch' => 900,
         // A nested-fleet clone's start: the 240 s start phase with the Club key, the 300 s fleet check and the 600 s fleet start with
         // its Doctor wait, plus input, result and cleanup. Expected about 110 s: a clone's fleet start took 91 s (Operation 20180).
         'instance.start' => 1200,

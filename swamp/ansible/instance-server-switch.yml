@@ -3,6 +3,8 @@
 # The Gateway checked T3's threads before admitting the run. Right before writing the drop-in and restarting `t3.service`,
 # this playbook re-checks `t3.service` processes with `templates/t3-service-processes.j2` so no running turn or terminal is cut.
 # A container that stopped before the run takes the drop-in through the file API and finishes with `switch: deferred`.
+# The Conn Server listens only once its first-start import of T3's threads finished: the wait is `intent.import_seconds`. A failure
+# after the drop-in is written reports `container_server: conn`, so the Gateway's record follows the unit and nothing restarts the import.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -29,8 +31,6 @@
     as_agent: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
           '--', 'runuser', '-u', 'agent', '--'] }}
-    switch_retries: 30
-    switch_delay: 1
   tasks:
     - name: Run the server switch
       tags: [switch]
@@ -112,7 +112,7 @@
           when: switch_result is not defined
           ansible.builtin.set_fact:
             expected_server_version: >-
-              {{ (switch_version.stdout | trim | regex_search('^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b', '\1') | default([], true)) | first | default('', true) }}
+              {{ (switch_version.stdout | trim | regex_search(intent.version_pattern, '\1') | default([], true)) | first | default('', true) }}
 
         - name: Refuse an unreadable Conn Server version
           when: switch_result is not defined
@@ -143,6 +143,10 @@
             stdin_add_newline: false
           changed_when: true
 
+        - name: Note the written drop-in
+          when: switch_result is not defined
+          ansible.builtin.set_fact: { switch_written: true }
+
         - name: Reload systemd in the container
           when: switch_result is not defined
           ansible.builtin.command:
@@ -158,15 +162,15 @@
         - name: Wait until the Conn Server answers with its version
           when: switch_result is not defined
           block:
-            - name: Read the Conn Server descriptor
+            - name: Wait for the Conn Server's import and read its descriptor
               ansible.builtin.command:
-                argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '2', 'http://127.0.0.1:' ~ intent.t3_port ~ '/.well-known/t3/environment'] }}"
+                argv: >-
+                  {{ as_agent + ['timeout', intent.import_seconds | string, 'sh', '-c',
+                                 'until curl --fail --silent --max-time 2 "$0"; do sleep 1; done',
+                                 'http://127.0.0.1:' ~ intent.t3_port ~ '/.well-known/t3/environment'] }}
               register: switch_env
               changed_when: false
               failed_when: false
-              retries: "{{ switch_retries }}"
-              delay: "{{ switch_delay }}"
-              until: switch_env.rc == 0 and (switch_env.stdout | from_json).serverVersion | default('') == expected_server_version
 
             - name: Refuse a Conn Server that does not answer
               ansible.builtin.assert: { that: [switch_env.rc == 0], fail_msg: instance.t3_unready, quiet: true }
@@ -201,7 +205,8 @@
             content: >-
               {{ {'error_code': ansible_failed_result.msg
                   if (ansible_failed_result.msg | default('') is match('^(?:instance|conn)\.[a-z0-9_]+$'))
-                  else 'instance.container_server_switch_failed'} | to_json }}
+                  else 'instance.container_server_switch_failed'}
+                 | combine({'container_server': 'conn'} if switch_written | default(false) | bool else {}) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

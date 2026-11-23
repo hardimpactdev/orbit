@@ -284,6 +284,19 @@
             argv: ['timeout', '100', 'incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'systemctl', 'restart', '--', 't3.service']
           changed_when: true
 
+# The wake that applies a deferred server switch first waits for the Conn Server's first-start import of T3's threads: it listens
+# only once the import finished, which takes minutes on a large home (`intent.server_import_seconds`).
+- name: Wait for the Conn Server's import after a server switch
+  when: power == 'awake' and container.clone | default(none) is not none and intent.server_import_seconds is defined
+  ansible.builtin.command:
+    argv: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--', 'timeout', intent.server_import_seconds | string, 'sh', '-c',
+          'until curl --fail --silent --max-time 2 "$0" >/dev/null; do sleep 1; done',
+          'http://127.0.0.1:' ~ container.clone.t3.internal_port ~ '/.well-known/t3/environment'] }}
+  changed_when: false
+  failed_when: false
+
 # T3 gates only the end of the wake: a clone whose T3 stays silent ends failed while its site already serves.
 - name: Wait for T3
   when: power == 'awake' and container.clone | default(none) is not none
@@ -306,6 +319,31 @@
     that: [t3_ready.rc == 0]
     fail_msg: instance.t3_unready
     quiet: true
+
+# The server that answers must be the recorded one: its program's `--version` names the contract version that it reports. A wake
+# after a switch whose unit still ran T3 fails here, so the Gateway keeps the switch pending and records no T3 version.
+- name: Read the recorded server's version
+  when: power == 'awake' and container.clone | default(none) is not none
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '10', 'incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--', container.clone.t3.t3, '--version'] }}
+  register: wake_server_version
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a wake whose server is not the recorded one
+  when: power == 'awake' and container.clone | default(none) is not none
+  ansible.builtin.assert:
+    that:
+      - wake_expected_version != ''
+      - (t3_ready.stdout | from_json).serverVersion | default('') == wake_expected_version
+    fail_msg: instance.container_server_version_mismatch
+    quiet: true
+  vars:
+    wake_expected_version: >-
+      {{ (wake_server_version.stdout | default('') | trim | regex_search(container.clone.t3.version_pattern, '\1') | default([], true))
+         | first | default('', true) }}
 
 - name: Record the container server version after the wake
   when: >-

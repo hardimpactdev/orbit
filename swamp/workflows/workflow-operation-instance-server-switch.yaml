@@ -62,7 +62,7 @@ jobs:
           behaviorName: '${{ "instance-server-switch-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags switch "$ORBIT_ANSIBLE/instance-server-switch.yml"
+            run: timeout 780 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags switch "$ORBIT_ANSIBLE/instance-server-switch.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'

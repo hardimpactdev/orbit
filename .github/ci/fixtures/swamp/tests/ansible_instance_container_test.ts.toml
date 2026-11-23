@@ -39,6 +39,7 @@ cases = [
   "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes",
   "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
+  "a silent resume after a server switch boots on the recorded server's drop-in, and a wake whose server is not the recorded one fails",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
   "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
   "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
@@ -126,7 +127,7 @@ cost = 9300
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 117
+slices = 118
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -191,6 +192,7 @@ inputs = [
   "a wake's start of a Project without a web unit removes the marker without a web wait" = 40 # hosted run 43787856522: 34.7s x 1.15, rounded up
   "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes" = 41 # hosted run 43787856522: 35.3s x 1.15, rounded up
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one" = 51 # hosted run 43787856522: 43.7s x 1.15, rounded up
+  "a silent resume after a server switch boots on the recorded server's drop-in, and a wake whose server is not the recorded one fails" = 48 # ESTIMATE: 41s local run x 1.15, rounded up
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker" = 135 # hosted run 43787856522: 116.7s x 1.15, rounded up
   "a deployment's start resumes a Frozen container and then converges as usual" = 39 # hosted run 43787856522: 33.9s x 1.15, rounded up
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start, also at its next boot" = 134 # ESTIMATE (hosted run 43787856522): 115.8s from 94.2s measured plus the next boot's 14.5 of 95.6 local play seconds of the first-boot case (142.3s), x 1.15, rounded up

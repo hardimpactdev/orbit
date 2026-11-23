@@ -602,11 +602,12 @@
     machine_name: "{{ container.machine_name }}"
     machine_name_live: false
 
-# A stopped container whose server was switched gets its current server drop-in before boot so t3.service starts the recorded server.
+# A container that is stopped right before its boot gets the recorded server's drop-in, so t3.service starts the recorded server after a
+# switch: a stopped one, and a frozen one that the silent resume above force-stopped (its state is read again after the stop).
 - name: Write the container server drop-in before the start
   tags: [start]
   when: >-
-    phase == 'start' and start_found == 'Stopped' and container.clone is defined
+    phase == 'start' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Stopped' and container.clone is defined
     and (container.clone.files | default([]) | selectattr('path', 'equalto', '/etc/systemd/system/t3.service.d/20-orbit-server.conf') | list | length) > 0
     and 'volatile.apply_template' not in ((container_read.stdout | from_json).config | default({}))
   ansible.builtin.command:

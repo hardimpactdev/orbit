@@ -86,7 +86,8 @@ For a nested-fleet clone:
 | `instance.web_unready` | FrankenPHP gave no answer within about 30 seconds. The marker stays. |
 | `instance.container_frozen_unmanaged` | The kernel held the container frozen while Incus called it running, and the thaw did not end within 5 seconds. Nothing ran in the container, and the marker stays. See [a freeze that Incus lost](/reference/prepared-restore#a-freeze-that-incus-lost). |
 | `instance.container_exec_timeout` | A nested-fleet container did not answer a command within 10 seconds at its start. The marker stays. |
-| `instance.t3_unready` | T3 did not answer within about 30 seconds. The app already serves: the marker is gone, and the Instance is recorded as running. |
+| `instance.t3_unready` | T3 did not answer within about 30 seconds, or within 600 seconds more on the wake that applies a [server switch](/cli/instance/server-switch), while the Conn Server imports T3's threads. The app already serves: the marker is gone, and the Instance is recorded as running. |
+| `instance.container_server_version_mismatch` | The server that answered is not the one the runtime records: its `serverVersion` differs from the recorded program's `--version`. The marker is gone. A pending server switch stays pending for the next wake. |
 | `executor.wake_refused` | Executor wakes are enabled and the Node refused the order. The Operation keeps the refusal reason. |
 | `executor.wake_failed` | Executor wakes are enabled and the Node reported a failure. The Operation keeps the executor result. |
 | `executor.wake_timeout` | No executor result confirmed the wake before its queued completion. The Node may still finish; a later result does not reopen the Operation. |

@@ -34,6 +34,12 @@ final readonly class InstanceServerSwitch implements DirectOperationProjection
 {
     public const string Kind = 'instance.server_switch';
 
+    /**
+     * How long a switch, or the wake that applies a deferred one, waits for the Conn Server: it listens only once its first-start
+     * import of T3's threads has finished, which takes minutes on a large home. The run budgets of both kinds cover it.
+     */
+    public const int ImportSeconds = 600;
+
     /** @param iterable<InstanceAgentActivity> $agents */
     public function __construct(#[Tag(InstanceAgentActivity::class)] private iterable $agents) {}
 
@@ -85,6 +91,8 @@ final readonly class InstanceServerSwitch implements DirectOperationProjection
                 'instance_id' => $instance->id,
                 't3_port' => InstanceHostIntent::T3Port,
                 'program' => ContainerServer::Conn->program(),
+                'version_pattern' => ContainerServer::Conn->versionPattern(),
+                'import_seconds' => self::ImportSeconds,
                 'drop_in' => [
                     'path' => InstanceContainer::ServerDropIn,
                     'mode' => '0644',
@@ -176,11 +184,13 @@ final readonly class InstanceServerSwitch implements DirectOperationProjection
                     ? $code
                     : 'instance.container_server_switch_failed';
                 $data['error_code'] = $code;
-                $result = ['error_code' => $code];
+                // A run that failed after it wrote the Conn Server drop-in left the unit on Conn: the record follows the unit.
+                $written = ($raw['container_server'] ?? null) === ContainerServer::Conn->value;
+                $result = ['error_code' => $code, ...($written ? ['container_server' => ContainerServer::Conn->value] : [])];
             }
 
             $operation = app(DirectOperation::class)->project($operation, $data, $result);
-            if ($operation->status === OperationStatus::Succeeded) {
+            if ($operation->status === OperationStatus::Succeeded || ($operation->result['container_server'] ?? null) === ContainerServer::Conn->value) {
                 InstanceRuntime::query()
                     ->where('instance_id', $operation->target_id)
                     ->where('container_server', ContainerServer::T3->value)

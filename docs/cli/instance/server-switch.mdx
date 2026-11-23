@@ -49,6 +49,6 @@ On success, the Operation's result holds `container_server: "conn"`, `switch` (`
 | `instance.container_server_busy` | An agent turn, pending request, active task, T3 terminal or command runs in the container; retry once it is idle. |
 | `instance.t3_unreadable` | The running container's T3 server could not be read to confirm it is idle. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
-| `instance.t3_unready` | The Conn Server did not answer `/.well-known/t3/environment` after the restart. |
-| `instance.container_server_version_mismatch` | The answering server's `serverVersion` did not match `conn-server --version`. |
-| `instance.container_server_switch_failed` | The switch run failed without a more specific code; the runtime stays `t3`. |
+| `instance.t3_unready` | The Conn Server did not answer `/.well-known/t3/environment` within 600 seconds of the restart. It listens only once its import of T3's threads has finished. The drop-in is already written, so the runtime records `conn` and the result names `container_server: conn`. The unit keeps importing, and nothing restarts it: a retry is refused with `instance.container_server_already_conn`. |
+| `instance.container_server_version_mismatch` | The answering server's `serverVersion` did not match `conn-server --version`. The runtime records `conn`, as with `instance.t3_unready`. |
+| `instance.container_server_switch_failed` | The switch run failed without a more specific code. When the failure came before the drop-in was written, the runtime stays `t3`. When it came after, the runtime records `conn`. |

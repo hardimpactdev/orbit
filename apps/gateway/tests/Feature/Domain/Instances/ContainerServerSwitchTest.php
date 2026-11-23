@@ -12,6 +12,7 @@ use App\Domain\Instances\Power\InstanceAgentActivity;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBudgetTable;
 use App\Domain\Operations\OperationStatus;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -236,4 +237,88 @@ describe('switching a container server to conn', function (): void {
             ->and((string) $column->dflt_value)->toContain('conn')
             ->and($project->refresh()->container_server)->toBe(ContainerServer::T3);
     });
+
+    it('keeps every trigger and index on projects when the container server migration changes the column default', function (): void {
+        $objects = fn (): array => collect(DB::select("SELECT type, name, sql FROM sqlite_master WHERE tbl_name = 'projects' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY name"))
+            ->map(fn (object $row): array => (array) $row)->all();
+        $before = $objects();
+        $migration = require database_path('migrations/2027_03_23_000000_allow_switching_container_server_to_conn.php');
+
+        $migration->down();
+        expect($objects())->toBe($before);
+        $migration->up();
+
+        $project = Project::query()->create([
+            'name' => 'guarded', 'slug' => 'guarded', 'repository_url' => 'https://github.com/example/guarded.git',
+            'default_branch' => 'main', 'root' => 'public',
+        ]);
+        $column = collect(DB::select('PRAGMA table_info(projects)'))->firstWhere('name', 'container_server');
+        expect($objects())->toBe($before)
+            ->and(collect($before)->pluck('name')->all())->toContain('projects_code_insert', 'projects_code_update')
+            ->and((string) $column->dflt_value)->toContain('conn')
+            ->and(fn () => DB::table('projects')->where('id', $project->id)->update(['code' => 'ab1']))
+            ->toThrow(QueryException::class, 'Project code must contain three uppercase letters');
+    });
+
+    it('waits for the Conn Server import within the run budget and records conn when the run fails after writing the drop-in', function (): void {
+        ['instance' => $instance, 'runtime' => $runtime, 'environment' => $environment] = serverSwitchFixture(ContainerServer::T3, InstanceRuntimePowerState::Running);
+        bindAgentActivity(AgentActivity::read(false, now()->subMinutes(5)->getTimestamp()));
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $admit = fn (): Operation => Operation::query()->findOrFail(
+            $this->postJson('/api/v1/instances/'.$instance->id.'/server-switch')->assertAccepted()->json('data.id'),
+        );
+
+        $operation = $admit();
+        expect($operation->input['import_seconds'])->toBe(InstanceServerSwitch::ImportSeconds)
+            ->and($operation->input['version_pattern'])->toBe(ContainerServer::Conn->versionPattern())
+            ->and(OperationBudgetTable::SecondsByKind[InstanceServerSwitch::Kind])->toBeGreaterThan(InstanceServerSwitch::ImportSeconds + 100)
+            ->and(OperationBudgetTable::SecondsByKind[InstanceWake::Kind])->toBeGreaterThan(InstanceServerSwitch::ImportSeconds + 240);
+
+        $failed = switchRun($operation, 'failed', ['error_code' => 'instance.t3_unready', 'container_server' => 'conn']);
+
+        expect($failed->status)->toBe(OperationStatus::Failed)
+            ->and($failed->error_code)->toBe('instance.t3_unready')
+            ->and($failed->result)->toBe(['error_code' => 'instance.t3_unready', 'container_server' => 'conn'])
+            ->and($runtime->refresh()->container_server)->toBe(ContainerServer::Conn)
+            ->and($environment->refresh()->server_version)->toBe('0.1.7');
+        $this->postJson('/api/v1/instances/'.$instance->id.'/server-switch')
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.container_server_already_conn');
+    });
+
+    it('gives the wake that applies a deferred switch the import wait and keeps the switch pending until a wake reports the recorded server', function (): void {
+        ['instance' => $instance, 'environment' => $environment] = serverSwitchFixture(ContainerServer::T3, InstanceRuntimePowerState::Stopped);
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $this->postJson('/api/v1/instances/'.$instance->id.'/server-switch')->assertAccepted();
+        $wake = fn (): Operation => Operation::query()->findOrFail(
+            $this->postJson('/api/v1/instances/'.$instance->id.'/wake')->assertAccepted()->json('data.id'),
+        );
+
+        $first = $wake();
+        expect($first->input['server_import_seconds'])->toBe(InstanceServerSwitch::ImportSeconds)
+            ->and($first->input['container']['clone']['t3']['t3'])->toBe(ContainerServer::Conn->program())
+            ->and($first->input['container']['clone']['t3']['version_pattern'])->toBe(ContainerServer::Conn->versionPattern());
+
+        switchRun($first, 'failed', ['wake' => 'restarted_after_resume', 'error_code' => 'instance.container_server_version_mismatch']);
+
+        expect($environment->refresh()->server_version)->toBe('0.1.7')
+            ->and(InstanceServerSwitch::pendingForWake($instance))->toBeTrue();
+
+        $second = $wake();
+        expect($second->id)->not->toBe($first->id)
+            ->and($second->input['server_import_seconds'])->toBe(InstanceServerSwitch::ImportSeconds);
+        switchRun($second, 'succeeded', ['wake' => 'started', 'marker_found' => false, 'server_version' => '0.1.10']);
+
+        expect($environment->refresh()->server_version)->toBe('0.1.10')
+            ->and(InstanceServerSwitch::pendingForWake($instance))->toBeFalse()
+            ->and(array_key_exists('server_import_seconds', $wake()->input))->toBeFalse();
+    });
+
+    it('names the contract version in each server program version line', function (ContainerServer $server, string $line, string $version): void {
+        expect(preg_match('/'.$server->versionPattern().'/', $line, $match))->toBe(1)
+            ->and($match[1])->toBe($version);
+    })->with([
+        't3' => [ContainerServer::T3, 't3 v0.1.7', '0.1.7'],
+        'conn' => [ContainerServer::Conn, 'conn-server 0.4.2 (T3 server 0.1.10 contract, contract digest f72ee133e341)', '0.1.10'],
+    ]);
 });

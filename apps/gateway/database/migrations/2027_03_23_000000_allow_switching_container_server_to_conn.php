@@ -16,14 +16,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('PRAGMA legacy_alter_table = ON');
-        try {
-            Schema::table('projects', function (Blueprint $table) {
-                $table->string('container_server', 16)->default('conn')->change();
-            });
-        } finally {
-            DB::statement('PRAGMA legacy_alter_table = OFF');
-        }
+        $this->containerServerDefault('conn');
 
         DB::unprepared(<<<'SQL'
             DROP TRIGGER IF EXISTS instance_runtimes_container_server_update;
@@ -45,13 +38,28 @@ return new class extends Migration
             BEGIN SELECT RAISE(ABORT, 'An Instance runtime keeps its container server.'); END;
             SQL);
 
+        $this->containerServerDefault('t3');
+    }
+
+    /**
+     * SQLite changes a column default by rebuilding the table, which drops its triggers (the Project code guard among them) and
+     * may drop its indexes: every one the table held before is created again afterwards.
+     */
+    private function containerServerDefault(string $default): void
+    {
+        $kept = DB::select("SELECT name, sql FROM sqlite_master WHERE tbl_name = 'projects' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY type, name");
         DB::statement('PRAGMA legacy_alter_table = ON');
         try {
-            Schema::table('projects', function (Blueprint $table) {
-                $table->string('container_server', 16)->default('t3')->change();
+            Schema::table('projects', function (Blueprint $table) use ($default) {
+                $table->string('container_server', 16)->default($default)->change();
             });
         } finally {
             DB::statement('PRAGMA legacy_alter_table = OFF');
+        }
+        foreach ($kept as $object) {
+            if (DB::selectOne('SELECT 1 FROM sqlite_master WHERE name = ?', [$object->name]) === null) {
+                DB::unprepared($object->sql);
+            }
         }
     }
 };
