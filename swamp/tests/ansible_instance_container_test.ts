@@ -1879,7 +1879,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      (f.container as Record<string, unknown>).clone = { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service" } };
+      (f.container as Record<string, unknown>).clone = { t3: { internal_port: 3773, ready_seconds: 1, unit: "t3.service",
+        t3: "/opt/orbit-agent/current/agent/bin/t3", version_pattern: "^t3 v?(\\d+\\.\\d+\\.\\d+)\\b" } };
       let sleeping = asleep(f, { web: [200], t3: false });
       Object.assign(f.intent, { marker: sleeping.marker, web: { port: 8080, ready_seconds: 3, settle_seconds: 4 } });
       f.write();
