@@ -52,7 +52,8 @@ The generator applies these schema rules:
 - **Operations (`#[StartsOperation]`):** Marks routes that return an `Operation` receipt, including `keyed: false`, `requiresKey` (`Idempotency-Key` required), and `bindCaller` metadata.
 - **Destructive routes:** Marks every `DELETE` route and `DESTRUCTIVE_POSTS` (`instance:unregister`, `ai-router:task-guard`) with `x-orbit-destructive`, copied by `bin/mcp-tools` to `destructive`.
 - **Internal callbacks:** Routes in `INTERNAL` (such as Node callbacks like `operation:direct:executor-sign`) stay excluded from the operator MCP catalogue.
-- **Validation mapping:** Laravel `present` maps to required; `strictBoolean`/`strictTrue` map to strict boolean/true schemas; `Rule::in(...)` resolves class constants, including a whole array constant such as `Rule::in(ConnPush::EventTypes)`; partial patch bodies enforce `minProperties: 1`.
+- **Validation mapping:** Laravel `present` maps to required; `strictBoolean`/`strictTrue` map to strict boolean/true schemas; partial patch bodies enforce `minProperties: 1`.
+- **Enum rules:** `Rule::in(...)` resolves class constants, also a whole array constant such as `Rule::in(ConnPush::EventTypes)`.
 - **Hand-written schemas:** Complex conditional bodies (`conn_settings_body()`, `ConnLaunchSnapshot`, `TaskAgentSnapshot`, and `agent:facts`) are maintained manually in `bin/docs-openapi` rather than derived from runtime validators.
 
 Manual schemas can lag behind runtime validators: for example, `agent:facts` currently hard-codes five `kind` values (`host`, `units`, `checkout`, `checkouts`, `packages`), while `NodeFactKind` also accepts `metrics`, `ufw`, `env_keys`, and `accounts`.
