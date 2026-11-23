@@ -25,6 +25,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 require_once __DIR__.'/ContainerInstanceHelpers.php';
@@ -273,6 +274,14 @@ describe('switching a container server to conn', function (): void {
             ->and($operation->input['version_pattern'])->toBe(ContainerServer::Conn->versionPattern())
             ->and(OperationBudgetTable::SecondsByKind[InstanceServerSwitch::Kind])->toBeGreaterThan(InstanceServerSwitch::ImportSeconds + 100)
             ->and(OperationBudgetTable::SecondsByKind[InstanceWake::Kind])->toBeGreaterThan(InstanceServerSwitch::ImportSeconds + 240);
+
+        // Swamp refuses a start whose intent has a key the workflow's input schema does not admit, or lacks a required one.
+        // The run adds `ssh_execution` to the stored input (InstanceServerSwitch::input).
+        $schema = Yaml::parseFile(dirname(base_path(), 2).'/swamp/workflows/workflow-operation-instance-server-switch.yaml')['inputs']['properties']['intent'];
+        $intent = [...$operation->input, 'ssh_execution' => []];
+        expect(array_keys($intent))->toEqualCanonicalizing(array_keys($schema['properties']))
+            ->and($schema['required'])->toEqualCanonicalizing(array_keys($schema['properties']))
+            ->and($intent['import_seconds'])->toBeLessThanOrEqual($schema['properties']['import_seconds']['maximum']);
 
         $failed = switchRun($operation, 'failed', ['error_code' => 'instance.t3_unready', 'container_server' => 'conn']);
 

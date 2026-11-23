@@ -16,6 +16,9 @@ inputs:
         instance_id: {type: integer, minimum: 1}
         t3_port: {type: integer, minimum: 1, maximum: 65535}
         program: {type: string, minLength: 1, maxLength: 255}
+        version_pattern: {type: string, minLength: 1, maxLength: 255}
+        # The wait for the Conn Server's first-start import; the 780 s phase holds it (InstanceServerSwitch::ImportSeconds).
+        import_seconds: {type: integer, minimum: 1, maximum: 600}
         drop_in:
           type: object
           properties:
@@ -32,7 +35,7 @@ inputs:
           required: [project, name]
           additionalProperties: false
         ssh_execution: {type: object}
-      required: [instance_id, t3_port, program, drop_in, container, ssh_execution]
+      required: [instance_id, t3_port, program, version_pattern, import_seconds, drop_in, container, ssh_execution]
       additionalProperties: false
     # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
     execution_secrets: {type: object, properties: {}, additionalProperties: false}
