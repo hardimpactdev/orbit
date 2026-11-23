@@ -2001,13 +2001,13 @@ describe('the server a container records', function (): void {
             ->and(['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last])->toBe($before);
     });
 
-    it('keeps a runtime\'s server: no update changes it', function (): void {
+    it('refuses a conn runtime\'s switch back to t3', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         $clone = containerCreate($default->project, $node, 'feature');
 
         expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 't3']))
-            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+            ->toThrow(QueryException::class, 'An Instance runtime can only switch its container server from t3 to conn.');
     });
 });
 

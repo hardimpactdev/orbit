@@ -287,7 +287,7 @@ it('admits one wake per Instance, which a second caller joins, and records it aw
 
     expect($second->id)->toBe($first->id)
         ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)
-        ->and(OperationRunBudgets::seconds((clone $first)->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(300);
+        ->and(OperationRunBudgets::seconds((clone $first)->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(900);
 
     $done = powerRun($first, 'succeeded', ['commit' => null, 'wake' => 'resumed', 'marker_found' => true, 'resume_seconds' => 0.021, 'web_probe_seconds' => 0.4]);
 

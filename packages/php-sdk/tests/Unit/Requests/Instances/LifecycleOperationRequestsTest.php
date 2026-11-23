@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\SleepInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SwitchInstanceServerRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UnregisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceMailRequest;
@@ -54,6 +55,8 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
         'instance.sleep', '/api/v1/instances/501/sleep', []],
     'wake' => [new WakeInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
         'instance.wake', '/api/v1/instances/501/wake', []],
+    'server switch' => [new SwitchInstanceServerRequest(501, idempotencyKey: 'lifecycle-proof'),
+        'instance.server_switch', '/api/v1/instances/501/server-switch', []],
     'migrate' => [new MigrateInstanceRequest(501, idempotencyKey: 'lifecycle-proof'),
         'instance.migrate', '/api/v1/instances/501/migrate', []],
     'destroy' => [new DestroyInstanceRequest(501, force: true, idempotencyKey: 'lifecycle-proof'),

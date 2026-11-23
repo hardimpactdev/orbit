@@ -132,7 +132,7 @@ Each field takes effect as follows:
 | `merge_check` / `--merge-check` | Sets the required check run name (`null` or `--clear-merge-check` clears it). |
 | `task_implementer_*`, `task_reviewer_*` | Sets default copy-turn agents (`--clear-task-implementer-agent` / `--clear-task-reviewer-agent` clears them). |
 | `task_pr_mode` / `--task-pr-mode` | Sets the default PR mode (`--clear-task-pr-mode` clears it). |
-| `container_server` / `--container-server` | Applies to dev containers reserved after the change (`conn` or `t3`). |
+| `container_server` / `--container-server` | Applies to dev containers reserved after the change (`conn` or `t3`; column default `conn`). Existing `t3` containers keep theirs until switched with [`instance:server:switch`](/cli/instance/server-switch); task copies always run `conn`. |
 
 A type or root change that leaves a Route pointing at `.` fails with `route.target_web_root_unsupported`. Because Orbit stores each checkout's directory path at creation, changing `slug` never breaks older checkouts.
 

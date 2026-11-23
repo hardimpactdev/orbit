@@ -39,7 +39,7 @@ jobs:
           behaviorName: '${{ "instance-wake-start-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
+            run: timeout 840 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'

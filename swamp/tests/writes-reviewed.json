@@ -416,6 +416,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-server-switch": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-process-upgrade": {
    "Read the installed release": "read-only",
    "Verify it runs": "read-only",

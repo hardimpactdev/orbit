@@ -55,7 +55,8 @@
             "cli/instance/migrate",
             "cli/instance/mail-update",
             "cli/instance/sleep",
-            "cli/instance/wake"
+            "cli/instance/wake",
+            "cli/instance/server-switch"
           ]
         }
       ]

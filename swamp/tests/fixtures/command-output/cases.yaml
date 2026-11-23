@@ -1,5 +1,20 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  conn-server-version-ok:
+    intent: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}
+    switch_version: {rc: 0, stdout: "conn-server 0.4.2 (T3 server 0.1.10 contract, abcdef1)\n"}
+  conn-server-version-other:
+    intent: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}
+    switch_version: {rc: 0, stdout: "t3 v0.1.7\n"}
+  wake-recorded-conn-version:
+    container: {clone: {t3: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}}}
+    wake_server_version: {rc: 0, stdout: "conn-server 0.4.2 (T3 server 0.1.10 contract, contract digest f72ee133e341)\n"}
+  wake-recorded-t3-version:
+    container: {clone: {t3: {version_pattern: '^t3 v?(\d+\.\d+\.\d+)\b'}}}
+    wake_server_version: {rc: 0, stdout: "t3 v0.1.7\n"}
+  wake-recorded-conn-unreadable:
+    container: {clone: {t3: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}}}
+    wake_server_version: {rc: 126, stdout: ""}
   # The workspace guest prints one JSON object: its refusal with the table it collected first, its result, or, when it crashed, a
   # traceback that names no table.
   workspace-guest-refusal-with-parts:
@@ -1517,6 +1532,31 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-conn-version
+  expected: '0.1.10'
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-t3-version
+  expected: '0.1.7'
+- file: tasks/instance-container-power.yml
+  task: Refuse a wake whose server is not the recorded one
+  field: vars.wake_expected_version
+  context: wake-recorded-conn-unreadable
+  expected: ''
+- file: instance-server-switch.yml
+  task: Parse the Conn Server contract version
+  field: ansible.builtin.set_fact.expected_server_version
+  context: conn-server-version-ok
+  expected: '0.1.10'
+- file: instance-server-switch.yml
+  task: Parse the Conn Server contract version
+  field: ansible.builtin.set_fact.expected_server_version
+  context: conn-server-version-other
+  expected: ''
 - file: tasks/process-upgrade-verify.yml
   task: Refuse a unit that stopped or restarted
   field: ansible.builtin.assert.that[1]
@@ -3404,6 +3444,10 @@ non_command_output:
   field: vars.failure_code
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: conn-environment-restart.yml
+  task: Write the failure
+  field: ansible.builtin.copy.content
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
+- file: instance-server-switch.yml
   task: Write the failure
   field: ansible.builtin.copy.content
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.

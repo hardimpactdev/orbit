@@ -12,6 +12,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\MigrateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\SleepInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SwitchInstanceServerRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\WakeInstanceRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -32,7 +33,10 @@ afterEach(function (): void {
 });
 
 it('follows lifecycle admission and emits only the final Operation in JSON', function (string $command, string $request, array $arguments, array $body): void {
-    $kind = str_replace(':', '.', $command);
+    $kind = match ($command) {
+        'instance:server:switch' => 'instance.server_switch',
+        default => str_replace(':', '.', $command),
+    };
     $queued = ['id' => 901, 'kind' => $kind, 'target_type' => 'instance', 'target_id' => 501,
         'status' => 'queued', 'sequence' => 1, 'poll_after_seconds' => 0];
     $final = [...$queued, 'status' => 'succeeded', 'sequence' => 8, 'result' => ['instance_id' => 501, 'lifecycle_complete' => true]];
@@ -61,6 +65,7 @@ it('follows lifecycle admission and emits only the final Operation in JSON', fun
     'destroy' => ['instance:destroy', DestroyInstanceRequest::class, ['instance' => 501, '--yes' => true, '--force' => true], ['force' => true]],
     'sleep' => ['instance:sleep', SleepInstanceRequest::class, ['instance' => 501], []],
     'wake' => ['instance:wake', WakeInstanceRequest::class, ['instance' => 501], []],
+    'server switch' => ['instance:server:switch', SwitchInstanceServerRequest::class, ['instance' => 501], []],
 ]);
 
 it('says in human output that a sleep did not check T3', function (): void {

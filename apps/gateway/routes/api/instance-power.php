@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\InstancePowerController;
+use App\Http\Controllers\Api\InstanceServerSwitchController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -12,4 +13,6 @@ Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->whereNumber('instance')->name('instance:sleep');
     Route::post('instances/{instance}/wake', [InstancePowerController::class, 'wake'])
         ->whereNumber('instance')->name('instance:wake');
+    Route::post('instances/{instance}/server-switch', [InstanceServerSwitchController::class, 'store'])
+        ->whereNumber('instance')->name('instance:server:switch');
 });
