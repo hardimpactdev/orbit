@@ -43,6 +43,7 @@
                 }
             ],
             "reboot_hold": false,
+            "primary_agent": false,
             "access": {
                 "can_access": [],
                 "accessible_by": []

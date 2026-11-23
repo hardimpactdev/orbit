@@ -32,6 +32,13 @@ final readonly class RoleRegistry
         return $this->definition($role)->mutable || $role === RoleName::Router;
     }
 
+    /** @return list<string> The roles that only the Gateway records; host convergence never takes them. */
+    public function recordOnly(): array
+    {
+        return array_values(array_map(static fn (RoleName $role): string => $role->value,
+            array_filter($this->names(), fn (RoleName $role): bool => $this->definition($role)->recordOnly)));
+    }
+
     public function definition(RoleName $role): RoleDefinition
     {
         return match ($role) {
@@ -139,7 +146,7 @@ final readonly class RoleRegistry
                 relocatable: false,
                 conflicts: [RoleName::Gateway],
             ),
-            // Light marker role for a Node that hosts a host-level Conn server entry point (Linux or macOS).
+            // Marks a Node that hosts a host-level Conn server entry point (Linux or macOS). The Gateway only records it.
             RoleName::Agent => new RoleDefinition(
                 name: $role,
                 singleton: false,
@@ -147,6 +154,7 @@ final readonly class RoleRegistry
                 mutable: true,
                 relocatable: false,
                 metrics: false,
+                recordOnly: true,
             ),
         };
     }

@@ -43,7 +43,8 @@
                         "error_code": null
                     }
                 ],
-                "reboot_hold": false
+                "reboot_hold": false,
+                "primary_agent": false
             },
             {
                 "id": 1,
@@ -83,7 +84,8 @@
                         "error_code": null
                     }
                 ],
-                "reboot_hold": false
+                "reboot_hold": false,
+                "primary_agent": false
             }
         ],
         "meta": {

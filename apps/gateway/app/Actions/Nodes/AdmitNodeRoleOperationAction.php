@@ -71,7 +71,7 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            $light = $role === RoleName::Agent;
+            $light = $this->roles->definition($role)->recordOnly;
             if ($duringProvisioning || ($light ? $node->status !== LifecycleStatus::Active : ! app(ManagedNodeEligibility::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', $light ? 'Roles can be changed only on an active node.' : 'Role work requires its exact managed Node worker.', 422);
             }
@@ -163,7 +163,8 @@ final readonly class AdmitNodeRoleOperationAction
                     'reason' => 'swamp_self_removal', 'role' => $role->value,
                 ]);
             }
-            if ($role !== RoleName::Agent && ! app(ManagedNodeEligibility::class)->allows($node)) {
+            $recordOnly = $this->roles->definition($role)->recordOnly;
+            if (! $recordOnly && ! app(ManagedNodeEligibility::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires recorded SSH management.', 422);
             }
             $this->routes->assertRoleRemovable($node, $role);
@@ -182,7 +183,7 @@ final readonly class AdmitNodeRoleOperationAction
             }
             NodeRoleRemoveInput::refuseOffline($offline, $deleted);
             $input = ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline];
-            if ($role === RoleName::Agent || $assignment->neverTouchedNode()) {
+            if ($recordOnly || $assignment->neverTouchedNode()) {
                 return $this->recordRemoval($node, $assignment, $input, $requestId);
             }
             $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id, $input, 'operator', $requestId,
@@ -206,7 +207,7 @@ final readonly class AdmitNodeRoleOperationAction
         return is_int($clusterId) ? app(ClusterRouterOperationLock::class)->run($clusterId, $admit) : $admit();
     }
 
-    /** Light roles such as `agent` need no host convergence, so the Gateway records the active assignment and a succeeded Operation at once. */
+    /** A record-only role such as `agent` needs no host convergence, so the Gateway records the active assignment and a succeeded Operation at once. */
     private function recordLightAdd(Node $node, RoleName $role, bool $converge, string $kind, ?string $requestId): Operation
     {
         return $this->operations->record(
@@ -238,7 +239,7 @@ final readonly class AdmitNodeRoleOperationAction
      */
     private function recordRemoval(Node $node, NodeRole $assignment, array $input, ?string $requestId): Operation
     {
-        $snapshot = $assignment->role === RoleName::Agent ? null : app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role);
+        $snapshot = $this->roles->definition($assignment->role)->recordOnly ? null : app(NodeRoleRuntimeInput::class)->removal($node, $assignment->role);
         $result = ['node_id' => $node->id, 'assignment_id' => $assignment->id, 'role' => $assignment->role->value,
             'role_removed' => true, 'offline' => false];
         $operation = $this->operations->record('node.role_remove', 'node', $node->id, $node->id, $input, $result, 'operator', $requestId,

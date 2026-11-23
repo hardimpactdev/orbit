@@ -9,6 +9,7 @@ final readonly class RoleDefinition
     /**
      * @param  list<RoleName>  $conflicts
      * @param  bool  $metrics  Whether the role takes part in Metrics: its transitions converge the fleet and it selects the role-default exporter.
+     * @param  bool  $recordOnly  Whether the role is only a Gateway record: it has no recipe profile and no host work, so no converge or release input holds it.
      */
     public function __construct(
         public RoleName $name,
@@ -18,5 +19,6 @@ final readonly class RoleDefinition
         public bool $relocatable,
         public array $conflicts = [],
         public bool $metrics = true,
+        public bool $recordOnly = false,
     ) {}
 }

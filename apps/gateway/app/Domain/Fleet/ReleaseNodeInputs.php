@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleUnits;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -20,6 +21,7 @@ use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Models\Node;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Process;
+use LogicException;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -238,6 +240,7 @@ readonly class ReleaseNodeInputs
         $sharedFiles = $this->files($root, self::SharedRoleFiles);
         $roles = [];
         foreach ($node->roles()->where('status', LifecycleStatus::Active)
+            ->whereNotIn('role', app(RoleRegistry::class)->recordOnly())
             ->when($release, static fn ($query) => $query->where('role', '!=', RoleName::Gateway))
             ->when($selected !== null, static fn ($query) => $query->whereIn('role', $selected ?? []))->orderBy('id')->get() as $assignment) {
             $role = $assignment->role->value;
@@ -328,7 +331,9 @@ readonly class ReleaseNodeInputs
                 'swamp/ansible/tasks/private-dns-listener.yml', 'swamp/ansible/tasks/private-dns-withdraw.yml'],
             // These roles use the common converge play and the branches selected by their rendered resources and software.
             RoleName::AppDev, RoleName::Vpn, RoleName::Router, RoleName::Ingress,
-            RoleName::Database, RoleName::Analytics, RoleName::Agent => [],
+            RoleName::Database, RoleName::Analytics => [],
+            // roles() leaves out a record-only role: it has no host input.
+            RoleName::Agent => throw new LogicException('A record-only role has no release role input.'),
         };
     }
 
