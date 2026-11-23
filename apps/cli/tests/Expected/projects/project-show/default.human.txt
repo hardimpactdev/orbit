@@ -3,33 +3,39 @@ Fetching Instances...
 
 ┌  Project: acme
 │
-├  ID                      1
+├  ID                       1
 │
-├  Name                    Acme
+├  Name                     Acme
 │
-├  Type                    laravel-app
+├  Type                     laravel-app
 │
-├  Repository              https://github.com/acme/site.git
+├  Repository               https://github.com/acme/site.git
 │
-├  Source access           github_app
+├  Source access            github_app
 │
-├  Default branch          —
+├  Default branch           —
 │
-├  Web root                —
+├  Web root                 —
 │
-├  Task check              —
+├  Task check               —
 │
-├  Implementer agent       claude / claude-sonnet-5-5 / -
+├  Implementer agent        claude / claude-sonnet-5-5 / -
 │
-├  Reviewer agent          - / - / xhigh
+├  Reviewer agent           - / - / xhigh
 │
-├  Task workspace routed   yes
+├  Task pull request mode   Gateway default
 │
-├  Review and merge        no
+├  Container server         conn
 │
-├  Merge check             —
+├  Task workspace routed    yes
 │
-└  Maintenance             no
+├  Default auto-deploy      yes
+│
+├  Review and merge         no
+│
+├  Merge check              —
+│
+└  Maintenance              no
 
  ┌────┬──────┬─────────┬───────────────┬────────┐
  │ ID │ NAME │ NODE    │ DOMAIN        │ STATUS │

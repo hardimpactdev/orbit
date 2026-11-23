@@ -10,10 +10,19 @@ export type Operation = Omit<Required<components["schemas"]["Operation"]>, "resu
 /** One operation:list row: the record without input, result and steps. */
 export type OperationListItem = Required<components["schemas"]["OperationListItem"]>;
 
-export const TERMINAL: readonly string[] = ["succeeded", "failed", "cancelled", "interrupted"];
+/** The closed set of statuses the Gateway sends on an Operation. */
+export type OperationStatus = Operation["status"];
 
-export const isTerminal = (operation: Pick<Operation, "status">): boolean =>
-    TERMINAL.includes(operation.status);
+export const TERMINAL: readonly OperationStatus[] = [
+    "succeeded",
+    "failed",
+    "cancelled",
+    "interrupted",
+];
+
+/** Whether an operation has ended; an operation:list row carries the same status as a plain string. */
+export const isTerminal = (operation: Pick<Operation | OperationListItem, "status">): boolean =>
+    TERMINAL.some((status) => status === operation.status);
 
 /** Starts a deploy with the same request as `instance:deploy`; the Gateway answers 202 with the queued operation. */
 export const startDeploy = (instanceId: number): Promise<Operation> =>

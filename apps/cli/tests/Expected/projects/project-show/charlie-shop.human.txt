@@ -3,33 +3,39 @@ Fetching Instances...
 
 ┌  Project: charlie-shop
 │
-├  ID                      3
+├  ID                       3
 │
-├  Name                    Charlie shop
+├  Name                     Charlie shop
 │
-├  Type                    laravel-app
+├  Type                     laravel-app
 │
-├  Repository              git@github.com:charlie/shop.git
+├  Repository               git@github.com:charlie/shop.git
 │
-├  Source access           github_app
+├  Source access            github_app
 │
-├  Default branch          release
+├  Default branch           release
 │
-├  Web root                web/public
+├  Web root                 web/public
 │
-├  Task check              —
+├  Task check               —
 │
-├  Implementer agent       Gateway default
+├  Implementer agent        Gateway default
 │
-├  Reviewer agent          Gateway default
+├  Reviewer agent           Gateway default
 │
-├  Task workspace routed   yes
+├  Task pull request mode   Gateway default
 │
-├  Review and merge        no
+├  Container server         conn
 │
-├  Merge check             —
+├  Task workspace routed    yes
 │
-└  Maintenance             no
+├  Default auto-deploy      yes
+│
+├  Review and merge         no
+│
+├  Merge check              —
+│
+└  Maintenance              no
 
  ┌────┬──────────────────┬─────────┬────────────────────────────────────┬────────┐
  │ ID │ NAME             │ NODE    │ DOMAIN                             │ STATUS │
