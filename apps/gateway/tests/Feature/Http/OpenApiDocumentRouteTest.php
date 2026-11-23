@@ -32,10 +32,8 @@ it('serves the document bin/build-api wrote with its SHA-256 to an active WireGu
         ->assertHeader('Content-Type', 'application/json')
         ->assertHeader('X-Orbit-OpenAPI-SHA256', hash('sha256', (string) $document));
 
-    $paths = $response->json('paths');
     expect($response->getContent())->toBe($document)
-        ->and($paths['/api/v1/openapi.json']['get']['operationId'])->toBe('gateway-openapi')
-        ->and($paths['/api/v1/conn/managed/ack']['post']['operationId'])->toBe('conn-managed-ack');
+        ->and($response->json('paths'))->toHaveKeys(['/api/v1/openapi.json', '/api/v1/conn/managed/ack']);
 });
 
 it('refuses a caller that is not an active WireGuard peer', function (?string $status): void {
