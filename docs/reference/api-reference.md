@@ -22,6 +22,10 @@ composer api-fixtures   # runs bin/api-fixtures --check
 
 All generated files stay ignored by Git: `docs/openapi.json`, `docs/docs.json`, `apps/gateway/resources/mcp/tools.json`, and `apps/web/src/api/schema.d.ts`. Both `composer check` (`bin/review-check`) and CI run `bin/build-api` and `bin/api-fixtures --check`.
 
+## The document each release serves
+
+Each Gateway release serves its own document at `GET /api/v1/openapi.json` (`gateway-openapi`), to any active WireGuard peer. The `X-Orbit-OpenAPI-SHA256` header is the SHA-256 of the body, so a client such as Conn can pin the document it generated its types from. The step "Build the release" (`swamp/scripts/gateway-release-build.sh`) runs `composer install` in `apps/gateway`; its `post-install-cmd` runs `bin/build-api` in the release checkout. That one run writes both `docs/openapi.json`, which the route serves, and the MCP tool manifest that the release loads. A release from before this route has none, and a rollback to it removes the route. Without a generated document the route answers 503 `openapi.unavailable`. `bin/mcp-tools` excludes the route.
+
 ## Determinism and external inputs
 
 The same checkout must produce the exact same `docs/openapi.json`. Three inputs live outside tracked source files and must stay pinned:
