@@ -44,8 +44,8 @@ sequenceDiagram
       Note over GW: Record conn & version<br/>runtime · ConnEnvironment
     else busy or failed
       %% path: failed
-      N--xSW: Switch failed<br/>error_code · container_server once written
-      SW--xGW: Run failed<br/>runtime stays t3, or records conn once the drop-in is written
+      N--xSW: Switch failed<br/>error_code
+      SW--xGW: Run failed<br/>t3, or conn once written
     end
   end
   loop until terminal

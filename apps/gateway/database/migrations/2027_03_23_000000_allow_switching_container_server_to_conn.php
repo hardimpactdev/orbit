@@ -57,8 +57,9 @@ return new class extends Migration
             DB::statement('PRAGMA legacy_alter_table = OFF');
         }
         foreach ($kept as $object) {
-            if (DB::selectOne('SELECT 1 FROM sqlite_master WHERE name = ?', [$object->name]) === null) {
-                DB::unprepared($object->sql);
+            if (is_object($object) && is_string($object->name ?? null) && is_string($object->sql ?? null)
+                && DB::selectOne('SELECT 1 FROM sqlite_master WHERE name = ?', [$object->name]) === null) {
+                DB::statement($object->sql);
             }
         }
     }

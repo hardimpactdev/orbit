@@ -234,6 +234,7 @@
                         "url": "http://10.44.0.7:3800",
                         "label": "tool / fix-login",
                         "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                        "version_pattern": "^t3 v?(\\d+\\.\\d+\\.\\d+)\\b",
                         "project_mark": "/home/agent/.config/orbit/t3-project",
                         "condition": "/etc/orbit/instance"
                     },
@@ -693,6 +694,7 @@
                         "url": "http://10.44.0.7:3800",
                         "label": "tool / fix-login",
                         "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                        "version_pattern": "^t3 v?(\\d+\\.\\d+\\.\\d+)\\b",
                         "project_mark": "/home/agent/.config/orbit/t3-project",
                         "condition": "/etc/orbit/instance"
                     },
