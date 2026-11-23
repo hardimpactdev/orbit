@@ -46,7 +46,8 @@ function apns_test_ec_keypair(): array
     assert($key !== false);
 
     $privatePem = '';
-    assert(openssl_pkey_export($key, $privatePem));
+    $exported = openssl_pkey_export($key, $privatePem);
+    expect($exported)->toBeTrue();
     $details = openssl_pkey_get_details($key);
     assert(is_array($details) && is_string($details['key'] ?? null));
 
