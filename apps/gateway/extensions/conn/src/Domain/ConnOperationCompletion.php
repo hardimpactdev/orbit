@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
+use Orbit\Extensions\Conn\Domain\Push\ConnPushDevices;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -31,5 +32,6 @@ final readonly class ConnOperationCompletion
         ConnPairing::query()->whereIn('id', $operation->input['pairing_ids'])
             ->where('conn_environment_id', $operation->input['conn_environment_id'])
             ->where('node_id', $operation->target_id)->update(['revoked_at' => Carbon::now(), 'credential' => null]);
+        app(ConnPushDevices::class)->removeIfNoLivePairings($operation->target_id);
     }
 }

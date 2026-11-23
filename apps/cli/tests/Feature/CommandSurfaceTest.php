@@ -10,6 +10,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\GatewayExtensionState;
 use App\Support\CommandVocabulary;
 use App\Support\ExtensionCommandVisibility;
+use App\Support\GatedExtensionCommand;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -1802,3 +1803,21 @@ it('refuses missing and invalid IDs as structured errors without transport', fun
         MockClient::destroyGlobal();
     }
 })->with([[[]], [['instance' => '0']], [['instance' => 'garbage']]]);
+
+it('registers Conn push credentials commands behind the conn extension with expected options', function (): void {
+    $commands = app(Kernel::class)->all();
+
+    expect($commands)->toHaveKeys(['conn:push-credentials:set', 'conn:push-credentials:show'])
+        ->and(CommandVocabulary::allowsCommand('conn:push-credentials:set'))->toBeTrue()
+        ->and(CommandVocabulary::allowsCommand('conn:push-credentials:show'))->toBeTrue();
+
+    $set = $commands['conn:push-credentials:set'];
+    $show = $commands['conn:push-credentials:show'];
+
+    expect($set)->toBeInstanceOf(GatedExtensionCommand::class)
+        ->and($set->extensionSlug())->toBe('conn')
+        ->and(array_keys($set->getDefinition()->getOptions()))->toContain('key-id', 'team-id', 'json')
+        ->and($show)->toBeInstanceOf(GatedExtensionCommand::class)
+        ->and($show->extensionSlug())->toBe('conn')
+        ->and(array_keys($show->getDefinition()->getOptions()))->toContain('json');
+});

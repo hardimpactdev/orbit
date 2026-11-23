@@ -7,6 +7,7 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
+use Orbit\Extensions\Conn\Http\Controllers\ConnAttentionController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentRestartController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnInstancesController;
@@ -18,6 +19,8 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnPushCredentialsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnPushDevicesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnRealtimeController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnReservationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnSessionsController;
@@ -25,6 +28,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnTasksController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
 use Orbit\Extensions\Conn\Http\Middleware\AuthenticateConnManagedTarget;
 use Orbit\Extensions\Conn\Http\Middleware\RequireConnManagedTargets;
+use Orbit\Extensions\Conn\Http\Middleware\RequireConnPush;
 
 // Conn reuses node access (/reference/conn#access): a server is reached through its registering Node.
 // Registration needs none: it ties the server to the calling Node.
@@ -52,6 +56,14 @@ Route::middleware([
             Route::post('broadcasting/auth', [ConnRealtimeController::class, 'authenticate'])->name('conn:realtime:auth');
         });
         Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
+        Route::middleware(RequireConnPush::class)->group(function (): void {
+            Route::put('me/push-device', [ConnPushDevicesController::class, 'upsert'])->name('conn:me:push-device:upsert');
+            Route::get('me/push-device', [ConnPushDevicesController::class, 'show'])->name('conn:me:push-device:show');
+            Route::delete('me/push-device/{device_id}', [ConnPushDevicesController::class, 'destroy'])->whereUuid('device_id')->name('conn:me:push-device:destroy');
+            Route::post('environments/{environment}/attention', [ConnAttentionController::class, 'native'])->name('conn:attention:record');
+            Route::get('push-credentials', [ConnPushCredentialsController::class, 'show'])->name('conn:push-credentials:show');
+            Route::put('push-credentials', [ConnPushCredentialsController::class, 'update'])->name('conn:push-credentials:set');
+        });
         Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
         Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');
         Route::get('profiles/{profile}/settings', [ConnProfilesController::class, 'settings'])
@@ -111,5 +123,8 @@ Route::middleware(['api', RequireConnManagedTargets::class])->prefix('api/v1/con
         Route::post('authority', [ConnManagedTargetsController::class, 'authority'])->name('conn:managed:authority');
         Route::post('introspect', [ConnManagedTargetsController::class, 'introspect'])->name('conn:managed:introspect');
         Route::post('ack', [ConnManagedTargetsController::class, 'ack'])->name('conn:managed:ack');
+    });
+    Route::middleware([RequireConnPush::class, AuthenticateConnManagedTarget::class])->withoutMiddleware(RecordCommandActivity::class)->prefix('managed')->group(function (): void {
+        Route::post('attention', [ConnAttentionController::class, 'managed'])->name('conn:managed:attention');
     });
 });
