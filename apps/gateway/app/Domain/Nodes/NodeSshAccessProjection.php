@@ -23,9 +23,10 @@ final readonly class NodeSshAccessProjection implements DirectOperationProjectio
         return hash('sha256', json_encode(['target' => $target, 'keys' => $intent['keys']], JSON_THROW_ON_ERROR));
     }
 
+    /** An intent admitted before it named the Node's platform is a Linux Node's, as it was then. */
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets']];
+        return ['intent' => ValidatedData::object($operation->input['intent']) + ['platform' => 'linux'], 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation

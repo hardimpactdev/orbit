@@ -12,13 +12,15 @@ const steps = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operat
 const linux = steps.find((step) => step.name === "Write the Orbit keys")!;
 const mac = steps.find((step) => step.name === "Write the Mac keys")!;
 const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl swamp-worker";
-const inputs = (platform: string) => ({ node_id: 8n, intent: { platform, keys: [key], target: { user: "nick" } } });
-const items = (step: Step, platform: string) => environment.evaluate(swampExpression(step.forEach.in), { inputs: inputs(platform) });
+const inputs = (platform?: string) => ({ node_id: 8n, intent: { ...(platform === undefined ? {} : { platform }), keys: [key], target: { user: "nick" } } });
+const items = (step: Step, platform?: string) => environment.evaluate(swampExpression(step.forEach.in), { inputs: inputs(platform) });
 
 Deno.test("a Linux Node's keys go to the official authorized_key behavior, and a Mac Node's to the Mac step only", () => {
     assertEquals(linux.task.behaviorType, "@swamp/cfgmgmt/authorized_key");
     assertEquals([items(linux, "linux"), items(mac, "linux")], [[key], []]);
     assertEquals([items(linux, "macos"), items(mac, "macos")], [[], [key]]);
+    // An operation admitted before the intent named its platform is a Linux Node, as it was then.
+    assertEquals([items(linux), items(mac)], [[key], []]);
     // The login check runs after whichever step wrote the keys, and not after a failed write.
     const login = steps.find((step) => step.name === "Log in with Swamp identity")!;
     const written = { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] };

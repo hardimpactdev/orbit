@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeSshAccessAction;
+use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Operation;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
@@ -22,4 +24,12 @@ it('names the Node\'s platform in the SSH access intent, which picks how the key
         ->and($intents['macos']['platform'])->toBe('macos')
         // The digest covers the target and the keys only, so Nodes that converged before keep their recorded digest.
         ->and($intents['macos']['digest'])->toBe(hash('sha256', json_encode(['target' => $intents['macos']['target'], 'keys' => $intents['macos']['keys']], JSON_THROW_ON_ERROR)));
+});
+
+it('hands Swamp a Linux platform for an intent stored before the intent named one, and keeps a named platform', function (): void {
+    $input = fn (array $intent): array => (new NodeSshAccessProjection)->input(new Operation(['input' => ['intent' => $intent, 'execution_secrets' => []]]));
+    $stored = ['target' => ['host' => '192.0.2.9', 'user' => 'orbit'], 'keys' => ['ssh-ed25519 AAAAswamp'], 'digest' => 'recorded'];
+
+    expect($input($stored))->toBe(['intent' => $stored + ['platform' => 'linux'], 'execution_secrets' => []])
+        ->and($input($stored + ['platform' => 'macos'])['intent']['platform'])->toBe('macos');
 });
