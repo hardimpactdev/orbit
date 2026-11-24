@@ -10,9 +10,7 @@ covers:
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
   - swamp/ansible/t3_copy_rpc.mjs
-  - apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php}
-  - apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php
-  - swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}
+  - {apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
 ---
 
 # Instance containers
