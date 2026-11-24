@@ -9,8 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
-  - swamp/ansible/t3_copy_rpc.mjs
-  - {apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
+  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
 ---
 
 # Instance containers
@@ -251,10 +250,14 @@ On a Mac, the checks come first. The phase:
 Then the swap and the restart. The phase:
 
 5. sends the notice, when the record asks for one;
-6. makes a new backup folder for the run (`mkdir` refuses one that exists, `conn_server.backup_exists`), moves the installed bundle into it and the staged bundle onto the same path, so the TCC grants stay;
-7. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
-8. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait, and clicks **Allow** only when its texts name Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`);
-9. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. Else it puts the backup back on the path, kickstarts again and fails the Node (`conn_server.health_check_failed`, `rolled_back` true when the old version answers).
+6. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
+7. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
+8. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+9. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
+10. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
+11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version.
+
+When `/health` never names the version, the phase puts the backup back on the path and kickstarts again. The Node fails with `conn_server.health_check_failed`, and `rolled_back` is true when the old version answers.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way; a failed check points `current` back and restarts again.
 

@@ -34,9 +34,12 @@ case "$1" in
   -d) if [ "$2" = -r ]; then echo "Executable=$app"; echo "designated => $dr"; else printf 'Identifier=%s\\nTeamIdentifier=%s\\n' "$id" "$team" >&2; fi ;;
 esac`,
     ditto: `#!/bin/sh\nmkdir -p "$4" && tar -xf "$3" -C "$4"`,
-    // The job runs the version of the bundle on the path; a version listed in $FIXTURE/broken never answers.
+    // The job runs the version of the bundle on the path; a version listed in $FIXTURE/broken never answers. With $FIXTURE/stale the
+    // old server keeps answering. $FIXTURE/prompt-on-start is the TCC prompt that the first start raises.
     launchctl: `#!/bin/sh
 echo "$*" >> "$FIXTURE/launchctl"
+[ -f "$FIXTURE/prompt-on-start" ] && mv "$FIXTURE/prompt-on-start" "$FIXTURE/prompt"
+[ -f "$FIXTURE/stale" ] && exit 0
 v=$(cat "$FIXTURE_APP/Contents/version")
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
     osascript: `#!/bin/sh
@@ -52,7 +55,7 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; dryRun?: boolean; notice?: boolean };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; dryRun?: boolean; notice?: boolean };
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
@@ -80,6 +83,8 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${folder}/running`, "0.4.2");
         Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
+        if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
+        if (options.stale) Deno.writeTextFileSync(`${folder}/stale`, "");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
         const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
@@ -120,7 +125,7 @@ async function rollout(options: Options) {
             result: JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
-            launchctl: read("launchctl"), clicks: read("clicks"), noticed,
+            launchctl: read("launchctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
         };
     } finally {
@@ -170,6 +175,22 @@ test("a failed health check restores the backup, kickstarts the old server, fail
     assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }, { node_id: 46, outcome: "not_reached" }]);
     assertEquals([run.installed, run.linux, run.launchctl.length], ["0.4.2", "0.4.2", 2]);
     assertEquals(run.backups.length, 1);
+});
+
+const removable = '"Conn Server" would like to access files on a removable volume., Don’t Allow, Allow';
+
+test("a same-identity swap answers the TCC prompt its start raises, leaves none unanswered, and /health names the version", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }], promptOnStart: removable });
+    assert(run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2", prompts: [removable] }]);
+    assertEquals([run.installed, run.clicks, run.promptLeft, run.launchctl.length], ["0.5.0", ["click"], false, 1]);
+});
+
+test("a server that still answers the old version fails the /health version check and is rolled back", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }], stale: true });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
+    assertEquals([run.installed, run.launchctl.length, run.backups.length], ["0.4.2", 2, 1]);
 });
 
 test("the expected Conn Server prompt is allowed; any other prompt fails the Node and rolls back", async () => {
