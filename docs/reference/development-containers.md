@@ -9,7 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
-  - swamp/ansible/t3_copy_rpc.mjs
+  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
 ---
 
 # Instance containers
@@ -205,7 +205,65 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.4.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.1` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+
+#### Conn Server pin
+
+The agent folder part `conn-server` in `apps/gateway/resources/machine-software/recipe.json` pins one Conn release, `conn-server-v<X>`, as two assets:
+
+- `artifacts.amd64`: `conn-server-<X>-linux-x64.tar.gz` and its SHA-256. Container hosts unpack it into the agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`.
+- `macos_arm64`, optional: `conn-server-<X>-macos-arm64.zip` and its SHA-256. It also names the signature that its `Conn Server.app` must carry: `bundle_id` (`com.nckrtl.conn-server`) and `team_id`, the Developer ID team (`9SVJ4SYB9B`).
+
+The bundle is signed with the hardened runtime and is not notarized. Releases before 0.5.0 have no zip, so their pin leaves `macos_arm64` out.
+
+```json
+"conn-server": {
+    "version": "<X>",
+    "artifacts": {"amd64": {"url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-linux-x64.tar.gz", "sha256": "…"}},
+    "bin": {"conn-server": "conn-server-<X>-linux-x64/conn-server"},
+    "macos_arm64": {
+        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-macos-arm64.zip",
+        "sha256": "…",
+        "bundle_id": "com.nckrtl.conn-server",
+        "team_id": "9SVJ4SYB9B"
+    }
+}
+```
+
+The recipe loader accepts `macos_arm64` on agent folder parts only and requires the release's exact zip name. Container hosts never read it: the agent folder plan, and so the folder's version, has the Linux tarball alone. The Conn Server rollout to Mac Nodes reads the zip, its SHA-256 and the signing facts from this pin. A change to the pin changes the recipe digest, so a pin bump also updates the hashes in `apps/gateway/tests/Fixtures/production-gateway-converge-main.json`.
+
+#### Conn Server rollout
+
+`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"}`, both required) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
+
+Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 8,100 s, covers at most four Nodes of 2,000 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
+
+On a Mac, the checks come first. The phase:
+
+1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
+2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
+3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
+4. stops here in a dry run (`checked`).
+
+Then the swap and the restart. The phase:
+
+5. sends the notice, when the record asks for one;
+6. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
+7. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
+8. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+9. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
+10. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
+11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. No round starts after 180 s.
+
+From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when the old version answers.
+
+Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way. Any failure from the relink until `/health` answers points `current` back and restarts again.
+
+The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node with `conn_server.notice_failed` before anything changes. The URL or the command may hold a token, so the phase logs neither, nor their output, on success or failure.
+
+The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
 
 #### Switching an existing T3 container to Conn
 

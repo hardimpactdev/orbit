@@ -434,6 +434,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-fleet-conn-server-rollout": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-sleep": {
    "result": "read-only",
    "cleanup": "idempotent"

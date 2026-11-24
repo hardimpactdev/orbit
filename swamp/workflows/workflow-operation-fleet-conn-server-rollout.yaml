@@ -1,0 +1,87 @@
+id: 6b1f0c52-3d0e-4a8e-9c61-2f4d7a9e5b13
+name: operation-fleet-conn-server-rollout
+autoContinue: false
+description: "fleet.conn_server_rollout: roll the pinned Conn Server out to the Nodes that run one, canary first, one Node at a time, as one Ansible phase from 209 (docs/reference/development-containers.md#conn-server-rollout)."
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: fleet.conn_server_rollout}
+    intent:
+      type: object
+      properties:
+        version: {type: string, minLength: 1}
+        dry_run: {type: boolean}
+        mac: {type: object}
+        linux: {type: object}
+        notice: {type: object}
+        nodes: {type: array, minItems: 1}
+      required: [version, dry_run, mac, linux, notice, nodes]
+      additionalProperties: false
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: rollout
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # One phase: every Node in turn, canary first; each downloads, checks, swaps, restarts and checks /health, or rolls back.
+      # The deadline lets every Node finish its rollback: max_nodes (4) x node_seconds (2000, each Node's bounded worst case, in
+      # conn-server-rollout.yml) = 8000 s, plus 100 s for the plays that address the Nodes and write the result.
+      - name: Roll out
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-server-rollout" }}
+          methodName: execute
+          inputs:
+            run: timeout 8100 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Roll out, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-server-rollout-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-server-rollout-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
