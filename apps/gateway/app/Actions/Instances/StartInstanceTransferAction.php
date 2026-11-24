@@ -87,7 +87,7 @@ final readonly class StartInstanceTransferAction
                 'source_cluster_id' => $source->cluster_id,
                 'source_path' => $transfer->source_path, 'source_layout' => $transfer->source_layout->value,
                 'common_repository_path' => $transfer->common_repository_path, 'sqlite_source_path' => $transfer->sqlite_source_path,
-                'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
+                'repository' => $instance->project->repositoryUrl(), 'repository_identity' => $instance->project->repository_identity,
                 'initial_step' => $transfer->current_step->value, 'initial_cutover' => $transfer->cutover_at !== null,
                 'initial_completed' => $transfer->completed_at !== null,
             ], $caller, $requestId);

@@ -68,7 +68,7 @@ final readonly class TaskSyncIntent
      */
     public static function base(Task $group, TaskInstanceWorkspace $copy): ?array
     {
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($group->project->repositoryUrl());
         $branch = $group->project->default_branch;
         if ($repository === null || ! is_string($branch) || ! GitBranchName::isValid($branch)) {
             return null;

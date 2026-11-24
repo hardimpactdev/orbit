@@ -44,10 +44,10 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
         try {
             $ref = 'refs/heads/'.GitBranchName::validate($branch);
             $result = $this->processes->run(new ProcessInvocation(
-                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', '/', 'ls-remote', '--exit-code', '--heads', '--', $project->repository_url, $ref],
+                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', '/', 'ls-remote', '--exit-code', '--heads', '--', $project->repositoryUrl(), $ref],
                 timeout: 60.0,
                 maxOutputBytes: 65_536,
-                environment: $this->access->for($project->repository_url, $project->source_access)->variables,
+                environment: $this->access->for($project->repositoryUrl(), $project->source_access)->variables,
             ));
         } catch (Throwable $exception) {
             throw $this->failure($project, $branch, $exception);
@@ -72,12 +72,12 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
     {
         $deadline = new ReadDeadline(10.0);
         try {
-            $environment = $this->access->for($project->repository_url, $project->source_access, $deadline, $context);
+            $environment = $this->access->for($project->repositoryUrl(), $project->source_access, $deadline, $context);
             if ($context !== null) {
                 $context->environment = $environment;
             }
             $result = $this->processes->run(new ProcessInvocation(
-                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', '/', 'ls-remote', '--heads', '--', $project->repository_url],
+                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', '/', 'ls-remote', '--heads', '--', $project->repositoryUrl()],
                 timeout: $deadline->remaining(),
                 maxOutputBytes: 4_194_304,
                 environment: $environment->variables,
@@ -107,7 +107,7 @@ final readonly class GitRemoteBranchHeads implements RemoteBranchHeads
 
     private function failure(Project $project, ?string $branch, ?Throwable $previous = null): ResourceOperationException
     {
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
 
         if ($repository instanceof GitHubRepository) {
             $this->tokens?->forget($repository);

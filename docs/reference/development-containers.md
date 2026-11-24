@@ -281,7 +281,7 @@ A wake that applies the switch waits up to 600 seconds for the Conn Server's imp
 
 ### T3 registration and pairing
 
-Clone creation starts T3 on its allocated host proxy port, creates the workspace project, registers the server with [Conn](/reference/conn#instance-servers), and returns sealed Gateway and Swamp sessions. For a [reserved clone](/reference/conn#reserve-a-clone), when the agent supports `instance.t3_pairing`, the engine create's `t3` step also issues and seals the reserving device's pairing link (a refused link never fails the create).
+Clone creation starts T3 on its allocated host proxy port, creates the workspace project, registers the server with [Conn](/reference/conn#instance-servers), and returns sealed Gateway and Swamp sessions. On a Conn Server the Gateway session is issued with `--ttl 3650d`, so it is not renewed ([Session lifetimes](/reference/conn#session-lifetimes)). For a [reserved clone](/reference/conn#reserve-a-clone), when the agent supports `instance.t3_pairing`, the engine create's `t3` step also issues and seals the reserving device's pairing link (a refused link never fails the create).
 
 ### Threads
 

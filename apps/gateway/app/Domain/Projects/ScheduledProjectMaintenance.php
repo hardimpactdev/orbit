@@ -170,7 +170,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
     /** @return array<string,mixed> */
     private function identity(Project $project): array
     {
-        return ['id' => $project->id, 'repository' => $project->repository_url, 'default_branch' => $project->default_branch, 'check' => $project->task_check];
+        return ['id' => $project->id, 'repository' => $project->repositoryUrl(), 'default_branch' => $project->default_branch, 'check' => $project->task_check];
     }
 
     /** @return Builder<Setting> */

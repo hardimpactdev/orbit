@@ -70,7 +70,7 @@ final readonly class TaskPullRequestEvidence
     {
         $group->loadMissing('project');
         $project = $group->project;
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         $number = $group->watched_pr_number;
         $url = $group->watched_pr_url;
         if ($group->parent_id !== null || $group->orchestration !== TaskOrchestration::External || ! $repository instanceof GitHubRepository
@@ -88,7 +88,7 @@ final readonly class TaskPullRequestEvidence
      */
     public function outside(Project $project, int $number, string $head): TaskPullRequestTarget
     {
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         if (! $repository instanceof GitHubRepository) {
             throw new ResourceOperationException('tasks_pr.no_pull_request', 'The Project needs a GitHub repository.', 409);
         }

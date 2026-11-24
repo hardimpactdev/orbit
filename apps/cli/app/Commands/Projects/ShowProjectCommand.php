@@ -62,6 +62,7 @@ final class ShowProjectCommand extends GatewayCommand
             'Name' => $project->name,
             'Type' => $project->type,
             'Repository' => $project->repositoryUrl,
+            ...($project->nodeId === null ? [] : ['Node ID' => $project->nodeId]),
             'Source access' => $project->sourceAccess,
             'Default branch' => $project->defaultBranch,
             'Web root' => $project->root,

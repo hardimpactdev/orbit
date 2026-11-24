@@ -17,6 +17,7 @@ use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -73,7 +74,7 @@ final readonly class AdmitConnSessionHoldAction
                 'conn_environment_id' => $environment->id, 'caller_node_id' => $node->id, 'pairing_ids' => [$pairing->id],
                 'renews_pairing_id' => $renews?->id,
                 'intent' => ['url' => $environment->url, 'environment' => $environment->id, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label,
-                    'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => IssueConnPairingAction::Scopes], JSON_THROW_ON_ERROR)],
+                    'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => IssueConnPairingAction::Scopes, 'sessionTtl' => ConnSessionLifetime::UntilRevoked], JSON_THROW_ON_ERROR)],
                 'execution_secrets' => ['admin_session' => $reference],
             ], $renews instanceof ConnPairing ? 'schedule' : 'operator', null);
         });

@@ -1786,7 +1786,8 @@
       changed_when: false
     - name: Issue the sessions
       ansible.builtin.command:
-        argv: "{{ as_agent + [container.clone.t3.t3, 'auth', 'session', 'issue', '--label', item, '--token-only'] }}"
+        # The Conn Server's Gateway session lasts 10 years (0.2.0 on); the TypeScript T3 server's stays dated and renewed.
+        argv: "{{ as_agent + [container.clone.t3.t3, 'auth', 'session', 'issue', '--label', item] + (['--ttl', '3650d'] if item == 'Orbit Gateway' and container.clone.t3.t3.endswith('/conn-server') else []) + ['--token-only'] }}"
       loop: [Orbit Gateway, Orbit Swamp]
       register: t3_sessions
       no_log: true

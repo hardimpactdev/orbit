@@ -282,7 +282,7 @@ final readonly class ProductionDeployInput
         if ($operation->kind !== 'instance.deploy' || $operation->target_type !== 'instance' || $intent['variant'] !== 'production'
             || $operation->node_id !== $instance->node_id || ! $instance->placedOnAppProd()
             || $intent['user'] !== $instance->production_user || $intent['home'] !== $instance->production_home
-            || $intent['project_id'] !== $instance->project_id || $intent['repository'] !== $instance->project->repository_url
+            || $intent['project_id'] !== $instance->project_id || $intent['repository'] !== $instance->project->repositoryUrl()
             || $intent['node_user'] !== $instance->node->user) {
             throw $this->forbidden();
         }

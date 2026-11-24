@@ -92,7 +92,9 @@ jobs:
           # A cancelled or expired run can leave its copy; remove copies older than ten minutes.
           find /tmp -maxdepth 1 -name 'orbit-conn-renew-*' -mmin +10 -exec rm -rf -- {} + 2>/dev/null
           rm -rf -- "$d" && mkdir -m 700 -- "$d" && chown -- "$a" "$d" || { echo '{"outcome":"failed","error_code":"conn.session_issue_failed"}'; exit 0; }
-          if incus --project "$p" exec "$n" -- runuser -u agent -- env HOME=/home/agent "$t" auth session issue --label 'Orbit Gateway' --json > "$d/issued.json" 2>/dev/null \
+          # The Conn Server takes a 10-year session from 0.2.0 on; the TypeScript T3 server keeps its dated one and its renewal.
+          ttl=; case "$t" in */conn-server) ttl='--ttl 3650d' ;; esac
+          if incus --project "$p" exec "$n" -- runuser -u agent -- env HOME=/home/agent "$t" auth session issue --label 'Orbit Gateway' $ttl --json > "$d/issued.json" 2>/dev/null \
             && chown -- "$a" "$d/issued.json"; then
             echo '{"outcome":"issued"}'
           else

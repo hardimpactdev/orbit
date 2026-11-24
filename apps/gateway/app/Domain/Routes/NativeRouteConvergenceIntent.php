@@ -139,7 +139,7 @@ final readonly class NativeRouteConvergenceIntent
             $served = null;
             if ($member['production'] && ! $instance->hasProductionRelease() && $route->hasWebRoot()) {
                 $root = $instance->root ?? $instance->project->root;
-                $served = ['repository' => $instance->project->repository_url, 'user' => $instance->production_user, 'home' => $instance->production_home, 'instance' => $instance->id,
+                $served = ['repository' => $instance->project->repositoryUrl(), 'user' => $instance->production_user, 'home' => $instance->production_home, 'instance' => $instance->id,
                     'relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root),
                     'served' => array_map(fn (array $item): array => ['web_root' => $item['web_root'], 'directory' => $item['directory']], RouteWebRoot::servedApplications($instance, $route))];
             }

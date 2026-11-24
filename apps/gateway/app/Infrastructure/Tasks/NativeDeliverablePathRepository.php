@@ -51,7 +51,7 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
         }
         try {
             $this->run(['git', 'init', '--bare', '--', $directory], $project);
-            $this->run(['git', '-C', $directory, 'fetch', '--no-tags', '--depth=1', '--filter=blob:none', '--', $project->repository_url, $commit], $project);
+            $this->run(['git', '-C', $directory, 'fetch', '--no-tags', '--depth=1', '--filter=blob:none', '--', $project->repositoryUrl(), $commit], $project);
             $output = $this->run(['git', '-C', $directory, 'ls-tree', '-r', '-z', $commit], $project, self::MaxTreeBytes);
 
             return $this->parseTree($output);
@@ -87,7 +87,7 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
                 arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...array_slice($arguments, 1)],
                 timeout: 60.0,
                 maxOutputBytes: $maxOutputBytes,
-                environment: $this->access->for($project->repository_url, $project->source_access)->variables,
+                environment: $this->access->for($project->repositoryUrl(), $project->source_access)->variables,
             ));
         } catch (Throwable) {
             throw $this->failure();

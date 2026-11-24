@@ -221,13 +221,25 @@ sequenceDiagram
       %%> What it does:
       %%> - see conn/environment-renew.mmd; the run needs no old session, so a session that ended during the sleep renews too
     end
-    opt a held session is due or owes a revoke
+    opt a held session is due, or the server owes a revoke or cleanup
       Note over GW: Renew held sessions<br/>owed revoke next
       %%> When:
       %%> - after the wake's transaction, while the Gateway session has not ended; it never fails the wake
       %%> What it does:
       %%> - see conn/session-hold.mmd: one renewal per held session that ends within seven days
-      %%> - and the server's next owed held revoke (conn/pairing-revoke.mmd), which waited while the Instance slept
+      %%> - and the server's next owed held revoke (conn/pairing-revoke.mmd), which waited while the Instance slept, then its owed cleanup (conn/gateway-sessions-revoke.mmd)
+      %%> - what the busy server cannot take yet starts at the end of what holds it; what fails, the five-minute `conn:owed-work:advance` tick admits again
+    end
+    opt the server is a Conn Server from 0.5.0
+      Note over GW: Extend dated sessions<br/>clients/extend
+      %%> When:
+      %%> - after the held sessions, while the Gateway session has not ended; `GET /health` names `conn-server` 0.5.0 or later
+      %%> What it does:
+      %%> - `POST /api/auth/clients/extend` with `sessionTtl: "until-revoked"` for the Gateway session and each held session that ends within a year, with their own bearers
+      %%> - never for a peer-link session: its holder keeps the date it stored, so an existing dated link must be linked again
+      %%> - stores each new end; a 409 keeps a T3-carried session dated, and the hourly renewal keeps renewing it
+      %%> - a 404 means the session is gone: a held one is settled and held anew at the Node's next read, and the Gateway session is recorded as ended, so its renewal issues a new one
+      %%> - a 400 `invalid_session_ttl` is logged as an error; the session stays dated
     end
   else T3 does not answer
     %% path: t3-unready

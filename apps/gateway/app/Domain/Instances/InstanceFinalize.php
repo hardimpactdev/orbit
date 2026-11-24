@@ -69,7 +69,7 @@ final readonly class InstanceFinalize implements OperationRecordCoordinator
         $file = array_values(array_filter($files, static fn (mixed $file): bool => is_array($file)
             && ($file['path'] ?? null) === InstanceContainer::InstanceFile))[0]['content'] ?? null;
         $input = ['instance_id' => $instance->id, 'project_id' => $project->id, 'name' => $name, 'create_operation_id' => $create->id,
-            'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+            'repository' => $project->repositoryUrl(), 'repository_identity' => $project->repository_identity,
             'container' => ['project' => ValidatedData::string(ValidatedData::object($container)['project'] ?? null),
                 'name' => ValidatedData::string(ValidatedData::object($container)['name'] ?? null),
                 'workspace' => ValidatedData::string(ValidatedData::object($container)['workspace'] ?? null),

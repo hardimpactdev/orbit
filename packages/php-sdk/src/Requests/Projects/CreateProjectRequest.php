@@ -20,9 +20,10 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly string $slug,
+        /** Null for a generic Project, which has no repository and no root (docs/reference/projects.md#generic-projects). */
         #[\SensitiveParameter]
-        private readonly string $repositoryUrl,
-        private readonly string $root,
+        private readonly ?string $repositoryUrl,
+        private readonly ?string $root,
         private readonly string $type = 'laravel-app',
         private readonly ?string $name = null,
         private readonly ?string $defaultBranch = null,
@@ -30,6 +31,7 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
         private readonly bool $taskCheckProvided = false,
         private readonly ?string $sourceAccess = null,
         private readonly ?bool $taskWorkspaceRouted = null,
+        private readonly ?int $nodeId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -59,6 +61,7 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
                 'root' => $this->root,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
+                'node_id' => $this->nodeId,
             ],
             static fn (mixed $value, string $key): bool => $key === 'task_check' || $key === 'task_workspace_routed' || $value !== null,
             ARRAY_FILTER_USE_BOTH,
