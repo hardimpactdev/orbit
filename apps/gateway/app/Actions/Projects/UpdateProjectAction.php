@@ -64,7 +64,7 @@ final readonly class UpdateProjectAction
         // A changed source refreshes the facts a development create needs; the read happens before any change commits.
         $facts = app(CaptureProjectSourceFactsAction::class);
         $read = $data->typeProvided || $data->sourceAccessProvided || $data->hasReconcilableChanges() ? $facts->read(
-            $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repository_url,
+            $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repositoryUrl(),
             $data->sourceAccessProvided && $data->sourceAccess instanceof ProjectSourceAccess ? $data->sourceAccess : $project->source_access,
             $data->defaultBranchProvided && is_string($data->defaultBranch) ? $data->defaultBranch : (string) $project->default_branch,
             $data->rootProvided ? $data->root : $project->root,
@@ -86,7 +86,7 @@ final readonly class UpdateProjectAction
         }
 
         if ($data->reviewAndMergeProvided && $data->reviewAndMerge && ! $project->review_and_merge) {
-            $origin = $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repository_url;
+            $origin = $data->repositoryUrlProvided && is_string($data->repositoryUrl) ? $data->repositoryUrl : $project->repositoryUrl();
             $branch = $data->defaultBranchProvided && is_string($data->defaultBranch) ? $data->defaultBranch : $project->default_branch;
             if (! is_string($branch) || $branch === '') {
                 $access = $data->sourceAccessProvided && $data->sourceAccess instanceof ProjectSourceAccess ? $data->sourceAccess : $project->source_access;
@@ -175,7 +175,7 @@ final readonly class UpdateProjectAction
 
         $repository = $data->repositoryUrlProvided && is_string($data->repositoryUrl)
             ? GitRepositoryOrigin::validate($data->repositoryUrl)
-            : $project->repository_url;
+            : $project->repositoryUrl();
         $this->branches->resolve($repository, $access);
         $project->update(['source_access' => $access]);
 
@@ -380,7 +380,7 @@ final readonly class UpdateProjectAction
                     'requested_default_branch' => $normalized['default_branch'],
                     'requested_root' => $normalized['root'],
                     'previous_slug' => $locked->slug,
-                    'previous_repository_url' => $locked->repository_url,
+                    'previous_repository_url' => $locked->repositoryUrl(),
                     'previous_default_branch' => $locked->default_branch,
                     'previous_root' => $locked->root,
                     'inventory' => ['noop' => true],
@@ -399,7 +399,7 @@ final readonly class UpdateProjectAction
                 'requested_default_branch' => $data->defaultBranchProvided ? $normalized['default_branch'] : null,
                 'requested_root' => $data->rootProvided ? $normalized['root'] : null,
                 'previous_slug' => $locked->slug,
-                'previous_repository_url' => $locked->repository_url,
+                'previous_repository_url' => $locked->repositoryUrl(),
                 'previous_default_branch' => $locked->default_branch,
                 'previous_root' => $locked->root,
                 'inventory' => null,
@@ -459,7 +459,7 @@ final readonly class UpdateProjectAction
 
         if (is_string($update->requested_default_branch)) {
             $this->branches->verify(
-                $update->requested_repository_url ?? $project->repository_url,
+                $update->requested_repository_url ?? $project->repositoryUrl(),
                 $update->requested_default_branch,
                 $project->source_access,
             );
@@ -486,13 +486,13 @@ final readonly class UpdateProjectAction
             $this->assertRepositoryIdentity($project, $update->requested_repository_url);
 
             if (
-                $update->requested_repository_url !== $project->repository_url
+                $update->requested_repository_url !== $project->repositoryUrl()
                 || GitRepositoryIdentity::derive($update->requested_repository_url) !== $project->repository_identity
             ) {
                 $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
                 $this->sources->preflightRepository(
                     $plan['checkouts'],
-                    $project->repository_url,
+                    $project->repositoryUrl(),
                     $update->requested_repository_url,
                 );
                 $this->preflightContainers($project, $plan['containers'], $update->requested_repository_url);
@@ -850,14 +850,12 @@ final readonly class UpdateProjectAction
 
         $repository = $data->repositoryUrlProvided
             ? GitRepositoryOrigin::validate((string) $data->repositoryUrl)
-            : $project->repository_url;
+            : $project->repositoryUrl();
 
         return [
             'slug' => $data->slugProvided ? $data->slug : $project->slug,
             'repository_url' => $repository,
-            'repository_identity' => $data->repositoryUrlProvided
-                ? GitRepositoryIdentity::derive($repository)
-                : $project->repository_identity,
+            'repository_identity' => GitRepositoryIdentity::derive($repository),
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $project->default_branch,
@@ -871,7 +869,7 @@ final readonly class UpdateProjectAction
     private function changesState(Project $project, array $normalized): bool
     {
         return $normalized['slug'] !== $project->slug
-            || $normalized['repository_url'] !== $project->repository_url
+            || $normalized['repository_url'] !== $project->repositoryUrl()
             || $normalized['repository_identity'] !== $project->repository_identity
             || $normalized['default_branch'] !== $project->default_branch
             || $normalized['root'] !== $project->root;

@@ -5,17 +5,19 @@ sidebarTitle: "project:create"
 
 ```bash
 orbit project:create <slug> <type> <repository> [options]
+orbit project:create <slug> generic [--name=NAME] [--node=NODE]
 ```
 
 | Argument | Meaning |
 | --- | --- |
 | `slug` | Unique Project slug. |
-| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, or `node-package`. |
-| `repository` | HTTPS or SSH Git URL. |
+| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, `node-package`, or `generic`. |
+| `repository` | HTTPS or SSH Git URL. A [generic Project](/reference/projects#generic-projects) takes none. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--name=NAME` | the slug | Display name. |
+| `--node=NODE` | none | Node ID or registered name of the Node a generic Project is about. The Project stores the Node's ID. Only `generic` takes it. |
 | `--source-access=VALUE` | `github_app` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](/reference/projects#source-access). |
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
 | `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
@@ -27,6 +29,9 @@ orbit project:create acme laravel-app git@github.com:acme/site.git
 orbit project:create support laravel-package git@github.com:acme/support.git
 orbit project:create node-kit node-package git@github.com:acme/node-kit.git --task-check="vp run check"
 orbit project:create leden laravel-app git@github.com:acme/leden.git --source-access=gh_cli
+orbit project:create mini generic --node=mini
 ```
+
+A generic Project takes only `--name` and `--node`; the repository options fail before the CLI contacts the Gateway.
 
 A retry with the same values returns the existing Project.

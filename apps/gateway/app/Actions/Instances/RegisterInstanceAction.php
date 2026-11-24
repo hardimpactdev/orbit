@@ -141,7 +141,7 @@ final readonly class RegisterInstanceAction
 
             return $this->operations->execute('instance.register', 'instance', $instance->id, $caller->id, [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'node_id' => $caller->id,
-                'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+                'repository' => $project->repositoryUrl(), 'repository_identity' => $project->repository_identity,
                 'checkout' => $instance->checkout_path, 'application' => $instance->applicationDirectory(),
                 'user' => $caller->user, 'project_type' => $project->type->value,
                 'php_versions' => app(InstancePhpVersionCatalog::class)->versions(),

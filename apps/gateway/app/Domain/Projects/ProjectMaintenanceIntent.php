@@ -43,7 +43,7 @@ final readonly class ProjectMaintenanceIntent
             ]);
             $urls = [];
             if ($kind === 'project.observe') {
-                $repository = GitHubRepository::fromOrigin($project->repository_url);
+                $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
                 foreach ($groups as $group) {
                     if (in_array($group->status->value, ['completed', 'cancelled', 'failed'], true)) {
                         continue;
@@ -62,7 +62,7 @@ final readonly class ProjectMaintenanceIntent
             }
 
             return $this->start->execute($kind, 'project', $project->id, SwampNode::id(), [
-                'project' => ['id' => $project->id, 'repository' => $project->repository_url,
+                'project' => ['id' => $project->id, 'repository' => $project->repositoryUrl(),
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
                 // An inspection reads no group; the Gateway checks open work from its own records when it admits one.
                 ...($kind === 'project.detect' ? ['open' => $open] : ['groups' => $groups->toArray()]),

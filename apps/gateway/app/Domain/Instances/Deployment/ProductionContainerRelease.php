@@ -140,7 +140,7 @@ final readonly class ProductionContainerRelease
         $roles = $instance->node->roles->where('status', LifecycleStatus::Active)->pluck('role');
         if (! $instance->placedOnAppProd() || $instance->status !== InstanceState::Active || $instance->node->status !== LifecycleStatus::Active
             || ! $roles->contains(RoleName::AppProd) || $roles->contains(RoleName::AppDev)
-            || $instance->project->repository_identity !== GitRepositoryIdentity::derive($instance->project->repository_url)) {
+            || $instance->project->repository_identity !== GitRepositoryIdentity::derive($instance->project->repositoryUrl())) {
             throw new ResourceOperationException('deployment.identity_invalid', 'The active AppProd placement and Project repository identity must match.', 409);
         }
     }
@@ -184,7 +184,7 @@ final readonly class ProductionContainerRelease
         }
 
         return ['action' => $rollback ? 'rollback' : 'deploy', 'expected_live' => $instance->production_release['live'] ?? null,
-            'repository' => $instance->project->repository_url, 'branch' => $configuration->branch,
+            'repository' => $instance->project->repositoryUrl(), 'branch' => $configuration->branch,
             'application_suffix' => ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root),
             'php_version' => $instance->selected_php_version ?? $instance->project->php_version ?? '8.5',
             'needs_vp' => ! $rollback && array_any($configuration->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),

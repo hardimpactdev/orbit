@@ -22,7 +22,7 @@ final class ProjectData extends Data
         public string $slug,
         public string $code,
         public ProjectType $type,
-        public string $repositoryUrl,
+        public ?string $repositoryUrl,
         public ProjectSourceAccess $sourceAccess,
         public ?string $defaultBranch,
         public ?string $root,
@@ -43,6 +43,7 @@ final class ProjectData extends Data
         public ?TaskPrMode $taskPrMode = null,
         public bool $defaultAutoDeploy = true,
         public ContainerServer $containerServer = ContainerServer::Conn,
+        public ?int $nodeId = null,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -74,6 +75,7 @@ final class ProjectData extends Data
             taskPrMode: $project->task_pr_mode,
             defaultAutoDeploy: $project->default_auto_deploy,
             containerServer: $project->container_server,
+            nodeId: $project->node_id,
         );
     }
 }

@@ -71,7 +71,7 @@ final readonly class StartInstanceDeployAction
             InstanceMigration::assertSettled($instance);
             $configuration = $this->sourceConfiguration($instance);
             $project = $instance->project;
-            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
+            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repositoryUrl(), $project->source_access,
                 (string) $project->default_branch, $project->root, $project->type, $commit);
             // The seed's agent folder: the Project's instructions are read here, before the transaction
             // (docs/reference/development-containers.md#agent-instructions).
@@ -181,7 +181,7 @@ final readonly class StartInstanceDeployAction
     private function assertRepositoryIdentity(Instance $instance): void
     {
         $project = $instance->project()->firstOrFail();
-        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
+        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repositoryUrl())) {
             throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
         }
     }

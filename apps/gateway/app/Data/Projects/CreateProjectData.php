@@ -13,15 +13,16 @@ final readonly class CreateProjectData
         public string $name,
         public string $slug,
         public ProjectType $type,
-        public string $repositoryUrl,
+        public ?string $repositoryUrl,
         public ?string $defaultBranch,
-        public string $root,
+        public ?string $root,
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
         public ProjectSourceAccess $sourceAccess = ProjectSourceAccess::GitHubApp,
         public bool $taskWorkspaceRoutedProvided = false,
         public bool $taskWorkspaceRouted = true,
+        public ?int $nodeId = null,
     ) {}
 
     /**

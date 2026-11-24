@@ -5,7 +5,7 @@ description: "List the Projects you can reach with their slug, type, repository,
 ---
 
 ```bash
-orbit project:list [--json]
+orbit project:list [--node=NODE] [--json]
 ```
 
-The list holds the Projects with an Instance on a Node you have access to; from the Gateway, every Project. With `--json`, each entry also carries the [Project summary](/reference/projects#project-summary): `repository`, `node_name`, `icon`, `color`, and `instance_count`. Conn clients read the same fields to tag a General thread to a Project.
+The list holds the Projects with an Instance on a Node you have access to, and the [generic Projects](/reference/projects#generic-projects) about such a Node; from the Gateway, every Project. `--node=NODE` takes a Node ID or registered name and lists only the generic Project about that Node, found by the Node's ID whatever the Node is named. With `--json`, each entry also carries `node_id` and the [Project summary](/reference/projects#project-summary): `repository`, `node_name`, `icon`, `color`, and `instance_count`. Conn clients read the same fields to tag a General thread to a Project.

@@ -32,12 +32,14 @@ final class StoreProjectRequest extends FormRequest
                 'string',
                 Rule::enum(ProjectType::class),
             ],
-            'repository_url' => ['required', 'string', 'max:2048'],
-            'source_access' => ['sometimes', 'string', Rule::enum(ProjectSourceAccess::class)],
-            'default_branch' => ['sometimes', 'string', 'max:255'],
-            'root' => ['required', 'string', 'max:255'],
-            'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
-            'task_workspace_routed' => ['sometimes', 'boolean:strict'],
+            // A generic Project holds no repository, so it takes none of the repository fields (projects.md#generic-projects).
+            'repository_url' => ['required_unless:type,generic', 'prohibited_if:type,generic', 'string', 'max:2048'],
+            'source_access' => ['sometimes', 'prohibited_if:type,generic', 'string', Rule::enum(ProjectSourceAccess::class)],
+            'default_branch' => ['sometimes', 'prohibited_if:type,generic', 'string', 'max:255'],
+            'root' => ['required_unless:type,generic', 'prohibited_if:type,generic', 'string', 'max:255'],
+            'task_check' => ['sometimes', 'prohibited_if:type,generic', 'nullable', 'string', 'max:4096'],
+            'task_workspace_routed' => ['sometimes', 'prohibited_if:type,generic', 'boolean:strict'],
+            'node_id' => ['sometimes', 'prohibited_unless:type,generic', 'integer:strict', 'min:1', Rule::exists('nodes', 'id')],
         ];
     }
 
@@ -47,7 +49,7 @@ final class StoreProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'node_id'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -92,15 +94,16 @@ final class StoreProjectRequest extends FormRequest
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
             type: ProjectType::from(is_string($validated['type'] ?? null) ? $validated['type'] : ''),
-            repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : '',
+            repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : null,
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
-            root: is_string($validated['root'] ?? null) ? $validated['root'] : '',
+            root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
             sourceAccess: ProjectSourceAccess::tryFrom(is_string($validated['source_access'] ?? null) ? $validated['source_access'] : '')
                 ?? ProjectSourceAccess::GitHubApp,
             taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
+            nodeId: is_int($validated['node_id'] ?? null) ? $validated['node_id'] : null,
         );
     }
 

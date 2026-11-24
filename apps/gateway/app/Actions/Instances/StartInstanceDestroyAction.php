@@ -232,7 +232,7 @@ final readonly class StartInstanceDestroyAction
             'inventory_digest' => hash('sha256', json_encode($snapshots, JSON_THROW_ON_ERROR)),
             'source_pending' => true,
             'protected_source_roots' => app(ProtectedPathCatalog::class)->roots(),
-            'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
+            'repository' => $instance->project->repositoryUrl(), 'repository_identity' => $instance->project->repository_identity,
             'members' => $snapshots, 'additional_route_ids' => $additional, 'additional_routes' => array_map(fn (int $id): array => ['route_id' => $id, 'node_id' => $this->routeNode(Route::query()->findOrFail($id))], $additional),
         ];
     }

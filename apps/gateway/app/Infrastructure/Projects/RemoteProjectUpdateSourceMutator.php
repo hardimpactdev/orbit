@@ -115,9 +115,9 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             'operation' => 'preflight_branch',
             'path' => $instance->checkout_path,
             'branch' => $newBranch,
-            'repository' => $project->repository_url,
+            'repository' => $project->repositoryUrl(),
             'protocols' => array_values(array_filter(Config::array('orbit.git.checkout_protocols', ['https']), is_string(...))),
-            'git_read' => $this->access->for($project->repository_url, $project->source_access),
+            'git_read' => $this->access->for($project->repositoryUrl(), $project->source_access),
         ], 'app-update-default-branch-preflight', 'project.source_switch_failed');
     }
 

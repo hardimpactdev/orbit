@@ -60,7 +60,7 @@ final readonly class CaptureProjectSourceFactsAction
 
     public function execute(Project $project): Project
     {
-        return $this->record($project, $this->read($project->repository_url, $project->source_access, (string) $project->default_branch, $project->root, $project->type));
+        return $this->record($project, $this->read($project->repositoryUrl(), $project->source_access, (string) $project->default_branch, $project->root, $project->type));
     }
 
     /** @param array{facts:array<string,mixed>, head:string, template:array{mode:string, object:string, content:string}|null} $read */

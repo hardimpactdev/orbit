@@ -90,7 +90,7 @@ final readonly class NativeInstanceProvisioningIntent
             'vp_setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp),
             // Production deploy refuses a home without this root-owned marker (instance-deploy deploy_local.ts).
             'home' => ['path' => $home, 'state' => '/var/lib/orbit/app-instance-sources/'.$instance->id,
-                'release_layout' => base64_encode($instance->project->repository_url."\0".$user."\0".$home."\0initial\0"),
+                'release_layout' => base64_encode($instance->project->repositoryUrl()."\0".$user."\0".$home."\0initial\0"),
                 // The release's application .env links to the home .env, as a deploy's release does.
                 'environment_link' => str_repeat('../', 2 + substr_count($suffix, '/')).'.env'],
             'source' => ['repository' => $input['repository'], 'checkout' => $instance->checkout_path,

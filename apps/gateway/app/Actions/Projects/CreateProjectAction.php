@@ -27,10 +27,14 @@ final readonly class CreateProjectAction
     /** @return array{project: Project, created: bool} */
     public function execute(CreateProjectData $data): array
     {
-        $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
+        if (! $data->type->hasRepository()) {
+            return $this->createGeneric($data);
+        }
+
+        $repositoryUrl = GitRepositoryOrigin::validate((string) $data->repositoryUrl);
         $repositoryIdentity = GitRepositoryIdentity::derive($repositoryUrl);
         $defaultBranch = $data->defaultBranch === null ? null : GitBranchName::validate($data->defaultBranch);
-        $root = ProjectRoot::validate($data->root, $data->type);
+        $root = ProjectRoot::validate((string) $data->root, $data->type);
         $project = Project::query()->where('slug', $data->slug)->first();
 
         if ($project instanceof Project) {
@@ -101,6 +105,83 @@ final readonly class CreateProjectAction
         $project = $project->refresh();
         app(CaptureProjectSourceFactsAction::class)->recordTemplate($project, $source);
 
+        return $this->created($project);
+    }
+
+    /**
+     * A generic Project has no repository, so creating one reads no remote, captures no source facts and prepares no
+     * checkout or Instance. It may name the one Node it is about (projects.md#generic-projects).
+     *
+     * @return array{project: Project, created: bool}
+     */
+    private function createGeneric(CreateProjectData $data): array
+    {
+        $existing = Project::query()->where('slug', $data->slug)->first();
+
+        if ($existing instanceof Project) {
+            $this->assertGenericIdentityMatches($existing, $data);
+
+            return ['project' => $existing, 'created' => false];
+        }
+
+        for ($attempt = 0; ; $attempt++) {
+            $candidate = new Project([
+                'code' => $data->code,
+                'slug' => $data->slug,
+                'name' => $data->name,
+                'type' => $data->type,
+                'node_id' => $data->nodeId,
+            ]);
+            try {
+                $candidate->save();
+
+                return $this->created($candidate->refresh());
+            } catch (UniqueConstraintViolationException $exception) {
+                $existing = Project::query()->where('slug', $data->slug)->first();
+
+                if ($existing instanceof Project) {
+                    $this->assertGenericIdentityMatches($existing, $data);
+
+                    return ['project' => $existing, 'created' => false];
+                }
+
+                if ($data->nodeId !== null && Project::query()->where('node_id', $data->nodeId)->exists()) {
+                    throw new ResourceOperationException('project.node_conflict', 'Another Project is already about this Node.', 409, previous: $exception);
+                }
+
+                if ($data->code !== null && Project::query()->where('code', $data->code)->exists()) {
+                    throw new ResourceOperationException('project.code_conflict', 'This Project code is already in use.', 409, previous: $exception);
+                }
+                if ($data->code === null && $attempt < 4 && Project::query()->where('code', $candidate->code)->exists()) {
+                    continue;
+                }
+
+                throw $exception;
+            }
+        }
+    }
+
+    private function assertGenericIdentityMatches(Project $project, CreateProjectData $data): void
+    {
+        if (
+            ($data->code === null || $project->code === $data->code)
+            && $project->name === $data->name
+            && $project->type === $data->type
+            && $project->node_id === $data->nodeId
+        ) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'project.identity_conflict',
+            message: "Project [{$project->slug}] already exists with different creation identity.",
+            status: 409,
+        );
+    }
+
+    /** @return array{project: Project, created: true} */
+    private function created(Project $project): array
+    {
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::ProjectCreated,
             $project->id,

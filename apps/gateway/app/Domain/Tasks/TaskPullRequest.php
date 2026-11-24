@@ -155,7 +155,7 @@ final class TaskPullRequest
 
     private static function repository(Project $project): ?string
     {
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
 
         return $repository === null ? null : $repository->owner.'/'.$repository->name;
     }

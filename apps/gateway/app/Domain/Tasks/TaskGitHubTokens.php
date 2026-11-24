@@ -135,7 +135,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
      */
     public function writeClone(Task $group, array $reference): array
     {
-        $git = $this->reads->for($group->project->repository_url, $group->project->source_access);
+        $git = $this->reads->for($group->project->repositoryUrl(), $group->project->source_access);
 
         return $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $git->isEmpty() ? '' : $git->variables['GIT_CONFIG_VALUE_0']);
     }
@@ -148,7 +148,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
             default => throw $this->forbidden(),
         };
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($group->project->repositoryUrl());
         if (! is_string($name) || ! is_array($references) || $repository === null || $repository->owner.'/'.$repository->name !== $name) {
             throw $this->forbidden();
         }
@@ -188,7 +188,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             default => throw $this->forbidden(),
         };
         $name = $operation->input['repository'] ?? null;
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         $references = ValidatedData::object($operation->input['execution_secrets'] ?? []);
         if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name
             || array_any(array_keys($grants), static fn (string $member): bool => ! is_array($references[$member] ?? null))) {

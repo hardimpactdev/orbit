@@ -394,7 +394,7 @@ final readonly class InstanceContainer
                         'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled']] : [])]],
             // UFW on the Node, under one comment prefix per Instance, so its removal takes them all.
             'firewall' => [...($clone === null ? [] : $this->t3Firewall($instance, $runtime)), ...array_column($access, 'rule')],
-            'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
+            'mirror' => self::mirror($instance), 'repository' => $project->repositoryUrl(),
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),

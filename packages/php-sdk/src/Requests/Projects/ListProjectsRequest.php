@@ -15,9 +15,20 @@ final class ListProjectsRequest extends GatewayRequest
     #[\Override]
     protected Method $method = Method::GET;
 
+    /** @param  int|null  $nodeId  only the Project about this Node (docs/reference/projects.md#find-the-project-of-a-node) */
+    public function __construct(
+        private readonly ?int $nodeId = null,
+    ) {}
+
     public function resolveEndpoint(): string
     {
         return '/api/v1/projects';
+    }
+
+    /** @return array<string, int> */
+    protected function defaultQuery(): array
+    {
+        return $this->nodeId === null ? [] : ['node_id' => $this->nodeId];
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ProjectsResponse

@@ -118,7 +118,7 @@ final readonly class StartInstanceCloneAction
             $sqlite = $data->sqliteSourcePath === null ? null : $this->sqlite($candidate, $target, $data->sqliteSourcePath);
             $route = $candidate->requiresRoute() ? $this->previewRoute($target, $node, $data->previewName) : null;
             $input = ['instance_id' => $target->id, 'project_id' => $candidate->project_id, 'candidate_id' => $candidate->id,
-                'repository' => $candidate->project->repository_url, 'repository_identity' => $candidate->project->repository_identity,
+                'repository' => $candidate->project->repositoryUrl(), 'repository_identity' => $candidate->project->repository_identity,
                 'branch' => $branch, 'checkout' => $path, 'candidate' => ['node_id' => $candidate->node_id,
                     'branch' => $candidate->branch, 'repository_identity' => $candidate->project->repository_identity,
                     ...($runtime === null ? ['checkout' => $candidate->checkout_path] : ['container' => [

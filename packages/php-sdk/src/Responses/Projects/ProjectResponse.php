@@ -14,7 +14,8 @@ final readonly class ProjectResponse
         public string $name,
         public string $slug,
         public string $type,
-        public string $repositoryUrl,
+        /** Null for a generic Project, which has no repository (docs/reference/projects.md#generic-projects). */
+        public ?string $repositoryUrl,
         public ?string $defaultBranch,
         public ?string $root,
         public string $requestId,
@@ -44,9 +45,13 @@ final readonly class ProjectResponse
         /**
          * The summary a Conn client reads from the Project list (docs/reference/projects.md#project-summary); null from a show, create or update, or a Gateway that sends none.
          *
-         * @var array{repository: string, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
+         * @var array{repository: string|null, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
          */
         public ?array $summary = null,
+        /** The Node a generic Project is about (docs/reference/projects.md#generic-projects); null for none. */
+        public ?int $nodeId = null,
+        /** Whether the Gateway sent `node_id`, so a Project about no Node is told from an older Gateway that sends none. */
+        public bool $hasNodeId = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -65,7 +70,7 @@ final readonly class ProjectResponse
             type: is_string($data['type'] ?? null) ? $data['type'] : 'laravel-app',
             repositoryUrl: is_string($data['repository_url'] ?? null)
                 ? $redactor->redactText($data['repository_url'])
-                : '',
+                : null,
             defaultBranch: is_string($data['default_branch'] ?? null) ? $data['default_branch'] : null,
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
             requestId: $requestId,
@@ -82,12 +87,14 @@ final readonly class ProjectResponse
             containerServer: is_string($data['container_server'] ?? null) ? $data['container_server'] : null,
             agentInstructions: self::agentInstructions($data['agent_instructions'] ?? null),
             summary: self::summary($data),
+            nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : null,
+            hasNodeId: array_key_exists('node_id', $data),
         );
     }
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array{repository: string, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
+     * @return array{repository: string|null, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
      */
     private static function summary(array $data): ?array
     {
@@ -96,7 +103,7 @@ final readonly class ProjectResponse
         }
 
         return [
-            'repository' => is_string($data['repository'] ?? null) ? $data['repository'] : '',
+            'repository' => is_string($data['repository'] ?? null) ? $data['repository'] : null,
             'node_name' => is_string($data['node_name'] ?? null) ? $data['node_name'] : null,
             'icon' => is_string($data['icon'] ?? null) ? $data['icon'] : null,
             'color' => is_string($data['color'] ?? null) ? $data['color'] : null,
@@ -151,6 +158,7 @@ final readonly class ProjectResponse
             ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
             ...($this->containerServer === null ? [] : ['container_server' => $this->containerServer]),
             ...($this->agentInstructions === null ? [] : ['agent_instructions' => $this->agentInstructions]),
+            ...($this->hasNodeId ? ['node_id' => $this->nodeId] : []),
             ...($this->summary ?? []),
             'request_id' => $this->requestId,
         ];

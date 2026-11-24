@@ -13,7 +13,7 @@ final readonly class ProjectMaintenanceRequirements
     public static function missing(Project $project): array
     {
         $missing = [];
-        if ($project->source_access !== ProjectSourceAccess::GitHubApp || $project->repository_url === '') {
+        if ($project->source_access !== ProjectSourceAccess::GitHubApp || ($project->repository_url ?? '') === '') {
             $missing['source_access'] = 'Dependency maintenance needs source access through the GitHub App.';
         }
         if (! is_string($project->default_branch) || $project->default_branch === '') {

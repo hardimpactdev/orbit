@@ -99,6 +99,32 @@ describe('project requests', function (): void {
             ]);
     });
 
+    it('creates a generic Project about a Node without repository fields', function (): void {
+        $request = new CreateProjectRequest(slug: 'mini', repositoryUrl: null, root: null, type: 'generic', nodeId: 11);
+
+        expect($request->body()->all())->toBe(['slug' => 'mini', 'type' => 'generic', 'node_id' => 11])
+            ->and((new CreateProjectRequest(slug: 'site', repositoryUrl: 'https://github.com/acme/site.git', root: 'public'))->body()->all())
+            ->not->toHaveKey('node_id');
+    });
+
+    it('looks up the Project of a Node by its ID and sends no query otherwise', function (): void {
+        expect((new ListProjectsRequest(nodeId: 11))->query()->all())->toBe(['node_id' => 11])
+            ->and((new ListProjectsRequest)->query()->all())->toBe([]);
+    });
+
+    it('reads a generic Project with no repository and its Node', function (): void {
+        $generic = ProjectResponse::fromGatewayData([
+            ...project_gateway_data(), 'type' => 'generic', 'repository_url' => null, 'default_branch' => null, 'root' => null,
+            'node_id' => 11, 'repository' => null, 'node_name' => 'mini', 'icon' => null, 'color' => null, 'instance_count' => 0,
+        ], orbit_request_id());
+        $older = ProjectResponse::fromGatewayData(project_gateway_data(), orbit_request_id());
+
+        expect($generic->repositoryUrl)->toBeNull()
+            ->and($generic->nodeId)->toBe(11)
+            ->and($generic->toArray())->toMatchArray(['repository_url' => null, 'node_id' => 11, 'repository' => null, 'node_name' => 'mini'])
+            ->and($older->toArray())->not->toHaveKey('node_id');
+    });
+
     it('shows a project by numeric ID', function (): void {
         $mockClient = new MockClient([
             ShowProjectRequest::class => MockResponse::make([
