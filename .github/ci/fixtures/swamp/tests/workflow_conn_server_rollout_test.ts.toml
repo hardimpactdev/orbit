@@ -1,5 +1,6 @@
 cases = [
   "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret",
+  "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
   "a zip whose SHA-256 differs fails the Node and installs nothing",
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing",
@@ -14,9 +15,12 @@ cases = [
   "a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too",
   "after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks",
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent",
+  "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
+  "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
+  "a run with more Nodes than its deadline covers is refused before any Node is reached",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 220
+cost = 246
 # Local run in task 6221: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
 # unit far below the ceiling.
 slices = 4
@@ -52,3 +56,7 @@ inputs = [
   "a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too" = 20
   "after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks" = 21
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent" = 25
+  "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback" = 2
+  "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again" = 9
+  "a failed notice URL or command fails the Node with its code before any change, and appears in no output" = 13
+  "a run with more Nodes than its deadline covers is refused before any Node is reached" = 2

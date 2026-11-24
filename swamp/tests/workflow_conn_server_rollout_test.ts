@@ -20,8 +20,23 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 3000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 8100 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
+});
+
+Deno.test("the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback", () => {
+    const plays = parse(Deno.readTextFileSync(`${shipped}/conn-server-rollout.yml`)) as { vars: Record<string, number> }[];
+    const { max_nodes, node_seconds } = plays[0].vars;
+    const { health_seconds, health_rounds, health_delay } = plays[1].vars;
+    // A Mac start: a 30 s kickstart and the health wait, which starts no round after health_seconds; a round takes up to 52 s.
+    const macStart = 30 + health_seconds + 52;
+    // A Linux start: a 40 s relink, a 100 s restart and health_rounds reads of up to 5 s, health_delay apart.
+    const linuxStart = 40 + 100 + health_rounds * (5 + health_delay);
+    // The checks, then the swap's other task timeouts and two starts: the new server's and the rollback's.
+    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 220 + 2 * linuxStart);
+    assert(node_seconds >= worst, `${node_seconds} < ${worst}`);
+    const deadline = Number(/^timeout (\d+) /.exec(workflow.jobs[0].steps[1].task.inputs.run!)![1]);
+    assert(deadline >= max_nodes * node_seconds + 100, `${deadline}`);
 });
 
 const shims: Record<string, string> = {
@@ -50,6 +65,13 @@ case "$2" in
   *) [ -f "$FIXTURE/prompt" ] && cat "$FIXTURE/prompt" ;;
 esac
 exit 0`,
+    // With $FIXTURE/exit-mv-backup, the move of the installed bundle into the backup renames it and then exits 1, as a move that
+    // completes but whose task then fails or times out.
+    mv: `#!/bin/sh
+PATH=\${PATH#*:} mv "$@" || exit
+for last; do :; done
+case "$last" in *backup*/"Conn Server.app") [ -f "$FIXTURE/exit-mv-backup" ] && exit 1 ;; esac
+exit 0`,
     // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC.
     systemctl: `#!/bin/sh
 if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
@@ -60,7 +82,7 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl"; name?: string };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string; noticeUrl?: (port: number) => string; noticeCommand?: string[] };
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
@@ -97,6 +119,7 @@ async function rollout(options: Options) {
         const noticed: unknown[] = [];
         const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
             if (request.method === "POST") {
+                if (new URL(request.url).pathname !== "/notice") return new Response(null, { status: 500 });
                 noticed.push(await request.json());
                 return new Response(null, { status: 204 });
             }
@@ -108,7 +131,8 @@ async function rollout(options: Options) {
             version: "0.5.0", dry_run: options.dryRun ?? false,
             mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
             linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
-            notice: options.notice ? { url: `http://127.0.0.1:${port}/notice`, command: null } : { url: null, command: null },
+            notice: options.noticeCommand ? { url: null, command: options.noticeCommand }
+                : options.notice ? { url: options.noticeUrl?.(port) ?? `http://127.0.0.1:${port}/notice`, command: null } : { url: null, command: null },
             nodes: options.nodes.map((node, index) => ({
                 node_id: 45 + index,
                 ssh: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: user, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
@@ -126,11 +150,12 @@ async function rollout(options: Options) {
         await server.shutdown();
         const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
         const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
-        try { Deno.statSync(`${folder}/run/result.json`); } catch { throw new Error(output); }
+        let result = null;
+        try { result = JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)); } catch { /* no result: the phase stopped first */ }
         return {
             ok: done.success,
             output,
-            result: JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
+            result,
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
             releases: [...Deno.readDirSync(`${folder}/linux/releases`)].map((entry) => entry.name),
@@ -272,4 +297,29 @@ test("a Node set to notify posts the notice before its restart; with no target s
     const silent = await rollout({ nodes: [{ platform: "mac", canary: true, notify: true }] });
     assert(silent.ok, silent.output);
     assertEquals(silent.noticed, []);
+});
+
+test("a move into the backup that renames the bundle and then fails restores the old bundle, which runs again", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }], exitOn: "mv-backup" });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.step_failed", rolled_back: true }]);
+    assertEquals([run.installed, run.running, run.launchctl.length], ["0.4.2", "0.4.2", 1]);
+});
+
+test("a failed notice URL or command fails the Node with its code before any change, and appears in no output", async () => {
+    const secret = "s3cr3t-token-7f2b";
+    for (const options of [{ noticeUrl: (port: number) => `http://127.0.0.1:${port}/hook?token=${secret}` }, { noticeCommand: ["sh", "-c", `echo ${secret}; echo ${secret} >&2; exit 1`, secret] }]) {
+        const run = await rollout({ nodes: [{ platform: "mac", canary: true, notify: true }], notice: true, ...options });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.notice_failed", rolled_back: false }]);
+        assertEquals([run.installed, run.launchctl], ["0.4.2", []]);
+        assert(!run.output.includes(secret) && !JSON.stringify(run.result).includes(secret), run.output);
+    }
+});
+
+test("a run with more Nodes than its deadline covers is refused before any Node is reached", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, ...Array(4).fill({ platform: "linux" })] });
+    assert(!run.ok && run.result === null, run.output);
+    assert(run.output.includes("conn_server.too_many_nodes"), run.output);
+    assertEquals([run.installed, run.linux, run.launchctl], ["0.4.2", "0.4.2", []]);
 });

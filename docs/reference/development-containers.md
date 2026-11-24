@@ -238,7 +238,7 @@ The recipe loader accepts `macos_arm64` on agent folder parts only and requires 
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
 
-The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`.
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 8,100 s, covers at most four Nodes of 2,000 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
 
 On a Mac, the checks come first. The phase:
 
@@ -255,13 +255,13 @@ Then the swap and the restart. The phase:
 8. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
 9. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
 10. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
-11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version.
+11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. No round starts after 180 s.
 
-Once the installed bundle has moved, any failure before `/health` answers puts the backup back on the path and kickstarts again: a failed move, a failed or timed-out kickstart or **Allow** click, or a `/health` that never names the version. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when the old version answers.
+From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when the old version answers.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way. Any failure from the relink until `/health` answers points `current` back and restarts again.
 
-The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node before anything changes.
+The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node with `conn_server.notice_failed` before anything changes. The URL or the command may hold a token, so the phase logs neither, nor their output, on success or failure.
 
 The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
 

@@ -7,13 +7,16 @@
     mac_healthy: false
     mac_answered: []
     mac_prompt_error: null
+    mac_wait_until: "{{ now().timestamp() + health_seconds | int }}"
 
 - name: Kickstart the LaunchAgent in the gui domain
   ansible.builtin.command: { argv: [launchctl, kickstart, -k, "{{ mac_target }}"] }
   changed_when: true
   timeout: 30
 
-# One round reads a pending prompt and /health; the rounds end once the server answers or a prompt was not ours.
+# One round reads a pending prompt and /health; the rounds end once the server answers, a prompt was not ours, or health_seconds
+# have passed. A round takes at most 52 s (its 15 s, 15 s and 20 s task timeouts and the delay), so the wait ends within
+# health_seconds + 52 s.
 - name: Wait for the server, answering its prompt
   ansible.builtin.include_tasks: conn-server-mac-round.yml
   loop: "{{ range(health_rounds | int) | list }}"

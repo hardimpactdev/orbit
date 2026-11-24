@@ -143,15 +143,16 @@
         fail_msg: conn_server.backup_exists
         quiet: true
 
-    # Both renames stay on the bundle's own volume, and the new bundle takes the same path, so the TCC grants stay.
-    - name: Move the installed bundle into the backup
-      ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.app"] }
-      changed_when: true
-      timeout: 60
-
-    # From here on, every failure up to a healthy /health restores the backup and restarts the old server.
+    # From the move into the backup on, every failure up to a healthy /health restores the backup and restarts the old server,
+    # also when the move itself renamed the bundle and then failed or timed out.
     - name: Install and start the new server
       block:
+        # Both renames stay on the bundle's own volume, and the new bundle takes the same path, so the TCC grants stay.
+        - name: Move the installed bundle into the backup
+          ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.app"] }
+          changed_when: true
+          timeout: 60
+
         - name: Put the new bundle on the same path
           ansible.builtin.command: { argv: [mv, "{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"] }
           changed_when: true
@@ -183,24 +184,29 @@
                  else 'conn_server.step_failed' }}
             rolled_back: false
 
-        - name: Read what holds the bundle's path
-          ansible.builtin.stat: { path: "{{ mac_app }}", get_checksum: false }
+        # The backup holds the old bundle once its move renamed it, whether or not the move or the new bundle's move then failed.
+        - name: Read the backup and what holds the bundle's path
+          ansible.builtin.stat: { path: "{{ item }}", get_checksum: false }
+          loop: ["{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"]
           register: mac_placed
           timeout: 20
 
         - name: Set the new bundle aside
-          when: mac_placed.stat.exists
+          when: mac_placed.results[0].stat.exists and mac_placed.results[1].stat.exists
           ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.failed.app"] }
           changed_when: true
           timeout: 60
 
         - name: Restore the backup on the same path
+          when: mac_placed.results[0].stat.exists
           ansible.builtin.command: { argv: [mv, "{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"] }
           changed_when: true
           timeout: 60
 
-        # `rolled_back` says whether the old server answers again; a failed restart leaves it false.
+        # `rolled_back` says whether the old server answers again; a failed restart leaves it false. With the old bundle never
+        # moved, nothing restarted and nothing is restored.
         - name: Restart the old server
+          when: mac_placed.results[0].stat.exists
           block:
             - name: Start the old server and wait for its health
               ansible.builtin.include_tasks: conn-server-mac-start.yml

@@ -2,7 +2,7 @@
 # One round of the Conn Server's start (conn-server-mac-start.yml): read the texts of a pending UserNotificationCenter prompt, click
 # "Allow" only on one that names Conn Server and an expected permission, then read /health.
 - name: Run the round
-  when: not mac_healthy and mac_prompt_error is none
+  when: not mac_healthy and mac_prompt_error is none and now().timestamp() < mac_wait_until | float
   block:
     - name: Start the round with no prompt
       ansible.builtin.set_fact:
