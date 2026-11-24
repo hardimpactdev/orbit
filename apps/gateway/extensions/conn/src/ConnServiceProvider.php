@@ -21,6 +21,7 @@ use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Http\Request;
+use Orbit\Extensions\Conn\Console\AdvanceConnOwedWorkCommand;
 use Orbit\Extensions\Conn\Console\EnrolConnManagedTargetCommand;
 use Orbit\Extensions\Conn\Console\PruneConnAttentionEventsCommand;
 use Orbit\Extensions\Conn\Console\ReadConnThreadsCommand;
@@ -94,6 +95,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         TrimStrings::skipWhen(static fn (Request $request): bool => $request->is('api/v1/conn/broadcasting/auth'));
         $this->commands([
             RenewConnEnvironmentsCommand::class,
+            AdvanceConnOwedWorkCommand::class,
             ReadConnThreadsCommand::class,
             EnrolConnManagedTargetCommand::class,
             PruneConnAttentionEventsCommand::class,
@@ -103,6 +105,9 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         // Hourly, so a container started after its session ended soon gets a new one; each tick admits only the due ones.
         $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
             GatewaySchedule::command($schedule, 'conn:environments:renew', uniqueFor: 3000, overlapMinutes: 50)->hourly()
+                ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
+            // Owed revokes and cleanups that no Operation end or wake will admit, such as a failed one, start again (/reference/conn#owed-work).
+            GatewaySchedule::command($schedule, 'conn:owed-work:advance', uniqueFor: 240, overlapMinutes: 4)->everyFiveMinutes()
                 ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
             // Every minute while the operator's switch is on, on `problems`, so it waits behind task work and never on `operations`.
             GatewaySchedule::command($schedule, 'conn:threads:read', uniqueFor: 120, overlapMinutes: 2, queue: GatewayQueue::Problems)->everyMinute()

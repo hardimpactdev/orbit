@@ -92,6 +92,7 @@ sequenceDiagram
     %%> The Gateway reads:
     %%> - `conn.session_rejected`, `conn.request_refused`, `conn.response_invalid` or `conn.redeem_refused`: T3 answered, no session exists, the pairing is settled
     %%> - anything else is `conn.session_outcome_unknown`: the pairing is withdrawn and revoked by its label
+    %%> - the revoke is owed in the pairing row; a session of unknown end owes it until a revoke covers it, however old
     %%> Retry:
     %%> - the next read starts a new task with a new label
   end
@@ -101,4 +102,12 @@ sequenceDiagram
     %%> - each held session that ends within seven days; also on Instances no device uses; a wake renews a sleeping Instance's
     %%> What it does:
     %%> - the same run makes the new session; on success the old one is withdrawn and revoked by its pairing id
+  end
+  opt a withdrawn session owes its revoke
+    Note over GW: Admit the owed revoke<br/>conn/pairing-revoke.mmd
+    %%> Who starts it:
+    %%> - the end of the hold, revoke or cleanup that held the server, and the Instance's wake
+    %%> - the five-minute `conn:owed-work:advance` tick, for a revoke that failed at least 15 minutes ago or whose admission a crash lost; never the hourly renewal
+    %%> Not included:
+    %%> - a sleeping or removing Instance starts nothing until its wake
   end

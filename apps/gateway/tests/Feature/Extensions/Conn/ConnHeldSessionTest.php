@@ -26,6 +26,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\Operation;
 use App\Models\Project;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
@@ -35,11 +36,13 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
+use Orbit\Extensions\Conn\Domain\ConnCleanupProjection;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
+use Orbit\Extensions\Conn\Domain\ConnOwedWork;
 use Orbit\Extensions\Conn\Domain\ConnRevocationProjection;
 use Orbit\Extensions\Conn\Domain\ConnSessionHoldProjection;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -171,6 +174,20 @@ function endRevoke(Operation $operation, string $status = 'succeeded', ?string $
 function revokes(): array
 {
     return Operation::query()->where('kind', 'conn.pairing_revoke')->orderBy('id')->get()->all();
+}
+
+/** Ends a cleanup that failed or was interrupted. */
+function endCleanup(Operation $operation, string $status): Operation
+{
+    $operation->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => HeldRun]])->save();
+
+    return app(ConnCleanupProjection::class)->apply($operation->fresh(), ['run_id' => HeldRun, 'status' => $status,
+        'started_at' => now()->subSeconds(2)->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['detail' => null]]);
+}
+
+function cleanups(): array
+{
+    return Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->orderBy('id')->get()->all();
 }
 
 /**
@@ -843,6 +860,97 @@ describe('owed work without the hourly tick', function (): void {
         endRevoke(revokes()[0]);
 
         expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->sole()->input['cleanup_version'])->toBe(2);
+    });
+
+    it('admits an interrupted cleanup again for the same revision', function (): void {
+        $this->environment->forceFill(['cleanup_version' => 2, 'cleanup_completed_version' => 1])->save();
+        app(ConnOwedWork::class)->advance($this->environment->id);
+
+        endCleanup(cleanups()[0], 'interrupted');
+
+        expect(cleanups())->toHaveCount(2)->and(cleanups()[1]->input['cleanup_version'])->toBe(2)
+            ->and(cleanups()[1]->status)->not->toBe(OperationStatus::Interrupted);
+    });
+});
+
+describe('the owed work reconcile, with the hourly tick disabled', function (): void {
+    beforeEach(function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $this->held = ConnPairing::query()->where('held', true)->sole();
+    });
+
+    it('runs every five minutes while Conn is on, beside the hourly renewal', function (): void {
+        $event = collect(app(Schedule::class)->events())->sole(fn ($event): bool => str_contains((string) $event->command, 'conn:owed-work:advance'));
+        expect($event->expression)->toBe('*/5 * * * *')->and($event->filtersPass(app()))->toBeTrue();
+
+        app(ExtensionStore::class)->set('conn', false);
+        expect($event->filtersPass(app()))->toBeFalse();
+    });
+
+    it('admits a revoke again after a failed one, once the retry window passed', function (): void {
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+        // The host is unreachable: T3 never answers the revoke.
+        endRevoke(revokes()[0], 'failed', 'conn.revocation_failed');
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toHaveCount(1);
+
+        // The host reconnects; the next tick past the window revokes the same pairing by its id.
+        $this->travel(ConnOwedWork::RetryMinutes + 1)->minutes();
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toHaveCount(2)->and(revokes()[1]->input['pairing_ids'])->toBe([$this->held->id]);
+
+        endRevoke(revokes()[1]);
+        expect($this->held->fresh())->revoked_at->not->toBeNull()->withdrawn_at->toBeNull();
+    });
+
+    it('admits a revoke whose after-commit admission a crash lost', function (): void {
+        // The withdrawal committed; the Gateway died before its after-commit admission ran.
+        $this->held->forceFill(['session' => null, 'withdrawn_at' => now()])->save();
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$this->held->id]);
+    });
+
+    it('admits a revoke owed while the Gateway admin session had ended, once its renewal is recorded', function (): void {
+        $this->environment->forceFill(['admin_session_expires_at' => now()->subMinute(), 'renewal_error_code' => 'conn.renewal_failed'])->save();
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toBe([]);
+
+        $this->environment->forceFill(['admin_session_expires_at' => now()->addDays(30), 'renewal_error_code' => null])->save();
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$this->held->id]);
+    });
+
+    it('admits a failed cleanup again once the retry window passed', function (): void {
+        $this->environment->forceFill(['cleanup_version' => 2, 'cleanup_completed_version' => 1])->save();
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        endCleanup(cleanups()[0], 'failed');
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(cleanups())->toHaveCount(1);
+
+        $this->travel(ConnOwedWork::RetryMinutes + 1)->minutes();
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(cleanups())->toHaveCount(2)->and(cleanups()[1]->input['cleanup_version'])->toBe(2);
+    });
+
+    it('still revokes a withdrawn session whose end is unknown, however old', function (): void {
+        $this->held->forceFill(['session' => null, 'withdrawn_at' => now(), 'session_expires_at' => null, 'created_at' => now()->subDays(45)])->save();
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+
+        expect($this->held->fresh())->revoked_at->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$this->held->id]);
+    });
+
+    it('starts nothing on a sleeping Instance', function (): void {
+        InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'stopped']);
+        $this->held->forceFill(['session' => null, 'withdrawn_at' => now()])->save();
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(revokes())->toBe([]);
     });
 });
 

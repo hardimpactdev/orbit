@@ -45,7 +45,8 @@ final readonly class ConnHeldSessions
 
     /**
      * Stops serving a held session and records that its revoke is owed. The caller holds the transaction; the server's next owed revoke
-     * is admitted after its commit, and the next end of a Conn Operation on the server or its wake admits it while the server cannot take it.
+     * is admitted after its commit, and the next end of a Conn Operation on the server, its wake or the owed-work tick admits it while the
+     * server cannot take it.
      */
     public function withdraw(ConnPairing $pairing): void
     {
@@ -230,12 +231,13 @@ final readonly class ConnHeldSessions
         return $owed instanceof ConnPairing ? $this->revoke($owed) : null;
     }
 
-    /** A withdrawn session past its end owes nothing: T3 refuses it already. One whose end is unknown ends with T3's 30-day session. */
+    /**
+     * A withdrawn session past its end owes nothing: T3 refuses it already. One whose end is unknown, as a hold of unknown outcome
+     * leaves it, may never end, so it owes its revoke until a revoke by its pairing id covers it.
+     */
     public function settleEnded(CarbonImmutable $now): void
     {
-        ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')
-            ->where(static fn ($query) => $query->where('session_expires_at', '<=', $now)
-                ->orWhere(static fn ($unknown) => $unknown->whereNull('session_expires_at')->where('created_at', '<=', $now->subDays(30))))
+        ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')->where('session_expires_at', '<=', $now)
             ->update(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $now]);
     }
 }

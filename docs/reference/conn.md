@@ -95,7 +95,9 @@ On container Instance T3 servers, devices never pair directly. On first `GET /ap
 
 A container T3 server's owed work lives in its rows, so it survives a Gateway restart: each withdrawn held session owes a revoke by its pairing id, and a `cleanup_version` above `cleanup_completed_version` owes the cleanup of earlier Gateway sessions.
 
-The end of a Conn Operation that holds the server (a hold, a revoke, a cleanup) and the Instance's wake admit the next owed revoke, then the cleanup, without the hourly tick. An interrupted revoke or cleanup is admitted again; a failed one waits for the server's next such event. A sleeping or removing Instance starts nothing until its wake. The Gateway stops serving a withdrawn session at once.
+The end of a Conn Operation that holds the server (a hold, a revoke, a cleanup) and the Instance's wake admit the next owed revoke, then the cleanup, without the hourly tick. An interrupted revoke or cleanup is admitted again at once. A sleeping or removing Instance starts nothing until its wake. The Gateway stops serving a withdrawn session at once.
+
+The `conn:owed-work:advance` command runs every five minutes while Conn is on. It admits what no such event will. A revoke or cleanup that failed, as an unreachable host leaves it, is admitted again once 15 minutes have passed. A revoke that waited while the Gateway admin session had ended starts once a session is recorded. Work whose after-commit admission a crash lost starts at the next run. A withdrawn session past its recorded end owes nothing, because T3 refuses it already. One whose end is unknown owes its revoke until a revoke by its pairing id covers it, however old.
 
 ### Managed grant revocation
 
