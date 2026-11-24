@@ -85,6 +85,8 @@ The role installs Incus and configures the restricted `orbit-ci` project, `orbit
 
 Each CI Node has a pool of [CI places](/reference/node-settings#ci-places) set via `orbit node:update <node> --ci-places=N` (with optional `--ci-proof-only`). [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, registers, moves (`setup.sh move NAME`), and verifies runner containers with the shared labels `self-hosted,Linux,X64,hardimpact,orbit-shard`. The Gateway never stores organization registration tokens.
 
+The role never changes the host's `default` pool. Once every runner is on `orbit-ci`, the operator removes an old `dir` `default` pool with `setup.sh drop_dir_pool`. It refuses before any change when the pool is not `dir` or holds anything but profiles. It points each profile's root at `orbit-instances`, the `orbit-ci` project's at `orbit-ci`, then deletes the pool.
+
 Before removing `ci-runner`, deregister and delete all runner containers; role removal refuses any non-empty `orbit-ci` project even with `--force`. `--purge-data` also removes the empty project, bridge, and ACL after cached images and custom volumes are removed.
 
 ### Runner state for the runner view
