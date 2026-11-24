@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Nodes;
 
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
 use Illuminate\Foundation\Http\FormRequest;
@@ -19,9 +21,17 @@ final class UpdateNodeRequest extends FormRequest
 {
     private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'primary_agent', 'apps', 'nested_fleet', 'instance_host', 'ci'];
 
-    public function authorize(): bool
+    /** The primary agent is one fleet-wide designation, so changing it takes Gateway access, not only access to the target Node. */
+    public function authorize(NodeAccessAuthorizer $access): bool
     {
-        return true;
+        $caller = $this->user();
+
+        return ! $this->json()->has('primary_agent') || ($caller instanceof Node && $access->hasGatewayAuthority($caller));
+    }
+
+    protected function failedAuthorization(): never
+    {
+        throw new ResourceOperationException('node_access.required', 'Gateway access is required to change the primary agent.', 403);
     }
 
     /** @return array<string, list<mixed>> */

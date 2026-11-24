@@ -72,6 +72,9 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
             $light = $this->roles->definition($role)->recordOnly;
+            if ($light && $converge) {
+                throw new ResourceOperationException('validation.failed', "Role [{$role->value}] is only recorded by the Gateway and has no host work to converge.", 422);
+            }
             if ($duringProvisioning || ($light ? $node->status !== LifecycleStatus::Active : ! app(ManagedNodeEligibility::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', $light ? 'Roles can be changed only on an active node.' : 'Role work requires its exact managed Node worker.', 422);
             }
@@ -90,7 +93,7 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }
             if ($light) {
-                return $this->recordLightAdd($node, $role, $converge, $kind, $requestId);
+                return $this->recordLightAdd($node, $role, $requestId);
             }
             if ($role === RoleName::Analytics) {
                 app(ProcessOwnershipClaim::class)->forNode($node->id, PlausibleProcess::NAME);
@@ -208,14 +211,14 @@ final readonly class AdmitNodeRoleOperationAction
     }
 
     /** A record-only role such as `agent` needs no host convergence, so the Gateway records the active assignment and a succeeded Operation at once. */
-    private function recordLightAdd(Node $node, RoleName $role, bool $converge, string $kind, ?string $requestId): Operation
+    private function recordLightAdd(Node $node, RoleName $role, ?string $requestId): Operation
     {
         return $this->operations->record(
-            $kind,
+            'node.role_add',
             'node',
             $node->id,
             $node->id,
-            ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge],
+            ['node_id' => $node->id, 'role' => $role->value, 'converge' => false],
             ['node_id' => $node->id, 'role' => $role->value, 'role_added' => true],
             'operator',
             $requestId,

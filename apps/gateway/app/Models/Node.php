@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Casts\NodeAgentSecretHash;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Collection;
@@ -117,6 +118,12 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
+    }
+
+    /** @return HasMany<NodeRole, $this> The assignments that hold host work: every role except a record-only one such as `agent`. */
+    public function hostRoles(): HasMany
+    {
+        return $this->roles()->whereNotIn('role', app(RoleRegistry::class)->recordOnly());
     }
 
     /** @return BelongsTo<Cluster, $this> */

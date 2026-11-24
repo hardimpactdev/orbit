@@ -145,7 +145,8 @@ it('honours explicit primary_agent designation and switches it atomically across
     $mini->roles()->create(['role' => RoleName::Agent, 'status' => LifecycleStatus::Active]);
     $vps = roleEnvNode('agent-vps', '10.44.1.12');
     $vps->roles()->create(['role' => RoleName::Agent, 'status' => LifecycleStatus::Active]);
-    $this->caller->accessibleNodes()->attach([$mini->id, $vps->id]);
+    // The primary agent is fleet-wide, so the caller changes it through its Gateway access.
+    $this->caller->accessibleNodes()->attach([$mini->id, $vps->id, SwampNodeFixture::ensure()->id]);
 
     roleEnvHostServer($mini, 'env-mini');
     roleEnvHostServer($vps, 'env-vps');
@@ -182,6 +183,25 @@ it('honours explicit primary_agent designation and switches it atomically across
     expect($second['env-mini']['is_primary_agent'])->toBeFalse()
         ->and($second['env-vps']['is_primary_agent'])->toBeTrue();
 });
+
+it('refuses a primary_agent change from a caller without Gateway access and writes nothing', function (bool $primary): void {
+    $mini = roleEnvNode('mini', '10.44.1.11', platform: 'macos');
+    $mini->roles()->create(['role' => RoleName::Agent, 'status' => LifecycleStatus::Active]);
+    $vps = roleEnvNode('agent-vps', '10.44.1.12', primaryAgent: true);
+    $vps->roles()->create(['role' => RoleName::Agent, 'status' => LifecycleStatus::Active]);
+    // Access to both Nodes is not enough: the switch would redirect the fleet's primary entry point.
+    $this->caller->accessibleNodes()->attach([$mini->id, $vps->id]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->patchJson('/api/v1/nodes/'.($primary ? $mini->id : $vps->id), ['primary_agent' => $primary, 'reboot_hold' => true])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+
+    expect($mini->fresh()->primary_agent)->toBeFalse()
+        ->and($vps->fresh()->primary_agent)->toBeTrue()
+        ->and($mini->fresh()->reboot_hold)->toBeFalse()
+        ->and($vps->fresh()->reboot_hold)->toBeFalse();
+})->with(['setting it' => [true], 'clearing it' => [false]]);
 
 it('includes registering Node roles on Instance servers while keeping is_primary_agent false', function (): void {
     $host = roleEnvNode('beast', '10.44.1.10', primaryAgent: true);
@@ -233,7 +253,7 @@ it('includes registering Node roles on Instance servers while keeping is_primary
 
 it('assigns and removes the light agent role on a macOS Node without Swamp runs and clears primary_agent on removal', function (): void {
     $mini = roleEnvNode('mini', '10.44.1.11', platform: 'macos');
-    $this->caller->accessibleNodes()->attach($mini->id);
+    $this->caller->accessibleNodes()->attach([$mini->id, SwampNodeFixture::ensure()->id]);
 
     // Refuses primary_agent before the Node has an active agent role.
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
