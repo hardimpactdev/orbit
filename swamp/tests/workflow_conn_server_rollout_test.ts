@@ -33,7 +33,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     // A Linux start: a 40 s relink, a 100 s restart and health_rounds reads of up to 5 s, health_delay apart.
     const linuxStart = 40 + 100 + health_rounds * (5 + health_delay);
     // The checks, then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 220 + 2 * linuxStart);
+    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 240 + 2 * linuxStart);
     assert(node_seconds >= worst, `${node_seconds} < ${worst}`);
     const deadline = Number(/^timeout (\d+) /.exec(workflow.jobs[0].steps[1].task.inputs.run!)![1]);
     assert(deadline >= max_nodes * node_seconds + 100, `${deadline}`);
@@ -89,12 +89,26 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
+    // The Linux layout: `first` keeps the old release outside a `releases` folder, which does not exist yet, as on a Node set up before
+    // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
+    releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
+
+const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
+/** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
+const listed = (path: string) => {
+    try { return [...Deno.readDirSync(path)].map((entry) => entry.name).sort(); } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return null;
+        if (Deno.statSync(path).isFile) return "file";
+        throw error;
+    }
+};
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
     try {
-        for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", "linux/releases/0.4.2", `linux-build/${options.topFolder ?? "conn-server-0.5.0-linux-x64"}`]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        const old = options.releases === "first" || options.releases === "blocked" ? "linux/0.4.2" : "linux/releases/0.4.2";
+        for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", old, `linux-build/${options.topFolder ?? "conn-server-0.5.0-linux-x64"}`]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         for (const [name, text] of Object.entries(shims)) {
             Deno.writeTextFileSync(`${folder}/bin/${name}`, text);
             Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -109,8 +123,10 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${build}/version`, "0.5.0");
         Deno.writeTextFileSync(`${build}/sig`, `${options.valid === false ? "invalid" : "valid"} ${options.team ?? "9SVJ4SYB9B"} com.nckrtl.conn-server ${options.dr ?? "anchor-team-9SVJ4SYB9B"}\n`);
         new Deno.Command("tar", { args: ["-cf", `${folder}/conn-server.zip`, "-C", `${folder}/build`, "Conn Server.app"] }).outputSync();
-        Deno.writeTextFileSync(`${folder}/linux/releases/0.4.2/version`, "0.4.2");
-        Deno.symlinkSync(`${folder}/linux/releases/0.4.2`, `${folder}/linux/current`);
+        Deno.writeTextFileSync(`${folder}/${old}/version`, "0.4.2");
+        Deno.symlinkSync(`${folder}/${old}`, `${folder}/linux/current`);
+        if (options.releases === "taken") Deno.mkdirSync(`${folder}/linux/releases/0.5.0-${runId}`);
+        if (options.releases === "blocked") Deno.writeTextFileSync(`${folder}/linux/releases`, "");
         // The release tarball holds one top folder, which the unpack strips.
         const top = options.topFolder ?? "conn-server-0.5.0-linux-x64";
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/version`, "0.5.0");
@@ -150,9 +166,9 @@ async function rollout(options: Options) {
         }));
         const done = await new Deno.Command(playbook, {
             // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
-            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false",
+            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
-            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: "0f0e0d0c-0b0a-4908-8706-050403020100",
+            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,
                 ...(options.ssh ? { ANSIBLE_SSH_EXECUTABLE: `${folder}/bin/ssh-node`, ANSIBLE_SSH_TRANSFER_METHOD: "piped",
                     ANSIBLE_SSH_ARGS: `-o ControlMaster=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=${folder}/run/known_hosts` } : {}) },
@@ -168,7 +184,7 @@ async function rollout(options: Options) {
             result,
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
-            releases: [...Deno.readDirSync(`${folder}/linux/releases`)].map((entry) => entry.name),
+            releases: listed(`${folder}/linux/releases`),
             launchctl: read("launchctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             running: Deno.readTextFileSync(`${folder}/running`).trim(),
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
@@ -343,4 +359,24 @@ test("a run with more Nodes than its deadline covers is refused before any Node 
     assert(!run.ok && run.result === null, run.output);
     assert(run.output.includes("conn_server.too_many_nodes"), run.output);
     assertEquals([run.installed, run.linux, run.launchctl], ["0.4.2", "0.4.2", []]);
+});
+
+test("a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none", async () => {
+    const dry = await rollout({ nodes: [{ platform: "linux", canary: true }], releases: "first", dryRun: true });
+    assert(dry.ok, dry.output);
+    assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
+    assertEquals([dry.linux, dry.releases], ["0.4.2", null]);
+    const run = await rollout({ nodes: [{ platform: "linux", canary: true }], releases: "first" });
+    assert(run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2" }]);
+    assertEquals([run.linux, run.running, run.releases], ["0.5.0", "0.5.0", [`0.5.0-${runId}`]]);
+});
+
+test("an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause", async () => {
+    for (const [releases, reason, left] of [["taken", "conn_server.backup_exists", ["0.4.2", `0.5.0-${runId}`]], ["blocked", "conn_server.step_failed", "file"]] as const) {
+        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], releases });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason, rolled_back: false }]);
+        assertEquals([run.linux, run.running, run.releases], ["0.4.2", "0.4.2", left]);
+    }
 });

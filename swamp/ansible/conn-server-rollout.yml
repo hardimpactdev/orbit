@@ -25,9 +25,9 @@
     #   Mac: checks 830 s (download 300, unpack 120, verify 120, signer and two requirements 180, the rest 110), then the swap 904 s
     #   (read 20, notice 60, backup folder 20, two renames 120, the rollback's reads 40 and two renames 120, two starts of 262 s:
     #   a 30 s kickstart and a health wait of health_seconds + 52 s), so 1734 s.
-    #   Linux: checks 480 s, then the swap 1340 s (read 20, notice 60, release folder 20, unpack 120, two starts of 560 s: a 40 s
-    #   relink, a 100 s restart and 60 health reads of up to 7 s), so 1820 s.
-    # node_seconds adds 180 s for the SSH set-up and the tasks without a timeout.
+    #   Linux: checks 480 s, then the swap 1360 s (read 20, notice 60, releases folder 20, release folder 20, unpack 120, two starts of
+    #   560 s: a 40 s relink, a 100 s restart and 60 health reads of up to 7 s), so 1840 s.
+    # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     max_nodes: 4
     node_seconds: 2000
   tasks:
@@ -77,6 +77,8 @@
     health_rounds: 60
     health_delay: 2
     health_seconds: 180
+    # The owner of a Linux Node's `releases` folder.
+    linux_releases_owner: root
     # The TCC prompts that the Conn Server may raise on its start, matched in lower case against the prompt's texts.
     tcc_expected: [removable volume, network volume, documents folder, desktop folder, downloads folder, local network, files on]
   tasks:
