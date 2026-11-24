@@ -47,7 +47,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "conn-server-rollout-" + string(inputs.operation_id) }}'
+          behaviorName: ${{ "conn-server-rollout" }}
           methodName: execute
           inputs:
             run: timeout 3000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"
