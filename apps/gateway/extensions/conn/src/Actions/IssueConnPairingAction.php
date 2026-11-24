@@ -14,6 +14,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -51,7 +52,7 @@ final readonly class IssueConnPairingAction
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-create-'.Str::uuid()];
             $operation = $this->operations->execute('conn.pairing_create', 'conn_pairing', $pairing->id, $gateway,
                 ['conn_environment_id' => $environment->id, 'intent' => ['url' => $environment->url, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label,
-                    'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => self::Scopes], JSON_THROW_ON_ERROR)],
+                    'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => self::Scopes, 'sessionTtl' => ConnSessionLifetime::UntilRevoked], JSON_THROW_ON_ERROR)],
                     'execution_secrets' => ['admin_session' => $reference],
                     'pairing_ids' => [$pairing->id], 'caller_node_id' => $node->id], 'operator', null);
             if ($operation->wasRecentlyCreated) {

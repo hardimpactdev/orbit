@@ -63,6 +63,26 @@ Access is owner-scoped and requires Conn enabled plus node access to the registe
 
 Removal is synchronous, local, and idempotent without contacting the T3 server. In one transaction, the Gateway deletes the environment row (`admin_session`), pairings, held sessions, cached threads, and managed target records. After commit, it drops attached thread references from profiles and deletes execution secret vault copies. It returns HTTP `200` with `{"environment_id": "...", "removed": true|false}`, and a still-running host T3 server that registers again reappears.
 
+T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. It calls `POST /api/auth/logout` with that session's own bearer and no body. A 401 means an earlier logout already revoked it, so the row goes either way. Against an older server the row stays owed.
+
+A host server that registers again with the same bearer uses that session again: the registration deletes the owed row for its environment or URL, and the reconcile drops without logout any owed row whose session a registered server holds. The reconcile holds no transaction or lock across a network call. After the `/health` gate, it reads the owed row again and stops if a registration deleted it, drops it without logout if a registered server holds its session, and otherwise logs out at once and then deletes the row.
+
+### Session lifetimes
+
+Orbit asks for sessions that last until revoked. The Conn Server stores `until-revoked` as its about 10-year cap and still answers a date, which the Gateway stores.
+
+The Gateway session of an Instance's Conn Server is issued with `--ttl 3650d`. Every Conn Server from 0.2.0 on takes it. The TypeScript T3 server keeps its 30-day session.
+
+Each pairing-token request sends `sessionTtl: "until-revoked"`. That covers held sessions and the pairing links that devices and peer links spend. The code itself still lasts 5 minutes. A server older than 0.5.0 ignores the field and grants 30 days.
+
+At a host server's registration and at an Instance's wake, the Gateway reads `GET /health`. On a `conn-server` of 0.5.0 or later, it calls `POST /api/auth/clients/extend` for the Gateway session and each held session that ends within a year, each with its own bearer.
+
+Only `GET /health` tells an old server, which gets no `extend`. A 409 `operation_forbidden` keeps a T3-carried session dated and renewed. A 404 means the session is gone. A gone held session is settled, and the Node's next read holds a new one. A gone Gateway session is recorded as ended, so the renewal issues a new one. A 400 `invalid_session_ttl` is logged as an error and keeps the session dated.
+
+Orbit does nothing for peer links: Conn owns them. The Gateway never extends a peer-link session, because the holder keeps the end it stored when it linked. A new link made with an until-revoked code lasts about 10 years on both sides. From Conn 0.5.1, the holder extends an existing dated link itself, with its own MCP bearer through `POST /api/auth/clients/extend`.
+
+The hourly renewal still runs. It renews only sessions within 7 days of their end, so it never renews a long-lived one. Revocation is unchanged: a revoke by session id ends a long-lived session at once.
+
 ### Instance servers
 
 Container Instances automatically register their T3 server under their host `app-dev` Node during clone creation (`clone-register`), exposing the container's T3 port over the host's WireGuard address. On Instance destroy, terminal projection removes the environment and pairings before core deletes the Instance, scanning only Conn Operation kinds to keep the write lock short. After commit, Orbit deletes vault execution copies (logging `conn.destroy_secret_delete_failed` without failing destroy) and drops attached thread references.
@@ -90,6 +110,14 @@ On container Instance T3 servers, devices never pair directly. On first `GET /ap
 ### Session cleanup
 
 `POST /api/v1/conn/environments/{environment}/sessions/cleanup` revokes stale sessions on a T3 server. Removing a Node access grant (`NodeAccessRemovalHook`) or removing a Node (`NodeRemovalHook`) automatically rotates profile event keys and cleans up held sessions.
+
+### Owed work
+
+A container T3 server's owed work lives in its rows, so it survives a Gateway restart: each withdrawn held session owes a revoke by its pairing id, and a `cleanup_version` above `cleanup_completed_version` owes the cleanup of earlier Gateway sessions.
+
+The end of a Conn Operation that holds the server (a hold, a revoke, a cleanup) and the Instance's wake admit the next owed revoke, then the cleanup, without the hourly tick. An interrupted revoke or cleanup is admitted again at once. A sleeping or removing Instance starts nothing until its wake. The Gateway stops serving a withdrawn session at once.
+
+The `conn:owed-work:advance` command runs every five minutes while Conn is on. It admits what no such event will. A revoke or cleanup that failed, as an unreachable host leaves it, is admitted again once 15 minutes have passed. A revoke that waited while the Gateway admin session had ended starts once a session is recorded. Work whose after-commit admission a crash lost starts at the next run. A withdrawn session past its recorded end owes nothing, because T3 refuses it already. One whose end is unknown owes its revoke until a revoke by its pairing id covers it, however old.
 
 ### Managed grant revocation
 

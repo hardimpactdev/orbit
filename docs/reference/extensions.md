@@ -50,7 +50,7 @@ Each extension registers one provider extending `App\Providers\ExtensionServiceP
 | `dependencies()` | Extension slugs that must be enabled first (default none). |
 | `enable()`, `disable()` | Optional hooks run before enabling or after disabling (used by `tasks` to broadcast `tasks.updated`; unused by `documents`, `vault`, `conn`, and `ai-router`). |
 
-The provider registers its routes, commands, scheduled work (for example `conn:environments:renew` hourly and `conn:threads:read` every minute on `conn`), and plug-in contributions via `$this->contribute(Interface::class, Implementation::class)`.
+The provider registers its routes, commands, scheduled work (for example `conn:environments:renew` hourly, `conn:owed-work:advance` every five minutes and `conn:threads:read` every minute on `conn`), and plug-in contributions via `$this->contribute(Interface::class, Implementation::class)`.
 
 ## Add a plug-in point
 

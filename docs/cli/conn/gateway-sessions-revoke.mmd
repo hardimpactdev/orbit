@@ -19,6 +19,8 @@ sequenceDiagram
   %%> - syntax: the MCP tool `conn-environment-cleanup` with `environment`
   %%> Who starts it:
   %%> - the Gateway itself, when a registration of env-beast commits a new cleanup revision; a start failure keeps registration successful and the revision pending
+  %%> - for a container Instance's server, the Gateway also admits it at the end of the hold or revoke that held the server and at the Instance's wake ([Owed work](/reference/conn#owed-work))
+  %%> - for a container Instance's server, the five-minute `conn:owed-work:advance` tick, for a revision whose cleanup failed at least 15 minutes ago or whose admission a crash lost; never the hourly renewal
   %%> - an operator, to retry a revision that failed
   %%> Not included:
   %%> - there is no `orbit` command, and no per-minute Swamp check of pending revisions
@@ -77,7 +79,8 @@ sequenceDiagram
     %%> - which step failed and its safe `conn.*` error code
     Note over GW: Revision stays pending<br/>task failed · rerun is safe
     %%> Result:
-    %%> - the revision stays pending; no automatic task follows; task #5181 fails
+    %%> - the revision stays pending; task #5181 fails
+    %%> - on a container Instance's server, an interrupted cleanup is admitted again at once, and a failed one by the owed-work tick after 15 minutes; on a host server no automatic task follows
     %%> Retry:
     %%> - safe: call cleanup again, or register again; it lists the sessions again and skips those already gone
   end

@@ -42,24 +42,31 @@ Deno.test("the copy runs only for an issued session, and the Node copy is remove
 });
 
 /** Runs the Node step's script with a stand-in `incus` that reports `state` and issues a session unless `issue` is false. */
-async function node(state: string, issue: boolean) {
+async function node(state: string, issue: boolean, program = "/opt/orbit-agent/current/agent/bin/t3") {
     const bin = await Deno.makeTempDir();
     const folder = `${await Deno.makeTempDir()}/renew`;
     await Deno.writeTextFile(
         `${bin}/incus`,
-        `#!/bin/sh\ncase "$1" in list) printf '%s\\n' "${state}" ;; *) ${issue ? `echo '{"token":"private-node-sentinel"}'` : "exit 1"} ;; esac\n`,
+        `#!/bin/sh\nprintf '%s\\n' "$*" >> "${bin}/args"\ncase "$1" in list) printf '%s\\n' "${state}" ;; *) ${issue ? `echo '{"token":"private-node-sentinel"}'` : "exit 1"} ;; esac\n`,
         { mode: 0o755 },
     );
     const argv = step("Issue the Gateway session").task.inputs.argv as string[];
     const user = new TextDecoder().decode((await new Deno.Command("id", { args: ["-un"] }).output()).stdout).trim();
     const output = await new Deno.Command("sh", {
-        args: ["-c", argv[4], "sh", "orbit-instances", "instance-7", folder, "/opt/orbit-agent/current/agent/bin/t3", user],
+        args: ["-c", argv[4], "sh", "orbit-instances", "instance-7", folder, program, user],
         env: { PATH: `${bin}:${Deno.env.get("PATH")}` },
     }).output();
     const stdout = new TextDecoder().decode(output.stdout);
     assert(!stdout.includes("private-node-sentinel"));
-    return { stdout: JSON.parse(stdout), folder };
+    return { stdout: JSON.parse(stdout), folder, args: await Deno.readTextFile(`${bin}/args`) };
 }
+
+Deno.test("the Node step asks the Conn Server for its 10-year session, and the TypeScript T3 server for its default one", async () => {
+    const conn = await node("RUNNING", true, "/opt/orbit-agent/current/agent/bin/conn-server");
+    assertEquals(conn.stdout, { outcome: "issued" });
+    assert(conn.args.includes("auth session issue --label Orbit Gateway --ttl 3650d --json"));
+    assert(!(await node("RUNNING", true)).args.includes("--ttl"));
+});
 
 Deno.test("the Node step refuses a stopped container before it issues anything", async () => {
     const { stdout, folder } = await node("STOPPED", true);
