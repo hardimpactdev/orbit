@@ -26,6 +26,7 @@ use Orbit\Extensions\Conn\Actions\Managed\EnrolConnManagedTargetAction;
 use Orbit\Extensions\Conn\Actions\Managed\IssueConnManagedTokenAction;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedAuthority;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedNoticePublisher;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedRevocation;
@@ -766,5 +767,34 @@ describe('unregister', function (): void {
 
         Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/api/auth/logout'));
         expect(ConnOwedGatewayRevoke::query()->count())->toBe(0);
+    });
+
+    it('sends no logout when a same-bearer registration commits during the reconcile\'s health gate', function (): void {
+        $armed = false;
+        Http::fake(function (Request $request) use (&$armed) {
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            if ($path === '/health' && $armed) {
+                $armed = false;
+                app(RegisterConnEnvironmentAction::class)->execute($this->serving, new RegisterConnEnvironmentData($this->environmentId, 'lab', 'http://10.44.0.30:3773', 'admin-token'));
+            }
+
+            return match ($path) {
+                '/health' => Http::response(['server' => 'conn-server', 'version' => '0.5.0']),
+                '/.well-known/t3/environment' => Http::response(['environmentId' => $this->environmentId, 'label' => 'lab', 'serverVersion' => '0.0.20']),
+                '/api/auth/session' => Http::response(['authenticated' => true, 'scopes' => ['access:read', 'access:write'], 'expiresAt' => now()->addDays(3650)->toJSON()]),
+                default => Http::response(['revoked' => true]),
+            };
+        });
+        ConnEnvironment::query()->where('environment_id', $this->environmentId)->update(['admin_session_expires_at' => now()->addDays(3650)]);
+        test()->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
+            ->deleteJson("/api/v1/conn/environments/{$this->environmentId}")->assertOk();
+        $owed = ConnOwedGatewayRevoke::query()->sole();
+
+        $armed = true;
+        expect(app(ConnSessionLifetime::class)->revokeOwed($owed))->toBeTrue();
+
+        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/api/auth/logout'));
+        expect(ConnOwedGatewayRevoke::query()->count())->toBe(0)
+            ->and(ConnEnvironment::query()->where('environment_id', $this->environmentId)->sole()->admin_session)->toBe('admin-token');
     });
 });

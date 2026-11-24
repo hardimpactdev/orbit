@@ -70,7 +70,8 @@ final readonly class RegisterConnEnvironmentAction
                 'admin_session_expires_at' => $session->expiresAt, 'registered_at' => $now,
                 'cleanup_version' => $environment->cleanup_version + 1])->save();
             // A host server that registers again with the bearer it kept uses that session again, so the Gateway no longer owes its revoke.
-            ConnOwedGatewayRevoke::query()->where(fn ($owed) => $owed->where('environment_id', $data->environmentId)->orWhere('url', $data->url))->get()
+            // The lock waits for a logout of that session in flight (ConnSessionLifetime::revokeOwed).
+            ConnOwedGatewayRevoke::query()->where(fn ($owed) => $owed->where('environment_id', $data->environmentId)->orWhere('url', $data->url))->lockForUpdate()->get()
                 ->filter(fn (ConnOwedGatewayRevoke $owed): bool => hash_equals($owed->admin_session, $session->token))->each->delete();
 
             DB::afterCommit(function () use ($environment, $node): void {
