@@ -68,7 +68,7 @@ final readonly class PhpSymbolIndexRefresh implements DirectOperationProjection
             // The seed that clones copy: the run refuses with `instance.php_index_seed_moved` before any snapshot when the container's
             // HEAD is another commit, as after a failed deployment, since its seed phase would retake `seed-<HEAD>` and delete this one.
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
-                ['container' => InstanceDeploymentIntent::container($instance, $runtime, $agentFolder),'seed_commit' => $runtime->seed_commit], $caller, $requestId,
+                ['container' => InstanceDeploymentIntent::container($instance, $runtime, $agentFolder), 'seed_commit' => $runtime->seed_commit], $caller, $requestId,
                 lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }
