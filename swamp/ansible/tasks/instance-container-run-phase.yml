@@ -42,6 +42,7 @@
          | combine(club_key_carried)
          | combine(wake_result | default({})) | combine(fleet_refresh_carried)
          | combine(executor_carried) | combine(workspace_clean_carried | default({}))
+         | combine({'php_index_skipped': php_index_skipped} if php_index_skipped | default('') != '' else {})
          | combine({'phases_passed': container_phases_passed} if phases is defined else {}) | to_json }}
     dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
     mode: "0600"

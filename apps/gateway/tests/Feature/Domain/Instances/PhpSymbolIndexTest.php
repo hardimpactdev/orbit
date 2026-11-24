@@ -171,7 +171,9 @@ it('runs only the index and seed phases of a running Laravel default, with no de
 
     expect($operation->kind)->toBe(PhpSymbolIndexRefresh::Kind)
         ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('operation-instance-php-index')
-        ->and(array_keys($operation->input))->toBe(['container'])
+        ->and(array_keys($operation->input))->toBe(['container', 'seed_commit'])
+        // The seed that clones copy: the run refuses when the container's HEAD is another commit (instance.php_index_seed_moved).
+        ->and($operation->input['seed_commit'])->toBe(str_repeat('c', 40))
         ->and($operation->input['container']['php_index'])->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds])
         // The seed it retakes records the clone files and the tree's state, as a deployment's seed does.
         ->and($operation->input['container'])->toHaveKeys(['seed_files', 'services_digest'])

@@ -4502,3 +4502,122 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "an index whose seed snapshot failed stays pending: the retry builds again and retakes the seed, then a repeat is unchanged",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, home, calls } = phpIndexFixture();
+    try {
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
+      const head = git(f.source, "rev-parse", "HEAD");
+      const set = (key: string, value: boolean) => {
+        const state = f.state();
+        state[key] = value;
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      };
+      const creates = () => Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot") && call.includes("create")).length;
+
+      // The index builds, then the snapshot fails for want of an ID range: the old seed, without the index, stays.
+      set("no_id_range", true);
+      const failed = f.phases(["php_index", "seed"]);
+      assert(!failed.ok, failed.output);
+      assertEquals(f.result().error_code, "instance.container_seed_failed");
+      assertEquals(calls().length, 1);
+      assertThrows(() => Deno.statSync(`${home}/.cache/orbit-php-index.json`));
+
+      // The retry is not `unchanged`: it builds and retakes the seed, and only then records the fingerprint.
+      set("no_id_range", false);
+      const before = creates();
+      const retry = f.phases(["php_index", "seed"]);
+      assert(retry.ok, retry.output);
+      assertEquals(calls().length, 2);
+      assertEquals(creates(), before + 1, retry.output);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      assert(Deno.statSync(`${home}/.cache/orbit-php-index.json`).isFile);
+
+      const again = f.phases(["php_index", "seed"]);
+      assert(again.ok, again.output);
+      assertEquals(calls().length, 2);
+      assertEquals(creates(), before + 1);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "an index refresh of a default whose HEAD moved past its recorded seed is refused before any build or snapshot, and the seed stays",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, calls } = phpIndexFixture();
+    try {
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
+      const seeded = git(f.source, "rev-parse", "HEAD");
+      // A deployment of B checked out B, then failed before its seed: the Gateway still records the seed at A.
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "b");
+      for (const phases of [["start", "fetch"], ["checkout"]]) assert(f.phases(phases).ok);
+      assert(f.workspace("rev-parse", "HEAD") !== seeded);
+      const creates = () => Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot") && (call.includes("create") || call.includes("delete"))).length;
+      const before = creates();
+
+      (f.intent as Record<string, unknown>).seed_commit = seeded;
+      f.write();
+      const refused = f.phases(["php_index", "seed"]);
+      assert(!refused.ok, refused.output);
+      assertEquals(f.result().error_code, "instance.php_index_seed_moved");
+      assertEquals(f.result().phases_passed, []);
+      assertEquals(calls(), []);
+      assertEquals(creates(), before);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${seeded}`]);
+
+      // At the recorded commit the refresh runs.
+      (f.intent as Record<string, unknown>).seed_commit = f.workspace("rev-parse", "HEAD");
+      f.write();
+      const ran = f.phases(["php_index", "seed"]);
+      assert(ran.ok, ran.output);
+      assertEquals(calls().length, 1);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment on a Node whose runtime has no phpactor yet passes with its seed and records why the index was skipped; a converged Node indexes",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, home, calls } = phpIndexFixture();
+    try {
+      const setup = f.phases(["container", "workspace", "processes"]);
+      assert(setup.ok, setup.output);
+      const phpactor = `${f.folder}/php-index-bin/phpactor`;
+      const kept = Deno.readTextFileSync(phpactor);
+      Deno.removeSync(phpactor);
+
+      // Unconverged: the deployment's seed is taken and its result says why no index was built.
+      const unconverged = f.phases(["processes", "php_index", "seed", "check"]);
+      assert(unconverged.ok, unconverged.output);
+      const head = git(f.source, "rev-parse", "HEAD");
+      assertEquals(f.result(), { commit: head, php_index_skipped: "The Node's runtime folder has no phpactor yet: converge the Node.",
+        phases_passed: ["processes", "php_index", "seed", "check"] });
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      assertThrows(() => Deno.statSync(`${home}/.cache`));
+
+      // Converged: the next run builds the index and retakes the seed.
+      Deno.writeTextFileSync(phpactor, kept);
+      Deno.chmodSync(phpactor, 0o755);
+      const converged = f.phases(["php_index", "seed"]);
+      assert(converged.ok, converged.output);
+      assertEquals(calls().length, 1);
+      assertEquals(f.result(), { commit: head, phases_passed: ["php_index", "seed"] });
+      assert(Deno.statSync(`${home}/.cache/orbit-php-index.json`).isFile);
+    } finally {
+      f.cleanup();
+    }
+  },
+});

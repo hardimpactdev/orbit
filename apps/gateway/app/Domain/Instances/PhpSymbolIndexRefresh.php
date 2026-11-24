@@ -61,8 +61,10 @@ final readonly class PhpSymbolIndexRefresh implements DirectOperationProjection
                     'A nested-fleet or proof default prepares its PHP symbol index only in its deployment.', 409);
             }
 
+            // The seed that clones copy: the run refuses with `instance.php_index_seed_moved` before any snapshot when the container's
+            // HEAD is another commit, as after a failed deployment, since its seed phase would retake `seed-<HEAD>` and delete this one.
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
-                ['container' => InstanceDeploymentIntent::container($instance, $runtime)], $caller, $requestId,
+                ['container' => InstanceDeploymentIntent::container($instance, $runtime), 'seed_commit' => $runtime->seed_commit], $caller, $requestId,
                 lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }

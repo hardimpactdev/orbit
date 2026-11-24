@@ -101,6 +101,8 @@ sequenceDiagram
   %%> - `agent` runs Phpactor's `index:build` at the application's folder, after the deploy steps, at the lowest CPU and I/O priority and within 600 s; Phpactor finds its index under agent's home by itself, and reindexes only what changed
   %%> - an unchanged tree (its fingerprint in `~/.cache/orbit-php-index.json`) starts no Phpactor
   %%> - a failed or late build fails with `instance.php_index_failed` and Phpactor's reason in the detail; the seed is not taken, so the old seed stays
+  %%> - a Node whose runtime folder has no `phpactor` yet (not converged since the release) skips the work: the deployment passes, its seed has no new index, and its result has `php_index_skipped`
+  %%> - a new fingerprint stays pending until the seed phase takes the seed that holds the index, so a failed snapshot leaves the next run to build and retake again
   %%> Phase seed:
   %%> - prepares a Node/Vite default’s private Node store as www-data before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them

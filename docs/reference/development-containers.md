@@ -104,6 +104,7 @@ The run is incremental and bounded:
 
 - Phpactor reindexes a PHP file whose ctime is not older than the index's last update. A build on an index that exists reads only what changed, and nothing resets it.
 - The run records a fingerprint in `~/.cache/orbit-php-index.json`. It covers the `phpactor` and `php` paths, the folder, and the index's timestamp files.
+- A new fingerprint waits in `~/.cache/orbit-php-index.pending.json` until the seed phase has taken the seed that holds the index. After a failed snapshot it stays pending, so the next run builds again and retakes the seed.
 - The fingerprint also covers each PHP file and folder below the application's folder, with its ctime and size. `.git` is left out.
 - An unchanged fingerprint starts no Phpactor, as at a repeat refresh of the same commit.
 - The build runs at `nice -n 19` and `ionice -c 3`, as one Phpactor process, within 600 s (`PhpSymbolIndex::Seconds`).
@@ -111,6 +112,8 @@ The run is incremental and bounded:
 - No unit, timer or daemon runs Phpactor. A clone's boot starts nothing.
 
 A build that fails or runs past its bound fails the phase with `instance.php_index_failed`. Its detail names Phpactor's exit code or the bound, with the end of Phpactor's output. The seed is not taken, so the old seed stays, and the run records no fingerprint, so the next deployment builds again. Orbit fails the deployment rather than warn: a seed whose index is missing or half built would hand every clone a lookup that is silently wrong.
+
+A Node whose runtime folder has no `phpactor` yet skips the work rather than fail the run. The phase starts nothing and records nothing, and the run's result names the reason in `php_index_skipped`. The seed is taken as without an index. This is the [rollout window](#prepare-the-index-of-a-running-default) between a release and the Node's converge.
 
 The index needs no Composer install. A default without `vendor/` gets an index of its own source, and a later `composer install` adds the packages at the next build, incrementally.
 
@@ -120,6 +123,8 @@ A legacy host checkout, such as a default that `instance:migrate` has not moved 
 
 A deployment is not the way to add the index to a default that already runs. Its `checkout` phase removes every untracked file that Git does not ignore from the default's tree (`instance_default_clean.py`), also at the same commit. `instance.php_index` instead runs only the container's `php_index` and `seed` phases in one play (`PhpSymbolIndexRefresh`, workflow `operation-instance-php-index`). It runs no fetch, checkout, clean, reset or deploy step, so the working tree, its untracked files included, stays as it is.
 
+The intent carries the seed that the Gateway records for clones, `seed_commit`. The `php_index` phase first requires that the container's HEAD is that commit. A default whose HEAD moved past it, as after a deployment that failed after its checkout, is refused with `instance.php_index_seed_moved` before any build or snapshot. Its seed phase would otherwise take `seed-<HEAD>` and delete the seed that clones copy. The next passed deployment moves the HEAD and the seed together.
+
 The seed phase retakes `seed-<HEAD>` only when the index changed. A second run on an unchanged tree starts no Phpactor and takes no snapshot. The retake stops and starts the default's Processes around the snapshot, as a deployment's seed does. The Operation's budget is 900 s and its step's bound 750 s.
 
 Admission refuses each of these with its code:
@@ -128,6 +133,7 @@ Admission refuses each of these with its code:
 - A host checkout with no container (`operation.kind_unavailable`).
 - A default with no seed yet or with an unfinished Operation (`instance.lifecycle_busy`).
 - A stopped container (`process.target_inactive`): the run never starts one.
+- A running default whose HEAD is not its recorded seed (`instance.php_index_seed_moved`), refused by the run before it touches anything.
 - A nested-fleet or proof default in the nested Incus project (`instance.php_index_unsupported`). Only its deployment builds its index, with the rules its seed needs.
 
 To prepare the index in existing Laravel defaults:
@@ -135,7 +141,7 @@ To prepare the index in existing Laravel defaults:
 1. Right after the Gateway release, before any deployment, converge each `app-dev` Node: `orbit node:converge <node>`. Its runtime folder then holds `phpactor`.
 2. On the Gateway host, admit the runs: `php artisan instances:php-index <instance-id> [<instance-id>...]`.
 
-Between the release and a Node's converge, the release's intents already carry `php_index` while the Node's runtime folder has no `phpactor`. Each Laravel default deployment on that Node then fails with `instance.php_index_failed` (`phpactor and php must be on PATH`) and keeps its old seed.
+Between the release and a Node's converge, the release's intents already carry `php_index` while the Node's runtime folder has no `phpactor`. A Laravel default deployment on that Node passes and takes its seed without an index, and its result has `php_index_skipped`. So does an `instances:php-index` run, which then retakes no seed. Run it again after the converge.
 
 The command prints one JSON line per Instance: `{"instance":<id>,"operation":<id>}` when admitted, or `{"instance":<id>,"skipped":"<code>","reason":"..."}`, and exits `1` when any was skipped. Follow each Operation with `orbit operation:show <id>`. A failed build ends it with `instance.php_index_failed`, and the old seed stays.
 

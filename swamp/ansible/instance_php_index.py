@@ -2,7 +2,7 @@
 
 `agent` runs it in the default container in the `php_index` phase, after the Project's deploy steps and its Processes and before the
 seed, with the application's folder (the one with `artisan`) as its working folder and the container's deploy environment: `HOME` is
-`/home/agent` and `PATH` has the Project's PHP and the runtime folder's `phpactor`. Argument: the bound in seconds.
+`/home/agent` and `PATH` has the Project's PHP and the runtime folder's `phpactor`. Argument: the bound in seconds, or `seeded`.
 
 Phpactor names its index by itself: `$HOME/.cache/phpactor/index/<folder name>-<hash of the folder's path>`, the folder being the
 working folder of `phpactor index:build` or the root URI of its language server. A clone has the same home and application path, so a
@@ -11,10 +11,15 @@ than the index's last update, so a build on an index that exists is incremental.
 
 The run keeps a fingerprint of what the index read in STAMP: Phpactor's and PHP's paths (a new version is a new path), the folder,
 each PHP file and folder below it with its ctime and size, and the index's own timestamp files. With the fingerprint unchanged it
-starts no Phpactor. Otherwise it runs `phpactor index:build` at the lowest CPU and I/O priority within the bound and then records the
-new fingerprint. A build that fails or runs past the bound exits 1 with the end of Phpactor's output on stderr, and records nothing.
+starts no Phpactor. Otherwise it runs `phpactor index:build` at the lowest CPU and I/O priority within the bound and then writes the
+new fingerprint to PENDING. Only the seed phase, once the seed that holds the index is taken, makes it the recorded one (`seeded`), so a
+run whose snapshot failed leaves the fingerprint pending, and the next run builds again and retakes the seed. A build that fails or runs
+past the bound exits 1 with the end of Phpactor's output on stderr, and records nothing.
 
-Prints one JSON line: `{"index": "unchanged"}` or `{"index": "updated", "seconds": <float>}`.
+A Node whose runtime folder has no `phpactor` yet (a release before the Node's converge) gets no index work: the run starts nothing,
+records nothing and exits 0 with the reason, so the deployment goes on with a seed that has no new index.
+
+Prints one JSON line: `{"index": "unchanged"}`, `{"index": "updated", "seconds": <float>}` or `{"index": "skipped", "reason": ...}`.
 """
 
 import hashlib
@@ -26,6 +31,7 @@ import sys
 import time
 
 STAMP = os.path.join(os.path.expanduser("~"), ".cache", "orbit-php-index.json")
+PENDING = os.path.join(os.path.expanduser("~"), ".cache", "orbit-php-index.pending.json")
 INDEXES = os.path.join(os.path.expanduser("~"), ".cache", "phpactor", "index")
 # Phpactor's own extensions (indexer.supported_extensions).
 EXTENSIONS = (".php", ".phar")
@@ -61,11 +67,18 @@ def recorded():
 
 
 def main():
+    if sys.argv[1] == "seeded":
+        if os.path.exists(PENDING):
+            os.replace(PENDING, STAMP)
+        return 0
     seconds = int(sys.argv[1])
     root = os.getcwd()
     phpactor, php = shutil.which("phpactor"), shutil.which("php")
-    if phpactor is None or php is None:
-        print("phpactor and php must be on PATH", file=sys.stderr)
+    if phpactor is None:
+        print(json.dumps({"index": "skipped", "reason": "The Node's runtime folder has no phpactor yet: converge the Node."}))
+        return 0
+    if php is None:
+        print("php must be on PATH", file=sys.stderr)
         return 1
     phpactor, php = os.path.realpath(phpactor), os.path.realpath(php)
     if recorded().get(root) == fingerprint(root, phpactor, php):
@@ -83,12 +96,12 @@ def main():
         print(f"{reason}: {tail}" if tail else reason, file=sys.stderr)
         return 1
 
-    # Taken after the build, so the fingerprint holds the index's new timestamp.
+    # Taken after the build, so the fingerprint holds the index's new timestamp. It waits in PENDING until the seed holds the index.
     os.makedirs(os.path.dirname(STAMP), exist_ok=True)
-    temporary = STAMP + ".tmp"
+    temporary = PENDING + ".tmp"
     with open(temporary, "w", encoding="utf-8") as handle:
         json.dump({root: fingerprint(root, phpactor, php)}, handle)
-    os.replace(temporary, STAMP)
+    os.replace(temporary, PENDING)
     print(json.dumps({"index": "updated", "seconds": round(time.monotonic() - started, 1)}))
     return 0
 

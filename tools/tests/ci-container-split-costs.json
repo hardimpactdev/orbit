@@ -1,6 +1,6 @@
 {
   "source_sha256": "d2cbbc2bb4d9114a7dc1be01069630d051f0f1ccd0c2a2eac4f2235a1a3bf1b8",
-  "registered_case_count": 122,
+  "registered_case_count": 125,
   "note": "Completed local orb observations with two shared fixture workers, not hosted-pool calibration. These include installed Process prerequisites and exact unit-file assertions. Each value is the maximum of its corrected bounded probe and any selected-gate observation. Only the six cases split from two combined cases are recalibrated: ceil(seconds * 2.1) + 1 body seconds, plus the unchanged six-second startup allowance. Other declarations retain their existing evidence. The full file remains named capacity debt; runners cannot resolve its oversized units.",
   "case_seconds": {
     "merged deploy steps keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next": 81.60394002700001,

@@ -1891,10 +1891,28 @@
         argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'restore', container.inner_volume.pool, container.inner_volume.name, restore_seed] }}"
       changed_when: true
 
+# The index refresh of a running default (instance.php_index) names the seed that the Gateway records for its clones. Its seed phase
+# takes `seed-<HEAD>` and deletes every other seed, so a default whose HEAD moved past that seed (a failed deployment) is refused
+# before anything is built or snapshotted: the recorded seed stays for the clones, and the next passed deployment moves both.
+- name: Refuse an index refresh whose default moved past its recorded seed
+  tags: [php_index]
+  when: phase == 'php_index' and intent.seed_commit is defined
+  block:
+    - name: Read the default's commit
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}" }
+      register: php_index_head
+      changed_when: false
+    - name: Require the recorded seed's commit
+      ansible.builtin.assert:
+        that: php_index_head.stdout | trim == intent.seed_commit
+        fail_msg: instance.php_index_seed_moved
+        quiet: true
+
 # The Phpactor symbol index of a Laravel default on an app-dev Node, right before its seed, so a clone's first lookup reads the seed's
 # index (docs/reference/development-containers.md#php-symbol-index). Only an intent with `php_index` has it (PhpSymbolIndex). `agent`
 # runs it at the application's folder with the deploy steps' environment; an unchanged tree starts no Phpactor, and a changed one
-# reindexes only what changed, niced and within the intent's bound. A failed or late build fails the phase, so the old seed stays.
+# reindexes only what changed, niced and within the intent's bound. A failed or late build fails the phase, so the old seed stays. A
+# runtime folder with no `phpactor` yet (the Node is not converged since the release) skips the work, and the result says why.
 - name: Prepare the PHP symbol index
   tags: [php_index]
   when: phase == 'php_index' and container.php_index is defined
@@ -1911,7 +1929,8 @@
     # A register is overwritten when the next phase includes this file and skips the task; a skipped set_fact keeps its fact.
     - name: Name whether the index changed, for the seed
       ansible.builtin.set_fact:
-        php_index_changed: "{{ php_index_built.changed }}"
+        php_index_changed: "{{ php_index_built.changed and (php_index_built.stdout | from_json).index == 'updated' }}"
+        php_index_skipped: "{{ (php_index_built.stdout | from_json).reason | default('') }}"
   rescue:
     - name: Name why the index failed
       ansible.builtin.set_fact:
@@ -2216,6 +2235,16 @@
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + units }}" }
           changed_when: false
+    # The new index's fingerprint becomes the recorded one only now that a seed holds the index: after a failed snapshot it stays
+    # pending, so the next run builds again and retakes the seed (instance_php_index.py `seeded`).
+    - name: Record the seeded index's fingerprint as agent
+      when: container.php_index is defined and php_index_changed | default(false) | bool
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '60', 'incus', 'exec', '--project', container.project, container.name, '--', 'runuser', '-u', 'agent', '--',
+              '/usr/bin/env', '-i'] + container.environment
+             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), 'seeded'] }}
+      changed_when: true
     - name: Clear the captured Node-store refresh marker as the app user
       when: intent.migrate is not defined and (node_runtime_result | default({})).get('seed_refresh_required', false)
       ansible.builtin.command:
