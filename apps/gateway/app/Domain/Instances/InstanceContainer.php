@@ -638,9 +638,12 @@ final readonly class InstanceContainer
      * a clone places only what differs (swamp/ansible/instance_seed_files.py). Per-copy files stay with the clone: its identity, model
      * key, settings with providers, proxy bypass and Instance file.
      *
+     * `$agentFolder`: the agent folder that a caller in its own transaction read before it (seedAgentFolder); null reads it here.
+     *
+     * @param  list<array<string, mixed>>|null  $agentFolder
      * @return list<array<string, mixed>>
      */
-    public function seedFiles(Instance $default, InstanceRuntime $runtime): array
+    public function seedFiles(Instance $default, InstanceRuntime $runtime, ?array $agentFolder = null): array
     {
         $folders = $this->folders();
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
@@ -660,18 +663,31 @@ final readonly class InstanceContainer
         foreach (self::t3DropIns($conn, $folders) as $file) {
             $items[] = ['file' => ['path' => $file['path'], 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'], 'content' => $file['content'], 'parents' => true]];
         }
-        // Instructions that cannot be read leave the folder to each clone, whose create reads and checks them again.
-        try {
-            $instructions = app(InstanceAgentInstructions::class);
-            $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
-            $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
-        } catch (ResourceOperationException) {
-        }
+        $items = [...$items, ...($agentFolder ?? $this->seedAgentFolder($default->project))];
         foreach (InstanceAgentInstructions::links() as $link) {
             $items[] = ['link' => [...$link, 'owner' => ['uid' => $agent, 'gid' => $agent]]];
         }
 
         return $items;
+    }
+
+    /**
+     * The agent folder item of a default's seed (seedFiles), with the Project's instructions. Their bodies cannot be read inside a
+     * database transaction (docs/reference/development-containers.md#agent-instructions). Instructions that cannot be read leave the
+     * folder to each clone, whose create reads and checks them again: no item.
+     *
+     * @return list<array{folder: array{path: string, files: list<array{path: string, content: string}>}}>
+     */
+    public function seedAgentFolder(Project $project): array
+    {
+        try {
+            $instructions = app(InstanceAgentInstructions::class);
+            $agentFolder = $instructions->intent($project, $instructions->read($project));
+        } catch (ResourceOperationException) {
+            return [];
+        }
+
+        return [['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]]];
     }
 
     /**

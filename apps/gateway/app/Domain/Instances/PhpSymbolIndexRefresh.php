@@ -33,7 +33,11 @@ final readonly class PhpSymbolIndexRefresh implements DirectOperationProjection
             return $replay;
         }
 
-        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+        // The seed's agent folder: the Project's instructions are read here, before the transaction
+        // (docs/reference/development-containers.md#agent-instructions).
+        $agentFolder = app(InstanceContainer::class)->seedAgentFolder($instance->project()->firstOrFail());
+
+        return DB::transaction(function () use ($instance, $caller, $requestId, $agentFolder): Operation {
             $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
             $runtime = $instance->runtime()->first();
             // A host checkout has no container and no seed to hold an index.
@@ -64,7 +68,7 @@ final readonly class PhpSymbolIndexRefresh implements DirectOperationProjection
             // The seed that clones copy: the run refuses with `instance.php_index_seed_moved` before any snapshot when the container's
             // HEAD is another commit, as after a failed deployment, since its seed phase would retake `seed-<HEAD>` and delete this one.
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
-                ['container' => InstanceDeploymentIntent::container($instance, $runtime), 'seed_commit' => $runtime->seed_commit], $caller, $requestId,
+                ['container' => InstanceDeploymentIntent::container($instance, $runtime, $agentFolder),'seed_commit' => $runtime->seed_commit], $caller, $requestId,
                 lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }
