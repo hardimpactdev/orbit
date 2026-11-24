@@ -66,7 +66,8 @@
     quiet: true
 
 # /health answers on the unit's `--host` (`--host=<addr>` or `--host <addr>` in ExecStart's argv), or on 127.0.0.1 when it has
-# none or a wildcard, never through a proxy. A read that gets no answer there fails the Node before any change, in a dry run too.
+# none or a wildcard, never through a proxy. Before any change, in a dry run too, the running server must answer there with 200,
+# `server: conn-server` and its version, so the rollback has a version to check; anything else fails the Node.
 - name: Name the unit's health address
   ansible.builtin.set_fact:
     linux_health_url: >-
@@ -81,9 +82,12 @@
   failed_when: false
   timeout: 20
 
-- name: Refuse a health address that does not answer
+- name: Refuse a running server that does not answer with its version
   ansible.builtin.assert:
-    that: linux_before.status | default(-1) | int > 0
+    that:
+      - linux_before.status | default(-1) | int == 200
+      - linux_before.json.server | default('') == 'conn-server'
+      - linux_before.json.version | default('', true) | string | length > 0
     fail_msg: conn_server.health_unreachable
     quiet: true
 

@@ -92,6 +92,8 @@ type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
 type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
     // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
     args?: string; listen?: string;
+    // `down` starts with the running server answering 503 and no version.
+    down?: boolean;
     // The Linux layout: `first` keeps the old release outside a `releases` folder, which does not exist yet, as on a Node set up before
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
@@ -134,7 +136,7 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/version`, "0.5.0");
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/conn-server`, "");
         new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, top] }).outputSync();
-        Deno.writeTextFileSync(`${folder}/running`, "0.4.2");
+        Deno.writeTextFileSync(`${folder}/running`, options.down ? "down" : "0.4.2");
         Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
         if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
@@ -291,7 +293,9 @@ test("a Linux Node whose /health names another server is not updated, as on a Ma
     for (const platform of ["mac", "linux"] as const) {
         const run = await rollout({ nodes: [{ platform, canary: true }], name: "t3" });
         assert(!run.ok, run.output);
-        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", "conn_server.health_check_failed"]);
+        // A Linux Node reads the running server before any change, so it fails in its checks.
+        const reason = platform === "linux" ? "conn_server.health_unreachable" : "conn_server.health_check_failed";
+        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", reason]);
         assertEquals([run.installed, run.linux], ["0.4.2", "0.4.2"]);
     }
 });
@@ -339,9 +343,9 @@ test("a Linux unit without --host, or with a wildcard one, reads /health on 127.
     }
 });
 
-test("a Linux Node whose health address does not answer fails before any change, in a dry run too", async () => {
-    for (const dryRun of [true, false]) {
-        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], dryRun, args: "--host=127.0.0.2" });
+test("a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too", async () => {
+    for (const [options, dryRun] of [[{ args: "--host=127.0.0.2" }, true], [{ args: "--host=127.0.0.2" }, false], [{ down: true }, true], [{ down: true }, false]] as const) {
+        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], dryRun, ...options });
         assert(!run.ok, run.output);
         assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_unreachable", rolled_back: false }]);
         assertEquals([run.linux, run.releases, run.systemctl], ["0.4.2", ["0.4.2"], []]);
