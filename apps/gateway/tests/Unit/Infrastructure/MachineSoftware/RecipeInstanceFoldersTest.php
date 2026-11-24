@@ -59,6 +59,63 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
         ]);
 });
 
+/** The shipped recipe whose `conn-server` part also pins its release's macOS arm64 app, as a release from Conn 0.5.0 on does. */
+function recipeWithConnMacApp(Closure $change): string
+{
+    return recipeWithInstances(static function (array &$document) use ($change): void {
+        $version = $document['instances']['agent']['conn-server']['version'];
+        $document['instances']['agent']['conn-server']['macos_arm64'] = [
+            'url' => "https://github.com/nckrtl/conn/releases/download/conn-server-v{$version}/conn-server-{$version}-macos-arm64.zip",
+            'sha256' => str_repeat('ab', 32), 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B',
+        ];
+        $change($document);
+    });
+}
+
+it('pins a Conn release without a macOS app, as today\'s pin has none', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+
+    expect($recipe->instances->agent['conn-server']->macApp)->toBeNull();
+});
+
+it('pins a Conn release\'s macOS arm64 zip and its signature next to the Linux tarball, and gives container hosts the same plan', function (): void {
+    $today = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $recipe = new RecipeLoader()->decode(recipeWithConnMacApp(static fn () => null));
+    $part = $recipe->instances->agent['conn-server'];
+    $version = $part->version;
+
+    expect($part->artifact)->toEqual($today->instances->agent['conn-server']->artifact)
+        ->and($part->bin)->toBe($today->instances->agent['conn-server']->bin)
+        ->and($part->macApp?->artifact->location)->toBe("https://github.com/nckrtl/conn/releases/download/conn-server-v{$version}/conn-server-{$version}-macos-arm64.zip")
+        ->and($part->macApp?->artifact->algorithm)->toBe('sha256')
+        ->and($part->macApp?->artifact->digest)->toBe(str_repeat('ab', 32))
+        ->and($part->macApp?->bundleId)->toBe('com.nckrtl.conn-server')
+        ->and($part->macApp?->teamId)->toBe('9SVJ4SYB9B')
+        // Container hosts install the agent folder plan; it, and so the folder's version, has the Linux tarball alone.
+        ->and(InstanceFolderPlan::for($recipe->instances))->toBe(InstanceFolderPlan::for($today->instances))
+        ->and(InstanceFolderPlan::for($recipe->instances, shift: false))->toBe(InstanceFolderPlan::for($today->instances, shift: false));
+});
+
+it('refuses a macOS app pin that is not the release\'s signed arm64 zip of an agent folder part', function (Closure $change, string $error): void {
+    expect(static fn () => new RecipeLoader()->decode(recipeWithConnMacApp($change)))->toThrow(InvalidArgumentException::class, $error);
+})->with([
+    'another asset' => [static function (array &$document): void {
+        $document['instances']['agent']['conn-server']['macos_arm64']['url'] = str_replace('-macos-arm64.zip', '-linux-x64.tar.gz', $document['instances']['agent']['conn-server']['macos_arm64']['url']);
+    }, 'instances.agent.conn-server.macos_arm64.url: expected the release\'s conn-server-'],
+    'another release' => [static function (array &$document): void {
+        $document['instances']['agent']['conn-server']['macos_arm64']['url'] = 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.0.1/conn-server-0.0.1-macos-arm64.zip';
+    }, 'instances.agent.conn-server.macos_arm64.url: expected the exact version'],
+    'no sha256' => [static function (array &$document): void {
+        unset($document['instances']['agent']['conn-server']['macos_arm64']['sha256']);
+    }, 'instances.agent.conn-server.macos_arm64: expected exactly fields url, sha256, bundle_id, team_id'],
+    'no team id' => [static function (array &$document): void {
+        $document['instances']['agent']['conn-server']['macos_arm64']['team_id'] = 'Developer ID';
+    }, 'instances.agent.conn-server.macos_arm64.team_id: expected a ten-character Developer ID team id.'],
+    'a runtime folder part' => [static function (array &$document): void {
+        $document['instances']['runtime']['composer']['macos_arm64'] = $document['instances']['agent']['conn-server']['macos_arm64'];
+    }, 'instances.runtime.composer.macos_arm64: expected only on an agent folder part.'],
+]);
+
 it('ships agent-browser as one pinned release binary in the agent folder, which opens the same headless Chrome', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');

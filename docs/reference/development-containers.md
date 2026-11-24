@@ -207,6 +207,31 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.4.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
+#### Conn Server pin
+
+The agent folder part `conn-server` in `apps/gateway/resources/machine-software/recipe.json` pins one Conn release, `conn-server-v<X>`, as two assets:
+
+- `artifacts.amd64`: `conn-server-<X>-linux-x64.tar.gz` and its SHA-256. Container hosts unpack it into the agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`.
+- `macos_arm64`, optional: `conn-server-<X>-macos-arm64.zip` and its SHA-256. It also names the signature that its `Conn Server.app` must carry: `bundle_id` (`com.nckrtl.conn-server`) and `team_id`, the Developer ID team (`9SVJ4SYB9B`).
+
+The bundle is signed with the hardened runtime and is not notarized. Releases before 0.5.0 have no zip, so their pin leaves `macos_arm64` out.
+
+```json
+"conn-server": {
+    "version": "<X>",
+    "artifacts": {"amd64": {"url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-linux-x64.tar.gz", "sha256": "…"}},
+    "bin": {"conn-server": "conn-server-<X>-linux-x64/conn-server"},
+    "macos_arm64": {
+        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-macos-arm64.zip",
+        "sha256": "…",
+        "bundle_id": "com.nckrtl.conn-server",
+        "team_id": "9SVJ4SYB9B"
+    }
+}
+```
+
+The recipe loader accepts `macos_arm64` on agent folder parts only and requires the release's exact zip name. Container hosts never read it: the agent folder plan, and so the folder's version, has the Linux tarball alone. The Conn Server rollout to Mac Nodes reads the zip, its SHA-256 and the signing facts from this pin. A change to the pin changes the recipe digest, so a pin bump also updates the hashes in `apps/gateway/tests/Fixtures/production-gateway-converge-main.json`.
+
 #### Switching an existing T3 container to Conn
 
 An existing container runtime that records `t3` can switch one way to `conn` through [`instance:server:switch`](/cli/instance/server-switch) (`POST /api/v1/instances/{instance}/server-switch`, MCP `instance-server-switch`). Both servers use `/home/agent/.t3/userdata`. On its first start, when `engine.sqlite` is absent beside T3's `statev2.sqlite`, the Conn Server imports every project, thread, message, session, and pairing in one transaction while opening `statev2.sqlite` read-only and leaving it unchanged. No Instance, container, database, or Route is removed or recreated.
