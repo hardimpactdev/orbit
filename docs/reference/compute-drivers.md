@@ -54,6 +54,8 @@ Container hosts publish two read-only shared folders built from the recipe:
   It also holds the `phpactor` PHAR, which a Laravel default runs for its [PHP symbol index](/reference/development-containers#php-symbol-index).
 - **`/opt/orbit-agent` (`agent`, `root:2750`):** `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser`.
 
+An agent folder part may also pin its release's macOS arm64 app as `macos_arm64`: the zip, its SHA-256, and the bundle id and Developer ID team id of its signature. This is not a recipe architecture. No container host installs it, and the folder's plan and version leave it out. Only `conn-server` uses it today; see [Conn Server pin](/reference/development-containers#conn-server-pin).
+
 #### The Vite+ home
 
 The runtime folder places Vite+ under `/opt/orbit-runtime/vite-plus/<digest>`. Containers set `VP_HOME=/var/lib/orbit/vite-plus-home` and `VP_NO_UPDATE_CHECK=1`, keeping Project lockfiles independent from the host recipe pin.
