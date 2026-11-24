@@ -243,17 +243,18 @@ The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes o
 1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
 2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
 3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
-4. stops here in a dry run (`checked`); else sends the notice, if the record asks for one;
-5. makes a new backup folder for the run (`mkdir` refuses one that exists, `conn_server.backup_exists`), moves the installed bundle into it and the staged bundle onto the same path, so the TCC grants stay;
-6. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
-7. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait, and clicks **Allow** only when its texts name Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`);
-8. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. Else it puts the backup back on the path, kickstarts again and fails the Node (`conn_server.health_check_failed`, `rolled_back` true when the old version answers).
+4. stops here in a dry run (`checked`);
+5. sends the notice, when the record asks for one;
+6. makes a new backup folder for the run (`mkdir` refuses one that exists, `conn_server.backup_exists`), moves the installed bundle into it and the staged bundle onto the same path, so the TCC grants stay;
+7. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+8. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait, and clicks **Allow** only when its texts name Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`);
+9. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. Else it puts the backup back on the path, kickstarts again and fails the Node (`conn_server.health_check_failed`, `rolled_back` true when the old version answers).
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way; a failed check points `current` back and restarts again.
 
 The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node before anything changes.
 
-The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`.
+The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
 
 #### Switching an existing T3 container to Conn
 
