@@ -22,14 +22,14 @@
     intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
     # The workflow's `timeout` covers max_nodes x node_seconds, so no Node's rollback is cut by the run's deadline. A Node's worst
     # case is the sum of the task timeouts on its longest path, a failed start and its rollback:
-    #   Mac: checks 1430 s (download 900, unpack 120, verify 120, signer and two requirements 180, the rest 110), then the swap 904 s
-    #   (read 20, notice 60, backup folder 20, two renames 120, the rollback's reads 40 and two renames 120, two starts of 262 s:
-    #   a 30 s kickstart and a health wait of health_seconds + 52 s), so 2334 s.
+    #   Mac: checks 1560 s (download 900, unpack 120, verify 120, signer and two requirements 180, the rest 240), then the swap 1500 s
+    #   (read 60, notice 60, backup folder 60, two renames 120, the rollback's reads 120 and two renames 120, two starts of 480 s:
+    #   a 60 s kickstart and a health wait of health_seconds + 240 s), so 3060 s.
     #   Linux: checks 1100 s, then the swap 1350 s (notice 60, releases folder 20, release folder 20, unpack 120, two starts of
     #   565 s: a 40 s relink, a 100 s restart and 61 health reads of up to 5 s, 2 s apart), so 2450 s.
     # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     max_nodes: 4
-    node_seconds: 2610
+    node_seconds: 3220
   tasks:
     - name: Refuse more Nodes than the run's deadline covers
       ansible.builtin.assert:

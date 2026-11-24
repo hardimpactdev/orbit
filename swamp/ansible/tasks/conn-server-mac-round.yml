@@ -14,7 +14,7 @@
       register: mac_prompt
       changed_when: false
       failed_when: false
-      timeout: 15
+      timeout: 60
 
     - name: Judge the prompt
       when: mac_prompt.rc == 0 and mac_prompt.stdout | trim | length > 0
@@ -34,7 +34,7 @@
       ansible.builtin.command:
         argv: [osascript, -e, 'tell application "System Events" to click button "Allow" of window 1 of process "UserNotificationCenter"']
       changed_when: true
-      timeout: 15
+      timeout: 60
 
     - name: Record the allowed prompt
       when: mac_prompt_text | length > 0 and mac_prompt_expected
@@ -46,7 +46,7 @@
       ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
       register: mac_health
       failed_when: false
-      timeout: 20
+      timeout: 60
 
     - name: Note a healthy server
       when: mac_prompt_error is none and (mac_health.json | default({})).server | default('') == 'conn-server'
@@ -57,3 +57,4 @@
     - name: Wait before the next round
       when: not mac_healthy and mac_prompt_error is none
       ansible.builtin.wait_for: { timeout: "{{ health_delay | int }}" }
+      timeout: 60

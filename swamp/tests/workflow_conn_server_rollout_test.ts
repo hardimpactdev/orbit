@@ -20,16 +20,49 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 10540 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 12980 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
+});
+
+type Task = { name: string; timeout?: number; delegate_to?: string; block?: Task[]; rescue?: Task[] } & Record<string, unknown>;
+/** The tasks of a task file, those in its blocks and rescues too. */
+const tasks = (file: string): Task[] => {
+    const flat = (task: Task): Task[] => [task, ...(task.block ?? []).flatMap(flat), ...(task.rescue ?? []).flatMap(flat)];
+    return (parse(Deno.readTextFileSync(`${shipped}/tasks/${file}`)) as Task[]).flatMap(flat);
+};
+const macFiles = ["conn-server-mac.yml", "conn-server-mac-start.yml", "conn-server-mac-round.yml", "conn-server-notice.yml"];
+/** The task timeout of the named task in a task file. */
+const timeout = (file: string, name: string) => {
+    const task = tasks(file).find((task) => task.name === name);
+    assert(task?.timeout, `${file}: ${name}`);
+    return task.timeout;
+};
+
+// Over SSH, a module on mini took 10 s from the start of its python3 to its own code (run 33436), which tripped a 10 s step.
+Deno.test("every module that a Mac Node runs has a task timeout of at least 60 s", () => {
+    const controller = ["ansible.builtin.set_fact", "ansible.builtin.assert", "ansible.builtin.include_tasks", "ansible.builtin.meta"];
+    const modules = macFiles.flatMap((file) => tasks(file).filter((task) => !task.block && task.delegate_to !== "localhost"
+        && !Object.keys(task).some((key) => controller.includes(key))).map((task) => ({ file, name: task.name, timeout: task.timeout })));
+    assert(modules.length >= 20, `${modules.length}`);
+    assertEquals(modules.filter((task) => !(task.timeout! >= 60)), []);
 });
 
 Deno.test("the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback", () => {
     const plays = parse(Deno.readTextFileSync(`${shipped}/conn-server-rollout.yml`)) as { vars: Record<string, number> }[];
     const { max_nodes, node_seconds } = plays[0].vars;
     const { health_seconds, health_rounds, health_delay } = plays[1].vars;
-    // A Mac start: a 30 s kickstart and the health wait, which starts no round after health_seconds; a round takes up to 52 s.
-    const macStart = 30 + health_seconds + 52;
+    const mac = (...names: string[]) => names.reduce((sum, name) => sum + timeout("conn-server-mac.yml", name), 0);
+    // A Mac start: the kickstart and the health wait, which starts no round after health_seconds; a round takes up to the sum of
+    // its task timeouts.
+    const round = tasks("conn-server-mac-round.yml").reduce((sum, task) => sum + (task.timeout ?? 0), 0);
+    const macStart = timeout("conn-server-mac-start.yml", "Kickstart the LaunchAgent in the gui domain") + health_seconds + round;
+    // The checks before the download and after it; the designated requirements are read for two bundles.
+    const macChecks = mac("Read the home folder and the uid", "Check that the Conn Server is installed", "Make the staging folder",
+        "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer") + 2 * mac("Read the designated requirements");
+    // The swap's other steps: the notice from the worker, two renames, the rollback's two reads and two renames.
+    const notice = timeout("conn-server-notice.yml", "Post the notice") + timeout("conn-server-notice.yml", "Run the notice command");
+    const macSwap = mac("Read the running version", "Make the backup folder", "Move the installed bundle into the backup", "Put the new bundle on the same path",
+        "Set the new bundle aside", "Restore the backup on the same path") + notice + 2 * mac("Read the backup and what holds the bundle's path");
     // A Linux start: a 40 s relink, a 100 s restart and the health wait: `retries: health_rounds` reads after the first, so
     // health_rounds + 1 reads of up to 5 s, health_delay apart.
     const linuxStart = 40 + 100 + (health_rounds + 1) * 5 + health_rounds * health_delay;
@@ -42,7 +75,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
         return task.timeout;
     };
     // The checks (the download and the rest), then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(download("conn-server-mac.yml", "Download the zip") + 530 + 380 + 2 * macStart,
+    const worst = Math.max(download("conn-server-mac.yml", "Download the zip") + macChecks + macSwap + 2 * macStart,
         download("conn-server-linux.yml", "Download the tarball") + 200 + 220 + 2 * linuxStart);
     // node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     assert(node_seconds >= worst + 160, `${node_seconds} < ${worst} + 160`);
@@ -89,10 +122,13 @@ case "$last" in *backup*/"Conn Server.app") [ -f "$FIXTURE/exit-mv-backup" ] && 
 exit 0`,
     // The workflow's ssh, for Ansible's ssh connection plugin: like real ssh it refuses a host that the run's UserKnownHostsFile does
     // not pin, so only the Nodes are reached, and it runs each command on this machine.
+    // With $FIXTURE/slow-starts holding n, the next n modules wait 15 s before they start, as a module on mini took 10 s over SSH.
     "ssh-node": `#!/bin/sh
 for a; do case "$a" in UserKnownHostsFile=*) known=\${a#UserKnownHostsFile=} ;; esac; done
 eval "host=\\\${$(($# - 1))}" && eval "command=\\\${$#}"
 grep -q "^$host " "$known" 2>/dev/null || { echo "Host key verification failed." >&2; exit 255; }
+case "$command" in *python*) n=$(cat "$FIXTURE/slow-starts" 2>/dev/null || echo 0)
+  if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$FIXTURE/slow-starts"; sleep 15; fi ;; esac
 exec /bin/sh -c "$command"`,
     // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC and its arguments follow `serve`.
     systemctl: `#!/bin/sh
@@ -111,7 +147,9 @@ type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; vali
     down?: boolean;
     // The Linux layout: `first` keeps the old release outside a `releases` folder, which does not exist yet, as on a Node set up before
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
-    releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
+    releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
+    // `slowStarts` modules over ssh each take 15 s to start.
+    slowStarts?: number };
 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 /** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
@@ -156,6 +194,7 @@ async function rollout(options: Options) {
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
         if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
         if (options.stale) Deno.writeTextFileSync(`${folder}/stale`, "");
+        if (options.slowStarts) Deno.writeTextFileSync(`${folder}/slow-starts`, `${options.slowStarts}`);
         if (options.exitOn) Deno.writeTextFileSync(`${folder}/exit-${options.exitOn}`, "0.5.0\n");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
@@ -403,6 +442,13 @@ test("run as the workflow runs it, over ssh with no connection override, a Mac d
     const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "mac", notify: true }], notice: true, ssh: true });
     assert(run.ok, run.output);
     assertEquals(run.noticed, [{ node_id: 46, version: "0.5.0", event: "conn_server.restart" }]);
+});
+
+test("over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked", async () => {
+    // The first three: the home and uid read, the installed check and the staging folder, whose task timeouts were 10, 20 and 20 s.
+    const dry = await rollout({ nodes: [{ platform: "mac", canary: true }], dryRun: true, ssh: true, slowStarts: 3 });
+    assert(dry.ok, dry.output);
+    assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
 });
 
 test("a run with more Nodes than its deadline covers is refused before any Node is reached", async () => {

@@ -1,12 +1,13 @@
 ---
 # One Mac Node of the Conn Server rollout (conn-server-rollout.yml). Every command carries a task timeout: a pending TCC prompt blocks
-# open() and can hang any command. The job only ever starts through `launchctl kickstart -k gui/<uid>/<label>`, never from this SSH
+# open() and can hang any command. No task timeout is under 60 s: over SSH, a module on mini took 10 s from the start of its python3
+# to its own code (run 33436). The job only ever starts through `launchctl kickstart -k gui/<uid>/<label>`, never from this SSH
 # session's own security session. Sets `node_result`; a failed check fails with its public code as the message.
 - name: Read the home folder and the uid
   ansible.builtin.command: { argv: [sh, -c, 'printf "%s\n%s\n%s" "$HOME" "$(id -u)" "$(id -un)"'] }
   register: mac_who
   changed_when: false
-  timeout: 10
+  timeout: 60
 
 - name: Name the paths of the Node
   vars:
@@ -28,7 +29,7 @@
 - name: Check that the Conn Server is installed
   ansible.builtin.stat: { path: "{{ mac_app }}/Contents/Info.plist", get_checksum: false }
   register: mac_installed
-  timeout: 20
+  timeout: 60
 
 - name: Refuse a Node with no installed bundle
   ansible.builtin.assert:
@@ -38,7 +39,7 @@
 
 - name: Make the staging folder
   ansible.builtin.file: { path: "{{ mac_stage }}", state: directory, mode: "0700" }
-  timeout: 20
+  timeout: 60
 
 - name: Download the zip
   ansible.builtin.get_url: { url: "{{ intent.mac.url }}", dest: "{{ mac_stage }}/conn-server.zip", mode: "0600", timeout: 60 }
@@ -123,7 +124,7 @@
       ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
       register: mac_before
       failed_when: false
-      timeout: 20
+      timeout: 60
 
     - name: Send the notice before the restart
       when: server.notify_before_restart
@@ -135,7 +136,7 @@
       register: mac_backup_made
       changed_when: true
       failed_when: false
-      timeout: 20
+      timeout: 60
 
     - name: Refuse an existing backup folder
       ansible.builtin.assert:
@@ -189,7 +190,7 @@
           ansible.builtin.stat: { path: "{{ item }}", get_checksum: false }
           loop: ["{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"]
           register: mac_placed
-          timeout: 20
+          timeout: 60
 
         - name: Set the new bundle aside
           when: mac_placed.results[0].stat.exists and mac_placed.results[1].stat.exists
