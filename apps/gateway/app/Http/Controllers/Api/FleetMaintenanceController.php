@@ -7,12 +7,15 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Fleet\AdmitFleetCliAction;
 use App\Actions\Fleet\AdmitFleetRebootAction;
 use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
 use App\Http\Requests\Fleet\AdmitFleetReleaseRequest;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Models\Node;
 use App\Support\ValidatedData;
 use Illuminate\Http\JsonResponse;
 
@@ -39,6 +42,16 @@ final class FleetMaintenanceController extends Controller
     public function cli(AdmitFleetReleaseRequest $request, AdmitFleetCliAction $action): JsonResponse
     {
         $operation = $action->fleet($request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+    }
+
+    /** The rollout of the pinned Conn Server to the Nodes that run one; `dry_run` only downloads and checks on each Node. */
+    #[StartsOperation(ConnServerRollout::Kind)]
+    public function connServer(AdmitConnServerRolloutRequest $request, ConnServerRollout $rollout): JsonResponse
+    {
+        $caller = $request->getUserResolver()();
+        $operation = $rollout->admit($request->boolean('dry_run'), $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

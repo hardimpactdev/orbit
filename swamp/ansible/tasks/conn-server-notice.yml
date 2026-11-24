@@ -1,0 +1,25 @@
+---
+# The configurable notice before a Node's Conn Server restarts (conn-server-rollout.yml): a POST to the admitted URL or the admitted
+# command, from the Swamp worker. With no target set, nothing is sent. A failed notice fails the Node before anything changes.
+- name: Post the notice
+  when: intent.notice.url | default(none) is not none
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "{{ intent.notice.url }}"
+    method: POST
+    body_format: json
+    body: { node_id: "{{ node_id | int }}", version: "{{ version }}", event: conn_server.restart }
+    status_code: [200, 201, 202, 204]
+    timeout: 20
+  timeout: 30
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Run the notice command
+  when: intent.notice.command | default(none) is not none
+  delegate_to: localhost
+  ansible.builtin.command: { argv: "{{ intent.notice.command + [node_id | string, version] }}" }
+  changed_when: true
+  timeout: 30
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

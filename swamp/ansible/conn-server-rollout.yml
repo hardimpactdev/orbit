@@ -1,0 +1,139 @@
+---
+# The rollout of the pinned Conn Server to the Nodes that run one (docs/reference/development-containers.md#conn-server-rollout).
+# The Gateway admitted the pin's version, its macOS arm64 zip and Linux tarball, the Nodes' records (platform, path, service, port,
+# user, canary, notice) canary first, and the notice target, if any.
+#   rollout: one Node at a time. A Mac Node downloads the zip and checks its SHA-256, the signature, the team and the bundle id, and
+#   holds when the staged bundle's designated requirement differs from the installed one's, because its TCC grants would reset. Else it
+#   backs up the installed bundle into a new backup folder, swaps the staged bundle onto the same path, kickstarts the LaunchAgent in
+#   the gui domain, answers the expected Conn Server TCC prompt, and waits for /health to name the version. A Linux Node does the same
+#   with the tarball, a new release folder and the `current` link under systemd. A failed health check restores the backup, restarts
+#   the old server and checks that it answers. A failed or held canary, or any failed Node, stops the run.
+#   With `dry_run`, each Node only downloads and checks, and installs nothing.
+# It writes `result.json` in the run folder: `{"version", "dry_run", "nodes": [{"node_id", "outcome", "reason"?, ...}], "error_code"}`,
+# where outcome is `updated`, `checked`, `held` or `failed`. Never print or copy a LaunchAgent plist: plists hold tokens.
+- name: Address the Conn Server Nodes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Start with no Node results
+      ansible.builtin.file: { path: "{{ run }}/nodes", state: directory, mode: "0700" }
+
+    - name: Pin the host keys of the Nodes
+      ansible.builtin.known_hosts:
+        path: "{{ run }}/known_hosts"
+        name: "{{ item.0.ssh.target.host if item.0.ssh.target.port == 22 else '[' ~ item.0.ssh.target.host ~ ']:' ~ item.0.ssh.target.port }}"
+        key: "{{ item.0.ssh.target.host if item.0.ssh.target.port == 22 else '[' ~ item.0.ssh.target.host ~ ']:' ~ item.0.ssh.target.port }} {{ item.1 }}"
+        state: present
+      loop: "{{ intent.nodes | subelements('ssh.target.host_keys') }}"
+      loop_control: { label: "{{ item.0.node_id }}" }
+
+    # Canary first: the Gateway admitted the list in that order, and serial plays keep it.
+    - name: Address the Nodes, canary first
+      ansible.builtin.add_host:
+        name: "node-{{ item.node_id }}"
+        groups: [conn_server_nodes]
+        ansible_host: "{{ item.ssh.target.host }}"
+        ansible_user: "{{ item.ssh.target.user }}"
+        ansible_port: "{{ item.ssh.target.port }}"
+        ansible_ssh_private_key_file: "{{ item.ssh.identity_file }}"
+        server: "{{ item.server }}"
+        node_id: "{{ item.node_id }}"
+      loop: "{{ intent.nodes }}"
+      loop_control: { label: "{{ item.node_id }}" }
+
+- name: Roll out the Conn Server, one Node at a time
+  hosts: conn_server_nodes
+  gather_facts: false
+  serial: 1
+  tags: [rollout]
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    version: "{{ intent.version }}"
+    # The health wait: up to 60 rounds of a prompt read and a /health read, 2 s apart, so about 3 minutes per server start.
+    health_rounds: 60
+    health_delay: 2
+    # The TCC prompts that the Conn Server may raise on its start, matched in lower case against the prompt's texts.
+    tcc_expected: [removable volume, network volume, documents folder, desktop folder, downloads folder, local network, files on]
+  tasks:
+    - name: Roll out on the Node
+      block:
+        - name: Roll out on a Mac
+          when: server.platform == 'mac'
+          ansible.builtin.include_tasks: tasks/conn-server-mac.yml
+
+        - name: Roll out on Linux
+          when: server.platform == 'linux'
+          ansible.builtin.include_tasks: tasks/conn-server-linux.yml
+      rescue:
+        - name: Record the failed Node
+          ansible.builtin.set_fact:
+            node_result: >-
+              {{ {'node_id': node_id | int, 'outcome': 'failed',
+                  'reason': ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
+                            else 'conn_server.step_failed',
+                  'rolled_back': rolled_back | default(false)} }}
+
+    - name: Write the Node's result
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ run }}/nodes/{{ '%06d' | format((intent.nodes | map(attribute='node_id') | list).index(node_id | int)) }}.json"
+        content: "{{ node_result | to_json }}"
+        mode: "0600"
+
+    # A failed Node, or a canary that held, stops the run: no later Node is reached.
+    - name: Stop the run
+      when: node_result.outcome == 'failed' or (server.canary and node_result.outcome == 'held')
+      ansible.builtin.meta: end_play
+
+- name: Report the rollout
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [always]
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+  tasks:
+    - name: Read the Node results
+      ansible.builtin.find: { paths: "{{ run }}/nodes", patterns: "*.json" }
+      register: rollout_files
+
+    - name: Read each Node's result
+      ansible.builtin.slurp: { src: "{{ item }}" }
+      loop: "{{ rollout_files.files | map(attribute='path') | sort }}"
+      register: rollout_nodes
+
+    - name: Report the result
+      vars:
+        nodes: "{{ rollout_nodes.results | map(attribute='content') | map('b64decode') | map('from_json') | list }}"
+        reached: "{{ nodes | map(attribute='node_id') | list }}"
+        not_reached: >-
+          [{% for item in intent.nodes if item.node_id not in reached %}{{ {'node_id': item.node_id, 'outcome': 'not_reached'} | to_json }}{{ '' if loop.last else ',' }}{% endfor %}]
+        canary: "{{ intent.nodes | selectattr('server.canary') | map(attribute='node_id') | list }}"
+        error_code: >-
+          {{ 'conn_server.node_failed' if nodes | selectattr('outcome', 'equalto', 'failed') | list
+             else 'conn_server.canary_held' if nodes | selectattr('outcome', 'equalto', 'held') | selectattr('node_id', 'in', canary) | list
+             else none }}
+      block:
+        - name: Write the result
+          ansible.builtin.copy:
+            dest: "{{ run }}/result.json"
+            mode: "0600"
+            content: >-
+              {{ {'version': intent.version, 'dry_run': intent.dry_run, 'error_code': error_code,
+                  'nodes': nodes + (not_reached | from_json)} | to_json }}
+
+        - name: Fail the phase on a failed Node or a held canary
+          ansible.builtin.assert:
+            that: error_code is none
+            fail_msg: "{{ error_code if error_code else 'conn_server.node_failed' }}"
+            quiet: true

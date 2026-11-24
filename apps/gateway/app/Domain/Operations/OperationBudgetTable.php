@@ -42,6 +42,9 @@ final class OperationBudgetTable
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,
+        // The 3000 s rollout phase (four Nodes, each a download, checks, the swap and up to two health waits of about 3 minutes),
+        // a 30 s queue wait, input, result and cleanup. No live sample yet.
+        'fleet.conn_server_rollout' => 3300,
         // One placed 85 s T3 phase, plus the input, receipt and cleanup step bounds and their queue allowances.
         'conn.launch_inspect' => 300,
         'conn.launch_dispatch' => 300,

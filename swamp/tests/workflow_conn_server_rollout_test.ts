@@ -1,0 +1,211 @@
+/** The Conn Server rollout (docs/reference/development-containers.md#conn-server-rollout): the shipped workflow's steps, and its one
+ * phase run by real Ansible against fixture Nodes: a Mac bundle with stand-ins for codesign, ditto, launchctl and osascript, a Linux
+ * release folder with a stand-in systemctl, and one /health server that answers with the version the fixture's job runs. */
+import { assert, assertEquals } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { encodeHex } from "jsr:@std/encoding@1/hex";
+
+type Step = { name: string; dependsOn?: { step: string; condition: { type: string } }[]; task: { inputs: { run?: string } } };
+const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-fleet-conn-server-rollout.yaml", import.meta.url))) as {
+    inputs: { properties: { intent: { required: string[] } } };
+    jobs: { name: string; steps: Step[] }[];
+};
+const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
+const playbook = Deno.env.get("ANSIBLE_PLAYBOOK") ?? "ansible-playbook";
+const available = new Deno.Command("sh", { args: ["-c", `command -v ${playbook}`] }).outputSync().success;
+const user = new TextDecoder().decode(new Deno.Command("id", { args: ["-un"] }).outputSync().stdout).trim();
+
+Deno.test("the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret", () => {
+    const steps = workflow.jobs.flatMap((job) => job.steps);
+    assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
+    assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
+    assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
+    assertEquals(steps[1].task.inputs.run, 'timeout 3000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assert(!JSON.stringify(workflow).includes("vault.get"));
+});
+
+const shims: Record<string, string> = {
+    // The fixture signature of a bundle is Contents/sig: `valid|invalid team id requirement`.
+    codesign: `#!/bin/sh
+for app; do :; done
+read -r valid team id dr < "$app/Contents/sig"
+case "$1" in
+  --verify) [ "$valid" = valid ] ;;
+  -d) if [ "$2" = -r ]; then echo "Executable=$app"; echo "designated => $dr"; else printf 'Identifier=%s\\nTeamIdentifier=%s\\n' "$id" "$team" >&2; fi ;;
+esac`,
+    ditto: `#!/bin/sh\nmkdir -p "$4" && tar -xf "$3" -C "$4"`,
+    // The job runs the version of the bundle on the path; a version listed in $FIXTURE/broken never answers.
+    launchctl: `#!/bin/sh
+echo "$*" >> "$FIXTURE/launchctl"
+v=$(cat "$FIXTURE_APP/Contents/version")
+if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
+    osascript: `#!/bin/sh
+case "$2" in
+  *click*) echo click >> "$FIXTURE/clicks"; rm -f "$FIXTURE/prompt" ;;
+  *) [ -f "$FIXTURE/prompt" ] && cat "$FIXTURE/prompt" ;;
+esac
+exit 0`,
+    systemctl: `#!/bin/sh
+echo "$*" >> "$FIXTURE/systemctl"
+v=$(cat "$FIXTURE_LINUX/current/version")
+if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
+};
+
+type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; dryRun?: boolean; notice?: boolean };
+
+async function rollout(options: Options) {
+    const folder = Deno.makeTempDirSync();
+    try {
+        for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", "linux/releases/0.4.2", "linux-build/conn-server-0.5.0-linux-x64"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        for (const [name, text] of Object.entries(shims)) {
+            Deno.writeTextFileSync(`${folder}/bin/${name}`, text);
+            Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
+        }
+        const app = `${folder}/home/Applications/Conn Server.app`;
+        Deno.mkdirSync(`${app}/Contents`, { recursive: true });
+        Deno.writeTextFileSync(`${app}/Contents/Info.plist`, "<plist/>");
+        Deno.writeTextFileSync(`${app}/Contents/version`, "0.4.2");
+        Deno.writeTextFileSync(`${app}/Contents/sig`, "valid 9SVJ4SYB9B com.nckrtl.conn-server anchor-team-9SVJ4SYB9B\n");
+        const build = `${folder}/build/Conn Server.app/Contents`;
+        Deno.writeTextFileSync(`${build}/Info.plist`, "<plist/>");
+        Deno.writeTextFileSync(`${build}/version`, "0.5.0");
+        Deno.writeTextFileSync(`${build}/sig`, `${options.valid === false ? "invalid" : "valid"} ${options.team ?? "9SVJ4SYB9B"} com.nckrtl.conn-server ${options.dr ?? "anchor-team-9SVJ4SYB9B"}\n`);
+        new Deno.Command("tar", { args: ["-cf", `${folder}/conn-server.zip`, "-C", `${folder}/build`, "Conn Server.app"] }).outputSync();
+        Deno.writeTextFileSync(`${folder}/linux/releases/0.4.2/version`, "0.4.2");
+        Deno.symlinkSync(`${folder}/linux/releases/0.4.2`, `${folder}/linux/current`);
+        // The release tarball holds one top folder, which the unpack strips.
+        Deno.writeTextFileSync(`${folder}/linux-build/conn-server-0.5.0-linux-x64/version`, "0.5.0");
+        new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, "conn-server-0.5.0-linux-x64"] }).outputSync();
+        Deno.writeTextFileSync(`${folder}/running`, "0.4.2");
+        Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
+        if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
+        const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
+        const noticed: unknown[] = [];
+        const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
+            if (request.method === "POST") {
+                noticed.push(await request.json());
+                return new Response(null, { status: 204 });
+            }
+            const running = Deno.readTextFileSync(`${folder}/running`).trim();
+            return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: "conn-server", version: running });
+        });
+        const port = server.addr.port;
+        Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
+            version: "0.5.0", dry_run: options.dryRun ?? false,
+            mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
+            linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
+            notice: options.notice ? { url: `http://127.0.0.1:${port}/notice`, command: null } : { url: null, command: null },
+            nodes: options.nodes.map((node, index) => ({
+                node_id: 45 + index,
+                ssh: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: user, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
+                server: node.platform === "mac"
+                    ? { platform: "mac", path: "~/Applications/Conn Server.app", service: "com.nckrtl.conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false }
+                    : { platform: "linux", path: `${folder}/linux/current`, service: "conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false },
+            })),
+        }));
+        const done = await new Deno.Command(playbook, {
+            args: ["-i", "localhost,", "--tags", "rollout", "-e", "ansible_connection=local", "-e", "ansible_become=false",
+                "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
+            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: "0f0e0d0c-0b0a-4908-8706-050403020100",
+                PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+        }).output();
+        await server.shutdown();
+        const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
+        const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
+        try { Deno.statSync(`${folder}/run/result.json`); } catch { throw new Error(output); }
+        return {
+            ok: done.success,
+            output,
+            result: JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
+            installed: Deno.readTextFileSync(`${app}/Contents/version`),
+            linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
+            launchctl: read("launchctl"), clicks: read("clicks"), noticed,
+            backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
+        };
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+}
+
+const test = (name: string, fn: () => Promise<void>) => Deno.test({ name, ignore: !available, fn });
+
+test("a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }] });
+    assert(run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2", prompts: [] }]);
+    assertEquals(run.installed, "0.5.0");
+    assertEquals(run.launchctl.length, 1);
+    assert(/^kickstart -k gui\/\d+\/com\.nckrtl\.conn-server$/.test(run.launchctl[0]), run.launchctl[0]);
+    assertEquals(run.backups, []);
+});
+
+test("a zip whose SHA-256 differs fails the Node and installs nothing", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }], sha: "0".repeat(64) });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.hash_mismatch", rolled_back: false }, { node_id: 46, outcome: "not_reached" }]);
+    assertEquals([run.installed, run.launchctl], ["0.4.2", []]);
+});
+
+test("a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing", async () => {
+    for (const [options, reason] of [[{ team: "AAAAAAAAAA" }, "conn_server.team_mismatch"], [{ valid: false }, "conn_server.signature_invalid"]] as const) {
+        const run = await rollout({ nodes: [{ platform: "mac", canary: true }], ...options });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes[0].reason, reason);
+        assertEquals([run.installed, run.launchctl], ["0.4.2", []]);
+    }
+});
+
+test("a changed designated requirement holds the canary, installs nothing and stops the run", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }], dr: "anchor-team-OTHER" });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.error_code, "conn_server.canary_held");
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "held", reason: "designated_requirement_changed" }, { node_id: 46, outcome: "not_reached" }]);
+    assertEquals([run.installed, run.linux, run.launchctl], ["0.4.2", "0.4.2", []]);
+});
+
+test("a failed health check restores the backup, kickstarts the old server, fails the canary and stops the run", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }], broken: ["0.5.0"] });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }, { node_id: 46, outcome: "not_reached" }]);
+    assertEquals([run.installed, run.linux, run.launchctl.length], ["0.4.2", "0.4.2", 2]);
+    assertEquals(run.backups.length, 1);
+});
+
+test("the expected Conn Server prompt is allowed; any other prompt fails the Node and rolls back", async () => {
+    const allowed = await rollout({ nodes: [{ platform: "mac", canary: true }], prompt: '"Conn Server" would like to access files on a removable volume., Don’t Allow, Allow' });
+    assert(allowed.ok, allowed.output);
+    assertEquals([allowed.installed, allowed.clicks], ["0.5.0", ["click"]]);
+    const other = await rollout({ nodes: [{ platform: "mac", canary: true }], prompt: '"Terminal" would like to access your contacts.' });
+    assert(!other.ok, other.output);
+    // The prompt stays up, so the restored bundle cannot answer either: the Node reports that it is not rolled back.
+    assertEquals(other.result.nodes[0], { node_id: 45, outcome: "failed", reason: "conn_server.unexpected_prompt", rolled_back: false });
+    assertEquals([other.installed, other.clicks], ["0.4.2", []]);
+});
+
+test("a Linux Node whose new release fails its health check points current back at the old release", async () => {
+    const run = await rollout({ nodes: [{ platform: "linux", canary: true }], broken: ["0.5.0"] });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
+    assertEquals(run.linux, "0.4.2");
+});
+
+test("after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }] });
+    assert(run.ok, run.output);
+    assertEquals(run.result.nodes.map((node: { outcome: string }) => node.outcome), ["updated", "updated"]);
+    assertEquals(run.linux, "0.5.0");
+    const dry = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }], dryRun: true });
+    assert(dry.ok, dry.output);
+    assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }, { node_id: 46, outcome: "checked" }]);
+    assertEquals([dry.installed, dry.linux, dry.launchctl], ["0.4.2", "0.4.2", []]);
+});
+
+test("a Node set to notify posts the notice before its restart; with no target set, nothing is sent", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "mac", notify: true }], notice: true });
+    assert(run.ok, run.output);
+    assertEquals(run.noticed, [{ node_id: 46, version: "0.5.0", event: "conn_server.restart" }]);
+    const silent = await rollout({ nodes: [{ platform: "mac", canary: true, notify: true }] });
+    assert(silent.ok, silent.output);
+    assertEquals(silent.noticed, []);
+});

@@ -232,6 +232,29 @@ The bundle is signed with the hardened runtime and is not notarized. Releases be
 
 The recipe loader accepts `macos_arm64` on agent folder parts only and requires the release's exact zip name. Container hosts never read it: the agent folder plan, and so the folder's version, has the Linux tarball alone. The Conn Server rollout to Mac Nodes reads the zip, its SHA-256 and the signing facts from this pin. A change to the pin changes the recipe digest, so a pin bump also updates the hashes in `apps/gateway/tests/Fixtures/production-gateway-converge-main.json`.
 
+#### Conn Server rollout
+
+`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false}`) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
+
+Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. On a Mac it:
+
+1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
+2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
+3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
+4. stops here in a dry run (`checked`); else sends the notice, if the record asks for one;
+5. makes a new backup folder for the run (`mkdir` refuses one that exists, `conn_server.backup_exists`), moves the installed bundle into it and the staged bundle onto the same path, so the TCC grants stay;
+6. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+7. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait, and clicks **Allow** only when its texts name Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`);
+8. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. Else it puts the backup back on the path, kickstarts again and fails the Node (`conn_server.health_check_failed`, `rolled_back` true when the old version answers).
+
+Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way; a failed check points `current` back and restarts again.
+
+The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node before anything changes.
+
+The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`.
+
 #### Switching an existing T3 container to Conn
 
 An existing container runtime that records `t3` can switch one way to `conn` through [`instance:server:switch`](/cli/instance/server-switch) (`POST /api/v1/instances/{instance}/server-switch`, MCP `instance-server-switch`). Both servers use `/home/agent/.t3/userdata`. On its first start, when `engine.sqlite` is absent beside T3's `statev2.sqlite`, the Conn Server imports every project, thread, message, session, and pairing in one transaction while opening `statev2.sqlite` read-only and leaving it unchanged. No Instance, container, database, or Route is removed or recreated.

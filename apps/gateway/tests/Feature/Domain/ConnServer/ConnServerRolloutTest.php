@@ -1,0 +1,89 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\ConnServer\ConnServerRollout;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\ConnServerNode;
+use App\Models\Node;
+use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
+
+uses(LazilyRefreshDatabase::class);
+
+/** A Node that runs a Conn Server, with its record. @param array<string, mixed> $server */
+function connServerNode(string $name, int $address, array $server): Node
+{
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => $name, 'public_ssh_host' => '192.0.2.'.$address,
+        'wireguard_ip' => '10.44.0.'.$address, 'user' => 'nick', 'ssh_host_fingerprint' => 'SHA256:'.$name, 'ssh_host_key_type' => 'ssh-ed25519',
+        'ssh_host_key' => $name.'-key', 'status' => LifecycleStatus::Active, 'platform' => 'darwin', 'architecture' => 'arm64']));
+    ConnServerNode::query()->create(['node_id' => $node->id, 'platform' => 'mac', 'path' => '~/Applications/Conn Server.app',
+        'service' => 'com.nckrtl.conn-server', 'port' => 3773, 'user' => 'nick', ...$server]);
+
+    return $node;
+}
+
+/** Serve a recipe whose conn-server part pins the release's macOS arm64 app, as a release from Conn 0.5.0 on does. */
+function connServerMacPin(): void
+{
+    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    $version = $recipe['instances']['agent']['conn-server']['version'];
+    $recipe['instances']['agent']['conn-server']['macos_arm64'] = [
+        'url' => "https://github.com/nckrtl/conn/releases/download/conn-server-v{$version}/conn-server-{$version}-macos-arm64.zip",
+        'sha256' => str_repeat('ab', 32), 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B',
+    ];
+    $home = sys_get_temp_dir().'/conn-server-rollout-'.bin2hex(random_bytes(4));
+    mkdir($home.'/release/apps/gateway/resources/machine-software', 0700, true);
+    symlink('release', $home.'/orbit');
+    file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+    config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
+}
+
+beforeEach(function (): void {
+    Queue::fake();
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    SwampNodeFixture::ensure();
+});
+
+it('admits the pinned release for every Conn Server Node, canary first, from their records', function (): void {
+    connServerMacPin();
+    $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
+    $vm = connServerNode('nick-vm', 62, ['canary' => true]);
+
+    $operation = app(ConnServerRollout::class)->admit(dryRun: true);
+    $intent = $operation->input['intent'];
+
+    expect($operation->kind)->toBe('fleet.conn_server_rollout')
+        ->and(app(DirectOperation::class)->definition('fleet.conn_server_rollout')['workflow'])->toBe('operation-fleet-conn-server-rollout')
+        ->and($intent['version'])->toBe('0.4.2')
+        ->and($intent['dry_run'])->toBeTrue()
+        ->and($intent['mac'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.4.2/conn-server-0.4.2-macos-arm64.zip',
+            'sha256' => str_repeat('ab', 32), 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B'])
+        ->and($intent['linux'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.4.2/conn-server-0.4.2-linux-x64.tar.gz',
+            'sha256' => '91eb2e73ab69ce3a3493f3664d36181c1aeb56805bea71f22cf8683d624e9e65'])
+        ->and($intent['notice'])->toBe(['url' => null, 'command' => null])
+        ->and(array_column($intent['nodes'], 'node_id'))->toBe([$vm->id, $mini->id])
+        ->and($intent['nodes'][1]['server'])->toBe(['platform' => 'mac', 'path' => '~/Applications/Conn Server.app', 'service' => 'com.t3tools.t3code.service',
+            'port' => 3773, 'user' => 'nick', 'canary' => false, 'notify_before_restart' => true])
+        ->and($intent['nodes'][0]['ssh']['target'])->toMatchArray(['host' => '10.44.0.62', 'user' => 'nick', 'host_keys' => ['ssh-ed25519 nick-vm-key']]);
+});
+
+it('passes the configured notice target to the run', function (): void {
+    connServerMacPin();
+    connServerNode('nick-vm', 62, ['canary' => true]);
+    config(['orbit.conn.server_rollout_notice' => ['url' => 'https://mini.example/notice', 'command' => null]]);
+
+    expect(app(ConnServerRollout::class)->admit(dryRun: false)->input['intent']['notice'])->toBe(['url' => 'https://mini.example/notice', 'command' => null]);
+});
+
+it('refuses a pin without a macOS app, and a fleet without exactly one canary', function (): void {
+    connServerNode('nick-vm', 62, ['canary' => true]);
+    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true))->toThrow(ResourceOperationException::class, 'The Conn Server pin names no macOS arm64 app.');
+
+    connServerMacPin();
+    ConnServerNode::query()->update(['canary' => false]);
+    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true))->toThrow(ResourceOperationException::class, 'Exactly one Conn Server Node must be the canary.');
+});
