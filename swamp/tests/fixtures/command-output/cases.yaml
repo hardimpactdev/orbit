@@ -3211,6 +3211,14 @@ non_command_output:
   task: Record the failed Node
   field: ansible.builtin.set_fact.node_result
   reason: Maps Ansible failure metadata to a public error code; does not parse command output.
+- file: tasks/conn-server-mac.yml
+  task: Name the cause
+  field: ansible.builtin.set_fact.mac_failure
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
+- file: tasks/conn-server-linux.yml
+  task: Name the cause
+  field: ansible.builtin.set_fact.linux_failure
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: operation-process-upgrade.yml
   task: Refuse a layout without a relative current link to a release
   field: ansible.builtin.assert.that[4]
