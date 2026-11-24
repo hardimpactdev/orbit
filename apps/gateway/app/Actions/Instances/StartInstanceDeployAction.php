@@ -62,7 +62,7 @@ final readonly class StartInstanceDeployAction
             $this->writer->assertSwamp($instance);
             $this->assertRepositoryIdentity($instance);
         }
-        $configuration = $read = null;
+        $configuration = $read = $agentFolder = null;
         if ($instance->runtime()->exists()) {
             if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
                 return $existing;
@@ -73,9 +73,12 @@ final readonly class StartInstanceDeployAction
             $project = $instance->project;
             $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
                 (string) $project->default_branch, $project->root, $project->type, $commit);
+            // The seed's agent folder: the Project's instructions are read here, before the transaction
+            // (docs/reference/development-containers.md#agent-instructions).
+            $agentFolder = app(InstanceContainer::class)->seedAgentFolder($project);
         }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $release, $configuration, $read): Operation {
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $release, $configuration, $read, $agentFolder): Operation {
             $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
             if ($automatic) {
                 $this->writer->assertSwamp($instance);
@@ -110,7 +113,7 @@ final readonly class StartInstanceDeployAction
                 // Render the runtime definitions only after capturing the deployed commit's facts.
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
             }
-            $deployment = $development ? $this->intent->snapshot($instance) : [
+            $deployment = $development ? $this->intent->snapshot($instance, agentFolder: $agentFolder) : [
                 'variant' => 'production-release', 'project_id' => $instance->project_id,
                 'steps' => array_map(static fn ($step): array => ['timeout_seconds' => $step->timeoutSeconds], app(InstanceDeploymentConfigResolver::class)->resolve($instance)->steps),
             ];
