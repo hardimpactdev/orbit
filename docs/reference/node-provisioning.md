@@ -16,7 +16,7 @@ covers:
 
 `orbit node:add <name> [host]` enrolls a machine into the fleet or re-converges an existing Node after changing its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit while leaving it reachable over public SSH. See [`node`](/cli/node) for all command flags.
 
-Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey`, `node.add`, `node.remove`, and role workflows execute on the Swamp Node's workers over pinned SSH using the Swamp control key (`/etc/orbit/swamp-role-worker/ssh-identity`). No target Node needs its own Swamp worker.
+Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey`, `node.add`, `node.remove`, and role workflows execute on the Swamp Node's workers over pinned SSH using the Swamp control key (`/etc/orbit/swamp-role-worker/ssh-identity`). No target Node needs its own Swamp worker. `node.ssh_access_converge` writes Orbit's keys on a Linux Node with the official `@swamp/cfgmgmt/authorized_key` behavior, which reads the account with `getent`. macOS has no `getent`, so on a `macos` Node the run writes them with `@swamp/ssh` exec and finds the account's home with `dscl`.
 
 ### Per-Node Swamp worker
 

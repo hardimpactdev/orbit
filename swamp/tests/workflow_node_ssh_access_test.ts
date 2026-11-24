@@ -10,7 +10,7 @@ const steps = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operat
     jobs: { steps: Step[] }[];
 }).jobs[0].steps;
 const linux = steps.find((step) => step.name === "Write the Orbit keys")!;
-const mac = steps.find((step) => step.name === "Write the Orbit keys on a Mac")!;
+const mac = steps.find((step) => step.name === "Write the Mac keys")!;
 const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl swamp-worker";
 const inputs = (platform: string) => ({ node_id: 8n, intent: { platform, keys: [key], target: { user: "nick" } } });
 const items = (step: Step, platform: string) => environment.evaluate(swampExpression(step.forEach.in), { inputs: inputs(platform) });

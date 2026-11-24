@@ -54,10 +54,17 @@ sequenceDiagram
     %%> Never:
     %%> - removes, reorders or changes another line, so operator keys Orbit does not manage keep their access
     %%> How:
-    %%> - on Linux, the official `@swamp/cfgmgmt/authorized_key` behavior over SSH, as the managed account
-    %%> - on a Mac, which has no `getent` for that behavior: `@swamp/ssh` exec as the managed account; `dscl` names its home, and a key whose type and body are missing is appended as one line
+    %%> - the official `@swamp/cfgmgmt/authorized_key` behavior over SSH, as the managed account
+    %%> - only on a Node whose platform is not `macos`: the behavior reads the account with `getent`, which macOS lacks
     %%> Not included:
     %%> - a Node that does not accept the `swamp` role identity yet; Node bootstrap adds that first key
+    SW->>N: Write the Mac keys<br/>@swamp/ssh exec · dscl
+    %%> What it does:
+    %%> - on a `macos` Node, the same per key: adds each of Orbit's keys to the managed account's `authorized_keys` when its type and body are missing
+    %%> How:
+    %%> - `@swamp/ssh` exec as the managed account; `dscl . -read /Users/<user> NFSHomeDirectory` names the home, a missing `.ssh` folder is made with mode 0700, and the key is appended as one line
+    %%> Never:
+    %%> - removes, reorders or changes another line
     SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · true
     %%> What it does:
     %%> - opens a new SSH session with the `swamp` role identity only, and runs `true`

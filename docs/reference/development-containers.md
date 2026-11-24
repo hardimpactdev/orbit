@@ -263,6 +263,8 @@ Every command has a task timeout, because a pending prompt blocks `open()`. The 
 
 The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node with `conn_server.notice_failed` before anything changes. The URL or the command may hold a token, so the phase logs neither, nor their output, on success or failure.
 
+The workflow runs the phase with `-i localhost,`, so `localhost` is an inventory host that would take the ssh connection. The tasks that the phase delegates to the Swamp worker, each Node's result and the notice, therefore set a local connection; a test runs the phase this way, over the ssh connection plugin.
+
 The result names the `version`, `dry_run`, and each Node's `outcome` (`updated`, `checked`, `held`, `failed` or `not_reached`) with its `reason`. A failed run keeps its `conn_server.*` code; a run that names none fails with `conn_server.rollout_failed`.
 
 #### Switching an existing T3 container to Conn

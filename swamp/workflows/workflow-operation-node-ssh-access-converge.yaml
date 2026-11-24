@@ -33,7 +33,7 @@ jobs:
         nodeUser: '${{ inputs.intent.target.user }}', nodePort: '${{ inputs.intent.target.port }}', nodeIdentityFile: '${{ inputs.intent.identity_file }}'}
       inputs: {}
     # On a Mac, the same per key: dscl names the account's home, and a key whose type and body are missing is appended as one line.
-  - name: 'Write the Orbit keys on a Mac'
+  - name: 'Write the Mac keys'
     labels: {role: swamp}
     writes: true
     forEach: {item: key, in: '${{ inputs.intent.platform == "macos" ? inputs.intent.keys : [] }}'}
@@ -63,7 +63,7 @@ jobs:
   - name: 'Log in with Swamp identity'
     labels: {role: swamp}
     dependsOn: [{step: 'Write the Orbit keys', condition: &written {type: or, conditions: [{type: succeeded}, {type: skipped}]}},
-      {step: 'Write the Orbit keys on a Mac', condition: *written}]
+      {step: 'Write the Mac keys', condition: *written}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
