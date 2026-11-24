@@ -4335,19 +4335,26 @@ Deno.test({
  */
 function phpIndexFixture() {
   const f = fixture();
-  const bin = `${f.folder}/php-index-bin`;
-  Deno.mkdirSync(bin);
-  Deno.writeTextFileSync(`${bin}/phpactor`, `#!/bin/sh
+  // The runtime folder as the recipe assembles it: the `phpactor` part and its `bin/` link. A second marker makes the stand-in commit
+  // in the default during its build, as a commit landing in a running default would.
+  // The stand-in's `incus exec` maps a container path such as /usr/local/... into the container's folder; PATH is this machine's.
+  const runtime = `${f.folder}/containers/instance-7/usr/local/orbit-runtime`;
+  const bin = `${runtime}/bin`;
+  Deno.mkdirSync(bin, { recursive: true });
+  Deno.mkdirSync(`${runtime}/phpactor`);
+  Deno.writeTextFileSync(`${runtime}/phpactor/phpactor.phar`, `#!/bin/sh
 printf '%s %s\\n' "$(pwd)" "$*" >> '${f.folder}/phpactor-calls'
 [ -e '${f.folder}/phpactor-fails' ] && { echo 'Phpactor: cannot parse app/Broken.php'; exit 3; }
+[ -e '${f.folder}/phpactor-commits' ] && git -c user.name=proof -c user.email=proof@example.test commit --quiet --allow-empty -m moved
 mkdir -p "$HOME/.cache/phpactor/index/workspace-abcdef" && date +%s > "$HOME/.cache/phpactor/index/workspace-abcdef/timestamp.v3"
 `);
-  Deno.chmodSync(`${bin}/phpactor`, 0o755);
+  Deno.chmodSync(`${runtime}/phpactor/phpactor.phar`, 0o755);
+  Deno.symlinkSync("../phpactor/phpactor.phar", `${bin}/phpactor`);
   Deno.symlinkSync(new TextDecoder().decode(new Deno.Command("sh", { args: ["-c", "command -v python3"] }).outputSync().stdout).trim(), `${bin}/php`);
   const home = `${f.folder}/containers/instance-7/home/agent`;
   Object.assign(f.container, {
     environment: [`HOME=${home}`, "USER=agent", `PATH=${bin}:/usr/bin:/bin`],
-    php_index: { root: "/srv/workspace", seconds: 600 },
+    php_index: { root: "/srv/workspace", seconds: 600, runtime: "/usr/local/orbit-runtime" },
   });
   f.write();
   const calls = () => {
@@ -4357,7 +4364,7 @@ mkdir -p "$HOME/.cache/phpactor/index/workspace-abcdef" && date +%s > "$HOME/.ca
       return [];
     }
   };
-  return { f, home, calls };
+  return { f, home, calls, runtime };
 }
 
 Deno.test({
@@ -4591,13 +4598,13 @@ Deno.test({
   name: "a deployment on a Node whose runtime has no phpactor yet passes with its seed and records why the index was skipped; a converged Node indexes",
   ignore: !hasAnsible,
   fn() {
-    const { f, home, calls } = phpIndexFixture();
+    const { f, home, calls, runtime } = phpIndexFixture();
     try {
       const setup = f.phases(["container", "workspace", "processes"]);
       assert(setup.ok, setup.output);
-      const phpactor = `${f.folder}/php-index-bin/phpactor`;
-      const kept = Deno.readTextFileSync(phpactor);
-      Deno.removeSync(phpactor);
+      // A runtime folder built before the release: neither the `phpactor` part nor its link.
+      Deno.renameSync(`${runtime}/phpactor`, `${f.folder}/phpactor-part`);
+      Deno.removeSync(`${runtime}/bin/phpactor`);
 
       // Unconverged: the deployment's seed is taken and its result says why no index was built.
       const unconverged = f.phases(["processes", "php_index", "seed", "check"]);
@@ -4609,13 +4616,47 @@ Deno.test({
       assertThrows(() => Deno.statSync(`${home}/.cache`));
 
       // Converged: the next run builds the index and retakes the seed.
-      Deno.writeTextFileSync(phpactor, kept);
-      Deno.chmodSync(phpactor, 0o755);
+      Deno.renameSync(`${f.folder}/phpactor-part`, `${runtime}/phpactor`);
+      Deno.symlinkSync("../phpactor/phpactor.phar", `${runtime}/bin/phpactor`);
       const converged = f.phases(["php_index", "seed"]);
       assert(converged.ok, converged.output);
       assertEquals(calls().length, 1);
       assertEquals(f.result(), { commit: head, phases_passed: ["php_index", "seed"] });
       assert(Deno.statSync(`${home}/.cache/orbit-php-index.json`).isFile);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a commit that lands in the default during the index refresh's build fails its seed with instance.php_index_seed_moved and changes no snapshot",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, calls } = phpIndexFixture();
+    try {
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
+      const seeded = f.workspace("rev-parse", "HEAD");
+      const changes = () => Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot") && ["create", "delete", "rename"].some((verb) => call.includes(verb))).length;
+      const before = changes();
+
+      // HEAD is the recorded seed's commit when the run checks it; the build then commits B in the default.
+      (f.intent as Record<string, unknown>).seed_commit = seeded;
+      f.write();
+      Deno.writeTextFileSync(`${f.folder}/phpactor-commits`, "");
+      const failed = f.phases(["php_index", "seed"]);
+      assert(!failed.ok, failed.output);
+      assertEquals(calls().length, 1);
+      const moved = f.workspace("rev-parse", "HEAD");
+      assert(moved !== seeded);
+      assertEquals(f.result().error_code, "instance.php_index_seed_moved");
+      assertEquals(f.result().failed_phase, "seed");
+      assertEquals(f.result().phases_passed, ["php_index"]);
+      // seed-A stays for the clones, and no seed-B exists.
+      assertEquals(changes(), before);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${seeded}`]);
     } finally {
       f.cleanup();
     }

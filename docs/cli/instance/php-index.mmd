@@ -31,11 +31,12 @@ sequenceDiagram
   %%> What it does:
   %%> - `agent` runs `phpactor index:build` at the application's folder, niced, within 600 s; Phpactor keeps its index at `~/.cache/phpactor/index/<folder>-<md5(path)[:6]>`
   %%> - an unchanged fingerprint (`~/.cache/orbit-php-index.json`) starts no Phpactor; a new one waits as pending until the seed holds it
-  %%> - a runtime folder with no `phpactor` yet skips the work: the result has `php_index_skipped` and no seed is retaken
+  %%> - a runtime folder that predates Phpactor, with neither its `phpactor` part nor `bin/phpactor`, skips the work: the result has `php_index_skipped` and no seed is retaken; a missing `php`, or a shipped `bin/phpactor` that is missing or not executable, fails with `instance.php_index_failed`
   %%> On failure:
   %%> - a failed or late build: `instance.php_index_failed` with Phpactor's reason; no seed is taken, so the old seed stays
   SW->>N: Retake the seed<br/>Ansible · tags seed
   %%> What it does:
+  %%> - first requires again that the commit it names the seed after is `seed_commit`, as a commit may land during the build: otherwise `instance.php_index_seed_moved`, and no snapshot is created or deleted
   %%> - only when the index changed: stops the Processes, takes `next-<HEAD>`, replaces `seed-<HEAD>` with it, starts the Processes again
   %%> - then records the pending fingerprint, so a failed snapshot leaves the next run to build and retake again
   %%> Not included:

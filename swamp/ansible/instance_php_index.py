@@ -2,7 +2,8 @@
 
 `agent` runs it in the default container in the `php_index` phase, after the Project's deploy steps and its Processes and before the
 seed, with the application's folder (the one with `artisan`) as its working folder and the container's deploy environment: `HOME` is
-`/home/agent` and `PATH` has the Project's PHP and the runtime folder's `phpactor`. Argument: the bound in seconds, or `seeded`.
+`/home/agent` and `PATH` has the Project's PHP. Arguments: the bound in seconds and the runtime folder (`/opt/orbit-runtime/current`),
+or `seeded`.
 
 Phpactor names its index by itself: `$HOME/.cache/phpactor/index/<folder name>-<hash of the folder's path>`, the folder being the
 working folder of `phpactor index:build` or the root URI of its language server. A clone has the same home and application path, so a
@@ -16,8 +17,10 @@ new fingerprint to PENDING. Only the seed phase, once the seed that holds the in
 run whose snapshot failed leaves the fingerprint pending, and the next run builds again and retakes the seed. A build that fails or runs
 past the bound exits 1 with the end of Phpactor's output on stderr, and records nothing.
 
-A Node whose runtime folder has no `phpactor` yet (a release before the Node's converge) gets no index work: the run starts nothing,
-records nothing and exits 0 with the reason, so the deployment goes on with a seed that has no new index.
+A missing `php` always fails. A runtime folder that predates Phpactor, with neither its `phpactor` part folder nor its `bin/phpactor`
+link (a release before the Node's converge), gets no index work: the run starts nothing, records nothing and exits 0 with the reason,
+so the deployment goes on with a seed that has no new index. A runtime folder that ships Phpactor but whose `bin/phpactor` is missing
+or not executable fails.
 
 Prints one JSON line: `{"index": "unchanged"}`, `{"index": "updated", "seconds": <float>}` or `{"index": "skipped", "reason": ...}`.
 """
@@ -71,23 +74,27 @@ def main():
         if os.path.exists(PENDING):
             os.replace(PENDING, STAMP)
         return 0
-    seconds = int(sys.argv[1])
+    seconds, runtime = int(sys.argv[1]), sys.argv[2]
     root = os.getcwd()
-    phpactor, php = shutil.which("phpactor"), shutil.which("php")
-    if phpactor is None:
-        print(json.dumps({"index": "skipped", "reason": "The Node's runtime folder has no phpactor yet: converge the Node."}))
-        return 0
+    php = shutil.which("php")
     if php is None:
         print("php must be on PATH", file=sys.stderr)
         return 1
-    phpactor, php = os.path.realpath(phpactor), os.path.realpath(php)
+    program = os.path.join(runtime, "bin", "phpactor")
+    if not os.path.lexists(program) and not os.path.exists(os.path.join(runtime, "phpactor")):
+        print(json.dumps({"index": "skipped", "reason": "The Node's runtime folder has no phpactor yet: converge the Node."}))
+        return 0
+    if not (os.path.isfile(program) and os.access(program, os.X_OK)):
+        print(f"The runtime folder ships phpactor, but {program} is missing or not executable", file=sys.stderr)
+        return 1
+    phpactor, php = os.path.realpath(program), os.path.realpath(php)
     if recorded().get(root) == fingerprint(root, phpactor, php):
         print(json.dumps({"index": "unchanged"}))
         return 0
 
     started = time.monotonic()
     build = subprocess.run(["timeout", "--kill-after=10", str(seconds), "nice", "-n", "19", "ionice", "-c", "3",
-                            "phpactor", "index:build", "--no-interaction", "--no-ansi"],
+                            program, "index:build", "--no-interaction", "--no-ansi"],
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
     if build.returncode != 0:
         tail = build.stdout.decode(errors="replace").strip()[-400:]

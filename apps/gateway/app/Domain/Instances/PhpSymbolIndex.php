@@ -24,10 +24,10 @@ final readonly class PhpSymbolIndex
     public const int ExecSeconds = 30;
 
     /**
-     * The container intent's `php_index`: the application's folder, where Phpactor finds the index by itself, and the bound. Null
-     * when the Instance gets no index.
+     * The container intent's `php_index`: the application's folder, where Phpactor finds the index by itself, the bound, and the
+     * runtime folder whose `phpactor` part the run requires unless that folder predates it. Null when the Instance gets no index.
      *
-     * @return array{root: string, seconds: int}|null
+     * @return array{root: string, seconds: int, runtime: string}|null
      */
     public static function intent(Instance $instance): ?array
     {
@@ -38,7 +38,7 @@ final readonly class PhpSymbolIndex
             return null;
         }
 
-        return ['root' => InstanceContainer::application($instance), 'seconds' => self::Seconds];
+        return ['root' => InstanceContainer::application($instance), 'seconds' => self::Seconds, 'runtime' => InstanceHostIntent::RuntimeFolder.'/current'];
     }
 
     /** What the index adds to a run's budget: its bound and its exec's, or nothing without an index. */

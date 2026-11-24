@@ -1912,7 +1912,8 @@
 # index (docs/reference/development-containers.md#php-symbol-index). Only an intent with `php_index` has it (PhpSymbolIndex). `agent`
 # runs it at the application's folder with the deploy steps' environment; an unchanged tree starts no Phpactor, and a changed one
 # reindexes only what changed, niced and within the intent's bound. A failed or late build fails the phase, so the old seed stays. A
-# runtime folder with no `phpactor` yet (the Node is not converged since the release) skips the work, and the result says why.
+# runtime folder that predates Phpactor (the Node is not converged since the release) skips the work, and the result says why; a
+# runtime folder that ships it with a broken program fails.
 - name: Prepare the PHP symbol index
   tags: [php_index]
   when: phase == 'php_index' and container.php_index is defined
@@ -1923,7 +1924,8 @@
           {{ ['timeout', (container.php_index.seconds + 30) | string, 'incus', 'exec', '--project', container.project,
               '--cwd', container.php_index.root, container.name, '--', 'runuser', '-u', 'agent', '--', '/usr/bin/env', '-i']
              + container.environment
-             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), container.php_index.seconds | string] }}
+             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), container.php_index.seconds | string,
+                 container.php_index.runtime] }}
       register: php_index_built
       changed_when: php_index_built.rc == 0 and (php_index_built.stdout | from_json).index != 'unchanged'
     # A register is overwritten when the next phase includes this file and skips the task; a skipped set_fact keeps its fact.
@@ -2049,6 +2051,15 @@
         seed_volume_bases: >-
           {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^base-') | list)
              if container.inner_volume is defined else [] }}
+    # The index refresh (an intent with `seed_commit`) checked HEAD before its build, but a commit may land in the running default
+    # during it. The seed's name is read again above; before any snapshot is created or deleted it must still be the recorded seed's
+    # commit, or `seed-<HEAD>` would replace the seed that clones copy.
+    - name: Require the recorded seed's commit for the index refresh's seed
+      when: intent.seed_commit is defined
+      ansible.builtin.assert:
+        that: container_commit == intent.seed_commit
+        fail_msg: instance.php_index_seed_moved
+        quiet: true
     # An earlier retake stopped after its new seed was whole: every half of it is under `next-`. It takes the seed's name now. A new
     # seed that is not whole is dropped, so no seed is ever a pair of two retakes.
     - name: Finish an earlier retake of this seed

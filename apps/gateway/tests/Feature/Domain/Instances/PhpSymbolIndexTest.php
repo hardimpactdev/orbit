@@ -77,7 +77,7 @@ it('prepares the index of a Laravel default on an active app-dev Node at its art
     $create = containerCreate($project, $node);
     $default = Instance::query()->findOrFail($create->target_id);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
-    $index = ['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds];
+    $index = ['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds, 'runtime' => '/opt/orbit-runtime/current'];
 
     // The create's seed and every deployment's seed after it, a repeat refresh of the same commit too: the same root, so Phpactor in
     // the container finds the same index and reindexes only what changed, and the same bound, which each run's budget holds.
@@ -91,7 +91,7 @@ it('prepares the index of a Laravel default on an active app-dev Node at its art
 it('names a nested Laravel application\'s folder, not the workspace, as the index root', function (): void {
     $default = phpIndexDefault(containerDefaultNode(), 'apps/shop/public');
 
-    expect(PhpSymbolIndex::intent($default->refresh()))->toBe(['root' => InstanceHostIntent::Workspace.'/apps/shop', 'seconds' => PhpSymbolIndex::Seconds]);
+    expect(PhpSymbolIndex::intent($default->refresh()))->toBe(['root' => InstanceHostIntent::Workspace.'/apps/shop', 'seconds' => PhpSymbolIndex::Seconds, 'runtime' => '/opt/orbit-runtime/current']);
 });
 
 it('gives the index only to a Laravel default placed on an active app-dev Node', function (Closure $change): void {
@@ -161,7 +161,7 @@ it('indexes a Laravel default without vendor/ too: eligibility reads no Composer
     $default = phpIndexDefault(containerDefaultNode());
 
     expect(ProjectDevelopmentDeployStep::query()->where('project_id', $default->project_id)->exists())->toBeFalse()
-        ->and(PhpSymbolIndex::intent($default))->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds]);
+        ->and(PhpSymbolIndex::intent($default))->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds, 'runtime' => '/opt/orbit-runtime/current']);
 });
 
 it('runs only the index and seed phases of a running Laravel default, with no deployment, checkout or deploy step', function (): void {
@@ -174,7 +174,7 @@ it('runs only the index and seed phases of a running Laravel default, with no de
         ->and(array_keys($operation->input))->toBe(['container', 'seed_commit'])
         // The seed that clones copy: the run refuses when the container's HEAD is another commit (instance.php_index_seed_moved).
         ->and($operation->input['seed_commit'])->toBe(str_repeat('c', 40))
-        ->and($operation->input['container']['php_index'])->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds])
+        ->and($operation->input['container']['php_index'])->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds, 'runtime' => '/opt/orbit-runtime/current'])
         // The seed it retakes records the clone files and the tree's state, as a deployment's seed does.
         ->and($operation->input['container'])->toHaveKeys(['seed_files', 'services_digest'])
         ->and($operation->input['container'])->not->toHaveKey('steps');
@@ -241,7 +241,7 @@ it('indexes an ordinary default of the proof Project, which runs no nested fleet
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     $runtime = InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail();
     $runtime->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
-    $index = ['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds];
+    $index = ['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds, 'runtime' => '/opt/orbit-runtime/current'];
     $snapshot = app(InstanceDeploymentIntent::class)->snapshot($default->refresh());
 
     expect(containerIntentOf($create)['php_index'])->toBe($index)

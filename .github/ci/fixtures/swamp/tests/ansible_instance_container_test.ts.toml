@@ -124,16 +124,17 @@ cases = [
   "a running default's index refresh runs only php_index and seed: its untracked files stay, and a changed index alone retakes the seed",  "an index whose seed snapshot failed stays pending: the retry builds again and retakes the seed, then a repeat is unchanged",
   "an index refresh of a default whose HEAD moved past its recorded seed is refused before any build or snapshot, and the seed stays",
   "a deployment on a Node whose runtime has no phpactor yet passes with its seed and records why the index was skipped; a converged Node indexes",
+  "a commit that lands in the default during the index refresh's build fails its seed with instance.php_index_seed_moved and changes no snapshot",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 9693
+cost = 9728
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 125
+slices = 126
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -306,6 +307,7 @@ inputs = [
 "an index whose seed snapshot failed stays pending: the retry builds again and retakes the seed, then a repeat is unchanged" = 45
 "an index refresh of a default whose HEAD moved past its recorded seed is refused before any build or snapshot, and the seed stays" = 50
 "a deployment on a Node whose runtime has no phpactor yet passes with its seed and records why the index was skipped; a converged Node indexes" = 45
+"a commit that lands in the default during the index refresh's build fails its seed with instance.php_index_seed_moved and changes no snapshot" = 35
 [mandatory_cases]
 "swamp/ansible/instance-container.yml" = ["a failed start retains its task and bounded stderr and hides private task output"]
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]

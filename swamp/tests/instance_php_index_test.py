@@ -3,6 +3,7 @@ itself, an unchanged tree starts no Phpactor, a changed one runs Phpactor's incr
 the seed holds the index, a failed or late build fails with its reason and records nothing, and a runtime without phpactor skips."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,20 +30,25 @@ class PhpIndexTest(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp()
         self.app = os.path.join(tempfile.mkdtemp(), 'app')
-        self.bin = tempfile.mkdtemp()
+        # The runtime folder as the recipe assembles it: the `phpactor` part and its `bin/` link, with the Project's PHP on PATH.
+        self.runtime = tempfile.mkdtemp()
+        self.bin = os.path.join(self.runtime, 'bin')
+        os.makedirs(self.bin)
+        os.makedirs(os.path.join(self.runtime, 'phpactor'))
         os.makedirs(os.path.join(self.app, 'app/Models'))
         os.makedirs(os.path.join(self.app, '.git'))
         Path(self.app, 'artisan').write_text('<?php\n')
         Path(self.app, 'app/Models/User.php').write_text('<?php class User {}\n')
-        phpactor = Path(self.bin, 'phpactor')
+        phpactor = Path(self.runtime, 'phpactor/phpactor.phar')
         phpactor.write_text(PHPACTOR)
         phpactor.chmod(0o755)
+        os.symlink('../phpactor/phpactor.phar', os.path.join(self.bin, 'phpactor'))
         os.symlink(sys.executable, os.path.join(self.bin, 'php'))
 
     def run_index(self, seconds=60, **environment):
         # As the phase runs it: a clean environment with the deploy steps' HOME and PATH, at the application's folder.
         env = {'HOME': self.home, 'PATH': f"{self.bin}:/usr/bin:/bin", **environment}
-        return subprocess.run([sys.executable, '-I', '-c', PROGRAM.read_text(), str(seconds)], cwd=self.app, env=env,
+        return subprocess.run([sys.executable, '-I', '-c', PROGRAM.read_text(), str(seconds), self.runtime], cwd=self.app, env=env,
                               capture_output=True, text=True, check=False, timeout=30)
 
     def seeded(self):
@@ -154,13 +160,29 @@ class PhpIndexTest(unittest.TestCase):
         self.assertFalse(Path(self.home, '.cache/orbit-php-index.json').exists())
         self.assertFalse(Path(self.home, '.cache/orbit-php-index.pending.json').exists())
 
-    def test_a_runtime_without_phpactor_skips_with_its_reason_and_records_nothing(self):
-        # A Node not converged since the release: the deployment goes on, and the skip says why.
+    def test_a_runtime_that_predates_phpactor_skips_with_its_reason_and_records_nothing(self):
+        # A Node not converged since the release: neither the part nor its link. The deployment goes on, and the skip says why.
         os.remove(os.path.join(self.bin, 'phpactor'))
+        shutil.rmtree(os.path.join(self.runtime, 'phpactor'))
         result = self.run_index()
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), {'index': 'skipped', 'reason': "The Node's runtime folder has no phpactor yet: converge the Node."})
+        self.assertFalse(os.path.exists(os.path.join(self.home, '.cache')))
+
+    def test_a_converged_runtime_whose_phpactor_is_not_executable_or_missing_fails(self):
+        program = os.path.join(self.bin, 'phpactor')
+        os.chmod(os.path.join(self.runtime, 'phpactor/phpactor.phar'), 0o644)
+        result = self.run_index()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(f'The runtime folder ships phpactor, but {program} is missing or not executable', result.stderr)
+
+        # The part is there and its link is gone.
+        os.remove(program)
+        result = self.run_index()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('is missing or not executable', result.stderr)
+        self.assertEqual(self.calls(), [])
         self.assertFalse(os.path.exists(os.path.join(self.home, '.cache')))
 
     def test_a_missing_php_fails(self):
@@ -168,6 +190,15 @@ class PhpIndexTest(unittest.TestCase):
         result = self.run_index()
 
         self.assertEqual(result.returncode, 1)
+        self.assertIn('php must be on PATH', result.stderr)
+
+    def test_a_missing_php_fails_also_on_a_runtime_that_predates_phpactor(self):
+        os.remove(os.path.join(self.bin, 'php'))
+        os.remove(os.path.join(self.bin, 'phpactor'))
+        shutil.rmtree(os.path.join(self.runtime, 'phpactor'))
+        result = self.run_index()
+
+        self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('php must be on PATH', result.stderr)
 
 
