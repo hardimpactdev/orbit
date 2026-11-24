@@ -46,8 +46,13 @@ final readonly class InstanceDeploymentIntent
         private ServiceMetricsProjection $metrics,
     ) {}
 
-    /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $rollback = false): array
+    /**
+     * `$agentFolder`: as InstanceContainer::seedFiles takes it.
+     *
+     * @param  list<array<string, mixed>>|null  $agentFolder
+     * @return array<string, mixed>
+     */
+    public function snapshot(Instance $instance, bool $rollback = false, ?array $agentFolder = null): array
     {
         $instance->refresh()->loadMissing(['project', 'node']);
         // An Instance that moves into a container takes no deployment until the move has ended.
@@ -74,7 +79,7 @@ final readonly class InstanceDeploymentIntent
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 // A default holds the files every clone of it needs before its seed (InstanceContainer::seedFiles).
-                'container' => $runtime !== null ? self::container($instance, $runtime) : null,
+                'container' => $runtime !== null ? self::container($instance, $runtime, $agentFolder) : null,
                 ...($runtime === null ? [] : ExecutorPowerIntent::lifecycle($instance, $runtime)),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];
