@@ -72,7 +72,9 @@ final readonly class ConnSessionLifetime
     /** Revokes the Gateway session an unregistered host server still holds, once the server passes the gate; until then it stays owed. */
     public function revokeOwed(ConnOwedGatewayRevoke $owed): bool
     {
-        if (! $owed->admin_session_expires_at->isFuture()) {
+        // A server registered again with the same bearer uses this session, so it is no longer owed; never revoke it.
+        if (! $owed->admin_session_expires_at->isFuture()
+            || ConnEnvironment::query()->get()->contains(fn (ConnEnvironment $environment): bool => hash_equals($environment->admin_session, $owed->admin_session))) {
             $owed->delete();
 
             return true;

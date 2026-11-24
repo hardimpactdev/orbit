@@ -65,6 +65,8 @@ Removal is synchronous, local, and idempotent without contacting the T3 server. 
 
 T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. It calls `POST /api/auth/logout` with that session's own bearer and no body. A 401 means an earlier logout already revoked it, so the row goes either way. Against an older server the row stays owed.
 
+A host server that registers again with the same bearer uses that session again: the registration deletes the owed row for its environment or URL, and the reconcile drops without logout any owed row whose session a registered server holds.
+
 ### Session lifetimes
 
 Orbit asks for sessions that last until revoked. The Conn Server stores `until-revoked` as its about 10-year cap and still answers a date, which the Gateway stores.
