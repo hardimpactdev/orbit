@@ -10,6 +10,9 @@ covers:
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
   - swamp/ansible/t3_copy_rpc.mjs
+  - apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php}
+  - apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php
+  - swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}
 ---
 
 # Instance containers
@@ -238,12 +241,17 @@ The recipe loader accepts `macos_arm64` on agent folder parts only and requires 
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
 
-The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. On a Mac it:
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`.
+
+On a Mac, the checks come first. The phase:
 
 1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
 2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
 3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
-4. stops here in a dry run (`checked`);
+4. stops here in a dry run (`checked`).
+
+Then the swap and the restart. The phase:
+
 5. sends the notice, when the record asks for one;
 6. makes a new backup folder for the run (`mkdir` refuses one that exists, `conn_server.backup_exists`), moves the installed bundle into it and the staged bundle onto the same path, so the TCC grants stay;
 7. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
