@@ -40,8 +40,8 @@ jobs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       # One phase: every Node in turn, canary first; each downloads, checks, swaps, restarts and checks /health, or rolls back.
-      # The deadline lets every Node finish its rollback: max_nodes (4) x node_seconds (2610, each Node's bounded worst case, in
-      # conn-server-rollout.yml) = 10440 s, plus 100 s for the plays that address the Nodes and write the result.
+      # The deadline lets every Node finish its rollback: max_nodes (4) x node_seconds (3220, each Node's bounded worst case, in
+      # conn-server-rollout.yml) = 12880 s, plus 100 s for the plays that address the Nodes and write the result.
       - name: Roll out
         labels: {role: swamp}
         writes: true
@@ -52,7 +52,7 @@ jobs:
           behaviorName: ${{ "conn-server-rollout" }}
           methodName: execute
           inputs:
-            run: timeout 10540 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"
+            run: timeout 12980 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'

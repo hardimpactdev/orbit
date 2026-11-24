@@ -1,5 +1,6 @@
 cases = [
   "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret",
+  "every module that a Mac Node runs has a task timeout of at least 60 s",
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
   "a zip whose SHA-256 differs fails the Node and installs nothing",
@@ -21,13 +22,14 @@ cases = [
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
   "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
   "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker",
+  "over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked",
   "a run with more Nodes than its deadline covers is refused before any Node is reached",
   "a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none",
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 360
-# Local runs in tasks 6221 and 6232: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
+cost = 425
+# Local runs in tasks 6221, 6232 and 6236: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
 # unit far below the ceiling.
 slices = 4
 inputs = [
@@ -72,3 +74,5 @@ inputs = [
   "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker" = 18
   "a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none" = 13
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause" = 11
+  "every module that a Mac Node runs has a task timeout of at least 60 s" = 2
+  "over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked" = 63
