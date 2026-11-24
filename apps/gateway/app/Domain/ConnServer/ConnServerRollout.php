@@ -15,20 +15,21 @@ use Illuminate\Support\Facades\Config;
 
 /**
  * Admits the rollout of the pinned Conn Server to the Nodes that run one (docs/reference/development-containers.md#conn-server-rollout):
- * the agent folder's `conn-server` pin, its macOS arm64 app, each Node's record with its SSH target, canary first, and the notice target.
- * A dry run only downloads and checks. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the rest. Nothing
- * starts it from a pin change.
+ * the agent folder's `conn-server` pin, its macOS arm64 app, each Node's record with its SSH target in visiting order, and the notice target.
+ * A dry run only downloads and checks. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the rest; `nodes`
+ * reaches the named Nodes alone, in the caller's order. Nothing starts it from a pin change.
  */
 final readonly class ConnServerRollout
 {
     public const string Kind = 'fleet.conn_server_rollout';
 
     /** The scopes a caller must choose from; there is no default that reaches the whole fleet. */
-    public const array Scopes = ['canary', 'fleet'];
+    public const array Scopes = ['canary', 'fleet', 'nodes'];
 
     public function __construct(private StartOperationAction $start, private CurrentRecipe $recipes, private SwampSshExecutionInput $ssh) {}
 
-    public function admit(bool $dryRun, string $scope, ?string $triggeredBy = null, ?string $requestId = null): Operation
+    /** @param list<int>|null $nodeIds the Nodes of scope `nodes`, in visiting order; each has a record (AdmitConnServerRolloutRequest) */
+    public function admit(bool $dryRun, string $scope, ?array $nodeIds = null, ?string $triggeredBy = null, ?string $requestId = null): Operation
     {
         $pin = $this->recipes->currentRecipe()->instances?->agent['conn-server'] ?? null;
         if ($pin?->macApp === null) {
@@ -40,6 +41,8 @@ final readonly class ConnServerRollout
         }
         if ($scope === 'canary') {
             $servers = $servers->where('canary', true);
+        } elseif ($scope === 'nodes') {
+            $servers = collect($nodeIds)->map(fn (int $id): ConnServerNode => $servers->firstOrFail('node_id', $id));
         }
         $notice = Config::array('orbit.conn.server_rollout_notice');
 

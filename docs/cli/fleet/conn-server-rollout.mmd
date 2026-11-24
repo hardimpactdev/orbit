@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% One Ansible phase, conn-server-rollout.yml, visits the Conn Server Nodes one at a time, canary first. docs/reference/development-containers.md#conn-server-rollout.
+  %% One Ansible phase, conn-server-rollout.yml, visits the admitted Conn Server Nodes one at a time, in order. docs/reference/development-containers.md#conn-server-rollout.
   %% status: draft
   %% command: none · POST /api/v1/fleet/conn-server/rollout
   %% kind: fleet.conn_server_rollout
@@ -13,19 +13,20 @@ sequenceDiagram
   Note over GW: Read the pin and<br/>the Conn Server Nodes
   %%> When:
   %%> - an operator posts `{"dry_run", "scope"}` to `POST /api/v1/fleet/conn-server/rollout`; both are required, so no default reaches the whole fleet
+  %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
   %%> - nothing starts it from a pin change
   %%> Requirements:
   %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
   %%> Picks:
-  %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order
+  %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order; scope `nodes`: the named records alone, in the request's order
   %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope
   GW->>SW: Start run, full intent<br/>conn-server-rollout
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
   %%> - at most four Nodes, so the 8,100 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
-  loop each Node, canary first
+  loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
     %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
