@@ -77,7 +77,7 @@ At a host server's registration and at an Instance's wake, the Gateway reads `GE
 
 Only `GET /health` tells an old server, which gets no `extend`. A 409 `operation_forbidden` keeps a T3-carried session dated and renewed. A 404 means the session is gone. A gone held session is settled, and the Node's next read holds a new one. A gone Gateway session is recorded as ended, so the renewal issues a new one. A 400 `invalid_session_ttl` is logged as an error and keeps the session dated.
 
-The Gateway never extends a peer-link session. The holder keeps the end it stored when it linked and drops the link then, so an existing dated link must be linked again with an until-revoked code. A new link made with such a code lasts about 10 years on both sides.
+Orbit does nothing for peer links: Conn owns them. The Gateway never extends a peer-link session, because the holder keeps the end it stored when it linked. A new link made with an until-revoked code lasts about 10 years on both sides. From Conn 0.5.1, the holder extends an existing dated link itself, with its own MCP bearer through `POST /api/auth/clients/extend`.
 
 The hourly renewal still runs. It renews only sessions within 7 days of their end, so it never renews a long-lived one. Revocation is unchanged: a revoke by session id ends a long-lived session at once.
 
