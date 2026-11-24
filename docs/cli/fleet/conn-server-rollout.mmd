@@ -25,13 +25,14 @@ sequenceDiagram
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
-  %%> - at most four Nodes, so the 10,500 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 10,540 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
     %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
     %%> - Mac: `codesign --verify --strict --deep`, the pin's `TeamIdentifier` and bundle id, or `conn_server.signature_invalid`, `team_mismatch`, `bundle_mismatch`
     %%> - Linux: the unit's `ExecStart` is `<current>/conn-server` and the tarball holds `conn-server-<X>-linux-x64/conn-server`, or `conn_server.layout_mismatch`
+    %%> - Linux: `/health` on the unit's `--host`, or 127.0.0.1 when it has none or a wildcard, answers 200 with `server: conn-server` and a version, or `conn_server.health_unreachable`
     alt Mac: staged `codesign -dr -` differs from the installed bundle
       Note over N: Hold, install nothing<br/>held
       %%> Why:
@@ -60,7 +61,7 @@ sequenceDiagram
           %%> - reads the prompt's static texts and clicks Allow only on a Conn Server prompt for an expected permission
           %%> - any other prompt fails the Node (`conn_server.unexpected_prompt`)
         end
-        SW->>N: GET /health on 127.0.0.1
+        SW->>N: GET /health<br/>on 127.0.0.1 or the unit's --host
         %%> What it does:
         %%> - waits for `server: conn-server` and the pin's version
       end

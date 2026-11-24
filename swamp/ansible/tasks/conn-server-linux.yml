@@ -65,6 +65,32 @@
     fail_msg: conn_server.layout_mismatch
     quiet: true
 
+# /health answers on the unit's `--host` (`--host=<addr>` or `--host <addr>` in ExecStart's argv), or on 127.0.0.1 when it has
+# none or a wildcard, never through a proxy. Before any change, in a dry run too, the running server must answer there with 200,
+# `server: conn-server` and its version, so the rollback has a version to check; anything else fails the Node.
+- name: Name the unit's health address
+  ansible.builtin.set_fact:
+    linux_health_url: >-
+      {%- set argv = linux_exec.stdout | regex_search('argv\\[\\]=([^;]*)', '\\1') | default([''], true) | first -%}
+      {%- set host = argv | regex_search('(?:^|\\s)--host(?:=|\\s+)(\\S+)', '\\1') | default([''], true) | first -%}
+      {%- set host = '127.0.0.1' if host in ['', '0.0.0.0', '::'] else host -%}
+      http://{{ '[' ~ host ~ ']' if ':' in host else host }}:{{ server.port }}/health
+
+- name: Read the running version
+  ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, return_content: true, timeout: 5 }
+  register: linux_before
+  failed_when: false
+  timeout: 20
+
+- name: Refuse a running server that does not answer with its version
+  ansible.builtin.assert:
+    that:
+      - linux_before.status | default(-1) | int == 200
+      - linux_before.json.server | default('') == 'conn-server'
+      - linux_before.json.version | default('', true) | string | length > 0
+    fail_msg: conn_server.health_unreachable
+    quiet: true
+
 - name: Record a checked Node of a dry run
   when: intent.dry_run
   ansible.builtin.set_fact:
@@ -73,12 +99,6 @@
 - name: Swap and restart
   when: not intent.dry_run
   block:
-    - name: Read the running version
-      ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
-      register: linux_before
-      failed_when: false
-      timeout: 20
-
     - name: Send the notice before the restart
       when: server.notify_before_restart
       ansible.builtin.include_tasks: conn-server-notice.yml
