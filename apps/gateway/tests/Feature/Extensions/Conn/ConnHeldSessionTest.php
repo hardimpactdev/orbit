@@ -39,8 +39,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
+use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
 use Orbit\Extensions\Conn\Actions\UnregisterConnEnvironmentAction;
+use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
 use Orbit\Extensions\Conn\Domain\ConnCleanupProjection;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
@@ -51,6 +53,9 @@ use Orbit\Extensions\Conn\Domain\ConnOwedWork;
 use Orbit\Extensions\Conn\Domain\ConnRevocationProjection;
 use Orbit\Extensions\Conn\Domain\ConnSessionHoldProjection;
 use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
+use Orbit\Extensions\Conn\Domain\T3AdminSession;
+use Orbit\Extensions\Conn\Domain\T3EnvironmentDescriptor;
+use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -984,23 +989,23 @@ it('pre-mints held sessions for the creating profile\'s Nodes that reach a new c
 })->with(['on' => true, 'off' => false]);
 
 /** A Conn Server at `$version` whose extend route answers `$extend`; returns the requests it saw. */
-function connServer(string $version, int $extend = 200, string $reason = ''): ArrayObject
+function connServer(string $version, int $extend = 200, string $reason = '', int $logout = 200): ArrayObject
 {
     $seen = new ArrayObject;
-    Http::fake(function (Request $request) use ($seen, $version, $extend, $reason) {
+    Http::fake(function (Request $request) use ($seen, $version, $extend, $reason, $logout) {
         $path = parse_url($request->url(), PHP_URL_PATH);
-        $seen[] = ['path' => $path, 'body' => $request->data(), 'bearer' => $request->header('Authorization')[0] ?? null];
+        $seen[] = ['path' => $path, 'body' => $request->data(), 'raw' => $request->body(), 'bearer' => $request->header('Authorization')[0] ?? null];
 
         return match ($path) {
             '/health' => Http::response(['server' => 'conn-server', 'version' => $version]),
             '/api/auth/clients/extend' => $extend === 200
                 ? Http::response(['sessionId' => $request->data()['sessionId'] ?? 'own', 'expiresAt' => now()->addDays(3650)->toJSON()])
-                : Http::response(['error' => $reason], $extend),
+                : Http::response(['code' => $reason, 'reason' => $reason], $extend),
             '/api/auth/clients' => Http::response(['clientSessions' => [
                 ['sessionId' => 'peer-mini', 'subject' => 'mcp-client', 'client' => ['label' => 'Conn · mini'], 'expiresAt' => now()->addDays(30)->toJSON()],
                 ['sessionId' => 'device-desk', 'subject' => 'one-time-token', 'client' => ['label' => 'desk'], 'expiresAt' => now()->addDays(30)->toJSON()],
             ]]),
-            ConnSessionLifetime::SelfRevokeRoute => Http::response(['revoked' => true]),
+            ConnSessionLifetime::SelfRevokeRoute => $logout === 200 ? Http::response(['sessionId' => 'gateway', 'revoked' => true]) : Http::response(['code' => 'unauthorized'], $logout),
             default => Http::response([], 404),
         };
     });
@@ -1068,8 +1073,8 @@ describe('until-revoked lifetimes, with the hourly tick disabled', function (): 
         readHeld($this->phone, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
     });
 
-    it('keeps a session dated and renewed when extend answers 404 or 409 operation_forbidden', function (int $status, string $reason): void {
-        $seen = connServer('0.5.0', $status, $reason);
+    it('keeps a T3-carried session dated and renewed when extend answers 409 operation_forbidden', function (): void {
+        $seen = connServer('0.5.0', 409, 'operation_forbidden');
 
         app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
 
@@ -1078,7 +1083,70 @@ describe('until-revoked lifetimes, with the hourly tick disabled', function (): 
             ->and($this->held->fresh()->session_expires_at->getTimestamp())->toBe(now()->addDays(30)->getTimestamp());
         $this->travel(24)->days();
         expect(ConnHeldSessions::due(CarbonImmutable::now())->count())->toBe(2);
-    })->with([[404, 'not_found'], [409, 'operation_forbidden']]);
+    });
+
+    it('records a session a 0.5.0 server no longer has as ended, renews none of it, and holds a new one at the next read', function (): void {
+        connServer('0.5.0', 404, 'not_found');
+
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect($this->held->fresh())->session->toBeNull()->revoked_at->not->toBeNull()->withdrawn_at->toBeNull()
+            ->and($this->environment->fresh()->admin_session_expires_at->isFuture())->toBeFalse()
+            ->and(ConnHeldSessions::due(CarbonImmutable::now()->addDays(24))->count())->toBe(0);
+        // The Gateway session ended, so the sweep's renewal issues a new one first; then the Node's read holds again.
+        $this->environment->forceFill(['admin_session_expires_at' => now()->addDays(3650)])->save();
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        expect(revokes())->toBe([]);
+    });
+
+    it('reports a 400 invalid_session_ttl as an error and keeps the session dated, never as an old server', function (): void {
+        Log::spy();
+        connServer('0.5.0', 400, 'invalid_session_ttl');
+
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect($this->held->fresh())->session->not->toBeNull()->revoked_at->toBeNull()
+            ->and($this->held->fresh()->session_expires_at->getTimestamp())->toBe(now()->addDays(30)->getTimestamp());
+        Log::shouldHaveReceived('log')->withArgs(fn (string $level, string $message, array $context): bool => $level === 'error'
+            && $message === 'conn.session_extend_refused' && $context['status'] === 400)->atLeast()->once();
+    });
+
+    it('extends a host server\'s Gateway session in place at its registration on a 0.5.0 server', function (): void {
+        $seen = connServer('0.5.0');
+        app()->instance(T3ServerClient::class, new class implements T3ServerClient
+        {
+            public function describe(string $baseUrl): T3EnvironmentDescriptor
+            {
+                return new T3EnvironmentDescriptor('env-host', 'host', '0.0.20');
+            }
+
+            public function describes(array $baseUrls, float $timeoutSeconds): array
+            {
+                return [];
+            }
+
+            public function session(string $baseUrl, string $adminSession): T3AdminSession
+            {
+                return new T3AdminSession($adminSession, CarbonImmutable::now()->addDays(30), ['access:read', 'access:write']);
+            }
+
+            public function shell(string $baseUrl, string $adminSession): array
+            {
+                return [];
+            }
+
+            public function shells(array $servers, float $timeoutSeconds): array
+            {
+                return [];
+            }
+        });
+
+        $environment = app(RegisterConnEnvironmentAction::class)->execute($this->host,
+            new RegisterConnEnvironmentData('env-host', 'host', 'http://10.44.1.1:3773', 'private-admin-host'));
+
+        expect(collect($seen)->firstWhere('path', '/api/auth/clients/extend')['bearer'])->toBe('Bearer private-admin-host')
+            ->and($environment->fresh()->admin_session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue();
+    });
 
     it('calls no extend on a server older than 0.5.0', function (): void {
         $seen = connServer('0.4.2');
@@ -1116,6 +1184,16 @@ describe('until-revoked lifetimes, with the hourly tick disabled', function (): 
         $seen = connServer('0.5.0');
         $this->artisan('conn:owed-work:advance')->assertSuccessful();
         expect(ConnOwedGatewayRevoke::query()->count())->toBe(0)
-            ->and(collect($seen)->firstWhere('path', ConnSessionLifetime::SelfRevokeRoute)['bearer'])->toBe('Bearer private-admin-host');
+            ->and(collect($seen)->firstWhere('path', '/api/auth/logout'))->toMatchArray(['bearer' => 'Bearer private-admin-host', 'raw' => '']);
+    });
+
+    it('treats a 401 on logout as done, so a retry after an unrecorded success settles the owed revoke', function (): void {
+        ConnOwedGatewayRevoke::query()->create(['environment_id' => 'env-host', 'url' => 'http://10.44.1.1:3773', 'admin_session' => 'private-admin-host',
+            'admin_session_expires_at' => now()->addDays(3650)]);
+        connServer('0.5.0', logout: 401);
+
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+
+        expect(ConnOwedGatewayRevoke::query()->count())->toBe(0);
     });
 });

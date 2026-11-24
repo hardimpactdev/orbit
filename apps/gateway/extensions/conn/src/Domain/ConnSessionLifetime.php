@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
-use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Models\InstanceRuntime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -32,8 +30,11 @@ final readonly class ConnSessionLifetime
     /** The MCP client label of a Conn peer link, `Conn · <holder>`. */
     public const string PeerLabelPrefix = 'Conn · ';
 
-    /** PENDING: the Conn Server 0.5.0 route that revokes the bearer's own session; its path is not agreed yet. */
-    public const string SelfRevokeRoute = '/api/auth/session/revoke';
+    /** The Conn Server 0.5.0 route that revokes the bearer's own session; `/api/auth/clients/revoke` refuses the caller's own. */
+    public const string SelfRevokeRoute = '/api/auth/logout';
+
+    /** What `extend` answers for a session the server no longer has. */
+    private const string Gone = 'gone';
 
     public function __construct(private ConnServerLifetimes $server) {}
 
@@ -51,16 +52,22 @@ final readonly class ConnSessionLifetime
         }
         $longLived = self::longLived();
         if ($environment->admin_session_expires_at->lt($longLived)
-            && ($expires = $this->extend($environment, $environment->admin_session, null, 'admin')) instanceof CarbonImmutable) {
-            // Only the session it extended: a renewal recorded meanwhile keeps its own end.
+            && ($expires = $this->extend($environment, $environment->admin_session, null, 'admin')) !== null) {
+            // Only the session it extended: a renewal recorded meanwhile keeps its own end. A session the server no longer has has
+            // ended, so the Instance's renewal issues a new one and a host server registers again.
             ConnEnvironment::query()->whereKey($environment->id)->where('admin_session_expires_at', $environment->admin_session_expires_at)
-                ->update(['admin_session_expires_at' => $expires]);
+                ->update(['admin_session_expires_at' => $expires === self::Gone ? Carbon::now() : $expires]);
         }
         $held = ConnPairing::query()->where('conn_environment_id', $environment->id)->where('held', true)->whereNotNull('session')
             ->whereNull('withdrawn_at')->whereNull('revoked_at')->where('session_expires_at', '>', Carbon::now())->where('session_expires_at', '<', $longLived)->get();
         foreach ($held as $pairing) {
-            if (($expires = $this->extend($environment, (string) $pairing->session, null, 'held')) instanceof CarbonImmutable) {
+            $expires = $this->extend($environment, (string) $pairing->session, null, 'held');
+            if ($expires instanceof CarbonImmutable) {
                 ConnPairing::query()->whereKey($pairing->id)->whereNull('withdrawn_at')->whereNull('revoked_at')->update(['session_expires_at' => $expires]);
+            } elseif ($expires === self::Gone) {
+                // Nothing of it is left to renew or revoke; the Node's next read holds a new session.
+                ConnPairing::query()->whereKey($pairing->id)->whereNull('withdrawn_at')->whereNull('revoked_at')
+                    ->update(['session' => null, 'revoked_at' => Carbon::now()]);
             }
         }
         try {
@@ -91,7 +98,7 @@ final readonly class ConnSessionLifetime
         try {
             $this->server->revokeSelf($owed->url, $owed->admin_session);
         } catch (T3ServerException $error) {
-            // A session the server no longer accepts is gone already.
+            // A 401: an earlier logout revoked it already, or the server no longer has it.
             if ($error->errorCode !== 'conn.session_rejected') {
                 Log::warning('conn.gateway_revoke_failed', ['environment_id' => $owed->environment_id, 'error_code' => $error->errorCode]);
 
@@ -103,22 +110,27 @@ final readonly class ConnSessionLifetime
         return true;
     }
 
-    /** Whether the Instance of a container server is asleep; a sleeping one is migrated at its wake. */
-    public static function asleep(ConnEnvironment $environment): bool
-    {
-        return $environment->instance_id !== null && InstanceRuntime::query()->where('instance_id', $environment->instance_id)
-            ->where('power_state', InstanceRuntimePowerState::Stopped->value)->exists();
-    }
-
-    private function extend(ConnEnvironment $environment, string $bearer, ?string $sessionId, string $session): ?CarbonImmutable
+    /**
+     * The new end, Gone for a session the server no longer has, or null for one that stays dated. The gate already proved the server
+     * takes `extend`, so its 404 means the session is gone, not an old server.
+     *
+     * @return CarbonImmutable|self::Gone|null
+     */
+    private function extend(ConnEnvironment $environment, string $bearer, ?string $sessionId, string $session): CarbonImmutable|string|null
     {
         try {
             return $this->server->extend($environment->url, $bearer, $sessionId);
         } catch (T3ServerException $error) {
-            // 404: no extend route; 409 operation_forbidden: a T3-carried session. Either way it stays dated and renewed.
             $status = $error->details['status'] ?? null;
-            Log::log(in_array($status, [404, 409], true) ? 'info' : 'warning', 'conn.session_extend_refused',
-                ['environment_id' => $environment->environment_id, 'session' => $session, 'error_code' => $error->errorCode, 'status' => $status]);
+            $context = ['environment_id' => $environment->environment_id, 'session' => $session, 'error_code' => $error->errorCode, 'status' => $status];
+            if ($status === 404) {
+                Log::info('conn.session_extend_gone', $context);
+
+                return self::Gone;
+            }
+            // 409 operation_forbidden: a T3-carried session, which its signed token bounds; it stays dated and renewed. Anything else,
+            // as a 400 invalid_session_ttl, is an error to report; the session stays dated meanwhile.
+            Log::log($status === 409 ? 'info' : 'error', 'conn.session_extend_refused', [...$context, 'reason' => $error->details['reason'] ?? null]);
 
             return null;
         }

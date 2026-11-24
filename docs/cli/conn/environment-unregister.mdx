@@ -34,7 +34,7 @@ orbit conn:environment:unregister 2f6cdbde-0000-4000-8000-000000000001 --json
 
 In one transaction, the Gateway checks access, verifies the server is not bound to an Instance and has no running `conn.*` Operation, then deletes the environment record (including its stored admin session), its pairings and held sessions, cached threads, and managed target records (targets, tokens, and revisions). After commit, it drops attached thread references from Conn profiles and deletes any execution secret vault copies held for the server's `conn.*` Operations.
 
-The server keeps the Gateway's admin session, because no session may revoke itself. The Gateway keeps that session in a hidden row and revokes it from the owed-work reconcile once the server is a Conn Server of 0.5.0 or later ([Unregister a host server](/reference/conn#unregister-a-host-server)).
+The server keeps the Gateway's admin session, because no session may revoke itself. The Gateway keeps that session in a hidden row and revokes it with `POST /api/auth/logout` from the owed-work reconcile once the server is a Conn Server of 0.5.0 or later ([Unregister a host server](/reference/conn#unregister-a-host-server)).
 
 The API is `DELETE /api/v1/conn/environments/{environment}` (`conn:environment:unregister`), and the generated destructive MCP tool is `conn-environment-unregister`. See [Unregister a host server](/reference/conn#unregister-a-host-server).
 

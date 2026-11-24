@@ -26,6 +26,6 @@ interface ConnServerLifetimes
      */
     public function clients(string $baseUrl, #[SensitiveParameter] string $adminSession): array;
 
-    /** Revokes the bearer's own session at ConnSessionLifetime::SelfRevokeRoute. */
+    /** POST /api/auth/logout: revokes the bearer's own session. */
     public function revokeSelf(string $baseUrl, #[SensitiveParameter] string $bearer): void;
 }

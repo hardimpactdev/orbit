@@ -74,7 +74,8 @@ final readonly class HttpConnServerLifetimes implements ConnServerLifetimes
 
     public function revokeSelf(string $baseUrl, #[SensitiveParameter] string $bearer): void
     {
-        $this->json($baseUrl, 'revoke', fn (): Response => $this->request($bearer)->post($this->endpoint($baseUrl, ConnSessionLifetime::SelfRevokeRoute), (object) []), empty: true);
+        // No body: the bearer names the session. A 401 after an earlier success is refused as `conn.session_rejected`.
+        $this->json($baseUrl, 'logout', fn (): Response => $this->request($bearer)->send('POST', $this->endpoint($baseUrl, ConnSessionLifetime::SelfRevokeRoute)), empty: true);
     }
 
     private function request(#[SensitiveParameter] ?string $bearer = null): PendingRequest
@@ -101,7 +102,7 @@ final readonly class HttpConnServerLifetimes implements ConnServerLifetimes
             throw T3ServerException::unreachable($baseUrl, $exception);
         }
         if (! $response->successful()) {
-            $reason = $response->json('reason') ?? $response->json('error');
+            $reason = $response->json('reason') ?? $response->json('code') ?? $response->json('error');
 
             throw T3ServerException::refused($baseUrl, $operation, $response->status(), is_string($reason) ? $reason : 'unknown');
         }

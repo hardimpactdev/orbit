@@ -63,7 +63,7 @@ Access is owner-scoped and requires Conn enabled plus node access to the registe
 
 Removal is synchronous, local, and idempotent without contacting the T3 server. In one transaction, the Gateway deletes the environment row (`admin_session`), pairings, held sessions, cached threads, and managed target records. After commit, it drops attached thread references from profiles and deletes execution secret vault copies. It returns HTTP `200` with `{"environment_id": "...", "removed": true|false}`, and a still-running host T3 server that registers again reappears.
 
-T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. The route it calls is pending with the Conn Server owner. Against an older server the row stays owed.
+T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. It calls `POST /api/auth/logout` with that session's own bearer and no body. A 401 means an earlier logout already revoked it, so the row goes either way. Against an older server the row stays owed.
 
 ### Session lifetimes
 
@@ -73,7 +73,9 @@ The Gateway session of an Instance's Conn Server is issued with `--ttl 3650d`. E
 
 Each pairing-token request sends `sessionTtl: "until-revoked"`. That covers held sessions and the pairing links that devices and peer links spend. The code itself still lasts 5 minutes. A server older than 0.5.0 ignores the field and grants 30 days.
 
-At a host server's registration and at an Instance's wake, the Gateway reads `GET /health`. On a `conn-server` of 0.5.0 or later, it calls `POST /api/auth/clients/extend` for each session it keeps there that ends within a year. The Gateway session and each held session extend with their own bearers. Each `Conn · ` peer-link session extends by its id. A 404 or a 409 `operation_forbidden` keeps that session dated.
+At a host server's registration and at an Instance's wake, the Gateway reads `GET /health`. On a `conn-server` of 0.5.0 or later, it calls `POST /api/auth/clients/extend` for each session it keeps there that ends within a year. The Gateway session and each held session extend with their own bearers. Each `Conn · ` peer-link session extends by its id.
+
+Only `GET /health` tells an old server, which gets no `extend`. A 409 `operation_forbidden` keeps a T3-carried session dated and renewed. A 404 means the session is gone. A gone held session is settled, and the Node's next read holds a new one. A gone Gateway session is recorded as ended, so the renewal issues a new one. A 400 `invalid_session_ttl` is logged as an error and keeps the session dated.
 
 The hourly renewal still runs. It renews only sessions within 7 days of their end, so it never renews a long-lived one. Revocation is unchanged: a revoke by session id ends a long-lived session at once.
 
