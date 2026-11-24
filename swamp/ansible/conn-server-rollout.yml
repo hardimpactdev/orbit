@@ -25,7 +25,7 @@
     #   Mac: checks 830 s (download 300, unpack 120, verify 120, signer and two requirements 180, the rest 110), then the swap 904 s
     #   (read 20, notice 60, backup folder 20, two renames 120, the rollback's reads 40 and two renames 120, two starts of 262 s:
     #   a 30 s kickstart and a health wait of health_seconds + 52 s), so 1734 s.
-    #   Linux: checks 480 s, then the swap 1360 s (read 20, notice 60, releases folder 20, release folder 20, unpack 120, two starts of
+    #   Linux: checks 500 s, then the swap 1340 s (notice 60, releases folder 20, release folder 20, unpack 120, two starts of
     #   560 s: a 40 s relink, a 100 s restart and 60 health reads of up to 7 s), so 1840 s.
     # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     max_nodes: 4

@@ -33,7 +33,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     // A Linux start: a 40 s relink, a 100 s restart and health_rounds reads of up to 5 s, health_delay apart.
     const linuxStart = 40 + 100 + health_rounds * (5 + health_delay);
     // The checks, then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 240 + 2 * linuxStart);
+    const worst = Math.max(830 + 380 + 2 * macStart, 500 + 220 + 2 * linuxStart);
     assert(node_seconds >= worst, `${node_seconds} < ${worst}`);
     const deadline = Number(/^timeout (\d+) /.exec(workflow.jobs[0].steps[1].task.inputs.run!)![1]);
     assert(deadline >= max_nodes * node_seconds + 100, `${deadline}`);
@@ -79,9 +79,9 @@ for a; do case "$a" in UserKnownHostsFile=*) known=\${a#UserKnownHostsFile=} ;; 
 eval "host=\\\${$(($# - 1))}" && eval "command=\\\${$#}"
 grep -q "^$host " "$known" 2>/dev/null || { echo "Host key verification failed." >&2; exit 255; }
 exec /bin/sh -c "$command"`,
-    // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC.
+    // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC and its arguments follow `serve`.
     systemctl: `#!/bin/sh
-if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
+if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve $FIXTURE_ARGS ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
 echo "$*" >> "$FIXTURE/systemctl"
 v=$(cat "$FIXTURE_LINUX/current/version")
 if grep -qx "$v" "$FIXTURE/exit-systemctl" 2>/dev/null; then echo down > "$FIXTURE/running"; exit 1; fi
@@ -90,6 +90,10 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
 type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
+    // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
+    args?: string; listen?: string;
+    // `down` starts with the running server answering 503 and no version.
+    down?: boolean;
     // The Linux layout: `first` keeps the old release outside a `releases` folder, which does not exist yet, as on a Node set up before
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
@@ -132,7 +136,7 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/version`, "0.5.0");
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/conn-server`, "");
         new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, top] }).outputSync();
-        Deno.writeTextFileSync(`${folder}/running`, "0.4.2");
+        Deno.writeTextFileSync(`${folder}/running`, options.down ? "down" : "0.4.2");
         Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
         if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
@@ -140,7 +144,7 @@ async function rollout(options: Options) {
         if (options.exitOn) Deno.writeTextFileSync(`${folder}/exit-${options.exitOn}`, "0.5.0\n");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
-        const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
+        const server = Deno.serve({ port: 0, hostname: options.listen ?? "127.0.0.1", onListen() {} }, async (request) => {
             if (request.method === "POST") {
                 if (new URL(request.url).pathname !== "/notice") return new Response(null, { status: 500 });
                 noticed.push(await request.json());
@@ -168,7 +172,7 @@ async function rollout(options: Options) {
             // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
             args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
-            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
+            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, FIXTURE_ARGS: options.args ?? "", ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,
                 ...(options.ssh ? { ANSIBLE_SSH_EXECUTABLE: `${folder}/bin/ssh-node`, ANSIBLE_SSH_TRANSFER_METHOD: "piped",
                     ANSIBLE_SSH_ARGS: `-o ControlMaster=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=${folder}/run/known_hosts` } : {}) },
@@ -185,7 +189,7 @@ async function rollout(options: Options) {
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
             releases: listed(`${folder}/linux/releases`),
-            launchctl: read("launchctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
+            launchctl: read("launchctl"), systemctl: read("systemctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             running: Deno.readTextFileSync(`${folder}/running`).trim(),
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
         };
@@ -289,7 +293,9 @@ test("a Linux Node whose /health names another server is not updated, as on a Ma
     for (const platform of ["mac", "linux"] as const) {
         const run = await rollout({ nodes: [{ platform, canary: true }], name: "t3" });
         assert(!run.ok, run.output);
-        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", "conn_server.health_check_failed"]);
+        // A Linux Node reads the running server before any change, so it fails in its checks.
+        const reason = platform === "linux" ? "conn_server.health_unreachable" : "conn_server.health_check_failed";
+        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", reason]);
         assertEquals([run.installed, run.linux], ["0.4.2", "0.4.2"]);
     }
 });
@@ -314,6 +320,36 @@ test("after the canary, the Linux Node moves current to a new release under syst
     assert(dry.ok, dry.output);
     assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }, { node_id: 46, outcome: "checked" }]);
     assertEquals([dry.installed, dry.linux, dry.launchctl], ["0.4.2", "0.4.2", []]);
+});
+
+// 127.0.0.2 is a loopback alias that a read on 127.0.0.1 misses.
+test("a Linux Node reads /health on its unit's --host, in the check, the start and the rollback", async () => {
+    for (const args of ["--host=127.0.0.2 --port=3773 --no-browser", "--host 127.0.0.2 --port=3773"]) {
+        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], args, listen: "127.0.0.2" });
+        assert(run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2" }]);
+        assertEquals(run.linux, "0.5.0");
+    }
+    const broken = await rollout({ nodes: [{ platform: "linux", canary: true }], args: "--host=127.0.0.2", listen: "127.0.0.2", broken: ["0.5.0"] });
+    assertEquals(broken.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
+    assertEquals([broken.linux, broken.running], ["0.4.2", "0.4.2"]);
+});
+
+test("a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1", async () => {
+    for (const args of ["--port=3773 --no-browser", "--host=0.0.0.0", "--host ::"]) {
+        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], args });
+        assert(run.ok, run.output);
+        assertEquals([run.result.nodes[0].outcome, run.linux], ["updated", "0.5.0"]);
+    }
+});
+
+test("a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too", async () => {
+    for (const [options, dryRun] of [[{ args: "--host=127.0.0.2" }, true], [{ args: "--host=127.0.0.2" }, false], [{ down: true }, true], [{ down: true }, false]] as const) {
+        const run = await rollout({ nodes: [{ platform: "linux", canary: true }], dryRun, ...options });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_unreachable", rolled_back: false }]);
+        assertEquals([run.linux, run.releases, run.systemctl], ["0.4.2", ["0.4.2"], []]);
+    }
 });
 
 test("a Node set to notify posts the notice before its restart; with no target set, nothing is sent", async () => {
