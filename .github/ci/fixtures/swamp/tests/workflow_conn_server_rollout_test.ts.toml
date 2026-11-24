@@ -17,10 +17,11 @@ cases = [
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent",
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
   "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
+  "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker",
   "a run with more Nodes than its deadline covers is refused before any Node is reached",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 246
+cost = 264
 # Local run in task 6221: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
 # unit far below the ceiling.
 slices = 4
@@ -60,3 +61,4 @@ inputs = [
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again" = 9
   "a failed notice URL or command fails the Node with its code before any change, and appears in no output" = 13
   "a run with more Nodes than its deadline covers is refused before any Node is reached" = 2
+  "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker" = 18

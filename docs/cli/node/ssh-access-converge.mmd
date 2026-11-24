@@ -26,7 +26,7 @@ sequenceDiagram
   Note over GW: Validate, list the keys
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
-  %%> - the target is an active, managed Linux Node with stored SSH host keys (`operation.kind_unavailable`)
+  %%> - the target is an active, managed Node with stored SSH host keys (`operation.kind_unavailable`)
   %%> - its managed account is not `root`
   %%> - no other SSH access change runs for the target; the Gateway holds one lock per Node (`operation.target_busy`)
   %%> Builds:
@@ -41,7 +41,7 @@ sequenceDiagram
     %%> What it does:
     %%> - starts one Swamp run
     %%> Inputs:
-    %%> - Orbit's keys and their digest, and the managed account
+    %%> - Orbit's keys and their digest, the managed account, and the Node's platform; an intent stored before it named one is `linux`
     %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
     GW-->>CLI: 202 Accepted<br/>task ID
     %%> What you get:
@@ -55,8 +55,16 @@ sequenceDiagram
     %%> - removes, reorders or changes another line, so operator keys Orbit does not manage keep their access
     %%> How:
     %%> - the official `@swamp/cfgmgmt/authorized_key` behavior over SSH, as the managed account
+    %%> - only on a Node whose platform is not `macos`: the behavior reads the account with `getent`, which macOS lacks
     %%> Not included:
     %%> - a Node that does not accept the `swamp` role identity yet; Node bootstrap adds that first key
+    SW->>N: Write the Mac keys<br/>@swamp/ssh exec · dscl
+    %%> What it does:
+    %%> - on a `macos` Node, the same per key: adds each of Orbit's keys to the managed account's `authorized_keys` when its type and body are missing
+    %%> How:
+    %%> - `@swamp/ssh` exec as the managed account; `dscl . -read /Users/<user> NFSHomeDirectory` names the home, a missing `.ssh` folder is made with mode 0700, and the key is appended as one line
+    %%> Never:
+    %%> - removes, reorders or changes another line
     SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · true
     %%> What it does:
     %%> - opens a new SSH session with the `swamp` role identity only, and runs `true`
