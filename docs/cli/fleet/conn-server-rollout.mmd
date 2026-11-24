@@ -25,7 +25,7 @@ sequenceDiagram
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
-  %%> - at most four Nodes, so the 8,100 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 10,540 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:

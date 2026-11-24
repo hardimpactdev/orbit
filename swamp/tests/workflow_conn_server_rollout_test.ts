@@ -20,7 +20,7 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 8100 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 10540 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 
@@ -30,13 +30,28 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     const { health_seconds, health_rounds, health_delay } = plays[1].vars;
     // A Mac start: a 30 s kickstart and the health wait, which starts no round after health_seconds; a round takes up to 52 s.
     const macStart = 30 + health_seconds + 52;
-    // A Linux start: a 40 s relink, a 100 s restart and health_rounds reads of up to 5 s, health_delay apart.
-    const linuxStart = 40 + 100 + health_rounds * (5 + health_delay);
-    // The checks, then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(830 + 380 + 2 * macStart, 500 + 220 + 2 * linuxStart);
-    assert(node_seconds >= worst, `${node_seconds} < ${worst}`);
+    // A Linux start: a 40 s relink, a 100 s restart and the health wait: `retries: health_rounds` reads after the first, so
+    // health_rounds + 1 reads of up to 5 s, health_delay apart.
+    const linuxStart = 40 + 100 + (health_rounds + 1) * 5 + health_rounds * health_delay;
+    // A download may take 900 s, so a slow link (mini's tunnel, about 35 KB/s: 400 s for the zip) gets the asset; get_url's own
+    // timeout stays a 60 s limit per read.
+    const download = (file: string, name: string) => {
+        const task = (parse(Deno.readTextFileSync(`${shipped}/tasks/${file}`)) as
+            { name: string; timeout: number; "ansible.builtin.get_url": { timeout: number } }[]).find((task) => task.name === name)!;
+        assertEquals([task.timeout, task["ansible.builtin.get_url"].timeout], [900, 60]);
+        return task.timeout;
+    };
+    // The checks (the download and the rest), then the swap's other task timeouts and two starts: the new server's and the rollback's.
+    const worst = Math.max(download("conn-server-mac.yml", "Download the zip") + 530 + 380 + 2 * macStart,
+        download("conn-server-linux.yml", "Download the tarball") + 200 + 220 + 2 * linuxStart);
+    // node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
+    assert(node_seconds >= worst + 160, `${node_seconds} < ${worst} + 160`);
     const deadline = Number(/^timeout (\d+) /.exec(workflow.jobs[0].steps[1].task.inputs.run!)![1]);
     assert(deadline >= max_nodes * node_seconds + 100, `${deadline}`);
+    // The Gateway's run budget covers the deadline, the 30 s queue wait and 270 s for the input, the result and the cleanup.
+    const table = Deno.readTextFileSync(new URL("../../apps/gateway/app/Domain/Operations/OperationBudgetTable.php", import.meta.url));
+    const budget = Number(/'fleet\.conn_server_rollout' => (\d+),/.exec(table)![1]);
+    assert(budget >= deadline + 300, `${budget}`);
 });
 
 const shims: Record<string, string> = {
