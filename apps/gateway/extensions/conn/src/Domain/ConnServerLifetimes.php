@@ -19,13 +19,6 @@ interface ConnServerLifetimes
     /** POST /api/auth/clients/extend: the new end of the bearer's own session, or with `$sessionId` of that session. */
     public function extend(string $baseUrl, #[SensitiveParameter] string $bearer, ?string $sessionId = null): CarbonImmutable;
 
-    /**
-     * GET /api/auth/clients: the server's client sessions.
-     *
-     * @return list<array{session_id: string, subject: string, label: string, expires_at: CarbonImmutable}>
-     */
-    public function clients(string $baseUrl, #[SensitiveParameter] string $adminSession): array;
-
     /** POST /api/auth/logout: revokes the bearer's own session. */
     public function revokeSelf(string $baseUrl, #[SensitiveParameter] string $bearer): void;
 }

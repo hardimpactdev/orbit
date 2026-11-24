@@ -49,29 +49,6 @@ final readonly class HttpConnServerLifetimes implements ConnServerLifetimes
         return $this->timestamp($baseUrl, 'extend', $expiresAt);
     }
 
-    public function clients(string $baseUrl, #[SensitiveParameter] string $adminSession): array
-    {
-        $body = $this->json($baseUrl, 'clients', fn (): Response => $this->request($adminSession)->get($this->endpoint($baseUrl, '/api/auth/clients')));
-        $rows = array_is_list($body) ? $body : ($body['clientSessions'] ?? $body['clients'] ?? null);
-        if (! is_array($rows) || ! array_is_list($rows)) {
-            throw T3ServerException::malformed($baseUrl, 'clients');
-        }
-        $clients = [];
-        foreach ($rows as $row) {
-            $id = is_array($row) ? ($row['sessionId'] ?? null) : null;
-            $expiresAt = is_array($row) ? ($row['expiresAt'] ?? null) : null;
-            if (! is_string($id) || ! is_string($expiresAt)) {
-                throw T3ServerException::malformed($baseUrl, 'clients');
-            }
-            $subject = $row['subject'] ?? null;
-            $label = is_array($row['client'] ?? null) ? ($row['client']['label'] ?? null) : null;
-            $clients[] = ['session_id' => $id, 'subject' => is_string($subject) ? $subject : '', 'label' => is_string($label) ? $label : '',
-                'expires_at' => $this->timestamp($baseUrl, 'clients', $expiresAt)];
-        }
-
-        return $clients;
-    }
-
     public function revokeSelf(string $baseUrl, #[SensitiveParameter] string $bearer): void
     {
         // No body: the bearer names the session. A 401 after an earlier success is refused as `conn.session_rejected`.

@@ -13,8 +13,8 @@ use Orbit\Extensions\Conn\Models\ConnPairing;
 
 /**
  * The until-revoked lifetime of the sessions Orbit keeps on a Conn Server ([Session lifetimes](/reference/conn#session-lifetimes)).
- * A server that passes the `/health` gate extends the Gateway session, the held sessions and the Conn peer-link sessions it holds
- * in place, so no device pairs again. A refusal keeps the session dated, and the hourly renewal keeps renewing it.
+ * A server that passes the `/health` gate extends the Gateway session and the held sessions in place, so no device pairs again. A
+ * peer-link session is never extended: its holder keeps the date it stored and drops the link then. A refusal keeps the session dated, and the hourly renewal keeps renewing it.
  */
 final readonly class ConnSessionLifetime
 {
@@ -26,9 +26,6 @@ final readonly class ConnSessionLifetime
 
     /** A session that ends later than this many days from now is long-lived: it is neither renewed nor extended. */
     public const int LongLivedDays = 365;
-
-    /** The MCP client label of a Conn peer link, `Conn · <holder>`. */
-    public const string PeerLabelPrefix = 'Conn · ';
 
     /** The Conn Server 0.5.0 route that revokes the bearer's own session; `/api/auth/clients/revoke` refuses the caller's own. */
     public const string SelfRevokeRoute = '/api/auth/logout';
@@ -68,18 +65,6 @@ final readonly class ConnSessionLifetime
                 // Nothing of it is left to renew or revoke; the Node's next read holds a new session.
                 ConnPairing::query()->whereKey($pairing->id)->whereNull('withdrawn_at')->whereNull('revoked_at')
                     ->update(['session' => null, 'revoked_at' => Carbon::now()]);
-            }
-        }
-        try {
-            $clients = $this->server->clients($environment->url, $environment->admin_session);
-        } catch (T3ServerException $error) {
-            Log::warning('conn.session_extend_failed', ['environment_id' => $environment->environment_id, 'session' => 'peer', 'error_code' => $error->errorCode]);
-
-            return;
-        }
-        foreach ($clients as $client) {
-            if ($client['subject'] === 'mcp-client' && str_starts_with($client['label'], self::PeerLabelPrefix) && $client['expires_at']->lt($longLived)) {
-                $this->extend($environment, $environment->admin_session, $client['session_id'], 'peer');
             }
         }
     }

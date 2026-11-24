@@ -235,7 +235,8 @@ sequenceDiagram
       %%> When:
       %%> - after the held sessions, while the Gateway session has not ended; `GET /health` names `conn-server` 0.5.0 or later
       %%> What it does:
-      %%> - `POST /api/auth/clients/extend` with `sessionTtl: "until-revoked"` for the Gateway session and each held session that ends within a year, with their own bearers, and for each `Conn · ` peer-link session by its id
+      %%> - `POST /api/auth/clients/extend` with `sessionTtl: "until-revoked"` for the Gateway session and each held session that ends within a year, with their own bearers
+      %%> - never for a peer-link session: its holder keeps the date it stored, so an existing dated link must be linked again
       %%> - stores each new end; a 409 keeps a T3-carried session dated, and the hourly renewal keeps renewing it
       %%> - a 404 means the session is gone: a held one is settled and held anew at the Node's next read, and the Gateway session is recorded as ended, so its renewal issues a new one
       %%> - a 400 `invalid_session_ttl` is logged as an error; the session stays dated

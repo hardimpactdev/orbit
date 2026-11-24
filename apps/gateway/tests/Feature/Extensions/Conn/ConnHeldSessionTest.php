@@ -1001,10 +1001,6 @@ function connServer(string $version, int $extend = 200, string $reason = '', int
             '/api/auth/clients/extend' => $extend === 200
                 ? Http::response(['sessionId' => $request->data()['sessionId'] ?? 'own', 'expiresAt' => now()->addDays(3650)->toJSON()])
                 : Http::response(['code' => $reason, 'reason' => $reason], $extend),
-            '/api/auth/clients' => Http::response(['clientSessions' => [
-                ['sessionId' => 'peer-mini', 'subject' => 'mcp-client', 'client' => ['label' => 'Conn · mini'], 'expiresAt' => now()->addDays(30)->toJSON()],
-                ['sessionId' => 'device-desk', 'subject' => 'one-time-token', 'client' => ['label' => 'desk'], 'expiresAt' => now()->addDays(30)->toJSON()],
-            ]]),
             ConnSessionLifetime::SelfRevokeRoute => $logout === 200 ? Http::response(['sessionId' => 'gateway', 'revoked' => true]) : Http::response(['code' => 'unauthorized'], $logout),
             default => Http::response([], 404),
         };
@@ -1057,12 +1053,13 @@ describe('until-revoked lifetimes, with the hourly tick disabled', function (): 
         expect(ConnHeldSessions::due(CarbonImmutable::now())->pluck('id')->all())->toBe([$this->held->id, $this->kept->id]);
     });
 
-    it('extends the admin, held and Conn peer-link sessions in place at a wake on a 0.5.0 server', function (): void {
+    it('extends the admin and held sessions in place at a wake on a 0.5.0 server, and never a peer-link session', function (): void {
         $seen = connServer('0.5.0');
 
         app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
 
-        expect(extends_($seen))->toBe([null, null, null, 'peer-mini'])
+        expect(extends_($seen))->toBe([null, null, null])
+            ->and(collect($seen)->pluck('path')->contains('/api/auth/clients'))->toBeFalse()
             ->and($this->environment->fresh()->admin_session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue()
             ->and($this->held->fresh()->session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue()
             ->and($this->kept->fresh()->session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue();
@@ -1078,7 +1075,7 @@ describe('until-revoked lifetimes, with the hourly tick disabled', function (): 
 
         app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
 
-        expect(extends_($seen))->toBe([null, null, null, 'peer-mini'])
+        expect(extends_($seen))->toBe([null, null, null])
             ->and($this->environment->fresh()->admin_session_expires_at->getTimestamp())->toBe(now()->addDays(20)->getTimestamp())
             ->and($this->held->fresh()->session_expires_at->getTimestamp())->toBe(now()->addDays(30)->getTimestamp());
         $this->travel(24)->days();
