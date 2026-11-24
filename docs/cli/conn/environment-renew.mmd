@@ -28,6 +28,7 @@ sequenceDiagram
   SW->>N: Issue the Gateway session<br/>t3 auth session issue
   %%> Command, over the Node's SSH account, then in the container as `agent`:
   %%> - `t3 auth session issue --label "Orbit Gateway" --json`, into a 0600 file of the SSH account
+  %%> - the Conn Server (`conn-server`) adds `--ttl 3650d`, its about 10-year cap from 0.2.0 on, so its session is not renewed again; the TypeScript T3 server keeps its 30-day session
   %%> Refuses first:
   %%> - a stopped container, `conn.environment_stopped`; no container, `conn.environment_missing`
   %%> Why no old session:

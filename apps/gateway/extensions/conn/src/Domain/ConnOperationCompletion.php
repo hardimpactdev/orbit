@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\Push\ConnPushDevices;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -19,14 +20,21 @@ final readonly class ConnOperationCompletion
         if ($operation->kind === 'conn.pairing_revoke') {
             app(ConnHeldSessions::class)->revoked($operation, $outcome);
         }
-        if ($outcome->status !== OperationStatus::Succeeded) {
+        if ($operation->kind === 'conn.gateway_sessions_revoke') {
+            if ($outcome->status === OperationStatus::Succeeded) {
+                ConnEnvironment::query()->whereKey($operation->target_id)
+                    ->where('cleanup_version', $operation->input['cleanup_version'])
+                    ->update(['cleanup_completed_version' => $operation->input['cleanup_version']]);
+            }
+            // The cleanup held the server; an interrupted one runs again, and a revoke it kept waiting starts (/reference/conn#owed-work).
+            if (in_array($outcome->status, [OperationStatus::Succeeded, OperationStatus::Interrupted], true)) {
+                $environment = $operation->target_id;
+                DB::afterCommit(static fn () => app(ConnOwedWork::class)->advance($environment));
+            }
+
             return;
         }
-        if ($operation->kind === 'conn.gateway_sessions_revoke') {
-            ConnEnvironment::query()->whereKey($operation->target_id)
-                ->where('cleanup_version', $operation->input['cleanup_version'])
-                ->update(['cleanup_completed_version' => $operation->input['cleanup_version']]);
-
+        if ($outcome->status !== OperationStatus::Succeeded) {
             return;
         }
         ConnPairing::query()->whereIn('id', $operation->input['pairing_ids'])

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\ConnEnvironmentRemoval;
 use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
 
 /**
  * Unregisters a host Conn T3 server from the Gateway registry without contacting the T3 server.
@@ -67,6 +68,9 @@ final readonly class UnregisterConnEnvironmentAction
                 );
             }
 
+            // The server keeps the Gateway's admin session until it revokes it; the owed-work reconcile does once the server can.
+            ConnOwedGatewayRevoke::query()->create(['environment_id' => $environment->environment_id, 'url' => $environment->url,
+                'admin_session' => $environment->admin_session, 'admin_session_expires_at' => $environment->admin_session_expires_at]);
             $this->removal->remove([$environment]);
 
             return true;

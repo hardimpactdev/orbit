@@ -14,8 +14,10 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
 
 /**
  * Registers a T3 server. The Gateway checks that the URL serves the named environment and that T3 accepts
@@ -67,6 +69,9 @@ final readonly class RegisterConnEnvironmentAction
                 'server_version' => $descriptor->serverVersion, 'admin_session' => $session->token,
                 'admin_session_expires_at' => $session->expiresAt, 'registered_at' => $now,
                 'cleanup_version' => $environment->cleanup_version + 1])->save();
+            // A host server that registers again with the bearer it kept uses that session again, so the Gateway no longer owes its revoke.
+            ConnOwedGatewayRevoke::query()->where(fn ($owed) => $owed->where('environment_id', $data->environmentId)->orWhere('url', $data->url))->get()
+                ->filter(fn (ConnOwedGatewayRevoke $owed): bool => hash_equals($owed->admin_session, $session->token))->each->delete();
 
             DB::afterCommit(function () use ($environment, $node): void {
                 try {
@@ -74,6 +79,8 @@ final readonly class RegisterConnEnvironmentAction
                 } catch (ResourceOperationException $error) {
                     Log::warning('conn.cleanup_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
                 }
+                // The host server's start: a server that takes until-revoked keeps the session (/reference/conn#session-lifetimes).
+                app(ConnSessionLifetime::class)->migrate($environment);
             });
 
             return $environment;
