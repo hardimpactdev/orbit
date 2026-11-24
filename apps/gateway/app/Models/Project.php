@@ -52,6 +52,7 @@ use SensitiveParameter;
  * @property-read Collection<int, Task> $tasks
  * @property-read ProjectEnvironmentTemplate|null $environmentTemplate
  * @property-read Instance|null $defaultInstance
+ * @property-read int $instances_count Set only by withCount('instances').
  */
 final class Project extends Model
 {

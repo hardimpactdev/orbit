@@ -32,7 +32,7 @@ final class ProjectSummaryData extends Data
             nodeName: $project->defaultInstance?->node?->name,
             icon: null,
             color: null,
-            instanceCount: (int) $project->getAttribute('instances_count'),
+            instanceCount: $project->instances_count,
         );
     }
 }
