@@ -150,6 +150,16 @@ it('transports explicit reboot holds and clearing while omitting an unspecified 
     }
 });
 
+it('transports primary_agent designation while omitting it when unspecified', function (): void {
+    expect(new UpdateNodeRequest(nodeId: 2)->body()->all())->toBe([]);
+    foreach ([true, false] as $primary) {
+        $request = new UpdateNodeRequest(nodeId: 2, primaryAgent: $primary);
+        expect($request->body()->all())->toBe(['primary_agent' => $primary]);
+        $node = NodeResponse::fromGatewayData(['id' => 2, 'primary_agent' => $primary], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        expect($node->primaryAgent)->toBe($primary)->and($node->toArray()['primary_agent'])->toBe($primary);
+    }
+});
+
 it('reads a Node body without image_refresh_hold and returns none', function (): void {
     expect(NodeResponse::fromGatewayData(['id' => 12], '0198e15c-bf97-7c23-8f1f-61b8fe67a844')->toArray())->not->toHaveKey('image_refresh_hold')
         ->and(NodeResponse::fromGatewayData(['id' => 12, 'image_refresh_hold' => true], '0198e15c-bf97-7c23-8f1f-61b8fe67a844')->toArray())->not->toHaveKey('image_refresh_hold');

@@ -73,7 +73,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation);
 
         /** Failed or unfinished first-role attempts may have rolled back the peer, even with multiple assignments. */
-        if ($node->roles()->where('status', LifecycleStatus::Active)->exists()) {
+        if ($node->hostRoles()->where('status', LifecycleStatus::Active)->exists()) {
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
             $completion($observation);
 
@@ -217,7 +217,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
         $wireguardIp = $node->wireguard_ip;
 
-        if ($node->roles()->doesntExist()) {
+        if ($node->hostRoles()->doesntExist()) {
             try {
                 $this->firewall->convergeBase($node, $identity->managedUser);
             } catch (FirewallOperationException $exception) {
@@ -313,7 +313,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     /** @return array{0: string, 1: int} */
     private function accessTarget(Node $node): array
     {
-        if ($node->roles()->doesntExist()) {
+        if ($node->hostRoles()->doesntExist()) {
             return [$node->public_ssh_host, $node->public_ssh_port];
         }
 

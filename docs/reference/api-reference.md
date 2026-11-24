@@ -60,6 +60,10 @@ Manual schemas can lag behind runtime validators: for example, `agent:facts` cur
 
 For example, `DELETE /api/v1/conn/environments/{environment}` generates the bodyless destructive `conn-environment-unregister` tool returning 200 `{environment_id, removed}` and documenting `node_access.required` (403), `conn.environment_is_instance` (409), and `operation.target_busy` (409) ([Unregister a host server](/reference/conn#unregister-a-host-server)).
 
+`GET /api/v1/conn/environments` and `conn-environment-list` return `roles` (`string[]`) and `is_primary_agent` (`boolean`) on every entry, described in [Registration](/reference/conn#registration). Their types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
+
+`GET /api/v1/projects` and `project-list` return each Project as `allOf` the `Project` schema and the `ProjectSummary` schema (`repository`, `node_name`, `icon`, `color`, `instance_count`), described in [Project summary](/reference/projects#project-summary). `bin/docs-openapi` maps the action to both schemas by hand, because the response merges two data classes.
+
 ## Typed client contract rules
 
 `bin/docs-openapi` generates exact request, response, error, and authentication schemas for every route under `/api/v1/conn` and the six operations Conn calls outside it (`operation-show`, `instance-wake`, `realtime-show`, `realtime-auth`, `task-insights`, and `project-list`).

@@ -112,6 +112,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
             RoleName::CiRunner => $this->ciRunner ?? app(CiRunnerRoleBaseline::class),
             RoleName::Ingress => $this->ingress ?? app(IngressRoleBaseline::class),
+            RoleName::Agent => throw new ResourceOperationException('operation.kind_unavailable', 'Agent role needs no host convergence.', 503),
         };
     }
 

@@ -24,6 +24,7 @@ final class NodeRoleServiceCatalog
             RoleName::CiRunner => ['incus'],
             RoleName::WebSocket => ['caddy', 'orbit-websocket'],
             RoleName::Analytics => ['caddy', 'docker'],
+            RoleName::Agent => [],
         };
     }
 }

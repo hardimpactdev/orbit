@@ -71,7 +71,7 @@ class AddNodeRoleCommand extends NodeCommand
         }
 
         if ($role === null) {
-            $roles = ['gateway', 'ingress', 'app-dev', 'app-prod', 'database', 'analytics', 'metrics', 'websocket', 'ci-runner', 'swamp'];
+            $roles = ['gateway', 'ingress', 'app-dev', 'app-prod', 'database', 'analytics', 'metrics', 'websocket', 'ci-runner', 'swamp', 'agent'];
             $role = (string) $this->commandPrompts()->selectEntity('Role', ['Name'], array_combine(
                 $roles, array_map(static fn (string $name): array => [$name], $roles),
             ));

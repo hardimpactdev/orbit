@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
 use App\Data\Operations\OperationData;
+use App\Domain\Nodes\PrimaryAgentNode;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -26,23 +27,27 @@ use Symfony\Component\HttpFoundation\Response;
 final class ConnEnvironmentsController extends Controller
 {
     #[RequiresNodeAccess(ServingNode::Collection)]
-    public function index(Request $request, ConnServerAccess $access): JsonResponse
+    public function index(Request $request, ConnServerAccess $access, PrimaryAgentNode $primaryAgent): JsonResponse
     {
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
 
         $environments = $access->visible($caller, ConnEnvironment::query())
-            ->with(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes'])
+            ->with(['node.roles', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes'])
             ->orderBy('label')
             ->orderBy('id')
             ->get();
         // A reserved clone's server names its reservation until the finalize (/reference/conn#reserve-a-clone): one read for the list.
         $reservations = ConnReservations::open(array_values($environments->pluck('instance_id')->filter()->all()));
+        $primaryAgentNodeId = $primaryAgent->resolveId();
 
         return response()->json([
             'data' => $environments
-                ->map(static fn (ConnEnvironment $environment): array => ConnEnvironmentData::fromModel($environment,
-                    $environment->instance_id === null ? null : ($reservations[$environment->instance_id] ?? null))->toArray())
+                ->map(static fn (ConnEnvironment $environment): array => ConnEnvironmentData::fromModel(
+                    $environment,
+                    $environment->instance_id === null ? null : ($reservations[$environment->instance_id] ?? null),
+                    $primaryAgentNodeId,
+                )->toArray())
                 ->values()
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
@@ -75,13 +80,13 @@ final class ConnEnvironmentsController extends Controller
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
-    public function store(RegisterConnEnvironmentRequest $request, RegisterConnEnvironmentAction $action): JsonResponse
+    public function store(RegisterConnEnvironmentRequest $request, RegisterConnEnvironmentAction $action, PrimaryAgentNode $primaryAgent): JsonResponse
     {
         $node = $request->user();
         assert($node instanceof Node, description: 'Authenticated peer must be a Node.');
 
         return response()->json([
-            'data' => ConnEnvironmentData::fromModel($action->execute($node, $request->payload()))->toArray(),
+            'data' => ConnEnvironmentData::fromModel($action->execute($node, $request->payload()), primaryAgentNodeId: $primaryAgent->resolveId())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

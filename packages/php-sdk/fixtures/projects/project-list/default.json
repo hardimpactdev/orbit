@@ -31,7 +31,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/acme/site",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             }
         ],
         "meta": {

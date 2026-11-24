@@ -15,6 +15,9 @@ describe('generated Conn environment contract', function (): void {
             'instance_name' => 'string', 'node_name' => 'string', 'instance_url' => 'string'] as $field => $type) {
             expect($schema['properties'][$field]['type'])->toBe([$type, 'null']);
         }
+        expect($schema['properties']['roles']['type'])->toBe('array')
+            ->and($schema['properties']['roles']['items']['type'])->toBe('string')
+            ->and($schema['properties']['is_primary_agent']['type'])->toBe('boolean');
     });
 
     it('generates the MCP list tool from the same endpoint with the Orbit facts description', function (): void {
@@ -25,6 +28,6 @@ describe('generated Conn environment contract', function (): void {
         expect($tool['method'])->toBe('GET')
             ->and($tool['path'])->toBe('/api/v1/conn/environments')
             ->and($tool['extension'])->toBe('conn')
-            ->and($tool['description'])->toContain('project_id', 'project_name', 'project_slug', 'instance_name', 'node_name', 'instance_url', 'stock');
+            ->and($tool['description'])->toContain('project_id', 'project_name', 'project_slug', 'instance_name', 'node_name', 'instance_url', 'roles', 'is_primary_agent', 'stock');
     });
 });

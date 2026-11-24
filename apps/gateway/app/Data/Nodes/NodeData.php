@@ -48,6 +48,7 @@ final class NodeData extends Data
         public ?string $clusterName = null,
         public array $assignments = [],
         public bool $rebootHold = false,
+        public bool $primaryAgent = false,
     ) {}
 
     /**
@@ -75,6 +76,7 @@ final class NodeData extends Data
         return new self(
             id: $node->id,
             rebootHold: $node->reboot_hold,
+            primaryAgent: $node->primary_agent,
             clusterId: $node->cluster_id,
             name: $node->name,
             status: $node->status->value,

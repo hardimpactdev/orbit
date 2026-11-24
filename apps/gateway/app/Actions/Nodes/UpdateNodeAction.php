@@ -47,12 +47,12 @@ final readonly class UpdateNodeAction
      * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
     public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null,
-        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null): UpdateNodeResult
+        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null, ?bool $primaryAgent = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold): UpdateNodeResult {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $primaryAgent): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $primaryAgent);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -62,12 +62,13 @@ final readonly class UpdateNodeAction
     }
 
     private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId,
-        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): UpdateNodeResult
+        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $primaryAgent): UpdateNodeResult
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, &$written): Node|Operation {
+        $demotedIds = [];
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $primaryAgent, &$written, &$demotedIds): Node|Operation {
             $node->refresh();
-            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold);
+            ['written' => $written, 'demotedIds' => $demotedIds] = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $primaryAgent);
             $written = $this->recordCi($node, $settings) || $written;
             if ($settings->isEmpty()) {
                 return $node;
@@ -97,21 +98,30 @@ final readonly class UpdateNodeAction
             ], 'operator', $requestId, expectedWriter: 'direct');
         });
 
+        $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
         if ($written) {
             $node->refresh()->load('roles');
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            $broadcaster->broadcast(
                 RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray(),
             );
+        }
+        if ($demotedIds !== []) {
+            foreach (Node::query()->whereIn('id', $demotedIds)->with('roles')->get() as $demoted) {
+                $broadcaster->broadcast(RecordEventType::NodeUpdated, $demoted->id, NodeData::fromModel($demoted)->toArray());
+            }
         }
 
         return $result instanceof Node ? new UpdateNodeResult($node->load('roles'), unchanged: ! $written) : new UpdateNodeResult($result);
     }
 
     /**
-     * Saves the name, platform, LAN address and holds, the registry facts that need no run, and reports whether one changed. The LAN
-     * address selects where Orbit renders LAN traffic, the hub endpoint included (ADR 0251); each render picks it up.
+     * Saves the name, platform, LAN address, holds and primary agent designation, the registry facts that need no run,
+     * and reports whether one changed. The LAN address selects where Orbit renders LAN traffic, the hub endpoint
+     * included (ADR 0251); each render picks it up.
+     *
+     * @return array{written: bool, demotedIds: list<int>}
      */
-    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): bool
+    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $primaryAgent): array
     {
         // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
         if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
@@ -119,6 +129,9 @@ final readonly class UpdateNodeAction
         }
         if ($name !== null && $name !== $node->name && Node::query()->where('name', $name)->whereKeyNot($node->id)->exists()) {
             throw new ResourceOperationException('validation.failed', "The name [{$name}] is already registered.", details: ['field' => 'name']);
+        }
+        if ($primaryAgent === true && ! $this->hasActiveRole($node, RoleName::Agent)) {
+            throw new ResourceOperationException('node.agent_role_required', 'Only a Node with an active agent role can be the primary agent.', 422);
         }
         if ($name !== null) {
             $node->name = $name;
@@ -135,12 +148,24 @@ final readonly class UpdateNodeAction
         if ($rebootHold !== null) {
             $node->reboot_hold = $rebootHold;
         }
+        $demotedIds = [];
+        if ($primaryAgent !== null) {
+            if ($primaryAgent) {
+                foreach (Node::query()->whereKeyNot($node->id)->where('primary_agent', true)->get(['id']) as $previous) {
+                    $demotedIds[] = $previous->id;
+                }
+                if ($demotedIds !== []) {
+                    Node::query()->whereIn('id', $demotedIds)->update(['primary_agent' => false]);
+                }
+            }
+            $node->primary_agent = $primaryAgent;
+        }
         if (! $node->isDirty()) {
-            return false;
+            return ['written' => $demotedIds !== [], 'demotedIds' => $demotedIds];
         }
         $node->save();
 
-        return true;
+        return ['written' => true, 'demotedIds' => $demotedIds];
     }
 
     /**

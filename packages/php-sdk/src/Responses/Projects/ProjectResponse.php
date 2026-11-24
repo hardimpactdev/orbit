@@ -41,6 +41,12 @@ final readonly class ProjectResponse
          * @var array{source: string, agents_md_version: int|null, skills: list<string>}|null
          */
         public ?array $agentInstructions = null,
+        /**
+         * The summary a Conn client reads from the Project list (docs/reference/projects.md#project-summary); null from a show, create or update, or a Gateway that sends none.
+         *
+         * @var array{repository: string, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
+         */
+        public ?array $summary = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -75,7 +81,27 @@ final readonly class ProjectResponse
             defaultAutoDeploy: is_bool($data['default_auto_deploy'] ?? null) ? $data['default_auto_deploy'] : null,
             containerServer: is_string($data['container_server'] ?? null) ? $data['container_server'] : null,
             agentInstructions: self::agentInstructions($data['agent_instructions'] ?? null),
+            summary: self::summary($data),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{repository: string, node_name: string|null, icon: string|null, color: string|null, instance_count: int}|null
+     */
+    private static function summary(array $data): ?array
+    {
+        if (! is_int($data['instance_count'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'repository' => is_string($data['repository'] ?? null) ? $data['repository'] : '',
+            'node_name' => is_string($data['node_name'] ?? null) ? $data['node_name'] : null,
+            'icon' => is_string($data['icon'] ?? null) ? $data['icon'] : null,
+            'color' => is_string($data['color'] ?? null) ? $data['color'] : null,
+            'instance_count' => $data['instance_count'],
+        ];
     }
 
     /** @return array{source: string, agents_md_version: int|null, skills: list<string>}|null */
@@ -125,6 +151,7 @@ final readonly class ProjectResponse
             ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
             ...($this->containerServer === null ? [] : ['container_server' => $this->containerServer]),
             ...($this->agentInstructions === null ? [] : ['agent_instructions' => $this->agentInstructions]),
+            ...($this->summary ?? []),
             'request_id' => $this->requestId,
         ];
     }

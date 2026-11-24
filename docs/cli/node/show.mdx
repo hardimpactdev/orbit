@@ -52,7 +52,7 @@ Access follows the node family's [shared authority rule](/cli/node#authority).
 | `Access to`, `Accessible by` | The Nodes this Node has an access grant to, and the Nodes that have one to it, each as name and ID. |
 | `Failure` | The Node's failed step and error code, only when either is recorded. |
 
-Roles use the same shared projection as [`node:list`](/cli/node/list) and [`node:role:list`](/cli/node/role-list): identical `role`, `status`, `failed_step` and `error_code` values for each assignment. All assignment states appear: `active`, `provisioning`, `failed` and `removing`; human output may compact them. JSON also includes the Node's stored `settings`.
+Roles use the same shared projection as [`node:list`](/cli/node/list) and [`node:role:list`](/cli/node/role-list): identical `role`, `status`, `failed_step` and `error_code` values for each assignment. All assignment states appear: `active`, `provisioning`, `failed` and `removing`; human output may compact them. JSON also includes the Node's stored `settings` and `primary_agent`, which is `true` on the Node explicitly designated as the [primary agent](/cli/node/update#record-fields).
 
 ### Agent state
 

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Data;
 
+use App\Actions\Nodes\ListNodeRolesAction;
+use App\Domain\Shared\LifecycleStatus;
+use App\Models\NodeRole;
 use Carbon\CarbonImmutable;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -13,6 +16,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ConnEnvironmentData extends Data
 {
+    /** @param list<string> $roles */
     public function __construct(
         public string $environmentId,
         public string $label,
@@ -35,12 +39,22 @@ final class ConnEnvironmentData extends Data
         public ?string $renewalErrorCode,
         public ?string $renewalCheckedAt,
         public ?string $reservationId = null,
+        public array $roles = [],
+        public bool $isPrimaryAgent = false,
     ) {}
 
     /** `$reservationId`: the server's open reservation, which a list reads for all its rows at once. */
-    public static function fromModel(ConnEnvironment $environment, ?string $reservationId = null): self
+    public static function fromModel(ConnEnvironment $environment, ?string $reservationId = null, ?int $primaryAgentNodeId = null): self
     {
-        $environment->loadMissing(['node', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
+        $environment->loadMissing(['node.roles', 'instance.runtime', 'instance.project', 'instance.node', 'instance.routes']);
+
+        $roles = $environment->node === null ? [] : array_values(
+            app(ListNodeRolesAction::class)
+                ->execute($environment->node)
+                ->filter(static fn (NodeRole $assignment): bool => $assignment->status === LifecycleStatus::Active)
+                ->map(static fn (NodeRole $assignment): string => $assignment->role->value)
+                ->all(),
+        );
 
         return new self(
             environmentId: $environment->environment_id,
@@ -67,6 +81,12 @@ final class ConnEnvironmentData extends Data
             renewalCheckedAt: $environment->renewal_checked_at?->toIso8601String(),
             // A reserved clone's server, until its finalize: a device hides it from its threads (/reference/conn#reserve-a-clone).
             reservationId: $reservationId,
+            roles: $roles,
+            // Only a host (non-Instance) server registered by the primary agent Node is the primary agent entry point.
+            isPrimaryAgent: $environment->instance_id === null
+                && $environment->node_id !== null
+                && $primaryAgentNodeId !== null
+                && $environment->node_id === $primaryAgentNodeId,
         );
     }
 }

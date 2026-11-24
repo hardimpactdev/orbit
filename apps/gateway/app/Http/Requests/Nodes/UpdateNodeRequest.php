@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Nodes;
 
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
 use Illuminate\Foundation\Http\FormRequest;
@@ -14,14 +16,22 @@ use Illuminate\Validation\ValidationException;
 use stdClass;
 use UnexpectedValueException;
 
-/** One closed object: a new name, a platform, the LAN address, reboot hold, the apps folder, nested-fleet hosting, the Instance host opt-in, or a CI Node's CI places; at least one. */
+/** One closed object: a new name, a platform, the LAN address, reboot hold, primary agent flag, the apps folder, nested-fleet hosting, the Instance host opt-in, or a CI Node's CI places; at least one. */
 final class UpdateNodeRequest extends FormRequest
 {
-    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'apps', 'nested_fleet', 'instance_host', 'ci'];
+    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'primary_agent', 'apps', 'nested_fleet', 'instance_host', 'ci'];
 
-    public function authorize(): bool
+    /** The primary agent is one fleet-wide designation, so changing it takes Gateway access, not only access to the target Node. */
+    public function authorize(NodeAccessAuthorizer $access): bool
     {
-        return true;
+        $caller = $this->user();
+
+        return ! $this->json()->has('primary_agent') || ($caller instanceof Node && $access->hasGatewayAuthority($caller));
+    }
+
+    protected function failedAuthorization(): never
+    {
+        throw new ResourceOperationException('node_access.required', 'Gateway access is required to change the primary agent.', 403);
     }
 
     /** @return array<string, list<mixed>> */
@@ -34,6 +44,7 @@ final class UpdateNodeRequest extends FormRequest
             'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos', 'ipados'])],
             'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'reboot_hold' => ['sometimes', 'boolean:strict'],
+            'primary_agent' => ['sometimes', 'boolean:strict'],
             'nested_fleet' => ['sometimes', 'boolean:strict'],
             'instance_host' => ['sometimes', 'boolean:strict'],
             'apps' => ['sometimes', 'nullable', 'array:path'],
@@ -57,7 +68,7 @@ final class UpdateNodeRequest extends FormRequest
         $patch = $this->settings();
 
         return [
-            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold'])),
+            ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold', 'primary_agent'])),
             ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
             ...($patch->hasNestedFleet ? ['nested_fleet' => $patch->nestedFleet] : []),
             ...($patch->hasInstanceHost ? ['instance_host' => $patch->instanceHost] : []),
@@ -99,6 +110,13 @@ final class UpdateNodeRequest extends FormRequest
         return is_bool($hold) ? $hold : null;
     }
 
+    public function primaryAgent(): ?bool
+    {
+        $primary = $this->validated()['primary_agent'] ?? null;
+
+        return is_bool($primary) ? $primary : null;
+    }
+
     /** The apps, nested_fleet, instance_host and ci members; the settings parser owns their shape and the `node.settings_*` codes. */
     public function settings(): NodeSettingsPatch
     {
@@ -122,7 +140,7 @@ final class UpdateNodeRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
         if ($body === []) {
-            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, apps, nested_fleet, instance_host, or ci.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, primary_agent, apps, nested_fleet, instance_host, or ci.']]);
         }
 
         return $body;

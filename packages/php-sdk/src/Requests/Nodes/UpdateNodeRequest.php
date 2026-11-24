@@ -34,6 +34,7 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         private readonly ?bool $rebootHold = null,
         private readonly bool $hasCi = false,
         private readonly ?CiPlacesInput $ci = null,
+        private readonly ?bool $primaryAgent = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -79,6 +80,10 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
 
         if ($this->rebootHold !== null) {
             $body['reboot_hold'] = $this->rebootHold;
+        }
+
+        if ($this->primaryAgent !== null) {
+            $body['primary_agent'] = $this->primaryAgent;
         }
 
         if ($this->hasApps) {

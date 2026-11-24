@@ -50,6 +50,6 @@ final readonly class NodeRoleRemoveInput
             'runtime' => $this->runtime->removal($node, $role, $purgeData),
             'caddy' => in_array($role, [RoleName::AppProd, RoleName::Ingress], true) ? CaddyPublicationPlan::forNode($node) : null,
             'firewall' => $role === RoleName::Database ? null : $this->firewall->remove($node, $role),
-            'public_ssh' => $node->roles()->whereKeyNot($assignment->id)->doesntExist() ? $this->firewall->publicSsh($node) : null];
+            'public_ssh' => $node->hostRoles()->whereKeyNot($assignment->id)->doesntExist() ? $this->firewall->publicSsh($node) : null];
     }
 }
