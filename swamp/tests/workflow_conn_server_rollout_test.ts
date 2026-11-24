@@ -33,7 +33,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     // A Linux start: a 40 s relink, a 100 s restart and health_rounds reads of up to 5 s, health_delay apart.
     const linuxStart = 40 + 100 + health_rounds * (5 + health_delay);
     // The checks, then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 220 + 2 * linuxStart);
+    const worst = Math.max(830 + 380 + 2 * macStart, 480 + 240 + 2 * linuxStart);
     assert(node_seconds >= worst, `${node_seconds} < ${worst}`);
     const deadline = Number(/^timeout (\d+) /.exec(workflow.jobs[0].steps[1].task.inputs.run!)![1]);
     assert(deadline >= max_nodes * node_seconds + 100, `${deadline}`);
@@ -166,7 +166,7 @@ async function rollout(options: Options) {
         }));
         const done = await new Deno.Command(playbook, {
             // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
-            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false",
+            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
             env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,

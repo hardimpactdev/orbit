@@ -83,6 +83,12 @@
       when: server.notify_before_restart
       ansible.builtin.include_tasks: conn-server-notice.yml
 
+    # A Node set up before this rollout has no `releases` folder yet. Its failure is its own step, never backup_exists.
+    - name: Make the releases folder
+      ansible.builtin.file: { path: "{{ linux_release | dirname }}", state: directory, owner: "{{ linux_releases_owner }}", mode: "0755" }
+      become: true
+      timeout: 20
+
     # A new release folder per run: mkdir without -p refuses one that exists. The old release stays as the backup.
     - name: Make the release folder
       ansible.builtin.command: { argv: [mkdir, -m, "0755", "{{ linux_release }}"] }
