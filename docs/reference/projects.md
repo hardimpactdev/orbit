@@ -107,7 +107,7 @@ API responses, the SDK, MCP tools, and CLI JSON expose these fields:
 | Field | Meaning |
 | --- | --- |
 | `repository` | The [repository identity](#repository-identity), such as `github.com/acme/site`. It holds no credentials. |
-| `node_name` | The Node of the Project's `default` Instance, or `null` without one. |
+| `node_name` | The Node of the Project's `default` Instance when the caller has Gateway authority or access to that Node; otherwise `null`. It never names a hidden Node. |
 | `icon`, `color` | Always `null`: Orbit stores no Project icon or color. |
 | `instance_count` | The Project's Instances on Nodes the caller can reach; every Instance for the Gateway. |
 

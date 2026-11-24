@@ -18,7 +18,7 @@ final readonly class ListProjectsAction
     /** @return Collection<int, Project> */
     public function handle(Node $consumer): Collection
     {
-        $nodeIds = $this->access->hasGatewayAuthority($consumer) ? null : $this->access->accessibleNodeIds($consumer);
+        $nodeIds = $this->reachableNodeIds($consumer);
         $reachable = $nodeIds === null ? null : static fn ($instances) => $instances->whereIn('node_id', $nodeIds);
 
         return Project::query()
@@ -30,5 +30,11 @@ final readonly class ListProjectsAction
             ->orderBy('name')
             ->orderBy('id')
             ->get();
+    }
+
+    /** @return list<int>|null The Nodes whose Instances the consumer can reach; null for Gateway authority, which reaches every Node. */
+    public function reachableNodeIds(Node $consumer): ?array
+    {
+        return $this->access->hasGatewayAuthority($consumer) ? null : $this->access->accessibleNodeIds($consumer);
     }
 }

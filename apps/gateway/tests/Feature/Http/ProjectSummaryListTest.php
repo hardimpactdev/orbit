@@ -83,7 +83,7 @@ it('lets a Node with access to another Node read the Project summary fields', fu
         ->and($data[0])->toHaveKeys(['code', 'type', 'source_access', 'container_server']);
 });
 
-it('counts only the Instances on Nodes the caller can reach and names no Node for a Project without a default', function (): void {
+it('counts only the Instances on Nodes the caller can reach and names no hidden or missing default Node', function (): void {
     $shop = summaryProject('shop', 'https://github.com/acme/shop.git');
     summaryInstance($shop, $this->vps, 'default');
     summaryInstance($shop, $this->mini, 'feat-a');
@@ -96,9 +96,23 @@ it('counts only the Instances on Nodes the caller can reach and names no Node fo
 
     expect($data->keys()->all())->toBe(['shop', 'site'])
         ->and($data['shop']['instance_count'])->toBe(1)
-        ->and($data['shop']['node_name'])->toBe('vps')
+        // The default Instance is on vps, which the caller cannot reach, so the summary does not name it.
+        ->and($data['shop']['node_name'])->toBeNull()
         ->and($data['site']['instance_count'])->toBe(1)
         ->and($data['site']['node_name'])->toBeNull();
+});
+
+it('names the default Instance Node once the caller can reach it', function (): void {
+    $shop = summaryProject('shop', 'https://github.com/acme/shop.git');
+    summaryInstance($shop, $this->vps, 'default');
+    summaryInstance($shop, $this->mini, 'feat-a');
+    $this->caller->accessibleNodes()->attach($this->vps->id);
+
+    $data = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->getJson('/api/v1/projects')->assertOk()->json('data');
+
+    expect($data)->toHaveCount(1)
+        ->and($data[0])->toMatchArray(['slug' => 'shop', 'node_name' => 'vps', 'instance_count' => 2]);
 });
 
 it('counts every Instance for the Gateway and reads the summary in a fixed number of queries', function (): void {

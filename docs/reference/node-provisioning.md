@@ -253,6 +253,7 @@ Internal bootstrap commands `orbit:role-add`, `orbit:node-add`, `orbit:node-conv
 
 The role is only a Gateway record. Adding or removing it records the assignment and a succeeded Operation without SSH or a Swamp run, so a Node needs no managed access for it. A converge and a release leave it out, and a converge scoped to it is refused (`validation.failed`). Orbit does not install, start, or check the Conn Server; the Node's operator runs it. Mark the Node that should start General threads with [`node:update --primary-agent=true`](/cli/node/update#record-fields) when the fleet has more than one `agent` Node.
 
+## Role compatibility
 
 Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `node.role_conflict` HTTP 422 on `node:add` and `node:role:relocate`):
 

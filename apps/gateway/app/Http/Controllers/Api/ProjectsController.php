@@ -33,12 +33,14 @@ final class ProjectsController extends Controller
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 
+        $reachable = $action->reachableNodeIds($consumer);
+
         return response()->json([
             'data' => $action
                 ->handle($consumer)
                 ->map(static fn (Project $project): array => [
                     ...ProjectData::fromModel($project)->toArray(),
-                    ...ProjectSummaryData::fromModel($project)->toArray(),
+                    ...ProjectSummaryData::fromModel($project, $reachable)->toArray(),
                 ])
                 ->values()
                 ->all(),

@@ -24,12 +24,19 @@ final class ProjectSummaryData extends Data
         public int $instanceCount,
     ) {}
 
-    /** Expects `defaultInstance.node` loaded and `instances_count` counted, as ListProjectsAction does. */
-    public static function fromModel(Project $project): self
+    /**
+     * Expects `defaultInstance.node` loaded and `instances_count` counted, as ListProjectsAction does.
+     * The default Instance's Node is named only to a caller that reaches it, so the summary never identifies a hidden Node.
+     *
+     * @param  list<int>|null  $reachableNodeIds  null for Gateway authority, which reaches every Node
+     */
+    public static function fromModel(Project $project, ?array $reachableNodeIds): self
     {
+        $node = $project->defaultInstance?->node;
+
         return new self(
             repository: $project->repository_identity,
-            nodeName: $project->defaultInstance?->node?->name,
+            nodeName: $node !== null && ($reachableNodeIds === null || in_array($node->id, $reachableNodeIds, true)) ? $node->name : null,
             icon: null,
             color: null,
             instanceCount: $project->instances_count,
