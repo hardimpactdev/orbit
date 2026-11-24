@@ -27,6 +27,6 @@ After a CI host reboots, Orbit asks GitHub to rerun jobs lost during the drain. 
 
 <div className="flow-at" data-chart="fleet/reboot"></div>
 
-`POST /api/v1/fleet/conn-server/rollout` rolls the pinned Conn Server out to the Nodes that run one, canary first. Each run is one `fleet.conn_server_rollout` Operation. [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains the Node records, the checks, the hold, the swap and the rollback.
+`POST /api/v1/fleet/conn-server/rollout` rolls the pinned Conn Server out to the Nodes that run one: the canary, the fleet canary first, or the Nodes it names. Each run is one `fleet.conn_server_rollout` Operation. [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains the Node records, the checks, the hold, the swap and the rollback.
 
 <div className="flow-at" data-chart="fleet/conn-server-rollout"></div>
