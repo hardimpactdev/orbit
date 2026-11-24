@@ -51,7 +51,8 @@ sequenceDiagram
   %%> How:
   %%> - one HTTPS request from 209, with the admin session from `vault.get`
   %%> What it does:
-  %%> - asks T3 for a one-time pairing token with T3's administrative scopes and the admitted client label
+  %%> - asks T3 for a one-time pairing token with T3's administrative scopes, the admitted client label and `sessionTtl: "until-revoked"`
+  %%> - the token still lasts 5 minutes; a Conn Server from 0.5.0 gives the session it grants, also a peer link's, its about 10-year end, and an older server ignores the field and gives 30 days
   Note over SW: Store the link in vault
   %%> How:
   %%> - a typed data method reads the private response as T3's pairing result: id, credential, expiry and the echoed label, which must match; it ignores added fields

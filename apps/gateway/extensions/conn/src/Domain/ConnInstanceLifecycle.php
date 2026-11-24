@@ -63,6 +63,8 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         if ($environment->admin_session_expires_at->isFuture()) {
             app(ConnHeldSessions::class)->renewDue($environment, retryQueueFailure: $retryQueueFailure);
             app(ConnOwedWork::class)->advance($environment->id);
+            // A server that takes until-revoked keeps its sessions from here on ([Session lifetimes](/reference/conn#session-lifetimes)).
+            app(ConnSessionLifetime::class)->migrate($environment);
         }
     }
 

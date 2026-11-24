@@ -16,6 +16,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
 /**
@@ -32,7 +33,7 @@ final readonly class ConnOwedWork
     /** The Operations that carry a server's owed work. */
     private const array Kinds = ['conn.pairing_revoke', 'conn.gateway_sessions_revoke'];
 
-    public function __construct(private ConnHeldSessions $held) {}
+    public function __construct(private ConnHeldSessions $held, private ConnSessionLifetime $lifetimes) {}
 
     public function advance(int $environment): void
     {
@@ -54,7 +55,8 @@ final readonly class ConnOwedWork
 
     /**
      * Advances each container server that owes work, unless its last revoke or cleanup failed within the retry window. A server that
-     * runs one, sleeps or is being removed starts nothing.
+     * runs one, sleeps or is being removed starts nothing. Then it revokes each unregistered host server's Gateway session the server
+     * can revoke.
      *
      * @return list<int> the servers it advanced
      */
@@ -75,6 +77,10 @@ final readonly class ConnOwedWork
             }
             $this->advance($environment);
             $advanced[] = $environment;
+        }
+        // An unregistered host server's Gateway session; one the server cannot revoke yet stays owed.
+        foreach (ConnOwedGatewayRevoke::query()->orderBy('id')->get() as $owed) {
+            $this->lifetimes->revokeOwed($owed);
         }
 
         return $advanced;

@@ -26,16 +26,21 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\Operation;
 use App\Models\Project;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
+use Orbit\Extensions\Conn\Actions\UnregisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Domain\ConnCleanupProjection;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
@@ -45,7 +50,9 @@ use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
 use Orbit\Extensions\Conn\Domain\ConnOwedWork;
 use Orbit\Extensions\Conn\Domain\ConnRevocationProjection;
 use Orbit\Extensions\Conn\Domain\ConnSessionHoldProjection;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
@@ -975,3 +982,140 @@ it('pre-mints held sessions for the creating profile\'s Nodes that reach a new c
     expect(Operation::query()->where('kind', 'conn.session_hold')->where('input->conn_environment_id', $environment->id)->pluck('input')->pluck('caller_node_id')->sort()->values()->all())
         ->toBe($on ? [$this->phone->id, $desk->id] : []);
 })->with(['on' => true, 'off' => false]);
+
+/** A Conn Server at `$version` whose extend route answers `$extend`; returns the requests it saw. */
+function connServer(string $version, int $extend = 200, string $reason = ''): ArrayObject
+{
+    $seen = new ArrayObject;
+    Http::fake(function (Request $request) use ($seen, $version, $extend, $reason) {
+        $path = parse_url($request->url(), PHP_URL_PATH);
+        $seen[] = ['path' => $path, 'body' => $request->data(), 'bearer' => $request->header('Authorization')[0] ?? null];
+
+        return match ($path) {
+            '/health' => Http::response(['server' => 'conn-server', 'version' => $version]),
+            '/api/auth/clients/extend' => $extend === 200
+                ? Http::response(['sessionId' => $request->data()['sessionId'] ?? 'own', 'expiresAt' => now()->addDays(3650)->toJSON()])
+                : Http::response(['error' => $reason], $extend),
+            '/api/auth/clients' => Http::response(['clientSessions' => [
+                ['sessionId' => 'peer-mini', 'subject' => 'mcp-client', 'client' => ['label' => 'Conn · mini'], 'expiresAt' => now()->addDays(30)->toJSON()],
+                ['sessionId' => 'device-desk', 'subject' => 'one-time-token', 'client' => ['label' => 'desk'], 'expiresAt' => now()->addDays(30)->toJSON()],
+            ]]),
+            ConnSessionLifetime::SelfRevokeRoute => Http::response(['revoked' => true]),
+            default => Http::response([], 404),
+        };
+    });
+
+    return $seen;
+}
+
+function extends_(ArrayObject $seen): array
+{
+    return array_values(array_map(fn (array $call): ?string => $call['body']['sessionId'] ?? null,
+        array_filter($seen->getArrayCopy(), fn (array $call): bool => $call['path'] === '/api/auth/clients/extend')));
+}
+
+describe('until-revoked lifetimes, with the hourly tick disabled', function (): void {
+    beforeEach(function (): void {
+        $this->laptop = heldNode('laptop', '10.44.0.78');
+        NodeAccess::query()->create(['consumer_node_id' => $this->laptop->id, 'serving_node_id' => $this->host->id]);
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->laptop, $this->environment));
+        $this->held = ConnPairing::query()->where('node_id', $this->phone->id)->sole();
+        $this->kept = ConnPairing::query()->where('node_id', $this->laptop->id)->sole();
+    });
+
+    it('asks every pairing-token request for an until-revoked session, and keeps the 5-minute code', function (): void {
+        $intent = holdOperation($this->phone, $this->environment)->input['intent'];
+
+        expect(json_decode($intent['request_body'], true, flags: JSON_THROW_ON_ERROR)['sessionTtl'])->toBe('until-revoked')
+            ->and($this->held->fresh()->expires_at->getTimestamp())->toBe(now()->addMinutes(5)->getTimestamp());
+    });
+
+    it('keeps a long-lived session past day 31 on a new server with no renewal and no re-pair', function (): void {
+        // A 0.5.0 server answered the hold with its about 10-year end, which the hold stored.
+        $this->held->forceFill(['session_expires_at' => now()->addDays(3650)])->save();
+        $this->kept->forceFill(['session_expires_at' => now()->addDays(3650)])->save();
+        $this->environment->forceFill(['admin_session_expires_at' => now()->addDays(3650)])->save();
+        $holds = Operation::query()->where('kind', 'conn.session_hold')->count();
+
+        $this->travel(31)->days();
+
+        expect(ConnHeldSessions::due(CarbonImmutable::now())->count())->toBe(0);
+        app(ConnHeldSessionSweep::class)->run();
+        expect(Operation::query()->where('kind', 'conn.session_hold')->count())->toBe($holds);
+        readHeld($this->phone, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
+    it('still renews a dated session on an old server', function (): void {
+        $this->travel(24)->days();
+
+        expect(ConnHeldSessions::due(CarbonImmutable::now())->pluck('id')->all())->toBe([$this->held->id, $this->kept->id]);
+    });
+
+    it('extends the admin, held and Conn peer-link sessions in place at a wake on a 0.5.0 server', function (): void {
+        $seen = connServer('0.5.0');
+
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect(extends_($seen))->toBe([null, null, null, 'peer-mini'])
+            ->and($this->environment->fresh()->admin_session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue()
+            ->and($this->held->fresh()->session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue()
+            ->and($this->kept->fresh()->session_expires_at->gt(ConnSessionLifetime::longLived()))->toBeTrue();
+
+        // Day 31: nothing is due, the same session still answers, and nobody pairs again.
+        $this->travel(31)->days();
+        expect(ConnHeldSessions::due(CarbonImmutable::now())->count())->toBe(0);
+        readHeld($this->phone, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
+    it('keeps a session dated and renewed when extend answers 404 or 409 operation_forbidden', function (int $status, string $reason): void {
+        $seen = connServer('0.5.0', $status, $reason);
+
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect(extends_($seen))->toBe([null, null, null, 'peer-mini'])
+            ->and($this->environment->fresh()->admin_session_expires_at->getTimestamp())->toBe(now()->addDays(20)->getTimestamp())
+            ->and($this->held->fresh()->session_expires_at->getTimestamp())->toBe(now()->addDays(30)->getTimestamp());
+        $this->travel(24)->days();
+        expect(ConnHeldSessions::due(CarbonImmutable::now())->count())->toBe(2);
+    })->with([[404, 'not_found'], [409, 'operation_forbidden']]);
+
+    it('calls no extend on a server older than 0.5.0', function (): void {
+        $seen = connServer('0.4.2');
+
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect(extends_($seen))->toBe([])->and($this->held->fresh()->session_expires_at->getTimestamp())->toBe(now()->addDays(30)->getTimestamp());
+    });
+
+    it('still denies a revoked long-lived session and keeps the other Node\'s', function (): void {
+        connServer('0.5.0');
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+        $this->travel(31)->days();
+
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+        endRevoke(revokes()[0]);
+
+        expect(revokes()[0]->input['pairing_ids'])->toBe([$this->held->id])->and($this->held->fresh()->revoked_at)->not->toBeNull();
+        readHeld($this->phone, $this->environment)->assertStatus(403);
+        readHeld($this->laptop, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
+    it('owes an unregistered host server\'s Gateway session until the server can revoke it', function (): void {
+        $hostServer = ConnEnvironment::query()->create(['environment_id' => 'env-host', 'label' => 'host', 'url' => 'http://10.44.1.1:3773',
+            'node_id' => $this->host->id, 'admin_session' => 'private-admin-host', 'admin_session_expires_at' => now()->addDays(3650), 'registered_at' => now()]);
+        app(UnregisterConnEnvironmentAction::class)->execute($this->phone, $hostServer->environment_id);
+
+        $seen = connServer('0.4.2');
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(ConnOwedGatewayRevoke::query()->count())->toBe(1)
+            ->and(collect($seen)->pluck('path')->contains(ConnSessionLifetime::SelfRevokeRoute))->toBeFalse();
+
+        // The server is upgraded to 0.5.0.
+        Http::swap(new HttpFactory);
+        $seen = connServer('0.5.0');
+        $this->artisan('conn:owed-work:advance')->assertSuccessful();
+        expect(ConnOwedGatewayRevoke::query()->count())->toBe(0)
+            ->and(collect($seen)->firstWhere('path', ConnSessionLifetime::SelfRevokeRoute)['bearer'])->toBe('Bearer private-admin-host');
+    });
+});

@@ -230,6 +230,14 @@ sequenceDiagram
       %%> - and the server's next owed held revoke (conn/pairing-revoke.mmd), which waited while the Instance slept, then its owed cleanup (conn/gateway-sessions-revoke.mmd)
       %%> - what the busy server cannot take yet starts at the end of what holds it; what fails, the five-minute `conn:owed-work:advance` tick admits again
     end
+    opt the server is a Conn Server from 0.5.0
+      Note over GW: Extend dated sessions<br/>clients/extend
+      %%> When:
+      %%> - after the held sessions, while the Gateway session has not ended; `GET /health` names `conn-server` 0.5.0 or later
+      %%> What it does:
+      %%> - `POST /api/auth/clients/extend` with `sessionTtl: "until-revoked"` for the Gateway session and each held session that ends within a year, with their own bearers, and for each `Conn · ` peer-link session by its id
+      %%> - stores each new end; a 404 or 409 keeps that session dated, and the hourly renewal keeps renewing it
+    end
   else T3 does not answer
     %% path: t3-unready
     SW--xGW: Run failed<br/>instance.t3_unready

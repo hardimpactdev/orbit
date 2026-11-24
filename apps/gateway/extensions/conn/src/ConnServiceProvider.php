@@ -36,6 +36,7 @@ use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
 use Orbit\Extensions\Conn\Domain\ConnReservations;
+use Orbit\Extensions\Conn\Domain\ConnServerLifetimes;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedNoticePublisher;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedRevocation;
@@ -45,6 +46,7 @@ use Orbit\Extensions\Conn\Domain\Push\ApnsJwtProvider;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Infrastructure\ConnActivityInputRedaction;
 use Orbit\Extensions\Conn\Infrastructure\HttpApnsClient;
+use Orbit\Extensions\Conn\Infrastructure\HttpConnServerLifetimes;
 use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
 
 /** The conn extension: Conn devices, shared profiles, and T3 server pairing ([Conn layer](/reference/conn)). */
@@ -53,6 +55,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         T3ServerClient::class => HttpT3ServerClient::class,
+        ConnServerLifetimes::class => HttpConnServerLifetimes::class,
         ConnManagedNoticePublisher::class => ReverbConnManagedNoticePublisher::class,
     ];
 

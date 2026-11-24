@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
+use Orbit\Extensions\Conn\Domain\ConnSessionLifetime;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
@@ -74,6 +75,8 @@ final readonly class RegisterConnEnvironmentAction
                 } catch (ResourceOperationException $error) {
                     Log::warning('conn.cleanup_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
                 }
+                // The host server's start: a server that takes until-revoked keeps the session (/reference/conn#session-lifetimes).
+                app(ConnSessionLifetime::class)->migrate($environment);
             });
 
             return $environment;

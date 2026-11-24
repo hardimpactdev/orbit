@@ -58,7 +58,7 @@ sequenceDiagram
   %%> - mktemp creates a private directory for both T3 replies
   SW->>T3: Mint a pairing link<br/>POST /api/auth/pairing-token
   %%> How:
-  %%> - one bounded curl from 209 with the admin session from `vault.get`, the label and the scopes
+  %%> - one bounded curl from 209 with the admin session from `vault.get`, the label, the scopes and `sessionTtl: "until-revoked"`
   Note over SW: Read the link
   %%> What it does:
   %%> - a typed data method reads T3's pairing result; the echoed label must match
@@ -71,7 +71,7 @@ sequenceDiagram
   %%> - T3 issues a plain bearer session; it checks only signature, end and revocation, not the client
   Note over SW: Store the session
   %%> What it does:
-  %%> - reads T3's access-token result: a `Bearer` token, its scopes and `expires_in`
+  %%> - reads T3's access-token result: a `Bearer` token, its scopes and `expires_in`; the stored end is now plus `expires_in`, about 10 years on a Conn Server from 0.5.0 and 30 days before
   %%> - stores the session as a native sensitive field and reports only public metadata
   Note over SW: Remove private replies
   %%> How:
@@ -100,6 +100,7 @@ sequenceDiagram
     Note over GW: Renew under 7 days left<br/>renews_pairing_id
     %%> When:
     %%> - each held session that ends within seven days; also on Instances no device uses; a wake renews a sleeping Instance's
+    %%> - a long-lived session, one that ends more than a year away, is never renewed; only a dated one from an older server is
     %%> What it does:
     %%> - the same run makes the new session; on success the old one is withdrawn and revoked by its pairing id
   end
