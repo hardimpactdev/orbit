@@ -149,36 +149,47 @@
       changed_when: true
       timeout: 60
 
-    - name: Put the new bundle on the same path
-      ansible.builtin.command: { argv: [mv, "{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"] }
-      changed_when: true
-      timeout: 60
-
-    - name: Start the new server and wait for its health
-      ansible.builtin.include_tasks: conn-server-mac-start.yml
-      vars:
-        expected_version: "{{ version }}"
-
-    - name: Record the updated Node
-      when: mac_healthy
-      ansible.builtin.set_fact:
-        node_result:
-          node_id: "{{ node_id | int }}"
-          outcome: updated
-          previous_version: "{{ mac_before.json.version | default(none) }}"
-          prompts: "{{ mac_answered }}"
-
-    # The block's condition is read again for each of its tasks, so it reads a fact that the rollback's own start does not change.
-    - name: Decide the rollback
-      ansible.builtin.set_fact:
-        mac_rollback: "{{ not mac_healthy }}"
-        mac_failure: "{{ mac_prompt_error or 'conn_server.health_check_failed' }}"
-
-    - name: Roll back
-      when: mac_rollback
+    # From here on, every failure up to a healthy /health restores the backup and restarts the old server.
+    - name: Install and start the new server
       block:
+        - name: Put the new bundle on the same path
+          ansible.builtin.command: { argv: [mv, "{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"] }
+          changed_when: true
+          timeout: 60
+
+        - name: Start the new server and wait for its health
+          ansible.builtin.include_tasks: conn-server-mac-start.yml
+          vars:
+            expected_version: "{{ version }}"
+
+        - name: Fail an unhealthy new server
+          ansible.builtin.assert:
+            that: mac_healthy
+            fail_msg: "{{ mac_prompt_error or 'conn_server.health_check_failed' }}"
+            quiet: true
+
+        - name: Record the updated Node
+          ansible.builtin.set_fact:
+            node_result:
+              node_id: "{{ node_id | int }}"
+              outcome: updated
+              previous_version: "{{ mac_before.json.version | default(none) }}"
+              prompts: "{{ mac_answered }}"
+      rescue:
+        - name: Name the cause
+          ansible.builtin.set_fact:
+            mac_failure: >-
+              {{ ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
+                 else 'conn_server.step_failed' }}
+            rolled_back: false
+
+        - name: Read what holds the bundle's path
+          ansible.builtin.stat: { path: "{{ mac_app }}", get_checksum: false }
+          register: mac_placed
+          timeout: 20
 
         - name: Set the new bundle aside
+          when: mac_placed.stat.exists
           ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.failed.app"] }
           changed_when: true
           timeout: 60
@@ -188,15 +199,21 @@
           changed_when: true
           timeout: 60
 
-        - name: Start the old server and wait for its health
-          ansible.builtin.include_tasks: conn-server-mac-start.yml
-          vars:
-            expected_version: "{{ mac_before.json.version | default('') }}"
+        # `rolled_back` says whether the old server answers again; a failed restart leaves it false.
+        - name: Restart the old server
+          block:
+            - name: Start the old server and wait for its health
+              ansible.builtin.include_tasks: conn-server-mac-start.yml
+              vars:
+                expected_version: "{{ mac_before.json.version | default('') }}"
 
-        # The Node fails with the cause; `rolled_back` says whether the old server answers again.
-        - name: Note whether the old server answers
-          ansible.builtin.set_fact:
-            rolled_back: "{{ mac_healthy }}"
+            - name: Note whether the old server answers
+              ansible.builtin.set_fact:
+                rolled_back: "{{ mac_healthy }}"
+          rescue:
+            - name: Note that the old server does not answer
+              ansible.builtin.set_fact:
+                rolled_back: false
 
         - name: Fail the Node after its rollback
           ansible.builtin.assert:

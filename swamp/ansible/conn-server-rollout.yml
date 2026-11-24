@@ -6,8 +6,8 @@
 #   holds when the staged bundle's designated requirement differs from the installed one's, because its TCC grants would reset. Else it
 #   backs up the installed bundle into a new backup folder, swaps the staged bundle onto the same path, kickstarts the LaunchAgent in
 #   the gui domain, answers the expected Conn Server TCC prompt, and waits for /health to name the version. A Linux Node does the same
-#   with the tarball, a new release folder and the `current` link under systemd. A failed health check restores the backup, restarts
-#   the old server and checks that it answers. A failed or held canary, or any failed Node, stops the run.
+#   with the tarball, a new release folder and the `current` link under systemd. Once the bundle has moved or `current` is relinked,
+#   any failure before a healthy /health restores the backup, restarts the old server and checks that it answers. A failed or held canary, or any failed Node, stops the run.
 #   With `dry_run`, each Node only downloads and checks, and installs nothing.
 # It writes `result.json` in the run folder: `{"version", "dry_run", "nodes": [{"node_id", "outcome", "reason"?, ...}], "error_code"}`,
 # where outcome is `updated`, `checked`, `held` or `failed`. Never print or copy a LaunchAgent plist: plists hold tokens.

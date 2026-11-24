@@ -1,6 +1,7 @@
 ---
 # One Linux Node of the Conn Server rollout (conn-server-rollout.yml): the tarball unpacks into a new release folder beside
-# `current`, `current` moves to it, and systemd restarts the unit. A failed health check points `current` back and restarts again.
+# `current`, `current` moves to it, and systemd restarts the unit. Any failure from the relink until /health
+# answers points `current` back and restarts again.
 # `server.path` is the `current` link. Sets `node_result`; a failed check fails with its public code as the message.
 - name: Name the paths of the Node
   ansible.builtin.set_fact:
@@ -107,36 +108,55 @@
       become: true
       timeout: 120
 
-    - name: Point current at the new release
-      ansible.builtin.include_tasks: conn-server-linux-start.yml
-      vars:
-        linux_target: "{{ linux_release }}"
-        expected_version: "{{ version }}"
-
-    - name: Record the updated Node
-      when: linux_health.json.version | default('') == version
-      ansible.builtin.set_fact:
-        node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
-
-    - name: Roll back
-      when: node_result is not defined
-      # node_result stays unset through the rollback, so the block's condition holds for each of its tasks.
+    # From here on, every failure up to a healthy /health points current back at the old release and restarts it.
+    - name: Install and start the new release
       block:
-        - name: Point current back at the old release
+        - name: Point current at the new release
           ansible.builtin.include_tasks: conn-server-linux-start.yml
           vars:
-            linux_target: "{{ linux_current.stat.lnk_source }}"
-            expected_version: "{{ linux_before.json.version | default('') }}"
+            linux_target: "{{ linux_release }}"
+            expected_version: "{{ version }}"
 
-        # The Node fails with the cause; `rolled_back` says whether the old server answers again.
-        - name: Note whether the old server answers
+        - name: Fail an unhealthy new server
+          ansible.builtin.assert:
+            that:
+              - linux_health.json.server | default('') == 'conn-server'
+              - linux_health.json.version | default('') == version
+            fail_msg: conn_server.health_check_failed
+            quiet: true
+
+        - name: Record the updated Node
           ansible.builtin.set_fact:
-            rolled_back: "{{ linux_health.json.version | default('') == linux_before.json.version | default(none) }}"
+            node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
+      rescue:
+        - name: Name the cause
+          ansible.builtin.set_fact:
+            linux_failure: >-
+              {{ ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
+                 else 'conn_server.step_failed' }}
+            rolled_back: false
+
+        # `rolled_back` says whether the old server answers again; a failed restart leaves it false.
+        - name: Point current back at the old release
+          block:
+            - name: Restart the old release
+              ansible.builtin.include_tasks: conn-server-linux-start.yml
+              vars:
+                linux_target: "{{ linux_current.stat.lnk_source }}"
+                expected_version: "{{ linux_before.json.version | default('') }}"
+
+            - name: Note whether the old server answers
+              ansible.builtin.set_fact:
+                rolled_back: "{{ linux_health.json.version | default('') == linux_before.json.version | default(none) }}"
+          rescue:
+            - name: Note that the old server does not answer
+              ansible.builtin.set_fact:
+                rolled_back: false
 
         - name: Fail the Node after its rollback
           ansible.builtin.assert:
             that: false
-            fail_msg: conn_server.health_check_failed
+            fail_msg: "{{ linux_failure }}"
             quiet: true
 
 - name: Remove the staging folder

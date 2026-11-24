@@ -35,16 +35,18 @@ case "$1" in
 esac`,
     ditto: `#!/bin/sh\nmkdir -p "$4" && tar -xf "$3" -C "$4"`,
     // The job runs the version of the bundle on the path; a version listed in $FIXTURE/broken never answers. With $FIXTURE/stale the
-    // old server keeps answering. $FIXTURE/prompt-on-start is the TCC prompt that the first start raises.
+    // old server keeps answering. $FIXTURE/prompt-on-start is the TCC prompt that the first start raises. A version listed in
+    // $FIXTURE/exit-<command> makes that command exit 1: kickstart and restart with the server down, the click with the prompt up.
     launchctl: `#!/bin/sh
 echo "$*" >> "$FIXTURE/launchctl"
 [ -f "$FIXTURE/prompt-on-start" ] && mv "$FIXTURE/prompt-on-start" "$FIXTURE/prompt"
-[ -f "$FIXTURE/stale" ] && exit 0
 v=$(cat "$FIXTURE_APP/Contents/version")
+if grep -qx "$v" "$FIXTURE/exit-launchctl" 2>/dev/null; then echo down > "$FIXTURE/running"; exit 1; fi
+[ -f "$FIXTURE/stale" ] && exit 0
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
     osascript: `#!/bin/sh
 case "$2" in
-  *click*) echo click >> "$FIXTURE/clicks"; rm -f "$FIXTURE/prompt" ;;
+  *click*) grep -qx "$(cat "$FIXTURE_APP/Contents/version")" "$FIXTURE/exit-osascript" 2>/dev/null && exit 1; echo click >> "$FIXTURE/clicks"; rm -f "$FIXTURE/prompt" ;;
   *) [ -f "$FIXTURE/prompt" ] && cat "$FIXTURE/prompt" ;;
 esac
 exit 0`,
@@ -53,11 +55,12 @@ exit 0`,
 if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
 echo "$*" >> "$FIXTURE/systemctl"
 v=$(cat "$FIXTURE_LINUX/current/version")
+if grep -qx "$v" "$FIXTURE/exit-systemctl" 2>/dev/null; then echo down > "$FIXTURE/running"; exit 1; fi
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl"; name?: string };
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
@@ -89,6 +92,7 @@ async function rollout(options: Options) {
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
         if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
         if (options.stale) Deno.writeTextFileSync(`${folder}/stale`, "");
+        if (options.exitOn) Deno.writeTextFileSync(`${folder}/exit-${options.exitOn}`, "0.5.0\n");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
         const server = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, async (request) => {
@@ -97,7 +101,7 @@ async function rollout(options: Options) {
                 return new Response(null, { status: 204 });
             }
             const running = Deno.readTextFileSync(`${folder}/running`).trim();
-            return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: "conn-server", version: running });
+            return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: options.name ?? "conn-server", version: running });
         });
         const port = server.addr.port;
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -131,6 +135,7 @@ async function rollout(options: Options) {
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
             releases: [...Deno.readDirSync(`${folder}/linux/releases`)].map((entry) => entry.name),
             launchctl: read("launchctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
+            running: Deno.readTextFileSync(`${folder}/running`).trim(),
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
         };
     } finally {
@@ -214,6 +219,28 @@ test("a Linux Node whose new release fails its health check points current back 
     assert(!run.ok, run.output);
     assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
     assertEquals(run.linux, "0.4.2");
+});
+
+test("a kickstart, Allow click or systemctl restart that exits non-zero restores the old version, which runs again", async () => {
+    for (const [options, launches] of [[{ exitOn: "launchctl" }, 2], [{ exitOn: "osascript", promptOnStart: removable }, 2]] as const) {
+        const run = await rollout({ nodes: [{ platform: "mac", canary: true }], ...options });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.step_failed", rolled_back: true }]);
+        assertEquals([run.installed, run.running, run.launchctl.length], ["0.4.2", "0.4.2", launches]);
+    }
+    const linux = await rollout({ nodes: [{ platform: "linux", canary: true }], exitOn: "systemctl" });
+    assert(!linux.ok, linux.output);
+    assertEquals(linux.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.step_failed", rolled_back: true }]);
+    assertEquals([linux.linux, linux.running], ["0.4.2", "0.4.2"]);
+});
+
+test("a Linux Node whose /health names another server is not updated, as on a Mac", async () => {
+    for (const platform of ["mac", "linux"] as const) {
+        const run = await rollout({ nodes: [{ platform, canary: true }], name: "t3" });
+        assert(!run.ok, run.output);
+        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", "conn_server.health_check_failed"]);
+        assertEquals([run.installed, run.linux], ["0.4.2", "0.4.2"]);
+    }
 });
 
 test("a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too", async () => {
