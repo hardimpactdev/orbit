@@ -87,7 +87,7 @@ sequenceDiagram
     %%> On failure:
     %%> - the bound passes while the seed copy runs: the deployment fails with `instance.seed_hold_timeout` before it changes the container; the old seed stays; no seed is restored and the container is not started
   end
-  SW->>C: Finish the container<br/>Ansible · processes · php_index · seed · check
+  SW->>C: Finish the container<br/>Ansible · processes · seed · check
   %%> What it does:
   %%> - one play runs the phases `processes`, `php_index`, `seed` and `check`, in this order; a nested-fleet default refreshes its fleet between `processes` and `php_index`: container/fleet-refresh.mmd
   %%> - the handlers a phase notifies run before the next phase starts, as with separate plays

@@ -89,7 +89,7 @@ For routed Laravel checkouts, `.env` (with `APP_URL`, `APP_KEY`, and `APP_NAME`)
 Each setup or teardown step uses its stored timeout (summed up to 540 seconds per list):
 
 - **Explicit `instance:setup`:** Bounded by the 540-second list budget.
-- **Container `instance:create`:** 1,800 seconds plus development deploy step timeouts, plus 180 seconds for a default's server database.
+- **Container `instance:create`:** 1,800 seconds plus development deploy step timeouts, plus 180 seconds for a default's server database and 630 seconds for a Laravel default's [PHP symbol index](/reference/development-containers#php-symbol-index).
 - **Host checkout `instance:create` retry:** 60 seconds plus up to 540 seconds for setup, 30 seconds for Processes, 240 seconds for a Route, and 180 seconds for databases.
 - **Destroy (`instance:destroy`):** 60 seconds (host) or 600 seconds (container), plus up to 540 seconds for teardown, 330 seconds per withdrawn Route, and 180 seconds for databases.
 

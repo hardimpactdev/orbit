@@ -83,7 +83,7 @@ sequenceDiagram
   %%> What it does:
   %%> - checks out the release commit in `/srv/workspace`; the nested Gateway and app-dev see it through their `checkout` device
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
-  SW->>C: Finish the container<br/>Ansible · processes · php_index · seed · check
+  SW->>C: Finish the container<br/>Ansible · processes · seed · check
   %%> What it does:
   %%> - one play runs the phases `processes`, `fleet_refresh`, `php_index`, `seed` and `check`, in this order; a normal default runs `processes`, `php_index`, `seed` and `check`; `php_index` does work only for a Laravel default (container/deploy-default.mmd)
   %%> - the handlers a phase notifies run before the next phase starts, as with separate plays

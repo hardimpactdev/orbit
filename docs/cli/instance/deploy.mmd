@@ -151,7 +151,7 @@ sequenceDiagram
     %%> What it does:
     %%> - each Project command as `agent`, the workspace's owner (ADR 0268), in the workspace, with the runtime folder's PATH
     %%> - a step with `inputs` is skipped when its inputs at the commit and its command are as at its last passed run in this workspace
-    SW->>N: Finish the container<br/>Ansible · processes · php_index · seed · check
+    SW->>N: Finish the container<br/>Ansible · processes · seed · check
     %%> What it does:
     %%> - one play runs the phases `processes`, `php_index`, `seed` and `check`, in this order; a nested-fleet default runs `fleet_refresh` between `processes` and `php_index`
     %%> - `processes`: writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units; stops and removes the units and environment folders of the Processes the run does not own, such as those marked `removing`; enables and starts each running unit and waits for it; on failure the detail names the unit that is not active

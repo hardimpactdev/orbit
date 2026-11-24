@@ -12,7 +12,7 @@ Production `app-prod` Instances (and container Gateways) deploy through the `pro
 
 ## Prepare the AppProd Node
 
-Add or converge the role with `orbit node:role:add <node> app-prod [--converge --full]` to install the release controller, stock image, pinned static PHP runtime, bridge, egress proxy, and memory-reclaim service. Production Nodes require a ZFS Incus pool named `orbit-releases` (or an existing `orbit-instances` ZFS pool to create a child dataset); nested proof `app-prod` Nodes use btrfs instead. `dir` pools are refused.
+Add or converge the role with `orbit node:role:add <node> app-prod [--converge --full]` to install the release controller, stock image, pinned static PHP runtime, bridge, egress proxy, and memory-reclaim service. The pinned runtime holds every part of the recipe's runtime folder, the `laravel-lsp` and `phpactor` PHARs among them, as files only: no production phase runs them, and a production release prepares no [PHP symbol index](/reference/development-containers#php-symbol-index). Production Nodes require a ZFS Incus pool named `orbit-releases` (or an existing `orbit-instances` ZFS pool to create a child dataset); nested proof `app-prod` Nodes use btrfs instead. `dir` pools are refused.
 
 Once a production Instance starts its first container deployment, `instance:destroy` and `instance:unregister` are refused so release storage cannot be orphaned. Deploy a new release after changing a Route domain or web root so FrankenPHP's config updates.
 
