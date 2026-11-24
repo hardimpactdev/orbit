@@ -9,12 +9,17 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\PhpSymbolIndex;
+use App\Domain\Instances\PhpSymbolIndexRefresh;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProjectDevelopmentDeployStep;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -53,7 +58,10 @@ function phpIndexDefault(Node $node, string $root = 'public', bool $laravel = tr
 {
     $project = containerDefaultProject(ProjectType::Monorepo, '8.5');
     $project->update(['root' => $root, 'is_laravel' => $laravel]);
-    $default = Instance::query()->findOrFail(containerCreate($project, $node)->target_id);
+    $create = containerCreate($project, $node);
+    // The create ended: its Operation holds the Instance no longer.
+    $create->update(['status' => 'succeeded', 'lock_key' => null]);
+    $default = Instance::query()->findOrFail($create->target_id);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
         ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
@@ -145,4 +153,66 @@ it('keeps production out: a Project default on an app-prod Node has no container
 
     expect($instance->placedOnAppProd())->toBeTrue()
         ->and(PhpSymbolIndex::intent($instance))->toBeNull();
+});
+
+it('indexes a Laravel default without vendor/ too: eligibility reads no Composer install', function (): void {
+    // A default whose deploy steps never ran composer install has no vendor/ (as Beast's default 2120): its index holds the source.
+    $default = phpIndexDefault(containerDefaultNode());
+
+    expect(ProjectDevelopmentDeployStep::query()->where('project_id', $default->project_id)->exists())->toBeFalse()
+        ->and(PhpSymbolIndex::intent($default))->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds]);
+});
+
+it('runs only the index and seed phases of a running Laravel default, with no deployment, checkout or deploy step', function (): void {
+    $default = phpIndexDefault(containerDefaultNode());
+
+    $operation = app(PhpSymbolIndexRefresh::class)->start($default, null, null);
+
+    expect($operation->kind)->toBe(PhpSymbolIndexRefresh::Kind)
+        ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('operation-instance-php-index')
+        ->and(array_keys($operation->input))->toBe(['container'])
+        ->and($operation->input['container']['php_index'])->toBe(['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds])
+        // The seed it retakes records the clone files and the tree's state, as a deployment's seed does.
+        ->and($operation->input['container'])->toHaveKeys(['seed_files', 'services_digest'])
+        ->and($operation->input['container'])->not->toHaveKey('steps');
+});
+
+it('refuses the index refresh of an Instance that gets no index, holds no seed, or is not running', function (Closure $change, string $code): void {
+    $default = phpIndexDefault(containerDefaultNode());
+    $change($default);
+
+    try {
+        app(PhpSymbolIndexRefresh::class)->start(Instance::query()->findOrFail($default->id), null, null);
+        $this->fail('The refresh was admitted.');
+    } catch (ResourceOperationException $refusal) {
+        expect($refusal->errorCode)->toBe($code)
+            ->and(Operation::query()->where('kind', PhpSymbolIndexRefresh::Kind)->exists())->toBeFalse();
+    }
+})->with([
+    'a source that is not Laravel' => [static function (Instance $default): void {
+        $default->update(['source_is_laravel' => false]);
+    }, 'instance.php_index_ineligible'],
+    'an app-prod Node' => [static function (Instance $default): void {
+        $default->node->roles()->update(['role' => RoleName::AppProd]);
+    }, 'instance.php_index_ineligible'],
+    'a legacy host checkout, with no container or seed' => [static function (Instance $default): void {
+        $default->runtime()->delete();
+    }, 'operation.kind_unavailable'],
+    'a stopped container' => [static function (Instance $default): void {
+        $default->runtime()->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+    }, 'process.target_inactive'],
+    'a default with no seed yet' => [static function (Instance $default): void {
+        $default->runtime()->update(['seed_commit' => null]);
+    }, 'instance.lifecycle_busy'],
+]);
+
+it('admits each eligible default from the artisan entry point and names each refused one with its code', function (): void {
+    $node = containerDefaultNode();
+    $default = phpIndexDefault($node);
+
+    $this->artisan('instances:php-index', ['instance' => [(string) $default->id, '999999']])
+        ->expectsOutputToContain('"instance":'.$default->id.',"operation":')
+        ->expectsOutputToContain('"skipped":"instance.not_found"')
+        ->assertExitCode(1);
+    expect(Operation::query()->where('kind', PhpSymbolIndexRefresh::Kind)->count())->toBe(1);
 });

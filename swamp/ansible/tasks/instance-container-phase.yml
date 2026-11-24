@@ -1908,6 +1908,10 @@
              + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), container.php_index.seconds | string] }}
       register: php_index_built
       changed_when: php_index_built.rc == 0 and (php_index_built.stdout | from_json).index != 'unchanged'
+    # A register is overwritten when the next phase includes this file and skips the task; a skipped set_fact keeps its fact.
+    - name: Name whether the index changed, for the seed
+      ansible.builtin.set_fact:
+        php_index_changed: "{{ php_index_built.changed }}"
   rescue:
     - name: Name why the index failed
       ansible.builtin.set_fact:
@@ -2083,7 +2087,7 @@
       loop: "{{ seed_volume_nexts }}"
       changed_when: true
     # Every passed deployment retakes the seed, also at the same commit: the default's caches and built files move on, and a clone must
-    # copy them as they are now. A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
+    # copy them as they are now. So does a run whose `php_index` phase changed the index (instance.php_index, PhpSymbolIndexRefresh). A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
     # failure restores a seed with the fleet, and after it, so the seed holds the refreshed fleet and its record.
     - name: Snapshot the container with the Processes stopped
       when: >-
@@ -2091,6 +2095,7 @@
         or (container.inner_volume is defined and seed_name not in seed_volume_names)
         or intent.deployment is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
+        or php_index_changed | default(false) | bool
       vars:
         # A half of this name exists: the new seed waits under `next-` until it is whole.
         seed_take: "{{ seed_next if seed_name in seed_names or seed_name in seed_volume_names else seed_name }}"

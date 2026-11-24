@@ -121,16 +121,17 @@ cases = [
   "a Laravel default indexes as agent at its application folder before its first seed; a repeat refresh skips, a new commit reindexes",
   "a default whose intent has no php_index runs no index work in the php_index phase",
   "a failed index fails the run with instance.php_index_failed and Phpactor's reason, before the seed, and the old seed stays",
+  "a running default's index refresh runs only php_index and seed: its untracked files stay, and a changed index alone retakes the seed",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 9498
+cost = 9553
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 121
+slices = 122
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -299,6 +300,7 @@ inputs = [
 "a Laravel default indexes as agent at its application folder before its first seed; a repeat refresh skips, a new commit reindexes" = 75
 "a default whose intent has no php_index runs no index work in the php_index phase" = 30
 "a failed index fails the run with instance.php_index_failed and Phpactor's reason, before the seed, and the old seed stays" = 45
+"a running default's index refresh runs only php_index and seed: its untracked files stay, and a changed index alone retakes the seed" = 55
 [mandatory_cases]
 "swamp/ansible/instance-container.yml" = ["a failed start retains its task and bounded stderr and hides private task output"]
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]

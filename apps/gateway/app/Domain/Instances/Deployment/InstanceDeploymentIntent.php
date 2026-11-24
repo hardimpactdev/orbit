@@ -240,7 +240,7 @@ final readonly class InstanceDeploymentIntent
      *
      * @return array<string, mixed>
      */
-    private static function container(Instance $instance, InstanceRuntime $runtime): array
+    public static function container(Instance $instance, InstanceRuntime $runtime): array
     {
         $container = app(InstanceContainer::class)->intent($instance, $runtime);
         if ($instance->name !== DefaultInstanceName::Name) {

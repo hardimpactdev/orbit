@@ -19,10 +19,15 @@ use App\Domain\Instances\InstanceRestoreProjection;
 use App\Domain\Instances\InstanceUnregisterProjection;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\NodeServiceTargetOperation;
+use App\Domain\Instances\PhpSymbolIndexRefresh;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 use App\Domain\Proof\ProofSeedCopyProjection;
 
 return [
+    // The PHP symbol index of a running Laravel default and its seed, without a deployment's checkout or clean.
+    'instance.php_index' => ['workflow' => 'operation-instance-php-index', 'workflow_inputs' => true,
+        'projection' => PhpSymbolIndexRefresh::class,
+        'terminal_result' => ['job' => 'index', 'step' => 'result']],
     // The end check is the Route create child; the journal clear after it fails the run too.
     'instance.restore' => ['workflow' => 'operation-instance-restore', 'workflow_inputs' => true,
         'projection' => InstanceRestoreProjection::class,

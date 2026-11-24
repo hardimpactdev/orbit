@@ -4453,3 +4453,52 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "a running default's index refresh runs only php_index and seed: its untracked files stay, and a changed index alone retakes the seed",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, calls } = phpIndexFixture();
+    try {
+      // A default seeded before the index existed: its seed holds no index.
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
+      const head = git(f.source, "rev-parse", "HEAD");
+      const workspace = `${f.folder}/containers/instance-7/srv/workspace`;
+      Deno.mkdirSync(`${workspace}/notes`);
+      Deno.writeTextFileSync(`${workspace}/notes/plan.md`, "work in progress\n");
+      Deno.writeTextFileSync(`${workspace}/Scratch.php`, "<?php class Scratch {}\n");
+      const snapshots = () => Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot") && call.includes("create")).length;
+      const before = snapshots();
+
+      // instance.php_index: the two phases of its one play, with no `deployment` in the intent.
+      const refresh = f.phases(["php_index", "seed"]);
+      assert(refresh.ok, refresh.output);
+      assertEquals(calls().length, 1);
+      assertEquals(snapshots(), before + 1, refresh.output);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      assertEquals(f.result(), { commit: head, phases_passed: ["php_index", "seed"] });
+      // No clean, reset or checkout ran: the untracked files are there as they were.
+      assertEquals(Deno.readTextFileSync(`${workspace}/notes/plan.md`), "work in progress\n");
+      assertEquals(Deno.readTextFileSync(`${workspace}/Scratch.php`), "<?php class Scratch {}\n");
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all").split("\n").sort(), ["?? Scratch.php", "?? notes/plan.md"]);
+
+      // The same refresh again: the index did not change, so no Phpactor starts and the seed stays as it is.
+      const again = f.phases(["php_index", "seed"]);
+      assert(again.ok, again.output);
+      assertEquals(calls().length, 1);
+      assertEquals(snapshots(), before + 1);
+
+      // A deployment at the same commit would not keep them: its checkout's clean removes untracked files.
+      for (const phases of [["start", "fetch"], ["checkout"]]) {
+        const deployed = f.phases(phases);
+        assert(deployed.ok, `${phases}: ${deployed.output}`);
+      }
+      assertEquals(f.result().workspace_cleaned.removed_count, 2);
+      assertThrows(() => Deno.statSync(`${workspace}/notes/plan.md`));
+    } finally {
+      f.cleanup();
+    }
+  },
+});

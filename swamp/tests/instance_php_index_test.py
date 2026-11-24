@@ -100,6 +100,19 @@ class PhpIndexTest(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['index'], 'updated')
         self.assertEqual(len(self.calls()), 2)
 
+    def test_an_application_without_vendor_is_indexed_from_its_source_and_a_later_composer_install_reindexes(self):
+        # As a default whose deploy steps never ran Composer: no vendor/, no autoloader. Nothing requires them.
+        self.assertFalse(os.path.exists(os.path.join(self.app, 'vendor')))
+        self.assertEqual(json.loads(self.run_index().stdout)['index'], 'updated')
+        time.sleep(0.01)
+        os.makedirs(os.path.join(self.app, 'vendor/laravel/framework/src'))
+        Path(self.app, 'vendor/autoload.php').write_text('<?php\n')
+        Path(self.app, 'vendor/laravel/framework/src/Application.php').write_text('<?php class Application {}\n')
+
+        self.assertEqual(json.loads(self.run_index().stdout)['index'], 'updated')
+        self.assertEqual(len(self.calls()), 2)
+        self.assertTrue(all('--reset' not in call for call in self.calls()))
+
     def test_a_failed_build_fails_with_phpactor_s_reason_and_records_nothing(self):
         result = self.run_index(FAIL='1')
 

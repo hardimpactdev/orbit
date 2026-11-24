@@ -17,6 +17,9 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
+        // The `php_index` and `seed` phases of one play: 630 s for the index (PhpSymbolIndex::Seconds and its exec) and 120 s for the seed,
+        // which the workflow step bounds at 750 s, plus 150 s for admission, the input and the result.
+        'instance.php_index' => 900,
         // No run yet. Basis: a 300 s download and unpack, the binary check, two restarts with their 10 s run checks (the upgrade and a
         // rollback), plus input, result and cleanup, rounded up to five minutes. Replace with the 14-day p95 after the first successes.
         'process.upgrade' => 600,

@@ -112,12 +112,29 @@ The run is incremental and bounded:
 
 A build that fails or runs past its bound fails the phase with `instance.php_index_failed`. Its detail names Phpactor's exit code or the bound, with the end of Phpactor's output. The seed is not taken, so the old seed stays, and the run records no fingerprint, so the next deployment builds again. Orbit fails the deployment rather than warn: a seed whose index is missing or half built would hand every clone a lookup that is silently wrong.
 
-To prepare the index in existing Laravel defaults, converge each `app-dev` Node so its runtime folder holds `phpactor`, then deploy each Laravel default on it. A deployment at the same commit retakes the seed:
+The index needs no Composer install. A default without `vendor/` gets an index of its own source, and a later `composer install` adds the packages at the next build, incrementally.
 
-```bash
-orbit node:converge <node>
-orbit instance:deploy <default-instance-id>
-```
+A legacy host checkout, such as a default that `instance:migrate` has not moved into a container, has no seed and no `php_index` phase. Its clones get no inherited index until it is a container default.
+
+#### Prepare the index of a running default
+
+A deployment is not the way to add the index to a default that already runs. Its `checkout` phase removes every untracked file that Git does not ignore from the default's tree (`instance_default_clean.py`), also at the same commit. `instance.php_index` instead runs only the container's `php_index` and `seed` phases in one play (`PhpSymbolIndexRefresh`, workflow `operation-instance-php-index`). It runs no fetch, checkout, clean, reset or deploy step, so the working tree, its untracked files included, stays as it is.
+
+The seed phase retakes `seed-<HEAD>` only when the index changed. A second run on an unchanged tree starts no Phpactor and takes no snapshot. The retake stops and starts the default's Processes around the snapshot, as a deployment's seed does. The Operation's budget is 900 s and its step's bound 750 s.
+
+Admission refuses each of these with its code:
+
+- An Instance that gets no index (`instance.php_index_ineligible`): not a Laravel default, or not on an active `app-dev` Node.
+- A host checkout with no container (`operation.kind_unavailable`).
+- A default with no seed yet or with an unfinished Operation (`instance.lifecycle_busy`).
+- A stopped container (`process.target_inactive`): the run never starts one.
+
+To prepare the index in existing Laravel defaults:
+
+1. Converge each `app-dev` Node so its runtime folder holds `phpactor`: `orbit node:converge <node>`.
+2. On the Gateway host, admit the runs: `php artisan instances:php-index <instance-id> [<instance-id>...]`.
+
+The command prints one JSON line per Instance: `{"instance":<id>,"operation":<id>}` when admitted, or `{"instance":<id>,"skipped":"<code>","reason":"..."}`, and exits `1` when any was skipped. Follow each Operation with `orbit operation:show <id>`. A failed build ends it with `instance.php_index_failed`, and the old seed stays.
 
 ### PHP
 
