@@ -116,6 +116,7 @@ additionalFiles:
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
   - ansible/instance_root_disk.py
+  - ansible/instance_php_index.py
   - ansible/instance_seed_files.py
   - ansible/instance_default_clean.py
   - ansible/instance_fleet_tunnel.py
