@@ -19,7 +19,7 @@
 
 # Up to health_rounds reads, health_delay seconds apart.
 - name: Wait for the health
-  ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
+  ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, return_content: true, timeout: 5 }
   register: linux_health
   until: linux_health.json.server | default('') == 'conn-server' and linux_health.json.version | default('') == expected_version
   retries: "{{ health_rounds | int }}"
