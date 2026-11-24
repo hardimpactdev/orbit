@@ -236,18 +236,20 @@ final readonly class InstanceDeploymentIntent
     /**
      * The container as the deployment runs it. A default also holds the files every clone of it needs before its seed
      * (InstanceContainer::seedFiles), and its seed records the digest of the services part it holds (InstanceContainer::servicesDigest).
-     * A Laravel default on an app-dev Node prepares its PHP symbol index before the seed (PhpSymbolIndex).
+     * A Laravel default on an app-dev Node prepares its PHP symbol index before the seed (PhpSymbolIndex). `$agentFolder`: as
+     * InstanceContainer::seedFiles takes it.
      *
+     * @param  list<array<string, mixed>>|null  $agentFolder
      * @return array<string, mixed>
      */
-    public static function container(Instance $instance, InstanceRuntime $runtime): array
+    public static function container(Instance $instance, InstanceRuntime $runtime, ?array $agentFolder = null): array
     {
         $container = app(InstanceContainer::class)->intent($instance, $runtime);
         if ($instance->name !== DefaultInstanceName::Name) {
             return $container;
         }
 
-        return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime),
+        return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime, $agentFolder),
             'services_digest' => InstanceContainer::servicesDigest($container),
             ...(($index = PhpSymbolIndex::intent($instance)) === null ? [] : ['php_index' => $index])];
     }
