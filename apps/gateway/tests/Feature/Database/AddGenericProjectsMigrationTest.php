@@ -60,14 +60,17 @@ it('keeps the Project ID sequence past a deleted highest Project in up and in do
 it('holds one write transaction across the rebuild, so a concurrent writer cannot commit a change it would lose', function (): void {
     genericProjectsMigration()->down();
 
-    // A second connection needs a database file: the test schema and Project are copied to one, and the migration runs there.
+    // A second connection needs a database file: the tables the migration touches, `projects` and the `nodes` it references,
+    // with their indexes and triggers, and one Project are copied to one in one transaction, and the migration runs there.
     $file = tempnam(sys_get_temp_dir(), 'generic-projects-');
     $copy = new PDO("sqlite:{$file}");
-    foreach (DB::select("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid") as $object) {
+    $copy->beginTransaction();
+    foreach (DB::select("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND tbl_name IN ('projects', 'nodes') ORDER BY rowid") as $object) {
         $copy->exec($object->sql);
     }
     $copy->prepare('INSERT INTO projects (name, slug, code, repository_url, repository_identity) VALUES (?, ?, ?, ?, ?)')
         ->execute(['alpha', 'alpha', 'ALP', 'https://github.com/acme/alpha.git', 'github.com/acme/alpha']);
+    $copy->commit();
     $copy = null;
     config(['database.connections.generic_projects_file' => [...config('database.connections.sqlite'), 'database' => $file]]);
     $default = DB::getDefaultConnection();
