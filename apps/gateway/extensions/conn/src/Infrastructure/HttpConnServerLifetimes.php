@@ -24,9 +24,10 @@ final readonly class HttpConnServerLifetimes implements ConnServerLifetimes
 
     public function untilRevoked(string $baseUrl): bool
     {
+        // Any failure of the gate, as a TypeScript server or an unreachable one gives, keeps the sessions dated.
         try {
             $response = $this->request()->get($this->endpoint($baseUrl, '/health'));
-        } catch (ConnectionException) {
+        } catch (Throwable) {
             return false;
         }
         $server = $response->successful() ? $response->json('server') : null;
