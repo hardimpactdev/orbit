@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnCleanupAction;
@@ -63,9 +64,10 @@ final readonly class ConnOwedWork
         $owing = ConnEnvironment::query()->whereNotNull('instance_id')
             ->where(static fn ($query) => $query->whereColumn('cleanup_version', '>', 'cleanup_completed_version')
                 ->orWhereIn('id', ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')->select('conn_environment_id')))
-            ->orderBy('id')->pluck('id')->all();
+            ->orderBy('id')->pluck('id');
         $advanced = [];
-        foreach ($owing as $environment) {
+        foreach ($owing as $id) {
+            $environment = ValidatedData::integer($id);
             $last = Operation::query()->whereIn('kind', self::Kinds)->where('input->conn_environment_id', $environment)->latest('id')->first();
             if ($last instanceof Operation && $last->status === OperationStatus::Failed
                 && ($last->finished_at ?? $last->updated_at)?->gt($now->subMinutes(self::RetryMinutes))) {
