@@ -72,6 +72,13 @@ PATH=\${PATH#*:} mv "$@" || exit
 for last; do :; done
 case "$last" in *backup*/"Conn Server.app") [ -f "$FIXTURE/exit-mv-backup" ] && exit 1 ;; esac
 exit 0`,
+    // The workflow's ssh, for Ansible's ssh connection plugin: like real ssh it refuses a host that the run's UserKnownHostsFile does
+    // not pin, so only the Nodes are reached, and it runs each command on this machine.
+    "ssh-node": `#!/bin/sh
+for a; do case "$a" in UserKnownHostsFile=*) known=\${a#UserKnownHostsFile=} ;; esac; done
+eval "host=\\\${$(($# - 1))}" && eval "command=\\\${$#}"
+grep -q "^$host " "$known" 2>/dev/null || { echo "Host key verification failed." >&2; exit 255; }
+exec /bin/sh -c "$command"`,
     // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC.
     systemctl: `#!/bin/sh
 if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
@@ -82,7 +89,7 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string; noticeUrl?: (port: number) => string; noticeCommand?: string[] };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean };
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
@@ -142,10 +149,13 @@ async function rollout(options: Options) {
             })),
         }));
         const done = await new Deno.Command(playbook, {
-            args: ["-i", "localhost,", "--tags", "rollout", "-e", "ansible_connection=local", "-e", "ansible_become=false",
+            // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
+            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false",
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
             env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: "0f0e0d0c-0b0a-4908-8706-050403020100",
-                PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+                PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,
+                ...(options.ssh ? { ANSIBLE_SSH_EXECUTABLE: `${folder}/bin/ssh-node`, ANSIBLE_SSH_TRANSFER_METHOD: "piped",
+                    ANSIBLE_SSH_ARGS: `-o ControlMaster=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=${folder}/run/known_hosts` } : {}) },
         }).output();
         await server.shutdown();
         const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
@@ -315,6 +325,17 @@ test("a failed notice URL or command fails the Node with its code before any cha
         assertEquals([run.installed, run.launchctl], ["0.4.2", []]);
         assert(!run.output.includes(secret) && !JSON.stringify(run.result).includes(secret), run.output);
     }
+});
+
+test("run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker", async () => {
+    const dry = await rollout({ nodes: [{ platform: "mac", canary: true }], dryRun: true, ssh: true });
+    assert(dry.ok, dry.output);
+    assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
+    assertEquals([dry.installed, dry.launchctl], ["0.4.2", []]);
+    // The notice is sent from the worker too, before the Node that is set to notify restarts.
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "mac", notify: true }], notice: true, ssh: true });
+    assert(run.ok, run.output);
+    assertEquals(run.noticed, [{ node_id: 46, version: "0.5.0", event: "conn_server.restart" }]);
 });
 
 test("a run with more Nodes than its deadline covers is refused before any Node is reached", async () => {

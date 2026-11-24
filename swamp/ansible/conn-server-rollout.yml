@@ -104,6 +104,9 @@
         dest: "{{ run }}/nodes/{{ '%06d' | format((intent.nodes | map(attribute='node_id') | list).index(node_id | int)) }}.json"
         content: "{{ node_result | to_json }}"
         mode: "0600"
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
     # A failed Node, or a canary that held, stops the run: no later Node is reached.
     - name: Stop the run

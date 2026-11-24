@@ -36,13 +36,15 @@ final readonly class AdmitNodeSshAccessAction
         });
     }
 
-    /** @return array<string,mixed> The SSH target and Orbit's keys: the swamp role key, then operator keys Orbit records (none yet). */
+    /** @return array<string,mixed> The SSH target, its platform, which picks how the keys are written, and Orbit's keys: the swamp role
+     * key, then operator keys Orbit records (none yet). */
     private function intent(Node $node): array
     {
         $intent = $this->ssh->forNode($node);
         if ($intent['target']['user'] === 'root') {
             throw new ResourceOperationException('node.ssh_account_invalid', 'SSH access publication requires the managed non-root account.', 422);
         }
+        $intent['platform'] = $node->platform;
         $intent['keys'] = [$intent['public_key']];
         $intent['digest'] = NodeSshAccessProjection::digest($intent);
 

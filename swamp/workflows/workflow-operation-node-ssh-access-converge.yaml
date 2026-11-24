@@ -18,11 +18,12 @@ jobs:
 - name: ssh_access
   labels: {role: swamp}
   steps:
-    # One official authorized_key per key Orbit owns; it adds a missing line and never touches another.
+    # One official authorized_key per key Orbit owns; it adds a missing line and never touches another. It reads the account with
+    # getent, which macOS lacks, so a Mac Node takes the next step instead.
   - name: 'Write the Orbit keys'
     labels: {role: swamp}
     writes: true
-    forEach: {item: key, in: '${{ inputs.intent.keys }}'}
+    forEach: {item: key, in: '${{ inputs.intent.platform != "macos" ? inputs.intent.keys : [] }}'}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/authorized_key'
@@ -31,10 +32,38 @@ jobs:
       globalArgs: {user: '${{ inputs.intent.target.user }}', key: '${{ self.key }}', ensure: present, nodeHost: '${{ inputs.intent.target.host }}',
         nodeUser: '${{ inputs.intent.target.user }}', nodePort: '${{ inputs.intent.target.port }}', nodeIdentityFile: '${{ inputs.intent.identity_file }}'}
       inputs: {}
+    # On a Mac, the same per key: dscl names the account's home, and a key whose type and body are missing is appended as one line.
+  - name: 'Write the Orbit keys on a Mac'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: key, in: '${{ inputs.intent.platform == "macos" ? inputs.intent.keys : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-access-mac-key-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-ssh-access-mac-key-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.target.user }}
+          port: ${{ inputs.intent.target.port }}
+          hostKeys: ${{ inputs.intent.target.host_keys }}
+          identityFile: ${{ inputs.intent.identity_file }}
+          identitiesOnly: true
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.target.host }}
+      inputs:
+        hosts: name:target
+        argv: ['/bin/sh', '-c', 'set -euf; home=$(dscl . -read "/Users/$1" NFSHomeDirectory); home=${home#NFSHomeDirectory: }; case $home in /*) ;; *) exit 1 ;; esac; umask 077; [ -d "$home/.ssh" ] || mkdir "$home/.ssh"; file=$home/.ssh/authorized_keys; set -- $2; if ! grep -qF -- "$1 $2" "$file" 2>/dev/null; then if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then echo >> "$file"; fi; printf "%s\n" "$*" >> "$file"; fi', sh,
+          '${{ inputs.intent.target.user }}', '${{ self.key }}']
+        timeoutSec: 30
     # The end check: a new session with the swamp role identity only.
   - name: 'Log in with Swamp identity'
     labels: {role: swamp}
-    dependsOn: [{step: 'Write the Orbit keys', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Write the Orbit keys', condition: &written {type: or, conditions: [{type: succeeded}, {type: skipped}]}},
+      {step: 'Write the Orbit keys on a Mac', condition: *written}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
