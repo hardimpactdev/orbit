@@ -105,7 +105,7 @@ When the `tasks` extension is enabled, Conn reads tasks and detail snapshots via
 
 ## Threads in an Orbit Project
 
-A General thread is tagged to a Project from the [Project summary](/reference/projects#project-summary) of `GET /api/v1/projects`; Conn keeps no Project registry of its own. Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
+A General thread is tagged to a Project from the [Project summary](/reference/projects#project-summary) of `GET /api/v1/projects`, which also lists the [generic Projects](/reference/projects#generic-projects) about a reachable Node; Conn keeps no Project registry of its own. Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
 
 Clone creation runs stable step names (`clone-container`, `clone-t3`, `clone-session-copy`, `clone-register`) and hands off to `instance.complete`. Inspect workspace git state via `GET /api/v1/conn/instances/{instance}/work`.
 
