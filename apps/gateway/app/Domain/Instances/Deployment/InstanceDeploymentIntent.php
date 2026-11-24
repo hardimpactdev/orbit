@@ -76,7 +76,7 @@ final readonly class InstanceDeploymentIntent
                 'needs_vp' => ! $container && array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
                 'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
                 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
-                'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
+                'repository' => $instance->project->repositoryUrl(), 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 // A default holds the files every clone of it needs before its seed (InstanceContainer::seedFiles).
                 'container' => $runtime !== null ? self::container($instance, $runtime, $agentFolder) : null,
@@ -100,7 +100,7 @@ final readonly class InstanceDeploymentIntent
             'php_runtime' => $runtime, 'php_refresh' => $refresh,
             'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $config->branch,
-            'repository' => $instance->project->repository_url,
+            'repository' => $instance->project->repositoryUrl(),
             'home' => $instance->production_home, 'user' => $instance->production_user,
             'relative_root' => $instance->root ?? $instance->project->root,
             'application_suffix' => ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root),

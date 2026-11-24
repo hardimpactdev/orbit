@@ -31,7 +31,7 @@ final readonly class ProjectGitHubSource
      */
     public function access(Project $project): ?array
     {
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         if ($project->source_access !== ProjectSourceAccess::GitHubApp || ! $repository instanceof GitHubRepository) {
             return null;
         }

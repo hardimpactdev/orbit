@@ -13,6 +13,7 @@ use App\Data\Instances\Dependencies\DependencySourceData;
 use App\Domain\Instances\Dependencies\DependencyReadFailure;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Dependencies\SwampDependencyReadException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\Swamp\SwampReadBusy;
 use App\Infrastructure\Swamp\SwampViewWait;
 use App\Models\Instance;
@@ -189,7 +190,9 @@ final readonly class ReadSwampDependenciesAction
 
     private static function repository(Project $project): string
     {
-        return str_starts_with($project->repository_identity, 'github.com/') ? strtolower($project->repository_identity) : $project->repository_identity;
+        $identity = GitRepositoryIdentity::derive($project->repositoryUrl());
+
+        return str_starts_with($identity, 'github.com/') ? strtolower($identity) : $identity;
     }
 
     private static function key(Project $project, string $ref): string

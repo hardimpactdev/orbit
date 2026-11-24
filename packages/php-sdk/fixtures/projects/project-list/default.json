@@ -32,6 +32,7 @@
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
                 "container_server": "conn",
+                "node_id": null,
                 "repository": "github.com/acme/site",
                 "node_name": "mini",
                 "icon": null,

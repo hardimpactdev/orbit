@@ -43,7 +43,7 @@ final readonly class ConnProjectBranches
         $names = array_slice($names, 0, self::Limit);
         $pullRequests = [];
         $unavailable = false;
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         if ($repository instanceof GitHubRepository && $names !== []) {
             $deadline = new ReadDeadline(10.0);
             try {

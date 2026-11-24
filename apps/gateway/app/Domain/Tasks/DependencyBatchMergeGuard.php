@@ -47,7 +47,7 @@ final readonly class DependencyBatchMergeGuard
             && preg_match('/^Swamp schedule: batch-[a-f0-9]{64}$/m', $group->brief ?? '') === 1, 'dependency_merge.batch_required');
         $publish = Operation::query()->where('kind', OperationKinds::TasksPublish)->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->find($publishId);
         $result = $publish === null ? [] : ($publish->result ?? []);
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         $number = $result['pull_request_number'] ?? null;
         $url = $result['pull_request_url'] ?? null;
         $check = TaskCheck::query()->where('task_id', $child->id)->whereKey($publish?->input['check'] ?? 0)->first();

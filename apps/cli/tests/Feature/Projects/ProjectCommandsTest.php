@@ -94,6 +94,28 @@ describe('project:create', function (): void {
             ->toMatchArray(['type' => 'node-package', 'root' => '.']);
     });
 
+    it('creates a generic Project about a Node without a repository', function (): void {
+        $mockClient = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', ['slug' => 'mini', 'type' => 'generic', '--node' => '11'])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['slug' => 'mini', 'type' => 'generic', 'node_id' => 11]);
+    });
+
+    it('refuses repository settings for a generic Project and a Node for any other type, before contacting the Gateway', function (array $arguments, string $code): void {
+        $mockClient = MockClient::global([]);
+
+        expect(Artisan::call('project:create', ['slug' => 'mini', '--json' => true, ...$arguments]))->toBe(1)
+            ->and(Artisan::output())->toContain($code);
+        $mockClient->assertNothingSent();
+    })->with([
+        'repository' => [['type' => 'generic', 'repository' => 'https://github.com/acme/mini.git'], 'project.repository_unsupported'],
+        'root' => [['type' => 'generic', '--root' => 'public'], 'project.option_unsupported'],
+        'node on a repository type' => [['type' => 'laravel-app', 'repository' => 'https://github.com/acme/mini.git', '--node' => '11'], 'project.node_unsupported'],
+    ]);
+
     it('creates a Project that reads through the GitHub CLI', function (): void {
         $mockClient = MockClient::global([
             CreateProjectRequest::class => app_mock_response(201),
@@ -406,6 +428,16 @@ describe('project:list', function (): void {
             ->artisan('project:list', ['--json' => true])
             ->expectsOutput($expected)
             ->assertExitCode(0);
+    });
+
+    it('looks up the Project of a Node by its ID', function (): void {
+        $mockClient = MockClient::global([
+            ListProjectsRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        $this->artisan('project:list', ['--node' => '11', '--json' => true])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->query()->all())->toBe(['node_id' => 11]);
     });
 
     it('lists projects for humans', function (): void {

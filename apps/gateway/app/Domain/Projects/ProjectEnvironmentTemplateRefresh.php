@@ -28,7 +28,7 @@ final readonly class ProjectEnvironmentTemplateRefresh
 
     public function observe(Project $project, string $head): void
     {
-        $repository = GitHubRepository::fromOrigin($project->repository_url);
+        $repository = GitHubRepository::fromOrigin($project->repositoryUrl());
         if ($project->source_access !== ProjectSourceAccess::GitHubApp || ! $repository instanceof GitHubRepository) {
             return;
         }

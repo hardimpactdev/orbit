@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Projects\ProjectType;
+use LogicException;
 use RuntimeException;
 
 /**
@@ -19,6 +20,8 @@ final readonly class InstanceNotes
             ProjectType::LaravelApp, ProjectType::SymfonyApp => 'web-app',
             ProjectType::Monorepo => 'monorepo',
             ProjectType::LaravelPackage, ProjectType::NodePackage => 'package',
+            // Instance creation reads the repository first, which a generic Project refuses (Project::repositoryUrl()).
+            ProjectType::Generic => throw new LogicException('A generic Project has no Instance.'),
         };
     }
 

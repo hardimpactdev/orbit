@@ -76,7 +76,7 @@ final readonly class RunTaskPullRequestGateAction
         if (TaskPullRequest::copy($group)) {
             return $this->result($group, $number, null, 'skipped', TaskPullRequest::Code);
         }
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($group->project->repositoryUrl());
         if (! is_int($number) || ! $repository instanceof GitHubRepository) {
             return $this->result($group, $number, null, 'skipped', 'tasks_pr.no_pull_request');
         }

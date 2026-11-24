@@ -9,12 +9,14 @@ use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\Tasks\TaskPrMode;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use SensitiveParameter;
@@ -25,8 +27,9 @@ use SensitiveParameter;
  * @property string $code
  * @property string $slug
  * @property ProjectType $type
- * @property string $repository_url
- * @property string $repository_identity
+ * @property string|null $repository_url
+ * @property string|null $repository_identity
+ * @property int|null $node_id
  * @property ProjectSourceAccess $source_access
  * @property string|null $default_branch
  * @property string|null $root
@@ -52,6 +55,7 @@ use SensitiveParameter;
  * @property-read Collection<int, Task> $tasks
  * @property-read ProjectEnvironmentTemplate|null $environmentTemplate
  * @property-read Instance|null $defaultInstance
+ * @property-read Node|null $node
  * @property-read int $instances_count Set only by withCount('instances').
  */
 final class Project extends Model
@@ -70,7 +74,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'default_auto_deploy', 'container_server', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'default_auto_deploy', 'container_server', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at', 'node_id'];
 
     /** @var list<string> */
     #[\Override]
@@ -82,7 +86,7 @@ final class Project extends Model
 
             $used = ValidatedData::stringList(self::query()->pluck('code')->all());
             $project->code = ProjectCode::validate($project->code ?? ProjectCode::suggest($project->slug, $used));
-            $project->repository_identity = GitRepositoryIdentity::derive($project->repository_url);
+            $project->repository_identity = $project->repository_url === null ? null : GitRepositoryIdentity::derive($project->repository_url);
         });
     }
 
@@ -91,6 +95,25 @@ final class Project extends Model
         return self::query()
             ->where('repository_identity', GitRepositoryIdentity::derive($repository))
             ->first();
+    }
+
+    /** @return BelongsTo<Node, $this> */
+    public function node(): BelongsTo
+    {
+        return $this->belongsTo(Node::class);
+    }
+
+    /**
+     * The repository that every checkout, branch, Instance and Task of this Project reads. A generic Project has none, so
+     * each of those paths refuses it here, before it writes anything (projects.md#generic-projects).
+     */
+    public function repositoryUrl(): string
+    {
+        if ($this->repository_url === null) {
+            throw new ResourceOperationException('project.repository_required', "Project [{$this->slug}] is generic and has no repository.", 409);
+        }
+
+        return $this->repository_url;
     }
 
     /** @return HasMany<Instance, $this> */

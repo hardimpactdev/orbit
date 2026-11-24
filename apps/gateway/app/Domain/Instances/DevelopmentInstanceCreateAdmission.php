@@ -145,7 +145,7 @@ final readonly class DevelopmentInstanceCreateAdmission
             || ! is_string($project->root) || ! ProjectRoot::isValid($project->root, $project->type)) {
             throw new ResourceOperationException('project.source_defaults_incomplete', "App [{$project->slug}] does not have complete source defaults.");
         }
-        GitRepositoryOrigin::validate($project->repository_url);
+        GitRepositoryOrigin::validate($project->repositoryUrl());
     }
 
     public function assertPlacement(Node $node): void

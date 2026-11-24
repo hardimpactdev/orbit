@@ -64,7 +64,7 @@ final readonly class TaskCheckIntent
         if ($input->phase === TaskCheckKind::Baseline && $this->evidence->groupImplementerStarted($group)) {
             throw new ResourceOperationException('tasks.baseline_done', 'An implementer has already started in this task group.', 409);
         }
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($group->project->repositoryUrl());
         $ci = $input->phase === TaskCheckKind::Handoff ? $group->project->handoffCheckName() : null;
         $container->requireReady();
         TaskTurn::refuseUnended($group);

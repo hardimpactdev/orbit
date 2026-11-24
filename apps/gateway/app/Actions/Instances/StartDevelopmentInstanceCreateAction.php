@@ -172,7 +172,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'name' => $name, 'name_converted_from' => DefaultInstanceName::convertedFrom($project, $data->name),
                 'root' => $root, 'domain' => $data->domain, 'branch_override' => $data->branch,
                 'checkout' => $instance->checkout_path, 'prepare_id' => $instance->source_prepare_id,
-                'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+                'repository' => $project->repositoryUrl(), 'repository_identity' => $project->repository_identity,
                 'default_branch' => $project->default_branch,
                 'task_vm' => false,
                 'node_id' => $node->id, 'initial_status' => $instance->status->value, 'first_setup_pending' => $instance->first_setup_pending,

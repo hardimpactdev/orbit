@@ -135,7 +135,9 @@ final readonly class ServingNodeResolver
 
         $nodes = Node::query()
             ->where(function ($query) use ($project): void {
-                $query->whereIn('id', $project->instances()->select('node_id'));
+                $query->whereIn('id', $project->instances()->select('node_id'))
+                    // A generic Project is served by the Node it is about (projects.md#generic-projects).
+                    ->orWhere('id', $project->node_id);
             })
             ->orderBy('id')
             ->get()

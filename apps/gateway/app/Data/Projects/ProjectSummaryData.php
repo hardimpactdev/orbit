@@ -17,7 +17,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class ProjectSummaryData extends Data
 {
     public function __construct(
-        public string $repository,
+        public ?string $repository,
         public ?string $nodeName,
         public ?string $icon,
         public ?string $color,
@@ -25,14 +25,15 @@ final class ProjectSummaryData extends Data
     ) {}
 
     /**
-     * Expects `defaultInstance.node` loaded and `instances_count` counted, as ListProjectsAction does.
-     * The default Instance's Node is named only to a caller that reaches it, so the summary never identifies a hidden Node.
+     * Expects `defaultInstance.node` and `node` loaded and `instances_count` counted, as ListProjectsAction does.
+     * The Node is the one a generic Project is about, otherwise the default Instance's. It is named only to a caller that
+     * reaches it, so the summary never identifies a hidden Node.
      *
      * @param  list<int>|null  $reachableNodeIds  null for Gateway authority, which reaches every Node
      */
     public static function fromModel(Project $project, ?array $reachableNodeIds): self
     {
-        $node = $project->defaultInstance?->node;
+        $node = $project->node ?? $project->defaultInstance?->node;
 
         return new self(
             repository: $project->repository_identity,

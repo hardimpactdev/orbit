@@ -49,7 +49,7 @@ final readonly class DevelopmentDeployInput
         $intent = ValidatedData::object($operation->input['deployment']);
         $copies = $this->steps->copies($operation, $instance->project, ValidatedData::object($input['deployment'])['steps']);
         // The fetch reads a 0600 credential file: a repository-scoped read token, or an empty line for a public origin.
-        $copies['credential'] = app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repository_url,
+        $copies['credential'] = app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repositoryUrl(),
             'development-deploy-operation-'.$operation->id.'-credential');
 
         // Commands run with the account's own home, as Orbit creates managed accounts.
@@ -89,7 +89,7 @@ final readonly class DevelopmentDeployInput
             || $operation->node_id !== $instance->node_id || ! $instance->placedOnAppDev()
             || ! $instance->node->roles()->where('role', RoleName::AppDev)->where('status', 'active')->exists()
             || $intent['home'] !== $instance->checkout_path || $intent['project_id'] !== $instance->project_id
-            || $intent['repository'] !== $instance->project->repository_url || $instance->project->source_access !== ProjectSourceAccess::GitHubApp
+            || $intent['repository'] !== $instance->project->repositoryUrl() || $instance->project->source_access !== ProjectSourceAccess::GitHubApp
             || $intent['node_user'] !== $instance->node->user) {
             throw $this->forbidden();
         }

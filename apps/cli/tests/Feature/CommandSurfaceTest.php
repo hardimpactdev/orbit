@@ -573,10 +573,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'activity:show' => [['activity'], ['json' => false]],
         'analytics:credentials' => [[], ['set' => false, 'api-key' => null, 'unset' => false, 'json' => false]],
         'analytics:update' => [['version'], ['json' => false]],
-        'project:list' => [[], ['json' => false]],
+        'project:list' => [[], ['node' => null, 'json' => false]],
         'project:create' => [
             ['slug', 'type', 'repository'],
-            ['name' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'task-workspace-routed' => null,
+            ['name' => null, 'node' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'task-workspace-routed' => null,
                 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
@@ -1120,6 +1120,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'route:create' => ['instance', 'domain'],
             'task:agent:list', 'task:egress', 'task:cancel', 'task:complete', 'task:show', 'task:update', 'task:comment:create', 'task:comment:list', 'task:destroy' => ['task'],
             'task:create' => ['title'],
+            'project:create' => ['repository'],
             'task:question:close' => ['question'],
             default => [],
         };
