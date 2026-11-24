@@ -1322,6 +1322,7 @@
                 }
             },
             "laravel-lsp": {
+                "dev_only": true,
                 "version": "0.0.32",
                 "artifacts": {
                     "amd64": {
@@ -1334,6 +1335,7 @@
                 }
             },
             "phpactor": {
+                "dev_only": true,
                 "version": "2026.11.22.0",
                 "artifacts": {
                     "amd64": {

@@ -6,6 +6,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\PhpSymbolIndex;
@@ -201,6 +202,15 @@ it('refuses the index refresh of an Instance that gets no index, holds no seed, 
     'a stopped container' => [static function (Instance $default): void {
         $default->runtime()->update(['power_state' => InstanceRuntimePowerState::Stopped]);
     }, 'process.target_inactive'],
+    'a nested-fleet or proof default, in the nested project' => [static function (Instance $default): void {
+        // A runtime keeps its project, so the nested default's record is its own.
+        $runtime = $default->runtime()->firstOrFail();
+        $runtime->delete();
+        InstanceRuntime::query()->create(['instance_id' => $default->id, 'node_id' => $default->node_id, 'incus_project' => InstancePlacement::NestedProject,
+            'container_name' => $runtime->container_name, 'bridge_address' => $runtime->bridge_address, 'runtime_version' => $runtime->runtime_version,
+            'agent_version' => $runtime->agent_version, 'power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => str_repeat('c', 40),
+            'idmap_size' => 101000000]);
+    }, 'instance.php_index_unsupported'],
     'a default with no seed yet' => [static function (Instance $default): void {
         $default->runtime()->update(['seed_commit' => null]);
     }, 'instance.lifecycle_busy'],

@@ -352,6 +352,27 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and(array_column(InstanceImage::shared(), 'content', 'path'))->toMatchArray(array_column(InstanceImage::browser(), 'content', 'path'));
     });
 
+    it('leaves the dev_only parts, their programs and laravel-lsp-root out of an app-prod Node\'s runtime folder, and keeps them for app-dev', function (): void {
+        $prod = instanceHostNode('prod-dev-only', '10.44.0.14', appDev: false);
+        $assignment = $prod->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        app(InstanceHostIntent::class)->prepare($prod, [RoleName::AppProd->value]);
+        $devOnly = ['laravel-lsp', 'phpactor'];
+
+        $production = app(NativeNodeRoleRuntimeInput::class)->capture($prod->refresh(), $assignment, [], new Operation)['intent']['production_releases']['folder'];
+        $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
+        expect(array_intersect(array_column($production['parts'], 'name'), $devOnly))->toBe([])
+            ->and(array_intersect(array_keys($programs($production)), $devOnly))->toBe([])
+            ->and($production['scripts'])->not->toHaveKey('laravel-lsp-root')
+            // The production folder keeps every other part, such as headless Chrome and Composer.
+            ->and(array_column($production['parts'], 'name'))->toContain('chrome-headless-shell', 'composer');
+
+        $development = InstanceFolderPlan::for(app(CurrentRecipe::class)->currentRecipe()->instances)['runtime'];
+        expect(array_column($development['parts'], 'name'))->toContain(...$devOnly)
+            ->and($programs($development))->toMatchArray(['laravel-lsp' => 'laravel-lsp', 'phpactor' => 'phpactor.phar'])
+            ->and($development['scripts'])->toHaveKey('laravel-lsp-root')
+            ->and($production['version'])->not->toBe($development['version']);
+    });
+
     it('makes a new app-dev Node with the instance_host opt-in and no runtime or bridge health a host, with its bridge and input rules', function (): void {
         $node = instanceHostNode('fresh', '10.44.0.21');
         NodeFact::query()->where('node_id', $node->id)->delete();

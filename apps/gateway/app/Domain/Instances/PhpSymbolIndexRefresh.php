@@ -53,6 +53,14 @@ final readonly class PhpSymbolIndexRefresh implements DirectOperationProjection
                 throw new ResourceOperationException('process.target_inactive', 'The container is stopped; the index refresh does not start it.', 409);
             }
 
+            // A default in the nested project, a nested-fleet default or the proof default (whose intent has `fleet` or `seed_hold`): its
+            // seed holds an inner fleet or is held against seed copies, and only its deployment keeps those rules (the fleet check, the
+            // Club key refusal, the seed hold and `seed_taken_at`), so this run takes no such seed.
+            if ($runtime->incus_project === InstancePlacement::NestedProject) {
+                throw new ResourceOperationException('instance.php_index_unsupported',
+                    'A nested-fleet or proof default prepares its PHP symbol index only in its deployment.', 409);
+            }
+
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
                 ['container' => InstanceDeploymentIntent::container($instance, $runtime)], $caller, $requestId,
                 lockKey: OperationStore::lockKey('instance', $instance->id));

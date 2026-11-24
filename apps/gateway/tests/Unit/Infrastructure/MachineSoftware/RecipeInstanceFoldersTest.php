@@ -128,7 +128,11 @@ it('pins the Phpactor PHAR as the runtime folder\'s `phpactor`, which a Laravel 
         ->and($phpactor->bin)->toBe(['phpactor' => 'phpactor.phar'])
         ->and($phpactor->artifact->location)->toBe('https://github.com/phpactor/phpactor/releases/download/2026.11.22.0/phpactor.phar')
         ->and($phpactor->artifact->algorithm)->toBe('sha256')
-        ->and($phpactor->artifact->digest)->toBe('1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659');
+        ->and($phpactor->artifact->digest)->toBe('1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659')
+        // Development tools only: the production runtime folder leaves both language-tool PHARs out.
+        ->and($phpactor->devOnly)->toBeTrue()
+        ->and(new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['laravel-lsp']->devOnly)->toBeTrue()
+        ->and(new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['composer']->devOnly)->toBeFalse();
 });
 
 it('reads a part without `bin` as files that give the folder no program', function (): void {
@@ -187,6 +191,9 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     'a path out of the artifact' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['ripgrep']['bin']['rg'] = '../../etc/passwd';
     }, 'expected a relative path inside the artifact'],
+    'a dev_only marker that is not true' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['phpactor']['dev_only'] = false;
+    }, 'instances.runtime.phpactor.dev_only: expected true, or no field'],
     'no program' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['ripgrep']['bin'] = new stdClass;
     }, 'expected at least one program'],

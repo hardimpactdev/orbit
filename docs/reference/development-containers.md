@@ -94,7 +94,7 @@ It exits `1` when it finds none, or two with nothing to pick one. The Project ho
 
 The recipe pins the [Phpactor](https://github.com/phpactor/phpactor) PHAR (`phpactor` `2026.11.22.0`, by SHA-256) as a part of the runtime folder, as it pins `laravel-lsp`. A Laravel default prepares Phpactor's index of its PHP classes before each seed, so a clone's first class lookup reads an index that is already built. The PHP symbol index and the [Laravel language server](#laravel-language-server) keep separate caches: `laravel-lsp` builds no index on disk and loads its framework data on demand.
 
-Only the Project's `default`, of a Laravel source, on a Node whose one app role is an active `app-dev`, gets the work: its container intent has `php_index` (`PhpSymbolIndex`). A clone, a non-Laravel source, a production Instance, an `app-prod` Node, a Node with no app role, such as a CI Node, and an `app-dev` role that is not active get none. On an `app-prod` Node the PHAR sits in the production runtime folder with every other runtime part, and nothing runs it.
+Only the Project's `default`, of a Laravel source, on a Node whose one app role is an active `app-dev`, gets the work: its container intent has `php_index` (`PhpSymbolIndex`). A clone, a non-Laravel source, a production Instance, an `app-prod` Node, a Node with no app role, such as a CI Node, and an `app-dev` role that is not active get none. The recipe marks `phpactor` and `laravel-lsp` `dev_only`, so an `app-prod` Node's [production runtime folder](/reference/production-containers#the-pinned-runtime) has neither PHAR, their programs or `laravel-lsp-root`.
 
 The `php_index` phase runs right before the `seed` phase: in the create's seed step, and in "Finish the container" of each deployment, after the checkout, the deploy steps (Composer's install and any generated PHP among them) and the `processes` phase. `agent` runs `phpactor index:build` at the application's folder, the one with `artisan` that `laravel-lsp-root` prints, with the deploy steps' environment. Orbit passes Phpactor no setting and writes no file in the Project.
 
@@ -128,11 +128,14 @@ Admission refuses each of these with its code:
 - A host checkout with no container (`operation.kind_unavailable`).
 - A default with no seed yet or with an unfinished Operation (`instance.lifecycle_busy`).
 - A stopped container (`process.target_inactive`): the run never starts one.
+- A nested-fleet or proof default in the nested Incus project (`instance.php_index_unsupported`). Only its deployment builds its index, with the rules its seed needs.
 
 To prepare the index in existing Laravel defaults:
 
-1. Converge each `app-dev` Node so its runtime folder holds `phpactor`: `orbit node:converge <node>`.
+1. Right after the Gateway release, before any deployment, converge each `app-dev` Node: `orbit node:converge <node>`. Its runtime folder then holds `phpactor`.
 2. On the Gateway host, admit the runs: `php artisan instances:php-index <instance-id> [<instance-id>...]`.
+
+Between the release and a Node's converge, the release's intents already carry `php_index` while the Node's runtime folder has no `phpactor`. Each Laravel default deployment on that Node then fails with `instance.php_index_failed` (`phpactor and php must be on PATH`) and keeps its old seed.
 
 The command prints one JSON line per Instance: `{"instance":<id>,"operation":<id>}` when admitted, or `{"instance":<id>,"skipped":"<code>","reason":"..."}`, and exits `1` when any was skipped. Follow each Operation with `orbit operation:show <id>`. A failed build ends it with `instance.php_index_failed`, and the old seed stays.
 

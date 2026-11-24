@@ -49,15 +49,18 @@ final readonly class InstanceFolderPlan
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
-    public static function for(InstanceFolders $folders, bool $shift = true, string $runtimeRoot = InstanceHostIntent::RuntimeFolder): array
+    public static function for(InstanceFolders $folders, bool $shift = true, string $runtimeRoot = InstanceHostIntent::RuntimeFolder, bool $production = false): array
     {
         // Unshifted folders carry `shift: false`, so their versions differ: the agent's programs are open to everyone there.
         $mount = $shift ? [] : ['shift' => 'false'];
-        $runtime = ['path' => $runtimeRoot, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
+        // The production runtime folder of an app-prod Node leaves out the development tools, the parts the recipe marks
+        // `dev_only`, with their programs and the scripts that serve them (docs/reference/production-containers.md#the-pinned-runtime).
+        $pins = $production ? array_filter($folders->runtime, static fn (FolderPin $pin): bool => ! $pin->devOnly) : $folders->runtime;
+        $runtime = ['path' => $runtimeRoot, 'parts' => [...self::parts($pins), ...self::php($folders)]];
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, 'laravel-lsp-root' => self::LaravelLspRoot], ...$mount];
+        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, ...($production ? [] : ['laravel-lsp-root' => self::LaravelLspRoot])], ...$mount];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];

@@ -7,7 +7,8 @@ namespace App\Infrastructure\MachineSoftware;
 /**
  * One part of a shared Instance folder (docs/reference/development-containers.md#shared-folders): a pinned artifact and
  * the programs it gives the folder's `bin`, each a path inside the unpacked artifact. The one part with a `trustModule` gives the
- * folder the PKCS#11 trust module that Chromium loads (docs/reference/development-containers.md#trust).
+ * folder the PKCS#11 trust module that Chromium loads (docs/reference/development-containers.md#trust). A `devOnly` part serves
+ * development containers only: the production runtime folder of an app-prod Node leaves it out, with its programs.
  */
 final readonly class FolderPin
 {
@@ -21,5 +22,6 @@ final readonly class FolderPin
         public ArtifactPin $artifact,
         public array $bin,
         public ?array $trustModule = null,
+        public bool $devOnly = false,
     ) {}
 }

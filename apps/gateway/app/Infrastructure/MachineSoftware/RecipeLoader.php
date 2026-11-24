@@ -399,14 +399,16 @@ final readonly class RecipeLoader
                     continue;
                 }
                 $this->object($part, $field, [...($programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']),
-                    ...(property_exists($part, 'trust_module') ? ['trust_module'] : [])]);
+                    ...(property_exists($part, 'trust_module') ? ['trust_module'] : []), ...(property_exists($part, 'dev_only') ? ['dev_only'] : [])]);
+                // A development tool, such as a language server, that the production runtime folder leaves out.
+                $this->require(! property_exists($part, 'dev_only') || $part->dev_only === true, "{$field}.dev_only: expected true, or no field.");
                 $version = $this->text($part->version, "{$field}.version");
                 $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1, "{$field}.version: expected an exact version, not a channel or constraint.");
                 $artifacts = $this->object($part->artifacts, "{$field}.artifacts");
                 $this->require(array_keys(get_object_vars($artifacts)) === $architectures, "{$field}.artifacts: expected exactly one amd64 pin.");
                 $artifact = $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version);
                 $trustModule = property_exists($part, 'trust_module') ? $this->trustModule($part->trust_module, $folder, $artifact, $field) : null;
-                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule);
+                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule, property_exists($part, 'dev_only'));
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
             // Chromium in every container loads the runtime folder's one trust module (docs/reference/development-containers.md#trust).
