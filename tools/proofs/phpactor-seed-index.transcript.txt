@@ -1,6 +1,6 @@
 # Phpactor seed index proof
-started: 2026-11-24T01:48:19+00:00
-checkout commit: 9ef67c10dd82e49f6650c6a3dece8b8f43e6005f
+started: 2026-11-24T03:58:57+00:00
+checkout commit: a74ad754b6fffc4bf3b1c4ed30c378e9593b3acd
 the index path Phpactor derives for /srv/workspace: /home/agent/.cache/phpactor/index/workspace-d589d4
 
 ## The pinned PHARs: in the app-dev runtime folder, not in the production runtime folder
@@ -27,13 +27,14 @@ default Instance 2 (instance-2), checkout /var/lib/incus/storage-pools/orbit-ins
   (exit 0)
 PASS: vendor/ is moved out of the application folder and the index and its fingerprint are gone
 [nested-gateway as orbit]$ php artisan instances:php-index 2
-  {"instance":2,"operation":316}
+  {"instance":2,"operation":341}
   (exit 0)
-$ orbit operation:show 316 --json
-$ orbit operation:show 316 --json
-$ orbit operation:show 316 --json
-$ orbit operation:show 316 --json
-php_index Operation: {"id": 316, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: ["input", "Index and seed", "result", "cleanup"]
+$ orbit operation:show 341 --json
+$ orbit operation:show 341 --json
+$ orbit operation:show 341 --json
+$ orbit operation:show 341 --json
+$ orbit operation:show 341 --json
+php_index Operation: {"id": 341, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: ["input", "Index and seed", "result", "cleanup"]
 PASS: instances:php-index on the default without vendor/ succeeded
 [instance-2 as agent]$ cd /srv/workspace && ls /home/agent/.cache/phpactor/index/workspace-d589d4 && phpactor index:query "App\Models\User" --no-ansi | head -3; phpactor index:query "Illuminate\Foundation\Auth\User" --no-ansi | head -2
   class_0
@@ -128,9 +129,9 @@ PASS: the index built from source alone knows App\Models\User and holds no vendo
 [instance-2 as agent]$ cd /srv/workspace && HOME=/tmp/phpactor-proof-cold phpactor index:build --no-interaction --no-ansi
   last progress: 588/588
   Building job...done
-  Building index with 4 worker processes, 19 files at a time:
-  Done in 3.22 seconds using 53,051,392b of memory
-  (exit 0, 3.4 s)
+  Building index with 2 worker processes, 37 files at a time:
+  Done in 3.66 seconds using 53,051,392b of memory
+  (exit 0, 3.9 s)
 PASS: phpactor index:build exited 0
 [instance-2 as agent]$ rm -rf /tmp/phpactor-proof-cold
   (exit 0)
@@ -141,11 +142,11 @@ PASS: vendor/ is back and the source-only index is removed, so the deploy builds
 
 ## Deploy the default: php_index builds the index before seed retakes the seed
 $ orbit instance:deploy 2 --json
-deploy Operation: {"id": 317, "kind": "instance.deploy", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null}
+deploy Operation: {"id": 342, "kind": "instance.deploy", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null}
 PASS: the default deploy succeeded at commit f32d7019cbd0ab0c378b3154c551d0c60c553ebc
-instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 01:49 UTC
+instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 04:00 UTC
 [instance-2 as agent]$ date -u -r /home/agent/.cache/orbit-php-index.json "+%Y/%m/%d %H:%M:%S UTC"; ls /home/agent/.cache/phpactor/index/workspace-d589d4 | head; cat /home/agent/.cache/orbit-php-index.json | head -c 120; echo
-  2026/11/24 01:49:27 UTC
+  2026/11/24 04:00:14 UTC
   class_0
   class_1
   class_2
@@ -156,165 +157,166 @@ instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 0
   class_7
   class_8
   class_9
-  {"/srv/workspace": "6560c0ed07c89df20525a4d00210cf2bfdb18e78be21c8131a9195e2b3b4bb85"}
+  {"/srv/workspace": "3d1e889df9bebf285812771944540600de9a4782d5716e329ea2797a1755a71d"}
   (exit 0)
-fingerprint written 2026/11/24 01:49:27 UTC; seed taken 2026/11/24 01:49 UTC
+fingerprint written 2026/11/24 04:00:14 UTC; seed taken 2026/11/24 04:00 UTC
 PASS: the index and its fingerprint exist, written before the seed was taken
 
 ## A dirty default: plant an untracked file, then instances:php-index
-[instance-2 as agent]$ echo "planted by the Phpactor proof" > /srv/workspace/proof-planted-1124014819.txt && cd /srv/workspace && git status --short --untracked-files=all | head
-  ?? proof-planted-1124014819.txt
+[instance-2 as agent]$ echo "planted by the Phpactor proof" > /srv/workspace/proof-planted-1124035857.txt && cd /srv/workspace && git status --short --untracked-files=all | head
+  ?? proof-planted-1124035857.txt
   (exit 0)
-instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 01:49 UTC
+instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 04:00 UTC
 [nested-gateway as orbit]$ php artisan instances:php-index 2
-  {"instance":2,"operation":318}
+  {"instance":2,"operation":343}
   (exit 0)
-$ orbit operation:show 318 --json
-$ orbit operation:show 318 --json
-$ orbit operation:show 318 --json
-php_index Operation: {"id": 318, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: ["input", "Index and seed", "result", "cleanup"]
+$ orbit operation:show 343 --json
+$ orbit operation:show 343 --json
+$ orbit operation:show 343 --json
+$ orbit operation:show 343 --json
+php_index Operation: {"id": 343, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: ["input", "Index and seed", "result", "cleanup"]
 PASS: instances:php-index on the dirty default succeeded
-instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 01:50 UTC
-PASS: the seed is retaken: 2026/11/24 01:49 UTC -> 2026/11/24 01:50 UTC
-[instance-2 as agent]$ cat /srv/workspace/proof-planted-1124014819.txt && cd /srv/workspace && git status --short --untracked-files=all | head
+instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 04:01 UTC
+PASS: the seed is retaken: 2026/11/24 04:00 UTC -> 2026/11/24 04:01 UTC
+[instance-2 as agent]$ cat /srv/workspace/proof-planted-1124035857.txt && cd /srv/workspace && git status --short --untracked-files=all | head
   planted by the Phpactor proof
-  ?? proof-planted-1124014819.txt
+  ?? proof-planted-1124035857.txt
   (exit 0)
 PASS: the planted file survives on the default, untracked
 
 ## An unchanged default: a second instances:php-index starts no build and keeps the seed
 [nested-gateway as orbit]$ php artisan instances:php-index 2
-  {"instance":2,"operation":319}
+  {"instance":2,"operation":344}
   (exit 0)
-$ orbit operation:show 319 --json
-$ orbit operation:show 319 --json
-$ orbit operation:show 319 --json
-php_index Operation: {"id": 319, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: []
-instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 01:50 UTC
-PASS: the seed stays as it was: 2026/11/24 01:50 UTC
+$ orbit operation:show 344 --json
+$ orbit operation:show 344 --json
+$ orbit operation:show 344 --json
+php_index Operation: {"id": 344, "kind": "instance.php_index", "target_type": "instance", "target_id": 2, "status": "succeeded", "failed_step": null, "error_code": null} steps: []
+instance-2 snapshots: seed-f32d7019cbd0ab0c378b3154c551d0c60c553ebc,2026/11/24 04:01 UTC
+PASS: the seed stays as it was: 2026/11/24 04:01 UTC
 
 ## Create a fresh clone from the refreshed seed
-$ orbit instance:create 2 3 phpactor-proof-1124014819 --json
-create Operation: {"id": 320, "kind": "instance.create", "target_type": "instance", "target_id": 8, "status": "succeeded", "failed_step": null, "error_code": null}
-$ orbit instance:show 8 --json
-$ orbit instance:show 8 --json
-PASS: clone 8 (phpactor-proof-1124014819) is active at f32d7019cbd0ab0c378b3154c551d0c60c553ebc
+$ orbit instance:create 2 3 phpactor-proof-1124035857 --json
+create Operation: {"id": 345, "kind": "instance.create", "target_type": "instance", "target_id": 12, "status": "succeeded", "failed_step": null, "error_code": null}
+$ orbit instance:show 12 --json
+$ orbit instance:show 12 --json
+PASS: clone 12 (phpactor-proof-1124035857) is active at f32d7019cbd0ab0c378b3154c551d0c60c553ebc
 
 ## The inherited index, before any build in the clone
-[instance-8 as agent]$ command -v phpactor && ls -la --time-style=+%FT%T /home/agent/.cache/phpactor/index/workspace-d589d4 && test -f /home/agent/.cache/orbit-php-index.json && echo fingerprint present
+[instance-12 as agent]$ command -v phpactor && ls -la --time-style=+%FT%T /home/agent/.cache/phpactor/index/workspace-d589d4 && test -f /home/agent/.cache/orbit-php-index.json && echo fingerprint present
   /opt/orbit-runtime/current/bin/phpactor
   total 940
-  drwxr-xr-x 1 agent agent   1348 2026-11-24T01:49:26 .
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 ..
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_0
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_1
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_2
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_3
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_4
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_5
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_6
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_7
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_8
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_9
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_a
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_b
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_c
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_d
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_e
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 class_f
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_0
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_1
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_2
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_3
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_4
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_5
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_6
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_7
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_8
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_9
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_a
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_b
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_c
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_d
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_e
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:26 constant_f
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_0
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_1
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_2
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_3
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_4
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_5
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_6
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_7
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_8
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_9
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_a
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_b
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 file_c
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_d
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_e
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 file_f
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 function_0
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:22 function_1
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 function_2
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:18 function_3
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_4
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_5
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_6
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_7
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:20 function_8
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_9
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 function_a
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:20 function_b
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:17 function_c
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:21 function_d
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:22 function_e
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:21 function_f
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_0
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_1
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_2
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_3
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_4
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_5
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_6
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_7
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_8
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_9
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_a
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_b
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_c
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_d
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_e
-  drwxr-xr-x 1 agent agent     32 2026-11-24T01:49:15 member_f
-  -rw-r--r-- 1 agent agent 955021 2026-11-24T01:49:26 search
-  -rw-r--r-- 1 agent agent     10 2026-11-24T01:49:26 timestamp.v3
+  drwxr-xr-x 1 agent agent   1348 2026-11-24T04:00:14 .
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 ..
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_0
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_1
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_2
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_3
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_4
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_5
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_6
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_7
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_8
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_9
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_a
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_b
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_c
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_d
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_e
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 class_f
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_0
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_1
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_2
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_3
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_4
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_5
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_6
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_7
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_8
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_9
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_a
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_b
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_c
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_d
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_e
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 constant_f
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_0
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_1
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_2
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_3
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_4
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_5
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_6
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_7
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_8
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_9
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_a
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_b
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 file_c
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_d
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_e
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 file_f
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 function_0
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:14 function_1
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 function_2
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:04 function_3
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_4
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_5
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_6
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_7
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:05 function_8
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_9
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 function_a
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:05 function_b
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:02 function_c
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:08 function_d
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:09 function_e
+  drwxr-xr-x 1 agent agent     32 2026-11-24T04:00:08 function_f
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_0
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_1
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_2
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_3
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_4
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_5
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_6
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_7
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_8
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_9
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_a
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_b
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_c
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_d
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_e
+  drwxr-xr-x 1 agent agent     32 2026-11-24T03:59:59 member_f
+  -rw-r--r-- 1 agent agent 955021 2026-11-24T04:00:14 search
+  -rw-r--r-- 1 agent agent     10 2026-11-24T04:00:14 timestamp.v3
   fingerprint present
   (exit 0)
 PASS: the clone holds the seed's index at /home/agent/.cache/phpactor/index/workspace-d589d4 and the fingerprint, and phpactor comes from the runtime folder
-[instance-8 as agent]$ cd /srv/workspace && phpactor index:query "App\Models\User" --no-ansi | head -3
+[instance-12 as agent]$ cd /srv/workspace && phpactor index:query "App\Models\User" --no-ansi | head -3
   Class:App\Models\User
   Path:file:///srv/workspace/app/Models/User.php
   Type:class
   (exit 0)
 PASS: before any build, a fresh Phpactor in the clone answers App\Models\User from the inherited index
-volatile.idmap.base: {"instance-2": "131072", "instance-8": "196608"}
-[instance-2] index timestamp, then ctime and mtime: 1795484966 | 1795070328 ctime 1795070328 mtime /srv/workspace/app/Models/User.php | 1795070339 ctime 1795070339 mtime /srv/workspace/vendor/autoload.php | 
-[instance-8] index timestamp, then ctime and mtime: 1795484966 | 1795485138 ctime 1795070328 mtime /srv/workspace/app/Models/User.php | 1795485138 ctime 1795070339 mtime /srv/workspace/vendor/autoload.php | 
-[instance-8 as agent]$ cd /srv/workspace && phpactor index:build --no-interaction --no-ansi
+volatile.idmap.base: {"instance-2": "131072", "instance-12": "196608"}
+[instance-2] index timestamp, then ctime and mtime: 1795492814 | 1795070328 ctime 1795070328 mtime /srv/workspace/app/Models/User.php | 1795070339 ctime 1795070339 mtime /srv/workspace/vendor/autoload.php | 
+[instance-12] index timestamp, then ctime and mtime: 1795492814 | 1795492989 ctime 1795070328 mtime /srv/workspace/app/Models/User.php | 1795492989 ctime 1795070339 mtime /srv/workspace/vendor/autoload.php | 
+[instance-12 as agent]$ cd /srv/workspace && phpactor index:build --no-interaction --no-ansi
   last progress: 8226/8226
   Building job...done
-  Building index with 4 worker processes, 250 files at a time:
-  Done in 11.61 seconds using 145,326,080b of memory
-  (exit 0, 11.8 s)
+  Building index in this process:
+  Done in 27.16 seconds using 147,423,232b of memory
+  (exit 0, 27.5 s)
 PASS: phpactor index:build exited 0
-[instance-8 as agent]$ cd /srv/workspace && HOME=/tmp/phpactor-proof-cold phpactor index:build --no-interaction --no-ansi
+[instance-12 as agent]$ cd /srv/workspace && HOME=/tmp/phpactor-proof-cold phpactor index:build --no-interaction --no-ansi
   last progress: 8785/8785
   Building job...done
-  Building index with 4 worker processes, 250 files at a time:
-  Done in 12.22 seconds using 164,200,448b of memory
-  (exit 0, 12.5 s)
+  Building index in this process:
+  Done in 26.98 seconds using 160,006,144b of memory
+  (exit 0, 27.2 s)
 PASS: phpactor index:build exited 0
-[instance-8 as agent]$ rm -rf /tmp/phpactor-proof-cold
+[instance-12 as agent]$ rm -rf /tmp/phpactor-proof-cold
   (exit 0)
 RESULT inherited-index build in the clone: 8226 files to index against 8785 cold (on this third-level fleet Node the shifted clone has new ctimes, so the count is not the real host's; see above)
 
@@ -331,37 +333,37 @@ PASS: phpactor language-server answered initialize with a definition provider
 definition URIs: ["file:///srv/workspace/app/Models/User.php"]
 PASS: the definition is app/Models/User.php in the workspace
   <- {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///srv/workspace/database/seeders/DatabaseSeeder.php", "version": 1, "diagnostics": []}}
-  <- {"jsonrpc": "2.0", "method": "window/showMessage", "params": {"type": 3, "message": "Done indexing (3.61s, 100/1,611 mb), watching with pattern matching find (BSD/GNU)"}}
-phpactor language-server processes on the Node (pid, cgroup): 31194 0::/.lxc
-31201 0::/system.slice/incus.service
-31207 0::/lxc.payload.orbit-instances_instance-8/user.slice/user-2750.slice/session-c8.scope
-31208 0::/lxc.payload.orbit-instances_instance-8/user.slice/user-2750.slice/session-c8.scope
-31229 0::/lxc.payload.orbit-instances_instance-8/user.slice/user-2750.slice/session-c8.scope
-31234 0::/.lxc
-PASS: the server runs in the clone's container instance-8 and in no other
-PASS: the URI's file is the clone's own copy on the Node, /var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-8/rootfs/srv/workspace/app/Models/User.php, not the default's
+  <- {"jsonrpc": "2.0", "method": "window/showMessage", "params": {"type": 3, "message": "Done indexing (3.97s, 100/1,611 mb), watching with pattern matching find (BSD/GNU)"}}
+phpactor language-server processes on the Node (pid, cgroup): 49727 0::/.lxc
+49731 0::/system.slice/incus.service
+49739 0::/lxc.payload.orbit-instances_instance-12/user.slice/user-2750.slice/session-c8.scope
+49740 0::/lxc.payload.orbit-instances_instance-12/user.slice/user-2750.slice/session-c8.scope
+49763 0::/lxc.payload.orbit-instances_instance-12/user.slice/user-2750.slice/session-c8.scope
+49769 0::/.lxc
+PASS: the server runs in the clone's container instance-12 and in no other
+PASS: the URI's file is the clone's own copy on the Node, /var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-12/rootfs/srv/workspace/app/Models/User.php, not the default's
   -> {"jsonrpc": "2.0", "id": 3, "method": "shutdown", "params": null}
   <- {"jsonrpc": "2.0", "id": 3, "result": null}
   -> {"jsonrpc": "2.0", "method": "exit", "params": null}
 server exit status: 0
 
 ## Incremental: a new class in the clone, built on demand without --reset
-[instance-8 as agent]$ mkdir -p /srv/workspace/app/Proof && printf "%s\n" "<?php" "" "namespace App\Proof;" "" "final class ProofWidget {}" > /srv/workspace/app/Proof/ProofWidget.php && cat /srv/workspace/app/Proof/ProofWidget.php
+[instance-12 as agent]$ mkdir -p /srv/workspace/app/Proof && printf "%s\n" "<?php" "" "namespace App\Proof;" "" "final class ProofWidget {}" > /srv/workspace/app/Proof/ProofWidget.php && cat /srv/workspace/app/Proof/ProofWidget.php
   <?php
   
   namespace App\Proof;
   
   final class ProofWidget {}
   (exit 0)
-[instance-8 as agent]$ cd /srv/workspace && phpactor index:build --no-interaction --no-ansi
+[instance-12 as agent]$ cd /srv/workspace && phpactor index:build --no-interaction --no-ansi
   last progress: 1/1
   Building job...done
   Building index in this process:
-  Done in 0.45 seconds using 38,371,328b of memory
-  (exit 0, 0.6 s)
+  Done in 0.53 seconds using 38,371,328b of memory
+  (exit 0, 0.7 s)
 PASS: phpactor index:build exited 0
 PASS: the build indexes only what changed: 1 files
-[instance-8 as agent]$ cd /srv/workspace && phpactor index:query "App\Proof\ProofWidget" --no-ansi | head -3
+[instance-12 as agent]$ cd /srv/workspace && phpactor index:query "App\Proof\ProofWidget" --no-ansi | head -3
   Class:App\Proof\ProofWidget
   Path:file:///srv/workspace/app/Proof/ProofWidget.php
   Type:class
@@ -369,20 +371,20 @@ PASS: the build indexes only what changed: 1 files
 PASS: index:query finds the new class at the clone's file
 
 ## The planted file in the clone
-[instance-8 as agent]$ cat /srv/workspace/proof-planted-1124014819.txt; cd /srv/workspace && git status --short --untracked-files=all | head
+[instance-12 as agent]$ cat /srv/workspace/proof-planted-1124035857.txt; cd /srv/workspace && git status --short --untracked-files=all | head
   planted by the Phpactor proof
   ?? app/Proof/ProofWidget.php
-  ?? proof-planted-1124014819.txt
+  ?? proof-planted-1124035857.txt
   (exit 0)
 RESULT planted file in the clone: present (the seed is a snapshot of the default container as it was, its untracked files included; the clone is made from that snapshot)
 
 ## Exclusions: only an active app-dev Laravel default gets the index
-[nested-gateway as orbit]$ php artisan instances:php-index 8
-  {"instance":8,"skipped":"instance.php_index_ineligible","reason":"Only a Laravel default on an active app-dev Node prepares the PHP symbol index."}
+[nested-gateway as orbit]$ php artisan instances:php-index 12
+  {"instance":12,"skipped":"instance.php_index_ineligible","reason":"Only a Laravel default on an active app-dev Node prepares the PHP symbol index."}
   (exit 1)
 PASS: instances:php-index refuses the clone
-[nested-gateway as orbit]$ php artisan tinker --execute='use App\Domain\Instances\PhpSymbolIndex; use App\Models\Instance; use App\Models\Node; $d = Instance::with("node.roles")->find(2); $out = ["default" => PhpSymbolIndex::intent($d), "clone" => PhpSymbolIndex::intent(Instance::find(8))]; $v = $d->replicate(); $v->setRelation("node", $d->node); $v->source_is_laravel = false; $out["non-Laravel"] = PhpSymbolIndex::intent($v); $v = $d->replicate(); $v->node_id = 4; $v->setRelation("node", Node::with("roles")->find(4)); $out["app-prod Node"] = PhpSymbolIndex::intent($v); $v = $d->replicate(); $n = $d->node->replicate(); $n->setRelation("roles", $d->node->roles->map(fn ($r) => tap($r->replicate(), fn ($c) => $c->status = App\Domain\Shared\LifecycleStatus::Provisioning))); $v->setRelation("node", $n); $out["app-dev role not active"] = PhpSymbolIndex::intent($v); echo json_encode($out), PHP_EOL;'
-  {"default":{"root":"\/srv\/workspace","seconds":600},"clone":null,"non-Laravel":null,"app-prod Node":null,"app-dev role not active":null}
+[nested-gateway as orbit]$ php artisan tinker --execute='use App\Domain\Instances\PhpSymbolIndex; use App\Models\Instance; use App\Models\Node; $d = Instance::with("node.roles")->find(2); $out = ["default" => PhpSymbolIndex::intent($d), "clone" => PhpSymbolIndex::intent(Instance::find(12))]; $v = $d->replicate(); $v->setRelation("node", $d->node); $v->source_is_laravel = false; $out["non-Laravel"] = PhpSymbolIndex::intent($v); $v = $d->replicate(); $v->node_id = 4; $v->setRelation("node", Node::with("roles")->find(4)); $out["app-prod Node"] = PhpSymbolIndex::intent($v); $v = $d->replicate(); $n = $d->node->replicate(); $n->setRelation("roles", $d->node->roles->map(fn ($r) => tap($r->replicate(), fn ($c) => $c->status = App\Domain\Shared\LifecycleStatus::Provisioning))); $v->setRelation("node", $n); $out["app-dev role not active"] = PhpSymbolIndex::intent($v); echo json_encode($out), PHP_EOL;'
+  {"default":{"root":"\/srv\/workspace","seconds":600,"runtime":"\/opt\/orbit-runtime\/current"},"clone":null,"non-Laravel":null,"app-prod Node":null,"app-dev role not active":null}
   (exit 0)
 PASS: the real default's intent has php_index at the application root
 PASS: clone: no php_index
@@ -391,10 +393,10 @@ PASS: app-prod Node: no php_index
 PASS: app-dev role not active: no php_index
 
 ## Clean up
-$ orbit instance:destroy 8 --yes --force --json
-destroy Operation: {"id": 322, "kind": "instance.destroy", "target_type": "instance", "target_id": 8, "status": "succeeded", "failed_step": null, "error_code": null}
-PASS: clone 8 and its container are gone
-[instance-2 as agent]$ rm -f /srv/workspace/proof-planted-1124014819.txt; test -d /home/agent/vendor.proof && mv /home/agent/vendor.proof /srv/workspace/vendor; true
+$ orbit instance:destroy 12 --yes --force --json
+destroy Operation: {"id": 347, "kind": "instance.destroy", "target_type": "instance", "target_id": 12, "status": "succeeded", "failed_step": null, "error_code": null}
+PASS: clone 12 and its container are gone
+[instance-2 as agent]$ rm -f /srv/workspace/proof-planted-1124035857.txt; test -d /home/agent/vendor.proof && mv /home/agent/vendor.proof /srv/workspace/vendor; true
   (exit 0)
 
 RESULT: PASS
