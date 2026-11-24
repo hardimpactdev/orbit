@@ -226,3 +226,29 @@ it('admits each eligible default from the artisan entry point and names each ref
         ->assertExitCode(1);
     expect(Operation::query()->where('kind', PhpSymbolIndexRefresh::Kind)->count())->toBe(1);
 });
+
+it('indexes an ordinary default of the proof Project, which runs no nested fleet and holds no seed hold', function (): void {
+    // As Beast's default 2120: the Project that `proof.project` names, a Laravel source with nested_fleet off.
+    $node = containerDefaultNode();
+    $project = containerDefaultProject(ProjectType::Monorepo, '8.5');
+    $project->update(['name' => 'Destroy guard proof', 'root' => 'public', 'is_laravel' => true, 'nested_fleet' => false]);
+    config(['proof.project' => $project->id]);
+    $create = containerCreate($project, $node);
+    $create->update(['status' => 'succeeded', 'lock_key' => null]);
+    $default = Instance::query()->findOrFail($create->target_id);
+    $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+    $runtime = InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail();
+    $runtime->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+    $index = ['root' => InstanceHostIntent::Workspace, 'seconds' => PhpSymbolIndex::Seconds];
+    $snapshot = app(InstanceDeploymentIntent::class)->snapshot($default->refresh());
+
+    expect(containerIntentOf($create)['php_index'])->toBe($index)
+        ->and($snapshot['container']['php_index'])->toBe($index)
+        ->and($runtime->refresh()->incus_project)->toBe('orbit-instances')
+        ->and($snapshot['container'])->not->toHaveKey('seed_hold')
+        ->and($snapshot)->not->toHaveKey('fleet');
+
+    $operation = app(PhpSymbolIndexRefresh::class)->start($default, null, null);
+    expect($operation->kind)->toBe(PhpSymbolIndexRefresh::Kind)
+        ->and($operation->input['container']['php_index'])->toBe($index);
+});
