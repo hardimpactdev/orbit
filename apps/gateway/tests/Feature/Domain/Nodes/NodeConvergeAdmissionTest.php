@@ -417,6 +417,21 @@ it('selects only existing assignments without changing their status or settings'
         ->and($a->refresh()->status->value)->toBe('active')->and($b->refresh()->status->value)->toBe('failed');
 });
 
+it('leaves the record-only agent role out of a full converge and the release role inputs, and refuses to converge it alone', function (): void {
+    $workload = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::Agent, 'status' => 'active']);
+
+    $this->postJson($this->url, ['roles' => ['agent']])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $this->postJson($this->url, ['roles' => ['app-prod', 'agent']])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect(Operation::query()->count())->toBe(0);
+
+    $this->postJson($this->url, [])->assertAccepted();
+    $intent = Operation::query()->sole()->input['_converge']['intent'];
+    expect($intent['selected_roles'])->toBe(['app-prod'])
+        ->and(array_column($intent['roles'], 'role'))->toBe(['app-prod'])
+        ->and(array_map(static fn (array $input): string => $input['role'], app(ReleaseNodeInputs::class)->roles($this->node->refresh())))->toBe([$workload->id => 'app-prod']);
+});
+
 it('allocates every Instance host app-dev Node\'s bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     InstancePool::give($this->node);

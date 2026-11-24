@@ -27,6 +27,7 @@ final class UpdateNodeCommand extends NodeCommand
         {--name= : New unique registry name}
         {--platform= : Platform of an unmanaged Node: linux, macos, or ipados}
         {--reboot-hold= : Hold fleet reboots: true or false}
+        {--primary-agent= : Designate this agent-role Node as the primary agent: true or false}
         {--lan-ip= : LAN IPv4 address; an empty value clears it}
         {--apps-path= : Apps folder; an empty value restores the default}
         {--ci-places= : CI places that runner jobs and proof copies share, from 0 to 64}
@@ -37,7 +38,7 @@ final class UpdateNodeCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change the name, platform, LAN address, reboot hold, apps folder, or CI places of a Node.';
+    protected $description = 'Change the name, platform, LAN address, reboot hold, primary agent flag, apps folder, or CI places of a Node.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -51,13 +52,14 @@ final class UpdateNodeCommand extends NodeCommand
         $platform = $this->option('platform');
         $lanIp = $this->option('lan-ip');
         $rebootHold = $this->option('reboot-hold');
+        $primaryAgent = $this->option('primary-agent');
         $appsPath = $this->option('apps-path');
         $ci = NodeSettingOptions::parseCi($this->option('ci-places'), (bool) $this->option('ci-proof-only'),
             (bool) $this->option('no-ci-proof-only'), (bool) $this->option('no-ci'));
 
         if (! is_string($name) && ! is_string($platform) && ! is_string($lanIp) && ! is_string($appsPath) && ! is_string($rebootHold)
-            && ($ci['ok'] && ! $ci['provided'])) {
-            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --apps-path, --ci-places, --ci-proof-only, --no-ci-proof-only, or --no-ci.');
+            && ! is_string($primaryAgent) && ($ci['ok'] && ! $ci['provided'])) {
+            return $this->renderGatewayFailure('node.option_required', 'Provide at least one of --name, --platform, --lan-ip, --reboot-hold, --primary-agent, --apps-path, --ci-places, --ci-proof-only, --no-ci-proof-only, or --no-ci.');
         }
 
         if ($ci['ok'] === false) {
@@ -66,6 +68,10 @@ final class UpdateNodeCommand extends NodeCommand
 
         if (is_string($rebootHold) && ! in_array($rebootHold, ['true', 'false'], true)) {
             return $this->renderGatewayFailure('node.reboot_hold_invalid', 'Reboot hold must be true or false.');
+        }
+
+        if (is_string($primaryAgent) && ! in_array($primaryAgent, ['true', 'false'], true)) {
+            return $this->renderGatewayFailure('node.primary_agent_invalid', 'Primary agent must be true or false.');
         }
 
         if ($name === '') {
@@ -120,6 +126,7 @@ final class UpdateNodeCommand extends NodeCommand
                 lanIp: is_string($lanIp) && $lanIp !== '' ? $lanIp : null,
                 hasCi: $ci['provided'],
                 ci: $ci['value'],
+                primaryAgent: is_string($primaryAgent) ? $primaryAgent === 'true' : null,
             ),
             NodeUpdateResponse::class,
             ['Update Node', 'Updating Node', 'Node updated'],

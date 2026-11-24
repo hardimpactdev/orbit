@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Casts\NodeAgentSecretHash;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Concerns\ValidatesPrivateDnsNamespace;
 use Illuminate\Database\Eloquent\Collection;
@@ -28,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $tld
  * @property string|null $wireguard_ip
  * @property bool $reboot_hold
+ * @property bool $primary_agent
  * @property string|null $lan_ip
  * @property string|null $wireguard_public_key
  * @property string|null $dns_server_override
@@ -66,6 +68,7 @@ final class Node extends Model
     protected $attributes = [
         'public_ssh_port' => 22,
         'reboot_hold' => false,
+        'primary_agent' => false,
     ];
 
     /** @var list<string> */
@@ -89,6 +92,7 @@ final class Node extends Model
         'wireguard_ip',
         'lan_ip',
         'reboot_hold',
+        'primary_agent',
         'wireguard_public_key',
         'dns_server_override',
         'ssh_host_key_type',
@@ -114,6 +118,12 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
+    }
+
+    /** @return HasMany<NodeRole, $this> The assignments that hold host work: every role except a record-only one such as `agent`. */
+    public function hostRoles(): HasMany
+    {
+        return $this->roles()->whereNotIn('role', app(RoleRegistry::class)->recordOnly());
     }
 
     /** @return BelongsTo<Cluster, $this> */
@@ -216,6 +226,7 @@ final class Node extends Model
             'release_inputs' => 'array',
             'id_ranges' => 'array',
             'reboot_hold' => 'boolean',
+            'primary_agent' => 'boolean',
             'ci_nested_hosting' => 'boolean',
             'agent_secret_hash' => NodeAgentSecretHash::class,
         ];

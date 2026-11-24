@@ -247,6 +247,14 @@ Preparing a fresh Gateway uses the local `gateway-bootstrap` workflow (`swamp/wo
 
 Internal bootstrap commands `orbit:role-add`, `orbit:node-add`, `orbit:node-converge`, and `orbit:node-converge-digest --base` let a newly bootstrapped Gateway admit its own roles and converges locally.
 
+## Agent role
+
+`orbit node:role:add <node> agent` marks a Linux or macOS Node that hosts a Conn Server entry point: the host-level server where General threads start and orchestrate work across other Orbit Nodes. That server registers itself as the Node's host entry (one with no `instance_id`) in [`GET /api/v1/conn/environments`](/reference/conn#registration). Each entry of the Node shows `agent` in `roles`, and the host entry of the fleet's primary agent Node shows `is_primary_agent: true`. Removing the role drops `agent` from those entries; the registration itself stays.
+
+The role is only a Gateway record. Adding or removing it records the assignment and a succeeded Operation without SSH or a Swamp run, so a Node needs no managed access for it. A converge and a release leave it out, and a converge scoped to it, `node:converge --role=agent` or `node:role:add <node> agent --converge`, is refused (`validation.failed`, HTTP 422) before any Operation is recorded.
+
+Wherever Orbit decides whether a Node holds host work, it counts only its other roles: a Node with only `agent` stays out of the [fleet rollout](/reference/gateway-recovery#fleet-rollout), keeps public SSH, and is treated as roleless by enrollment and converge. Orbit does not install, start, or check the Conn Server; the Node's operator runs it. Mark the Node that should start General threads with [`node:update --primary-agent=true`](/cli/node/update#record-fields) when the fleet has more than one `agent` Node.
+
 ## Role compatibility
 
 Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `node.role_conflict` HTTP 422 on `node:add` and `node:role:relocate`):
@@ -262,7 +270,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. Role admission entry points vary by role:
+`router`, `metrics`, `websocket`, `swamp`, and `agent` share a Node with any role. Role admission entry points vary by role:
 
 | Role | `node:add --role` | `node:role:add` |
 | --- | --- | --- |
@@ -272,6 +280,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
 | `swamp` | No | Singleton |
 | `router` | No | No (use [`cluster:router:set`](/cli/cluster/router-set)) |
+| `agent` | No | Yes |
 
 ## Package sources
 
@@ -353,7 +362,7 @@ The Gateway multiplexes remote commands over one shared OpenSSH connection per N
 
 ## Public SSH
 
-Bootstrap opens `orbit:public-ssh-recovery` and enables UFW, then adds `orbit:wireguard-members` once the tunnel answers. Adding the first active role removes `orbit:public-ssh-recovery` so the Node is reachable only over WireGuard. Removing the last role restores `orbit:public-ssh-recovery` before deleting the assignment (`node.firewall_recovery_failed` if restoration fails).
+Bootstrap opens `orbit:public-ssh-recovery` and enables UFW, then adds `orbit:wireguard-members` once the tunnel answers. Adding the first active role removes `orbit:public-ssh-recovery` so the Node is reachable only over WireGuard. Removing the last role restores `orbit:public-ssh-recovery` before deleting the assignment. A record-only role such as `agent` neither closes nor keeps public SSH closed, so removing the last other role restores it while `agent` stays (`node.firewall_recovery_failed` if restoration fails).
 
 ## WireGuard hub
 

@@ -373,6 +373,7 @@ function node_response_public_data(): array
         'wireguard_ip' => '10.44.0.3',
         'lan_ip' => '10.0.0.3',
         'reboot_hold' => false,
+        'primary_agent' => false,
         'wireguard_public_key' => null,
         'dns_server_override' => null,
         'ssh_host_fingerprint' => null,

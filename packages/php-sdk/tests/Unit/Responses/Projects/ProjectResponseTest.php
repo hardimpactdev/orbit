@@ -57,6 +57,13 @@ describe(ProjectResponse::class, function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 3, 'task_pr_mode' => null], 'request-id')->toArray())->toMatchArray(['task_pr_mode' => null])
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('task_pr_mode');
     });
+    it('maps the Project list summary and leaves it out when the Gateway sends none', function (): void {
+        $summary = ['repository' => 'github.com/acme/site', 'node_name' => 'mini', 'icon' => null, 'color' => null, 'instance_count' => 3];
+
+        expect(ProjectResponse::fromGatewayData(['id' => 3, ...$summary], 'request-id')->summary)->toBe($summary)
+            ->and(ProjectResponse::fromGatewayData(['id' => 3, ...$summary], 'request-id')->toArray())->toMatchArray($summary)
+            ->and(ProjectResponse::fromGatewayData(['id' => 3, 'node_name' => 'mini'], 'request-id')->toArray())->not->toHaveKeys(['node_name', 'instance_count']);
+    });
     it('maps default_auto_deploy and leaves it out when the Gateway sends none', function (): void {
         expect(ProjectResponse::fromGatewayData(['id' => 3, 'default_auto_deploy' => false], 'request-id')->toArray())->toMatchArray(['default_auto_deploy' => false])
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->defaultAutoDeploy)->toBeNull()

@@ -31,7 +31,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/acme/site",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 2,
@@ -59,7 +64,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/bravo/docs",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 3,
@@ -87,7 +97,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/charlie/shop",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 4,
@@ -115,7 +130,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/delta/api",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             }
         ],
         "meta": {

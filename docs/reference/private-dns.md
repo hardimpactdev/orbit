@@ -17,7 +17,7 @@ Orbit VPN DNS resolves private names (such as Route domains and `gateway.orbit`)
 
 ## Resolver selection
 
-Managed Linux peers are active Linux Nodes with at least one role other than `vpn` or `gateway`, a WireGuard IP, a public key, and an SSH host fingerprint. For each peer, Orbit renders a split-DNS routing domain list containing the VPN domain, `orbit`, every Cluster and Node TLD, and every outside-TLD private Route domain. The list holds up to 512 domains so systemd's 1,024-domain limit keeps headroom for replacements.
+Managed Linux peers are active Linux Nodes with at least one host role (any role except a record-only one such as `agent`), no `vpn` or `gateway` role, a WireGuard IP, a public key, and an SSH host fingerprint. For each peer, Orbit renders a split-DNS routing domain list containing the VPN domain, `orbit`, every Cluster and Node TLD, and every outside-TLD private Route domain. The list holds up to 512 domains so systemd's 1,024-domain limit keeps headroom for replacements.
 
 | Peer setting | DNS server | Routing domains |
 | --- | --- | --- |

@@ -33,7 +33,7 @@ The human table uses [shared list formatting](/reference/cli-ux#results) and sho
 | LAN | Recorded LAN address. |
 | Reboot hold | `yes` when [fleet reboot](/reference/gateway-recovery#fleet-reboot) is held for the Node; otherwise `no`. JSON uses `reboot_hold`. |
 
-JSON returns `nodes` and `request_id`. Each Node keeps its IDs, recorded addresses, agent state, `roles` names and Node-level `failed_step` and `error_code`. It also includes `cluster_name` alongside `cluster_id`, and `assignments`.
+JSON returns `nodes` and `request_id`. Each Node keeps its IDs, recorded addresses, agent state, `roles` names and Node-level `failed_step` and `error_code`. It also includes `cluster_name` alongside `cluster_id`, `assignments`, and `primary_agent`, which is `true` on the Node explicitly designated as the [primary agent](/cli/node/update#record-fields).
 
 The shared role projection used by `node:list`, `node:show` and `node:role:list` includes every assigned role in any status (`active`, `provisioning`, `failed`, `removing`), with identical `role`, `status`, `failed_step` and `error_code` values. Each assignment also has its `id`; absent failure fields are null. Native failed-step labels keep their recorded spaces and case. Human output may compact an assignment as `gateway (active)` or `app-dev (failed)`.
 

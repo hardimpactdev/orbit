@@ -131,7 +131,7 @@ final readonly class NodeEnrollmentPolicy
 
         return ['mode' => $tldOnly ? 'tld_only' : $platform, 'bootstrap_user' => $bootstrap, 'managed_user' => $managed,
             'fingerprint' => $fingerprint ?? '', 'requested_architecture' => MachineArchitecture::normalize($mac ? ($data->architecture ?? $architecture) : ($architecture ?? $data->architecture)),
-            'roleless_operator' => $data->roles === [] && (! $node->exists || ! $node->roles()->exists()),
+            'roleless_operator' => $data->roles === [] && (! $node->exists || ! $node->hostRoles()->exists()),
             'candidate' => ['cluster_id' => $clusterId, 'platform' => $platform, 'architecture' => $architecture, 'tld' => $tld, 'user' => $managed,
                 'public_ssh_host' => $host, 'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
                 'wireguard_ip' => $address, 'lan_ip' => $lan,

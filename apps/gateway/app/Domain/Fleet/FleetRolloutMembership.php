@@ -7,6 +7,7 @@ namespace App\Domain\Fleet;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -142,11 +143,14 @@ final readonly class FleetRolloutMembership
         return $group;
     }
 
-    /** @return list<string> */
+    /** @return list<string> The active roles that hold host work; the Gateway role and a record-only role such as `agent` don't. */
     private function workloadRoles(Node $node): array
     {
+        $recordOnly = app(RoleRegistry::class)->recordOnly();
+
         return array_values($node->roles
-            ->filter(static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active && $role->role !== RoleName::Gateway)
+            ->filter(static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active && $role->role !== RoleName::Gateway
+                && ! in_array($role->role->value, $recordOnly, true))
             ->map(static fn (NodeRole $role): string => $role->role->value)
             ->all());
     }

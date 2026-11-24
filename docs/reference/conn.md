@@ -8,7 +8,7 @@ covers:
   - swamp/ansible/conn-*.yml
   - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/database/migrations/2027_03_22_000001_let_a_reserved_clone_take_its_name.php
+  - apps/gateway/database/migrations/{2027_03_22_000001_let_a_reserved_clone_take_its_name,2027_03_23_000000_add_primary_agent_to_nodes_table}.php
   - apps/gateway/database/migrations/*_conn_*.php
 ---
 
@@ -52,6 +52,8 @@ When a profile write commits, the Gateway broadcasts `conn.profile.updated` (`{ 
 ## Registration
 
 A T3 server calls `POST /api/v1/conn/environments` with its environment ID and admin session. The calling Node owns that registration; another Node attempting to claim the same environment ID receives HTTP `409 conn.environment_owned`. If the owning Node is removed, only a peer with Gateway access can re-register the environment.
+
+Every entry in `GET /api/v1/conn/environments` also carries two additive fields from its registering Node: `roles` (the registering Node's active role names in canonical order, or `[]` when the Node was removed) and `is_primary_agent` (boolean). At most one active `agent`-role Node is the fleet's primary agent: the Node explicitly designated with `primary_agent: true` (`PATCH /api/v1/nodes/{node}` / `orbit node:update --primary-agent=true`, which takes Gateway access), or, when none is explicitly designated, the sole active `agent`-role Node. With zero or multiple undesignated `agent`-role Nodes, none is primary. `is_primary_agent` is `true` only on a host (non-Instance) server registered by that primary agent Node; Instance servers always return `is_primary_agent: false`.
 
 ### Unregister a host server
 
@@ -103,7 +105,7 @@ When the `tasks` extension is enabled, Conn reads tasks and detail snapshots via
 
 ## Threads in an Orbit Project
 
-Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
+A General thread is tagged to a Project from the [Project summary](/reference/projects#project-summary) of `GET /api/v1/projects`; Conn keeps no Project registry of its own. Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
 
 Clone creation runs stable step names (`clone-container`, `clone-t3`, `clone-session-copy`, `clone-register`) and hands off to `instance.complete`. Inspect workspace git state via `GET /api/v1/conn/instances/{instance}/work`.
 

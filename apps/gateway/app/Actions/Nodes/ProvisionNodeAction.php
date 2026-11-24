@@ -291,7 +291,7 @@ final readonly class ProvisionNodeAction
         foreach ($data->roles as $role) {
             $this->roles->preflightDuringProvisioning($node, $role, $data->roles);
         }
-        $rolelessOperator = $data->roles === [] && (! $node->exists || $node->roles()->doesntExist());
+        $rolelessOperator = $data->roles === [] && (! $node->exists || $node->hostRoles()->doesntExist());
 
         $node->fill([
             'status' => LifecycleStatus::Provisioning,

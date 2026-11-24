@@ -100,6 +100,19 @@ API responses, the SDK, MCP tools, and CLI JSON expose these fields:
 | `task_reviewer_*` | Default reviewer `provider`, `model`, and `effort` for task copies. |
 | `task_pr_mode` | Default [PR mode](/reference/tasks#task-group-modes) (`review_before_pr` or `pr_when_done`) for task copy groups. |
 
+### Project summary
+
+`GET /api/v1/projects` (`project:list`) adds a summary to each Project. Conn clients read it to tag a General thread to a Project, so Orbit stays the only registry of Projects. Any Node with access to at least one Node may call it. It lists the Projects with an Instance on a Node the caller can reach; the Gateway sees every Project.
+
+| Field | Meaning |
+| --- | --- |
+| `repository` | The [repository identity](#repository-identity), such as `github.com/acme/site`. It holds no credentials. |
+| `node_name` | The Node of the Project's `default` Instance when the caller has Gateway authority or access to that Node; otherwise `null`. It never names a hidden Node. |
+| `icon`, `color` | Always `null`: Orbit stores no Project icon or color. |
+| `instance_count` | The Project's Instances on Nodes the caller can reach; every Instance for the Gateway. |
+
+`project:show`, `project:create`, and `project:update` return no summary.
+
 ### Project codes
 
 Each Project gets a unique three-letter uppercase `code`, derived from its slug unless sent on `POST /api/v1/projects`. The code stays fixed when the slug changes.

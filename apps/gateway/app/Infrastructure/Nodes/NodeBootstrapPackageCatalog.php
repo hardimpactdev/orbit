@@ -55,6 +55,7 @@ final class NodeBootstrapPackageCatalog
                 ...self::PHP_COMPOSER_HOST_PACKAGES,
             ],
             RoleName::Analytics => ['caddy', 'docker.io', 'openssl'],
+            RoleName::Agent => [],
         };
     }
 }

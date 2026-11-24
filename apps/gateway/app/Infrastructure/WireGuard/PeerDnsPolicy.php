@@ -6,12 +6,14 @@ namespace App\Infrastructure\WireGuard;
 
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 
 final readonly class PeerDnsPolicy
@@ -27,7 +29,7 @@ final readonly class PeerDnsPolicy
     {
         return $node->platform === 'linux'
             && $node->status === LifecycleStatus::Active
-            && $node->roles->isNotEmpty()
+            && $node->roles->contains(static fn (NodeRole $assignment): bool => ! in_array($assignment->role->value, app(RoleRegistry::class)->recordOnly(), true))
             && ! $node->roles->contains('role', RoleName::Vpn)
             && ! $node->roles->contains('role', RoleName::Gateway)
             && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''

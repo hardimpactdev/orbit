@@ -251,7 +251,7 @@ final readonly class NativeNodeRoleRemovalInput
 
         $input = ['schema_version' => 1, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
             'role' => $assignment->role->value, 'ssh' => $ssh, 'publications' => $publications,
-            'public_ssh' => $node->roles()->whereKeyNot($assignment->id)->exists() ? [] : [['ssh' => $ssh,
+            'public_ssh' => $node->hostRoles()->whereKeyNot($assignment->id)->exists() ? [] : [['ssh' => $ssh,
                 'input' => ['argv' => ['ufw', ...array_slice(app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node)->arguments, 2)]]]],
             'stop_units' => [...$unitsForFleet, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'input' => ['unit' => $unit]], $units)],
             'files' => [...$files, ...array_map(static fn (string $unit): array => ['ssh' => $ssh, 'path' => '/etc/systemd/system/'.$unit], $units)],
