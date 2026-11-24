@@ -8,10 +8,12 @@ cases = [
   "test_an_application_without_vendor_is_indexed_from_its_source_and_a_later_composer_install_reindexes",
   "test_a_failed_build_fails_with_phpactor_s_reason_and_records_nothing",
   "test_a_build_past_its_bound_is_stopped_and_fails",
-  "test_a_missing_phpactor_fails",
+  "test_a_fingerprint_whose_seed_was_not_taken_stays_pending_and_the_retry_builds_again",
+  "test_a_runtime_without_phpactor_skips_with_its_reason_and_records_nothing",
+  "test_a_missing_php_fails",
 ]
 file = "swamp/tests/instance_php_index_test.py"
-cost = 10
+cost = 12
 # The Phpactor symbol index of a Laravel default before its seed.
 inputs = [
   "swamp/ansible/instance_php_index.py",
@@ -25,4 +27,6 @@ inputs = [
 "test_an_application_without_vendor_is_indexed_from_its_source_and_a_later_composer_install_reindexes" = 1
 "test_a_failed_build_fails_with_phpactor_s_reason_and_records_nothing" = 1
 "test_a_build_past_its_bound_is_stopped_and_fails" = 2
-"test_a_missing_phpactor_fails" = 1
+"test_a_fingerprint_whose_seed_was_not_taken_stays_pending_and_the_retry_builds_again" = 1
+"test_a_runtime_without_phpactor_skips_with_its_reason_and_records_nothing" = 1
+"test_a_missing_php_fails" = 1
