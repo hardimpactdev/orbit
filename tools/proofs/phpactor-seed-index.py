@@ -355,7 +355,7 @@ def exclusions(default, clone_id, prod_node):
                        '$v = $d->replicate(); $n = $d->node->replicate(); $n->setRelation("roles", $d->node->roles->map(fn ($r) => tap($r->replicate(), fn ($c) => $c->status = App\\Domain\\Shared\\LifecycleStatus::Provisioning))); '
                        '$v->setRelation("node", $n); $out["app-dev role not active"] = PhpSymbolIndex::intent($v); echo json_encode($out), PHP_EOL;\'')
     out = json.loads(variants.stdout.strip().splitlines()[-1])
-    check(out['default'] == {'root': ROOT, 'seconds': 600}, 'the real default\'s intent has php_index at the application root')
+    check(out['default'] == {'root': ROOT, 'seconds': 600, 'runtime': '/opt/orbit-runtime/current'}, 'the real default\'s intent has php_index at the application root')
     for name in ('clone', 'non-Laravel', 'app-prod Node', 'app-dev role not active'):
         check(out[name] is None, f'{name}: no php_index')
 
