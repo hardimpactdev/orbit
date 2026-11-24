@@ -91,6 +91,10 @@ On container Instance T3 servers, devices never pair directly. On first `GET /ap
 
 `POST /api/v1/conn/environments/{environment}/sessions/cleanup` revokes stale sessions on a T3 server. Removing a Node access grant (`NodeAccessRemovalHook`) or removing a Node (`NodeRemovalHook`) automatically rotates profile event keys and cleans up held sessions.
 
+### Owed work
+
+A container T3 server's owed work lives in its rows, so it survives a Gateway restart: each withdrawn held session owes a revoke by its pairing id, and a `cleanup_version` above `cleanup_completed_version` owes the cleanup of earlier Gateway sessions. The end of a Conn Operation that holds the server (a hold, a revoke, a cleanup) and the Instance's wake admit the next owed revoke, then the cleanup, without the hourly tick. An interrupted revoke or cleanup is admitted again; a failed one waits for the server's next such event. A sleeping or removing Instance starts nothing until its wake. The Gateway stops serving a withdrawn session at once.
+
 ### Managed grant revocation
 
 When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.managed_disabled` while off), Conn enforces revision-fenced revocation of target grants using `conn_svc_` and `conn_mt_` credentials enrolled via `php artisan conn:managed-target:enrol`. Targets poll or receive grant revisions, acknowledge revocation leases, and reject stale tokens (`conn.managed_*` error codes).

@@ -44,15 +44,15 @@ final readonly class ConnHeldSessions
     }
 
     /**
-     * Stops serving a held session and records that its revoke is owed. The caller holds the transaction; the revoke is admitted after
-     * its commit, and the hourly sweep admits it again while the server cannot take it.
+     * Stops serving a held session and records that its revoke is owed. The caller holds the transaction; the server's next owed revoke
+     * is admitted after its commit, and the next end of a Conn Operation on the server or its wake admits it while the server cannot take it.
      */
     public function withdraw(ConnPairing $pairing): void
     {
         // The row as it is now, so a session stored after the caller read it is cleared too.
         $pairing = ConnPairing::query()->lockForUpdate()->findOrFail($pairing->id);
         $pairing->forceFill(['session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
-        DB::afterCommit(fn () => $this->revoke($pairing));
+        DB::afterCommit(static fn () => app(ConnOwedWork::class)->advance($pairing->conn_environment_id));
     }
 
     /**
@@ -66,7 +66,7 @@ final readonly class ConnHeldSessions
             ->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays));
     }
 
-    /** Admits the revoke of one withdrawn pairing by its id; a refusal waits for the next sweep. */
+    /** Admits the revoke of one withdrawn pairing by its id; a refusal waits for the server's next owed work. */
     public function revoke(ConnPairing $pairing): ?Operation
     {
         $environment = $pairing->environment;
@@ -96,7 +96,7 @@ final readonly class ConnHeldSessions
     /**
      * Before its Node row goes, withdraws each held session of the Node that is not settled and hands it to the Gateway Node, so the
      * row survives the delete and its revoke by pairing id still runs. A hold that still runs revokes at its end. The caller holds the
-     * transaction; each server's next owed revoke is admitted after its commit, and the hourly sweep or a wake admits the rest. With no
+     * transaction; each server's next owed revoke is admitted after its commit, and each revoke's end or a wake admits the rest. With no
      * active Gateway Node nothing can revoke, so the rows go with the Node and the sessions stay valid on T3 until they end.
      */
     public function handOver(Node $node): void
@@ -116,9 +116,9 @@ final readonly class ConnHeldSessions
             $pairing->forceFill(['node_id' => $gateway, 'session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
         }
         $environments = array_values(array_unique($pairings->map(static fn (ConnPairing $pairing): int => $pairing->conn_environment_id)->all()));
-        DB::afterCommit(function () use ($environments): void {
+        DB::afterCommit(static function () use ($environments): void {
             foreach ($environments as $environment) {
-                $this->revokeNext($environment);
+                app(ConnOwedWork::class)->advance($environment);
             }
         });
     }
@@ -189,7 +189,8 @@ final readonly class ConnHeldSessions
      * A revoke's end settles the held pairings it named. One it covered no longer owes a revoke; an unmatched revoke of that one alone
      * proves nothing of it is left on the server, unless its hold ran at the revoke's admission: then the session may come after the
      * revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again (issue 3540). Then the next owed revoke
-     * on the server starts: one revoke holds a server at a time.
+     * on the server starts: one revoke holds a server at a time. An interrupted revoke, as a Gateway restart leaves one, is admitted again
+     * by the same pairing ids; a failed one waits for the server's next owed work.
      */
     public function revoked(Operation $operation, OperationOutcome $outcome): void
     {
@@ -198,10 +199,15 @@ final readonly class ConnHeldSessions
         $named = ValidatedData::integerList($operation->input['pairing_ids'] ?? []);
         $unmatched = $outcome->status !== OperationStatus::Succeeded && $outcome->errorCode === 'conn.revocation_unmatched';
         $holding = ValidatedData::integerList($operation->input['holding_pairing_ids'] ?? []);
+        $environment = ValidatedData::integer($operation->input['conn_environment_id']);
         if ($outcome->status !== OperationStatus::Succeeded && ! $unmatched) {
+            if ($outcome->status === OperationStatus::Interrupted) {
+                DB::afterCommit(static fn () => app(ConnOwedWork::class)->advance($environment));
+            }
+
             return;
         }
-        DB::transaction(function () use ($operation, $covered, $named, $unmatched, $holding): void {
+        DB::transaction(function () use ($operation, $covered, $named, $unmatched, $holding, $environment): void {
             $held = ConnPairing::query()->whereIn('id', $named)->where('conn_environment_id', $operation->input['conn_environment_id'])
                 ->where('held', true)->lockForUpdate()->get();
             foreach ($held as $pairing) {
@@ -209,7 +215,7 @@ final readonly class ConnHeldSessions
                     $pairing->forceFill(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
                 }
             }
-            DB::afterCommit(fn () => $this->revokeNext(ValidatedData::integer($operation->input['conn_environment_id'])));
+            DB::afterCommit(static fn () => app(ConnOwedWork::class)->advance($environment));
         });
     }
 

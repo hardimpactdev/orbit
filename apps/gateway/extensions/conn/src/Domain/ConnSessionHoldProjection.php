@@ -138,6 +138,10 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
                 Log::warning('conn.held_vault_cleanup_failed', ['operation_id' => $operation->id, 'exception' => $error::class]);
             }
         }
+        // The hold held the server: the revoke and the cleanup it kept waiting start now (/reference/conn#owed-work).
+        if (! $replay && $projected->status->terminal()) {
+            app(ConnOwedWork::class)->advance(ValidatedData::integer($operation->input['conn_environment_id']));
+        }
 
         return $projected;
     }

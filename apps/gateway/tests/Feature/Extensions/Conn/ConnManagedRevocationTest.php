@@ -705,3 +705,22 @@ describe('acknowledgement', function (): void {
         expect(ConnManagedRevision::query()->sole()->recovered_at)->toBe('2026-11-18T15:00:05.000000+00:00');
     });
 });
+
+describe('unregister', function (): void {
+    it('withdraws the unregistered target\'s tokens at the target and keeps another target\'s caller valid', function (): void {
+        $otherId = '7a2d3f0b-4c5e-4d6f-9a71-8293a4b5c6d7';
+        managed_environment($otherId, $this->serving);
+        [$other, $otherCredential] = managed_enrol($otherId);
+        $tokenA = managed_mint($this->callerA, $this->environmentId)->json('data.token');
+        $tokenB = managed_mint($this->callerB, $otherId)->json('data.token');
+
+        test()->withServerVariables(['REMOTE_ADDR' => $this->operator->wireguard_ip])
+            ->deleteJson("/api/v1/conn/environments/{$this->environmentId}")->assertOk()->assertJsonPath('data.removed', true);
+
+        // A target that wakes after the unregister learns it at its first probe: it has no authority left to accept any token.
+        managed_introspect($this->serving, $this->credential, $this->target, $tokenA, $this->callerA)->assertNotFound()
+            ->assertJsonPath('error.code', 'conn.managed_target_unknown');
+        expect(ConnManagedToken::query()->where('conn_managed_target_id', $this->target->id)->exists())->toBeFalse();
+        managed_introspect($this->serving, $otherCredential, $other, $tokenB, $this->callerB)->assertOk()->assertJsonPath('data.caller_node_id', $this->callerB->id);
+    });
+});

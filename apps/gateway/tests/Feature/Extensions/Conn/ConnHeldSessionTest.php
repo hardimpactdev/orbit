@@ -779,6 +779,73 @@ describe('revoke and removal', function (): void {
     });
 });
 
+describe('owed work without the hourly tick', function (): void {
+    beforeEach(function (): void {
+        $this->laptop = heldNode('laptop', '10.44.0.78');
+        NodeAccess::query()->create(['consumer_node_id' => $this->laptop->id, 'serving_node_id' => $this->host->id]);
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->laptop, $this->environment));
+        $this->revoked = ConnPairing::query()->where('node_id', $this->phone->id)->sole();
+        $this->kept = ConnPairing::query()->where('node_id', $this->laptop->id)->sole();
+    });
+
+    it('revokes a removed grant\'s held session by its pairing id and keeps another Node\'s', function (): void {
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+
+        expect(collect(revokes())->map(fn (Operation $revoke): array => $revoke->input['pairing_ids'])->all())->toBe([[$this->revoked->id]]);
+        endRevoke(revokes()[0]);
+
+        expect($this->revoked->fresh())->revoked_at->not->toBeNull()->session->toBeNull()
+            ->and($this->kept->fresh())->revoked_at->toBeNull()->withdrawn_at->toBeNull();
+        readHeld($this->phone, $this->environment)->assertStatus(403)->assertJsonPath('error.code', 'node_access.required');
+        readHeld($this->laptop, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
+    it('admits an interrupted revoke again by the same pairing id, as a Gateway restart leaves it', function (): void {
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+        endRevoke(revokes()[0], 'interrupted');
+
+        expect(revokes())->toHaveCount(2)->and(revokes()[1]->input['pairing_ids'])->toBe([$this->revoked->id])
+            ->and($this->revoked->fresh())->withdrawn_at->not->toBeNull()->revoked_at->toBeNull();
+        endRevoke(revokes()[1]);
+
+        expect($this->revoked->fresh())->revoked_at->not->toBeNull()->and(revokes())->toHaveCount(2);
+        readHeld($this->laptop, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
+    it('owes a sleeping Instance\'s revoke until its wake, and serves the other Node meanwhile', function (): void {
+        InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'stopped']);
+        app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+
+        expect(revokes())->toBe([])->and($this->revoked->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull();
+        readHeld($this->phone, $this->environment)->assertStatus(403);
+        readHeld($this->laptop, $this->environment)->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+
+        InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'running']);
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$this->revoked->id]);
+        endRevoke(revokes()[0]);
+        expect($this->revoked->fresh())->revoked_at->not->toBeNull()->and($this->kept->fresh())->revoked_at->toBeNull();
+        readHeld($this->laptop, $this->environment)->assertOk();
+    });
+
+    it('carries a cleanup that waited for a hold forward from its rows, and admits it once the server is free', function (): void {
+        $hold = app(AdmitConnSessionHoldAction::class)->hold(heldNode('tablet', '10.44.0.79'), $this->environment);
+        $this->environment->forceFill(['cleanup_version' => 2, 'cleanup_completed_version' => 1])->save();
+        // The Gateway restarts: only the rows carry the cleanup.
+        app()->forgetInstance(ConnHeldSessions::class);
+
+        endHold($hold, 'failed', 'conn.session_outcome_unknown');
+        // The failed hold owes its revoke, which takes the server first; the cleanup starts at that revoke's end.
+        expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->exists())->toBeFalse()
+            ->and(revokes()[0]->input['pairing_ids'])->toBe([$hold->target_id]);
+        endRevoke(revokes()[0]);
+
+        expect(Operation::query()->where('kind', 'conn.gateway_sessions_revoke')->sole()->input['cleanup_version'])->toBe(2);
+    });
+});
+
 it('pre-mints held sessions for the creating profile\'s Nodes that reach a new clone\'s server while the switch is on, and none while it is off', function (bool $on): void {
     config(['orbit.conn.held_session_premint' => $on]);
     $desk = heldNode('desk', '10.44.0.80');
