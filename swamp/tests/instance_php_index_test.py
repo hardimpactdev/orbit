@@ -43,17 +43,23 @@ class PhpIndexTest(unittest.TestCase):
         phpactor.write_text(PHPACTOR)
         phpactor.chmod(0o755)
         os.symlink('../phpactor/phpactor.phar', os.path.join(self.bin, 'phpactor'))
+        # PATH holds only the runtime's bin/ and the tools the program and the stand-in run, so a `php` of the host (a CI runner has
+        # /usr/bin/php) never stands in for the Project's.
+        self.tools = tempfile.mkdtemp()
+        for tool in ('timeout', 'nice', 'ionice', 'mkdir', 'date', 'sleep'):
+            os.symlink(shutil.which(tool), os.path.join(self.tools, tool))
+        self.path = f"{self.bin}:{self.tools}"
         os.symlink(sys.executable, os.path.join(self.bin, 'php'))
 
     def run_index(self, seconds=60, **environment):
         # As the phase runs it: a clean environment with the deploy steps' HOME and PATH, at the application's folder.
-        env = {'HOME': self.home, 'PATH': f"{self.bin}:/usr/bin:/bin", **environment}
+        env = {'HOME': self.home, 'PATH': self.path, **environment}
         return subprocess.run([sys.executable, '-I', '-c', PROGRAM.read_text(), str(seconds), self.runtime], cwd=self.app, env=env,
                               capture_output=True, text=True, check=False, timeout=30)
 
     def seeded(self):
         # The seed phase, once its snapshot is taken.
-        env = {'HOME': self.home, 'PATH': f"{self.bin}:/usr/bin:/bin"}
+        env = {'HOME': self.home, 'PATH': self.path}
         subprocess.run([sys.executable, '-I', '-c', PROGRAM.read_text(), 'seeded'], cwd=self.app, env=env, check=True, timeout=30)
 
     def run_and_seed(self, **environment):
