@@ -1,0 +1,36 @@
+order = 1553
+cases = [
+  "test_the_first_build_runs_phpactor_at_the_application_folder_with_no_index_setting_of_its_own",
+  "test_an_unchanged_tree_starts_no_phpactor_on_a_repeat_refresh",
+  "test_a_fingerprint_whose_seed_was_not_taken_stays_pending_and_the_retry_builds_again",
+  "test_a_changed_added_or_removed_php_file_runs_the_incremental_build_again_without_a_reset",
+  "test_a_file_that_phpactor_does_not_read_and_the_git_folder_leave_the_index_alone",
+  "test_a_removed_index_is_built_again_though_the_tree_did_not_change",
+  "test_an_application_without_vendor_is_indexed_from_its_source_and_a_later_composer_install_reindexes",
+  "test_a_failed_build_fails_with_phpactor_s_reason_and_records_nothing",
+  "test_a_build_past_its_bound_is_stopped_and_fails",
+  "test_a_runtime_that_predates_phpactor_skips_with_its_reason_and_records_nothing",
+  "test_a_converged_runtime_whose_phpactor_is_not_executable_or_missing_fails",
+  "test_a_missing_php_fails",
+  "test_a_missing_php_fails_also_on_a_runtime_that_predates_phpactor",
+]
+file = "swamp/tests/instance_php_index_test.py"
+cost = 14
+# The Phpactor symbol index of a Laravel default before its seed.
+inputs = [
+  "swamp/ansible/instance_php_index.py",
+]
+[case_costs]
+"test_the_first_build_runs_phpactor_at_the_application_folder_with_no_index_setting_of_its_own" = 1
+"test_an_unchanged_tree_starts_no_phpactor_on_a_repeat_refresh" = 1
+"test_a_changed_added_or_removed_php_file_runs_the_incremental_build_again_without_a_reset" = 1
+"test_a_file_that_phpactor_does_not_read_and_the_git_folder_leave_the_index_alone" = 1
+"test_a_removed_index_is_built_again_though_the_tree_did_not_change" = 1
+"test_an_application_without_vendor_is_indexed_from_its_source_and_a_later_composer_install_reindexes" = 1
+"test_a_failed_build_fails_with_phpactor_s_reason_and_records_nothing" = 1
+"test_a_build_past_its_bound_is_stopped_and_fails" = 2
+"test_a_fingerprint_whose_seed_was_not_taken_stays_pending_and_the_retry_builds_again" = 1
+"test_a_runtime_that_predates_phpactor_skips_with_its_reason_and_records_nothing" = 1
+"test_a_converged_runtime_whose_phpactor_is_not_executable_or_missing_fails" = 1
+"test_a_missing_php_fails" = 1
+"test_a_missing_php_fails_also_on_a_runtime_that_predates_phpactor" = 1

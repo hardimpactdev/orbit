@@ -416,6 +416,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-php-index": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-server-switch": {
    "result": "read-only",
    "cleanup": "idempotent"

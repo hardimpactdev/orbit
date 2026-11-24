@@ -1322,6 +1322,7 @@
                 }
             },
             "laravel-lsp": {
+                "dev_only": true,
                 "version": "0.0.32",
                 "artifacts": {
                     "amd64": {
@@ -1331,6 +1332,19 @@
                 },
                 "bin": {
                     "laravel-lsp": "laravel-lsp"
+                }
+            },
+            "phpactor": {
+                "dev_only": true,
+                "version": "2026.11.22.0",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/phpactor/phpactor/releases/download/2026.11.22.0/phpactor.phar",
+                        "sha256": "1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659"
+                    }
+                },
+                "bin": {
+                    "phpactor": "phpactor.phar"
                 }
             },
             "php-data-bridge": {

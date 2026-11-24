@@ -44,7 +44,10 @@ For Laravel apps with `storage` shared, Orbit links `public/storage` automatical
 Each deploy step enforces its own timeout (`timeout_seconds`). A required step that times out stops its process group and skips all remaining steps. The overall Operation also has a run budget:
 
 - **Production release:** `before_activation` allows 2,400s (3,450s with Vite+) plus `timeout_seconds + 20` per step; `after_activation` allows 60s plus `timeout_seconds + 20` per step, plus 7,800s for handover.
-- **Development default:** 900 seconds plus step timeouts, plus 5,590 seconds for nested-fleet defaults and 1,800 seconds for the proof Project's [seed-hold wait](/reference/development-containers#the-seed-hold).
+- **Development default:** 900 seconds plus step timeouts, and these additions:
+  - 5,590 seconds for a nested-fleet default.
+  - 1,800 seconds for the proof Project's [seed-hold wait](/reference/development-containers#the-seed-hold).
+  - 630 seconds for a Laravel default's [PHP symbol index](/reference/development-containers#php-symbol-index).
 - **Rollback:** 10,260 seconds for a production container rollback, or 900 seconds for a legacy host rollback.
 
 Each production phase is capped at 90,000 seconds (`deployment.step_budget_exceeded`, 422). When a run exceeds its budget, Orbit records `operation.timed_out`. When a run finishes without a readable end check, Orbit records `operation.result_unreadable`.

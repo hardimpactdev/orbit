@@ -2,11 +2,11 @@
 title: "Instance containers"
 description: "How development Instances and task copies run in unprivileged Incus containers cloned from a Project's default Instance, with networking, ACLs, egress, sleep/wake, and nested fleets."
 covers:
-  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskTurn,Domain/Tasks/TaskTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
+  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Console/Commands/InstancePhpIndexCommand,Domain/Tasks/TaskTurn,Domain/Tasks/TaskTurnProjection}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,PhpSymbolIndex,PhpSymbolIndexRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
-  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
+  - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
   - swamp/ansible/t3_copy_rpc.mjs
@@ -76,7 +76,7 @@ Incus mounts two recipe folders built on the host read-only into every container
 
 ### The pinned shape tools
 
-The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, ripgrep, `laravel-lsp`, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
+The shared folders supply pinned static PHP, Composer, Vite+, Node.js, pnpm, Bun, ripgrep, `laravel-lsp`, `phpactor`, `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser` without installing copies inside each container.
 
 #### Laravel language server
 
@@ -89,6 +89,63 @@ The server takes the folder with `artisan` as its root URI. `laravel-lsp-root [p
 3. The one folder at any depth below `path` with `artisan`, skipping `vendor`, `node_modules`, and `.git`.
 
 It exits `1` when it finds none, or two with nothing to pick one. The Project holds no Orbit setting for it.
+
+#### PHP symbol index
+
+The recipe pins the [Phpactor](https://github.com/phpactor/phpactor) PHAR (`phpactor` `2026.11.22.0`, by SHA-256) as a part of the runtime folder, as it pins `laravel-lsp`. A Laravel default prepares Phpactor's index of its PHP classes before each seed, so a clone's first class lookup reads an index that is already built. The PHP symbol index and the [Laravel language server](#laravel-language-server) keep separate caches: `laravel-lsp` builds no index on disk and loads its framework data on demand.
+
+Only the Project's `default`, of a Laravel source, on a Node whose one app role is an active `app-dev`, gets the work: its container intent has `php_index` (`PhpSymbolIndex`). A clone, a non-Laravel source, a production Instance, an `app-prod` Node, a Node with no app role, such as a CI Node, and an `app-dev` role that is not active get none. The recipe marks `phpactor` and `laravel-lsp` `dev_only`, so an `app-prod` Node's [production runtime folder](/reference/production-containers#the-pinned-runtime) has neither PHAR, their programs or `laravel-lsp-root`.
+
+The `php_index` phase runs right before the `seed` phase: in the create's seed step, and in "Finish the container" of each deployment, after the checkout, the deploy steps (Composer's install and any generated PHP among them) and the `processes` phase. `agent` runs `phpactor index:build` at the application's folder, the one with `artisan` that `laravel-lsp-root` prints, with the deploy steps' environment. Orbit passes Phpactor no setting and writes no file in the Project.
+
+Phpactor finds its index by itself. The folder it is started in, or the root URI its language server gets, is its project root, and its index is `~/.cache/phpactor/index/<folder name>-<first 6 hex of the MD5 of the folder's path>`. A clone has the same home and application path as its default, so a fresh Phpactor in the clone finds the seed's index: `phpactor index:build`, or a language-server session started at `laravel-lsp-root`, reindexes only the files that changed since the seed.
+
+The run is incremental and bounded:
+
+- Phpactor reindexes a PHP file whose ctime is not older than the index's last update. A build on an index that exists reads only what changed, and nothing resets it.
+- The run records a fingerprint in `~/.cache/orbit-php-index.json`. It covers the `phpactor` and `php` paths, the folder, and the index's timestamp files.
+- A new fingerprint waits in `~/.cache/orbit-php-index.pending.json` until the seed phase has taken the seed that holds the index. After a failed snapshot it stays pending, so the next run builds again and retakes the seed.
+- The fingerprint also covers each PHP file and folder below the application's folder, with its ctime and size. `.git` is left out.
+- An unchanged fingerprint starts no Phpactor, as at a repeat refresh of the same commit.
+- The build runs at `nice -n 19` and `ionice -c 3`, as one Phpactor process, within 600 s (`PhpSymbolIndex::Seconds`).
+- The step's bound holds 630 s for the phase: the 600 s and 30 s for the exec. Only an intent with `php_index` adds the 630 s to the run's budget.
+- No unit, timer or daemon runs Phpactor. A clone's boot starts nothing.
+
+A build that fails or runs past its bound fails the phase with `instance.php_index_failed`. Its detail names Phpactor's exit code or the bound, with the end of Phpactor's output. The seed is not taken, so the old seed stays, and the run records no fingerprint, so the next deployment builds again. Orbit fails the deployment rather than warn: a seed whose index is missing or half built would hand every clone a lookup that is silently wrong.
+
+A Node whose runtime folder predates Phpactor skips the work rather than fail the run. The intent's `php_index` names that folder (`/opt/orbit-runtime/current`), and the phase skips only when it has neither the `phpactor` part folder nor its `bin/phpactor` link. The phase then starts nothing and records nothing, and the run's result names the reason in `php_index_skipped`. The seed is taken as without an index. A missing `php` always fails, and so does a runtime folder that ships Phpactor whose `bin/phpactor` is missing or not executable, with `instance.php_index_failed`. This is the [rollout window](#prepare-the-index-of-a-running-default) between a release and the Node's converge.
+
+The index needs no Composer install. A default without `vendor/` gets an index of its own source, and a later `composer install` adds the packages at the next build, incrementally.
+
+A legacy host checkout, such as a default that `instance:migrate` has not moved into a container, has no seed and no `php_index` phase. Its clones get no inherited index until it is a container default.
+
+#### Prepare the index of a running default
+
+A deployment is not the way to add the index to a default that already runs. Its `checkout` phase removes every untracked file that Git does not ignore from the default's tree (`instance_default_clean.py`), also at the same commit. `instance.php_index` instead runs only the container's `php_index` and `seed` phases in one play (`PhpSymbolIndexRefresh`, workflow `operation-instance-php-index`). It runs no fetch, checkout, clean, reset or deploy step, so the working tree, its untracked files included, stays as it is.
+
+The intent carries the seed that the Gateway records for clones, `seed_commit`. The `php_index` phase first requires that the container's HEAD is that commit. A default whose HEAD moved past it, as after a deployment that failed after its checkout, is refused with `instance.php_index_seed_moved` before any build or snapshot. Its seed phase would otherwise take `seed-<HEAD>` and delete the seed that clones copy. The next passed deployment moves the HEAD and the seed together.
+
+A commit can also land in the running default during the build. So the seed phase checks again, right before it creates or deletes any snapshot, that the commit it names the seed after is `seed_commit`. Otherwise it fails with `instance.php_index_seed_moved` and changes no snapshot.
+
+The seed phase retakes `seed-<HEAD>` only when the index changed. A second run on an unchanged tree starts no Phpactor and takes no snapshot. The retake stops and starts the default's Processes around the snapshot, as a deployment's seed does. The Operation's budget is 900 s and its step's bound 750 s.
+
+Admission refuses each of these with its code:
+
+- An Instance that gets no index (`instance.php_index_ineligible`): not a Laravel default, or not on an active `app-dev` Node.
+- A host checkout with no container (`operation.kind_unavailable`).
+- A default with no seed yet or with an unfinished Operation (`instance.lifecycle_busy`).
+- A stopped container (`process.target_inactive`): the run never starts one.
+- A running default whose HEAD is not its recorded seed (`instance.php_index_seed_moved`), refused by the run before it touches anything.
+- A nested-fleet or proof default in the nested Incus project (`instance.php_index_unsupported`). Only its deployment builds its index, with the rules its seed needs.
+
+To prepare the index in existing Laravel defaults:
+
+1. Right after the Gateway release, before any deployment, converge each `app-dev` Node: `orbit node:converge <node>`. Its runtime folder then holds `phpactor`.
+2. On the Gateway host, admit the runs: `php artisan instances:php-index <instance-id> [<instance-id>...]`.
+
+Between the release and a Node's converge, the release's intents already carry `php_index` while the Node's runtime folder has no `phpactor`. A Laravel default deployment on that Node passes and takes its seed without an index, and its result has `php_index_skipped`. So does an `instances:php-index` run, which then retakes no seed. Run it again after the converge.
+
+The command prints one JSON line per Instance: `{"instance":<id>,"operation":<id>}` when admitted, or `{"instance":<id>,"skipped":"<code>","reason":"..."}`, and exits `1` when any was skipped. Follow each Operation with `orbit operation:show <id>`. A failed build ends it with `instance.php_index_failed`, and the old seed stays.
 
 ### PHP
 

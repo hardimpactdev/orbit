@@ -1,0 +1,76 @@
+id: 4b558c1d-57b7-4199-aece-3f8804c7dfbd
+name: operation-instance-php-index
+autoContinue: false
+description: Build a running Laravel default's PHP symbol index and retake its seed when the index changed; no checkout, clean or deploy step.
+queueTimeout: 10
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: instance.php_index}
+    intent: {type: object}
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: index
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Index and seed
+        # The container's `php_index` and `seed` phases in one play (docs/reference/development-containers.md#prepare-the-index-of-a-running-default):
+        # 630 s for the index and its exec, 120 s for the seed. The seed is retaken only when the index changed; nothing touches the tree.
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ ("instance-php-index-" + string(inputs.node_id) + "-" + string(inputs.intent.container.instance_id)).split(".").join("-") }}'
+          methodName: execute
+          inputs:
+            run: timeout 750 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags php_index,seed -e phases=php_index,seed "$ORBIT_ANSIBLE/instance-container.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Index and seed, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-php-index-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "instance-php-index-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

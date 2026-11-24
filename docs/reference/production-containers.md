@@ -16,6 +16,10 @@ Add or converge the role with `orbit node:role:add <node> app-prod [--converge -
 
 Once a production Instance starts its first container deployment, `instance:destroy` and `instance:unregister` are refused so release storage cannot be orphaned. Deploy a new release after changing a Route domain or web root so FrankenPHP's config updates.
 
+### The pinned runtime
+
+The app-prod converge builds `/opt/orbit-production-runtime` from the recipe's runtime folder parts, less every part that the recipe marks `"dev_only": true` and its programs. Those are the development tools `laravel-lsp` and `phpactor`. The folder also leaves out `laravel-lsp-root`, the finder of the Laravel language server. A production release prepares no [PHP symbol index](/reference/development-containers#php-symbol-index). Development containers keep all three in `/opt/orbit-runtime`.
+
 ## Release states and records
 
 Each Instance retains up to three containers between deploys (four briefly during cutover):

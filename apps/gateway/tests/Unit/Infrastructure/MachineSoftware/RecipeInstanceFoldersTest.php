@@ -23,7 +23,7 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $parts = array_keys($recipe->instances->runtime);
 
     expect(array_values(array_filter($parts, static fn (string $name): bool => ! str_starts_with($name, 'browser-'))))
-        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'laravel-lsp', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
+        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'laravel-lsp', 'phpactor', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
         ->and($recipe->instances->runtime['chrome-headless-shell'])->toEqual($recipe->instances->agent['chrome-headless-shell'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
@@ -121,6 +121,20 @@ it('pins the official laravel/lsp PHAR as the runtime folder\'s `laravel-lsp`, w
         ->and($lsp->artifact->digest)->toBe('86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51');
 });
 
+it('pins the Phpactor PHAR as the runtime folder\'s `phpactor`, which a Laravel default\'s seed runs for its symbol index', function (): void {
+    $phpactor = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['phpactor'];
+
+    expect($phpactor->version)->toBe('2026.11.22.0')
+        ->and($phpactor->bin)->toBe(['phpactor' => 'phpactor.phar'])
+        ->and($phpactor->artifact->location)->toBe('https://github.com/phpactor/phpactor/releases/download/2026.11.22.0/phpactor.phar')
+        ->and($phpactor->artifact->algorithm)->toBe('sha256')
+        ->and($phpactor->artifact->digest)->toBe('1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659')
+        // Development tools only: the production runtime folder leaves both language-tool PHARs out.
+        ->and($phpactor->devOnly)->toBeTrue()
+        ->and(new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['laravel-lsp']->devOnly)->toBeTrue()
+        ->and(new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['composer']->devOnly)->toBeFalse();
+});
+
 it('reads a part without `bin` as files that give the folder no program', function (): void {
     $bridge = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['php-data-bridge'];
 
@@ -177,6 +191,9 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     'a path out of the artifact' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['ripgrep']['bin']['rg'] = '../../etc/passwd';
     }, 'expected a relative path inside the artifact'],
+    'a dev_only marker that is not true' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['phpactor']['dev_only'] = false;
+    }, 'instances.runtime.phpactor.dev_only: expected true, or no field'],
     'no program' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['ripgrep']['bin'] = new stdClass;
     }, 'expected at least one program'],
