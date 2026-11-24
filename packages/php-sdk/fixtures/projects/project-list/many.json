@@ -31,7 +31,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/acme",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 2,
@@ -59,7 +64,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/bravo-docs",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 3,
@@ -87,7 +97,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/charlie-shop",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 4,
@@ -115,7 +130,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/delta-api",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 5,
@@ -143,7 +163,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/echo-mail",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 6,
@@ -171,7 +196,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/foxtrot-crm",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 7,
@@ -199,7 +229,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/golf-billing",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 8,
@@ -227,7 +262,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/hotel-booking",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 9,
@@ -255,7 +295,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/india-search",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 10,
@@ -283,7 +328,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/juliet-chat",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 11,
@@ -311,7 +361,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/kilo-metrics",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 12,
@@ -339,7 +394,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/lima-auth",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 13,
@@ -367,7 +427,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/mike-media",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 14,
@@ -395,7 +460,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/november-news",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 15,
@@ -423,7 +493,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/oscar-orders",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 16,
@@ -451,7 +526,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/papa-payments",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 17,
@@ -479,7 +559,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/quebec-queue",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 18,
@@ -507,7 +592,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/romeo-reports",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 19,
@@ -535,7 +625,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/sierra-store",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 20,
@@ -563,7 +658,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/tango-tickets",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 21,
@@ -591,7 +691,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/uniform-uploads",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             },
             {
                 "id": 22,
@@ -619,7 +724,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/victor-video",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 1
             },
             {
                 "id": 23,
@@ -647,7 +757,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/whiskey-wiki",
+                "node_name": "mini",
+                "icon": null,
+                "color": null,
+                "instance_count": 2
             },
             {
                 "id": 24,
@@ -675,7 +790,12 @@
                 "nested_fleet": false,
                 "task_pr_mode": null,
                 "default_auto_deploy": true,
-                "container_server": "conn"
+                "container_server": "conn",
+                "repository": "github.com/example/x-ray-export",
+                "node_name": null,
+                "icon": null,
+                "color": null,
+                "instance_count": 3
             }
         ],
         "meta": {

@@ -245,7 +245,12 @@ Preparing a fresh Gateway uses the local `gateway-bootstrap` workflow (`swamp/wo
 
 Internal bootstrap commands `orbit:role-add`, `orbit:node-add`, `orbit:node-converge`, and `orbit:node-converge-digest --base` let a newly bootstrapped Gateway admit its own roles and converges locally.
 
-## Role compatibility
+## Agent role
+
+`orbit node:role:add <node> agent` marks a Linux or macOS Node that hosts a Conn Server entry point: the host-level server where General threads start and orchestrate work across other Orbit Nodes. That server registers itself as the Node's host entry (one with no `instance_id`) in [`GET /api/v1/conn/environments`](/reference/conn#registration). Each entry of the Node shows `agent` in `roles`, and the host entry of the fleet's primary agent Node shows `is_primary_agent: true`. Removing the role drops `agent` from those entries; the registration itself stays.
+
+The role is only a Gateway record. Adding or removing it records the assignment and a succeeded Operation without SSH or a Swamp run, so a Node needs no managed access for it. A converge and a release leave it out, and a converge scoped to it is refused (`validation.failed`). Orbit does not install, start, or check the Conn Server; the Node's operator runs it. Mark the Node that should start General threads with [`node:update --primary-agent=true`](/cli/node/update#record-fields) when the fleet has more than one `agent` Node.
+
 
 Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `node.role_conflict` HTTP 422 on `node:add` and `node:role:relocate`):
 
@@ -260,7 +265,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. Role admission entry points vary by role:
+`router`, `metrics`, `websocket`, `swamp`, and `agent` share a Node with any role. Role admission entry points vary by role:
 
 | Role | `node:add --role` | `node:role:add` |
 | --- | --- | --- |
@@ -270,6 +275,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
 | `swamp` | No | Singleton |
 | `router` | No | No (use [`cluster:router:set`](/cli/cluster/router-set)) |
+| `agent` | No | Yes |
 
 ## Package sources
 

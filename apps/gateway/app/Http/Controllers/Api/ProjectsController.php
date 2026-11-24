@@ -10,6 +10,7 @@ use App\Actions\Projects\ListProjectsAction;
 use App\Actions\Projects\ShowProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\ProjectData;
+use App\Data\Projects\ProjectSummaryData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Projects\ReviewAndMergeRequirements;
@@ -35,7 +36,10 @@ final class ProjectsController extends Controller
         return response()->json([
             'data' => $action
                 ->handle($consumer)
-                ->map(static fn (Project $project): array => ProjectData::fromModel($project)->toArray())
+                ->map(static fn (Project $project): array => [
+                    ...ProjectData::fromModel($project)->toArray(),
+                    ...ProjectSummaryData::fromModel($project)->toArray(),
+                ])
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),

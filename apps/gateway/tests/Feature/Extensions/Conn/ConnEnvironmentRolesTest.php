@@ -268,3 +268,28 @@ it('assigns and removes the light agent role on a macOS Node without Swamp runs 
         ->and($mini->fresh()->primary_agent)->toBeFalse()
         ->and($this->dispatch->started)->toBe([]);
 });
+
+it('surfaces a Node as the Conn Server entry point for General threads once node:role:add records the agent role', function (): void {
+    $vps = roleEnvNode('agent-vps', '10.44.1.12');
+    $this->caller->accessibleNodes()->attach($vps->id);
+    roleEnvHostServer($vps, 'env-vps');
+    $host = fn (): array => collect($this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->getJson('/api/v1/conn/environments')->assertOk()->json('data'))->keyBy('environment_id')['env-vps'];
+
+    expect($host())->toMatchArray(['roles' => [], 'is_primary_agent' => false]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson("/api/v1/nodes/{$vps->id}/roles", ['role' => 'agent'])
+        ->assertAccepted()
+        ->assertJsonPath('data.status', OperationStatus::Succeeded->value);
+
+    // The sole agent-role Node is the primary agent without an explicit designation, and no host work ran.
+    expect($host())->toMatchArray(['roles' => ['agent'], 'is_primary_agent' => true])
+        ->and($this->dispatch->started)->toBe([]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$vps->id}/roles/agent", ['force' => true])
+        ->assertAccepted();
+
+    expect($host())->toMatchArray(['roles' => [], 'is_primary_agent' => false]);
+});

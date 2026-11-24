@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Instances\ContainerServer;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
@@ -50,6 +51,7 @@ use SensitiveParameter;
  * @property CarbonImmutable|null $source_facts_captured_at
  * @property-read Collection<int, Task> $tasks
  * @property-read ProjectEnvironmentTemplate|null $environmentTemplate
+ * @property-read Instance|null $defaultInstance
  */
 final class Project extends Model
 {
@@ -94,6 +96,12 @@ final class Project extends Model
     public function instances(): HasMany
     {
         return $this->hasMany(Instance::class);
+    }
+
+    /** @return HasOne<Instance, $this> */
+    public function defaultInstance(): HasOne
+    {
+        return $this->hasOne(Instance::class)->where('name', DefaultInstanceName::Name);
     }
 
     /** @return HasMany<Route, $this> */
