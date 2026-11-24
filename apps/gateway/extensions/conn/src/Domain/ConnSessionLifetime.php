@@ -6,7 +6,6 @@ namespace Orbit\Extensions\Conn\Domain;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnOwedGatewayRevoke;
@@ -72,8 +71,8 @@ final readonly class ConnSessionLifetime
 
     /**
      * Revokes the Gateway session an unregistered host server still holds, once the server passes the gate; until then it stays owed.
-     * The holder check and the logout run under the owed row's lock, which a registration with the same bearer takes before it drops
-     * the row, so either the registration waits for the logout or the tick finds the row gone or held and sends none.
+     * After the gate it reads the row fresh and checks for a holder, then logs out at once with no transaction open, so a
+     * registration with the same bearer that commits during the gate leaves no logout to send.
      */
     public function revokeOwed(ConnOwedGatewayRevoke $owed): bool
     {
@@ -85,32 +84,30 @@ final readonly class ConnSessionLifetime
         if (! $this->server->untilRevoked($owed->url)) {
             return false;
         }
-
-        return DB::transaction(function () use ($owed): bool {
-            $owed = ConnOwedGatewayRevoke::query()->whereKey($owed->id)->lockForUpdate()->first();
-            if (! $owed instanceof ConnOwedGatewayRevoke) {
-                return true;
-            }
-            // A server registered again with the same bearer uses this session, so it is no longer owed; never revoke it.
-            if (ConnEnvironment::query()->get()->contains(fn (ConnEnvironment $environment): bool => hash_equals($environment->admin_session, $owed->admin_session))) {
-                $owed->delete();
-
-                return true;
-            }
-            try {
-                $this->server->revokeSelf($owed->url, $owed->admin_session);
-            } catch (T3ServerException $error) {
-                // A 401: an earlier logout revoked it already, or the server no longer has it.
-                if ($error->errorCode !== 'conn.session_rejected') {
-                    Log::warning('conn.gateway_revoke_failed', ['environment_id' => $owed->environment_id, 'error_code' => $error->errorCode]);
-
-                    return false;
-                }
-            }
+        // A registration that committed during the gate deleted the row.
+        $owed = ConnOwedGatewayRevoke::query()->whereKey($owed->id)->first();
+        if (! $owed instanceof ConnOwedGatewayRevoke) {
+            return true;
+        }
+        // A server registered again with the same bearer uses this session, so it is no longer owed; never revoke it.
+        if (ConnEnvironment::query()->get()->contains(fn (ConnEnvironment $environment): bool => hash_equals($environment->admin_session, $owed->admin_session))) {
             $owed->delete();
 
             return true;
-        });
+        }
+        try {
+            $this->server->revokeSelf($owed->url, $owed->admin_session);
+        } catch (T3ServerException $error) {
+            // A 401: an earlier logout revoked it already, or the server no longer has it.
+            if ($error->errorCode !== 'conn.session_rejected') {
+                Log::warning('conn.gateway_revoke_failed', ['environment_id' => $owed->environment_id, 'error_code' => $error->errorCode]);
+
+                return false;
+            }
+        }
+        $owed->delete();
+
+        return true;
     }
 
     /**

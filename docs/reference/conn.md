@@ -65,7 +65,7 @@ Removal is synchronous, local, and idempotent without contacting the T3 server. 
 
 T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. It calls `POST /api/auth/logout` with that session's own bearer and no body. A 401 means an earlier logout already revoked it, so the row goes either way. Against an older server the row stays owed.
 
-A host server that registers again with the same bearer uses that session again: the registration deletes the owed row for its environment or URL, and the reconcile drops without logout any owed row whose session a registered server holds. After the `/health` gate, the reconcile locks the owed row, checks for a holder, and logs out in one transaction. The registration locks the same rows before it deletes them, so it waits for a logout in flight, and a reconcile that finds the row gone or held sends none.
+A host server that registers again with the same bearer uses that session again: the registration deletes the owed row for its environment or URL, and the reconcile drops without logout any owed row whose session a registered server holds. The reconcile holds no transaction or lock across a network call. After the `/health` gate, it reads the owed row again and stops if a registration deleted it, drops it without logout if a registered server holds its session, and otherwise logs out at once and then deletes the row.
 
 ### Session lifetimes
 
