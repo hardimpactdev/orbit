@@ -1,5 +1,18 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # A Mac Node of the Conn Server rollout: `printf` of $HOME, `id -u` and `id -un`, and `codesign -d -r -` of the staged and the
+  # installed bundle, which prints the executable before the requirement.
+  conn-server-mac-who:
+    server: {path: '~/Applications/Conn Server.app'}
+    mac_who: {rc: 0, stdout_lines: [/Users/nick, '501', nick]}
+  conn-server-same-requirement:
+    mac_requirements: {results: [
+      {rc: 0, stdout_lines: ['Executable=/Users/nick/Applications/.conn-server-stage-1/new/Conn Server.app/Contents/MacOS/conn-server', 'designated => identifier "com.nckrtl.conn-server" and anchor apple generic and certificate leaf[subject.OU] = "9SVJ4SYB9B"']},
+      {rc: 0, stdout_lines: ['Executable=/Users/nick/Applications/Conn Server.app/Contents/MacOS/conn-server', 'designated => identifier "com.nckrtl.conn-server" and anchor apple generic and certificate leaf[subject.OU] = "9SVJ4SYB9B"']}]}
+  conn-server-other-requirement:
+    mac_requirements: {results: [
+      {rc: 0, stdout_lines: ['Executable=/Users/nick/Applications/.conn-server-stage-1/new/Conn Server.app/Contents/MacOS/conn-server', 'designated => identifier "com.nckrtl.conn-server" and anchor apple generic and certificate leaf[subject.OU] = "9SVJ4SYB9B"']},
+      {rc: 0, stdout_lines: ['Executable=/Users/nick/Applications/Conn Server.app/Contents/MacOS/conn-server', 'designated => cdhash H"0123456789abcdef0123456789abcdef01234567"']}]}
   conn-server-version-ok:
     intent: {version_pattern: '^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b'}
     switch_version: {rc: 0, stdout: "conn-server 0.4.2 (T3 server 0.1.10 contract, abcdef1)\n"}
@@ -1532,6 +1545,21 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/conn-server-mac.yml
+  task: Name the paths of the Node
+  field: vars.app
+  context: conn-server-mac-who
+  expected: '/Users/nick/Applications/Conn Server.app'
+- file: tasks/conn-server-mac.yml
+  task: Hold on a changed designated requirement
+  field: when
+  context: conn-server-same-requirement
+  expected: false
+- file: tasks/conn-server-mac.yml
+  task: Hold on a changed designated requirement
+  field: when
+  context: conn-server-other-requirement
+  expected: true
 - file: tasks/instance-container-power.yml
   task: Refuse a wake whose server is not the recorded one
   field: vars.wake_expected_version
@@ -3179,6 +3207,10 @@ cases:
     libc6:i386: [2.42-0ubuntu2]
     tzdata: [2025b]
 non_command_output:
+- file: conn-server-rollout.yml
+  task: Record the failed Node
+  field: ansible.builtin.set_fact.node_result
+  reason: Maps Ansible failure metadata to a public error code; does not parse command output.
 - file: operation-process-upgrade.yml
   task: Refuse a layout without a relative current link to a release
   field: ansible.builtin.assert.that[4]
