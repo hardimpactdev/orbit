@@ -16,15 +16,19 @@ use Illuminate\Support\Facades\Config;
 /**
  * Admits the rollout of the pinned Conn Server to the Nodes that run one (docs/reference/development-containers.md#conn-server-rollout):
  * the agent folder's `conn-server` pin, its macOS arm64 app, each Node's record with its SSH target, canary first, and the notice target.
- * A dry run only downloads and checks. Nothing starts it from a pin change.
+ * A dry run only downloads and checks. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the rest. Nothing
+ * starts it from a pin change.
  */
 final readonly class ConnServerRollout
 {
     public const string Kind = 'fleet.conn_server_rollout';
 
+    /** The scopes a caller must choose from; there is no default that reaches the whole fleet. */
+    public const array Scopes = ['canary', 'fleet'];
+
     public function __construct(private StartOperationAction $start, private CurrentRecipe $recipes, private SwampSshExecutionInput $ssh) {}
 
-    public function admit(bool $dryRun, ?string $triggeredBy = null, ?string $requestId = null): Operation
+    public function admit(bool $dryRun, string $scope, ?string $triggeredBy = null, ?string $requestId = null): Operation
     {
         $pin = $this->recipes->currentRecipe()->instances?->agent['conn-server'] ?? null;
         if ($pin?->macApp === null) {
@@ -33,6 +37,9 @@ final readonly class ConnServerRollout
         $servers = ConnServerNode::query()->with('node')->orderByDesc('canary')->orderBy('node_id')->get();
         if ($servers->where('canary', true)->count() !== 1) {
             throw new ResourceOperationException('conn_server.canary_unset', 'Exactly one Conn Server Node must be the canary.', 409);
+        }
+        if ($scope === 'canary') {
+            $servers = $servers->where('canary', true);
         }
         $notice = Config::array('orbit.conn.server_rollout_notice');
 

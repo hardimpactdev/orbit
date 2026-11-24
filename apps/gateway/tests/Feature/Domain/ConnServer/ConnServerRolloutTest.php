@@ -6,10 +6,12 @@ use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
 use App\Models\ConnServerNode;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Validator;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -53,7 +55,7 @@ it('admits the pinned release for every Conn Server Node, canary first, from the
     $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
     $vm = connServerNode('nick-vm', 62, ['canary' => true]);
 
-    $operation = app(ConnServerRollout::class)->admit(dryRun: true);
+    $operation = app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet');
     $intent = $operation->input['intent'];
 
     expect($operation->kind)->toBe('fleet.conn_server_rollout')
@@ -76,14 +78,33 @@ it('passes the configured notice target to the run', function (): void {
     connServerNode('nick-vm', 62, ['canary' => true]);
     config(['orbit.conn.server_rollout_notice' => ['url' => 'https://mini.example/notice', 'command' => null]]);
 
-    expect(app(ConnServerRollout::class)->admit(dryRun: false)->input['intent']['notice'])->toBe(['url' => 'https://mini.example/notice', 'command' => null]);
+    expect(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'fleet')->input['intent']['notice'])->toBe(['url' => 'https://mini.example/notice', 'command' => null]);
 });
 
 it('refuses a pin without a macOS app, and a fleet without exactly one canary', function (): void {
     connServerNode('nick-vm', 62, ['canary' => true]);
-    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true))->toThrow(ResourceOperationException::class, 'The Conn Server pin names no macOS arm64 app.');
+    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet'))->toThrow(ResourceOperationException::class, 'The Conn Server pin names no macOS arm64 app.');
 
     connServerMacPin();
     ConnServerNode::query()->update(['canary' => false]);
-    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true))->toThrow(ResourceOperationException::class, 'Exactly one Conn Server Node must be the canary.');
+    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet'))->toThrow(ResourceOperationException::class, 'Exactly one Conn Server Node must be the canary.');
+});
+
+it('reaches only the canary with scope canary, and keeps the canary-first order with scope fleet', function (): void {
+    connServerMacPin();
+    $nick = connServerNode('nick', 60, ['service' => 'com.nckrtl.t3-headless', 'port' => 3780]);
+    $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
+    $vm = connServerNode('nick-vm', 62, ['canary' => true]);
+
+    expect(array_column(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'canary')->input['intent']['nodes'], 'node_id'))->toBe([$vm->id])
+        ->and(array_column(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'fleet')->input['intent']['nodes'], 'node_id'))->toBe([$vm->id, $nick->id, $mini->id]);
+});
+
+it('refuses a trigger that names no scope or another one, and no dry run choice', function (): void {
+    $rules = new AdmitConnServerRolloutRequest()->rules();
+
+    expect(Validator::make(['dry_run' => false], $rules)->errors()->keys())->toBe(['scope'])
+        ->and(Validator::make(['dry_run' => false, 'scope' => 'all'], $rules)->errors()->keys())->toBe(['scope'])
+        ->and(Validator::make(['scope' => 'canary'], $rules)->errors()->keys())->toBe(['dry_run'])
+        ->and(Validator::make(['dry_run' => true, 'scope' => 'canary'], $rules)->passes())->toBeTrue();
 });

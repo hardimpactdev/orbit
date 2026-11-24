@@ -42,6 +42,28 @@
     fail_msg: conn_server.hash_mismatch
     quiet: true
 
+# The layout this flow assumes, checked before any change and in a dry run too: the unit starts `<current>/conn-server`, and the
+# tarball holds `conn-server-<X>-linux-x64/conn-server`, whose top folder the unpack strips. Any other layout installs nothing.
+- name: Read the unit's program
+  ansible.builtin.command: { argv: [timeout, "20", systemctl, show, -p, ExecStart, --value, --, "{{ server.service }}"] }
+  register: linux_exec
+  changed_when: false
+  become: true
+
+- name: List the tarball
+  ansible.builtin.command: { argv: [timeout, "60", tar, -tzf, "{{ linux_stage }}/conn-server.tar.gz"] }
+  register: linux_listing
+  changed_when: false
+  become: true
+
+- name: Check the layout
+  ansible.builtin.assert:
+    that:
+      - ('path=' ~ server.path ~ '/conn-server ') in linux_exec.stdout
+      - ('conn-server-' ~ version ~ '-linux-x64/conn-server') in linux_listing.stdout_lines
+    fail_msg: conn_server.layout_mismatch
+    quiet: true
+
 - name: Record a checked Node of a dry run
   when: intent.dry_run
   ansible.builtin.set_fact:

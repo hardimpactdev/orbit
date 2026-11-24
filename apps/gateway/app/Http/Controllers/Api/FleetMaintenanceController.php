@@ -46,12 +46,12 @@ final class FleetMaintenanceController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
 
-    /** The rollout of the pinned Conn Server to the Nodes that run one; `dry_run` only downloads and checks on each Node. */
+    /** The rollout of the pinned Conn Server to the Nodes that run one; `dry_run` only downloads and checks, and `scope` (`canary` or `fleet`) names how far it goes. */
     #[StartsOperation(ConnServerRollout::Kind)]
     public function connServer(AdmitConnServerRolloutRequest $request, ConnServerRollout $rollout): JsonResponse
     {
         $caller = $request->getUserResolver()();
-        $operation = $rollout->admit($request->boolean('dry_run'), $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
+        $operation = $rollout->admit($request->boolean('dry_run'), $request->string('scope')->value(), $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

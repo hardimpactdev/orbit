@@ -234,9 +234,9 @@ The recipe loader accepts `macos_arm64` on agent folder parts only and requires 
 
 #### Conn Server rollout
 
-`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false}`) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
+`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"}`, both required) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
 
-Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health` on 127.0.0.1), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`. Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
 
 The run is one Ansible phase, `conn-server-rollout.yml`, that visits the Nodes one at a time, the canary first. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`.
 
@@ -259,7 +259,7 @@ Then the swap and the restart. The phase:
 
 When `/health` never names the version, the phase puts the backup back on the path and kickstarts again. The Node fails with `conn_server.health_check_failed`, and `rolled_back` is true when the old version answers.
 
-Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way; a failed check points `current` back and restarts again.
+Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed. A Linux Node unpacks the tarball into a new `releases/<X>-<run>` folder beside `current`, moves `current` to it with one rename, restarts the unit and checks `/health` in the same way; a failed check points `current` back and restarts again.
 
 The notice before a restart is `orbit.conn.server_rollout_notice`: `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL` gets a JSON POST of `node_id`, `version` and `event`, and `ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND` runs on the Swamp worker with the Node id and the version as its last arguments. With neither set, no notice is sent. A failed notice fails the Node before anything changes.
 

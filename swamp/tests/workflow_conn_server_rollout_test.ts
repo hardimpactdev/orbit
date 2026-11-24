@@ -48,19 +48,21 @@ case "$2" in
   *) [ -f "$FIXTURE/prompt" ] && cat "$FIXTURE/prompt" ;;
 esac
 exit 0`,
+    // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC.
     systemctl: `#!/bin/sh
+if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
 echo "$*" >> "$FIXTURE/systemctl"
 v=$(cat "$FIXTURE_LINUX/current/version")
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; dryRun?: boolean; notice?: boolean };
+type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean };
 
 async function rollout(options: Options) {
     const folder = Deno.makeTempDirSync();
     try {
-        for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", "linux/releases/0.4.2", "linux-build/conn-server-0.5.0-linux-x64"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", "linux/releases/0.4.2", `linux-build/${options.topFolder ?? "conn-server-0.5.0-linux-x64"}`]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         for (const [name, text] of Object.entries(shims)) {
             Deno.writeTextFileSync(`${folder}/bin/${name}`, text);
             Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -78,8 +80,10 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${folder}/linux/releases/0.4.2/version`, "0.4.2");
         Deno.symlinkSync(`${folder}/linux/releases/0.4.2`, `${folder}/linux/current`);
         // The release tarball holds one top folder, which the unpack strips.
-        Deno.writeTextFileSync(`${folder}/linux-build/conn-server-0.5.0-linux-x64/version`, "0.5.0");
-        new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, "conn-server-0.5.0-linux-x64"] }).outputSync();
+        const top = options.topFolder ?? "conn-server-0.5.0-linux-x64";
+        Deno.writeTextFileSync(`${folder}/linux-build/${top}/version`, "0.5.0");
+        Deno.writeTextFileSync(`${folder}/linux-build/${top}/conn-server`, "");
+        new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, top] }).outputSync();
         Deno.writeTextFileSync(`${folder}/running`, "0.4.2");
         Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
@@ -112,7 +116,7 @@ async function rollout(options: Options) {
         const done = await new Deno.Command(playbook, {
             args: ["-i", "localhost,", "--tags", "rollout", "-e", "ansible_connection=local", "-e", "ansible_become=false",
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
-            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: "0f0e0d0c-0b0a-4908-8706-050403020100",
+            env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: "0f0e0d0c-0b0a-4908-8706-050403020100",
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         await server.shutdown();
@@ -125,6 +129,7 @@ async function rollout(options: Options) {
             result: JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
+            releases: [...Deno.readDirSync(`${folder}/linux/releases`)].map((entry) => entry.name),
             launchctl: read("launchctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
         };
@@ -209,6 +214,17 @@ test("a Linux Node whose new release fails its health check points current back 
     assert(!run.ok, run.output);
     assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
     assertEquals(run.linux, "0.4.2");
+});
+
+test("a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too", async () => {
+    for (const options of [{ exec: "/opt/conn-server/bin/conn-server" }, { topFolder: "conn-server" }]) {
+        for (const dryRun of [true, false]) {
+            const run = await rollout({ nodes: [{ platform: "linux", canary: true }], dryRun, ...options });
+            assert(!run.ok, run.output);
+            assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.layout_mismatch", rolled_back: false }]);
+            assertEquals([run.linux, run.releases], ["0.4.2", ["0.4.2"]]);
+        }
+    }
 });
 
 test("after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks", async () => {
