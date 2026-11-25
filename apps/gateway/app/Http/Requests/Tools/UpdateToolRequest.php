@@ -15,7 +15,7 @@ final class UpdateToolRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return [...new AptRepositoryRules()->rules()];
+        return ['desired_version' => ['nullable', 'string', 'max:255'], ...new AptRepositoryRules()->rules()];
     }
 
     /** @return array<string, mixed> */
@@ -25,7 +25,7 @@ final class UpdateToolRequest extends FormRequest
             return [];
         }
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['repository']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['repository', 'desired_version']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -37,5 +37,10 @@ final class UpdateToolRequest extends FormRequest
         $value = $this->validated('repository');
 
         return $value === null ? null : ValidatedData::object($value);
+    }
+
+    public function desiredVersion(): ?string
+    {
+        return ValidatedData::nullableString($this->validated('desired_version'));
     }
 }

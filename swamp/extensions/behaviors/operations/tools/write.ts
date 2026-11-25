@@ -2,11 +2,10 @@ import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import {
-    allows,
     type Context,
+    exactMatches,
     Facts,
     ManagerFields,
-    normalizeVersion,
     PackageInput,
     platformSupports,
     publicVersion,
@@ -15,7 +14,8 @@ import {
     ToolRefusal,
     verifyInstalled,
 } from "./contract.ts";
-import { homebrewBlock, homebrewCandidateVersion } from "./homebrew.ts";
+import { candidate, writeInventory } from "./write_policy.ts";
+export { writeInventory } from "./write_policy.ts";
 export const WriteInput = PackageInput.safeExtend({
     kind: z.enum(["tool.install", "tool.update"]),
     setup: Setup.nullable().default(null),
@@ -46,20 +46,6 @@ const plain = (input: Input) => ({
     materialize: null,
     intent_only: false,
 });
-/** The manager's package facts: one admitted scope, a readable manager version and at most one installed version. */
-export function writeInventory(value: unknown) {
-    const facts = Facts.parse(value);
-    if (facts.scope !== "present") {
-        throw new ToolRefusal("tool.manager_unavailable");
-    }
-    if (
-        facts.error_code || !safeVersion(facts.manager_version) ||
-        facts.complete !== true || !facts.versions ||
-        facts.versions.length > 1 ||
-        facts.versions.some((version) => !safeVersion(version))
-    ) throw new ToolRefusal("tool.version_probe_failed");
-    return { facts, present: facts.versions.length === 1 };
-}
 /** Refusals on the installed package before any package write; false when nothing needs writing. */
 export function before(
     input: Input,
@@ -67,44 +53,18 @@ export function before(
     present: boolean,
 ): boolean {
     if (
-        input.kind === "tool.install" && input.tool_status === null && present
+        present && input.kind === "tool.install" && input.installed_version === null
     ) throw new ToolRefusal("tool.package_already_installed");
     if (input.kind === "tool.update" && !present) {
         throw new ToolRefusal("tool.version_probe_failed");
     }
+    if (input.desired_version !== null) {
+        if (!present || !exactMatches(input, facts.versions![0]!)) return true;
+        verifyInstalled(plain(input), facts.versions![0]!);
+        return false;
+    }
     if (present) verifyInstalled(plain(input), facts.versions![0]!);
     return !(input.kind === "tool.install" && present);
-}
-/** The manager's normal candidate, checked against the constraint without selecting a version. */
-export function candidate(
-    input: Input,
-    value: unknown,
-): { version: string; allowed: boolean } {
-    const raw = Public.safeParse(value);
-    if (!raw.success) {
-        throw new ToolRefusal("tool.candidate_version_probe_failed");
-    }
-    const version = input.manager.startsWith("brew")
-        ? homebrewCandidateVersion(input, raw.data)
-        : raw.data.version;
-    if (
-        input.manager.startsWith("brew") && homebrewBlock(input, raw.data, true)
-    ) throw new ToolRefusal("tool.candidate_version_probe_failed");
-    if (raw.data.error_code !== undefined) {
-        throw new ToolRefusal("tool.candidate_version_probe_failed");
-    }
-    if (!safeVersion(version)) {
-        throw new ToolRefusal("tool.candidate_version_unavailable");
-    }
-    if (
-        input.version_constraint !== null &&
-        normalizeVersion(version, input.manager) === null
-    ) throw new ToolRefusal("tool.candidate_version_unparseable");
-    const allowed = allows(plain(input), version);
-    if (!allowed && input.kind === "tool.install") {
-        throw new ToolRefusal("tool.version_constraint_blocked");
-    }
-    return { version, allowed };
 }
 /** Decide from "Check the candidate" whether the package write runs; every refusal happens here, before it (flows/tool.install.mmd, tool.update.mmd). */
 export function decide(input: Input, phase: Phase): Decision {
@@ -159,7 +119,7 @@ function choose(input: Input, phase: Phase): Decision {
                 candidate_json: "null",
             };
         }
-        const chosen = candidate(input, phase.candidate);
+        const chosen = candidate(plain(input), phase.candidate);
         // Update: the same version is nothing to do, a version outside the constraint stops here (flows/tool.update.mmd).
         const outcome = !chosen.allowed
             ? "blocked_by_constraint"
@@ -287,8 +247,11 @@ export const behavior = {
                             ""
                         : "",
                 };
-                await ctx.writeResource("decision", "decision", value);
-                return value;
+                const write = value.mutate && args.input.manager === "apt"
+                    ? native.aptWrite(args.input.package, value.version, args.input.desired_version !== null)
+                    : native.commands(args.input).write;
+                await ctx.writeResource("decision", "decision", {...value, write});
+                return {...value, write};
             },
         },
         observe: {
@@ -311,6 +274,9 @@ export const behavior = {
                     !safeVersion(installed_version)
                 ) throw new ToolRefusal("tool.version_probe_failed");
                 if (typeof installed_version === "string") {
+                    if (!exactMatches(args.input, installed_version)) {
+                        throw new ToolRefusal("tool.installed_version_mismatch");
+                    }
                     verifyInstalled(
                         plain(
                             WriteInput.parse({

@@ -159,7 +159,7 @@ class GatewayTestsPolicyTest(unittest.TestCase):
             self.deno_setup(version='deno 2.9.7')
 
     def test_deno_pin_uses_the_recipe_digest_and_separate_archive_cache(self):
-        recipe = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+        recipe = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())
         deno = recipe['tools']['deno']
         self.assertEqual(deno['version'], '2.9.8')
         self.assertRegex(deno['artifacts']['amd64']['sha256'], r'^[0-9a-f]{64}$')
@@ -168,7 +168,7 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertIn("hashlib.sha256(archive.read_bytes()).hexdigest() != artifact['sha256']", code)
         self.assertNotIn(deno['artifacts']['amd64']['sha256'], JOB)
         key = next(line for line in JOB.splitlines() if 'key: gateway-tests-deno-download-' in line)
-        self.assertIn("hashFiles('apps/gateway/resources/machine-software/recipe.json')", key)
+        self.assertIn("hashFiles('apps/gateway/resources/machine-software/core.yaml')", key)
         self.assertIn('path: ~/.cache/orbit-gateway-tests/deno', JOB)
 
     def caddy_setup(self, *, cached=False, corrupt=False, version='v2.11.7', missing=False):
@@ -210,7 +210,7 @@ class GatewayTestsPolicyTest(unittest.TestCase):
                 self.caddy_setup(**options)
 
     def test_caddy_pin_matches_the_recipe(self):
-        recipe = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+        recipe = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())
         caddy = recipe['tools']['caddy']
         self.assertEqual(caddy['version'], '2.11.7')
         self.assertRegex(caddy['artifacts']['amd64']['sha512'], r'^[0-9a-f]{128}$')

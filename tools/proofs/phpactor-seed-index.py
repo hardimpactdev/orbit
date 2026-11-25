@@ -45,7 +45,7 @@ say, step, fail, check, guest, as_agent, as_agent_argv, Server, definition_uris,
     lsp.say, lsp.step, lsp.fail, lsp.check, lsp.guest, lsp.as_agent, lsp.as_agent_argv, lsp.Server, lsp.definition_uris, lsp.operation_line)
 
 CHECKOUT = HERE.parents[1]
-RECIPE = CHECKOUT / 'apps/gateway/resources/machine-software/recipe.json'
+RECIPE = CHECKOUT / 'apps/gateway/resources/machine-software/core.yaml'
 INSTANCE_PROJECT = lsp.INSTANCE_PROJECT
 NESTED_APP_PROD = 'nested-app-prod'
 ROOT = '/srv/workspace'

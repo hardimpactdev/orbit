@@ -31,7 +31,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready',
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready',
         ]))], 'ssh' => $operation->input['ssh']];
     }
 
@@ -169,7 +169,8 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             if ($status === OperationStatus::Cancelled) {
                 return;
             }
-            $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $result['installed_version'] ?? $tool->installed_version,
+            $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $operation->error_code === 'tool.package_already_installed'
+                ? $tool->installed_version : ($result['installed_version'] ?? $tool->installed_version),
                 'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code]);
 
             return;
@@ -210,6 +211,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         return Tool::query()->create([
             'node_id' => $operation->node_id, 'tool_manager_id' => $record->id,
             'package' => $operation->input['package'], 'version_constraint' => $operation->input['version_constraint'],
+            'desired_version' => $operation->input['desired_version'] ?? null,
             'status' => ToolStatus::Installing,
         ]);
     }

@@ -562,7 +562,7 @@ it('keeps a Node\'s baseline recorded before host inputs were classified by Node
 function copyRolloutHostTree(string $path): void
 {
     $root = dirname(base_path(), 2);
-    $recipe = '/apps/gateway/resources/machine-software/recipe.json';
+    $recipe = '/apps/gateway/resources/machine-software/core.yaml';
     File::ensureDirectoryExists(dirname($path.$recipe));
     File::copy($root.$recipe, $path.$recipe);
     foreach (['/apps/gateway/app/Domain/Nodes', '/swamp/ansible/tasks'] as $folder) {
@@ -871,7 +871,7 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
     $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
     InstancePool::give($node);
     $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
-    $recipe = '/resources/machine-software/recipe.json';
+    $recipe = '/resources/machine-software/core.yaml';
     $gateway = $this->base.'/orbit/apps/gateway';
     mkdir(dirname($gateway.$recipe), 0700, true);
     copy(base_path().$recipe, $gateway.$recipe);
@@ -908,7 +908,7 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
 it('fingerprints edits to a shared play or a dependency of that role', function (string $path, bool $shared): void {
     $root = $this->base.'/playbooks';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     foreach ([$recipe, $path] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
         copy($repo.'/'.$file, $root.'/'.$file);
@@ -938,7 +938,7 @@ it('fingerprints edits to a shared play or a dependency of that role', function 
 it('fingerprints a shared Instance host helper only for the role that runs it', function (string $path): void {
     $root = $this->base.'/instance-helper';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     foreach ([$recipe, $path] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
         copy($repo.'/'.$file, $root.'/'.$file);
@@ -966,7 +966,7 @@ it('fingerprints a shared Instance host helper only for the role that runs it', 
 it('fingerprints a base play change for the roles whose units it applies', function (RoleName $role): void {
     $root = $this->base.'/base-play';
     $repo = dirname(base_path(), 2);
-    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $recipe = 'apps/gateway/resources/machine-software/core.yaml';
     $play = 'swamp/ansible/tasks/node-converge-base.yml';
     foreach ([$recipe, $play] as $file) {
         mkdir(dirname($root.'/'.$file), 0700, true);
@@ -1010,7 +1010,7 @@ it('fingerprints the Swamp helper tool pins from the selected software plan', fu
     $database = $node->roles()->where('role', RoleName::Database)->sole();
     $root = $this->base.'/recipe-tree';
     copyRolloutHostTree($root);
-    $file = $root.'/apps/gateway/resources/machine-software/recipe.json';
+    $file = $root.'/apps/gateway/resources/machine-software/core.yaml';
     $inputs = app(ReleaseNodeInputs::class);
     $before = $inputs->roles($node, root: $root);
     $host = $inputs->host($root);

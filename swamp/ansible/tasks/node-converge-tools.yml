@@ -1,0 +1,31 @@
+---
+- name: Start the independent Tool observations
+  ansible.builtin.set_fact: { tool_results: [] }
+- name: Run the Tool helper once before judging any Tool
+  when: intent.tools | length > 0
+  ansible.builtin.command:
+    argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", check]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: tool_helper
+- name: Require a working Tool helper
+  when: intent.tools | length > 0
+  ansible.builtin.assert:
+    that: (tool_helper.stdout | trim) == '{"ready":true}'
+    fail_msg: The Tool helper must run on the Swamp Node before it can judge a Tool.
+    quiet: true
+- name: Reconcile each independent Tool
+  ansible.builtin.include_tasks:
+    file: node-converge-tool.yml
+    apply: { tags: [tools] }
+  loop: "{{ intent.tools }}"
+  loop_control: { loop_var: tool, label: "{{ tool.id }}" }
+- name: Record bounded Tool results
+  ansible.builtin.copy:
+    dest: "{{ orbit_run }}/tools-result.json"
+    content: "{{ tool_results | to_json }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false

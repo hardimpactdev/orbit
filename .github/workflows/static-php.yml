@@ -8,7 +8,7 @@ name: Static PHP build
 on:
   pull_request:
     paths:
-      - apps/gateway/resources/machine-software/recipe.json
+      - apps/gateway/resources/machine-software/core.yaml
       - bin/static-php-build
       - tools/static-php/**
       - swamp/ansible/library/orbit_static_php.py
@@ -16,7 +16,7 @@ on:
   push:
     branches: [main]
     paths:
-      - apps/gateway/resources/machine-software/recipe.json
+      - apps/gateway/resources/machine-software/core.yaml
       - bin/static-php-build
       - tools/static-php/**
       - swamp/ansible/library/orbit_static_php.py

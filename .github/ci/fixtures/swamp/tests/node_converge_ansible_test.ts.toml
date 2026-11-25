@@ -41,7 +41,7 @@ cases = [
 file = "swamp/tests/node_converge_ansible_test.ts"
 cost = 106 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1), plus 4s for the two CLI ownership cases (local 1.7s x 2.1)
 inputs = [
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/build_vars.py",

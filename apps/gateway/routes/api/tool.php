@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
+use App\Http\Controllers\Api\ToolPolicyController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -13,6 +14,9 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
+    Route::get('tool-policy', [ToolPolicyController::class, 'show'])->name('tool:mode');
+    Route::put('tool-policy', [ToolPolicyController::class, 'update'])->name('tool:mode:set');
+    Route::post('nodes/{node}/tools/converge', [ToolsController::class, 'converge'])->whereNumber('node')->name('tool:converge');
     Route::get('tool-inventory', [ToolInventoryController::class, 'scan'])
         ->name('tool:scan');
     Route::get('tool-managers', [ToolManagersController::class, 'index'])

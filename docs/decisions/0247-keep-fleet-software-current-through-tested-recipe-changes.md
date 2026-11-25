@@ -26,13 +26,13 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 
 **Desired state.**
 
-- `apps/gateway/resources/machine-software/recipe.json` stays JSON and stays the one source of pins, role tool lists and the image tool list.
-- Ansible reads it directly from the release checkout.
-- The Gateway intent carries targets only: Nodes, roles, Tools, network and SSH details. It carries no versions.
+- `apps/gateway/resources/machine-software/core.yaml` uses JSON syntax within YAML and owns release pins for host prerequisites, roles, and the shared container runtime and agent folders.
+- Release preparation and the core planners read that release's recipe. Core digests exclude optional Tool coordinates and Conn host releases.
+- The Gateway owns optional membership per Node. It admits typed Tool coordinates from the active catalog or database before Ansible runs on the Swamp control Node over pinned SSH.
 
 **Updates.**
 
-- Self-hosted Renovate runs as an hourly GitHub Actions cron on Orbit's self-hosted runners. A custom manager reads `recipe.json`.
+- Self-hosted Renovate runs as an hourly GitHub Actions cron on Orbit's self-hosted runners. A custom manager reads `core.yaml`.
 - A new version is proposed when it is at least 24 hours old, or right away when it fixes a known CVE.
 - Non-major updates go into one rolling batch PR. Each tool has a track (its major line); a new major gets its own PR that waits for Nick.
 - A green PR merges automatically. A red PR stays open. A person or agent excludes the broken version, and Renovate rebuilds the PR.
@@ -43,7 +43,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - Each chart path has one case, kept in `docs/cli/<family>/<command>.cases.yaml`: the main path, each `--flag`, and the error paths. `bin/check-flows` fails when an `opt` block has no case.
 - `proof:run <commit>` takes a VM, builds its nested test fleet (Gateway with Swamp, app-dev, app-prod) from the ready snapshot, applies the commit and runs the cases. [`proof:run`](/cli/proof/run) owns the contract.
 - A case passes when Doctor finds no drift on the records it touched and a second run changes nothing. An error case passes when the command refuses and changes nothing.
-- A CI job calls `proof:run` for every pull request that changes command code, and its result is the required check `Proofs`. A commit that changes `recipe.json` runs every case. (Amended 2026-11-08: a proof runs only for commands whose own code or cases change; shared code selects none.)
+- A CI job calls `proof:run` for every pull request that changes command code, and its result is the required check `Proofs`. A commit that changes `core.yaml` runs every case. (Amended 2026-11-08: a proof runs only for commands whose own code or cases change; shared code selects none.)
 
 **Rollout.**
 
@@ -60,10 +60,10 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 
 **Tools.**
 
-- Tool records stay per Node.
-- One Tools phase serves `tool:install`, `tool:update`, `tool:remove`, `node:converge` and the rollout. It also runs on macOS.
-- The phase picks the newest version within the constraint that is at least 24 hours old, or one that fixes a CVE.
-- A Tool that conflicts with a held recipe package fails alone, with `tool.recipe_conflict`. A failed Tool does not halt the rollout.
+- The Gateway keeps desired coordinates separate from observations. File mode has one `tools.yaml` and restricts membership to its entries; database mode can pin different exact manager releases on different Nodes.
+- Mode activation preserves memberships and takes a snapshot before changing policy. Export refuses conflicts rather than picking a version. Existing Gateways start in database mode without changing any Node.
+- Direct Tool writes and Tools convergence use the same admission and package selection rules. Full Linux Node convergence includes Tools, role-only convergence does not, and `tool:converge` also runs on macOS.
+- Task copies require container Conn from the core agent folder. Host Conn uses its own checksummed release catalog and explicit rollout, retaining canary, health, signature, notice, and rollback checks. General convergence cannot update it.
 
 **Templates.**
 
@@ -73,14 +73,14 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - A nightly task builds the topology from stock Ubuntu in a task VM, runs every case, and compares the result with the templates through Doctor.
   - On a pass, the fresh build replaces the templates.
   - On a failure, Pi works in that VM, on Codex Sol 6.1 at High effort. It fixes an Orbit bug with a PR, pins and excludes a broken upstream version with a PR, or reruns once and then reports.
-  - A pin PR touches only `recipe.json` and `renovate.json`, and merges automatically when its required check passes. A fix PR changes Orbit code and goes through normal review: an independent review, then Nick's approval.
+  - A pin PR touches only `core.yaml` and `renovate.json`, and merges automatically when its required check passes. A fix PR changes Orbit code and goes through normal review: an independent review, then Nick's approval.
 
 **Python.**
 
 - Ansible needs Python on each Node, so Python comes with the agent.
 - Linux Nodes keep the system `python3`, which Ubuntu always ships and Ansible's `apt` module needs.
 - A macOS Node gets its Python where it gets its agent: `node:add` installs a pinned python-build-standalone build into Orbit's own prefix, with one `raw` task that needs no Python. The Tool commands then run on it. `node:converge` and the rollout stay Linux-only.
-- The build is a `recipe.json` artifact, which Renovate keeps current.
+- The build is a `core.yaml` artifact, which Renovate keeps current.
 - Orbit installs no Xcode and no Command Line Tools. Homebrew's own need for them stays Homebrew's.
 
 ## Rejected alternatives
@@ -93,8 +93,8 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 
 ## Consequences
 
-- `recipe.json` gains one artifact: the python-build-standalone build for macOS Nodes.
-- No recipe version reaches a Node untested. Two exceptions remain: Ubuntu security patches, which the next test confirms after the fact, and Tool versions, which follow their constraint and the 24-hour rule without a test, isolated by the recipe hold.
+- `core.yaml` gains one artifact: the python-build-standalone build for macOS Nodes.
+- Core recipe versions require release proof. Ubuntu security patches remain independently managed, and optional Tool versions are selected by Gateway policy within their manager and constraint rules.
 - The task VM image build, `fleet.recipe_pr`, the agent image phases, the Tool candidate and decision steps, and the footprint digests are removed.
 - Every rollout visits every Node. A visit with no changes takes about a minute.
 - Timings of today's workflows, not of the Ansible phases, measured on the shared proof topology on Shark on 2026-11-03 and 2026-11-04:

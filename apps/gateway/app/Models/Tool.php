@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $tool_manager_id
  * @property string $package
  * @property string|null $version_constraint
+ * @property string|null $desired_version
  * @property ToolStatus $status
  * @property string|null $installed_version
  * @property ToolOperation|null $failed_operation
@@ -34,6 +35,7 @@ final class Tool extends Model
         'package',
         'apt_repository_id',
         'version_constraint',
+        'desired_version',
         'status',
         'installed_version',
         'failed_operation',

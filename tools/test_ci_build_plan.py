@@ -108,7 +108,7 @@ class BuildPlanTest(unittest.TestCase):
                      'swamp/config/gateway-workflow-grants.json', 'swamp/ansible/task-vm-host.yml',
                      'tools/swamp-proof-guest/ansible-recaps.php', 'docs/cli/firewall/allow.mmd',
                      'apps/gateway/app/Domain/Tasks/direct-operations.php',
-                     'apps/gateway/resources/machine-software/recipe.json',
+                     'apps/gateway/resources/machine-software/core.yaml',
                      '.github/actions/php/action.yml'):
             for main in (False, True):
                 with self.subTest(path=path, main=main):

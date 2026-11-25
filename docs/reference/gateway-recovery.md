@@ -184,6 +184,8 @@ Admission reads the target commit's pin from `apps/gateway/resources/agent/froze
 
 The build step verifies free disk space (database size plus 1 GiB), creates the worktree, links shared `.env` and storage, runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` in `apps/cli` and `apps/gateway`, writes the agent manifest, seals source permissions with `REVISION`, and caches config at mode `0600`. Existing sealed releases of the same commit are reused.
 
+For a container build, the installed protocol 4 launcher runs the controller from the admitted commit. That controller archives its own runtime installer and `core.yaml` before the candidate checkout exists. A previous release can keep using its own recipe filename while it serves traffic; the candidate prepare does not read that file. A clean preparation uses `core.yaml` from its own checkout.
+
 #### Release provenance
 
 CI signs each CLI/agent release with Sigstore ([CLI binaries: Provenance](/reference/cli-binaries#provenance)). Both release admission and [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) download `provenance.sigstore.json` without authentication and verify it offline with PHP's OpenSSL extension against `apps/gateway/resources/sigstore/trusted_root.json`.

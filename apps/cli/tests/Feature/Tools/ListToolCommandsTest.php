@@ -102,6 +102,7 @@ it('renders the complete tool table with nullable values', function (): void {
                     'manager' => 'composer',
                     'package' => 'vendor/tool',
                     'version_constraint' => '^1.2',
+                    'desired_version' => '1.4.0',
                     'status' => 'failed',
                     'installed_version' => '1.3.0',
                     'error_code' => 'tool.failed',
@@ -116,8 +117,8 @@ it('renders the complete tool table with nullable values', function (): void {
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('PACKAGE')
-        ->and($flat)->toContain('│ 41 │ vp │ @openai/codex │ — │ installed │ — │ — │')
-        ->and($flat)->toContain('│ 42 │ composer │ vendor/tool │ ^1.2 │ failed │ 1.3.0 │ tool.failed │')
+        ->and($flat)->toContain('│ 41 │ vp │ @openai/codex │ — │ — │ installed │ — │ — │')
+        ->and($flat)->toContain('│ 42 │ composer │ vendor/tool │ ^1.2 │ 1.4.0 │ failed │ 1.3.0 │ tool.failed │')
         ->and($output)->toContain("Request ID: {$id}");
 
     expect($mock->getLastRequest()?->getMethod())
@@ -158,6 +159,7 @@ it('renders every show field as a detail tree', function (): void {
         ->and($flat)->toContain('Manager vp')
         ->and($flat)->toContain('Package @openai/codex')
         ->and($flat)->toContain('Constraint —')
+        ->and($flat)->toContain('Desired version —')
         ->and($flat)->toContain('Status installed')
         ->and($flat)->toContain('Installed version —')
         ->and($flat)->toContain('Failed operation —')
@@ -267,6 +269,7 @@ function tool_data(array $overrides = []): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => null,
+        'desired_version' => null,
         'repository' => null,
         'status' => 'installed',
         'installed_version' => null,

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (one Tools phase shared with node:converge; 24 h / CVE version rule). Same shape as tool.install. docs/reference/tools.md#update-a-tool.
+  %% docs/reference/tools.md#install-and-update-a-tool
   %% status: draft
   %% command: tool:update
   %% kind: tool.update
@@ -16,10 +16,11 @@ sequenceDiagram
   CLI->>GW: tool:update 31
   %%> Command:
   %%> - `orbit tool:update 31`
-  %%> - syntax: `<tool> [--repository=JSON] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `<tool> [--tool-version=VERSION] [--repository=JSON] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Tool<br/>task #5134 · ripgrep on Node 12
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
+  %%> - file mode requires its declared coordinate without overrides; database mode retains an existing pin unless the caller supplies a new one
   GW->>SW: Start run, full intent<br/>operation-tool-write
   GW-->>CLI: 202 Accepted<br/>task #5134
   SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
@@ -32,7 +33,7 @@ sequenceDiagram
   %%> Why the converge phase:
   %%> - an update is the same phase as an install, limited to this Tool
   %%> Version:
-  %%> - the newest in the constraint that is at least 24 hours old, or fixes a known CVE
+  %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
   SW->>N: Check the Tool<br/>ansible · tags check
   alt check passes
     SW-->>GW: Run succeeded

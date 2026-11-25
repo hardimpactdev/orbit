@@ -13,6 +13,6 @@ final readonly class InstallToolAction
 
     public function execute(InstallToolData $data): Operation
     {
-        return $this->operations->execute('install', $data->nodeId, $data->manager, $data->package, $data->versionConstraint, repository: $data->repository);
+        return $this->operations->execute('install', $data->nodeId, $data->manager, $data->package, $data->versionConstraint, repository: $data->repository, version: $data->desiredVersion);
     }
 }

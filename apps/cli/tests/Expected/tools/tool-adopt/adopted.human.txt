@@ -12,6 +12,8 @@ Node #2: agent online
 │
 ├  Constraint          ^1.7
 │
+├  Desired version     —
+│
 ├  Status              installed
 │
 ├  Installed version   1.7.1

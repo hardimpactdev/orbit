@@ -41,12 +41,12 @@ COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 # The recipe's pinned Swamp binary, for the self-hosted native fixtures (ADR 0262).
 SWAMP_BINARY=/usr/local/bin/orbit-swamp-proof
 read -r SWAMP_URL SWAMP_SHA256 < <(python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["tools"]["swamp"]["artifacts"]["amd64"]; print(a["url"], a["sha256"])' \
-  "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json")
+  "$REPOSITORY/apps/gateway/resources/machine-software/core.yaml")
 # The Node's runtime folder, read-only in each runner container: its FrankenPHP serves the FrankenPHP fixtures. The PHP
 # version is the recipe's CI version, which the Instance runtime must also build.
 RUNTIME=/opt/orbit-runtime
 FRANKENPHP=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); v=r["php"]["ci"]; assert v in r["instances"]["php"]["versions"], v; print(sys.argv[2] + "/current/php/" + v + "/bin/frankenphp")' \
-  "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" "$RUNTIME")
+  "$REPOSITORY/apps/gateway/resources/machine-software/core.yaml" "$RUNTIME")
 REPO_URL=https://github.com/hardimpactdev
 # The labels every hardimpactdev shard runner carries. No runner carries a host label: all CI Nodes form one pool.
 LABELS=self-hosted,Linux,X64,hardimpact,orbit-shard
@@ -84,8 +84,8 @@ container() {
   incus file push "$source_agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
   in_ct "$name" chmod 0755 "$tree/apps/agent/target/release/orbit-agent"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
-  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
-    "$name$tree/apps/gateway/resources/machine-software/recipe.json" --project "$PROJECT"
+  incus file push "$REPOSITORY/apps/gateway/resources/machine-software/core.yaml" \
+    "$name$tree/apps/gateway/resources/machine-software/core.yaml" --project "$PROJECT"
   incus file push "$REPOSITORY/tools/agent_command.py" "$name$tree/tools/agent_command.py" --project "$PROJECT"
   incus file push "$REPOSITORY/tools/ci-runners/javascript.py" "$name$tree/tools/ci-runners/javascript.py" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/vite-plus-package-lock.json" \
@@ -160,7 +160,7 @@ fi
 # Install and verify recipe Node, then retire its old source and provider files.
 python3 /root/orbit-php-build/tools/ci-runners/javascript.py
 # Verify the launcher from a directory that runner can traverse, against the recipe.
-expected_node_version=$(python3 -c 'import json,sys; print("v" + json.load(open(sys.argv[1]))["tools"]["node"]["version"])' /root/orbit-php-build/apps/gateway/resources/machine-software/recipe.json)
+expected_node_version=$(python3 -c 'import json,sys; print("v" + json.load(open(sys.argv[1]))["tools"]["node"]["version"])' /root/orbit-php-build/apps/gateway/resources/machine-software/core.yaml)
 actual_node_version=$(cd / && sudo -u runner -H /usr/local/bin/node --version)
 if [ "$actual_node_version" != "$expected_node_version" ]; then
   echo "Runner Node version does not match the recipe: expected $expected_node_version, got $actual_node_version" >&2

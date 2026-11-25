@@ -1,0 +1,11 @@
+---
+title: "orbit tool:mode"
+sidebarTitle: "tool:mode"
+description: "Inspect or export the active Gateway Tool policy."
+---
+
+```bash
+orbit tool:mode [--export=snapshot|catalog] [--json]
+```
+
+The command reports `database` or `file` and the active external catalog path, if any. Exports always produce JSON. `snapshot` includes each Node's membership, desired coordinates, and observations. `catalog` exports the file-format `document` and refuses divergent or unpinned database coordinates. See [Tool modes](/reference/tools#tool-modes).

@@ -696,7 +696,7 @@ class CiPolicyTest(unittest.TestCase):
                  (['apps/gateway/app/Support/ValidatedData.php'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['swamp/extensions/behaviors/operations/node/ci_host_spec.ts'], ['ci-policy']),
                  (['apps/gateway/resources/ci-runner/hold.py'], ['check-flows', 'docs-lint', 'ci-policy']),
-                 (['apps/gateway/resources/machine-software/recipe.json'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['apps/gateway/resources/machine-software/core.yaml'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['apps/gateway/app/Domain/Tasks/direct-operations.php'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['packages/php-sdk/src/Requests/Tasks/CancelTaskRequest.php'], ['check-flows', 'docs-lint'])]
         for paths, expected in cases:

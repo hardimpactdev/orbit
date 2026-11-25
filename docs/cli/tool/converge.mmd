@@ -1,0 +1,33 @@
+sequenceDiagram
+  %% status: draft
+  %% command: tool:converge
+  %% kind: tool.converge
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP
+  participant GW as Gateway
+  participant SW as Swamp<br/>control Node
+  participant N as Target Node
+  CLI->>GW: tool:converge --node=ID
+  %%> Command:
+  %%> - syntax: `--node=ID [--idempotency-key=KEY] [--json]`
+  Note over GW: Admit registered Tools<br/>with desired coordinates
+  %%> Requirements:
+  %%> - the Node is active and SSH-managed on Linux or macOS
+  %%> - the caller has access to the Node and no competing Tool write is active
+  alt no registered Tools
+    GW-->>CLI: Complete · changed 0
+  else registered Tools
+    GW->>SW: Start Tools-only Operation
+    GW-->>CLI: 202 Accepted
+    SW->>N: Reconcile Tools<br/>over pinned SSH
+    %%> Result:
+    %%> - install missing packages and apply exact desired versions; leave existing unpinned packages alone
+    %%> - do not run core, role, network, or host Conn phases
+    SW-->>GW: Report changes<br/>and observed versions
+    CLI->>GW: Follow the Operation
+    GW-->>CLI: Terminal receipt
+  end

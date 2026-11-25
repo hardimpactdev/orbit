@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign (recipe.json read by Ansible, selected packages held). docs/cli/node/converge.mdx. Phases: input, agent, software, roles, tools, network, check; network applies hub first, then the Node and waits for the handshake.
+  %% Target design: fleet maintenance redesign (core.yaml read by Ansible, selected packages held). docs/cli/node/converge.mdx. Phases: input, agent, software, roles, tools, network, check; network applies hub first, then the Node and waits for the handshake.
   %% status: draft
   %% command: node:converge
   %% kind: node.converge
@@ -95,7 +95,7 @@ sequenceDiagram
     %%> - without a CLI plan: needs no CLI release or probe; removes the managed `/usr/local/bin/orbit` link, regular `orbit-0.N.0` binaries and root profile at `/root/.orbit/config.json` in this phase, under the Node update lock; preserves unrelated executables, backups and directories
     SW->>N: Install pinned software<br/>Ansible phase: software
     %%> What it does:
-    %%> - reads recipe.json and holds its selected packages at their pins
+    %%> - reads core.yaml and holds its selected packages at their pins
     SW->>N: Configure the roles<br/>Ansible phase: roles
     %%> What it does:
     %%> - repairs selected role configuration without changing an Instance or role assignment

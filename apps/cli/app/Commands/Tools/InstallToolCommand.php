@@ -25,6 +25,7 @@ final class InstallToolCommand extends ToolCommand
         {--node= : Numeric target node ID}
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
+        {--tool-version= : Exact manager-native version (database mode)}
         {--repository= : Signed apt repository as a JSON object}
         {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
@@ -67,7 +68,7 @@ final class InstallToolCommand extends ToolCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint'), $this->stringOption('idempotency-key'), $repositoryDefinition), OperationResponse::class);
+        $operation = $this->send($connector, new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint'), $this->stringOption('idempotency-key'), $repositoryDefinition, $this->stringOption('tool-version')), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Install Tool [{$package}]", 'Tool')

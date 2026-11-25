@@ -145,7 +145,7 @@ def preflight(args):
     if "problem" in workload:
         raise ValueError(workload["problem"])
     verify_queue(workload["queue"])
-    info = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
+    info = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/core.yaml").read_text()))
     return {**net, **info, "dataset": dataset, "stock_image": str(args.stock_image.resolve()), "stock_sha256": args.stock_sha256,
             "uid": account.pw_uid, "gid": account.pw_gid, "source": str(ROOT)}
 
@@ -181,7 +181,7 @@ def apply_playbook(name, plan):
 
 
 def release_runtime():
-    plan = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
+    plan = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/core.yaml").read_text()))
     path = Path(plan["runtime_dir"])
     if not path.exists():
         apply_playbook("gateway-container-runtime.yml", plan)

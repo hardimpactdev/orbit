@@ -54,6 +54,7 @@ final readonly class StartNodeConvergeAction
         }
 
         return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release, $automatic, $releaseInputs, $cli): Operation {
+            $toolScope = ! $base && $roles === null;
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
             // Release admission already compares its public role digest, including the workflow and materializer.
             $fresh = $node->fresh() ?? $node;
@@ -61,7 +62,7 @@ final readonly class StartNodeConvergeAction
             // A scoped converge keeps the full-scope converge record it holds now (NodeConvergePhaseDigest::held()).
             $held = $base || $roles !== null ? app(NodeConvergePhaseDigest::class)->holdable($fresh) : null;
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
-                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
+                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'tool_scope' => $toolScope, 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
@@ -70,7 +71,7 @@ final readonly class StartNodeConvergeAction
                 // never in the capture. A Node with neither releases an unused bridge.
                 app(InstanceHostIntent::class)->prepare($node, $selected);
                 $inputs = app(ReleaseNodeInputs::class);
-                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release, $cli);
+                $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, $toolScope, $operation, $release ? null : $hub, $release, $cli);
                 $plans = RouteExecutionProof::objects($snapshot['intent']['roles']);
                 $roleInputs = $releaseInputs === null
                     ? $inputs->roles($node, $release, $selected, renderedRoles: array_column($plans, null, 'assignment_id'))
@@ -98,7 +99,7 @@ final readonly class StartNodeConvergeAction
                 }
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
-                    ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
+                    ...$snapshot, 'tool_scope' => $toolScope, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
                 ]];
                 $operation->save();
             }

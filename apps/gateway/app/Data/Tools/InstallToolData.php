@@ -13,5 +13,6 @@ final readonly class InstallToolData
         public string $package,
         public ?string $versionConstraint,
         public ?array $repository = null,
+        public ?string $desiredVersion = null,
     ) {}
 }

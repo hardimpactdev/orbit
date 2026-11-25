@@ -223,7 +223,7 @@ Deno.test({ name: "a read that fails, a MainPID outside the service, a descendan
 } });
 
 Deno.test("the provider names of the process rule are the binaries the recipe ships", () => {
-    const recipe = JSON.parse(Deno.readTextFileSync(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
+    const recipe = JSON.parse(Deno.readTextFileSync(new URL("../../apps/gateway/resources/machine-software/core.yaml", import.meta.url)));
     const bins: string[] = [];
     const walk = (value: unknown, key = "") => {
         if (value === null || typeof value !== "object") return;

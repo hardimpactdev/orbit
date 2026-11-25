@@ -52,7 +52,8 @@ final class FleetMaintenanceController extends Controller
     {
         $caller = $request->getUserResolver()();
         $operation = $rollout->admit($request->boolean('dry_run'), $request->string('scope')->value(),
-            $request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')), $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'));
+            $request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')), $caller instanceof Node ? $caller->name : null, $request->attributes->getString('orbit.request_id'),
+            $request->has('version') ? $request->string('version')->value() : null);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

@@ -26,6 +26,7 @@ export const Input = z.object({
     platform: z.enum(["linux", "macos"]),
     architecture: z.string(),
     version_constraint: z.string().nullable().default(null),
+    desired_version: z.string().min(1).max(255).nullable().default(null),
     tool_id: z.number().int().positive().nullable().default(null),
     tool_status: z.string().nullable().default(null),
     installed_version: z.string().nullable().default(null),
@@ -152,6 +153,17 @@ export function allows(input: ToolInput, raw: string): boolean {
     const normalized = normalizeVersion(raw, input.manager);
     return normalized !== null &&
         constraintMatches(input.version_constraint)(normalized);
+}
+
+export function exactMatches(
+    input: Pick<ToolInput, "manager" | "desired_version">,
+    raw: string,
+): boolean {
+    if (input.desired_version === null) return true;
+    const strip = (value: string) => value.replace(/^v/, "");
+    return ["vp", "composer"].includes(input.manager)
+        ? strip(input.desired_version) === strip(raw)
+        : input.desired_version === raw;
 }
 
 export function verifyInstalled(input: ToolInput, version: string): void {

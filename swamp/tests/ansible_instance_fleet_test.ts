@@ -340,7 +340,7 @@ const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- ru
 const swampReads = [
   'incus exec nested-gateway -- python3 -c import json, sys; s = json.load(open(sys.argv[1]))["tools"]["swamp"]; print(s["version"]); ' +
   'print(s["artifacts"]["amd64"]["sha256"]) ' +
-  "/home/orbit/orbit/apps/gateway/resources/machine-software/recipe.json",
+  "/home/orbit/orbit/apps/gateway/resources/machine-software/core.yaml",
   'incus exec nested-gateway -- sh -c readlink -f "/proc/$(systemctl show -p MainPID --value orbit-swamp-serve.service)/exe"',
 ];
 /** The swamp-pin play on the nested Gateway, with the egress proxy: it installs the recipe's release and restarts Swamp on it. */
@@ -2303,7 +2303,7 @@ Deno.test({
       write("swamp/ansible/instance-container-power.yml",
         "- hosts: all\n  tasks:\n    - { name: Relay, ansible.builtin.include_tasks: tasks/executor-power-relay.yml }\n");
       write("swamp/ansible/tasks/executor-power-relay.yml", "- { name: Relay, ansible.builtin.debug: { msg: stock } }\n");
-      write("apps/gateway/resources/machine-software/recipe.json", "stock recipe\n");
+      write("apps/gateway/resources/machine-software/core.yaml", "stock recipe\n");
       git("add", "-A");
       git("commit", "-qm", "Seed the fixture checkout");
       f.change((state) => {
@@ -2328,7 +2328,7 @@ Deno.test({
       commit("swamp/ansible/tasks/node-role-app-dev.yml", "- { name: Build the Instance host, ansible.builtin.debug: { msg: changed } }\n");
       const changed = refresh(true);
       assert(changed.host && changed.host !== calibrated.host);
-      commit("apps/gateway/resources/machine-software/recipe.json", "new recipe\n");
+      commit("apps/gateway/resources/machine-software/core.yaml", "new recipe\n");
       const recipe = refresh(true);
       assert(recipe.host && recipe.host !== changed.host);
       f.change((state) => state.hostCheckout = `${checkout}/missing`);

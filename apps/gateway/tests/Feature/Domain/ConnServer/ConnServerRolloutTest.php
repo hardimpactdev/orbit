@@ -28,20 +28,6 @@ function connServerNode(string $name, int $address, array $server): Node
     return $node;
 }
 
-/** Serve the shipped recipe, with `$change` applied to its decoded document. */
-function connServerPin(?Closure $change = null): void
-{
-    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
-    if ($change !== null) {
-        $change($recipe);
-    }
-    $home = sys_get_temp_dir().'/conn-server-rollout-'.bin2hex(random_bytes(4));
-    mkdir($home.'/release/apps/gateway/resources/machine-software', 0700, true);
-    symlink('release', $home.'/orbit');
-    file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
-    config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
-}
-
 beforeEach(function (): void {
     Queue::fake();
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
@@ -49,11 +35,10 @@ beforeEach(function (): void {
 });
 
 it('admits the pinned release for every Conn Server Node, canary first, from their records', function (): void {
-    connServerPin();
     $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
     $vm = connServerNode('nick-vm', 62, ['canary' => true]);
 
-    $operation = app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet');
+    $operation = app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet', version: '0.5.2');
     $intent = $operation->input['intent'];
 
     expect($operation->kind)->toBe('fleet.conn_server_rollout')
@@ -72,27 +57,22 @@ it('admits the pinned release for every Conn Server Node, canary first, from the
 });
 
 it('passes the configured notice target to the run', function (): void {
-    connServerPin();
     connServerNode('nick-vm', 62, ['canary' => true]);
     config(['orbit.conn.server_rollout_notice' => ['url' => 'https://mini.example/notice', 'command' => null]]);
 
     expect(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'fleet')->input['intent']['notice'])->toBe(['url' => 'https://mini.example/notice', 'command' => null]);
 });
 
-it('refuses a pin without a macOS app, and a fleet without exactly one canary', function (): void {
+it('refuses an unknown host release and a fleet without exactly one canary', function (): void {
     connServerNode('nick-vm', 62, ['canary' => true]);
-    connServerPin(static function (array &$recipe): void {
-        unset($recipe['instances']['agent']['conn-server']['macos_arm64']);
-    });
-    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet'))->toThrow(ResourceOperationException::class, 'The Conn Server pin names no macOS arm64 app.');
+    expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet', version: '0.5.0'))
+        ->toThrow(ResourceOperationException::class, 'The requested Conn Server host release is not in the release catalog.');
 
-    connServerPin();
     ConnServerNode::query()->update(['canary' => false]);
     expect(fn () => app(ConnServerRollout::class)->admit(dryRun: true, scope: 'fleet'))->toThrow(ResourceOperationException::class, 'Exactly one Conn Server Node must be the canary.');
 });
 
 it('reaches only the canary with scope canary, and keeps the canary-first order with scope fleet', function (): void {
-    connServerPin();
     $nick = connServerNode('nick', 60, ['service' => 'com.nckrtl.t3-headless', 'port' => 3780]);
     $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
     $vm = connServerNode('nick-vm', 62, ['canary' => true]);
@@ -102,7 +82,6 @@ it('reaches only the canary with scope canary, and keeps the canary-first order 
 });
 
 it('reaches only the named Nodes with scope nodes, in the order given, without the canary', function (): void {
-    connServerPin();
     $nick = connServerNode('nick', 60, ['service' => 'com.nckrtl.t3-headless', 'port' => 3780]);
     $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
     connServerNode('nick-vm', 62, ['canary' => true]);

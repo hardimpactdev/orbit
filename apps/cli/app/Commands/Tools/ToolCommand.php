@@ -82,6 +82,7 @@ abstract class ToolCommand extends GatewayCommand
             'Manager' => $tool->manager,
             'Package' => $tool->package,
             'Constraint' => $tool->versionConstraint,
+            'Desired version' => $tool->desiredVersion,
             'Status' => $tool->status,
             'Installed version' => $tool->installedVersion,
             'Failed operation' => $tool->failedOperation,

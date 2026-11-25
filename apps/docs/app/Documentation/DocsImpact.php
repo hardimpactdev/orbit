@@ -10,7 +10,7 @@ use RuntimeException;
 final readonly class DocsImpact
 {
     /** The machine software recipe; a change to its pins alone needs no prose. */
-    private const string MACHINE_RECIPE = 'apps/gateway/resources/machine-software/recipe.json';
+    private const string MACHINE_RECIPE = 'apps/gateway/resources/machine-software/core.yaml';
 
     /** The recipe pin values: no page lists them. */
     private const array RECIPE_PIN_KEYS = ['snapshot', 'version', 'url', 'sha256'];

@@ -521,7 +521,7 @@ if (command[0] === "incus") {
     // current pin by default) and the binary that serve runs (`swampRunning`, the fleet build's folder of that sha256 by default).
     // `swampUnreadable` makes the first fail.
     if (rest[0] === "python3" && rest[1] === "-c" && rest[2].includes('["tools"]["swamp"]')) {
-      if (state.swampUnreadable) fail("FileNotFoundError: recipe.json");
+      if (state.swampUnreadable) fail("FileNotFoundError: core.yaml");
       done(`${state.swampPin ?? swampPin}\n${state.swampSha ?? swampSha}`);
     }
     if (rest[0] === "sh" && rest[1] === "-c" && rest[2].includes("orbit-swamp-serve.service)/exe")) {

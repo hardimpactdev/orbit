@@ -112,7 +112,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |
 | `task` | `cancel`, `check`, `close`, `complete`, `start`, `publish`, `sync`, `turn`, `status` | The CLI starts task work, checks or publishes work, brings main into a task copy, sends turns, completes or cancels tasks, closes questions, and reports state. |
-| `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
+| `tool` | `adopt`, `converge`, `scan` | Adopt an installed package, apply registered Tool coordinates, or discover packages without taking ownership. |
 | `vault` | `setup`, `status`, `sync` | The CLI stores the Gateway's Vaultwarden account, reports the published Database items, publishes changes now, or deletes the items and the account. The commands belong to the `vault` extension. |
 | `websocket` | `rotate`, `sync` | Rotate one app secret or wait for the live app registry to apply. |
 
@@ -132,6 +132,7 @@ Six commands end in a noun.
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:wireguard-key` | Set an unmanaged Node's public key and reconverge the WireGuard hub. |
 | `task:egress` | The CLI lists the outside hosts that a [task](/reference/tasks)'s VM connected to. |
+| `tool:mode` | The CLI reads or exports the Gateway's [Tool policy](/reference/tools#tool-modes). |
 
 ## Gateway route names
 

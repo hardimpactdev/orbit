@@ -13,7 +13,7 @@ final readonly class CurrentRecipe
 
     public function currentRecipe(): MachineRecipe
     {
-        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/recipe.json';
+        $path = rtrim(config()->string('orbit.gateway_checkout'), '/').'/resources/machine-software/core.yaml';
 
         return $this->loader->load(is_link(dirname(config()->string('orbit.gateway_checkout'), 2)) ? $path : null);
     }

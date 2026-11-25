@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (one Tools phase shared with node:converge; recipe packages held; 24 h / CVE version rule). docs/reference/tools.md#install-a-tool.
+  %% docs/reference/tools.md#install-and-update-a-tool
   %% status: draft
   %% command: tool:install
   %% kind: tool.install
@@ -16,11 +16,12 @@ sequenceDiagram
   CLI->>GW: tool:install ripgrep<br/>--node=12 --manager=apt
   %%> Command:
   %%> - `orbit tool:install ripgrep --node=12 --manager=apt`
-  %%> - syntax: `[package] --node=ID [--manager=MANAGER] [--constraint=CONSTRAINT] [--repository=JSON] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `[package] --node=ID [--manager=MANAGER] [--tool-version=VERSION] [--constraint=CONSTRAINT] [--repository=JSON] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, record the Tool<br/>Tool: installing · task #5133
   %%> Requirements:
   %%> - your Node has an access grant to Node 12; the manager runs on its platform
   %%> - the package is not a recipe package of Node 12's roles
+  %%> - file mode requires a catalog entry and refuses overrides; database mode accepts an exact desired version
   GW->>SW: Start run, full intent<br/>operation-tool-write
   GW-->>CLI: 202 Accepted<br/>task #5133
   SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
@@ -34,7 +35,7 @@ sequenceDiagram
   %%> - one way to install a Tool, shared with `node:converge` and the rollout
   %%> - limited to this Tool, so other Tools do not move
   %%> Version:
-  %%> - the newest in the constraint that is at least 24 hours old, or fixes a known CVE
+  %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
   SW->>N: Check the Tool<br/>ansible · tags check
   alt check passes
     SW-->>GW: Run succeeded

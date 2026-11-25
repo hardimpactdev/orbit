@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 CHECKOUT = Path(__file__).resolve().parents[2]
-RECIPE = CHECKOUT / 'apps/gateway/resources/machine-software/recipe.json'
+RECIPE = CHECKOUT / 'apps/gateway/resources/machine-software/core.yaml'
 ORBIT = ['php', str(CHECKOUT / 'apps/cli/orbit')]
 NESTED_APP_DEV = 'nested-app-dev'       # the Incus guest of the inner app-dev Node
 INSTANCE_PROJECT = 'orbit-instances'    # the Incus project of the Instance containers on that Node

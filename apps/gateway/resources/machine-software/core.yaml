@@ -1733,12 +1733,6 @@
                         "sha256": "554766fc35583e2a2284a8c08581ce47dd729efef30315738eebd8f8ad35f539"
                     }
                 },
-                "macos_arm64": {
-                    "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-macos-arm64.zip",
-                    "sha256": "40d753aaa246e3137e4ed5cd5caa08586b2dc3eb33f281e5be144b0d3083bb9d",
-                    "bundle_id": "com.nckrtl.conn-server",
-                    "team_id": "9SVJ4SYB9B"
-                },
                 "bin": {
                     "conn-server": "conn-server-0.5.2-linux-x64/conn-server"
                 }

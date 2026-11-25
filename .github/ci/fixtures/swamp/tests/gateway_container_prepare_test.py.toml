@@ -4,7 +4,7 @@ inputs = [
   "bin/gateway-container-prepare",
   "bin/gateway-container-environment",
   "bin/gateway-container-rollback",
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "swamp/ansible/files/gateway-release-guest.py",
   "swamp/ansible/files/gateway-release-infrastructure.py",
   "swamp/scripts/gateway-release-checkout.sh",

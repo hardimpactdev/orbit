@@ -36,6 +36,19 @@ const Stats = z.object({ changed: z.number().int().nonnegative(), failures: z.nu
 const Report = z.object({ stats: z.record(z.string(), Stats), plays: z.array(z.unknown()).min(1) });
 const Timing = z.object({ exit_code: z.number().int(), elapsed_seconds: z.number().finite().nonnegative() }).strict();
 
+export async function toolConvergeResult(folder: string) {
+    try {
+        const report = Report.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools.json`)));
+        const tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
+        const target = report.stats.target;
+        const succeeded = target !== undefined && Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0) &&
+            new Set(tools.map((tool) => tool.id)).size === tools.length;
+        return { changed: target?.changed ?? 0, tools, succeeded };
+    } catch {
+        return { changed: 0, tools: [], succeeded: false };
+    }
+}
+
 const Fields = z.record(z.string(), z.unknown());
 const Play = z.object({ tasks: z.array(z.unknown()) });
 const Task = z.object({ task: Fields, hosts: z.record(z.string(), Fields) });

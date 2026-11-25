@@ -110,7 +110,7 @@ class BuildTest(unittest.TestCase):
 
     def test_main_exits_nonzero_with_the_message_on_stderr(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'recipe.json'
+            path = Path(directory) / 'core.yaml'
             path.write_text(json.dumps(recipe()))
             with patch.object(build, 'verify', side_effect=build.BuildError('different build')), \
                  redirect_stderr(io.StringIO()) as error:
@@ -259,7 +259,7 @@ class BuildTest(unittest.TestCase):
             resources = root / 'apps/gateway/resources/machine-software'
             resources.mkdir(parents=True)
             document = build.load(build.RECIPE)
-            (resources / 'recipe.json').write_text(json.dumps(document))
+            (resources / 'core.yaml').write_text(json.dumps(document))
             (resources / 'vite-plus-package-lock.json').write_text('locked runtime')
             with patch.object(javascript.subprocess, 'check_output', return_value='amd64\n'), \
                  patch.object(javascript.runpy, 'run_path', return_value={'run': lambda *args: calls.append(args) or ({'changed': True, 'retired': []}, '')}):
@@ -326,7 +326,7 @@ class BumpTest(unittest.TestCase):
 
     def test_bump_writes_the_recipe_in_its_own_format_only_when_pins_change(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'recipe.json'
+            path = Path(directory) / 'core.yaml'
             original = json.dumps(recipe(), indent=4) + '\n'
             path.write_text(original)
             index = '\n'.join([stanza(name, pin['version'], 'all' if name == 'php-common' else 'amd64')
@@ -526,7 +526,7 @@ class IncusBumpTest(unittest.TestCase):
                 document = copy.deepcopy(DOCUMENT)
                 if changed:
                     document['tools']['incus']['artifacts']['amd64']['sha256'] = '0' * 64
-                path = Path(directory) / 'recipe.json'
+                path = Path(directory) / 'core.yaml'
                 path.write_text(json.dumps(document))
                 with patch.dict(vars(artifacts)['bump_incus'].__globals__, {'fetch': fetch, 'ZABBLY_KEY_SHA256': hashlib.sha256(key).hexdigest()}), \
                      patch.object(vars(artifacts)['subprocess'], 'run', return_value=subprocess.CompletedProcess([], 0, hashes.encode(), b'')), \
@@ -541,7 +541,7 @@ class ArtifactUpdateTest(unittest.TestCase):
     def test_one_update_publishes_both_providers_atomically_and_dry_run_writes_nothing(self):
         for dry_run, fail in [(False, False), (True, False), (False, True)]:
             with self.subTest(dry_run=dry_run, fail=fail), tempfile.TemporaryDirectory() as directory:
-                target = Path(directory) / 'recipe.json'
+                target = Path(directory) / 'core.yaml'
                 original = '{"providers": []}\n'
                 target.write_text(original)
                 def sury(path):

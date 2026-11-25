@@ -236,7 +236,7 @@ it('adds zero packages to the captured Gateway recipe and role inputs when local
     expect($without)->toHaveKey('roles.0.packages', $roleWithout['packages']);
 })->with(['role add' => false, 'role converge' => true]);
 
-it('keeps production Gateway runtime recipe and Ansible vars byte identical to main', function (LifecycleStatus $vpnNodeStatus, LifecycleStatus $vpnRoleStatus): void {
+it('pins the production Gateway runtime and Ansible input digests', function (LifecycleStatus $vpnNodeStatus, LifecycleStatus $vpnRoleStatus): void {
     config(['orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway', 'orbit.home' => '/home/orbit/.orbit',
         'orbit.hibernation.sweep_seconds' => 600, 'orbit.gateway_queue.connection' => null,
         'swamp.address' => 'swamp.orbit', 'swamp.ca_path' => '/fixture/ca.pem', 'swamp.run_token' => 'fixture',

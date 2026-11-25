@@ -48,7 +48,11 @@ Deno.test("refusals happen before any write: silent adoption, missing updates an
     const retry = decide(input({ tool_id: 1, tool_status: "failed" }), {
         facts: { ...facts, versions: ["1.0.0"] },
     });
-    assertEquals([retry.ready, retry.mutate, retry.installed_version], [
+    assertEquals(retry.error_code, "tool.package_already_installed");
+    const known = decide(input({ tool_id: 1, tool_status: "failed", installed_version: "1.0.0" }), {
+        facts: { ...facts, versions: ["1.0.0"] },
+    });
+    assertEquals([known.ready, known.mutate, known.installed_version], [
         true,
         false,
         "1.0.0",

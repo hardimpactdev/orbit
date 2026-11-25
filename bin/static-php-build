@@ -25,7 +25,7 @@ import sys
 import tarfile
 
 ROOT = Path(__file__).resolve().parent.parent
-RECIPE = ROOT / 'apps/gateway/resources/machine-software/recipe.json'
+RECIPE = ROOT / 'apps/gateway/resources/machine-software/core.yaml'
 CRAFT = ROOT / 'tools/static-php/craft.yml'
 CHECK = runpy.run_path(str(ROOT / 'swamp/ansible/library/orbit_static_php.py'))
 RELEASES = 'https://github.com/hardimpactdev/orbit/releases/download'

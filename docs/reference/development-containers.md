@@ -9,7 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
-  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
+  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php,Infrastructure/MachineSoftware/ConnServerRelease*.php},apps/gateway/resources/machine-software/conn-server-releases.yaml,apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
 ---
 
 # Instance containers
@@ -205,40 +205,21 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The core recipe pins the Linux `conn-server` `0.5.2` tarball, the T3 server `0.1.10`, and `chrome-headless-shell` `157.0.8103.78`. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
-The agent folder part `conn-server` in `apps/gateway/resources/machine-software/recipe.json` pins one Conn release, `conn-server-v<X>`, as two assets:
-
-- `artifacts.amd64`: `conn-server-<X>-linux-x64.tar.gz` and its SHA-256. Container hosts unpack it into the agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`.
-- `macos_arm64`, optional: `conn-server-<X>-macos-arm64.zip` and its SHA-256. It also names the signature that its `Conn Server.app` must carry: `bundle_id` (`com.nckrtl.conn-server`) and `team_id`, the Developer ID team (`9SVJ4SYB9B`).
-
-The bundle is signed with the hardened runtime and is not notarized. Releases before 0.5.0 have no zip, so their pin leaves `macos_arm64` out.
-
-```json
-"conn-server": {
-    "version": "<X>",
-    "artifacts": {"amd64": {"url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-linux-x64.tar.gz", "sha256": "…"}},
-    "bin": {"conn-server": "conn-server-<X>-linux-x64/conn-server"},
-    "macos_arm64": {
-        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v<X>/conn-server-<X>-macos-arm64.zip",
-        "sha256": "…",
-        "bundle_id": "com.nckrtl.conn-server",
-        "team_id": "9SVJ4SYB9B"
-    }
-}
-```
-
-The recipe loader accepts `macos_arm64` on agent folder parts only and requires the release's exact zip name. Container hosts never read it: the agent folder plan, and so the folder's version, has the Linux tarball alone. The Conn Server rollout to Mac Nodes reads the zip, its SHA-256 and the signing facts from this pin. A change to the pin changes the recipe digest, so a pin bump also updates the hashes in `apps/gateway/tests/Fixtures/production-gateway-converge-main.json`.
+The agent folder part `conn-server` in `core.yaml` pins the Linux x64 asset and its SHA-256. Container hosts unpack it into the shared agent folder and link `bin/conn-server` to `conn-server-<X>-linux-x64/conn-server`. Changing this pin changes the container agent folder plan and digest. Changing or removing a host Conn installation does not.
 
 #### Conn Server rollout
 
-`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"|"nodes", "node_ids": [...]}`; `dry_run` and `scope` are required, and `node_ids` comes with scope `nodes` alone) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
+`POST /api/v1/fleet/conn-server/rollout` starts `fleet.conn_server_rollout` for Conn Servers running outside containers. It requires `dry_run` and `scope`; `node_ids` is only valid with scope `nodes`. Pass `version` to select an exact host release, or omit it to select the catalog default. An unknown release returns `conn_server.pin_unavailable`. Tool and container convergence cannot trigger this rollout.
+
+The Gateway release ships `conn-server-releases.yaml`, which gives each host release its exact Linux x64 and macOS arm64 asset URLs and SHA-256 checksums. The macOS entry also names the signed `Conn Server.app` bundle and Developer ID team. The app uses the hardened runtime and is not notarized. Changing the host catalog does not change container digests or start an Operation.
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health`), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`.
 
-Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. Scope `nodes` reaches the Nodes that `node_ids` names, one to four, in the request's order; it adds no canary and puts none first. An id without a record, a repeated id, or `node_ids` with another scope is refused with a validation error. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. Scope `nodes` reaches the Nodes that `node_ids` names, one to four, in the request's order; it adds no canary and puts none first. An id without a record, a repeated id, or `node_ids` with another scope is refused with a validation error. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a fleet without exactly one canary (`conn_server.canary_unset`).
 
 The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 12,980 s, covers at most four Nodes of 3,220 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
 

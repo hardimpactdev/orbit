@@ -26,6 +26,8 @@ final readonly class ToolResponse
 
     public ?string $versionConstraint;
 
+    public ?string $desiredVersion;
+
     public string $status;
 
     public ?string $installedVersion;
@@ -70,6 +72,8 @@ final readonly class ToolResponse
         string $requestId,
         #[SensitiveParameter]
         ?array $repository = null,
+        #[SensitiveParameter]
+        ?string $desiredVersion = null,
     ) {
         $this->repository = $repository === null ? null : new CredentialRedactor()->redactArray($repository);
         if ($id < 1 || $nodeId < 1) {
@@ -86,6 +90,7 @@ final readonly class ToolResponse
             'version_constraint',
         );
         $this->status = self::directToken($status, 'status');
+        $this->desiredVersion = self::directNullableText($desiredVersion, self::TEXT_MAX_LENGTH, 'desired_version');
         $this->installedVersion = self::directNullableText(
             $installedVersion,
             self::TEXT_MAX_LENGTH,
@@ -161,6 +166,7 @@ final readonly class ToolResponse
             outcome: self::nullableString($data, 'outcome'),
             requestId: $requestId,
             repository: ToolRepositoryData::fromGateway($data['repository'] ?? null),
+            desiredVersion: self::nullableString($data, 'desired_version'),
         );
     }
 
@@ -173,6 +179,7 @@ final readonly class ToolResponse
             'manager' => $this->manager,
             'package' => $this->package,
             'version_constraint' => $this->versionConstraint,
+            'desired_version' => $this->desiredVersion,
             'repository' => $this->repository,
             'status' => $this->status,
             'installed_version' => $this->installedVersion,

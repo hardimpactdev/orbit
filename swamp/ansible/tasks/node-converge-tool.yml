@@ -11,19 +11,23 @@
       register: tool_plan
     - name: Hold the compiled Tool argv
       ansible.builtin.set_fact: { tool_argv: "{{ tool_plan.stdout | from_json }}" }
+    - name: Read macOS compatibility for a cask
+      when: tool.manager == 'brew-cask' and (tool.platform | default('linux')) == 'macos'
+      ansible.builtin.command: { argv: "{{ tool_argv.os }}" }
+      become: false
+      changed_when: false
+      register: tool_os
     - name: Reconcile a recorded apt repository
       when: tool.manager == 'apt' and tool.repository is not none
       ansible.builtin.include_tasks: node-converge-tool-repository.yml
     - name: Read the Tool manager version
       ansible.builtin.command: { argv: "{{ tool_argv.version }}" }
-      become: true
-      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      become: "{{ tool.manager == 'apt' }}"
       changed_when: false
       register: tool_version
     - name: Read installed Tool state
       ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
-      become: true
-      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      become: "{{ tool.manager == 'apt' }}"
       register: tool_query
       changed_when: false
       failed_when: false
@@ -39,34 +43,39 @@
       when: (tool_inspection.stdout | from_json).needs_write
       block:
         - name: Refresh recorded apt candidate metadata
-          when: tool.manager == 'apt'
+          when: tool.manager == 'apt' and tool.repository is not none
           ansible.builtin.command: { argv: "{{ tool_argv.refresh }}" }
           changed_when: false
+        - name: Refresh Linux cask metadata
+          when: tool.manager == 'brew-cask' and (tool.platform | default('linux')) == 'linux'
+          ansible.builtin.command: { argv: "{{ tool_argv.refresh }}" }
+          become: false
+          changed_when: false
+          register: tool_refresh
         - name: Read the manager candidate
           ansible.builtin.command: { argv: "{{ tool_argv.candidate }}" }
-          become: true
-          become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+          become: "{{ tool.manager == 'apt' }}"
           changed_when: false
           register: tool_candidate
         - name: Validate and pin the candidate before any package write
           ansible.builtin.command:
             argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", candidate]
             stdin: >-
-              {{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version,
-              'query': tool_query, 'candidate': tool_candidate} | to_json }}
+              {{ ({'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'version': tool_version,
+              'query': tool_query, 'candidate': tool_candidate}
+              | combine({'os': tool_os} if tool_os.rc is defined else {})
+              | combine({'refresh': tool_refresh} if tool_refresh.rc is defined else {})) | to_json }}
           delegate_to: localhost
           become: false
           changed_when: false
           register: tool_write
         - name: Apply the validated Tool candidate
           ansible.builtin.command: { argv: "{{ (tool_write.stdout | from_json).write }}" }
-          become: true
-          become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+          become: "{{ tool.manager == 'apt' }}"
           changed_when: true
     - name: Read the resulting Tool state
       ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
-      become: true
-      become_user: "{{ 'root' if tool.manager == 'apt' else intent.user }}"
+      become: "{{ tool.manager == 'apt' }}"
       register: tool_after
       changed_when: false
       failed_when: false

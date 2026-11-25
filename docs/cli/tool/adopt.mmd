@@ -43,8 +43,10 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12
   %%> - Node 12's platform supports the Tool Manager
   %%> - the package isn't already a Tool on Node 12, and isn't protected (such as Caddy or PHP)
+  %%> - file mode requires an entry for the package and refuses definition overrides
   %%> Checks in the agent's latest report:
   %%> - the package is installed, and its version fits `--constraint`
+  %%> - in file mode the installed version matches the catalog coordinate
   %%> - Orbit can manage this package later (no adoption block)
   %%> - with `--repository`: the apt source and signing key on the Node match the definition
   alt package can be adopted

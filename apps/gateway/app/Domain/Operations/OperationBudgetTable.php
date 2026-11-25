@@ -137,6 +137,7 @@ final class OperationBudgetTable
         // phases plus margin. Replace with the 14-day p95 once repository installs have native history.
         'tool.install' => 1500,
         'tool.update' => 1500,
+        'tool.converge' => 1080,
     ];
 
     /**

@@ -20,7 +20,7 @@ inputs = [
   "apps/gateway/composer.json",
   "apps/gateway/composer.lock",
   "apps/gateway/resources/agent/frozen-manifest.json",
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "bin/build-api",
   "bin/gateway-app-key",
   "bin/swamp-shape-gate",

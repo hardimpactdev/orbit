@@ -14,7 +14,7 @@ sequenceDiagram
   participant T as Templates<br/>Gateway, dev, prod
   Note over GW: Release changed Node state<br/>task #5210
   %%> When:
-  %%> - the release run ended verified, and its commit changed workflows, playbooks, role definitions, `recipe.json` or the release itself
+  %%> - the release run ended verified, and its commit changed workflows, playbooks, role definitions, `core.yaml` or the release itself
   %%> - off the merge path: one refresh at a time; a newer release replaces a waiting one, so skipped commits never run
   GW->>SW: Start run, full intent<br/>operation-template-refresh
   SW->>T: Release onto the templates<br/>gateway:release:deploy · load

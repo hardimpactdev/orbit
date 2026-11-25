@@ -25,7 +25,7 @@ final readonly class ToolAdoption
      * @param  array<string, mixed>|null  $repository
      * @return array{Tool, ToolOutcome} `unchanged` when the Tool was already recorded as installed
      */
-    public function record(Node $node, ToolManager $manager, ?ToolManagerRecord $record, ?Tool $tool, string $package, ?string $constraint, ?array $repository): array
+    public function record(Node $node, ToolManager $manager, ?ToolManagerRecord $record, ?Tool $tool, string $package, ToolDefinition $definition, ?array $repository): array
     {
         $observed = ObservedPackages::find($node, $manager->name())
             ?? throw new ResourceOperationException('tool.not_observed', "The Node agent has not reported the {$manager->name()->value} packages on this Node yet.", 409);
@@ -34,6 +34,10 @@ final readonly class ToolAdoption
             throw new ToolAdoptionBlocked($found->block);
         }
         $version = (string) $found->version();
+        $constraint = $definition->constraint;
+        if ($definition->version !== null && ! $definition->matches($manager->name(), $version)) {
+            throw new ResourceOperationException('tool.installed_version_mismatch', 'The observed Tool is not at the declared coordinate.', 409);
+        }
         if ($constraint !== null) {
             $normalized = $manager->normalizeVersion($version)
                 ?? throw new ResourceOperationException('tool.installed_version_unparseable', 'The installed version cannot be compared with the constraint.', 409);
@@ -56,7 +60,7 @@ final readonly class ToolAdoption
         }
         $outcome = $tool?->status === ToolStatus::Installed ? ToolOutcome::Unchanged : ToolOutcome::Applied;
         $tool ??= new Tool(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $package, 'version_constraint' => $constraint]);
-        $tool->fill(['status' => ToolStatus::Installed, 'installed_version' => $version, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id,
+        $tool->fill(['status' => ToolStatus::Installed, 'installed_version' => $version, 'version_constraint' => $constraint, 'desired_version' => $definition->version, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id,
             'failed_operation' => null, 'error_code' => null])->save();
 
         return [$tool, $outcome];

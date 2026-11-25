@@ -21,7 +21,7 @@ prove = importlib.util.module_from_spec(importlib.util.spec_from_loader(prove_lo
 prove_loader.exec_module(prove)
 
 WORKFLOW = (ROOT / '.github/workflows/static-php.yml').read_text()
-RECIPE = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+RECIPE = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())
 
 
 class StaticPhpBuildTest(unittest.TestCase):

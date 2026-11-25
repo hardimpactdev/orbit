@@ -49,3 +49,10 @@
     owner: root
     group: root
     mode: "0644"
+- name: Limit every repository to its admitted Tools
+  ansible.builtin.copy:
+    dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
+    content: "{{ tool_argv.repository_preferences }}"
+    owner: root
+    group: root
+    mode: "0644"

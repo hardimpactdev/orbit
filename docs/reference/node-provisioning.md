@@ -173,7 +173,7 @@ Admission locks the Node (sharing the lock with enrollment, role operations, and
 | --- | --- |
 | `input` | Stages private inventory, variables, pinned `known_hosts`, and phase digests |
 | `agent` | Reconciles `orbit-agent`, executor (on `app-dev`, `vpn`, `gateway`), CLI state, [role units](#role-units-at-a-converge), [kernel policy](#kernel-policy), and [update policy](#update-policy) without rotating the agent secret |
-| `software` | Installs and holds recipe packages from `recipe.json` (plus pinned Deno on the Swamp Node) |
+| `software` | Installs and holds recipe packages from `core.yaml` (plus pinned Deno on the Swamp Node) |
 | `roles` | Repairs assigned role configuration (including `/etc/tmpfiles.d/orbit.conf` and container host setup on `app-dev`) |
 | `tools` | Runs the Deno Tool helper and applies recorded Tools (individual Tool failures do not fail the parent Operation) |
 | `network` | Applies VPN hub and peer WireGuard configuration and verifies the handshake |

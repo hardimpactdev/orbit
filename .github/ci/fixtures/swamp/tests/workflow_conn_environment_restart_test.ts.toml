@@ -22,7 +22,7 @@ cost = 312
 # its 10 s is an ESTIMATE until a complete hosted run. The two Conn Server cases (4 and 6 phase runs, about 7 s each) are ESTIMATES the same way. Six slices keep each unit far below the ceiling.
 slices = 6
 inputs = [
-  "apps/gateway/resources/machine-software/recipe.json",
+  "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/conn-environment-restart.yml",

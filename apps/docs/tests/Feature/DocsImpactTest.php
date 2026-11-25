@@ -535,7 +535,7 @@ it('docs impact does not let a covers: glob over a source folder claim the tests
 
 it('docs impact needs no prose for a recipe change that only bumps pinned values', function (string $after, bool $documented): void {
     $root = docsImpactFixture();
-    $path = 'apps/gateway/resources/machine-software/recipe.json';
+    $path = 'apps/gateway/resources/machine-software/core.yaml';
     @mkdir(dirname($root.'/'.$path), 0777, true);
     file_put_contents($root.'/docs/reference/compute-drivers.md', "---\ntitle: Compute drivers\ncovers:\n  - \"apps/gateway/resources/machine-software/**\"\n---\nRecipe\n");
     file_put_contents($root.'/'.$path, json_encode(['ubuntu' => ['snapshot' => '20261102T000000Z'], 'tools' => [

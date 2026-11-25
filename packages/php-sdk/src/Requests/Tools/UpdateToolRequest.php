@@ -24,6 +24,7 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
         private readonly ?string $idempotencyKey = null,
         #[\SensitiveParameter]
         private readonly ?array $repository = null,
+        private readonly ?string $desiredVersion = null,
     ) {}
 
     /** @return array<string, string> */
@@ -32,10 +33,10 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
         return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{repository?: array<string, mixed>} */
+    /** @return array{repository?: array<string, mixed>, desired_version?: string} */
     protected function defaultBody(): array
     {
-        return $this->repository === null ? [] : ['repository' => $this->repository];
+        return array_filter(['repository' => $this->repository, 'desired_version' => $this->desiredVersion], static fn (mixed $value): bool => $value !== null);
     }
 
     public function resolveEndpoint(): string

@@ -9,8 +9,7 @@ use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceHostIntent;
-use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolPackageProtection;
+use App\Domain\Tools\ToolConvergeIntent;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
@@ -20,7 +19,6 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Tool;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -162,17 +160,7 @@ final readonly class NodeDesiredConvergeInput
     {
         $delivery = app(AgentDelivery::class);
         $recipe = new RecipeLoader()->source();
-        $tools = [];
-        // Tool records have Node ownership, not an assignment. Explicit role-only scopes do not widen to Node Tools.
-        if ($all) {
-            foreach (Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get() as $tool) {
-                $manager = ToolManagerName::from($tool->manager->name);
-                $tools[] = ['id' => $tool->id, 'manager_id' => $tool->tool_manager_id, 'manager' => $manager->value, 'package' => $tool->package,
-                    'repository' => $tool->aptRepository?->definition,
-                    'version_constraint' => $tool->version_constraint, 'installed_version' => $tool->installed_version,
-                    'protected' => app(ToolPackageProtection::class)->forNode($node, $manager)];
-            }
-        }
+        $tools = $all ? app(ToolConvergeIntent::class)->capture($node) : [];
         $network = null;
         if (($all || in_array('vpn', $roles, true) || in_array('router', $roles, true)) && $hub !== null && $node->wireguard_ip !== null) {
             $network = app(NodeNetworkConvergeInput::class)->converge($node);

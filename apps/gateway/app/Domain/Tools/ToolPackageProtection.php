@@ -17,15 +17,18 @@ final readonly class ToolPackageProtection
     public function forNode(Node $node, ToolManagerName $manager): array
     {
         if ($manager === ToolManagerName::Vp) {
-            return ['pnpm'];
+            return ['pnpm', 'conn-server'];
         }
         if ($manager === ToolManagerName::Brew) {
-            return ['wireguard-tools', 'wireguard-go'];
+            return ['wireguard-tools', 'wireguard-go', 'conn-server'];
+        }
+        if ($manager === ToolManagerName::BrewCask) {
+            return ['conn-server'];
         }
         if ($manager !== ToolManagerName::Apt) {
             return [];
         }
-        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', ...new RecipeLoader()->source()->gitPackages];
+        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', 'conn-server', ...new RecipeLoader()->source()->gitPackages];
         foreach (RoleName::cases() as $role) {
             $packages = [...$packages, ...$this->bootstrapPackages->forRole($node, $role)];
         }

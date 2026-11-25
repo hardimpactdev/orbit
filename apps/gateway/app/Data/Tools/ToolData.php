@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tools;
 
+use App\Domain\Tools\ActiveToolPolicy;
 use App\Domain\Tools\ToolObjectStatus;
 use App\Domain\Tools\ToolOutcome;
 use App\Models\Tool;
@@ -27,24 +28,27 @@ final class ToolData extends Data
         public ?string $errorCode,
         public ?string $outcome,
         public ?array $repository = null,
+        public ?string $desiredVersion = null,
     ) {}
 
-    public static function fromModel(Tool $tool, ?ToolOutcome $outcome = null, ?ToolObjectStatus $status = null): self
+    public static function fromModel(Tool $tool, ?ToolOutcome $outcome = null, ?ToolObjectStatus $status = null, ?ActiveToolPolicy $policy = null): self
     {
         $tool->loadMissing('manager', 'aptRepository');
+        $definition = $policy?->definition($tool->manager->name, $tool->package);
 
         return new self(
             id: $tool->id,
             nodeId: $tool->node_id,
             manager: $tool->manager->name,
             package: $tool->package,
-            versionConstraint: $tool->version_constraint,
+            versionConstraint: $policy?->mode === 'file' ? $definition?->constraint : $tool->version_constraint,
             status: $status ?? ToolObjectStatus::fromStored($tool->status),
             installedVersion: $tool->installed_version,
             failedOperation: $tool->failed_operation?->value,
             errorCode: $tool->error_code,
             outcome: $outcome?->value,
             repository: $tool->aptRepository?->definition,
+            desiredVersion: $policy?->mode === 'file' ? $definition?->version : $tool->desired_version,
         );
     }
 }

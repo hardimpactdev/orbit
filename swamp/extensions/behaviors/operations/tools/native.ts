@@ -12,7 +12,7 @@ type Input =
         | "repository_packages"
         | "remove_repository"
     >
-    & { user: string; kind?: string };
+    & { user: string; kind?: string; desired_version?: string | null };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
 const object = (v: unknown) => z.record(z.string(), z.unknown()).parse(v);
 export function stdout(step: Step, absent = false): string {
@@ -80,10 +80,12 @@ export function commands(input: Input) {
         qualified = (cask ? "homebrew/cask/" : "homebrew/core/") +
             input.package;
     const install = input.kind === "tool.install";
+    const exact = input.desired_version ?? null;
+    const composerRequire = install || exact !== null;
     const composer = [
         "global",
-        install ? "require" : "update",
-        input.package + (install ? ":*" : ""),
+        composerRequire ? "require" : "update",
+        input.package + (exact !== null ? ":" + exact : install ? ":*" : ""),
         "--no-interaction",
         "--no-ansi",
         "--no-progress",
@@ -112,6 +114,10 @@ export function commands(input: Input) {
         scope,
         remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
+        repository_preferences: repo === null ? "" : repo.uris.map((uri) => {
+            const origin = new URL(uri).hostname;
+            return `Package: ${input.repository_packages.join(" ")}\nPin: origin "${origin}"\nPin-Priority: 990\n\nPackage: *\nPin: origin "${origin}"\nPin-Priority: 1\n`;
+        }).join("\n"),
         repository: input.repository ??
             {
                 name: "unused",
@@ -124,6 +130,7 @@ export function commands(input: Input) {
                 },
             },
         version: run("--version"),
+        os: ["/usr/bin/sw_vers", "-productVersion"],
         // Linux `brew info` reads the cached cask API; `outdated` is an auto-update command, so it refreshes that
         // API first (HOMEBREW_FORCE_API_AUTO_UPDATE) without `brew update`.
         refresh: cask ? run("outdated", "--cask", "--quiet") : [
@@ -154,7 +161,7 @@ export function commands(input: Input) {
                 ...env,
                 "/usr/bin/apt-cache",
                 ...aptOptions,
-                "policy",
+                exact === null ? "policy" : "madison",
                 "--",
                 input.package,
             ]
@@ -162,7 +169,7 @@ export function commands(input: Input) {
             ? run("info", "--json=v2", formula, qualified)
             : input.manager === "composer"
             ? run(...composer, "--dry-run")
-            : run("info", input.package, "version", "--json"),
+            : run("info", input.package + (exact === null ? "" : "@" + exact.replace(/^v/, "")), "version", "--json"),
         plan: input.manager === "apt"
             ? run("--simulate", "remove", "--", input.package)
             : input.manager === "brew"
@@ -178,9 +185,9 @@ export function commands(input: Input) {
             : input.manager === "composer"
             ? run(...composer)
             : run(
-                install ? "install" : "update",
+                install || exact !== null ? "install" : "update",
                 "-g",
-                input.package,
+                input.package + (exact === null ? "" : "@" + exact.replace(/^v/, "")),
                 ...(install
                     ? ["--node", "lts"]
                     : ["--reinstall-node-mismatch"]),
@@ -199,6 +206,15 @@ export function commands(input: Input) {
             )
             : run("remove", "-g", input.package),
     };
+}
+
+export function aptWrite(packageName: string, version: string, exact: boolean): string[] {
+    return [
+        "/usr/bin/env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive",
+        "/usr/bin/apt-get", "-o", "DPkg::Lock::Timeout=300", "install",
+        "--yes", "--no-install-recommends", "--no-remove",
+        ...(exact ? ["--allow-downgrades"] : []), "--", `${packageName}=${version}`,
+    ];
 }
 export function inventory(
     input: Input,
@@ -279,6 +295,14 @@ export function candidate(
 ) {
     const text = stdout(step);
     if (input.manager === "apt") {
+        const exact = input.desired_version ?? null;
+        if (exact !== null) {
+            const available = text.split("\n").some((line) => {
+                const [name, version, archive] = line.split("|").map((part) => part.trim());
+                return name === input.package && version === exact && Boolean(archive);
+            });
+            return { version: available ? exact : null };
+        }
         const matches = text.split("\n").map((s) =>
             /^\s*Candidate:\s+(\S+)\s*$/.exec(s)
         ).filter((v) => v !== null);

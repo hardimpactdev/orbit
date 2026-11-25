@@ -1,19 +1,79 @@
 ---
 title: "Tools"
-description: "Where Tools run, the supported Tool Managers, how Orbit discovers, adopts, installs, updates, and removes one package, and why the contract stays closed."
+description: "Which packages Orbit owns, and how to manage optional Tools, exact versions, and Gateway policy per Node."
 covers:
   - swamp/extensions/behaviors/operations/tools/**
-  - swamp/workflows/workflow-operation-tool-{write-209,remove-209,manager-setup}.yaml
+  - swamp/workflows/workflow-operation-tool-{write-209,remove-209,manager-setup,converge}.yaml
+  - swamp/ansible/{operation-tool-converge.yml,tasks/node-converge-tool*.yml}
   - apps/gateway/app/{Providers/ApplicationServiceProvider.php,{Actions,Domain}/Tools/**,Data/Tools/**,Actions/Doctor/Intent/RuntimeDoctorIntent.php}
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
-  - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
+  - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table,2027_03_26_000000_add_tool_policy}.php,routes/api/tool.php,resources/machine-software/tools.yaml}
   - apps/agent/src/commands/{vp_store,vp_scope,vp_global,tools_apt,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
-  - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
+  - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController,ToolPolicyController}.php,Requests/Tools/**}
 ---
 
 # Tools
 
-A Tool is one package that Orbit manages on a Node through a supported Tool Manager, identified by `(node, manager, package)`. Orbit records only packages it installs or explicitly adopts; discovery (`tool:scan`) reports other installed packages without creating Tool records. [`tool`](/cli/tool) lists the CLI commands. Machine recipe software, container runtimes, and CI caches stay separate from Tools.
+A Tool is an optional package that the Gateway manages on one Node, identified by `(node, manager, package)`. Orbit registers only packages you ask it to install or adopt. Discovery (`tool:scan`) reports installed packages without taking ownership. [`tool`](/cli/tool) lists the commands.
+
+## Package ownership
+
+Classify a package by what consumes it and where it runs, not by the name of its executable.
+
+| Consumer and install location | Owner |
+| --- | --- |
+| Orbit, a Node role, or container-host prerequisites on the host | The release's `core.yaml` recipe. A Tool cannot override protected core or role software. |
+| Shared container runtime under `/opt/orbit-runtime` | The runtime section of `core.yaml`; Projects and Instances retain their runtime and driver selection. |
+| Shared container agent software under `/opt/orbit-agent` | The agent section of `core.yaml`, including the Linux Conn Server required by task copies. |
+| An optional host package selected for a Node | A Gateway Tool record. The active Tool mode assigns the version, constraint, and source. |
+| A Conn Server running as a host service | An explicit [Conn Server rollout](/reference/development-containers#conn-server-rollout) selects a checksummed host release. Neither Tool convergence nor container convergence updates this service. |
+
+## Tool modes
+
+There is one mode per Gateway, and membership stays per Node in either mode. An existing Gateway enters database mode without adopting, installing, updating, or removing any package. Existing observed versions stay observations, not new pins.
+
+| Mode | Who sets the coordinate |
+| --- | --- |
+| `database` | `tool:install` and `tool:update` can set an exact desired version for one Node's Tool. With no pin, the manager selects a candidate within the optional constraint. |
+| `file` | One `tools.yaml` on the Gateway declares exact versions and optional constraints and repositories. Use the release's default catalog or supply an absolute path that the Gateway can read. |
+
+In file mode, adding a catalog entry does not register or install a Tool on any Node. Use `tool:install` or `tool:adopt` to add membership, and `tool:remove` to remove it. Install and adoption refuse packages outside the catalog (`tool.not_in_catalog`); install, update, and adoption refuse per-command overrides (`tool.file_override`). Adoption writes no package and requires the observed version to match the catalog (`tool.installed_version_mismatch`).
+
+The catalog has schema `1` and a list of packages, each with `manager`, `package`, `version`, and optional `constraint` and `repository`. Quote version strings. Replace the active file atomically and run [`tool:converge`](/cli/tool/converge) on the affected Nodes. Orbit does not watch the file or change packages in the background. Keep an entry until all its memberships have been removed: convergence refuses a missing entry instead of deleting or uninstalling the Tool.
+
+```yaml
+schema: 1
+packages:
+  - manager: apt
+    package: ripgrep
+    version: '15.1.0-1ubuntu1'
+```
+
+### Switch modes without running Node work
+
+Export before switching so you have a copy of the current policy and memberships.
+
+1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json` to preserve membership, desired coordinates, and observations.
+2. To enter file mode with existing Tools, use `orbit tool:mode --export=catalog --json`. Write its `document` to `tools.yaml` on the Gateway, then run `orbit tool:mode:set file --catalog=/absolute/path/tools.yaml`. Omit `--catalog` to use the shipped file.
+3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates for the existing memberships. An unapplied source change must converge before this switch.
+
+A catalog cannot express different desired coordinates for the same manager and package across Nodes, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation. Activation also refuses missing or different coordinates and waits for running Tool Operations to finish. A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
+
+## Desired and installed versions
+
+`tool:list` and `tool:show` report `desired_version` separately from `installed_version`. A failed or not yet applied change can leave the two values different. To select an exact version in database mode, use `--tool-version=VERSION` on install or update, or send `desired_version` through the API or MCP. Omitting the option on update keeps an existing pin.
+
+| Manager | Exact coordinate |
+| --- | --- |
+| `apt` | The full Debian version, including the epoch or distro suffix where applicable. A pin can select an available older version; a floating update does not downgrade. |
+| `vp`, `composer` | An exact package release version, not a range or a tag. |
+| `brew`, `brew-cask` | The current supported formula or cask version, including the cask build suffix. Orbit does not add taps or fetch older bottles. |
+
+The manager must still offer the version, and the version must meet any SemVer constraint. Orbit refuses an unavailable coordinate instead of substituting a different version. Package downloads and removals retain the manager's source, verification, scope, and dependency rules.
+
+## Converge registered Tools
+
+Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches. Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit the same Tool coordinates and run Ansible from the Swamp control Node over pinned SSH.
 
 ## Where Tools run and Tool Managers
 
@@ -43,7 +103,7 @@ Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `un
 
 ## Protected packages
 
-Orbit protects essential host and manager packages from installation, update, adoption (`adoption_block: protected`), or removal (`tool.package_protected`, 409):
+Orbit protects essential host and manager packages from installation, update, adoption (`adoption_block: protected`), removal, or convergence (`tool.package_protected`, 409). `conn-server` is reserved for the dedicated host rollout and container recipe, not a generic package write:
 
 | Manager | Protected package names |
 | --- | --- |
@@ -65,7 +125,7 @@ Adoption requires a single installed version, no adoption block, and constraint 
 
 ## Install and update a Tool
 
-`tool:install` and `tool:update` return HTTP `202` with an [Operation](/reference/operations) serialized under one per-`(node, manager)` lock (`operation.target_busy`, 409, on contention). If install finds an already-installed unmanaged package on the Node, the admitted Operation fails with `tool.package_already_installed`; adopt it with `tool:adopt` first. Optional SemVer `version_constraint` blocks out-of-range candidates (`blocked_by_constraint` / `tool.version_constraint_blocked`, 422) without downgrading.
+`tool:install` and `tool:update` return HTTP `202` with an [Operation](/reference/operations) serialized under one per-`(node, manager)` lock (`operation.target_busy`, 409, on contention). If install finds an already-installed unmanaged package on the Node, the admitted Operation fails with `tool.package_already_installed`; adopt it with `tool:adopt` first. Optional SemVer `version_constraint` blocks out-of-range candidates (`blocked_by_constraint` / `tool.version_constraint_blocked`).
 
 ## Homebrew formulae
 
@@ -81,7 +141,7 @@ On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accept
 
 ## Signed apt repositories
 
-An `apt` Tool install, adopt, or update can include a `repository` JSON object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for declared packages, `1` for other packages from that host). Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
+An `apt` Tool definition can include a `repository` object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). In database mode pass it as JSON on install, adoption, or update; in file mode declare it in the catalog. Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for declared packages, `1` for other packages from that host). Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
 
 Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
 

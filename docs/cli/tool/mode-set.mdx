@@ -1,0 +1,11 @@
+---
+title: "orbit tool:mode:set"
+sidebarTitle: "tool:mode:set"
+description: "Switch the active Tool policy without changing packages on any Node."
+---
+
+```bash
+orbit tool:mode:set <file|database> [--catalog=/absolute/path/tools.yaml] [--json]
+```
+
+The `mode` argument is `file` or `database`. `file` uses the shipped default unless `--catalog` names an absolute path on the Gateway. `database` takes no catalog path. A successful change returns the snapshot ID for the prior policy; a conflicting change leaves the active policy untouched. Follow the [switch procedure](/reference/tools#switch-modes-without-running-node-work) to preserve existing memberships.

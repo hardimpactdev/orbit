@@ -6,11 +6,16 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeAgentData;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\AdmittedToolPackage;
 use App\Domain\Tools\ReservesRolePackages;
 use App\Domain\Tools\ToolAdoption;
 use App\Domain\Tools\ToolAdoptionBlocked;
+use App\Domain\Tools\ToolConvergeIntent;
+use App\Domain\Tools\ToolDefinition;
+use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -19,8 +24,6 @@ use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Domain\Tools\ToolStatus;
-use App\Domain\Tools\VersionConstraint;
-use App\Http\Requests\Tools\AptRepositoryRules;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\AptRepository;
 use App\Models\Node;
@@ -37,17 +40,21 @@ final readonly class StartToolOperationAction
         private StartOperationAction $operations,
         private ToolManagerRegistry $managers,
         private ToolNodeEligibility $eligibility,
-        private VersionConstraint $constraints,
+        private ToolDefinitionResolver $definitions,
         private ToolPackageProtection $protection,
         private ToolAdoption $adoption,
     ) {}
 
     /** @param array<string, mixed>|null $repository */
-    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?array $repository = null): Operation
+    public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?array $repository = null, ?string $version = null): Operation
     {
-        return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, function (array $admitted) use ($verb, $nodeId, $managerName, $package, $constraint): Operation {
+        if (($existing = app(OperationIdempotency::class)->replay('tool.'.$verb)) !== null) {
+            return $existing;
+        }
+
+        return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, $version, function (array $admitted) use ($verb, $nodeId, $managerName, $package): Operation {
             ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'role_owned' => $roleOwned, 'protected' => $protected,
-                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven] = $admitted;
+                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven, 'definition' => $definition] = $admitted;
             // The repository's apt preference admits exactly the packages of the Tools that reference it.
             $repositoryPackages = $repositoryRecord === null ? ($repository === null || $verb === 'remove' ? [] : [$package]) : Tool::query()
                 ->where('apt_repository_id', $repositoryRecord->id)
@@ -57,13 +64,10 @@ final readonly class StartToolOperationAction
             $removeRepository = $verb === 'remove' && $repositoryRecord !== null && $repositoryPackages === [];
 
             $input = [
-                'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                'platform' => $node->platform, 'architecture' => $node->architecture,
-                'version_constraint' => $constraint,
+                ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
                 'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
                 'repository_packages' => $repositoryPackages, 'repository_given' => $repositoryGiven,
-                'tool_id' => $tool?->id, 'manager_id' => $record?->id,
-                'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
+                'tool_id' => $tool?->id,
                 'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                 'protected_packages' => $protected,
                 'manager_ready' => $record?->status === LifecycleStatus::Active,
@@ -75,7 +79,7 @@ final readonly class StartToolOperationAction
                 // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
                 $record ??= ToolManagerRecord::query()->create(['node_id' => $nodeId, 'name' => $managerName, 'status' => LifecycleStatus::Provisioning]);
                 $tool = Tool::query()->create(['node_id' => $nodeId, 'tool_manager_id' => $record->id, 'package' => $package,
-                    'version_constraint' => $constraint, 'status' => ToolStatus::Installing]);
+                    'version_constraint' => $definition->constraint, 'desired_version' => $definition->version, 'status' => ToolStatus::Installing]);
                 $input['tool_id'] = $tool->id;
                 $input['manager_id'] = $record->id;
             }
@@ -89,7 +93,12 @@ final readonly class StartToolOperationAction
                 return $operation;
             }
 
-            return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->operationLockKey($nodeId));
+            $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
+            if ($verb !== 'remove' && $operation->wasRecentlyCreated) {
+                $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint]);
+            }
+
+            return $operation;
         });
     }
 
@@ -102,8 +111,8 @@ final readonly class StartToolOperationAction
      */
     public function adopt(int $nodeId, string $managerName, string $package, ?string $constraint, ?array $repository, ?NodeAgentData $agent): array
     {
-        return $this->admit('adopt', $nodeId, $managerName, $package, $constraint, null, $repository, $agent,
-            fn (array $admitted): array => $this->adoption->record($admitted['node'], $admitted['manager'], $admitted['record'], $admitted['tool'], $package, $constraint, $repository));
+        return $this->admit('adopt', $nodeId, $managerName, $package, $constraint, null, $repository, $agent, null,
+            fn (array $admitted): array => $this->adoption->record($admitted['node'], $admitted['manager'], $admitted['record'], $admitted['tool'], $package, $admitted['definition'], $admitted['repository']));
     }
 
     /**
@@ -112,20 +121,18 @@ final readonly class StartToolOperationAction
      * @template T
      *
      * @param  array<string, mixed>|null  $repository
-     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, role_owned: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_given: bool}): T  $then
+     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, role_owned: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_given: bool, definition: ToolDefinition}): T  $then
      * @return T
      */
-    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, Closure $then): mixed
+    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then): mixed
     {
         try {
-            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $then): mixed {
+            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then): mixed {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
+                app(ToolConvergeIntent::class)->assertIdle($nodeId, direct: true);
                 $manager = $this->manager($node, $managerName);
                 if (! $manager->validatePackage($package)) {
                     $this->refuse('tool.package_invalid', 422);
-                }
-                if (! $this->constraints->isValid($constraint)) {
-                    $this->refuse('tool.constraint_invalid', 422);
                 }
                 $roleOwned = $manager instanceof ReservesRolePackages && $manager->roleOwns($package);
                 if ($roleOwned && $verb !== 'remove') {
@@ -138,9 +145,6 @@ final readonly class StartToolOperationAction
                     $this->refuse('tool.state_invalid');
                 }
                 if ($tool !== null) {
-                    if ($tool->version_constraint !== $constraint) {
-                        $this->refuse('tool.constraint_conflict');
-                    }
                     $retryable = $tool->status === ToolStatus::Installed
                         || ($tool->status === ToolStatus::Failed && ($verb === 'adopt' || $verb === 'remove' || $tool->failed_operation?->value === $verb));
                     if (! $retryable) {
@@ -155,7 +159,8 @@ final readonly class StartToolOperationAction
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
                 }
 
-                new AptRepositoryRules()->validate($repository, $managerName);
+                $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository);
+                $repository = $definition->repository;
                 $currentRepository = $tool?->aptRepository;
                 if ($currentRepository !== null && $repository !== null && $repository['name'] !== $currentRepository->name) {
                     $this->refuse('tool.repository_conflict');
@@ -169,11 +174,11 @@ final readonly class StartToolOperationAction
                         $this->refuse('tool.repository_conflict');
                     }
                 }
-                $repositoryGiven = $repository !== null;
+                $repositoryGiven = $repository !== null && $repositoryRecord?->definition != $repository;
                 $repository ??= $repositoryRecord?->definition;
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'role_owned' => $roleOwned, 'protected' => $protected,
-                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven]);
+                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven, 'definition' => $definition]);
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {

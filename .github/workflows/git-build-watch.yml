@@ -8,7 +8,7 @@ on:
     paths:
       - bin/git-build-watch
       - .github/workflows/git-build-watch.yml
-      - apps/gateway/resources/machine-software/recipe.json
+      - apps/gateway/resources/machine-software/core.yaml
 
 permissions:
   contents: read

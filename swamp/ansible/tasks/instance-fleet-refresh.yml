@@ -200,7 +200,7 @@
     argv: >-
       {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'python3', '-c',
           'import json, sys; s = json.load(open(sys.argv[1]))["tools"]["swamp"]; print(s["version"]); print(s["artifacts"]["amd64"]["sha256"])',
-          intent.fleet.checkout.path ~ '/apps/gateway/resources/machine-software/recipe.json'] }}
+          intent.fleet.checkout.path ~ '/apps/gateway/resources/machine-software/core.yaml'] }}
   register: fleet_swamp_pin_read
   changed_when: false
   failed_when: false

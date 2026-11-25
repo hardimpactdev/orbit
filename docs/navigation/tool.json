@@ -16,7 +16,10 @@
             "cli/tool/list",
             "cli/tool/show",
             "cli/tool/update",
-            "cli/tool/remove"
+            "cli/tool/remove",
+            "cli/tool/converge",
+            "cli/tool/mode",
+            "cli/tool/mode-set"
           ]
         }
       ]

@@ -16,7 +16,7 @@ sequenceDiagram
   %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
   %%> - nothing starts it from a pin change
   %%> Requirements:
-  %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
+  %%> - `version` selects an exact release in the host catalog, or `conn_server.pin_unavailable`; omitting it selects the default host release
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
   %%> Picks:
   %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order; scope `nodes`: the named records alone, in the request's order

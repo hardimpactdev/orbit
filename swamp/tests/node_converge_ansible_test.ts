@@ -16,7 +16,7 @@ const taskPath = (name: string) => fileURLToPath(new URL(`../ansible/tasks/${nam
 /** The play of the converge on the target Node. Other plays run on the hub and on the default's Node. */
 const targetPlay = async () => (parse(await Deno.readTextFile(new URL("../ansible/operation-node-converge.yml", import.meta.url))) as Array<Record<string, unknown>>)
     .find((play) => play.hosts === "target") as { tasks: Array<Record<string, unknown>> } & Record<string, unknown>;
-const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/recipe.json", import.meta.url)));
+const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/core.yaml", import.meta.url)));
 
 Deno.test("generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible", async () => {
     const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");

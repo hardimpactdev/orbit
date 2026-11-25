@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { WriteInput } from "./write.ts";
 import {
     after,
+    aptWrite,
     candidate,
     commands,
     inventory,
@@ -63,6 +64,20 @@ Deno.test("removal plans and official checks prove exact package state", () => {
         [],
     );
     assertThrows(() => after(input(), { status: "failed", packages: null }));
+});
+Deno.test("a Debian pin selects the exact available coordinate and explicitly allows a downgrade", () => {
+    const pinned = { ...input(), desired_version: "2:1.2-1ubuntu0.1" };
+    const output = "hello | 2:1.3-1 | archive\nhello | 2:1.2-1ubuntu0.1 | archive\n";
+    assertEquals(commands(pinned).candidate.slice(-3), ["madison", "--", "hello"]);
+    assertEquals(candidate(pinned, step(output), {}), {
+        version: "2:1.2-1ubuntu0.1",
+    });
+    assertEquals(candidate({ ...pinned, desired_version: "1.1-1" }, step(output), {}), {
+        version: null,
+    });
+    assertEquals(aptWrite("hello", pinned.desired_version, true).includes("--allow-downgrades"), true);
+    assertEquals(aptWrite("hello", pinned.desired_version, true).at(-1), "hello=2:1.2-1ubuntu0.1");
+    assertEquals(aptWrite("hello", pinned.desired_version, false).includes("--allow-downgrades"), false);
 });
 Deno.test("Composer and Vite+ observations are parsed on the worker", () => {
     const composer = input("composer"),

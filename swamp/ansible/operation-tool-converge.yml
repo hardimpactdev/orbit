@@ -1,0 +1,10 @@
+---
+- name: Reconcile only optional Tools on a managed Node
+  hosts: target
+  gather_facts: false
+  vars:
+    intent: "{{ converge_intent }}"
+  tasks:
+    - name: Apply admitted Tool membership
+      ansible.builtin.import_tasks: tasks/node-converge-tools.yml
+      tags: [tools]

@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).with_name('setup.sh').read_text()
-RECIPE = json.loads((ROOT / 'apps/gateway/resources/machine-software/recipe.json').read_text())
+RECIPE = json.loads((ROOT / 'apps/gateway/resources/machine-software/core.yaml').read_text())
 FAKE = '''#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_ROOT/calls"

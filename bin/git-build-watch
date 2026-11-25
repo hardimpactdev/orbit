@@ -84,7 +84,7 @@ def check(recipe):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--recipe', default=ROOT / 'apps/gateway/resources/machine-software/recipe.json')
+    parser.add_argument('--recipe', default=ROOT / 'apps/gateway/resources/machine-software/core.yaml')
     parser.add_argument('--output', required=True)
     arguments = parser.parse_args()
     findings = check(json.loads(Path(arguments.recipe).read_text()))

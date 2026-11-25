@@ -50,7 +50,7 @@ release_runtime() (
   stage=$(mktemp -d /run/orbit-gateway-runtime.XXXXXXXX)
   trap 'rm -rf -- "$stage"' EXIT
   git -c safe.directory="$mirror" -C "$mirror" archive "$sha" -- \
-    bin/gateway-container-prepare apps/gateway/resources/machine-software/recipe.json \
+    bin/gateway-container-prepare apps/gateway/resources/machine-software/core.yaml \
     swamp/ansible/{ansible.cfg,gateway-container-runtime.yml,transport-exit-codes.json,tasks/artifact-fetch.yml,library/orbit_artifact.py} \
     | tar -x -C "$stage"
   python3 "$stage/bin/gateway-container-prepare" --release-runtime
