@@ -132,7 +132,7 @@ Start endpoints validate access, idempotency, and input, commit a `queued` Opera
 
 ### Retry a start with a key
 
-Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the existing Operation even after it ends; a different target or input returns `409 operation.idempotency_conflict`.
+Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the first Operation returned for that key even after it ends; a different target or input returns `409 operation.idempotency_conflict`. For a staged operation such as the Conn Server rollout, a replay still returns the original stage, not the next one.
 
 By default, fingerprints are portable across callers with access to the target. Endpoints declared with `bindCaller: true` (such as automatic deploys at `POST /api/v1/instances/{instance}/deploy/automatic`, keyed Conn starts, WebSocket app Operations, task pull-request merges, proof runs, and `node.base_inventory`) also bind `caller_node_id` and `command`, so a different caller Node replaying the same key receives `409 operation.idempotency_conflict`. Durable Conn launches (`POST /api/v1/conn/launches`) are an exception: they scope keys per caller Node (`keyed: false`), so two callers sending the same `Idempotency-Key` for the same target receive `202` with different launch IDs.
 

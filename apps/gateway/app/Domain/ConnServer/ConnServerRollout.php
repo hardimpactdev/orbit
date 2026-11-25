@@ -100,93 +100,96 @@ final readonly class ConnServerRollout
     /** @param list<int>|null $nodeIds the Nodes of scope `nodes`, in visiting order */
     public function admit(bool $dryRun, string $scope, ?array $nodeIds = null, ?string $triggeredBy = null, ?string $requestId = null, ?int $canaryOperationId = null, ?int $retryOperationId = null): Operation
     {
-        return DB::transaction(function () use ($dryRun, $scope, $nodeIds, $triggeredBy, $requestId, $canaryOperationId, $retryOperationId): Operation {
-            if (($replay = $this->idempotency->replay(self::Kind)) !== null) {
-                return $replay;
-            }
-            $pin = $this->pin();
-            $servers = $this->servers();
-            $canary = $servers->firstOrFail();
-            $selected = match ($scope) {
-                'canary' => $servers->take(1),
-                'nodes' => $servers->sortBy(static fn (ConnServerNode $server): int|false => array_search($server->node_id, $nodeIds ?? [], true))
-                    ->whereIn('node_id', $nodeIds ?? []),
-                default => $servers,
-            };
-            if (! $pin->releaseCanary && ($canaryOperationId !== null || $retryOperationId !== null)) {
-                throw new ResourceOperationException('conn_server.pin_changed', 'The serving pin has no managed canary receipt.', 409);
-            }
-            if (! $pin->releaseCanary || ($dryRun && $scope !== 'fleet')) {
-                return $this->run($pin, $selected, $dryRun, false, $triggeredBy, $requestId);
-            }
-            if ($this->serving->supersedes() || $this->serving->read()['state'] === FleetServingRelease::Unreadable) {
-                throw new ResourceOperationException('conn_server.pin_changed', 'The serving Gateway release changed. Read its current canary receipt.', 409);
-            }
+        return DB::transaction(fn (): Operation => $this->idempotency->replay(self::Kind) ?? $this->idempotency->bind(
+            $this->admitCurrent($dryRun, $scope, $nodeIds, $triggeredBy, $requestId, $canaryOperationId, $retryOperationId),
+        ));
+    }
 
-            $key = $this->fingerprint($pin, $canary);
-            if ($dryRun) {
-                $rest = $servers->skip(1);
-                if ($rest->isEmpty()) {
-                    return $this->run($pin, $selected, true, false, $triggeredBy, $requestId);
-                }
-                $preflight = $this->receipt($key, 'preflight');
+    /** @param list<int>|null $nodeIds */
+    private function admitCurrent(bool $dryRun, string $scope, ?array $nodeIds, ?string $triggeredBy, ?string $requestId, ?int $canaryOperationId, ?int $retryOperationId): Operation
+    {
+        $pin = $this->pin();
+        $servers = $this->servers();
+        $canary = $servers->firstOrFail();
+        $selected = match ($scope) {
+            'canary' => $servers->take(1),
+            'nodes' => $servers->sortBy(static fn (ConnServerNode $server): int|false => array_search($server->node_id, $nodeIds ?? [], true))
+                ->whereIn('node_id', $nodeIds ?? []),
+            default => $servers,
+        };
+        if (! $pin->releaseCanary && ($canaryOperationId !== null || $retryOperationId !== null)) {
+            throw new ResourceOperationException('conn_server.pin_changed', 'The serving pin has no managed canary receipt.', 409);
+        }
+        if (! $pin->releaseCanary || ($dryRun && $scope !== 'fleet')) {
+            return $this->run($pin, $selected, $dryRun, false, $triggeredBy, $requestId);
+        }
+        if ($this->serving->supersedes() || $this->serving->read()['state'] === FleetServingRelease::Unreadable) {
+            throw new ResourceOperationException('conn_server.pin_changed', 'The serving Gateway release changed. Read its current canary receipt.', 409);
+        }
 
-                return $this->retry($pin, $key, 'preflight', $rest, $preflight, $triggeredBy, $requestId, $retryOperationId);
-            }
-            $check = $this->receipt($key, 'check');
-            $probe = $this->receipt($key, 'canary');
-            if ($scope === 'canary') {
-                if ($probe !== null && $this->passed($probe, $pin, $canary, false)) {
-                    return $probe;
-                }
-                $dryPassed = $this->passed($check, $pin, $canary, true);
-
-                return $this->retry($pin, $key, $dryPassed ? 'canary' : 'check', $selected,
-                    $dryPassed ? $probe : $check, $triggeredBy, $requestId, $retryOperationId);
-            }
-
-            if ($scope !== 'fleet' || $canaryOperationId === null || $probe?->id !== $canaryOperationId
-                || ! $this->passed($probe, $pin, $canary, false)) {
-                throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
-            }
-            $pinIdentity = $this->pinIdentity($pin);
-            $promotion = $this->receipt($pinIdentity, 'promotion');
-            if ($promotion !== null && ($retryOperationId === null || ! $promotion->status->terminal() || $promotion->status === OperationStatus::Succeeded)) {
-                return $promotion;
-            }
+        $key = $this->fingerprint($pin, $canary);
+        if ($dryRun) {
             $rest = $servers->skip(1);
             if ($rest->isEmpty()) {
-                throw new ResourceOperationException('conn_server.no_promotion_targets', 'There are no remaining standalone Conn Server Nodes.', 409);
+                return $this->run($pin, $selected, true, false, $triggeredBy, $requestId);
             }
             $preflight = $this->receipt($key, 'preflight');
-            if (data_get($preflight?->result, 'error_code') === 'conn_server.preflight_blocked') {
-                throw new ResourceOperationException('conn_server.preflight_required', 'Review the held Nodes in the fleet dry run.', 409);
-            }
-            $targets = $rest->map($this->nodeIntent(...))->values()->all();
-            $results = (array) ($preflight?->result['nodes'] ?? []);
-            if ($preflight?->status !== OperationStatus::Succeeded || data_get($preflight->result, 'version') !== $pin->version
-                || data_get($preflight->input, 'intent.nodes') !== $targets
-                || data_get($preflight->result, 'dry_run') !== true
-                || array_column($results, 'node_id') !== array_column($targets, 'node_id')
-                || array_unique(array_column($results, 'outcome')) !== ['checked']) {
-                throw new ResourceOperationException('conn_server.preflight_required', 'Repeat the fleet dry run until every remaining Node reports checked.', 409);
-            }
 
-            if ($retryOperationId !== null) {
-                $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
-                    ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
-                if ($retry !== null) {
-                    return $retry;
-                }
-                if ($promotion?->id !== $retryOperationId) {
-                    throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
-                }
-                $rest = $this->remainingPromotionNodes($pinIdentity, $rest);
+            return $this->retry($pin, $key, 'preflight', $rest, $preflight, $triggeredBy, $requestId, $retryOperationId);
+        }
+        $check = $this->receipt($key, 'check');
+        $probe = $this->receipt($key, 'canary');
+        if ($scope === 'canary') {
+            if ($probe !== null && $this->passed($probe, $pin, $canary, false)) {
+                return $probe;
             }
+            $dryPassed = $this->passed($check, $pin, $canary, true);
 
-            return $this->releaseOperation($pin, $pinIdentity, 'promotion', $rest, $triggeredBy, $requestId,
-                retry: $retryOperationId, proof: $probe->id);
-        });
+            return $this->retry($pin, $key, $dryPassed ? 'canary' : 'check', $selected,
+                $dryPassed ? $probe : $check, $triggeredBy, $requestId, $retryOperationId);
+        }
+
+        if ($scope !== 'fleet' || $canaryOperationId === null || $probe?->id !== $canaryOperationId
+            || ! $this->passed($probe, $pin, $canary, false)) {
+            throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
+        }
+        $pinIdentity = $this->pinIdentity($pin);
+        $promotion = $this->receipt($pinIdentity, 'promotion');
+        if ($promotion !== null && ($retryOperationId === null || ! $promotion->status->terminal() || $promotion->status === OperationStatus::Succeeded)) {
+            return $promotion;
+        }
+        $rest = $servers->skip(1);
+        if ($rest->isEmpty()) {
+            throw new ResourceOperationException('conn_server.no_promotion_targets', 'There are no remaining standalone Conn Server Nodes.', 409);
+        }
+        $preflight = $this->receipt($key, 'preflight');
+        if (data_get($preflight?->result, 'error_code') === 'conn_server.preflight_blocked') {
+            throw new ResourceOperationException('conn_server.preflight_required', 'Review the held Nodes in the fleet dry run.', 409);
+        }
+        $targets = $rest->map($this->nodeIntent(...))->values()->all();
+        $results = (array) ($preflight?->result['nodes'] ?? []);
+        if ($preflight?->status !== OperationStatus::Succeeded || data_get($preflight->result, 'version') !== $pin->version
+            || data_get($preflight->input, 'intent.nodes') !== $targets
+            || data_get($preflight->result, 'dry_run') !== true
+            || array_column($results, 'node_id') !== array_column($targets, 'node_id')
+            || array_unique(array_column($results, 'outcome')) !== ['checked']) {
+            throw new ResourceOperationException('conn_server.preflight_required', 'Repeat the fleet dry run until every remaining Node reports checked.', 409);
+        }
+
+        if ($retryOperationId !== null) {
+            $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
+                ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
+            if ($retry !== null) {
+                return $retry;
+            }
+            if ($promotion?->id !== $retryOperationId) {
+                throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
+            }
+            $rest = $this->remainingPromotionNodes($pinIdentity, $rest);
+        }
+
+        return $this->releaseOperation($pin, $pinIdentity, 'promotion', $rest, $triggeredBy, $requestId,
+            retry: $retryOperationId, proof: $probe->id);
     }
 
     /**
@@ -208,7 +211,7 @@ final readonly class ConnServerRollout
                     throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
                 }
                 if (($result['outcome'] ?? null) === 'updated') {
-                    $completed[] = $targets[$index];
+                    $completed[] = $this->installationIdentity($result['node_id'] ?? null, data_get($targets[$index], 'server'));
                 }
                 if (($result['outcome'] ?? null) === 'failed' && ($result['rolled_back'] ?? false) === false
                     && ($result['changed'] ?? true) === true) {
@@ -217,7 +220,19 @@ final readonly class ConnServerRollout
             }
         }
 
-        return $servers->reject(fn (ConnServerNode $server): bool => in_array($this->nodeIntent($server), $completed, true));
+        return $servers->reject(fn (ConnServerNode $server): bool => in_array($this->installationIdentity($server->node_id, $server), $completed, true));
+    }
+
+    /** @return array{mixed, mixed, mixed, mixed} */
+    private function installationIdentity(mixed $nodeId, mixed $server): array
+    {
+        return [$nodeId, data_get($server, 'platform'), data_get($server, 'service'), data_get($server, 'path')];
+    }
+
+    /** Stage keys use a separator that the HTTP Idempotency-Key cannot contain. */
+    private function stageKey(string $pin, string $stage, ?int $retry): string
+    {
+        return "conn-release/{$pin}:{$stage}:".($retry ?? 'first');
     }
 
     /** @param Collection<int, ConnServerNode> $servers */
@@ -234,7 +249,7 @@ final readonly class ConnServerRollout
         if ($blockers === []) {
             return $this->releaseOperation($pin, $key, 'preflight', $servers, $by, $requestId, $retry);
         }
-        $identity = "conn-release:{$key}:preflight:".($retry ?? 'first');
+        $identity = $this->stageKey($key, 'preflight', $retry);
         $nodes = $servers->map(static fn (ConnServerNode $server): array => isset($blockers[$server->node_id])
             ? ['node_id' => $server->node_id, 'outcome' => 'held', 'reason' => $blockers[$server->node_id]]
             : ['node_id' => $server->node_id, 'outcome' => 'not_reached'])->values()->all();
@@ -301,7 +316,7 @@ final readonly class ConnServerRollout
     private function releaseOperation(FolderPin $pin, string $key, string $stage, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null, ?int $proof = null): Operation
     {
         // Failed attempts remain as evidence. An explicit retry is keyed by the exact failed attempt it replaces.
-        $identity = "conn-release:{$key}:{$stage}:".($retry ?? 'first');
+        $identity = $this->stageKey($key, $stage, $retry);
 
         $receipt = ['release_pin' => $key, 'release_stage' => $stage,
             ...($retry === null ? [] : ['retry_operation_id' => $retry]),

@@ -5,15 +5,18 @@ declare(strict_types=1);
 use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseObserver;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\ConnServerNode;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
 use Tests\Support\SwampNodeFixture;
@@ -49,6 +52,7 @@ function connServerPin(?Closure $change = null): void
         $change($recipe);
     }
     $home = sys_get_temp_dir().'/conn-server-rollout-'.bin2hex(random_bytes(4));
+    test()->recipeHomes = [...test()->recipeHomes, $home];
     mkdir($home.'/releases/'.str_repeat('a', 12).'/apps/gateway/resources/machine-software', 0700, true);
     symlink('releases/'.str_repeat('a', 12), $home.'/orbit');
     file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
@@ -60,9 +64,16 @@ function connServerPin(?Closure $change = null): void
 }
 
 beforeEach(function (): void {
+    $this->recipeHomes = [];
     Queue::fake();
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
     SwampNodeFixture::ensure();
+});
+
+afterEach(function (): void {
+    foreach ($this->recipeHomes as $home) {
+        File::deleteDirectory($home);
+    }
 });
 
 it('admits the pinned release for every Conn Server Node, canary first, from their records', function (): void {
@@ -172,6 +183,81 @@ function finishConnRollout(Operation $operation, string $status, array $nodes): 
         'nodes' => $nodes,
     ]])->save();
 }
+
+it('replays the first keyed canary receipt after its dry run passes without dispatching an update', function (): void {
+    connServerPin(static function (array &$recipe): void {
+        $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    });
+    $canary = connServerNode('canary', 62, ['canary' => true]);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $url = '/api/v1/fleet/conn-server/rollout';
+    $body = ['scope' => 'canary', 'dry_run' => false];
+    $key = ['Idempotency-Key' => 'canary-rollout'];
+    $secondKey = ['Idempotency-Key' => 'canary-rollout-also'];
+
+    $response = $this->postJson($url, $body, $key)->assertAccepted();
+    $check = Operation::query()->sole();
+    $response->assertJsonPath('data.id', $check->id);
+    expect($check->input['intent']['dry_run'])->toBeTrue();
+    $this->postJson($url, $body, $secondKey)->assertAccepted()->assertJsonPath('data.id', $check->id);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+    finishConnRollout($check, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'checked']]);
+
+    $replay = $this->postJson($url, $body, $key)->assertAccepted();
+    expect(Operation::query()->count())->toBe(1);
+    $replay->assertJsonPath('data.id', $check->id);
+    $this->postJson($url, $body, $secondKey)->assertAccepted()->assertJsonPath('data.id', $check->id);
+    $this->postJson($url, ['scope' => 'canary', 'dry_run' => true], $key)
+        ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
+    expect(Operation::query()->count())->toBe(1);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+
+    $fresh = $this->postJson($url, $body, ['Idempotency-Key' => 'canary-update'])->assertAccepted();
+    $update = Operation::query()->whereKeyNot($check->id)->sole();
+    $fresh->assertJsonPath('data.id', $update->id);
+    expect($update->input['intent']['dry_run'])->toBeFalse();
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+});
+
+it('skips an updated installation in a promotion retry after follower settings change', function (bool $changeSsh): void {
+    connServerPin(static function (array &$recipe): void {
+        $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    });
+    $canary = connServerNode('canary', 62, ['canary' => true]);
+    $updated = connServerNode('updated', 61, ['notify_before_restart' => true]);
+    $failed = connServerNode('failed', 60, []);
+    $rollout = app(ConnServerRollout::class);
+    $pin = $rollout->releasePin();
+    $check = $rollout->releaseGate($pin);
+    finishConnRollout($check, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'checked']]);
+    $probe = $rollout->releaseGate($pin);
+    finishConnRollout($probe, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'updated', 'thread_read' => true]]);
+    $preflight = $rollout->admit(true, 'fleet');
+    $checked = [['node_id' => $updated->id, 'outcome' => 'checked'], ['node_id' => $failed->id, 'outcome' => 'checked']];
+    finishConnRollout($preflight, 'succeeded', $checked);
+    $promotion = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id);
+    finishConnRollout($promotion, 'failed', [
+        ['node_id' => $updated->id, 'outcome' => 'updated'],
+        ['node_id' => $failed->id, 'outcome' => 'failed', 'changed' => false],
+    ]);
+
+    if ($changeSsh) {
+        $updated->update(['user' => 'operator']);
+    } else {
+        ConnServerNode::query()->where('node_id', $updated->id)->update(['notify_before_restart' => false]);
+    }
+    $recheck = $rollout->admit(true, 'fleet', retryOperationId: $preflight->id);
+    $field = $changeSsh ? 'ssh.target.user' : 'server.notify_before_restart';
+    expect(data_get($recheck->input['intent']['nodes'][0], $field))->toBe($changeSsh ? 'operator' : false);
+    finishConnRollout($recheck, 'succeeded', $checked);
+
+    $retry = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id, retryOperationId: $promotion->id);
+    expect(array_column($retry->input['intent']['nodes'], 'node_id'))->toBe([$failed->id]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $retry->id);
+})->with(['notification setting' => [false], 'SSH user' => [true]]);
 
 it('reads the standalone Conn pin without resolving the Orbit Agent delivery manifest', function (): void {
     connServerPin(static function (array &$recipe): void {
