@@ -25,10 +25,11 @@ sequenceDiagram
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
-  %%> - at most four Nodes, so the 12,980 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 13,220 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
+    %%> - Mac: `launchctl print gui/<uid>/<label>` checks the configured LaunchAgent before staging, including in a dry run, or `conn_server.service_not_loaded`
     %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
     %%> - Mac: `codesign --verify --strict --deep`, the pin's `TeamIdentifier` and bundle id, or `conn_server.signature_invalid`, `team_mismatch`, `bundle_mismatch`
     %%> - Linux: the unit's `ExecStart` is `<current>/conn-server` and the tarball holds `conn-server-<X>-linux-x64/conn-server`, or `conn_server.layout_mismatch`
