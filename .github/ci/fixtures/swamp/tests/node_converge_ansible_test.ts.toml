@@ -55,6 +55,9 @@ inputs = [
   "swamp/ansible/tasks/node-converge-base.yml",
   "swamp/ansible/tasks/node-converge-role.yml",
   "swamp/ansible/tasks/node-converge-software.yml",
+  "swamp/ansible/tasks/node-converge-tool-repository.yml",
+  "swamp/ansible/tasks/node-converge-tool.yml",
+  "swamp/ansible/tasks/node-converge-tools.yml",
   "swamp/ansible/tasks/node-executor.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-role-runtime.yml",
@@ -66,6 +69,8 @@ inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/extensions/behaviors/operations/tools/constraints.ts",
   "swamp/extensions/behaviors/operations/tools/contract.ts",
+  "swamp/extensions/behaviors/operations/tools/homebrew.ts",
   "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/extensions/behaviors/operations/tools/write_policy.ts",
   "swamp/tests/phase_code_fixture.ts",
 ]

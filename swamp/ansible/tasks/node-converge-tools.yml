@@ -8,12 +8,15 @@
   delegate_to: localhost
   become: false
   changed_when: false
+  failed_when: false
   register: tool_helper
 - name: Require a working Tool helper
   when: intent.tools | length > 0
   ansible.builtin.assert:
-    that: (tool_helper.stdout | trim) == '{"ready":true}'
-    fail_msg: The Tool helper must run on the Swamp Node before it can judge a Tool.
+    that: tool_helper.rc | default(1) == 0 and (tool_helper.stdout | default('') | trim) == '{"ready":true}'
+    fail_msg: >-
+      The Tool helper does not run with {{ converge_deno }} on the Swamp Node, so no Tool was judged.
+      Converge the Swamp Node: its software phase installs the pinned Deno.
     quiet: true
 - name: Reconcile each independent Tool
   ansible.builtin.include_tasks:

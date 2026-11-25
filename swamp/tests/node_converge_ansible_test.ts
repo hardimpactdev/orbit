@@ -451,11 +451,11 @@ async function compiledSwamp(folder: string) {
 async function toolsPhase(folder: string, runtime: string) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
-        const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
-        if (include) include.file = taskPath("node-converge-tool");
+        const imported = task["ansible.builtin.import_tasks"];
+        if (typeof imported === "string") task["ansible.builtin.import_tasks"] = fileURLToPath(new URL(`../ansible/${imported}`, import.meta.url));
     }
     // A protected package is refused by the helper's own policy, before any machine read: one Tool failure with a working helper.
-    const tool = { id: 3, manager: "apt", package: "tree", version_constraint: "^2.2", protected: ["tree"], repository: null };
+    const tool = { id: 3, manager: "apt", package: "tree", version_constraint: null, protected: ["tree"], repository: null };
     await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false, tasks,
         vars: { intent: { node_id: 7, user: "orbit", tools: [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
@@ -514,6 +514,7 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
     try {
         const phase = await toolsPhase(folder, Deno.execPath());
         assertEquals(phase.code, 0, phase.output);
+        assertMatch(phase.output, /tool\.package_protected/);
         assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
