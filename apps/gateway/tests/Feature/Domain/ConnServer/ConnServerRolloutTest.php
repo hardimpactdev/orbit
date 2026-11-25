@@ -172,6 +172,28 @@ function finishConnRollout(Operation $operation, string $status, array $nodes): 
     ]])->save();
 }
 
+it('records a follower SSH blocker without invalidating the verified canary', function (): void {
+    connServerPin(static function (array &$recipe): void {
+        $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    });
+    $vm = connServerNode('nick-vm', 62, ['canary' => true]);
+    $other = connServerNode('mini', 61, []);
+    $other->forceFill(['ssh_host_key' => null, 'ssh_host_fingerprint' => null])->save();
+
+    $rollout = app(ConnServerRollout::class);
+    $check = $rollout->releaseGate();
+    finishConnRollout($check, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'checked']]);
+    $probe = $rollout->releaseGate();
+    finishConnRollout($probe, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'updated', 'thread_read' => true]]);
+    expect($rollout->releaseGate())->toBeNull();
+
+    $preflight = Operation::query()->where('input->release_stage', 'preflight')->sole();
+    expect($preflight->result['error_code'])->toBe('conn_server.preflight_blocked')
+        ->and($preflight->result['nodes'][0])->toMatchArray(['node_id' => $other->id, 'outcome' => 'held']);
+    expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id))
+        ->toThrow(ResourceOperationException::class, 'Review the held Nodes');
+});
+
 it('resumes a pin from its durable receipts and authorizes exactly one promotion to the remaining Nodes', function (): void {
     connServerPin(static function (array &$recipe): void {
         $recipe['instances']['agent']['conn-server']['release_canary'] = true;
@@ -209,7 +231,14 @@ it('resumes a pin from its durable receipts and authorizes exactly one promotion
     expect(array_column($promotion->input['intent']['nodes'], 'node_id'))->toBe([$mini->id, $nick->id])
         ->and($promotion->input['intent']['nodes'][0]['server']['notify_before_restart'])->toBeTrue()
         ->and(app(ConnServerRollout::class)->admit(false, 'fleet', canaryOperationId: $retry->id)->id)->toBe($promotion->id);
-    finishConnRollout($promotion, 'succeeded', [['node_id' => $mini->id, 'outcome' => 'updated'], ['node_id' => $nick->id, 'outcome' => 'updated']]);
+    finishConnRollout($promotion, 'failed', [
+        ['node_id' => $mini->id, 'outcome' => 'updated'],
+        ['node_id' => $nick->id, 'outcome' => 'failed', 'rolled_back' => true, 'changed' => true],
+    ]);
+    $continued = $rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $promotion->id);
+    expect(array_column($continued->input['intent']['nodes'], 'node_id'))->toBe([$nick->id])
+        ->and($rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $promotion->id)->id)->toBe($continued->id);
+    finishConnRollout($continued, 'succeeded', [['node_id' => $nick->id, 'outcome' => 'updated']]);
 
     connServerPin(static function (array &$recipe): void {
         $pin = &$recipe['instances']['agent']['conn-server'];

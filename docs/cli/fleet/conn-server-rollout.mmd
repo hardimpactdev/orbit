@@ -18,6 +18,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
+  %%> - a gated promotion requires a passing canary operation ID and a checked dry run for every remaining Node
   %%> Picks:
   %%> - scope `canary`: the canary alone; scope `fleet`: remaining records in Node order for a gated pin, otherwise canary first; scope `nodes`: the named records alone, in the request's order
   %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope
@@ -38,7 +39,7 @@ sequenceDiagram
     alt Mac: staged `codesign -dr -` differs from the installed bundle
       Note over N: Hold, install nothing<br/>held
       %%> Why:
-      %%> - a new designated requirement resets the TCC grants; a held canary stops the run, a held later Node does not
+      %%> - a new designated requirement resets the TCC grants; a hold stops a gated promotion or a canary update; earlier pins hold only the affected follower
     else dry run
       Note over N: Stop after the checks<br/>checked
     else checks pass
@@ -89,7 +90,7 @@ sequenceDiagram
   else a Node fails, or the canary holds
     SW--xGW: Run failed<br/>NODE · error_code
     %%> Result:
-    %%> - `error_code` is `conn_server.node_failed`, or `conn_server.canary_held` when the canary held
+    %%> - `error_code` is `conn_server.node_failed`, `conn_server.canary_held` for a held canary, or `conn_server.node_held` during promotion
     %%> Why stop:
     %%> - later Nodes are not visited and report `not_reached`, so one bad release reaches at most one Node
   end

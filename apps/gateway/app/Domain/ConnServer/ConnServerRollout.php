@@ -82,7 +82,7 @@ final readonly class ConnServerRollout
         }
         $rest = $servers->skip(1);
         if ($rest->isNotEmpty() && $this->receipt($key, 'preflight') === null) {
-            $this->releaseOperation($pin, $key, 'preflight', $rest, 'gateway-release');
+            $this->preflight($pin, $key, $rest, 'gateway-release');
         }
 
         return null;
@@ -141,7 +141,8 @@ final readonly class ConnServerRollout
                 throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
             }
             $pinIdentity = $this->pinIdentity($pin);
-            if (($promotion = $this->receipt($pinIdentity, 'promotion')) !== null) {
+            $promotion = $this->receipt($pinIdentity, 'promotion');
+            if ($promotion !== null && ($retryOperationId === null || ! $promotion->status->terminal() || $promotion->status === OperationStatus::Succeeded)) {
                 return $promotion;
             }
             $rest = $servers->skip(1);
@@ -149,6 +150,9 @@ final readonly class ConnServerRollout
                 throw new ResourceOperationException('conn_server.no_promotion_targets', 'There are no remaining standalone Conn Server Nodes.', 409);
             }
             $preflight = $this->receipt($key, 'preflight');
+            if (data_get($preflight?->result, 'error_code') === 'conn_server.preflight_blocked') {
+                throw new ResourceOperationException('conn_server.preflight_required', 'Review the held Nodes in the fleet dry run.', 409);
+            }
             $targets = $rest->map($this->nodeIntent(...))->values()->all();
             $results = (array) ($preflight?->result['nodes'] ?? []);
             if ($preflight?->status !== OperationStatus::Succeeded || data_get($preflight->result, 'version') !== $pin->version
@@ -159,8 +163,72 @@ final readonly class ConnServerRollout
                 throw new ResourceOperationException('conn_server.preflight_required', 'Repeat the fleet dry run until every remaining Node reports checked.', 409);
             }
 
-            return $this->releaseOperation($pin, $pinIdentity, 'promotion', $rest, $triggeredBy, $requestId, proof: $probe->id);
+            if ($retryOperationId !== null) {
+                $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
+                    ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
+                if ($retry !== null) {
+                    return $retry;
+                }
+                if ($promotion?->id !== $retryOperationId) {
+                    throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
+                }
+                $rest = $this->remainingPromotionNodes($pinIdentity, $rest);
+            }
+
+            return $this->releaseOperation($pin, $pinIdentity, 'promotion', $rest, $triggeredBy, $requestId,
+                retry: $retryOperationId, proof: $probe->id);
         });
+    }
+
+    /** @param Collection<int, ConnServerNode> $servers @return Collection<int, ConnServerNode> */
+    private function remainingPromotionNodes(string $pin, Collection $servers): Collection
+    {
+        $completed = [];
+        foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pin)
+            ->where('input->release_stage', 'promotion')->get() as $attempt) {
+            $results = (array) ($attempt->result['nodes'] ?? []);
+            if (array_column($results, 'node_id') !== array_column((array) data_get($attempt->input, 'intent.nodes', []), 'node_id')) {
+                throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
+            }
+            foreach ($results as $result) {
+                if (($result['outcome'] ?? null) === 'updated') {
+                    $completed[] = $result['node_id'];
+                }
+                if (($result['outcome'] ?? null) === 'failed' && ($result['rolled_back'] ?? false) === false
+                    && ($result['changed'] ?? true) === true) {
+                    throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm the failed Node recovered before retrying.', 409);
+                }
+            }
+        }
+
+        return $servers->whereNotIn('node_id', $completed);
+    }
+
+    /** @param Collection<int, ConnServerNode> $servers */
+    private function preflight(FolderPin $pin, string $key, Collection $servers, ?string $by, ?string $requestId = null, ?int $retry = null): Operation
+    {
+        $blockers = [];
+        foreach ($servers as $server) {
+            try {
+                $this->nodeIntent($server);
+            } catch (ResourceOperationException $problem) {
+                $blockers[$server->node_id] = $problem->errorCode;
+            }
+        }
+        if ($blockers === []) {
+            return $this->releaseOperation($pin, $key, 'preflight', $servers, $by, $requestId, $retry);
+        }
+        $identity = "conn-release:{$key}:preflight:".($retry ?? 'first');
+        $nodes = $servers->map(static fn (ConnServerNode $server): array => isset($blockers[$server->node_id])
+            ? ['node_id' => $server->node_id, 'outcome' => 'held', 'reason' => $blockers[$server->node_id]]
+            : ['node_id' => $server->node_id, 'outcome' => 'not_reached'])->values()->all();
+
+        return $this->idempotency->under(self::Kind, $identity, $identity, fn (): Operation => $this->start->record(
+            self::Kind, 'fleet', SwampNode::id(), SwampNode::id(), ['release_pin' => $key, 'release_stage' => 'preflight',
+                ...($retry === null ? [] : ['retry_operation_id' => $retry])],
+            ['version' => $pin->version, 'dry_run' => true, 'nodes' => $nodes, 'error_code' => 'conn_server.preflight_blocked'],
+            $by, $requestId, lockKey: self::Lock,
+        ));
     }
 
     private function pin(): FolderPin
@@ -208,7 +276,9 @@ final readonly class ConnServerRollout
             throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest finished check for this pin.', 409);
         }
 
-        return $this->releaseOperation($pin, $key, $stage, $servers, $by, $requestId, $retryId);
+        return $stage === 'preflight'
+            ? $this->preflight($pin, $key, $servers, $by, $requestId, $retryId)
+            : $this->releaseOperation($pin, $key, $stage, $servers, $by, $requestId, $retryId);
     }
 
     /** @param Collection<int, ConnServerNode> $servers */

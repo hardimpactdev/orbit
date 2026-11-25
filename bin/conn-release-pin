@@ -66,7 +66,7 @@ def verify_artifact(release, filename, base, folder):
     return artifact, {"url": base + filename, "sha256": digest}
 
 
-def read_contract(linux, binary_path, mac, version, sha, folder):
+def read_contract(linux, binary_path, mac, version, sha, folder, version_output):
     with zipfile.ZipFile(mac) as archive:
         info = plistlib.loads(archive.read("Conn Server.app/Contents/Info.plist"))
     if (info["CFBundleIdentifier"], info["CFBundleShortVersionString"], info["ConnServerCommit"]) != (BUNDLE, version, sha):
@@ -75,9 +75,11 @@ def read_contract(linux, binary_path, mac, version, sha, folder):
         member = archive.getmember(binary_path)
         if not member.isfile() or not member.mode & 0o111:
             raise ValueError("the pinned Linux binary is not a regular executable")
-        archive.extract(member, folder, filter="data")
-        binary = folder / binary_path
-    transcript = subprocess.check_output([binary, "--version"], text=True, timeout=20).strip()
+        if version_output is None:
+            archive.extract(member, folder, filter="data")
+    if version_output is None:
+        version_output = subprocess.check_output([folder / binary_path, "--version"], text=True, timeout=20).strip()
+    transcript = version_output
     match = re.fullmatch(r"conn-server ([\d.]+) \(T3 server ([\d.]+) contract, contract digest ([a-f0-9]+)\)", transcript)
     if match is None or match[1] != version:
         raise ValueError("unexpected Conn Server version output")
@@ -104,8 +106,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
     parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--pr-body", required=True, type=Path)
+    parser.add_argument("--pr-body", type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--print-contract", action="store_true")
+    mode.add_argument("--version-output")
     args = parser.parse_args()
+    if not args.print_contract and args.pr_body is None:
+        parser.error("proposing a pin requires --pr-body")
     version = args.version
     version_tuple(version)
     tag = f"conn-server-v{version}"
@@ -128,7 +135,11 @@ def main():
         folder = Path(directory)
         linux, linux_pin = verify_artifact(release, f"conn-server-{version}-linux-x64.tar.gz", base, folder)
         mac, mac_pin = verify_artifact(release, f"conn-server-{version}-macos-arm64.zip", base, folder)
-        contract = read_contract(linux, binary_path, mac, version, args.source_sha, folder)
+        contract = read_contract(linux, binary_path, mac, version, args.source_sha, folder, args.version_output)
+
+    if args.print_contract:
+        print(contract["version_output"])
+        return
 
     if version == pin["version"]:
         if (pin["artifacts"]["amd64"] != linux_pin

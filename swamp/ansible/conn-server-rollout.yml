@@ -110,7 +110,8 @@
               {{ {'node_id': node_id | int, 'outcome': 'failed',
                   'reason': ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
                             else 'conn_server.step_failed',
-                  'rolled_back': rolled_back | default(false)} }}
+                  'rolled_back': rolled_back | default(false)} | combine(
+                  {'changed': conn_write_started | default(false)} if intent.stop_on_hold | default(false) else {}) }}
 
     - name: Write the Node's result
       delegate_to: localhost
