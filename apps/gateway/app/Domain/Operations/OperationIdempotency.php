@@ -7,10 +7,13 @@ namespace App\Domain\Operations;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Facades\DB;
 
 /** Request-scoped start identity, shared by the HTTP boundary and the operation store. */
 final class OperationIdempotency
 {
+    private const string Aliases = 'operation_idempotency_aliases';
+
     public ?string $kind = null;
 
     public ?string $key = null;
@@ -70,6 +73,18 @@ final class OperationIdempotency
         }
     }
 
+    /** Binds a caller's key to the returned receipt inside the same admission transaction. */
+    public function bind(Operation $operation): Operation
+    {
+        if ($this->kind === $operation->kind && $this->key !== null && $this->key !== $operation->idempotency_key) {
+            DB::table(self::Aliases)->insert([
+                'kind' => $this->kind, 'key' => $this->key, 'fingerprint' => $this->fingerprint, 'operation_id' => $operation->id,
+            ]);
+        }
+
+        return $operation;
+    }
+
     /**
      * Returns the recorded intent without resubmitting its native workflow.
      *
@@ -82,10 +97,18 @@ final class OperationIdempotency
         }
 
         $operation = Operation::query()->where('kind', $kind)->where('idempotency_key', $this->key)->first();
+        $fingerprint = $operation?->idempotency_fingerprint;
+        if ($operation === null) {
+            $alias = DB::table(self::Aliases)->where('kind', $kind)->where('key', $this->key)->first();
+            if ($alias !== null) {
+                $operation = Operation::query()->whereKey($alias->operation_id)->firstOrFail();
+                $fingerprint = $alias->fingerprint;
+            }
+        }
 
         $parent ??= $this->parent($kind);
         $owner = $operation->parent_operation_id ?? $operation->state['conn_launch_owner'] ?? $operation->input['launch_operation_id'] ?? $operation->input['proof_operation_id'] ?? null;
-        if ($operation !== null && ($operation->idempotency_fingerprint !== $this->fingerprint || ($parent !== null && $owner !== $parent->id))) {
+        if ($operation !== null && ($fingerprint !== $this->fingerprint || ($parent !== null && $owner !== $parent->id))) {
             throw new ResourceOperationException(
                 'operation.idempotency_conflict',
                 'This operation kind already has the Idempotency-Key with another target or input.',

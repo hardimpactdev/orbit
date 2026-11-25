@@ -20,7 +20,7 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 13220 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 13620 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 
@@ -78,7 +78,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
         return task.timeout;
     };
     // The checks (the download and the rest), then the swap's other task timeouts and two starts: the new server's and the rollback's.
-    const worst = Math.max(download("conn-server-mac.yml", "Download the zip") + macChecks + macSwap + 2 * macStart,
+    const worst = Math.max(download("conn-server-mac.yml", "Download the zip") + macChecks + macSwap + mac("Verify the client can read the canary thread") + 2 * macStart,
         download("conn-server-linux.yml", "Download the tarball") + 200 + 220 + 2 * linuxStart);
     // node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     assert(node_seconds >= worst + 160, `${node_seconds} < ${worst} + 160`);
@@ -138,6 +138,14 @@ exit 0`,
 for a; do case "$a" in UserKnownHostsFile=*) known=\${a#UserKnownHostsFile=} ;; esac; done
 eval "host=\\\${$(($# - 1))}" && eval "command=\\\${$#}"
 grep -q "^$host " "$known" 2>/dev/null || { echo "Host key verification failed." >&2; exit 255; }
+if [ -f "$FIXTURE/drop-swap-ssh" ] && { [ ! -e "$FIXTURE_APP" ] || [ "$(cat "$FIXTURE_LINUX/current/version" 2>/dev/null)" = 0.5.0 ]; }; then
+  rm "$FIXTURE/drop-swap-ssh"
+  echo "Connection reset by peer" >&2
+  exit 255
+fi
+case "$command" in *python3*conn-server-probe.py*)
+  if [ -f "$FIXTURE/drop-probe-ssh" ]; then rm "$FIXTURE/drop-probe-ssh"; echo "Connection reset by peer" >&2; exit 255; fi ;;
+esac
 case "$command" in *python*) n=$(cat "$FIXTURE/slow-starts" 2>/dev/null || echo 0)
   if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$FIXTURE/slow-starts"; sleep 15; fi ;; esac
 exec /bin/sh -c "$command"`,
@@ -151,7 +159,7 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean; service?: string };
-type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
+type Options = { nodes: Server[]; probe?: "read" | "wrong"; dropProbeSsh?: boolean; dropSwapSsh?: boolean; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
     // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
     args?: string; listen?: string;
     // `down` starts with the running server answering 503 and no version.
@@ -193,6 +201,13 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${build}/Info.plist`, "<plist/>");
         Deno.writeTextFileSync(`${build}/version`, "0.5.0");
         Deno.writeTextFileSync(`${build}/sig`, `${options.valid === false ? "invalid" : "valid"} ${options.team ?? "9SVJ4SYB9B"} com.nckrtl.conn-server ${options.dr ?? "anchor-team-9SVJ4SYB9B"}\n`);
+        if (options.dropSwapSsh) Deno.writeTextFileSync(folder + "/drop-swap-ssh", "1");
+        if (options.dropProbeSsh) Deno.writeTextFileSync(folder + "/drop-probe-ssh", "1");
+        if (options.probe) {
+            Deno.mkdirSync(build + "/MacOS");
+            Deno.writeTextFileSync(build + "/MacOS/conn-server", `#!/bin/sh\nprintf '%s\\n' '{"thread":{"threadId":"${options.probe === "read" ? "canary" : "wrong"}"}}'\n`);
+            Deno.chmodSync(build + "/MacOS/conn-server", 0o755);
+        }
         new Deno.Command("tar", { args: ["-cf", `${folder}/conn-server.zip`, "-C", `${folder}/build`, "Conn Server.app"] }).outputSync();
         Deno.writeTextFileSync(`${folder}/${old}/version`, "0.4.2");
         Deno.symlinkSync(`${folder}/${old}`, `${folder}/linux/current`);
@@ -227,8 +242,13 @@ async function rollout(options: Options) {
             return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: options.name ?? "conn-server", version: running });
         });
         const port = server.addr.port;
+        if (options.probe) {
+            Deno.mkdirSync(folder + "/home/.config/orbit", { recursive: true });
+            Deno.writeTextFileSync(folder + "/home/.config/orbit/conn-canary.json", JSON.stringify({ state_dir: folder, thread_id: "canary" }));
+            Deno.writeTextFileSync(folder + "/server-runtime.json", JSON.stringify({ origin: "http://127.0.0.1:" + port }));
+        }
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
-            version: "0.5.0", dry_run: options.dryRun ?? false,
+            version: "0.5.0", probe_thread: Boolean(options.probe), dry_run: options.dryRun ?? false,
             mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
             linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
             notice: options.noticeCommand ? { url: null, command: options.noticeCommand }
@@ -582,5 +602,36 @@ test("an existing release folder fails with backup_exists, and a releases folder
         assert(!run.ok, run.output);
         assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason, rolled_back: false }]);
         assertEquals([run.linux, run.running, run.releases], ["0.4.2", "0.4.2", left]);
+    }
+});
+
+test("the release canary reads its thread before keeping the update and rolls back a wrong thread", async () => {
+    const nodes: Server[] = [{ platform: "mac", canary: true }];
+    const accepted = await rollout({ nodes, probe: "read" });
+    assert(accepted.ok, accepted.output);
+    assertEquals(accepted.result.nodes[0].thread_read, true);
+    const rejected = await rollout({ nodes, probe: "wrong" });
+    assert(!rejected.ok, rejected.output);
+    assertEquals([rejected.result.nodes[0].rolled_back, rejected.running], [true, "0.4.2"]);
+});
+
+test("an SSH reset during the canary thread read rolls back the updated Mac", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }], probe: "read", dropProbeSsh: true, ssh: true });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes[0].reason, "conn_server.canary_thread_unreadable");
+    assertEquals(run.result.nodes[0].rolled_back, true);
+    assertEquals(run.running, "0.4.2");
+});
+
+
+test("an SSH reset during the Mac swap or Linux restart restores the original server", async () => {
+    for (const platform of ["mac", "linux"] as const) {
+        const run = await rollout({ nodes: [{ platform, canary: true }, { platform }], dropSwapSsh: true, ssh: true });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes[0].reason, "conn_server.transport_lost");
+        assertEquals(run.result.nodes[0].rolled_back, true);
+        assertEquals(run.result.nodes[1].outcome, "not_reached");
+        assertEquals(platform === "mac" ? run.installed : run.linux, "0.4.2");
+        assertEquals(run.running, "0.4.2");
     }
 });

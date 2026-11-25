@@ -25,7 +25,9 @@ it('parses one recipe text once in a process and gives every reader the same val
 });
 
 it('reads a changed recipe text as its own recipe', function (): void {
-    $shipped = new RecipeLoader()->decode(shippedRecipeText());
+    // Whitespace gives this test its own cache entry, even after other tests have loaded the shipped bytes.
+    $original = shippedRecipeText()."\n ";
+    $shipped = new RecipeLoader()->decode($original);
     $changed = new RecipeLoader()->decode(shippedRecipeText(static function (array &$document): void {
         $document['git']['usn_since'] = '2001-02-03';
     }));
@@ -33,7 +35,7 @@ it('reads a changed recipe text as its own recipe', function (): void {
     expect($changed)->not->toBe($shipped)
         ->and($changed->json)->toContain('2001-02-03')
         ->and($shipped->json)->not->toContain('2001-02-03')
-        ->and(new RecipeLoader()->decode(shippedRecipeText()))->toBe($shipped);
+        ->and(new RecipeLoader()->decode($original))->toBe($shipped);
 });
 
 it('refuses a bad recipe text on every read', function (): void {

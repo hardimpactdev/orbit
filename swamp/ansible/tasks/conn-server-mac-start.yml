@@ -13,6 +13,13 @@
   ansible.builtin.command: { argv: [launchctl, kickstart, -k, "{{ mac_target }}"] }
   changed_when: true
   timeout: 60
+  register: conn_transport_step
+  ignore_unreachable: true
+
+- name: Check transport after kickstart the launchagent in the gui domain
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ conn_transport_step }}"
 
 # One round reads a pending prompt and /health; the rounds end once the server answers, a prompt was not ours, or health_seconds
 # have passed. A round takes at most 240 s (its four 60 s task timeouts, the delay's wait among them), so the wait ends within

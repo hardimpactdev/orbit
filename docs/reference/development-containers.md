@@ -205,7 +205,7 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). The launch check uses the contract version reported by that release. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
@@ -234,13 +234,29 @@ The recipe loader accepts `macos_arm64` on agent folder parts only and requires 
 
 #### Conn Server rollout
 
-`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"|"nodes", "node_ids": [...]}`; `dry_run` and `scope` are required, and `node_ids` comes with scope `nodes` alone) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server. Nothing starts the rollout from a pin change.
+`POST /api/v1/fleet/conn-server/rollout` (body `{"dry_run": true|false, "scope": "canary"|"fleet"|"nodes", "node_ids": [...]}`; `dry_run` and `scope` are required, and `node_ids` comes with scope `nodes` alone) starts `fleet.conn_server_rollout`: Swamp workflow `operation-fleet-conn-server-rollout` rolls the current pin out to the Nodes that run a Conn Server outside containers. Container Conn Servers are out of scope; their image pins the server.
+
+The Conn release workflow checks the tagged commit, verifies both published files against their SHA-256 manifests and GitHub digests, and generates the Orbit recipe, launch transcript and convergence fixture. The job that executes the binary supplies the version line and Linux checksum to the App writer. It opens one PR per tag for the existing merge queue. A repeat verifies the same published files. Orbit rejects an older version or different bytes under an existing version.
+
+A generated pin sets `release_canary: true`. Once the Gateway serves that recipe, the release fleet pass starts with a dry run on `nick-vm`, the registered standalone canary. It then updates just that Node and reads a known thread through the authenticated local CLI. The Operation records the exact artifacts, Node, version and outcome. A failure holds convergence and, after the swap, restores and checks the previous version. After both canary stages pass, a fleet dry run reports the remaining standalone Nodes' checks.
+
+A missing, unreadable, or invalid serving recipe fails the release fleet phase with `conn_server.recipe_unavailable`. When a valid recipe requires no canary, ordinary fleet convergence proceeds.
+
+Keep a persistent test thread on the canary. As its Conn Server user, put the thread ID and the absolute directory containing `server-runtime.json` in `~/.config/orbit/conn-canary.json`, for example `{"thread_id":"<thread UUID>","state_dir":"/Users/nckrtl/.conn/userdata"}`. The probe reads the serving loopback address and compares the authenticated response's thread ID. Its result omits the thread contents. To retry a failed canary stage, submit `{"scope":"canary","dry_run":false,"retry_operation_id":<failed operation id>}`. To rerun the remaining Nodes' dry run, send `scope: fleet` with `dry_run: true` and the previous dry run's ID in `retry_operation_id`.
+
+Replaying an `Idempotency-Key` with the same input returns the first Operation, even after a canary dry run passes. Use a new key for a new stage or an explicit retry. Reusing the same key with different input returns `409 operation.idempotency_conflict`.
+
+Promote the serving pin with `{"scope":"fleet","dry_run":false,"canary_operation_id":<successful canary operation id>}`. The remaining Nodes must all report `checked` in the fleet dry run. Orbit visits them serially and returns the same promotion receipt on replay. A newer pin requires its own successful canary read.
+
+A failed promotion reports the held or unreached Nodes. Send its ID as `retry_operation_id` with the same canary receipt to continue. The retry skips installations already recorded as updated, matched by Node, platform, service, and path. Changing notification or SSH settings does not make an updated installation eligible again. Orbit holds a retry when Node results are incomplete or a changed Node failed to roll back. Inspect those Nodes before a manual repair.
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health`), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`.
 
-Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. Scope `nodes` reaches the Nodes that `node_ids` names, one to four, in the request's order; it adds no canary and puts none first. An id without a record, a repeated id, or `node_ids` with another scope is refused with a validation error. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
+Scope `canary` reaches the canary alone. Scope `fleet` visits the other standalone Nodes for a canary-gated pin. On earlier pins it visits the canary first and then the rest. Scope `nodes` reaches one to four IDs in the request's order. For a canary-gated pin, scope `nodes` can check Nodes. An unknown or repeated ID fails validation. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
 
-The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 13,220 s, covers at most four Nodes of 3,280 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A dry run reports each Node even when an earlier check fails. During an update a failure stops the run. A held canary or a hold during promotion also stops it. Later Nodes report `not_reached`.
+
+The phase's deadline, 13,620 s, covers at most four Nodes of 3,380 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
 
 On a Mac, before staging any files, Orbit runs `launchctl print gui/<uid>/<label>` for the configured LaunchAgent. A missing job fails the Node with `conn_server.service_not_loaded` in both dry runs and rollouts. Orbit keeps the command output out of the logs because it can contain the job's environment.
 
@@ -262,7 +278,7 @@ Then the swap and the restart. The phase:
 11. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
 12. waits up to about 3 minutes for a valid `/health` response with the pin's exact version. No round starts after 180 s.
 
-From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
+From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed, timed out or lost SSH also starts rollback. The Node stays held when Orbit cannot reconnect and verify recovery. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed.
 
