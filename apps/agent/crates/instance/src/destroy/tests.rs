@@ -244,7 +244,7 @@ fn destroy_leaves_markers_until_the_legacy_helper_reports_discarded() {
 
     assert_eq!(
         destroy(&fixture, "12", &input()).expect_err("no terminal discard").code,
-        FAILED
+        "instance.power_discard_failed"
     );
     assert!(marker.is_file());
     fixture.checked();

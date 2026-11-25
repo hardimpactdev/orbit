@@ -361,11 +361,11 @@ fn discard_legacy(system: &impl System, id: &str) -> Result<(), Failure> {
             Ok(text) if serde_json::from_str::<Value>(&text).is_ok_and(|receipt| receipt["outcome"] == "discarded") => {
                 return Ok(())
             }
-            Ok(_) => return Err(Failure::new(FAILED, "legacy discard did not report a terminal result")),
+            Ok(_) => return Err(Failure::new("instance.power_discard_failed", "legacy discard did not report a terminal result")),
             Err(error) if attempt < 39 && error.detail.contains("already loaded or has a fragment file") => {
                 thread::sleep(Duration::from_millis(250));
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(Failure::new("instance.power_discard_failed", error.detail)),
         }
     }
     unreachable!("the last attempt returns")
@@ -374,5 +374,5 @@ fn discard_legacy(system: &impl System, id: &str) -> Result<(), Failure> {
 fn command(system: &impl System, seconds: u32, args: &[&str]) -> Result<String, Failure> {
     system
         .run(seconds, &args.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None)
-        .map_err(|detail| Failure::new(FAILED, detail))
+        .map_err(|detail| Failure::new(FAILED, format!("{}: {detail}", args.join(" "))))
 }

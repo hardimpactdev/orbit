@@ -112,7 +112,7 @@ The observer tails Instance, Process, or Schedule logs only while an active [liv
 
 The observer fetches `GET /api/v1/agent/log-streams` (up to 16 active streams) on channel join, on `log-streams.changed`, and every 15 seconds while streaming. If the list cannot be fetched for 60 seconds, all active streams end with `list_unavailable`.
 
-Supported sources are `laravel` (`storage/logs/laravel*.log`, rejecting symlinks and root-owned files), `journal` (`journalctl --unit <unit> --output short-iso --utc` for `orbit-process-*` and `orbit-schedule-*` units), and `docker` (containers matching `orbit-process-{id}-{name}` with `orbit.managed=true`). Lines are redacted with the Gateway's secret patterns before transmission and bounded to 8 KiB per line, 256 KiB initial batch, 32 KiB/s per stream, and 256 KiB/s per agent.
+Supported sources are `laravel` (`storage/logs/laravel*.log`, rejecting symlinks and root-owned files), `journal` (`journalctl --unit <unit> --output short-iso --utc` for `orbit-process-*` and `orbit-schedule-*` units), and `docker` (containers matching `orbit-process-{id}-{name}` with `orbit.managed=true`). Lines are redacted with the Gateway's secret patterns before transmission and bounded to 8 KiB per line, 256 KiB initial batch, 32 KiB/s per stream, and 256 KiB/s per agent. The same Node redactor also sanitizes signed removal diagnostics before the executor journals them.
 
 ## Commands
 

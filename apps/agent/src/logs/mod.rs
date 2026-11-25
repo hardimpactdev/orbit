@@ -7,7 +7,7 @@ pub mod events;
 pub mod journalctl;
 pub mod laravel;
 pub mod limits;
-pub mod redact;
+pub use orbit_agent_contract::redact;
 
 use serde_json::Value;
 use std::collections::BTreeSet;

@@ -126,12 +126,15 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
     public function applyEngine(Operation $operation, EngineRun $run): void
     {
         $this->direct->assertRun($operation, $run->runId());
-        $failure = $run->failed()?->error_code;
+        $step = $run->failed();
+        $failure = $step?->error_code;
+        $detail = $step?->error_detail;
         $removed = $run->succeeded();
         $label = $failure === 'instance.removal_stop_failed' ? 'Stop the container' : 'Delete the container';
         $code = $failure === null ? null : (in_array($failure, self::PhaseCodes, true) ? $failure : 'instance.removal_incomplete');
         $data = [...$run->times(), 'status' => $removed ? 'succeeded' : ($failure === null ? 'cancelled' : 'failed'), 'error_code' => $code,
-            ...($failure === null ? [] : ['failure' => ['failed_step' => $label, 'stderr_recorded' => false]])];
+            ...($failure === null ? [] : ['failure' => ['failed_step' => $label,
+                'detail' => $detail ?? 'The Node refused or could not complete the signed removal.', 'stderr_recorded' => $detail !== null]])];
         $result = match (true) {
             $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])],
             $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code],

@@ -79,7 +79,11 @@ The engine accepts `--force` for one container clone in development. The clone c
 
 The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
 
-A missing start or receipt leaves the Instance fenced. The Gateway resends the same step with a fresh nonce and accepts the Node's stored result after a restart. A cancellation, expiry, or order refusal does not release the lock after dispatch: none proves that the first order stopped. A terminal failure leaves the same removal intent for the existing retry rules.
+Preparing an order or scheduling its deadline does not publish it. The removal can still be cancelled at that point. Just before publishing, the Gateway records the first order's signed expiry under the same Operation lock used by cancellation. From then on, a lost acknowledgement, cancellation, expiry, or order refusal cannot release the Instance lock: none proves that the Node did not act.
+
+The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
+
+A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`.
 
 ### instance.fleet
 
@@ -119,7 +123,7 @@ The engine mirrors step state into `state.native_progress` so `operation:show` m
 
 Each step is one signed order with `operation` set to `<id>:<step>` and `target` set to the resource being mutated. For `ufw.ensure_rule`, the target is the Node, serializing firewall writes per Node.
 
-Engine orders expire 8 seconds after signing, and the executor refuses expiries more than 10 seconds ahead. A `refused` receipt with `expired` or a `failed` receipt with `executor.order_expired` resets the step to pending for resend. A `replayed_nonce` receipt applies the original result when present.
+Engine orders expire 8 seconds after signing, and the executor refuses expiries more than 10 seconds ahead. A `refused` receipt with `expired` or a `failed` receipt with `executor.order_expired` resets the step to pending for resend. Signed removal instead keeps its publication fence and the scheduled retry. A `replayed_nonce` receipt applies the original result when present.
 
 The engine reads the Node ID from the receipt subject (`orbit.receipts.<node>`), never from the payload, and terminates unreadable receipts. A receipt's `output` field carries public text needed by later steps, such as a CSR. Its `applied` count reports changes made: for firewall kinds, zero changes records a skip with `firewall.rule_absent` for `firewall.remove` and `firewall.rule_exists` for allow or deny.
 

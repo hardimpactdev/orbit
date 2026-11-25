@@ -142,7 +142,9 @@ The executor appends JSON records to `/var/lib/orbit/executor/journal`: `seen` o
 
 At startup, the executor creates the `journal.accepts` marker, marks any `seen`-without-`open` order as `executor.order_expired`, and replays any `open`-without-`done` order under its target lock before accepting new work on that target.
 
-For `instance.destroy`, an order that expires before taking the target lock never settles the step. A fresh nonce can still perform the removal. A terminal receipt is sent only after the executor appends its `done` record. After a lost receipt, a fresh order for the same step returns the stored result without repeating the deletion.
+For `instance.destroy`, an order that expires before taking the target lock never settles the step. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
+
+A signed removal failure can include `detail`, a redacted diagnostic of at most 4 KiB. The executor keeps it with the result so a repeat or a restart does not discard the diagnostic. The Gateway redacts it again against the Instance's stored environment values before recording it for operators.
 
 ## The listener and the hand-off
 

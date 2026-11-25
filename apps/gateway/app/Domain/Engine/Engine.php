@@ -7,12 +7,15 @@ namespace App\Domain\Engine;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
 use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -94,7 +97,7 @@ final readonly class Engine
             if ($step === null || $step->node_id !== $node) {
                 return; // A receipt from another Node is not this step's.
             }
-            self::record($step, $line, self::requiresReceipt($operation));
+            self::record($step, $line, self::requiresReceipt($operation) ? $operation : null);
         });
         $this->advance($operationId);
     }
@@ -159,8 +162,11 @@ final readonly class Engine
      *
      * @param  array<string, mixed>  $line
      */
-    private static function record(OperationEngineStep $step, array $line, bool $receiptBound = false): void
+    private static function record(OperationEngineStep $step, array $line, ?Operation $receiptBound = null): void
     {
+        if ($receiptBound !== null && ($step->first_order_expires_ms === null || ($line['operation'] ?? null) !== $receiptBound->id.':'.$step->name)) {
+            return;
+        }
         if (in_array($step->status, ['done', 'failed'], true)) {
             $step->update(['late' => $step->late + 1]);
 
@@ -174,7 +180,7 @@ final readonly class Engine
 
             return;
         }
-        if ($receiptBound && ($step->first_sent_ms === null || ! in_array($status, ['done', 'failed'], true)
+        if ($receiptBound !== null && (! in_array($status, ['done', 'failed'], true)
             || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
             || ($line['code'] ?? null) === 'executor.order_expired')) {
             return;
@@ -193,7 +199,9 @@ final readonly class Engine
             $status === 'refused' && $reason === 'expired',
             $status === 'failed' && ($line['code'] ?? null) === 'executor.order_expired' => $step->update(['status' => 'pending']),
             in_array($status, ['failed', 'partial', 'refused'], true) => $step->update(['status' => 'failed', 'done_ms' => self::nowMs(),
-                'error_code' => mb_strcut(self::text($line['code'] ?? null) ?: ($reason ?: 'executor.failed'), 0, 128)]),
+                'error_code' => mb_strcut(self::text($line['code'] ?? null) ?: ($reason ?: 'executor.failed'), 0, 128),
+                ...($receiptBound !== null && is_string($line['detail'] ?? null) && $line['detail'] !== ''
+                    ? ['error_detail' => app(NativeStepFailure::class)->written($step->name, $line['detail'], $receiptBound)['detail']] : [])]),
             default => null,
         };
     }
@@ -222,7 +230,7 @@ final readonly class Engine
             $steps = self::steps($operationId, lock: true);
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
-            $mayCancel = ! $receiptBound || ! array_any($steps, static fn (OperationEngineStep $step): bool => $step->first_sent_ms !== null);
+            $mayCancel = ! $receiptBound || ! array_any($steps, static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null);
             $cancel = $operation->cancel_requested_at !== null && $mayCancel;
             foreach ($steps as $step) {
                 if (! $receiptBound && $step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
@@ -245,9 +253,14 @@ final readonly class Engine
                 if (! $ready && ! $overdue) {
                     continue;
                 }
+                if ($receiptBound && ! self::withinReplayWindow($step, $now + ExecutorOrderSigner::StepExpiresAfterMs)) {
+                    $step->update(['resend_at_ms' => null]);
+
+                    continue;
+                }
                 $step->update(['status' => 'sent', 'sends' => $step->sends + 1, 'first_sent_ms' => $step->first_sent_ms ?? $now,
                     'resend_at_ms' => $now + $step->resend_ms]);
-                $step->node_id === 0 ? $locals[] = $step->name : $sends[] = $step->name;
+                $step->node_id === 0 ? $locals[] = $step->name : $sends[$step->name] = $step->sends;
             }
             $rescued = array_all(array_filter($steps, static fn (OperationEngineStep $step): bool => $step->on_failure),
                 static fn (OperationEngineStep $step): bool => in_array($step->status, ['done', 'failed', 'skipped'], true));
@@ -265,7 +278,7 @@ final readonly class Engine
                 $sends = $locals = [];
             }
             $state['native_progress'] = self::progress($operationId, $steps);
-            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (end($sends) ?: (end($locals) ?: $operation->current_step)) : null]);
+            $this->operations->change($operation, ['state' => $state, 'current_step' => $end === null ? (array_key_last($sends) ?? (end($locals) ?: $operation->current_step)) : null]);
 
             return $operation;
         });
@@ -288,23 +301,33 @@ final readonly class Engine
 
     /**
      * Schedules each step's deadline, then publishes its order. A step whose order cannot be made, such as an input the kind
-     * cannot build or an order over 4 KB, fails at once: sending it again would fail the same way. A publish that failed puts
-     * its step back to pending and throws, so the consumer negatively acknowledges the event and JetStream delivers it again.
-     * The deadline goes first, so a crash before the publish still brings the step back.
+     * cannot build or an order over 4 KB, normally fails at once. Other send failures return that step to pending and throw,
+     * so JetStream delivers the event again. A receipt-bound send instead keeps its reserved deadline and lets it or the
+     * reconciler drive the next transition. Sending the deadline first covers a crash before order publication.
      *
-     * @param  list<string>  $names
+     * @param  array<string, int>  $attempts
      * @return bool Whether a step failed, so the Operation must advance to its end.
      */
-    private function send(Operation $operation, EngineDefinition $definition, array $names): bool
+    private function send(Operation $operation, EngineDefinition $definition, array $attempts): bool
     {
-        if ($names === []) {
+        if ($attempts === []) {
             return false;
         }
         $run = $this->run($operation->id);
+        if (self::requiresReceipt($operation)) {
+            foreach ($attempts as $name => $attempt) {
+                $step = $run->steps[$name];
+                if ($step->status === 'sent' && $step->sends === $attempt) {
+                    $this->sendFencedOrder($operation, $definition, $step, $run);
+                }
+            }
+
+            return false;
+        }
         $signer = ExecutorOrderSigner::fromConfig();
         $invalid = [];
         $unsent = [];
-        foreach ($names as $name) {
+        foreach (array_keys($attempts) as $name) {
             $step = $run->steps[$name];
             try {
                 $input = $definition->input($operation, $name, $run);
@@ -340,7 +363,6 @@ final readonly class Engine
             }
         }
         $failed = $invalid !== [] && OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $invalid)->where('status', 'sent')
-            ->when(self::requiresReceipt($operation), static fn ($query) => $query->where('sends', 1))
             ->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.order_invalid']) > 0;
         if ($unsent !== []) {
             OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $unsent)->where('status', 'sent')
@@ -349,6 +371,49 @@ final readonly class Engine
         }
 
         return $failed;
+    }
+
+    private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): void
+    {
+        try {
+            $input = $definition->input($operation, $step->name, $run);
+            $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
+            $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
+            if ($this->claimPublication($step, $order->expiresMs)) {
+                $this->bus->publishOrder($step->node_id, $order);
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Could not send the signed removal order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+        }
+    }
+
+    /** Commits the earliest possible publication under the same lock as cancellation and receipts. */
+    private function claimPublication(OperationEngineStep $attempt, int $expiryMs): bool
+    {
+        return DB::transaction(function () use ($attempt, $expiryMs): bool {
+            $operation = Operation::query()->lockForUpdate()->findOrFail($attempt->operation_id);
+            $step = OperationEngineStep::query()->lockForUpdate()->findOrFail($attempt->id);
+            if (! self::requiresReceipt($operation) || $operation->status->terminal()
+                || (ValidatedData::object($operation->state['engine'] ?? [])['finished_ms'] ?? null) !== null
+                || $operation->lock_key !== OperationStore::lockKey($operation->target_type, $operation->target_id)
+                || $step->status !== 'sent' || $step->sends !== $attempt->sends || $step->resend_at_ms === null || self::nowMs() >= $expiryMs
+                || ($step->first_order_expires_ms === null && $operation->cancel_requested_at !== null)
+                || ! self::withinReplayWindow($step, $expiryMs)) {
+                return false;
+            }
+            if ($step->first_order_expires_ms === null) {
+                $step->update(['first_order_expires_ms' => $expiryMs]);
+            }
+
+            return true;
+        });
+    }
+
+    /** The earliest Node acceptance is the first expiry minus its allowed lookahead. A repeat must expire before that result can be pruned. */
+    private static function withinReplayWindow(OperationEngineStep $step, int $expiryMs): bool
+    {
+        return $step->first_order_expires_ms === null
+            || $expiryMs <= $step->first_order_expires_ms - ExecutorOrderSigner::MaxExpiryAheadMs + ExecutorJournalLookup::RetentionMs;
     }
 
     /** Runs one Gateway step outside any transaction, records its result like a receipt, and advances. */

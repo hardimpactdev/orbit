@@ -24,6 +24,8 @@ Operations execute on one of four backends depending on kind and configuration:
 
 When any Operation (including `instance.deploy`, `instance.start`, and Swamp recovery sleep/wake runs) ends `interrupted` with `executor.result_unknown` under a signed-order fence, the reconcile pass re-reads the Node's executor journal (least-recently-read first, up to 50 per pass). A recorded result or late receipt frees the lock once the Swamp run's native terminal is recorded. An absent record frees the lock only when the Gateway recorded signing time and expiry, its clock is 1 minute past expiry, and the journal proves coverage from 1 minute before signing. The Operation keeps `interrupted`, `executor.result_unknown`, and `finished_at`, recording what settled the fence under `executor_fence_settled`.
 
+Signed `instance.destroy` uses its own engine step fence. Its first potentially published order establishes the replay limit. A removal with no terminal receipt remains running and locked, even after the [Gateway stops sending orders](/reference/gateway-engine#instancedestroy). A failed receipt records its redacted diagnostic on the step and in the Operation's error.
+
 Container Process journal tails and unit state reads create no Operation; they use the narrow [direct transport exception](/reference/node-agent#commands). Automatic production deploy Activity entries and alerts also record without an Operation.
 
 ## Instance failure alerts

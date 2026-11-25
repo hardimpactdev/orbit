@@ -25,16 +25,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $budget_ms
  * @property int $resend_ms
  * @property int|null $first_sent_ms
+ * @property int|null $first_order_expires_ms expiry of the first order that may have been published
  * @property int|null $resend_at_ms
  * @property int|null $done_ms
  * @property string|null $output
  * @property string|null $error_code
+ * @property string|null $error_detail redacted public failure diagnostic
  * @property int $late
  */
 final class OperationEngineStep extends Model
 {
     protected $fillable = ['operation_id', 'name', 'node_id', 'action', 'target', 'after', 'on_failure', 'optional', 'status', 'sends', 'budget_ms', 'resend_ms',
-        'first_sent_ms', 'resend_at_ms', 'done_ms', 'output', 'error_code', 'late'];
+        'first_sent_ms', 'first_order_expires_ms', 'resend_at_ms', 'done_ms', 'output', 'error_code', 'error_detail', 'late'];
 
     /** @return BelongsTo<Operation, $this> */
     public function operation(): BelongsTo
@@ -45,6 +47,6 @@ final class OperationEngineStep extends Model
     protected function casts(): array
     {
         return ['after' => 'array', 'on_failure' => 'boolean', 'optional' => 'boolean', 'node_id' => 'integer', 'sends' => 'integer', 'budget_ms' => 'integer', 'resend_ms' => 'integer',
-            'first_sent_ms' => 'integer', 'resend_at_ms' => 'integer', 'done_ms' => 'integer', 'late' => 'integer'];
+            'first_sent_ms' => 'integer', 'first_order_expires_ms' => 'integer', 'resend_at_ms' => 'integer', 'done_ms' => 'integer', 'late' => 'integer'];
     }
 }

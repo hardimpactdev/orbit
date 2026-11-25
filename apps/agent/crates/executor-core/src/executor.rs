@@ -190,9 +190,7 @@ impl<R: Run> Executor<R> {
     ) -> Result<(Self, Pending), JournalError> {
         let mut live = Live::from_records(journal::read(path)?);
         let now_ms = clock();
-        let expired = Outcome::Failed {
-            code: ORDER_EXPIRED.to_owned(),
-        };
+        let expired = Outcome::failed(ORDER_EXPIRED);
         for (nonce, key) in live.abandoned() {
             live.apply(&Record::Done {
                 nonce,
@@ -358,9 +356,7 @@ impl<R: Run> Executor<R> {
         }
         let now_ms = (self.clock)().max(now_ms);
         if now_ms >= order.expires_ms() {
-            let outcome = Outcome::Failed {
-                code: ORDER_EXPIRED.to_owned(),
-            };
+            let outcome = Outcome::failed(ORDER_EXPIRED);
             let _ = self.finish(order.nonce(), &key, &outcome, now_ms);
             return Ok(reply(&key, outcome, Source::Ran));
         }
@@ -484,17 +480,31 @@ mod tests {
     const N3: &str = "00000000000000000000000000000003";
 
     fn destroy_order(nonce: &str) -> VerifiedOrder {
+        destroy_order_at(nonce, NOW, NOW + 5000)
+    }
+
+    fn destroy_order_at(nonce: &str, now: u64, expiry: u64) -> VerifiedOrder {
         let mut fields = payload();
         fields["action"] = "instance.destroy".into();
         fields["target"] = "12".into();
         fields["operation"] = "42:remove".into();
         fields["nonce"] = nonce.into();
+        fields["expires_ms"] = expiry.into();
         fields["input"] = serde_json::json!({"project":"orbit-instances-nested","name":"instance-12","pool":"orbit-instances","acl":"instance-12","inner_volume":"inner-12"});
         let keys = pinned(1);
         let enabled = Enabled::parse("instance").expect("valid");
         let node = "7".parse().expect("id");
-        crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW,
-            |action, target| action == Action::InstanceDestroy && target.as_str() == "12").expect("valid destroy")
+        crate::order::check_with_target(
+            &sign(1, &fields),
+            &Checks {
+                keys: &keys,
+                enabled: &enabled,
+                node: &node,
+            },
+            now,
+            |action, target| action == Action::InstanceDestroy && target.as_str() == "12",
+        )
+        .expect("valid destroy")
     }
 
     #[test]
@@ -505,7 +515,7 @@ mod tests {
         let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
         let expired = destroy_order(N1);
         let reply = executor.handle(&expired, expired.expires_ms()).expect("expires waiting for the lock");
-        assert_eq!(reply.outcome, Outcome::Failed { code: ORDER_EXPIRED.to_owned() });
+        assert_eq!(reply.outcome, Outcome::failed(ORDER_EXPIRED));
         assert_eq!(runs.load(Ordering::SeqCst), 0);
         drop(executor);
 
@@ -561,6 +571,41 @@ mod tests {
         assert!(reply.repeat);
         assert_eq!(reply.outcome, Outcome::Done);
         assert_eq!(runs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn destroy_repeats_a_journaled_terminal_refusal_with_its_detail_after_restart() {
+        const REPLAY: u64 = NOW + DONE_RETENTION_MS - 1;
+        struct DatasetTaken;
+        impl Run for DatasetTaken {
+            fn run(&self, _order: &VerifiedOrder) -> Outcome {
+                Outcome::Failed {
+                    code: "instance.removal_dataset_taken".to_owned(),
+                    detail: Some("The saved dataset name is already held.".to_owned()),
+                }
+            }
+        }
+
+        let directory = tempfile::tempdir().expect("scratch");
+        let path = directory.path().join("journal");
+        let (executor, _) = Executor::start(&path, DatasetTaken, || NOW, |_| {}).expect("start");
+        let first = executor
+            .handle(&destroy_order(N1), NOW)
+            .expect("terminal refusal");
+        drop(executor);
+
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (executor, recovered) =
+            Executor::start(&path, Counting(Arc::clone(&runs)), || REPLAY, |_| {})
+                .expect("restart");
+        assert_eq!(recovered, vec![]);
+        let repeat = executor
+            .handle(&destroy_order_at(N2, REPLAY, REPLAY + 1), REPLAY)
+            .expect("repeat stored refusal");
+        assert!(repeat.repeat);
+        assert_eq!(repeat.outcome, first.outcome);
+        assert_eq!(repeat.operation.as_str(), "42:remove");
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -825,16 +870,11 @@ mod tests {
             );
             let late = waiting.join().expect("second").expect("answers");
             assert!(!late.repeat);
-            assert_eq!(
-                late.outcome,
-                Outcome::Failed {
-                    code: ORDER_EXPIRED.to_owned()
-                }
-            );
+            assert_eq!(late.outcome, Outcome::failed(ORDER_EXPIRED));
         });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert!(records(&path).iter().any(|record| matches!(record,
-            Record::Done { key, outcome: Outcome::Failed { code }, .. }
+            Record::Done { key, outcome: Outcome::Failed { code, .. }, .. }
                 if key.operation.as_str() == "op-2" && code == ORDER_EXPIRED)));
     }
 
@@ -914,12 +954,7 @@ mod tests {
         assert_eq!(recovered, vec![]);
         let repeat = executor.handle(&order(N2, "op-wait"), NOW).expect("repeat");
         assert!(repeat.repeat);
-        assert_eq!(
-            repeat.outcome,
-            Outcome::Failed {
-                code: ORDER_EXPIRED.to_owned()
-            }
-        );
+        assert_eq!(repeat.outcome, Outcome::failed(ORDER_EXPIRED));
         assert_eq!(runs.load(Ordering::SeqCst), 0);
     }
 }

@@ -24,6 +24,9 @@ final readonly class ExecutorOrderSigner
 
     public const int ExpiresAfterMs = 5000;
 
+    /** The most time a Node accepts on an order at verification (MAX_EXPIRY_AHEAD_MS in the executor). */
+    public const int MaxExpiryAheadMs = 10_000;
+
     /**
      * An engine order may wait in its Node's JetStream consumer while the Node reconnects. The executor refuses an expiry more
      * than 10 s ahead, so the engine signs 8 s and sends a new order when a receipt says `expired` (ADR 0271).
