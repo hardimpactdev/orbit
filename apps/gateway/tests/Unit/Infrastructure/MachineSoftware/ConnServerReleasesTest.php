@@ -7,8 +7,9 @@ use Symfony\Component\Yaml\Yaml;
 
 it('selects the exact host release independently of the container recipe', function (): void {
     $releases = new ConnServerReleases;
+    $catalog = Yaml::parseFile(resource_path('machine-software/conn-server-releases.yaml'));
 
-    expect($releases->find(null)?->version)->toBe('0.5.2')
+    expect($releases->find(null)?->version)->toBe($catalog['default'])
         ->and($releases->find('0.5.2')?->mac->artifact->algorithm)->toBe('sha256')
         ->and($releases->find('0.5.1')?->linux->version)->toBe('0.5.1')
         ->and($releases->find('0.5.0'))->toBeNull();

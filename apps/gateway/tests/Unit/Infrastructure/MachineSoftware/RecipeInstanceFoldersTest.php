@@ -49,23 +49,33 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
-    expect($recipe->instances->agent['conn-server']->version)->toBe('0.5.2')
-        ->and($recipe->instances->agent['conn-server']->artifact->digest)->toBe('554766fc35583e2a2284a8c08581ce47dd729efef30315738eebd8f8ad35f539')
-        ->and($parts['chrome-headless-shell'])->toBe([
-            'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
-            'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
-            'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
-            'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
-        ]);
+    expect($parts['chrome-headless-shell'])->toBe([
+        'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
+        'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
+        'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
+        'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
+    ]);
 });
 
 it('keeps required container Conn independent of host rollout artifacts', function (): void {
-    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $text = recipeWithInstances(static fn () => null);
+    $pin = json_decode($text, true, flags: JSON_THROW_ON_ERROR)['instances']['agent']['conn-server'];
+    $recipe = new RecipeLoader()->decode($text);
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
-    expect($parts['conn-server']['version'])->toBe('0.5.2')
-        ->and($parts['conn-server']['url'])->toEndWith('-linux-x64.tar.gz');
+    expect($parts['conn-server'])->toMatchArray([
+        'version' => $pin['version'], 'url' => $pin['artifacts']['amd64']['url'],
+        'sha256' => $pin['artifacts']['amd64']['sha256'], 'bin' => $pin['bin'],
+    ])->and($parts['conn-server']['url'])->toEndWith('-linux-x64.tar.gz');
 });
+
+it('rejects host rollout metadata in the container pin', function (string $field, mixed $value): void {
+    $text = recipeWithInstances(static function (array &$recipe) use ($field, $value): void {
+        $recipe['instances']['agent']['conn-server'][$field] = $value;
+    });
+
+    expect(fn () => new RecipeLoader()->decode($text))->toThrow(InvalidArgumentException::class, 'instances.agent.conn-server: expected exactly fields version, artifacts, bin');
+})->with(['gate' => ['release_canary', true], 'Mac asset' => ['macos_arm64', []]]);
 
 it('ships agent-browser as one pinned release binary in the agent folder, which opens the same headless Chrome', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));

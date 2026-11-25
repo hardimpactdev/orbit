@@ -33,7 +33,9 @@ class ConnReleasePinTest(unittest.TestCase):
             setattr(self.pin, name, destination)
         self.files = [self.pin.CORE, self.pin.HOST_RELEASES, self.pin.CONTRACT, self.pin.GOLDEN]
         self.before = {path: path.read_bytes() for path in self.files}
-        current = self.pin.version_tuple(json.loads(self.before[self.pin.HOST_RELEASES])['default'])
+        host_version = json.loads(self.before[self.pin.HOST_RELEASES])['default']
+        container_version = json.loads(self.before[self.pin.CORE])['instances']['agent']['conn-server']['version']
+        current = max(self.pin.version_tuple(host_version), self.pin.version_tuple(container_version))
         self.version = '.'.join(map(str, (*current[:2], current[2] + 1)))
         self.commit = 'a' * 40
         self.tag = 'conn-server-v' + self.version
