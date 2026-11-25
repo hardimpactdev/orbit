@@ -3,6 +3,7 @@ cases = [
   "every module that a Mac Node runs has a task timeout of at least 60 s",
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too",
   "a zip whose SHA-256 differs fails the Node and installs nothing",
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing",
   "a changed designated requirement holds the canary, installs nothing and stops the run",
@@ -32,7 +33,7 @@ cases = [
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 572
+cost = 582
 # Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
 slices = 4
 inputs = [
@@ -55,6 +56,7 @@ inputs = [
 [case_costs]
   "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret" = 2
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version" = 11
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too" = 10
   "a zip whose SHA-256 differs fails the Node and installs nothing" = 6
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing" = 11
   "a changed designated requirement holds the canary, installs nothing and stops the run" = 6

@@ -20,7 +20,7 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 12980 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 13220 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 
@@ -59,7 +59,7 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     const round = tasks("conn-server-mac-round.yml").reduce((sum, task) => sum + (task.timeout ?? 0), macHealth);
     const macStart = timeout("conn-server-mac-start.yml", "Kickstart the LaunchAgent in the gui domain") + health_seconds + round;
     // The checks before the download and after it; the designated requirements are read for two bundles, then the running version.
-    const macChecks = mac("Read the home folder and the uid", "Check that the Conn Server is installed", "Make the staging folder",
+    const macChecks = mac("Read the home folder and the uid", "Check that the Conn Server is installed", "Read the loaded LaunchAgent", "Make the staging folder",
         "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer")
         + 2 * mac("Read the designated requirements") + macHealth;
     // The swap's other steps: the notice from the worker, two renames, the rollback's two reads and two renames.
@@ -104,7 +104,15 @@ esac`,
     // old server keeps answering. $FIXTURE/prompt-on-start is the TCC prompt that the first start raises. A version listed in
     // $FIXTURE/exit-<command> makes that command exit 1: kickstart and restart with the server down, the click with the prompt up.
     launchctl: `#!/bin/sh
+target="gui/$(id -u)/com.nckrtl.conn-server"
+if [ "$1" = print ]; then
+  echo "$*" >> "$FIXTURE/launchctl-print"
+  echo fixture-private-launchagent-environment
+  [ "$2" = "$target" ]
+  exit $?
+fi
 echo "$*" >> "$FIXTURE/launchctl"
+[ "$3" = "$target" ] || exit 113
 [ -f "$FIXTURE/prompt-on-start" ] && mv "$FIXTURE/prompt-on-start" "$FIXTURE/prompt"
 v=$(cat "$FIXTURE_APP/Contents/version")
 if grep -qx "$v" "$FIXTURE/exit-launchctl" 2>/dev/null; then echo down > "$FIXTURE/running"; exit 1; fi
@@ -142,7 +150,7 @@ if grep -qx "$v" "$FIXTURE/exit-systemctl" 2>/dev/null; then echo down > "$FIXTU
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
 };
 
-type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean };
+type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean; service?: string };
 type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
     // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
     args?: string; listen?: string;
@@ -155,7 +163,7 @@ type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; vali
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
     // `slowStarts` modules over ssh each take 15 s to start.
-    slowStarts?: number };
+    slowStarts?: number; verbose?: boolean };
 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 /** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
@@ -229,7 +237,7 @@ async function rollout(options: Options) {
                 node_id: 45 + index,
                 ssh: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: user, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
                 server: node.platform === "mac"
-                    ? { platform: "mac", path: "~/Applications/Conn Server.app", service: "com.nckrtl.conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false }
+                    ? { platform: "mac", path: "~/Applications/Conn Server.app", service: node.service ?? "com.nckrtl.conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false }
                     : { platform: "linux", path: `${folder}/linux/current`, service: "conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false },
             })),
         }));
@@ -240,7 +248,7 @@ async function rollout(options: Options) {
         }) : undefined;
         const done = await new Deno.Command(playbook, {
             // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
-            args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
+            args: ["-i", "localhost,", "--tags", "rollout", ...(options.verbose ? ["-v"] : []), ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
             env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, FIXTURE_ARGS: options.args ?? "", ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,
@@ -259,7 +267,7 @@ async function rollout(options: Options) {
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
             linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
             releases: listed(`${folder}/linux/releases`),
-            launchctl: read("launchctl"), systemctl: read("systemctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
+            launchctl: read("launchctl"), launchctlPrint: read("launchctl-print"), systemctl: read("systemctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             running: Deno.readTextFileSync(`${folder}/running`).trim(),
             proxyRequests,
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
@@ -277,8 +285,23 @@ test("a Mac canary checks, swaps the bundle on the same path, kickstarts in the 
     assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2", prompts: [] }]);
     assertEquals(run.installed, "0.5.0");
     assertEquals(run.launchctl.length, 1);
+    assertEquals(run.launchctlPrint, [run.launchctl[0].replace("kickstart -k ", "print ")]);
     assert(/^kickstart -k gui\/\d+\/com\.nckrtl\.conn-server$/.test(run.launchctl[0]), run.launchctl[0]);
     assertEquals(run.backups, []);
+});
+
+test("a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too", async () => {
+    const nodes: Server[] = [{ platform: "mac", canary: true, notify: true, service: "com.nckrtl.t3-headless" }];
+    for (const dryRun of [true, false]) {
+        const run = await rollout({ nodes, dryRun, notice: true, verbose: true });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.service_not_loaded", rolled_back: false }]);
+        assertEquals(run.launchctlPrint.length, 1);
+        assert(/^print gui\/\d+\/com\.nckrtl\.t3-headless$/.test(run.launchctlPrint[0]), run.launchctlPrint[0]);
+        assertEquals([run.installed, run.running, run.launchctl, run.backups, run.noticed], ["0.4.2", "0.4.2", [], [], []]);
+        assert(!run.output.includes("Make the staging folder"), run.output);
+        assert(!run.output.includes("fixture-private-launchagent-environment"), run.output);
+    }
 });
 
 test("a zip whose SHA-256 differs fails the Node and installs nothing", async () => {
