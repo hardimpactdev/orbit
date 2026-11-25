@@ -137,6 +137,9 @@
     # From here on, every failure up to a healthy /health points current back at the old release and restarts it.
     - name: Install and start the new release
       block:
+        - name: Mark the promotion write boundary
+          ansible.builtin.set_fact: { conn_write_started: true }
+
         - name: Point current at the new release
           ansible.builtin.include_tasks: conn-server-linux-start.yml
           vars:
@@ -151,9 +154,30 @@
             fail_msg: conn_server.health_check_failed
             quiet: true
 
+        - name: Verify the client can read the canary thread
+          when: intent.probe_thread | default(false)
+          ansible.builtin.script:
+            cmd: 'files/conn-server-probe.py {{ (server.path + "/conn-server") | quote }} {{ server.port | int }}'
+            executable: python3
+          become: true
+          become_user: "{{ server.user }}"
+          register: conn_thread_probe
+          ignore_unreachable: true
+          no_log: true
+          failed_when: false
+          changed_when: false
+          timeout: 60
+
+        - name: Require an authenticated canary read
+          when: intent.probe_thread | default(false)
+          ansible.builtin.assert:
+            that: conn_thread_probe is not unreachable and conn_thread_probe.rc | default(1) == 0
+            fail_msg: conn_server.canary_thread_unreadable
+            quiet: true
+
         - name: Record the updated Node
           ansible.builtin.set_fact:
-            node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
+            node_result: { node_id: "{{ node_id | int }}", outcome: updated, thread_read: "{{ true if intent.probe_thread | default(false) else omit }}", previous_version: "{{ linux_before.json.version | default(none) }}" }
       rescue:
         - name: Name the cause
           ansible.builtin.set_fact:

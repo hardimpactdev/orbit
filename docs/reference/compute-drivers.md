@@ -43,7 +43,7 @@ Inspect or validate the recipe from the Gateway:
 php artisan orbit:machine-recipe --validate [--validate-ubuntu] [--role=<role>] [--architecture=amd64] [--json]
 ```
 
-Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combining `recipe.json` with the pinned agent delivery manifest).
+Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combining `recipe.json` with the pinned agent delivery manifest). The [standalone Conn Server rollout](/reference/development-containers#conn-server-rollout) reads its pin from the validated recipe source.
 
 ### Shared Instance folders
 

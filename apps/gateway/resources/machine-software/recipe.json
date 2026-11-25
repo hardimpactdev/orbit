@@ -1741,7 +1741,8 @@
                 },
                 "bin": {
                     "conn-server": "conn-server-0.5.3-linux-x64/conn-server"
-                }
+                },
+                "release_canary": true
             },
             "chrome-headless-shell": {
                 "version": "157.0.8103.78",

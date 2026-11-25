@@ -1,0 +1,6 @@
+---
+- name: Report a lost transport as a recoverable task failure
+  ansible.builtin.assert:
+    that: conn_transport_result is not unreachable
+    fail_msg: conn_server.transport_lost
+    quiet: true

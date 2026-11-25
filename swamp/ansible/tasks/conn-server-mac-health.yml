@@ -10,6 +10,12 @@
   register: mac_health_response
   failed_when: false
   timeout: 60
+  ignore_unreachable: true
+
+- name: Check transport after read the health
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ mac_health_response }}"
 
 - name: Validate the health response
   vars:

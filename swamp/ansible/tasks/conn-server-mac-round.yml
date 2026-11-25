@@ -15,6 +15,12 @@
       changed_when: false
       failed_when: false
       timeout: 60
+      ignore_unreachable: true
+
+    - name: Check transport after read a pending prompt
+      ansible.builtin.include_tasks: conn-server-require-transport.yml
+      vars:
+        conn_transport_result: "{{ mac_prompt }}"
 
     - name: Judge the prompt
       when: mac_prompt.rc == 0 and mac_prompt.stdout | trim | length > 0
@@ -35,6 +41,13 @@
         argv: [osascript, -e, 'tell application "System Events" to click button "Allow" of window 1 of process "UserNotificationCenter"']
       changed_when: true
       timeout: 60
+      register: conn_transport_step
+      ignore_unreachable: true
+
+    - name: Check transport after allow the expected prompt
+      ansible.builtin.include_tasks: conn-server-require-transport.yml
+      vars:
+        conn_transport_result: "{{ conn_transport_step }}"
 
     - name: Record the allowed prompt
       when: mac_prompt_text | length > 0 and mac_prompt_expected
@@ -54,3 +67,10 @@
       when: not mac_healthy and mac_prompt_error is none
       ansible.builtin.wait_for: { timeout: "{{ health_delay | int }}" }
       timeout: 60
+      register: conn_transport_step
+      ignore_unreachable: true
+
+    - name: Check transport after wait before the next round
+      ansible.builtin.include_tasks: conn-server-require-transport.yml
+      vars:
+        conn_transport_result: "{{ conn_transport_step }}"
