@@ -49,6 +49,21 @@
     fail_msg: conn_server.not_installed
     quiet: true
 
+# launchctl print can include the job's environment.
+- name: Read the loaded LaunchAgent
+  ansible.builtin.command: { argv: [launchctl, print, "{{ mac_target }}"] }
+  register: mac_service
+  changed_when: false
+  failed_when: false
+  no_log: true
+  timeout: 60
+
+- name: Refuse a Node without its LaunchAgent loaded
+  ansible.builtin.assert:
+    that: mac_service.rc == 0
+    fail_msg: conn_server.service_not_loaded
+    quiet: true
+
 - name: Make the staging folder
   ansible.builtin.file: { path: "{{ mac_stage }}", state: directory, mode: "0700" }
   timeout: 60
