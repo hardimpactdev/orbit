@@ -25,5 +25,6 @@ final readonly class FolderPin
         public ?array $trustModule = null,
         public bool $devOnly = false,
         public ?MacAppPin $macApp = null,
+        public bool $releaseCanary = false,
     ) {}
 }

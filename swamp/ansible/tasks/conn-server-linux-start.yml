@@ -5,17 +5,38 @@
   ansible.builtin.file: { src: "{{ linux_target }}", dest: "{{ server.path }}.next", state: link, force: true }
   become: true
   timeout: 20
+  register: conn_transport_step
+  ignore_unreachable: true
+
+- name: Check transport after link the release beside current
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ conn_transport_step }}"
 
 - name: Move the link onto current
   ansible.builtin.command: { argv: [mv, -T, "{{ server.path }}.next", "{{ server.path }}"] }
   changed_when: true
   become: true
   timeout: 20
+  register: conn_transport_step
+  ignore_unreachable: true
+
+- name: Check transport after move the link onto current
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ conn_transport_step }}"
 
 - name: Restart the unit
   ansible.builtin.command: { argv: [timeout, "100", systemctl, restart, --, "{{ server.service }}"] }
   changed_when: true
   become: true
+  register: conn_transport_step
+  ignore_unreachable: true
+
+- name: Check transport after restart the unit
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ conn_transport_step }}"
 
 # Up to health_rounds reads, health_delay seconds apart.
 - name: Wait for the health
@@ -25,3 +46,9 @@
   retries: "{{ health_rounds | int }}"
   delay: "{{ health_delay | int }}"
   failed_when: false
+  ignore_unreachable: true
+
+- name: Check transport after wait for the health
+  ansible.builtin.include_tasks: conn-server-require-transport.yml
+  vars:
+    conn_transport_result: "{{ linux_health }}"

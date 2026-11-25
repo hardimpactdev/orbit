@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Generate an Orbit pin proposal from the published Conn Server release."""
+import argparse
+import hashlib
+import json
+import os
+import plistlib
+import re
+import subprocess
+import tarfile
+import tempfile
+import urllib.request
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+GATEWAY = ROOT / "apps/gateway"
+RECIPE = GATEWAY / "resources/machine-software/recipe.json"
+FIXTURES = GATEWAY / "tests/Fixtures"
+GOLDEN = FIXTURES / "production-gateway-converge-main.json"
+CONTRACT = FIXTURES / "conn-server-release.json"
+REPO = "nckrtl/conn"
+BUNDLE = "com.nckrtl.conn-server"
+TEAM = "9SVJ4SYB9B"
+
+
+def version_tuple(value):
+    if not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}", value, re.ASCII):
+        raise ValueError("expected a stable Conn Server version")
+    return tuple(map(int, value.split(".")))
+
+
+def github(path):
+    request = urllib.request.Request("https://api.github.com/" + path)
+    token = os.environ.get("GH_TOKEN")
+    if token:
+        request.add_header("Authorization", "Bearer " + token)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
+def download(release, asset_name, expected_url, destination):
+    asset, = [item for item in release["assets"] if item["name"] == asset_name]
+    digest = asset.get("digest") or ""
+    if (asset["state"] != "uploaded" or asset["browser_download_url"] != expected_url
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+        raise ValueError(f"missing or invalid release asset: {asset_name}")
+    req = urllib.request.Request(expected_url)
+    with urllib.request.urlopen(req, timeout=45) as response, destination.open("wb") as output:
+        for chunk in iter(lambda: response.read(65536), b""):
+            output.write(chunk)
+    with destination.open("rb") as artifact:
+        if hashlib.file_digest(artifact, "sha256").hexdigest() != digest[7:]:
+            raise ValueError(f"GitHub asset checksum mismatch: {asset_name}")
+    return digest[7:]
+
+
+def verify_artifact(release, filename, base, folder):
+    artifact = folder / filename
+    digest = download(release, filename, base + filename, artifact)
+    checksum = filename + ".sha256"
+    manifest = folder / checksum
+    download(release, checksum, base + checksum, manifest)
+    if manifest.read_bytes() not in (f"{digest}  {filename}\n".encode(), f"{digest} *{filename}\n".encode()):
+        raise ValueError(f"published checksum does not describe {filename}")
+    return artifact, {"url": base + filename, "sha256": digest}
+
+
+def read_contract(linux, binary_path, mac, version, sha, folder, version_output):
+    with zipfile.ZipFile(mac) as archive:
+        info = plistlib.loads(archive.read("Conn Server.app/Contents/Info.plist"))
+    if (info["CFBundleIdentifier"], info["CFBundleShortVersionString"], info["ConnServerCommit"]) != (BUNDLE, version, sha):
+        raise ValueError("Mac bundle metadata differs from the release tag")
+    with tarfile.open(linux, "r:gz") as archive:
+        member = archive.getmember(binary_path)
+        if not member.isfile() or not member.mode & 0o111:
+            raise ValueError("the pinned Linux binary is not a regular executable")
+        if version_output is None:
+            archive.extract(member, folder, filter="data")
+    if version_output is None:
+        version_output = subprocess.check_output([folder / binary_path, "--version"], text=True, timeout=20, env={}).strip()
+    transcript = version_output
+    match = re.fullmatch(r"conn-server ([\d.]+) \(T3 server ([\d.]+) contract, contract digest ([a-f0-9]+)\)", transcript)
+    if match is None or match[1] != version:
+        raise ValueError("unexpected Conn Server version output")
+    return {"version": version, "launch_version": match[2], "version_output": transcript}
+
+
+def capture_fixture():
+    test = ["vendor/bin/pest", "tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php",
+            "--filter", "keeps production Gateway runtime recipe", "--colors=never"]
+    fixture = json.loads(GOLDEN.read_text())
+    with tempfile.TemporaryDirectory() as folder:
+        prefix = Path(folder) / "capture"
+        subprocess.run(test, cwd=GATEWAY, env={**os.environ, "ORBIT_DNS_EQUALITY_EVIDENCE": str(prefix)},
+                       stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=False, timeout=90)
+        for state, row in fixture["vpn_states"].items():
+            captured = json.loads(Path(f"{prefix}-{state.replace('/', '-')}.json").read_text())
+            for key in ("recipe_sha256", "converge_sha256", "ansible_vars_sha256"):
+                row[key] = captured[key]
+    GOLDEN.write_text(json.dumps(fixture, indent=2, ensure_ascii=False) + "\n")
+    subprocess.run(test, cwd=GATEWAY, check=True, timeout=90)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("version")
+    parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--pr-body", type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--print-contract", action="store_true")
+    mode.add_argument("--contract")
+    args = parser.parse_args()
+    if not args.print_contract and args.pr_body is None:
+        parser.error("proposing a pin requires --pr-body")
+    version = args.version
+    version_tuple(version)
+    tag = f"conn-server-v{version}"
+    if not re.fullmatch(r"[a-f0-9]{40}", args.source_sha) or github(f"repos/{REPO}/commits/{tag}")["sha"] != args.source_sha:
+        raise ValueError("release tag does not resolve to the checked Conn commit")
+    release = github(f"repos/{REPO}/releases/tags/{tag}")
+    if release["tag_name"] != tag or release["draft"] or release["prerelease"] or not release["published_at"]:
+        raise ValueError("expected a published stable Conn Server release")
+
+    recipe = json.loads(RECIPE.read_text())
+    pin = recipe["instances"]["agent"]["conn-server"]
+    if version_tuple(version) < version_tuple(pin["version"]):
+        raise ValueError("the serving Orbit pin already names a newer release")
+    if (pin["macos_arm64"]["bundle_id"], pin["macos_arm64"]["team_id"]) != (BUNDLE, TEAM):
+        raise ValueError("unexpected Mac signing identity")
+
+    base = f"https://github.com/{REPO}/releases/download/{tag}/"
+    binary_path = f"conn-server-{version}-linux-x64/conn-server"
+    with tempfile.TemporaryDirectory() as directory:
+        folder = Path(directory)
+        linux, linux_pin = verify_artifact(release, f"conn-server-{version}-linux-x64.tar.gz", base, folder)
+        mac, mac_pin = verify_artifact(release, f"conn-server-{version}-macos-arm64.zip", base, folder)
+        version_output = None
+        if args.contract is not None:
+            observed = json.loads(args.contract)
+            if (not isinstance(observed, dict) or observed.get("linux_sha256") != linux_pin["sha256"]
+                    or not isinstance(observed.get("version_output"), str)):
+                raise ValueError("the recorded launch contract does not match the Linux archive")
+            version_output = observed["version_output"]
+        contract = read_contract(linux, binary_path, mac, version, args.source_sha, folder, version_output)
+
+    if args.print_contract:
+        print(json.dumps({"linux_sha256": linux_pin["sha256"], "version_output": contract["version_output"]}))
+        return
+
+    if version == pin["version"]:
+        if (pin["artifacts"]["amd64"] != linux_pin
+                or any(pin["macos_arm64"][key] != value for key, value in mac_pin.items())
+                or pin["bin"]["conn-server"] != binary_path
+                or json.loads(CONTRACT.read_text()) != contract):
+            raise ValueError("published release differs from the reviewed pin")
+        print(f"{tag}: existing pin and launch contract match both published artifacts")
+        return
+
+    old = {path: path.read_bytes() for path in (RECIPE, CONTRACT, GOLDEN)}
+    pin["artifacts"]["amd64"] = linux_pin
+    pin["macos_arm64"].update(mac_pin)
+    pin["bin"]["conn-server"] = binary_path
+    pin.update(version=version, release_canary=True)
+    try:
+        RECIPE.write_text(json.dumps(recipe, indent=4, ensure_ascii=False) + "\n")
+        CONTRACT.write_text(json.dumps(contract, indent=2) + "\n")
+        capture_fixture()
+        subprocess.run(["vendor/bin/pest", "tests/Feature/Domain/Instances/ContainerServerSwitchTest.php",
+                        "--filter", "launch", "--colors=never"], cwd=GATEWAY, check=True, timeout=90)
+        args.pr_body.write_text(
+            f"Pin [Conn Server {version}](https://github.com/{REPO}/releases/tag/{tag}) for Orbit. "
+            "The published SHA-256 manifests and GitHub asset digests agree for both archives. "
+            "The Mac bundle identity, Linux archive path, launch contract and Gateway convergence fixture are verified.\n\n"
+            f"Conn-Source: {args.source_sha}\n\n"
+            "Docs-unaffected: docs/reference/compute-drivers.md: The release changes the Conn Server assets. "
+            "Compute driver selection, configuration and provisioning behavior stay the same.\n"
+            "Docs-unaffected: docs/reference/development-containers.md: The release follows the documented "
+            "pin, launch check and standalone canary process.\n"
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        for path, content in old.items():
+            path.write_bytes(content)
+        raise
+    print(f"{tag}: verified both artifacts and generated the pin proposal")
+
+
+if __name__ == "__main__":
+    main()

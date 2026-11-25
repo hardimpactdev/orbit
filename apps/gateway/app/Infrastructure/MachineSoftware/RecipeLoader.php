@@ -400,6 +400,7 @@ final readonly class RecipeLoader
                 }
                 $this->object($part, $field, [...($programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']),
                     ...(property_exists($part, 'trust_module') ? ['trust_module'] : []), ...(property_exists($part, 'dev_only') ? ['dev_only'] : []),
+                    ...(property_exists($part, 'release_canary') ? ['release_canary'] : []),
                     ...(property_exists($part, 'macos_arm64') ? ['macos_arm64'] : [])]);
                 // A development tool, such as a language server, that the production runtime folder leaves out.
                 $this->require(! property_exists($part, 'dev_only') || $part->dev_only === true, "{$field}.dev_only: expected true, or no field.");
@@ -411,7 +412,10 @@ final readonly class RecipeLoader
                 $trustModule = property_exists($part, 'trust_module') ? $this->trustModule($part->trust_module, $folder, $artifact, $field) : null;
                 $this->require(! property_exists($part, 'macos_arm64') || $folder === 'agent', "{$field}.macos_arm64: expected only on an agent folder part.");
                 $macApp = property_exists($part, 'macos_arm64') ? $this->macApp($part->macos_arm64, "{$field}.macos_arm64", (string) $name, $version) : null;
-                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule, property_exists($part, 'dev_only'), $macApp);
+                $releaseCanary = property_exists($part, 'release_canary');
+                $this->require(! $releaseCanary || ($part->release_canary === true && $name === 'conn-server' && $macApp !== null),
+                    "{$field}.release_canary: expected true on the Conn Server pin with both release assets.");
+                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule, property_exists($part, 'dev_only'), $macApp, $releaseCanary);
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
             // Chromium in every container loads the runtime folder's one trust module (docs/reference/development-containers.md#trust).

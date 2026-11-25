@@ -15,6 +15,8 @@ final class AdmitConnServerRolloutRequest extends FormRequest
     {
         return ['dry_run' => ['required', 'boolean'], 'scope' => ['required', Rule::in(ConnServerRollout::Scopes)],
             'node_ids' => ['required_if:scope,nodes', 'prohibited_unless:scope,nodes', 'array', 'min:1', 'max:4'],
+            'canary_operation_id' => ['prohibited_unless:scope,fleet', 'integer', 'min:1'],
+            'retry_operation_id' => ['prohibited_if:scope,nodes', 'integer', 'min:1'],
             'node_ids.*' => ['integer', 'distinct', 'exists:conn_server_nodes,node_id']];
     }
 }
