@@ -42,6 +42,8 @@ beforeEach(function (): void {
     $this->host->accessibleNodes()->attach($this->host->id);
     $this->environment = ConnEnvironment::query()->create(['environment_id' => 'env-host', 'label' => 'Agent', 'url' => 'http://conn.test:3773',
         'node_id' => $this->host->id, 'admin_session' => 'test-admin-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    // The host's first librarian poll ran as the test began; the poll tests start before it.
+    DB::table('conn_librarian_watermarks')->insert(['conn_environment_id' => $this->environment->id, 'started_at_ms' => now()->getTimestampMs()]);
     $this->project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'type' => 'generic', 'node_id' => $this->host->id]);
     $this->thread = ['id' => 'general-thread', 'projectId' => 'scratch-id', 'title' => str_repeat('á', 300),
         'status' => 'running', 'lineage' => ['parentThreadId' => null], 'createdAt' => now()->toIso8601String(),
@@ -55,6 +57,7 @@ beforeEach(function (): void {
     ];
     $this->rpc = [];
     $this->archived = false;
+    $this->unpushedThreads = [];
     $this->missingReads = 0;
     $this->dropFilingReplies = 0;
     $socket = Mockery::mock(WebSocketClient::class);
@@ -142,7 +145,7 @@ function librarianHttpFake(object $test, Closure $model): void
         'http://conn.test:3773/health' => Http::response(['server' => 'conn-server', 'version' => '0.5.2']),
         'http://conn.test:3773/api/orchestration/shell' => static fn () => Http::response([
             'projects' => [['id' => 'scratch-id', 'workspaceRoot' => '/home/agent/scratch/'], ['id' => 'repo-id', 'workspaceRoot' => '/home/agent/repo']],
-            'threads' => $test->archived ? [] : [$test->thread],
+            'threads' => $test->archived ? [] : [$test->thread, ...$test->unpushedThreads],
         ]),
         'http://conn.test:3773/api/orchestration/threads/general-thread' => static fn () => $test->missingReads-- > 0
             ? Http::response(['error' => 'not found'], 404)
@@ -241,21 +244,6 @@ it('refuses a checkout thread once, without asking the server again on the next 
     expect(librarianWrites($this->rpc))->toBeEmpty()
         ->and(collect($this->rpc)->where('tag', 'server.getConfig'))->toHaveCount(1)
         ->and(ConnThreadClassification::query()->sole())->completed_at->not->toBeNull()->result->toBeNull();
-});
-
-it('sets the host cutoff from the first pushed thread, never from the time of the push', function (): void {
-    $this->thread['createdAt'] = now()->subDay()->toIso8601String();
-    librarianHttpFake($this, librarianExisting($this));
-    librarianPushed($this);
-    Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
-    expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe(now()->subDay()->getTimestampMs());
-
-    // A thread created before the first pushed one is out of scope, and does not move the cutoff.
-    $this->thread = [...$this->thread, 'id' => 'older-thread', 'createdAt' => now()->subDays(2)->toIso8601String()];
-    librarianPush($this, threadId: 'older-thread')->assertCreated();
-    librarianRunPush();
-    Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
-    expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe(now()->subDay()->getTimestampMs());
 });
 
 it('queues nothing for a container server', function (): void {
@@ -492,6 +480,41 @@ describe('a filing whose reply was lost', function (): void {
 });
 
 describe('the host poll, the fallback for a push that never came', function (): void {
+    it('records a push before the host’s first librarian poll without setting the cutoff or classifying', function (): void {
+        DB::table('conn_librarian_watermarks')->delete();
+        librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+        $response = librarianPush($this);
+        $response->assertCreated()->assertExactJson(['data' => ['environment_id' => 'env-host', 'instance_id' => null,
+            'project_id' => null, 'thread_id' => 'general-thread', 'title' => 'Fix the index', 'state' => null, 'needs_input' => false,
+            'last_user_message_at' => null, 'last_run_completed_at' => null, 'seen_at' => now()->toIso8601String(), 'classification' => null],
+            'meta' => ['request_id' => $response->json('meta.request_id')]]);
+        librarianRunPush();
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        Http::assertNothingSent();
+        expect(DB::table('conn_librarian_watermarks')->count())->toBe(0)
+            ->and(ConnThreadClassification::query()->count())->toBe(0);
+    });
+
+    it('sets the cutoff at the first poll’s start, so a thread pushed or created before it is never classified', function (): void {
+        DB::table('conn_librarian_watermarks')->delete();
+        $this->thread['createdAt'] = now()->subSecond()->toIso8601String();
+        $this->unpushedThreads = [[...$this->thread, 'id' => 'unpushed-thread', 'createdAt' => now()->subMinute()->toIso8601String()]];
+        librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+        librarianPushed($this);
+        $this->travel(3)->seconds();
+        $startedAt = now()->getTimestampMs();
+        librarianHostPoll();
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe($startedAt)
+            ->and(ConnThread::hostQuery()->pluck('thread_id')->sort()->values()->all())->toBe(['general-thread', 'unpushed-thread']);
+
+        // A later push or poll keeps the cutoff and leaves both threads out of scope.
+        librarianPushed($this);
+        librarianHostPoll();
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe($startedAt);
+    });
+
     it('indexes a host whose push never came and files its General thread after the first user message', function (): void {
         $calls = 0;
         librarianHttpFake($this, function () use (&$calls): PromiseInterface {
@@ -519,6 +542,7 @@ describe('the host poll, the fallback for a push that never came', function (): 
     });
 
     it('does not backfill threads created before the host’s first librarian pass', function (): void {
+        DB::table('conn_librarian_watermarks')->delete();
         $this->thread['createdAt'] = now()->subSecond()->toIso8601String();
         librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
         librarianHostPoll();
@@ -534,6 +558,12 @@ describe('the host poll, the fallback for a push that never came', function (): 
 
             return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
         });
+        // The host's first poll, before the thread exists, sets the cutoff.
+        DB::table('conn_librarian_watermarks')->delete();
+        $this->archived = true;
+        librarianHostPoll();
+        $this->archived = false;
+        expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe(now()->getTimestampMs());
         if ($order === 'push first') {
             librarianPushed($this);
             librarianHostPoll();

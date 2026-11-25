@@ -142,7 +142,9 @@ The host poll is the fallback: it finds a thread whose push never came once the 
 - its Conn project is the scratch project;
 - it has no completed decision.
 
-The first librarian pass for a host, push or poll, sets its permanent cutoff: the pushed thread's creation time, or the time the poll began. Threads created before it are out of scope. A thread outside the scratch project is refused once and not read again. A completed decision is never revisited, so a push and a poll, or two pushes, classify a thread at most once. A missing model setting, an unreachable Conn Server, or Conn disabled after the POST makes the push's job do nothing; the poll still finds the thread later.
+Only the host's first librarian poll sets its permanent cutoff, the time that poll began. Threads created before it are out of scope. A push that arrives before that poll records its row and gets the same response, but it sets no cutoff and queues no classification.
+
+A thread outside the scratch project is refused once and not read again. A completed decision is never revisited, so a push and a poll, or two pushes, classify a thread at most once. A missing model setting, an unreachable Conn Server, or Conn disabled after the POST makes the push's job do nothing; the poll still finds the thread later.
 
 A push can arrive before its thread or first message is readable. The job then reads the thread again, every 2 seconds, four reads in all, and judges each read on that read's thread. The wait is not a failure: when the message stays unreadable, the thread stays undecided, and a later push or poll classifies it, using its first user message even after more turns.
 

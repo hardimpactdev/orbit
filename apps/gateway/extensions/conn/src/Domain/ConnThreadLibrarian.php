@@ -49,25 +49,29 @@ final readonly class ConnThreadLibrarian
         }
         $this->admit($environment, $shell, array_filter($shell['threads'],
             static fn (mixed $thread): bool => is_array($thread) && is_string($thread['latestUserAuthoredMessageAt'] ?? null)),
-            $observedAt->getTimestampMs());
+            $this->cutoff($environment, $observedAt->getTimestampMs()));
     }
 
-    /** The push: the host's Conn Server recorded a thread, which stands for its first user message. */
+    /**
+     * The push: the host's Conn Server recorded a thread, which stands for its first user message. Before the host's first librarian poll
+     * there is no cutoff, and the thread is out of scope.
+     */
     public function pushed(DiscoverConnThreadJob $job): void
     {
         if (! $this->extensions->enabled('conn') || ! AiRouterThreadClassifier::configured()) {
             return;
         }
         $environment = ConnEnvironment::query()->whereNull('instance_id')->whereNotNull('node_id')->find($job->environmentId);
-        if ($environment === null) {
+        $cutoff = $environment === null ? null
+            : DB::table('conn_librarian_watermarks')->where('conn_environment_id', $environment->id)->value('started_at_ms');
+        if ($environment === null || ! is_numeric($cutoff)) {
             return;
         }
         $shell = $this->http->shell($environment->url, $environment->admin_session);
         $thread = collect(is_array($shell['threads'] ?? null) ? $shell['threads'] : [])
             ->first(static fn (mixed $thread): bool => is_array($thread) && ($thread['id'] ?? null) === $job->threadId);
-        if (is_array($thread) && is_string($thread['createdAt'] ?? null)) {
-            // A host's first push sets its cutoff at the pushed thread's creation, so that thread is in scope and an older one is not.
-            $this->admit($environment, $shell, [$thread], CarbonImmutable::parse($thread['createdAt'])->getTimestampMs());
+        if (is_array($thread)) {
+            $this->admit($environment, $shell, [$thread], (int) $cutoff);
         }
     }
 
@@ -79,9 +83,8 @@ final readonly class ConnThreadLibrarian
      * @param  array<array-key, mixed>  $shell
      * @param  array<array-key, mixed>  $threads
      */
-    private function admit(ConnEnvironment $environment, array $shell, array $threads, int $startedAtMs): void
+    private function admit(ConnEnvironment $environment, array $shell, array $threads, int $cutoff): void
     {
-        $cutoff = $this->cutoff($environment, $startedAtMs);
         $roots = [];
         foreach (is_array($shell['projects'] ?? null) ? $shell['projects'] : [] as $project) {
             if (is_array($project) && is_string($project['id'] ?? null) && is_string($project['workspaceRoot'] ?? null)) {
@@ -245,7 +248,7 @@ final readonly class ConnThreadLibrarian
         return ConnThreadClassification::query()->firstOrNew(['conn_environment_id' => $job->environmentId, 'thread_id' => $job->threadId]);
     }
 
-    /** The host's permanent cutoff, stored once by its first librarian pass, push or poll: an older thread is never classified. */
+    /** The host's permanent cutoff, stored once by its first librarian poll at the time it began: an older thread is never classified. */
     private function cutoff(ConnEnvironment $environment, int $startedAtMs): int
     {
         DB::table('conn_librarian_watermarks')->insertOrIgnore(['conn_environment_id' => $environment->id, 'started_at_ms' => $startedAtMs]);
