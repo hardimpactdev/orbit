@@ -78,7 +78,7 @@ def read_contract(linux, binary_path, mac, version, sha, folder, version_output)
         if version_output is None:
             archive.extract(member, folder, filter="data")
     if version_output is None:
-        version_output = subprocess.check_output([folder / binary_path, "--version"], text=True, timeout=20).strip()
+        version_output = subprocess.check_output([folder / binary_path, "--version"], text=True, timeout=20, env={}).strip()
     transcript = version_output
     match = re.fullmatch(r"conn-server ([\d.]+) \(T3 server ([\d.]+) contract, contract digest ([a-f0-9]+)\)", transcript)
     if match is None or match[1] != version:
