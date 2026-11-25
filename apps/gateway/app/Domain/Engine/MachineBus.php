@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Executor\SignedExecutorOrder;
+use Closure;
 
 /**
  * What the state machine needs from the machine bus (ADR 0271). `App\Infrastructure\Engine\EngineBus` is the NATS JetStream
@@ -12,7 +13,12 @@ use App\Domain\Executor\SignedExecutorOrder;
  */
 interface MachineBus
 {
-    public function publishOrder(int $node, SignedExecutorOrder $order): void;
+    /**
+     * Runs the optional durable claim after setup and immediately before attempting to publish the order. False sends nothing.
+     *
+     * @param  (Closure(): bool)|null  $claim
+     */
+    public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void;
 
     public function publishStart(int $operation): void;
 

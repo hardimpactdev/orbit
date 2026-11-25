@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Logs/**
   - apps/gateway/app/Infrastructure/AgentView/LogRelay.php
   - apps/agent/src/logs/**
+  - apps/agent/crates/contract/src/redact.rs
 ---
 
 # Live logs

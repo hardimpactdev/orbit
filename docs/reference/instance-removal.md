@@ -41,6 +41,8 @@ Physical slots do not belong to a database and never block removal. MySQL, Valke
 
 ## Native order
 
+The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
+
 Removal follows the [`instance:destroy` chart](/cli/instance/destroy):
 
 1. **Schedules and work checks:** Admission removes Schedule triggers. For non-forced host checkouts, Orbit fetches origin and refuses dirty or unpushed work (ignoring Orbit-rendered `.env` and `.env.testing`). `gh_cli` Projects require `--force` on host checkouts.

@@ -173,6 +173,8 @@ def execute(case, fleet, spec, evidence, negative=False):
         stop_batch = True
     except steps.Unrun as error:
         verdict, cause, failures = 'unrun', 'precondition', [f'setup: {error}']
+    except steps.Failed as error:
+        verdict, cause, failures = 'failed', 'assertion', failures + [str(error)]
     except Exception as error:  # a step that could not run is a failed case, never a pass
         verdict, cause, failures = 'failed', 'infrastructure', failures + [f'{type(error).__name__}: {error}']
     try:

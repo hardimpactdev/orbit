@@ -1647,6 +1647,7 @@ name = "orbit-agent-contract"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "regex",
  "rustix",
  "schemars 1.2.2",
  "serde",
@@ -1689,6 +1690,7 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "libc",
+ "orbit-agent-contract",
  "orbit-executor-core",
  "orbit-executor-dns",
  "orbit-executor-firewall",

@@ -7,6 +7,7 @@ namespace App\Domain\Engine;
 use App\Domain\Firewall\FirewallEngineFlow;
 use App\Domain\Instances\InstanceCompleteEngineFlow;
 use App\Domain\Instances\InstanceCreateEngineFlow;
+use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
@@ -28,6 +29,7 @@ final readonly class EngineKinds
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
+        InstanceDestroyEngineFlow::Kind => InstanceDestroyEngineFlow::class,
         'instance.complete' => InstanceCompleteEngineFlow::class,
         'instance.fleet' => InstanceFleetEngineFlow::class,
         'instance.finalize' => InstanceFinalizeEngineFlow::class,

@@ -49,7 +49,7 @@ struct Families(orbit_executor_power::Power);
 impl Run for Families {
     fn target_exists(&self, action: Action, target: &orbit_executor_core::ids::TargetId) -> bool {
         // A discard after destroy must still be possible when Incus no longer has the container.
-        if action == Action::Discard {
+        if matches!(action, Action::Discard | Action::InstanceDestroy) {
             return target
                 .as_str()
                 .parse::<u64>()
@@ -57,7 +57,6 @@ impl Run for Families {
         }
         self.0.target_exists(target.as_str())
     }
-    #[expect(clippy::too_many_lines, reason = "one arm per executor action")]
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
@@ -84,16 +83,13 @@ impl Run for Families {
                     }
                     Err(error) => {
                         log(&format!("power sleep failed: {error}"));
-                        Outcome::Failed {
-                            code: match error.to_string().as_str() {
-                                code @ ("instance.container_frozen_unmanaged"
+                        Outcome::failed(match error.to_string().as_str() {
+                            code @ ("instance.container_frozen_unmanaged"
                                 | orbit_executor_power::SLEEP_INCOMPLETE
                                 | orbit_executor_power::ROUTE_UNREADY
                                 | orbit_executor_power::READERS_BUSY) => code,
-                                _ => "instance.container_freeze_failed",
-                            }
-                            .to_owned(),
-                        }
+                            _ => "instance.container_freeze_failed",
+                        })
                     }
                 }
             }
@@ -129,40 +125,88 @@ impl Run for Families {
                     Err(error) => {
                         log(&format!("power wake failed: {error}"));
                         let code = error.to_string();
-                        Outcome::Failed {
-                            code: if WAKE_CODES.contains(&code.as_str()) {
-                                code
-                            } else {
-                                "instance.container_start_failed".to_owned()
-                            },
-                        }
+                        Outcome::failed(if WAKE_CODES.contains(&code.as_str()) {
+                            code
+                        } else {
+                            "instance.container_start_failed".to_owned()
+                        })
                     }
                 }
             }
             Action::Discard => match self.0.discard_stopped(order.target().as_str()) {
                 Ok(()) => Outcome::Done,
-                Err(error) => Outcome::Failed {
-                    code: if error.to_string() == orbit_executor_power::READERS_BUSY {
-                        orbit_executor_power::READERS_BUSY
-                    } else {
-                        "instance.power_discard_failed"
-                    }
-                    .to_owned(),
-                },
+                Err(error) => Outcome::failed(if error.to_string() == orbit_executor_power::READERS_BUSY {
+                    orbit_executor_power::READERS_BUSY
+                } else {
+                    "instance.power_discard_failed"
+                }),
             },
             Action::UfwEnsureRule => match orbit_executor_firewall::ensure_rule(&orbit_executor_firewall::NodeUfw, order.input()) {
                 Ok(changes) => Outcome::Applied { changes },
                 Err(failure) => {
                     log(&format!("ufw.ensure_rule {} failed: {} {}", order.operation(), failure.code, failure.detail));
-                    Outcome::Failed { code: failure.code.to_owned() }
+                    Outcome::failed(failure.code)
                 }
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
+            Action::InstanceDestroy => self.destroy(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames => instance(order),
         }
+    }
+}
+
+impl Families {
+    fn destroy(&self, order: &VerifiedOrder) -> Outcome {
+        let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+        let id = order.target().as_str();
+        if let Err(failure) = orbit_executor_instance::destroy(&system, id, order.input()) {
+            log(&format!("{} {} failed: {}", order.action(), order.operation(), failure.code));
+            return destroy_failure(failure.code, &failure.detail);
+        }
+        match self.0.discard_destroyed(id) {
+            Ok(()) => Outcome::Done,
+            Err(error) => {
+                log(&format!(
+                    "{} {} could not discard executor power state",
+                    order.action(),
+                    order.operation()
+                ));
+                destroy_failure(
+                    "instance.power_discard_failed",
+                    &format!("Could not discard executor power state: {error}"),
+                )
+            }
+        }
+    }
+}
+
+fn destroy_failure(code: &str, detail: &str) -> Outcome {
+    const MAX_DETAIL_BYTES: usize = 4096;
+    let detail = orbit_agent_contract::redact::redact_text(detail);
+    let start = detail.len().saturating_sub(MAX_DETAIL_BYTES);
+    let bytes = detail.as_bytes();
+    let start = if start > 0 && bytes[start - 1] != b'\n' {
+        bytes[start..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(detail.len(), |newline| start + newline + 1)
+    } else {
+        start
+    };
+    let tail = detail[start..].trim();
+    let diagnostic = if !tail.is_empty() {
+        Some(tail.to_owned())
+    } else if start > 0 {
+        Some("The incomplete native diagnostic line was omitted.".to_owned())
+    } else {
+        None
+    };
+    Outcome::Failed {
+        code: code.to_owned(),
+        detail: diagnostic,
     }
 }
 
@@ -293,7 +337,7 @@ fn route(order: &VerifiedOrder) -> Outcome {
     };
     result.unwrap_or_else(|failure| {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
-        Outcome::Failed { code: failure.code.to_owned() }
+        Outcome::failed(failure.code)
     })
 }
 
@@ -304,7 +348,7 @@ fn dns(order: &VerifiedOrder) -> Outcome {
     orbit_executor_dns::publish_records(&system, order.input()).map_or_else(
         |failure| {
             log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
-            Outcome::Failed { code: failure.code.to_owned() }
+            Outcome::failed(failure.code)
         },
         |changes| Outcome::Applied { changes },
     )
@@ -330,13 +374,56 @@ fn instance(order: &VerifiedOrder) -> Outcome {
     };
     result.unwrap_or_else(|failure| {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
-        Outcome::Failed { code: failure.code.to_owned() }
+        Outcome::failed(failure.code)
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn destroy_failure_redacts_before_keeping_a_bounded_tail() {
+        let stderr = format!("{}Error: opening https://fixture:disposable-url-sentinel@example.test/owned\nPASSWORD=disposable-password-sentinel",
+            "ressource occupée\n".repeat(500));
+        let line = serde_json::to_value(destroy_failure("instance.removal_stop_failed", &stderr))
+            .expect("receipt");
+        let detail = line["detail"].as_str().expect("diagnostic");
+        assert_eq!(line["status"], "failed");
+        assert_eq!(line["code"], "instance.removal_stop_failed");
+        assert!(
+            detail.len() <= 4096,
+            "keep the public diagnostic within its byte bound"
+        );
+        assert!(
+            detail.contains("https://[REDACTED]@example.test/owned\nPASSWORD=[REDACTED]"),
+            "keep the redacted tail"
+        );
+        assert!(
+            !detail.contains("disposable-"),
+            "do not journal the original values"
+        );
+    }
+
+    #[test]
+    fn destroy_failure_marks_an_oversized_final_line_as_recorded_without_returning_it() {
+        let oversized = format!("earlier line\n{}", "resource fixture é ".repeat(300));
+        for detail in [&oversized, &format!("{oversized}\n")] {
+            let receipt = serde_json::to_value(destroy_failure("instance.removal_incomplete", detail))
+                .expect("receipt");
+            assert_eq!(
+                receipt,
+                serde_json::json!({
+                    "status": "failed",
+                    "code": "instance.removal_incomplete",
+                    "detail": "The incomplete native diagnostic line was omitted."
+                })
+            );
+        }
+        let empty = serde_json::to_value(destroy_failure("instance.removal_incomplete", ""))
+            .expect("receipt without diagnostic");
+        assert!(empty.get("detail").is_none());
+    }
 
     #[test]
     fn a_wake_takes_its_readiness_bound_from_the_signed_input() {

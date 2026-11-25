@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
+use App\Domain\Engine\EngineRun;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -112,18 +113,61 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                     $operation->update(['state' => [...($operation->state ?? []), 'container_stop_succeeded' => true]]);
                 }
                 if ($data['status'] === 'succeeded') {
-                    // A task's copy lets go of its group before its row goes; any other Instance has no owner and nothing happens.
-                    app(TaskLifecycle::class)->destroyed($operation->target_id);
-                    app(ProjectDirectInstanceDestroyAction::class)->execute(app(InstanceDestroySourceInspection::class)->executable($operation->input), $result);
+                    $this->removed($operation, $result);
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
-                    InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
-                        'error_code' => $data['error_code'] ?? 'operation.cancelled', 'current_step' => $this->failedStep($result), 'failed_step' => $this->failedStep($result)]);
-
+                    $this->failed($operation, $code ?? 'operation.cancelled', $this->failedStep($result));
                 }
             }
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    public function applyEngine(Operation $operation, EngineRun $run): void
+    {
+        $this->direct->assertRun($operation, $run->runId());
+        $step = $run->failed();
+        $failure = $step?->error_code;
+        $detail = $step?->error_detail;
+        $removed = $run->succeeded();
+        $label = $failure === 'instance.removal_stop_failed' ? 'Stop the container' : 'Delete the container';
+        $code = $failure === null ? null : (in_array($failure, self::PhaseCodes, true) ? $failure : 'instance.removal_incomplete');
+        $data = [...$run->times(), 'status' => $removed ? 'succeeded' : ($failure === null ? 'cancelled' : 'failed'), 'error_code' => $code,
+            ...($failure === null ? [] : ['failure' => ['failed_step' => $label,
+                'detail' => $detail ?? 'The Node refused or could not complete the signed removal.', 'stderr_recorded' => $detail !== null]])];
+        $result = match (true) {
+            $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])],
+            $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code],
+            default => [],
+        };
+        if ($removed && ! $operation->status->terminal()) {
+            app(ContainerDestroyExecutionCopies::class)->remove($operation);
+        }
+
+        DB::transaction(function () use ($operation, $removed, $data, $result, $code): void {
+            $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
+            if (! $operation->status->terminal()) {
+                if ($removed) {
+                    $this->removed($operation, $result);
+                } else {
+                    $this->failed($operation, $code ?? 'operation.cancelled', $code === null ? InstanceRemovalStep::SourcePreparation : InstanceRemovalStep::RuntimeCleanup);
+                }
+            }
+            $this->direct->project($operation, $data, $result);
+        });
+    }
+
+    /** @param array<string, mixed> $result */
+    private function removed(Operation $operation, array $result): void
+    {
+        app(TaskLifecycle::class)->destroyed($operation->target_id);
+        app(ProjectDirectInstanceDestroyAction::class)->execute(app(InstanceDestroySourceInspection::class)->executable($operation->input), $result);
+    }
+
+    private function failed(Operation $operation, string $code, InstanceRemovalStep $step): void
+    {
+        InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
+            'error_code' => $code, 'current_step' => $step, 'failed_step' => $step]);
     }
 
     /**

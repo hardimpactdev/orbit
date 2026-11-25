@@ -115,10 +115,10 @@ final class EngineBus implements MachineBus
     }
 
     /** Publishes one signed order to its Node. The nonce makes a repeated publish land once. */
-    public function publishOrder(int $node, SignedExecutorOrder $order): void
+    public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void
     {
         $this->ensureNode($node);
-        $this->publish('ORDERS', "orbit.node.{$node}.orders", $order->wire, ['Nats-Msg-Id' => $order->nonce]);
+        $this->publish('ORDERS', "orbit.node.{$node}.orders", $order->wire, ['Nats-Msg-Id' => $order->nonce], $claim);
     }
 
     /** The start event of an engine Operation: the consumer handles it like a receipt. */
@@ -300,11 +300,23 @@ final class EngineBus implements MachineBus
         return ValidatedData::object($value);
     }
 
-    /** @param array<string, string> $headers */
-    private function publish(string $stream, string $subject, string $body, array $headers): void
+    /**
+     * @param  array<string, string>  $headers
+     * @param  (Closure(): bool)|null  $claim
+     */
+    private function publish(string $stream, string $subject, string $body, array $headers, ?Closure $claim = null): void
     {
         try {
-            $ack = $this->client()->getApi()->getStream($stream)->publish($subject, new Payload($body, $headers));
+            $client = $this->client();
+            $destination = $client->getApi()->getStream($stream);
+            $payload = new Payload($body, $headers);
+            if ($claim !== null) {
+                $client->subscribeRequests();
+                if (! $claim()) {
+                    return;
+                }
+            }
+            $ack = $destination->publish($subject, $payload);
         } catch (Throwable $exception) {
             $this->client = null; // Reconnect on the next publish.
             throw new RuntimeException('engine.publish_failed', previous: $exception);

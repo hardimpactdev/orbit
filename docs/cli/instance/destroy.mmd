@@ -100,6 +100,22 @@ sequenceDiagram
   %%> - record the Operation and mark the Instance removing and Route retiring only after Schedule removal succeeds
   %%> On Schedule failure:
   %%> - keep the Instance and Route active; record no destroy Operation, as before
+  alt eligible signed clone removal
+    GW-->>CLI: 202 Accepted<br/>task #5132
+    %%> Result:
+    %%> - the Gateway has saved the removal intent; a receipt decides the outcome
+    GW->>N: Remove the clone<br/>signed instance.destroy
+    %%> When:
+    %%> - a non-default development container clone with --force needs no Route, database, Process, Schedule, custom or CI teardown
+    %%> - the Gateway enables the kind and the executor advertises the action
+    %%> What it does:
+    %%> - holds the Instance lock, force-stops the saved container, removes its owned volume, ACL, rules and files, and discards both engines' freeze artifacts
+    N-->>GW: Terminal receipt<br/>executor journal
+    %%> Recovery:
+    %%> - a lost receipt keeps the Instance fenced; the same step is resent with a fresh nonce and the executor repeats its stored result
+    %%> Result:
+    %%> - success projects the same removal as a Swamp run; a terminal failure leaves the saved intent for retry
+  else existing Swamp removal
   opt private repository
     GW->>SW: Push the token<br/>vault: github-token
     %%> Why:
@@ -249,7 +265,7 @@ sequenceDiagram
     %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules, mirror and, for a task copy, the Node scratch `/var/tmp/orbit-task-base-<id>` that a cancelled `task:sync` may leave; it holds no credential
     %%> - requires successful Route withdrawal when present, and owned database removal; other Instances stay
     %%> - the power helper's `discard`, as the Instance's lock unit: waits for a helper call still at work, then removes the plan, `limits.json`, the target descriptor and the Instance's fast wake request and outcome files, so a late worker finds nothing to act on
-    %%> - removes the executor's freeze state folder `/var/lib/orbit/executor/power/<instance id>` (plan, swap limits, receipt) with no signed order; signed destroy is a follow-up (ADR 0266, task 5891)
+    %%> - removes the executor's freeze state folder `/var/lib/orbit/executor/power/<instance id>` (plan, swap limits, receipt) with no signed order
     Note over SW: Read container removal
     %%> Failure:
     %%> - a skipped deletion has no result and cannot report success
@@ -292,6 +308,7 @@ sequenceDiagram
     %%> Retry:
     %%> - run `instance:destroy 42` again; it is a new task and converges the same captured set
     %%> - after a held withdrawal the retry skips it and waits for no Route write
+  end
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5132

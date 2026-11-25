@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
+use crate::executor::ORDER_EXPIRED;
 use crate::ids::{Nonce, OperationId, TargetId};
 use crate::order::PowerCheck;
 
@@ -67,6 +68,9 @@ pub enum Outcome {
     Failed {
         /// The failure's code.
         code: String,
+        /// Bounded public diagnostics for actions that provide them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
     },
     /// A desired-state primitive converged its resource and checked it (ADR 0271). A journal holding this outcome
     /// needs an executor that knows it: roll back only to a release that has the firewall family.
@@ -80,6 +84,20 @@ pub enum Outcome {
         /// The answer.
         stdout: String,
     },
+}
+
+impl Outcome {
+    /// A failure with no public diagnostic.
+    pub fn failed(code: impl Into<String>) -> Self {
+        Self::Failed {
+            code: code.into(),
+            detail: None,
+        }
+    }
+
+    pub(crate) fn ends_operation(&self, action: Action) -> bool {
+        action != Action::InstanceDestroy || !matches!(self, Self::Failed { code, .. } if code == ORDER_EXPIRED)
+    }
 }
 
 /// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.
@@ -204,8 +222,9 @@ impl Live {
                 at_ms,
             } => {
                 self.open.remove(nonce);
-                self.done
-                    .insert(key.clone(), (*nonce, outcome.clone(), *at_ms));
+                if outcome.ends_operation(key.action) {
+                    self.done.insert(key.clone(), (*nonce, outcome.clone(), *at_ms));
+                }
             }
         }
     }
@@ -743,6 +762,18 @@ mod tests {
 
     fn start(path: &Path, compaction: Compaction) -> Journal {
         Journal::start(path, Live::default(), compaction, || NOW, |_| {}).expect("journal starts")
+    }
+
+    #[test]
+    fn a_failed_outcome_without_a_diagnostic_keeps_its_existing_wire_shape() {
+        let line = serde_json::json!({"status": "failed", "code": "executor.order_expired"});
+        let outcome =
+            serde_json::from_value::<Outcome>(line.clone()).expect("existing journal outcome");
+        assert_eq!(outcome, Outcome::failed("executor.order_expired"));
+        assert_eq!(
+            serde_json::to_value(outcome).expect("receipt outcome"),
+            line
+        );
     }
 
     #[test]
