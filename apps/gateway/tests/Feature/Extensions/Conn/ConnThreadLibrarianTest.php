@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\AgentView\WebSocketException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -17,9 +18,11 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
+use Orbit\Extensions\Conn\Domain\T3ServerException;
 use Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob;
 use Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnThread;
 use Orbit\Extensions\Conn\Models\ConnThreadClassification;
 
 uses(LazilyRefreshDatabase::class);
@@ -51,6 +54,7 @@ beforeEach(function (): void {
     $this->rpc = [];
     $this->archived = false;
     $this->missingReads = 0;
+    $this->dropFilingReplies = 0;
     $socket = Mockery::mock(WebSocketClient::class);
     $socket->expects('connect')->withArgs(fn (WebSocketEndpoint $endpoint, float $timeout): bool => $endpoint->address === 'conn.test' && $endpoint->port === 3773 && $endpoint->path === '/ws?orchestrationProtocol=2'
         && $endpoint->bearerToken === 'test-admin-session' && ! $endpoint->secure && $timeout === 2.0)->zeroOrMoreTimes();
@@ -64,6 +68,9 @@ beforeEach(function (): void {
     });
     $socket->allows('receive')->andReturnUsing(function (): array {
         $request = end($this->rpc);
+        if ($request['tag'] === 'orchestration.dispatchCommand' && $this->dropFilingReplies-- > 0) {
+            throw new WebSocketException('The filing reply was lost.');
+        }
         $value = $request['tag'] === 'server.getConfig' ? ['scratchWorkspaceRoot' => '/home/agent/scratch'] : ['sequence' => 12];
 
         return [['_tag' => 'Exit', 'requestId' => $request['id'], 'exit' => ['_tag' => 'Success', 'value' => $value]]];
@@ -443,4 +450,49 @@ it('gives up after three failed model attempts and a later push does not requeue
     $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
         ->assertOk()->assertJsonPath('data.0.project_id', null)
         ->assertJsonPath('data.0.classification', ['result' => 'given_up', 'error_code' => 'conn.ai_router_invalid_response']);
+});
+
+describe('a filing whose reply was lost', function (): void {
+    it('records the thread in the index on the retry without filing twice', function (): void {
+        $this->dropFilingReplies = 1;
+        librarianHttpFake($this, librarianExisting($this));
+        librarianPushed($this);
+        $job = librarianQueuedJob();
+        expect(fn () => librarianRun($job))->toThrow(T3ServerException::class);
+        expect(librarianWrites($this->rpc))->toHaveCount(1)->and(ConnThread::hostQuery()->sole()->orbit_project_id)->toBeNull();
+
+        librarianRun($job);
+        expect(librarianWrites($this->rpc))->toHaveCount(1)
+            ->and(ConnThreadClassification::query()->sole()->completed_at)->not->toBeNull();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads?project='.$this->project->id)
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.thread_id', 'general-thread')
+            ->assertJsonPath('data.0.project_id', $this->project->id);
+    });
+
+    it('changes nothing in the index when the thread was refiled or unfiled by hand before the retry', function (mixed $orbitProject): void {
+        $this->dropFilingReplies = 1;
+        librarianHttpFake($this, librarianExisting($this));
+        librarianPushed($this);
+        $job = librarianQueuedJob();
+        expect(fn () => librarianRun($job))->toThrow(T3ServerException::class);
+        $this->thread['orbitProject'] = $orbitProject;
+
+        librarianRun($job);
+        expect(librarianWrites($this->rpc))->toHaveCount(1)->and(ConnThread::hostQuery()->sole()->orbit_project_id)->toBeNull()
+            ->and(ConnThreadClassification::query()->sole()->completed_at)->not->toBeNull();
+    })->with(['filed to another Project' => [['id' => 19, 'slug' => 'existing']], 'unfiled by hand' => [null]]);
+});
+
+it('lists host rows without activity, also rows written before host reads ended', function (): void {
+    librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+    ConnThread::hostQuery()->insert(['conn_environment_id' => $this->environment->id, 'thread_id' => 'old-thread', 'title' => 'Old',
+        'state' => 'running', 'needs_input' => true, 'last_user_message_at' => now()->subHour(), 'last_run_completed_at' => now()->subMinute(),
+        'seen_at' => now()->subMinute()]);
+    librarianPush($this, 'Old again', 'old-thread')->assertOk();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
+        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0', [
+            'environment_id' => 'env-host', 'instance_id' => null, 'project_id' => null, 'thread_id' => 'old-thread', 'title' => 'Old again',
+            'state' => null, 'needs_input' => false, 'last_user_message_at' => null, 'last_run_completed_at' => null,
+            'seen_at' => now()->toIso8601String(), 'classification' => null,
+        ]);
 });

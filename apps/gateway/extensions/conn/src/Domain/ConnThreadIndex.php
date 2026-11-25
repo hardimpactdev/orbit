@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceThreadContribution;
 use App\Models\Instance;
 use App\Models\Node;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Collection;
@@ -105,7 +106,12 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             ->leftJoin('conn_thread_classifications', static fn (JoinClause $join) => $join
                 ->on('conn_thread_classifications.conn_environment_id', '=', "{$hostTable}.conn_environment_id")
                 ->on('conn_thread_classifications.thread_id', '=', "{$hostTable}.thread_id"))
-            ->select(array_map(static fn (string $field): string => "{$hostTable}.{$field}", $fields))
+            // A host server is never read, so its rows carry no activity: no state, no pending input, no message times.
+            ->select(array_map(static fn (string $field): Expression|string => match ($field) {
+                'state', 'last_user_message_at', 'last_run_completed_at' => DB::raw("null as {$field}"),
+                'needs_input' => DB::raw('0 as needs_input'),
+                default => "{$hostTable}.{$field}",
+            }, $fields))
             ->selectRaw('null as instance_id')->addSelect('orbit_project_id', 'conn_thread_classifications.result as classification');
 
         return DB::query()->fromSub($containers->toBase()->unionAll($hosts->toBase()), 'thread_index')

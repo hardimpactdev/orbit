@@ -133,8 +133,13 @@ final readonly class ConnThreadLibrarian
         }
         if ($answer['result'] === 'existing' && ($project = $projects->get($answer['project_id'])) instanceof Project) {
             $current = $this->projection($environment, $job->threadId)['thread'] ?? null;
-            if (self::unassignedTopLevel($current) && ($current['projectId'] ?? null) === $job->connProjectId) {
-                $this->orchestration->file($environment, $job->threadId, $project->id, $project->slug);
+            // A retry after a filing whose reply was lost finds the thread in this answer's Project: it records it without filing again.
+            $orbitProject = is_array($current) ? ($current['orbitProject'] ?? null) : null;
+            $filed = is_array($orbitProject) && ($orbitProject['id'] ?? null) === $project->id;
+            if ($filed || (self::unassignedTopLevel($current) && ($current['projectId'] ?? null) === $job->connProjectId)) {
+                if (! $filed) {
+                    $this->orchestration->file($environment, $job->threadId, $project->id, $project->slug);
+                }
                 ConnThread::hostQuery()->where($key)->update(['orbit_project_id' => $project->id]);
             }
         }

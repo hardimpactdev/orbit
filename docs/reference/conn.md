@@ -125,9 +125,11 @@ When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.manag
 
 ## Thread index
 
-`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread; its body is `{thread_id, title}`, and it answers `201` with the row, or `200` when the row existed. A host thread has no `instance_id`; its `project_id` is its Orbit filing by the librarian, or `null` for General. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
+`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread; its body is `{thread_id, title}`, and it answers `201` with the row, or `200` when the row existed. A host thread has no `instance_id`. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
 
-The Gateway stores host rows separately from the container index. Nothing polls a host server: each host thread enters the index when its Conn Server pushes it, and the Gateway schedules no read for host threads. A host row's `state` stays `null`.
+The Gateway stores host rows separately from the container index. Nothing polls a host server: each host thread enters the index when its Conn Server pushes it, and the Gateway schedules no read for host threads. So a host row carries no activity. The list returns it with `state` `null`, `needs_input` `false`, and `null` for `last_user_message_at` and `last_run_completed_at`, also for rows written before host reads ended. Its `project_id` comes only from the librarian's filing, or is `null`: a manual filing in Conn does not reach it.
+
+A container row's `state` stays `null` until the next read of its server; host servers have no next read.
 
 `ORBIT_CONN_THREAD_INDEX_POLL=true` enables the container poll: `conn:threads:read` runs every minute on the `problems` queue. A failed read keeps that server's last rows and reports the failure in `meta.environments[].read_error`.
 

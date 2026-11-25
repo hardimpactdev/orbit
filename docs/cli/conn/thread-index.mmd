@@ -43,14 +43,16 @@ sequenceDiagram
   %%> - a host Conn Server records each thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response
   GW-->>C: Row recorded<br/>201 · 200 on a repeat
   %%> Result:
-  %%> - in the list at once; state stays null until the next read
+  %%> - in the list at once; a container row's state stays null until the next read of its server
+  %%> - a host row has no next read: the list shows it with `state` null, `needs_input` false and no last-message times, also for rows written before host reads ended
+  %%> - a host row's `project_id` comes only from the librarian's filing; a manual filing in Conn does not reach it
   C->>GW: List threads<br/>GET /conn/threads?project=
   %%> Requires:
   %%> - node access, as for the server list: only servers whose Node the caller reaches
   %%> Narrows by:
   %%> - `project` or `instance`, both optional
   %%> Reads:
-  %%> - the index only: browsing never reads a server; `meta.environments[].read_at` says how fresh each server's rows are
+  %%> - the index only: browsing never reads a server; `meta.environments[].read_at` says how fresh each container server's rows are; a host server is never read
   opt --instance, rows older than 10 s
     GW->>T3: Read one server through<br/>at most 0.5 s · switch on
     %%> When:
@@ -68,7 +70,7 @@ sequenceDiagram
   GW-->>C: Rows with seen_at<br/>meta.environments
   %%> Returns:
   %%> - the rows, newest user message first, and each covered server with `power_state`, `read_at` and `read_error`
-  %%> - host rows have no `instance_id` and include the librarian's `classification` after a decision
+  %%> - host rows have no `instance_id`, no activity and no last-message time, so they follow the rows that have one; they include the librarian's `classification` after a decision
   %%> - an asleep server's rows are its last read, with their `seen_at`
   Note over GW: Last read before a sleep<br/>instance.sleep admission
   %%> When:
