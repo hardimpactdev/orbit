@@ -1,0 +1,94 @@
+# Conn librarian push proof (branch)
+started: 2026-11-25T20:21:01Z
+checkout commit: 1c20e382166e7b1913df152e5cd1bc601c219847
+seeded: host Node 127.0.0.1 (active), Orbit Project 1, host Conn environment env-host (instance_id null)
+
+## The host's first librarian poll sets its cutoff (no threads yet)
+poll pass done
+  worker: 2026-11-25 20:21:07 Worker STOPPED Queue empty
+
+## A: one push for a new host General thread queues one classification and files it
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-a","title":"Proof thread-a"}
+  status 201 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-a","title":"Proof thread-a","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:08+00:00","classification":null},"meta":{"request_id":"dfb38b14-2212-4a1b-82e3-d9ed9913065a"}}
+ queued on tasks: Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob
+ jobs queued: 1
+  worker: 2026-11-25 20:21:08 Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob  RUNNING
+  worker: 2026-11-25 20:21:08 Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob  35.11ms DONE
+  worker: 2026-11-25 20:21:08 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  RUNNING
+  worker: 2026-11-25 20:21:08 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  19.82ms DONE
+  worker: 2026-11-25 20:21:11 Worker STOPPED Queue empty
+  fake: GET shell
+  fake: GET thread thread-a: first message readable
+  fake: POST ai-router /v1/messages model=claude-haiku-5-5
+  fake: GET thread thread-a: first message readable
+  fake: WS file thread-a into Project 1
+ classification thread-a: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ given_up rows: 0, failed jobs: 0
+  fake totals: ai-router calls 1, file commands 1
+
+## B: the same push plus polls adds no classification
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-b","title":"Proof thread-b"}
+  status 201 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-b","title":"Proof thread-b","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:12+00:00","classification":null},"meta":{"request_id":"98275c76-e15e-4b36-8c35-436c355f33eb"}}
+worker runs only the push's discovery:
+ queued on tasks: Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob
+ jobs queued: 1
+a poll while the classification waits:
+poll pass done
+ queued on tasks: Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob
+ jobs queued: 1
+  worker: 2026-11-25 20:21:13 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  RUNNING
+  worker: 2026-11-25 20:21:13 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  31.37ms DONE
+  worker: 2026-11-25 20:21:16 Worker STOPPED Queue empty
+a poll after the thread is filed:
+poll pass done
+ jobs queued: 0
+  fake: GET shell
+  fake: GET shell
+  fake: GET thread thread-b: first message readable
+  fake: POST ai-router /v1/messages model=claude-haiku-5-5
+  fake: GET thread thread-b: first message readable
+  fake: WS file thread-b into Project 1
+  fake: GET shell
+ classification thread-a: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ classification thread-b: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ given_up rows: 0, failed jobs: 0
+  fake totals: ai-router calls 2, file commands 2
+
+## C: a push before the first message is readable reads again, then files it, with no given_up row
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-c","title":"Proof thread-c"}
+  status 201 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-c","title":"Proof thread-c","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:17+00:00","classification":null},"meta":{"request_id":"8afa87a0-2681-488a-9f43-53f3ee8e682c"}}
+  worker: 2026-11-25 20:21:17 Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob  RUNNING
+  worker: 2026-11-25 20:21:17 Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob  27.19ms DONE
+  worker: 2026-11-25 20:21:17 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  RUNNING
+  worker: 2026-11-25 20:21:21 Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob  4s DONE
+  worker: 2026-11-25 20:21:24 Worker STOPPED Queue empty
+  fake: GET shell
+  fake: GET thread thread-c: first message not readable yet
+  fake: GET thread thread-c: first message not readable yet
+  fake: GET thread thread-c: first message readable
+  fake: POST ai-router /v1/messages model=claude-haiku-5-5
+  fake: GET thread thread-c: first message readable
+  fake: WS file thread-c into Project 1
+ classification thread-a: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ classification thread-b: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ classification thread-c: {"result":"existing","project_id":1,"reason":"Orbit Gateway work."} completed=yes
+ given_up rows: 0, failed jobs: 0
+  fake totals: ai-router calls 3, file commands 3
+
+## Response of conn:thread:record
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-r","title":"Proof thread-r"}
+  status 201 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-r","title":"Proof thread-r","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:25+00:00","classification":null},"meta":{"request_id":"67801f80-fd5c-4df9-a36e-fc39df3e6682"}}
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-r","title":"Proof thread-r"}
+  status 200 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-r","title":"Proof thread-r","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:25+00:00","classification":null},"meta":{"request_id":"ee993477-4ee3-487d-83bb-edcade9ebf82"}}
+finished: 2026-11-25T20:21:28Z
+
+# Conn librarian push proof (main)
+started: 2026-11-25T20:21:35Z
+checkout commit: 1c20e382166e7b1913df152e5cd1bc601c219847 (with the code on main checked out over it)
+seeded: host Node 127.0.0.1 (active), Orbit Project 1, host Conn environment env-host (instance_id null)
+
+## Response of conn:thread:record
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-r","title":"Proof thread-r"}
+  status 201 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-r","title":"Proof thread-r","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:38+00:00","classification":null},"meta":{"request_id":"0a0a4ab7-36f3-4ba2-b440-8988b9b475ae"}}
+$ POST /api/v1/conn/environments/env-host/threads {"thread_id":"thread-r","title":"Proof thread-r"}
+  status 200 body {"data":{"environment_id":"env-host","instance_id":null,"project_id":null,"thread_id":"thread-r","title":"Proof thread-r","state":null,"needs_input":false,"last_user_message_at":null,"last_run_completed_at":null,"seen_at":"2026-11-25T20:21:38+00:00","classification":null},"meta":{"request_id":"1d528b1d-8512-481c-aa8d-08fba7edf3ed"}}
