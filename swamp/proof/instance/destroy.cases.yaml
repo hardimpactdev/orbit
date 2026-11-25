@@ -1,13 +1,33 @@
-# Live lane obligations, after independent review PASS. The runner has no container Instance fixture.
 command: instance:destroy
 chart: instance/container/destroy
 target: app-dev
 sources: [gateway]
 baseline: [operations]
-cases: []
+cases:
+  - id: signed-and-swamp-clone-lifecycle
+    batch: fresh-fleet
+    covers: ["path:admitted", "path:default-unavailable", "path:force-required", "path:removal-failed", "path:succeeded"]
+    summary: Create ready disposable clones, remove them through both engines, and recover a dropped signed receipt without repeating deletion or releasing the fence early.
+    exclusive: true
+    fails_on_base: true
+    timeout: 600
+    setup:
+      - clone_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - clone_create: {name: sibling, via: engine}
+      - clone_create: {name: signed, via: engine}
+      - clone_destroy: {name: signed, via: engine, sibling: sibling}
+      - clone_create: {name: interrupted, via: engine}
+      - clone_destroy: {name: interrupted, via: engine, sibling: sibling, fault: receipt}
+      - clone_create: {name: retry, via: engine}
+      - clone_destroy: {name: retry, via: engine, sibling: sibling, fault: held-volume}
+      - clone_create: {name: fallback, via: swamp}
+      - clone_destroy: {name: fallback, via: swamp, sibling: sibling}
+    expect:
+      - clone_compare: {engine: signed, swamp: fallback}
+      - clone_cleanup: {}
 uncovered:
   "path:main": "Need a container clone fixture with an owned database, Processes, a Route and a paired T3 client. Force destroy one clone; verify its Route, Processes, database, container, ZFS volume/snapshots, default-project ACL, firewall rules, mirror, Conn records and execution copies are absent. The client loses access; the default and sibling remain healthy; another clone can reuse its T3 port."
-  "path:removal-failed": "Inject failure after withdrawal and after container deletion. A fresh forced destroy must reuse the saved removal identity, accept absent resources and finish without touching the default or sibling. Also destroy a stopped clone."
-  "path:force-required": "Without --force, refuse a clone with instance.container_destroy_force_required, no Operation and unchanged resources."
-  "path:default-unavailable": "Container default destruction remains unavailable with and without force; no Operation or live effects. Default removal and the refusal while clones exist are follow-up work."
-  "path:succeeded": "Replay the completed destroy's original idempotency key after record deletion; recover the same Operation. Verify that the freed port is allocated to a new clone."
+  "path:removal-failed": "The case retries signed removal after container deletion. Failure after Route withdrawal and destruction of a stopped clone are not covered."
+  "path:default-unavailable": "The case checks the forced refusal for an unlisted default. Refusal without force and the allowlisted default's refusal with live copies are not covered."
+  "path:succeeded": "The case replays the original admission key after deletion. Actual reallocation of the freed port is not covered."
