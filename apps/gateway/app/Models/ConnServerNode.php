@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $user The user that runs it; on a Mac, the SSH user whose gui domain holds the LaunchAgent.
  * @property bool $canary
  * @property bool $notify_before_restart
+ * @property bool $tool_withdrawn
  * @property-read Node $node
  */
 final class ConnServerNode extends Model
@@ -35,6 +36,6 @@ final class ConnServerNode extends Model
     #[\Override]
     protected function casts(): array
     {
-        return ['port' => 'integer', 'canary' => 'boolean', 'notify_before_restart' => 'boolean'];
+        return ['port' => 'integer', 'canary' => 'boolean', 'notify_before_restart' => 'boolean', 'tool_withdrawn' => 'boolean'];
     }
 }

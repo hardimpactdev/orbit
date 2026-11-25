@@ -21,6 +21,9 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
     validateConstraint(input);
     const argv = commands(input);
     if (mode === "plan") {
+        if (payload.tool.manager_unavailable === true) {
+            throw new ToolRefusal("tool.manager_unsupported");
+        }
         if (z.array(z.string()).parse(payload.tool.protected).includes(input.package)) {
             throw new ToolRefusal("tool.package_protected");
         }
@@ -44,7 +47,7 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
     if (!safeVersion(selected)) throw new ToolRefusal("tool.candidate_version_unavailable");
     const write = input.manager === "apt" ? aptWrite(input.package, selected, input.desired_version !== null)
         : commands({ ...input, desired_version: selected,
-            kind: present && input.manager.startsWith("brew") ? "tool.update" : input.kind }).write;
+            kind: present && (input.manager.startsWith("brew") || input.manager === "vp") ? "tool.update" : input.kind }).write;
     return { write };
 }
 

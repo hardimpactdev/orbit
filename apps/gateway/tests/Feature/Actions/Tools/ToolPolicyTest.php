@@ -165,6 +165,41 @@ it('keeps the signed source requested by a failed install and retries at the sam
     expect($retry->input)->toMatchArray(['repository' => $source, 'desired_version' => '1.10', 'repository_given' => true]);
 });
 
+it('keeps a failed signed-source update separate from the last verified source', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.10');
+    $original = policySignedRepository('1.10');
+    $desired = policySignedRepository('1.1');
+    $verified = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $original]);
+    $tool->update(['apt_repository_id' => $verified->id, 'desired_repository' => $original]);
+    $operations = app(StartToolOperationAction::class);
+    $operation = $operations->execute('update', $node->id, 'apt', 'tree', null, $tool, $desired, '2.0');
+    policyComplete($operation, 'failed', ['steps' => ['Apply the package' => ['status' => 'failed']]]);
+    expect($tool->refresh()->desired_repository)->toBe($desired)->and($verified->refresh()->definition)->toBe($original);
+    expect(app(ToolConvergeIntent::class)->capture($node)[0])->toMatchArray(['repository' => $desired, 'desired_version' => '2.0']);
+    expect($operations->execute('update', $node->id, 'apt', 'tree', null, $tool)->input)->toMatchArray(['repository' => $desired, 'desired_version' => '2.0']);
+});
+
+it('bounds a converge batch while keeping repository preferences for unselected memberships', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $tools = [];
+    foreach (['tree', 'nano', 'ed', 'ripgrep'] as $package) {
+        $tool = policyTool($node, $package, '1.10');
+        $tool->update(['desired_repository' => $source]);
+        $tools[$package] = $tool->id;
+    }
+    $converge = app(StartToolConvergeAction::class);
+    expect(fn () => $converge->execute($node, 'test'))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.batch_too_large'));
+    $foreign = policyTool(policyNode('other', 11), 'tree', '1.10');
+    expect(fn () => $converge->execute($node, 'test', [$foreign->id]))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.scope_invalid'));
+    $operation = $converge->execute($node, 'test', [$tools['nano'], $tools['ed']]);
+    expect(array_column($operation->input['intent']['tools'], 'id'))->toBe([$tools['nano'], $tools['ed']])
+        ->and($operation->input['intent']['tools'][0]['repository_packages'])->toBe(['ed', 'nano', 'ripgrep', 'tree']);
+});
+
 it('admits the remaining preference packages for both membership changes and refuses unilateral trust changes', function (): void {
     policySwamp();
     $node = policyNode('dev');

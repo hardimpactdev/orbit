@@ -7,7 +7,9 @@ namespace App\Domain\ConnServer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Models\Operation;
+use App\Models\Tool;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Records the rollout's one report: the version, whether it was a dry run, and each Node's outcome (`updated`, `checked`, `held`,
@@ -31,6 +33,29 @@ final readonly class ConnServerRolloutProjection implements DirectOperationProje
         }
         $result = array_intersect_key($raw, array_flip(['version', 'dry_run', 'nodes', 'error_code']));
 
-        return $this->direct->project($operation, $data, $result);
+        return DB::transaction(function () use ($operation, $data, $result): Operation {
+            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $terminal = $operation->status->terminal();
+            $operation = $this->direct->project($operation, $data, $result);
+            $intent = ValidatedData::object($operation->input['intent']);
+            if ($terminal || ! $operation->status->terminal() || ($intent['dry_run'] ?? true) !== false
+                || ($result['version'] ?? null) !== ($intent['version'] ?? null) || ! is_string($intent['version'] ?? null)) {
+                return $operation;
+            }
+            $admitted = [];
+            foreach (is_array($intent['nodes'] ?? null) ? $intent['nodes'] : [] as $node) {
+                if (is_array($node) && is_int($node['tool_id'] ?? null) && is_int($node['node_id'] ?? null)) {
+                    $admitted[$node['node_id']] = $node['tool_id'];
+                }
+            }
+            foreach (is_array($result['nodes'] ?? null) ? $result['nodes'] : [] as $observation) {
+                if (is_array($observation) && is_int($observation['node_id'] ?? null) && ($observation['outcome'] ?? null) === 'updated'
+                    && isset($admitted[$observation['node_id']])) {
+                    Tool::query()->whereKey($admitted[$observation['node_id']])->where('node_id', $observation['node_id'])->update(['installed_version' => $intent['version']]);
+                }
+            }
+
+            return $operation;
+        });
     }
 }

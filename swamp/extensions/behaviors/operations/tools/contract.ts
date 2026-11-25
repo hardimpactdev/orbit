@@ -120,6 +120,7 @@ export function normalizeVersion(
     }
     // A cask version carries its build after a comma, such as `1.5.13,5253791805734912`; SemVer reads the part before it.
     if (manager === "brew-cask") version = version.split(",")[0];
+    if (manager === "brew") version = version.replace(/_[1-9]\d*$/, "");
     const match =
         /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
             .exec(version);

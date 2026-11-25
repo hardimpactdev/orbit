@@ -13,11 +13,12 @@ sequenceDiagram
   participant N as Target Node
   CLI->>GW: tool:converge --node=ID
   %%> Command:
-  %%> - syntax: `--node=ID [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `--node=ID [--tool-id=TOOL ...] [--idempotency-key=KEY] [--json]`
   Note over GW: Admit registered Tools<br/>with desired coordinates
   %%> Requirements:
   %%> - the Node is active and SSH-managed on Linux or macOS
   %%> - the caller has access to the Node and no competing Tool write is active
+  %%> - admit at most three registered Tools; an explicit selection must belong to this Node
   alt no registered Tools
     GW-->>CLI: Complete · changed 0
   else registered Tools

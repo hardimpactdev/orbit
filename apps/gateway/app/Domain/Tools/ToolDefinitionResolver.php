@@ -6,11 +6,12 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\Tools\AptRepositoryRules;
+use App\Infrastructure\MachineSoftware\ConnServerReleases;
 use App\Models\Tool;
 
 final readonly class ToolDefinitionResolver
 {
-    public function __construct(private ToolPolicy $policy, private VersionConstraint $constraints) {}
+    public function __construct(private ToolPolicy $policy, private VersionConstraint $constraints, private ConnServerReleases $conn) {}
 
     /** @param array<string, mixed>|null $repository */
     public function resolve(string $verb, ToolManager $manager, string $package, ?Tool $tool, ?string $version, ?string $constraint, ?array $repository, ?ActiveToolPolicy $active = null): ToolDefinition
@@ -32,7 +33,7 @@ final readonly class ToolDefinitionResolver
             if ($tool !== null && $constraint !== null && $tool->version_constraint !== $constraint) {
                 throw new ResourceOperationException('tool.constraint_conflict', 'The Tool already has a different constraint.', 409);
             }
-            $definition = new ToolDefinition($version ?? $tool?->desired_version, $constraint ?? $tool?->version_constraint,
+            $definition = new ToolDefinition($version ?? $tool?->desired_version ?? ($manager->name() === ToolManagerName::ConnServer ? $this->conn->find(null)?->version : null), $constraint ?? $tool?->version_constraint,
                 $repository ?? $tool?->desired_repository ?? $tool?->aptRepository?->definition);
         }
         $this->validate($manager, $definition);
@@ -51,6 +52,7 @@ final readonly class ToolDefinitionResolver
                 ToolManagerName::Apt => '/\A(?:[0-9]+:)?[0-9][0-9A-Za-z.+~:-]{0,253}\z/D',
                 ToolManagerName::BrewCask => '/\A[0-9][0-9A-Za-z.+_,:-]{0,254}\z/D',
                 ToolManagerName::Brew => '/\A[0-9][0-9A-Za-z.+_-]{0,254}\z/D',
+                ToolManagerName::ConnServer => '/\A[0-9]+\.[0-9]+\.[0-9]+\z/D',
                 ToolManagerName::Vp, ToolManagerName::Composer => '/\Av?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/D',
             };
             if (strlen($version) > 255 || preg_match($pattern, $version) !== 1
@@ -63,6 +65,9 @@ final readonly class ToolDefinitionResolver
                     throw new ResourceOperationException('tool.version_constraint_blocked', 'The exact Tool coordinate is outside the constraint.', 422);
                 }
             }
+        }
+        if ($manager->name() === ToolManagerName::ConnServer && ($version === null || $this->conn->find($version) === null)) {
+            throw new ResourceOperationException('conn_server.pin_unavailable', 'The requested Conn Server host release is not in the release catalog.', 409);
         }
         new AptRepositoryRules()->validate($definition->repository, $manager->name()->value);
     }

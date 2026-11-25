@@ -37,6 +37,13 @@
         fail_msg: conn_server.too_many_nodes
         quiet: true
 
+    - name: Refuse a withdrawal that does not name exactly one Linux Node
+      when: intent.withdraw | default(false)
+      ansible.builtin.assert:
+        that: intent.nodes | length == 1 and intent.nodes[0].server.platform == 'linux'
+        fail_msg: conn_server.withdraw_scope_invalid
+        quiet: true
+
     - name: Start with no Node results
       ansible.builtin.file: { path: "{{ run }}/nodes", state: directory, mode: "0700" }
 

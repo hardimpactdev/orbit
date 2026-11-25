@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Domain\ConnServer\ConnServerToolManager;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
@@ -30,6 +31,7 @@ final class ToolsServiceProvider extends ServiceProvider
                 app(ComposerToolManager::class),
                 app(HomebrewToolManager::class),
                 app(HomebrewCaskToolManager::class),
+                app(ConnServerToolManager::class),
             ]),
         );
     }

@@ -19,7 +19,7 @@ const targetPlay = async () => (parse(await Deno.readTextFile(new URL("../ansibl
 const recipe = JSON.parse(await Deno.readTextFile(new URL("../../apps/gateway/resources/machine-software/core.yaml", import.meta.url)));
 
 Deno.test("generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible", async () => {
-    const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
+    const { convergeInput, toolConvergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
     const folder = await Deno.makeTempDir();
     try {
         const fixture = {
@@ -32,19 +32,22 @@ Deno.test("generated converge vars preserve shell arguments, scalar strings and 
         const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, roles: [], fixture }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, 1, "/unused", "/unused", shipped.code);
         await Deno.writeTextFile(`${folder}/roundtrip.json`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
             tasks: [{ name: "Read generated literal values", "ansible.builtin.copy": {
                 dest: `${folder}/result.json`, content: "{{ converge_intent.fixture | to_json }}", mode: "0600",
             } }],
         }]));
-        const result = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, `${folder}/roundtrip.json`],
-            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
-        }).output();
-        assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
-        assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result.json`)), fixture);
+        for (const prepare of [() => convergeInput(folder, 1, "/unused", "/unused", shipped.code), () => toolConvergeInput(folder, "/unused")]) {
+            await prepare();
+            const result = await new Deno.Command("ansible-playbook", {
+                args: ["-i", "localhost,", "-e", `@${folder}/vars.yml`, `${folder}/roundtrip.json`],
+                env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" }, stdout: "piped", stderr: "piped",
+            }).output();
+            assertEquals(result.code, 0, new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr));
+            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/result.json`)), fixture);
+            await Deno.remove(`${folder}/result.json`);
+        }
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -448,7 +451,7 @@ async function compiledSwamp(folder: string) {
     await Deno.chmod(path, 0o755);
     return path;
 }
-async function toolsPhase(folder: string, runtime: string) {
+async function toolsPhase(folder: string, runtime: string, tools: unknown[] | null = null) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
         const imported = task["ansible.builtin.import_tasks"];
@@ -458,7 +461,7 @@ async function toolsPhase(folder: string, runtime: string) {
     const tool = { id: 3, manager: "apt", package: "tree", version_constraint: null, protected: ["tree"], repository: null };
     await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false, tasks,
-        vars: { intent: { node_id: 7, user: "orbit", tools: [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
+        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
     }]));
     const result = await new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
@@ -512,10 +515,19 @@ for (const runtime of ["the compiled Swamp binary", "a missing Deno launcher"]) 
 Deno.test("with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds", async () => {
     const folder = await Deno.makeTempDir();
     try {
-        const phase = await toolsPhase(folder, Deno.execPath());
+        const aptVersion = await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dpkg"] }).output();
+        assertEquals(aptVersion.code, 0);
+        const observed = new TextDecoder().decode(aptVersion.stdout);
+        const protectedApt = { id: 3, manager: "apt", package: "tree", protected: ["tree"], repository: null };
+        const unavailable = { id: 4, manager: "brew-cask", package: "font-orbit-test", protected: [], repository: null, manager_unavailable: true };
+        const matchingApt = { id: 5, manager: "apt", package: "dpkg", protected: [], repository: null, desired_version: observed };
+        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt]);
         assertEquals(phase.code, 0, phase.output);
         assertMatch(phase.output, /tool\.package_protected/);
-        assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null }]);
+        assertMatch(phase.output, /tool\.manager_unsupported/);
+        assertMatch(phase.output, /Refresh applicable apt candidate metadata[\s\S]*?skipping: \[localhost\]/);
+        assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null },
+            { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

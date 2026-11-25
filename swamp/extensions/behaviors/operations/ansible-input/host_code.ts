@@ -29,8 +29,10 @@ export async function hostCode(root: string): Promise<string> {
         files.add(file);
         for (const module of importNames(path, await Deno.readTextFile(`${root}/${file}`))) if (module.startsWith("../")) outside.add(module);
     }
-    for (const folder of [`${operations}/tools`, "apps/gateway/resources/machine-software"]) {
-        for (const file of await tree(`${root}/${folder}`)) files.add(`${folder}/${file}`);
+    for (const file of await tree(`${root}/${operations}/tools`)) files.add(`${operations}/tools/${file}`);
+    const recipe = "apps/gateway/resources/machine-software";
+    for (const file of await tree(`${root}/${recipe}`)) {
+        if (file === "core.yaml" || file === "vite-plus-package-lock.json") files.add(`${recipe}/${file}`);
     }
     files.add(`${operations}/ansible-input/converge_tool.ts`);
     const rows: string[] = [];

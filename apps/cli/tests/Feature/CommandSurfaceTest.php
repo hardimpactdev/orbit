@@ -1026,7 +1026,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'repository' => null, 'yes' => false, 'json' => false],
         ],
-        'tool:converge' => [[], ['node' => null, 'idempotency-key' => null, 'json' => false]],
+        'tool:converge' => [[], ['node' => null, 'tool-id' => [], 'idempotency-key' => null, 'json' => false]],
         'tool:install' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'tool-version' => null, 'repository' => null, 'idempotency-key' => null, 'json' => false],

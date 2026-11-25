@@ -234,7 +234,7 @@ async function writeInventory(folder: string, intent: { ssh: Ssh; node_id: numbe
 export async function toolConvergeInput(folder: string, toolHelper: string) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     await writeInventory(folder, { ...intent, roles: [] });
-    await Deno.writeTextFile(`${folder}/vars.yml`, JSON.stringify({ converge_intent: intent,
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: intent,
         converge_tool_helper: toolHelper, converge_deno: toolRuntime }), { mode: 0o600 });
 }
 

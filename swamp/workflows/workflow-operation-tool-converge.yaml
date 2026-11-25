@@ -53,7 +53,7 @@ jobs:
               export ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg"
               export ANSIBLE_SSH_ARGS="-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s"
               export ANSIBLE_STDOUT_CALLBACK=ansible.posix.json
-              timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.json" -e "@$ORBIT_RUN/vars.yml" -e "orbit_run=$ORBIT_RUN" --tags tools "$ORBIT_ANSIBLE/operation-tool-converge.yml" > "$ORBIT_RUN/tools.json"
+              timeout 6800 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.json" -e "@$ORBIT_RUN/vars.yml" -e "orbit_run=$ORBIT_RUN" --tags tools "$ORBIT_ANSIBLE/operation-tool-converge.yml" > "$ORBIT_RUN/tools.json"
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_ANSIBLE: '${{ steps["Prepare pinned SSH input"].outputs.assets }}'

@@ -136,6 +136,14 @@ Deno.test("Homebrew end observations decode the installed version without anothe
     assertEquals(command.includes("/opt/homebrew/bin/brew"), true);
 });
 
+Deno.test("Vite+ selects install argv for exact updates and update argv otherwise", () => {
+    for (const platform of ["linux", "macos"] as const) {
+        const tool = { ...input("vp"), platform, kind: "tool.update" as const };
+        assertEquals(commands({ ...tool, desired_version: "v1.2.3" }).write.slice(-3), ["install", "-g", "hello@1.2.3"]);
+        assertEquals(commands(tool).write.slice(-4), ["update", "-g", "hello", "--reinstall-node-mismatch"]);
+    }
+});
+
 Deno.test("Linux Vite+ uses the recipe launcher, which selects its installed store", () => {
     const c = commands(input("vp"));
     assertEquals(c.version.includes("/usr/local/bin/vp"), true);

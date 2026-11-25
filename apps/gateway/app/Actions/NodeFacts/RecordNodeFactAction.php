@@ -27,7 +27,7 @@ final readonly class RecordNodeFactAction
      */
     public function execute(Node $node, NodeFactKind $kind, string $subject, CarbonImmutable $observedAt, array $data): bool
     {
-        $tracksConfirmation = in_array($kind, [NodeFactKind::Host, NodeFactKind::Units, NodeFactKind::Ufw], true);
+        $tracksConfirmation = in_array($kind, [NodeFactKind::Host, NodeFactKind::Units, NodeFactKind::Ufw, NodeFactKind::Packages], true);
         $receivedAt = CarbonImmutable::now();
         $latestAllowed = $receivedAt->addSeconds(self::ClockSkewSeconds);
         if ($tracksConfirmation && $observedAt->greaterThan($latestAllowed)) {

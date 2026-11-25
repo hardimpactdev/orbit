@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ToolConvergeIntent
 {
+    public const int MaxBatch = 3;
+
     public function __construct(
         private ToolManagerRegistry $managers,
         private ToolPolicy $policy,
@@ -21,8 +24,10 @@ final readonly class ToolConvergeIntent
         private ToolPackageProtection $protection,
     ) {}
 
-    /** @return list<array<string, mixed>> */
-    public function capture(Node $node, ?int $owner = null): array
+    /** @param list<int>|null $ids
+     * @return list<array<string, mixed>>
+     */
+    public function capture(Node $node, ?int $owner = null, ?array $ids = null): array
     {
         $this->assertIdle($node->id, $owner);
         $active = $this->policy->active();
@@ -30,7 +35,7 @@ final readonly class ToolConvergeIntent
         $repositories = [];
         foreach (Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get() as $tool) {
             $manager = $this->managers->find($tool->manager->name);
-            if ($manager === null) {
+            if ($manager === null || $manager->name() === ToolManagerName::ConnServer) {
                 continue;
             }
             $protected = $this->protection->forNode($node, $manager->name());
@@ -53,6 +58,16 @@ final readonly class ToolConvergeIntent
             $packages[] = $package;
         }
 
+        if ($ids !== null) {
+            $packages = array_values(array_filter($packages, static fn (array $package): bool => in_array($package['id'], $ids, true)));
+            if (count($packages) !== count($ids)) {
+                throw new ResourceOperationException('tool.scope_invalid', 'Every Tool ID must name a convergable membership on this Node.', 422);
+            }
+        }
+        if (count($packages) > self::MaxBatch) {
+            throw new ResourceOperationException('tool.batch_too_large', 'Converge at most '.self::MaxBatch.' Tools at a time with tool:converge --tool-id.', 422);
+        }
+
         return array_map(static function (array $package) use ($repositories): array {
             if (is_array($package['repository'])) {
                 $name = ValidatedData::string($package['repository']['name']);
@@ -69,7 +84,7 @@ final readonly class ToolConvergeIntent
     public static function writers(): Builder
     {
         return Operation::query()->where(static fn ($query) => $query->whereIn('status', OperationStatus::openValues())->orWhereNotNull('lock_key'))
-            ->where(static fn ($query) => $query->where('kind', 'like', 'tool.%')
+            ->where(static fn ($query) => $query->where('kind', 'like', 'tool.%')->orWhere('kind', ConnServerRollout::Kind)
                 ->orWhere(static fn ($node) => $node->where('kind', 'node.converge')
                     ->where(static fn ($intent) => $intent->where('input->_converge->tool_scope', true)
                         ->orWhereJsonLength('input->_converge->intent->tools', '>', 0))));
@@ -77,7 +92,8 @@ final readonly class ToolConvergeIntent
 
     public function assertIdle(int $nodeId, ?int $owner = null): void
     {
-        if (self::writers()->where('node_id', $nodeId)->when($owner !== null, static fn ($query) => $query->whereKeyNot($owner))->exists()) {
+        if (self::writers()->where(static fn ($query) => $query->where('node_id', $nodeId)->orWhere('kind', ConnServerRollout::Kind))
+            ->when($owner !== null, static fn ($query) => $query->whereKeyNot($owner))->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'Another Tool Operation owns this Node.', 409);
         }
     }

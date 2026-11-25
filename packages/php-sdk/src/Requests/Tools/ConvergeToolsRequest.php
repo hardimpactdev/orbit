@@ -6,15 +6,26 @@ namespace Orbit\Sdk\Requests\Tools;
 
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
+use Saloon\Traits\Body\HasJsonBody;
 
-final class ConvergeToolsRequest extends GatewayRequest
+final class ConvergeToolsRequest extends GatewayRequest implements HasBody
 {
+    use HasJsonBody;
+
     #[\Override]
     protected Method $method = Method::POST;
 
-    public function __construct(private readonly int $nodeId, private readonly ?string $idempotencyKey = null) {}
+    /** @param list<int>|null $toolIds */
+    public function __construct(private readonly int $nodeId, private readonly ?string $idempotencyKey = null, private readonly ?array $toolIds = null) {}
+
+    /** @return array{tool_ids?: list<int>} */
+    protected function defaultBody(): array
+    {
+        return $this->toolIds === null ? [] : ['tool_ids' => $this->toolIds];
+    }
 
     public function resolveEndpoint(): string
     {

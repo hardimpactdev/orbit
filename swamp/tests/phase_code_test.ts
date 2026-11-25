@@ -432,9 +432,20 @@ Deno.test("the Instance host's code moves with a file the converge's check tag l
         // Another Operation's playbook (class c): the host stays.
         await append("instance-container-power.yml");
         assertEquals(await hostCode(tree), before);
+        const recipe = (name: string) => Deno.writeTextFile(`${tree}/apps/gateway/resources/machine-software/${name}`, "\n", { append: true });
+        for (const catalog of ["tools.yaml", "conn-server-releases.yaml"]) {
+            await recipe(catalog);
+            assertEquals(await hostCode(tree), before, catalog);
+        }
+        await recipe("core.yaml");
+        const core = await hostCode(tree);
+        assertEquals(core === before, false);
+        await recipe("vite-plus-package-lock.json");
+        const lock = await hostCode(tree);
+        assertEquals(lock === core, false);
         // node.converge runs `--tags check` after its phases; it loads the role check of every selected role, app-dev's too.
         await append("tasks/node-converge-role-check.yml");
-        assertEquals((await hostCode(tree)) === before, false);
+        assertEquals((await hostCode(tree)) === lock, false);
     } finally {
         await Deno.remove(tree, { recursive: true });
     }

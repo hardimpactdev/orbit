@@ -100,7 +100,8 @@ final class OperationBudgetTable
         // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.verify' => 3000,
-        'node.converge' => 3900,
+        // Five 900 s phases, roles up to 1,800 s, a 6,800 s Tools batch, and 400 s for setup and results.
+        'node.converge' => 13500,
         // The migrate path declares 4,830 s, including the 150 s pre-cutover Node preparation phase.
         // Round up to 5,100, plus 600 s for admission and settlement. This lower bound includes restore/cleanup,
         // but not undeclared work or dynamic repetitions.
@@ -137,7 +138,9 @@ final class OperationBudgetTable
         // phases plus margin. Replace with the 14-day p95 once repository installs have native history.
         'tool.install' => 1500,
         'tool.update' => 1500,
-        'tool.converge' => 1080,
+        // A sequential phase for at most three admitted Tools: 2,100 s each (bounded observations, source repair,
+        // metadata refresh, package write and verification), 500 s phase overhead, then 200 s for dispatch and result.
+        'tool.converge' => 7000,
     ];
 
     /**

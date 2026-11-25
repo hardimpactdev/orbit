@@ -161,7 +161,8 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;
         if ($status !== OperationStatus::Succeeded) {
             // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel.
-            if ($tool?->status === ToolStatus::Installing && (($managerFailed && $tool->desired_repository === null) || $status === OperationStatus::Cancelled
+            if ($tool?->status === ToolStatus::Installing && (($managerFailed && $tool->desired_repository === null
+                && $tool->desired_version === null && $tool->version_constraint === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
                 $tool->delete();
 

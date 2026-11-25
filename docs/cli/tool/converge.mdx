@@ -5,10 +5,12 @@ description: "Apply desired coordinates for the optional Tools registered on one
 ---
 
 ```bash
-orbit tool:converge --node=ID [--idempotency-key=KEY] [--json]
+orbit tool:converge --node=ID [--tool-id=TOOL ...] [--idempotency-key=KEY] [--json]
 ```
 
 Use this command on a managed Linux or macOS Node to reconcile Tools without changing roles, core software, or networks. A catalog entry without membership on that Node does not install. The Operation reports `changed` and the observed version of each reconciled Tool.
+
+Each run admits at most three Tools. If the Node has more, repeat `--tool-id` to select a batch of its Tool IDs. The HTTP and MCP inputs use `tool_ids`.
 
 ## How it works
 

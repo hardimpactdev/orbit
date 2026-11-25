@@ -18,6 +18,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tools\AdoptToolRequest;
+use App\Http\Requests\Tools\ConvergeToolsRequest;
 use App\Http\Requests\Tools\ListToolsRequest;
 use App\Http\Requests\Tools\StoreToolRequest;
 use App\Http\Requests\Tools\UpdateToolRequest;
@@ -75,9 +76,9 @@ final class ToolsController extends Controller
 
     #[RequiresNodeAccess(ServingNode::Target)]
     #[StartsOperation('tool.converge')]
-    public function converge(Request $request, Node $node, StartToolConvergeAction $action): JsonResponse
+    public function converge(ConvergeToolsRequest $request, Node $node, StartToolConvergeAction $action): JsonResponse
     {
-        return response()->json(['data' => OperationData::fromModel($action->execute($node, $request->attributes->getString('orbit.request_id')))->toArray(),
+        return response()->json(['data' => OperationData::fromModel($action->execute($node, $request->attributes->getString('orbit.request_id'), $request->toolIds()))->toArray(),
             'meta' => $this->meta($request)], 202);
     }
 

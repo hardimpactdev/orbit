@@ -26,7 +26,7 @@ Classify a package by what consumes it and where it runs, not by the name of its
 | Shared container runtime under `/opt/orbit-runtime` | The runtime section of `core.yaml`; Projects and Instances retain their runtime and driver selection. |
 | Shared container agent software under `/opt/orbit-agent` | The agent section of `core.yaml`, including the Linux Conn Server required by task copies. |
 | An optional host package selected for a Node | A Gateway Tool record. The active Tool mode assigns the version, constraint, and source. |
-| A Conn Server running as a host service | An explicit [Conn Server rollout](/reference/development-containers#conn-server-rollout) selects a checksummed host release. Neither Tool convergence nor container convergence updates this service. |
+| A Conn Server running as a host service | Gateway Tool membership can pin a release. Only an explicit [Conn Server rollout](/reference/development-containers#conn-server-rollout) changes the service. Neither Tool convergence nor container convergence updates it. |
 
 ## Tool modes
 
@@ -55,7 +55,7 @@ Export before switching so you have a copy of the current policy and memberships
 
 1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json` to preserve membership, desired coordinates, and observations.
 2. To enter file mode with existing Tools, use `orbit tool:mode --export=catalog --json`. Write its `document` to `tools.yaml` on the Gateway, then run `orbit tool:mode:set file --catalog=/absolute/path/tools.yaml`. Omit `--catalog` to use the shipped file.
-3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates for the existing memberships. An unapplied source change must converge before this switch.
+3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates and any unapplied signed source definitions for the existing memberships. It keeps observed versions and verified sources separate.
 
 A catalog cannot express different desired coordinates for the same manager and package across Nodes, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation. Activation also refuses missing or different coordinates and waits for running Tool Operations to finish. A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
 
@@ -67,17 +67,18 @@ A catalog cannot express different desired coordinates for the same manager and 
 | --- | --- |
 | `apt` | The full Debian version, including the epoch or distro suffix where applicable. A pin can select an available older version; a floating update does not downgrade. |
 | `vp`, `composer` | An exact package release version, not a range or a tag. |
-| `brew`, `brew-cask` | The current supported formula or cask version, including the cask build suffix. Orbit does not add taps or fetch older bottles. |
+| `brew`, `brew-cask` | The current supported formula or cask version, including a formula revision (`2.1.0_1`) or cask build suffix (`1.5.13,600`). Orbit does not add taps or fetch older bottles. |
+| `conn-server` | An exact checksummed host release from `conn-server-releases.yaml`. It is separate from the container agent pin. |
 
 The manager must still offer the version, and the version must meet any SemVer constraint. Orbit refuses an unavailable coordinate instead of substituting a different version. Package downloads and removals retain the manager's source, verification, scope, and dependency rules.
 
 ## Converge registered Tools
 
-Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches. Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit the same Tool coordinates and run Ansible from the Swamp control Node over pinned SSH.
+Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches. Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit at most three Tools per run and run Ansible from the Swamp control Node over pinned SSH. Use `--tool-id=ID` on `tool:converge` to select batches on larger Nodes. Direct installs, updates, and removals use native SSH with the same admission and package policy.
 
 ## Where Tools run and Tool Managers
 
-Tools run on active SSH-managed Nodes with a WireGuard IP and pinned SSH host fingerprint (`tool.node_inactive` or `tool.node_unmanaged`, 409, otherwise). Five managers are fixed in code:
+Tools run on active SSH-managed Nodes with a WireGuard IP and pinned SSH host fingerprint (`tool.node_inactive` or `tool.node_unmanaged`, 409, otherwise). The managers are fixed in code:
 
 | Manager | Platforms | Package | Scope | Becomes ready |
 | --- | --- | --- | --- | --- |
@@ -86,10 +87,17 @@ Tools run on active SSH-managed Nodes with a WireGuard IP and pinned SSH host fi
 | `vp` | Linux, macOS | npm package name | Enrolled account Vite+ store (`/opt/orbit/vite-plus`, `~/.vite-plus`, or `~/.local/share/vite-plus`) | Linux: first use or app role; macOS: verified in place |
 | `brew` | Linux, macOS | Homebrew Core bottle | `/home/linuxbrew/.linuxbrew` (Linux) or existing prefix (macOS) | Linux: pinned revision on first use; macOS: verified in place |
 | `brew-cask` | Linux (with Homebrew), macOS | Official Homebrew cask | Homebrew prefix (shares `brew` lock) | Linux: once agent reports Homebrew; macOS: verified in place |
+| `conn-server` | Linux x64, macOS arm64 | `conn-server` | Configured host service, not a container shared folder | After the Node has a trusted Conn Server topology record |
 
 Unsupported platform/manager pairs return `tool.manager_unsupported` (422); absent or conflicting scopes return `tool.manager_unavailable` (409). `orbit tool:manager:list --node=<id>` reports each supported manager as `uninstalled`, `provisioning`, `active`, or `failed`. Managers stay installed after their last Tool is removed.
 
 Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o DPkg::Lock::Timeout=300`); `apt-get update` and `dpkg --remove` fail immediately if locked. Linux `vp` launchers in `/usr/local/bin` export `VP_HOME` for the resolved store.
+
+### Host Conn Server membership
+
+`orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION --yes` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only`. They do not claim an installed version before a verified rollout.
+
+Use the explicit [rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or to retire a withdrawn Linux service. General Tool convergence does not execute host service intent. A host rollout never changes the required container Conn release.
 
 ## Project environments in the Vite+ store
 
@@ -107,7 +115,7 @@ Orbit protects essential host and manager packages from installation, update, ad
 
 | Manager | Protected package names |
 | --- | --- |
-| `apt` | All `NodeBootstrapPackageCatalog` packages plus `openssh-server` and `wireguard-tools`: `acl`, `attr`, `bind9-dnsutils`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `git-man`, `gnupg`, `incus`, `incus-base`, `incus-client`, `jq`, `libnss-resolve`, `logrotate`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `python3-venv`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
+| `apt` | Packages installed by the release's host recipe profiles, including role prerequisites, Git and its rollback helper, and Node bootstrap packages. A package used only inside a container does not reserve the host name. |
 | `brew` | `wireguard-tools`, `wireguard-go` |
 | `vp` | `pnpm` |
 

@@ -190,7 +190,7 @@ export function commands(input: Input) {
                 input.package + (exact === null ? "" : "@" + exact.replace(/^v/, "")),
                 ...(install
                     ? ["--node", "lts"]
-                    : ["--reinstall-node-mismatch"]),
+                    : exact === null ? ["--reinstall-node-mismatch"] : []),
             ),
         remove: brew
             ? run("uninstall", formula, input.package)

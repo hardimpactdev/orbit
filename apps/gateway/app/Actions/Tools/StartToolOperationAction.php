@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeAgentData;
+use App\Domain\ConnServer\ConnServerToolMembership;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -18,6 +19,7 @@ use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
+use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperationException;
@@ -56,6 +58,9 @@ final readonly class StartToolOperationAction
         return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, $version, function (array $admitted) use ($verb, $nodeId, $managerName, $package): Operation {
             ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'role_owned' => $roleOwned, 'protected' => $protected,
                 'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'definition' => $definition] = $admitted;
+            if ($manager->name() === ToolManagerName::ConnServer) {
+                return app(ConnServerToolMembership::class)->record($verb, $nodeId, $tool, $definition, request()->attributes->getString('orbit.request_id'));
+            }
             $removeRepository = $verb === 'remove' && $repository !== null && $repositoryPackages === [];
 
             $input = [
@@ -130,6 +135,9 @@ final readonly class StartToolOperationAction
                 if (! $manager->validatePackage($package)) {
                     $this->refuse('tool.package_invalid', 422);
                 }
+                if ($verb === 'adopt' && $manager->name() === ToolManagerName::ConnServer) {
+                    $this->refuse('tool.adoption_unsupported');
+                }
                 $roleOwned = $manager instanceof ReservesRolePackages && $manager->roleOwns($package);
                 if ($roleOwned && $verb !== 'remove') {
                     $this->refuse(ReservesRolePackages::ERROR_CODE);
@@ -189,7 +197,7 @@ final readonly class StartToolOperationAction
                     'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'definition' => $definition]);
             });
         } catch (ResourceOperationException $error) {
-            if (! str_starts_with($error->errorCode, 'tool.')) {
+            if (! str_starts_with($error->errorCode, 'tool.') && $error->errorCode !== 'conn_server.pin_unavailable') {
                 throw $error;
             }
             $toolId = $selected->id ?? Tool::query()->where('node_id', $nodeId)->where('package', $package)

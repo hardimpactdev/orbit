@@ -22,21 +22,22 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12; the manager runs on its platform
   %%> - the package is not a recipe package of Node 12's roles
   %%> - file mode requires a catalog entry and refuses overrides; database mode accepts an exact desired version
+  %%> - `conn-server` on a configured host records membership and the desired release without a Swamp run; an explicit rollout applies it
   GW->>SW: Start run, full intent<br/>operation-tool-write
   GW-->>CLI: 202 Accepted<br/>task #5133
-  SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
+  SW->>SW: Prepare native SSH commands<br/>admitted intent · pinned host key
   opt --repository
     SW->>SW: Verify the signing key<br/>fetch · fingerprint on 209
     %%> Why on 209:
     %%> - a wrong key stops the run before Node 12 is touched
   end
-  SW->>N: Install Tools<br/>ansible · tags tools
-  %%> Why the converge phase:
-  %%> - one way to install a Tool, shared with `node:converge` and the rollout
-  %%> - limited to this Tool, so other Tools do not move
+  SW->>N: Apply the package<br/>native SSH
+  %%> Scope:
+  %%> - direct writes share admission and candidate policy with convergence, but use the native SSH workflow, not an Ansible phase
+  %%> - only this Tool can change
   %%> Version:
   %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
-  SW->>N: Check the Tool<br/>ansible · tags check
+  SW->>N: Read the resulting package state<br/>native SSH
   alt check passes
     SW-->>GW: Run succeeded
     Note over GW: Record the version<br/>Tool: installed 14.1.0

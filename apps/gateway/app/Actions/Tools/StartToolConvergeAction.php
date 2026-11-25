@@ -20,18 +20,19 @@ final readonly class StartToolConvergeAction
     public function __construct(private ToolConvergeIntent $intent, private ToolNodeEligibility $eligibility,
         private SwampSshExecutionInput $ssh, private StartOperationAction $start, private OperationIdempotency $idempotency) {}
 
-    public function execute(Node $node, string $requestId): Operation
+    /** @param list<int>|null $toolIds */
+    public function execute(Node $node, string $requestId, ?array $toolIds = null): Operation
     {
         if (($existing = $this->idempotency->replay('tool.converge')) !== null) {
             return $existing;
         }
 
-        return DB::transaction(function () use ($node, $requestId): Operation {
+        return DB::transaction(function () use ($node, $requestId, $toolIds): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if ($node->status !== LifecycleStatus::Active || ! $this->eligibility->allows($node)) {
                 throw new ResourceOperationException('tool.node_unmanaged', 'Tool convergence requires an active, SSH-managed Node.', 409);
             }
-            $tools = $this->intent->capture($node);
+            $tools = $this->intent->capture($node, ids: $toolIds);
             $lock = "node_tools:{$node->id}:all";
             if ($tools === []) {
                 return $this->start->record('tool.converge', 'node_tools', $node->id, $node->id, ['tools' => []],

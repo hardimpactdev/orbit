@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: fleet maintenance redesign 2026-11-03 (one Tools phase shared with node:converge). DECISIONS R1 (record-only change starts no run). docs/reference/tools.md#remove-a-tool.
+  %% docs/reference/tools.md#remove-a-tool. R1: a record-only change starts no run.
   %% status: draft
   %% command: tool:remove
   %% kind: tool.remove
@@ -17,20 +17,21 @@ sequenceDiagram
   %%> - `orbit tool:remove 31 --yes`
   %%> - syntax: `<tool> [--yes] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Tool<br/>task #5135 · ripgrep on Node 12
-  alt package belongs to a role
+  alt record-only role cleanup or host Conn membership
     Note over GW: Delete only the record<br/>no run, package stays
     %%> Why:
     %%> - the recipe owns the package; removing it would break the role
-    GW-->>CLI: Tool removed<br/>package kept for the role
+    %%> - withdrawing a host Conn membership leaves the service running and excludes it from future release rollouts
+    GW-->>CLI: Tool removed<br/>package or service kept
   else Orbit installed it
     GW->>SW: Start run, full intent<br/>operation-tool-write
     GW-->>CLI: 202 Accepted<br/>task #5135
-    SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
-    SW->>N: Remove the Tool<br/>ansible · tags tools · absent
-    %%> Why the converge phase:
-    %%> - the same phase with this Tool marked absent; it removes the apt source too when no other Tool uses it
+    SW->>SW: Prepare native SSH commands<br/>admitted intent · pinned host key
+    SW->>N: Remove the Tool<br/>native SSH
+    %%> Scope:
+    %%> - remove the apt source when no membership needs it; otherwise repin only the remaining packages
     %%> - a removal that would also remove a held recipe package is refused
-    SW->>N: Check the Tool<br/>ansible · tags check
+    SW->>N: Read the resulting package state<br/>native SSH
     alt check passes
       SW-->>GW: Run succeeded
       Note over GW: Delete the Tool record

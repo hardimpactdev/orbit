@@ -1,5 +1,6 @@
 ---
 - name: Reconcile one recorded Tool without aborting other Tools
+  timeout: 45
   block:
     - name: Validate the Tool and compile public argv
       ansible.builtin.command:
@@ -11,15 +12,17 @@
       register: tool_plan
     - name: Hold the compiled Tool argv
       ansible.builtin.set_fact: { tool_argv: "{{ tool_plan.stdout | from_json }}" }
-    - name: Read macOS compatibility for a cask
-      when: tool.manager == 'brew-cask' and (tool.platform | default('linux')) == 'macos'
+    - name: Read macOS compatibility for Homebrew
+      when: tool.manager in ['brew', 'brew-cask'] and (tool.platform | default('linux')) == 'macos'
       ansible.builtin.command: { argv: "{{ tool_argv.os }}" }
       become: false
       changed_when: false
       register: tool_os
     - name: Reconcile a recorded apt repository
       when: tool.manager == 'apt' and tool.repository is not none
-      ansible.builtin.include_tasks: node-converge-tool-repository.yml
+      ansible.builtin.include_tasks:
+        file: node-converge-tool-repository.yml
+        apply: { become: true, timeout: 45 }
     - name: Read the Tool manager version
       ansible.builtin.command: { argv: "{{ tool_argv.version }}" }
       become: "{{ tool.manager == 'apt' }}"
@@ -31,6 +34,7 @@
       register: tool_query
       changed_when: false
       failed_when: false
+      timeout: 75
     - name: Compare observed state with the recorded constraint
       ansible.builtin.command:
         argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", inspect]
@@ -42,9 +46,11 @@
     - name: Repair an absent or nonmatching Tool
       when: (tool_inspection.stdout | from_json).needs_write
       block:
-        - name: Refresh recorded apt candidate metadata
-          when: tool.manager == 'apt' and tool.repository is not none
+        - name: Refresh applicable apt candidate metadata
+          when: tool.manager == 'apt'
           ansible.builtin.command: { argv: "{{ tool_argv.refresh }}" }
+          become: true
+          timeout: 150
           changed_when: false
         - name: Refresh Linux cask metadata
           when: tool.manager == 'brew-cask' and (tool.platform | default('linux')) == 'linux'
@@ -52,11 +58,13 @@
           become: false
           changed_when: false
           register: tool_refresh
+          timeout: 150
         - name: Read the manager candidate
           ansible.builtin.command: { argv: "{{ tool_argv.candidate }}" }
           become: "{{ tool.manager == 'apt' }}"
           changed_when: false
           register: tool_candidate
+          timeout: 120
         - name: Validate and pin the candidate before any package write
           ansible.builtin.command:
             argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", candidate]
@@ -73,12 +81,14 @@
           ansible.builtin.command: { argv: "{{ (tool_write.stdout | from_json).write }}" }
           become: "{{ tool.manager == 'apt' }}"
           changed_when: true
+          timeout: 900
     - name: Read the resulting Tool state
       ansible.builtin.command: { argv: "{{ tool_argv.inventory }}" }
       become: "{{ tool.manager == 'apt' }}"
       register: tool_after
       changed_when: false
       failed_when: false
+      timeout: 75
     - name: Verify the Tool postcondition
       ansible.builtin.command:
         argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", verify]

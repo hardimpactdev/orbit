@@ -2,13 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\ConnServer\ConnServerRollout;
+use App\Domain\ConnServer\ConnServerRolloutProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolConvergeIntent;
+use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
 use App\Models\ConnServerNode;
 use App\Models\Node;
+use App\Models\Tool;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
@@ -77,8 +82,10 @@ it('reaches only the canary with scope canary, and keeps the canary-first order 
     $mini = connServerNode('mini', 61, ['service' => 'com.t3tools.t3code.service', 'notify_before_restart' => true]);
     $vm = connServerNode('nick-vm', 62, ['canary' => true]);
 
-    expect(array_column(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'canary')->input['intent']['nodes'], 'node_id'))->toBe([$vm->id])
-        ->and(array_column(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'fleet')->input['intent']['nodes'], 'node_id'))->toBe([$vm->id, $nick->id, $mini->id]);
+    $canary = app(ConnServerRollout::class)->admit(dryRun: false, scope: 'canary');
+    expect(array_column($canary->input['intent']['nodes'], 'node_id'))->toBe([$vm->id]);
+    $canary->update(['status' => 'succeeded', 'lock_key' => null]);
+    expect(array_column(app(ConnServerRollout::class)->admit(dryRun: false, scope: 'fleet')->input['intent']['nodes'], 'node_id'))->toBe([$vm->id, $nick->id, $mini->id]);
 });
 
 it('reaches only the named Nodes with scope nodes, in the order given, without the canary', function (): void {
@@ -121,4 +128,50 @@ it('refuses a trigger that names no scope or another one, and no dry run choice'
         ->and(Validator::make(['dry_run' => false, 'scope' => 'all'], $rules)->errors()->keys())->toBe(['scope'])
         ->and(Validator::make(['scope' => 'canary'], $rules)->errors()->keys())->toBe(['dry_run'])
         ->and(Validator::make(['dry_run' => true, 'scope' => 'canary'], $rules)->passes())->toBeTrue();
+});
+
+it('records exact host Conn memberships through Tool writes and changes observations only after protected rollout', function (): void {
+    $first = connServerNode('first', 61, ['canary' => true]);
+    $second = connServerNode('second', 62, []);
+    Node::query()->whereKey([$first->id, $second->id])->update(['platform' => 'macos']);
+    $first->refresh();
+    $tools = app(StartToolOperationAction::class);
+    $rollout = app(ConnServerRollout::class);
+    expect(fn () => $tools->execute('install', $first->id, 'conn-server', 'conn-server', null, version: '9.9.9'))
+        ->toThrow(ToolOperationException::class);
+    $install = $tools->execute('install', $first->id, 'conn-server', 'conn-server', null, version: '0.5.1');
+    $tools->execute('install', $second->id, 'conn-server', 'conn-server', null, version: '0.5.2');
+    $membership = Tool::query()->findOrFail($install->result['tool_id']);
+    expect($install->result['execution'])->toBe('membership_only')->and($install->status->value)->toBe('succeeded')
+        ->and($membership->installed_version)->toBeNull()->and($membership->desired_version)->toBe('0.5.1')
+        ->and(app(ToolConvergeIntent::class)->capture($first))->toBe([]);
+    expect(fn () => $rollout->admit(false, 'fleet'))->toThrow(ResourceOperationException::class, 'Selected Nodes must desire the same release.');
+    $run = $rollout->admit(false, 'nodes', [$first->id]);
+    expect($run->input['intent']['version'])->toBe('0.5.1')->and($run->input['intent']['nodes'][0]['tool_id'])->toBe($membership->id);
+    expect(fn () => $tools->execute('remove', $first->id, 'conn-server', 'conn-server', null, $membership))->toThrow(ResourceOperationException::class);
+    $run->update(['state' => ['swamp_run_id' => 'fixture']]);
+    app(ConnServerRolloutProjection::class)->apply($run, ['run_id' => 'fixture', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
+        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.1', 'dry_run' => false, 'nodes' => [['node_id' => $first->id, 'outcome' => 'updated']]]]);
+    $membership->refresh();
+    $tools->execute('update', $first->id, 'conn-server', 'conn-server', null, $membership, version: '0.5.2');
+    expect($membership->refresh()->installed_version)->toBe('0.5.1')->and($membership->desired_version)->toBe('0.5.2');
+    $tools->execute('remove', $first->id, 'conn-server', 'conn-server', null, $membership);
+    expect(Tool::query()->find($membership->id))->toBeNull()
+        ->and(ConnServerNode::query()->where('node_id', $first->id)->firstOrFail()->tool_withdrawn)->toBeTrue();
+});
+
+it('admits physical withdrawal only for one explicitly named and previously withdrawn Linux host', function (): void {
+    connServerNode('canary', 61, ['canary' => true]);
+    $linux = connServerNode('linux', 62, ['platform' => 'linux', 'path' => '/opt/conn-server/current', 'service' => 'conn-server']);
+    $linux->update(['platform' => 'linux', 'architecture' => 'x86_64']);
+    $rollout = app(ConnServerRollout::class);
+    expect(fn () => $rollout->admit(true, 'fleet', withdraw: true))->toThrow(ResourceOperationException::class, 'Withdrawal requires one explicit Node');
+    expect(fn () => $rollout->admit(true, 'nodes', [$linux->id], withdraw: true))->toThrow(ResourceOperationException::class, 'Service withdrawal requires');
+    $tools = app(StartToolOperationAction::class);
+    $install = $tools->execute('install', $linux->id, 'conn-server', 'conn-server', null);
+    $tools->execute('remove', $linux->id, 'conn-server', 'conn-server', null, Tool::query()->findOrFail($install->result['tool_id']));
+    expect(fn () => $rollout->admit(true, 'nodes', [$linux->id]))->toThrow(ResourceOperationException::class, 'not enrolled');
+    $run = $rollout->admit(true, 'nodes', [$linux->id], withdraw: true);
+    expect($run->input['intent'])->toMatchArray(['withdraw' => true, 'dry_run' => true]);
+    expect(array_column($run->input['intent']['nodes'], 'node_id'))->toBe([$linux->id]);
 });

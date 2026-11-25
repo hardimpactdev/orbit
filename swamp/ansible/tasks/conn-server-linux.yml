@@ -96,8 +96,12 @@
   ansible.builtin.set_fact:
     node_result: { node_id: "{{ node_id | int }}", outcome: checked }
 
+- name: Withdraw a configured Linux host service
+  when: intent.withdraw | default(false)
+  ansible.builtin.include_tasks: conn-server-linux-withdraw.yml
+
 - name: Swap and restart
-  when: not intent.dry_run
+  when: not intent.dry_run and not (intent.withdraw | default(false))
   block:
     - name: Send the notice before the restart
       when: server.notify_before_restart

@@ -21,20 +21,21 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
   %%> - file mode requires its declared coordinate without overrides; database mode retains an existing pin unless the caller supplies a new one
+  %%> - a host `conn-server` update records the desired release without a Swamp run; an explicit rollout applies it
   GW->>SW: Start run, full intent<br/>operation-tool-write
   GW-->>CLI: 202 Accepted<br/>task #5134
-  SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
+  SW->>SW: Prepare native SSH commands<br/>admitted intent · pinned host key
   opt --repository
     SW->>SW: Verify the signing key<br/>fetch · fingerprint on 209
     %%> Why on 209:
     %%> - a wrong key stops the run before Node 12 is touched
   end
-  SW->>N: Install Tools<br/>ansible · tags tools
-  %%> Why the converge phase:
-  %%> - an update is the same phase as an install, limited to this Tool
+  SW->>N: Apply the package<br/>native SSH
+  %%> Scope:
+  %%> - update uses the direct install/update workflow, limited to this Tool; it shares admission and candidate policy, not the Ansible executor, with convergence
   %%> Version:
   %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
-  SW->>N: Check the Tool<br/>ansible · tags check
+  SW->>N: Read the resulting package state<br/>native SSH
   alt check passes
     SW-->>GW: Run succeeded
     Note over GW: Record the version<br/>applied · unchanged
