@@ -34,13 +34,17 @@ final readonly class StartToolConvergeAction
                 throw new ResourceOperationException('tool.node_unmanaged', 'Tool convergence requires an active, SSH-managed Node.', 409);
             }
             $tools = $this->intent->capture($node, ids: $toolIds);
-            if ($tools === []) {
+            // Only a whole-Node convergence removes the sources no Tool names any more.
+            $orphans = $toolIds === null ? AptSourceTrust::orphans($node->id) : [];
+            if ($tools === [] && $orphans === []) {
                 return $this->start->record('tool.converge', 'node_tools', $node->id, $node->id, ['tools' => []],
                     ['changed' => 0, 'tools' => [], 'outcome' => 'unchanged', 'cleanup_complete' => true], 'operator', $requestId);
             }
-            $scopes = implode('+', ToolConvergeIntent::scopes($tools));
+            $held = ToolConvergeIntent::scopes([...$tools, ...($orphans === [] ? [] : [['manager' => 'apt']])]);
+            $this->intent->assertIdle($node->id, $held);
+            $scopes = implode('+', $held);
             $seconds = ToolConvergeIntent::phaseSeconds(count($tools));
-            $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => $tools, 'tools_seconds' => $seconds, 'ssh' => $this->ssh->forNode($node)];
+            $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => $tools, 'orphan_sources' => $orphans, 'tools_seconds' => $seconds, 'ssh' => $this->ssh->forNode($node)];
 
             $operation = $this->start->execute('tool.converge', 'node_tools', $node->id, $node->id, ['intent' => $intent, 'run_budget_seconds' => $seconds + 200], 'operator', $requestId, lockKey: "node_tools:{$node->id}:converge:{$scopes}");
             if ($operation->wasRecentlyCreated) {

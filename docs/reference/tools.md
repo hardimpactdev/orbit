@@ -111,7 +111,7 @@ Before JavaScript deploy steps, Orbit reads the release's manifest, lockfile, an
 
 `GET /api/v1/tool-inventory?node_id=<id>` (`orbit tool:scan --node=<id>`) reads the [Node agent's](/reference/node-agent#packages) latest `packages` facts without contacting the Node or creating Tool rows. It returns `data.managers` in order (`brew`, `brew-cask`, `vp`, `apt`), each with `scan_state` (`complete`, `unsupported`, or `not_observed`) and sorted `packages` (`manager`, `package`, `package_kind`, `installed_version`, `dependency`, `registered`, `tool_id`, `adoption`, `adoption_block`, `repository`).
 
-Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`.
+Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, `authorization_required`, and `removal_pending`.
 
 ## Protected packages
 
@@ -155,13 +155,15 @@ On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accept
 
 ### Ownership
 
-A Tool owns its package only when Orbit recorded that ownership: a successful install or update, an explicit adoption, or a convergence that installed the package for that Tool. Nothing else grants or clears it, including a failure, a refused or interrupted retry, a failed cleanup, or another Tool's repair of the shared manager.
+A Tool owns its package only when Orbit acquired it: its own verified package write, an explicit adoption, or a convergence that installed the package for that Tool. Finding the package already present is an observation, not an acquisition. A verified write stays an acquisition even when a later step of the same run fails. Failures, refused or interrupted retries, and another Tool's repair of the shared manager never grant ownership.
+
+Only a confirmed absence ends ownership. A removal that verified the package gone, or found it already absent, leaves any remaining cleanup to the source alone. A retry then never removes a replacement package installed since.
 
 An install or convergence never takes over a present package for a Tool Orbit does not own. Both refuse with `tool.package_already_installed`, including after a first install that was cancelled, timed out or returned an unreadable result. Such an interrupted first install stays `installing` until you retry or remove it. You cannot update a Tool Orbit does not own.
 
 For a Tool Orbit does not own, removal deletes only the record and needs no SSH target or host key. If an earlier attempt may have written its apt source or key, the removal instead runs on the Node with `package_owned: false`. It skips the manager check and every package read and plan, cleans the source or repins the remaining members, and never removes the package. A refused or cancelled first install that may have written them stays as a failed Tool for that cleanup.
 
-A Tool whose removal is unfinished stays `failed` with `failed_operation: remove`. It is not a membership: convergence, apt preferences, catalog export and mode changes leave it out, and only `tool:remove` acts on it.
+A Tool whose removal is unfinished stays `failed` with `failed_operation: remove`. It is not a membership. Convergence, apt preferences, catalog export, mode changes and Doctor leave it out. `tool:scan` reports its package as unregistered with `adoption_block: removal_pending`, adoption refuses it with `tool.state_invalid`, and only `tool:remove` acts on it.
 
 For an apt package removal, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`. When the last member's removal cannot confirm that both the source and its preference file are gone, the Tool stays `failed` with `tool.repository_failed`. Run the removal again to finish the cleanup.
 
@@ -177,13 +179,20 @@ Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.
 
 All Tools sharing a repository on one Node must agree on its definition. An unchanged verified source does not need another key download on a direct write.
 
-The apt preference follows ownership. It gives priority `990` only to packages Orbit owns that share the source, and to the package of the write itself. Both executors write it only after that package is installed and verified, so a refused or failed install never pins a package.
+Every Orbit source keeps every other package of its origins at priority `1`, from the moment it is published. Both executors write the preference together with the source, before candidate selection. It gives priority `990` to the packages Orbit owns that share the source and to the package being written, so a floating install selects the source's version. Within one convergence it also prefers the Tools of the source that the same run already installed.
 
-A membership that has not acquired its package yet, such as one refused because the package was already there, is never pinned by a sibling's write. Within one convergence, a verified Tool also pins the Tools of its source that the same run installed before it. A failed write retains the requested repository separately from the last verified source.
+When the written package was not acquired, both executors rewrite the preference without it: after a refusal because the package was already there, or after a failed install or verification. A membership that has not acquired its package is never preferred by a sibling's write either. A failed write retains the requested repository separately from the last verified source.
 
 The Node keeps a record of each source Orbit may have on disk. Orbit creates it when it admits the first write that may publish the source, and deletes it only when a removal confirms the source and its preferences are gone.
 
-A write may change the key or source on disk before it fails, is cancelled, times out, or returns an unreadable result. So admitting a direct write that publishes or removes the source, or a convergence that includes it, marks the record unverified. Only Orbit's own successful write, or a convergence that installs a Tool from that source, marks it verified again. While it is unverified, the next direct write publishes the key and source again.
+A write may change the key, source or preference on disk before it fails, is cancelled, times out, or returns an unreadable result. So admitting any direct write or removal that touches the source, or a convergence that includes it, marks the record unverified. These mark it verified again:
+
+- Orbit's own successful write.
+- A run that left the key and source alone and restored the preference after a refusal.
+- A removal that repinned the survivors.
+- A convergence whose whole Tools phase succeeded and installed a Tool from the source.
+
+While the record is unverified, the next direct write publishes the key and source again.
 
 An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified.
 
@@ -191,19 +200,21 @@ Each convergence plan carries whether its source was verified at admission. A pl
 
 A removal cleans or repins a source as the record now defines it, so surviving members keep their current origin.
 
+A full convergence, `tool:converge` without Tool IDs or `node:converge`, also removes the key, source and preference of every recorded source that no Tool names. Orbit forgets such a source only after the Tools phase that removed its files succeeded. Each source is its own cleanup, so two sources whose packages share a name are both cleaned.
+
 Remove the membership before dropping or renaming a source that is verified or that an earlier attempt may have published; neither convergence nor a mode switch can bypass that rule. A mode switch also refuses `tool.repository_conflict` while two Tools on one Node define a shared source differently.
 
 #### Upgrade from the preceding release
 
 The upgrade that adds these records replays the preceding release's Tool Operations in order.
 
-Ownership needs a success. A Tool is owned when it is installed, or when a direct install, a direct update or a node converge succeeded for it. A failed first install followed by a failed removal therefore stays unowned.
+Ownership needs an acquisition. A Tool is owned when one of its direct installs or updates succeeded with outcome `applied`. An `unchanged` success is an observation. So is a node converge that found the Tool installed: the preceding release recorded no per-Tool write. An Operation admitted with `tool_status: installed` before any acquisition or observation implies an adoption, which the preceding release recorded no other way. A Tool with no Operation keeps ownership only when it is installed.
 
-Trust needs a write. A source is verified only when its latest event is a successful write with the recorded definition. An adoption is not a write, so a source known only from adoption starts unverified. The same holds for a source adopted again after a confirmed removal.
+Trust needs a write that ran. A source is verified only when its latest event is a successful write that published it (`repository_given: true`) with the recorded definition, or a converge whose Tools phase ran and installed a Tool from it. A write that skipped publication, and a converge whose Tools phase was skipped, neither prove nor doubt the source. An adoption is not a write.
 
-Cleanup needs a handle. Orbit gives a source a withdrawn, unowned apt Tool when no Tool names the source and its latest event is not a confirmed removal. `tool:remove` then cleans it. A run counts as reaching the Node when it has an attempt or a bound native run, and a later confirmed removal wins over an earlier refused attempt.
+Cleanup belongs to the source. Every source whose latest event is not a confirmed removal keeps a record, whatever package names collide. The next full convergence removes it once no Tool names it. No membership is created for it. A run counts as reaching the Node when it has an attempt or a bound native run.
 
-A failed install that wrote its source without linking it gets that source back as its desired source. Adoption leaves no Operation in the preceding release. So a Tool that was adopted and then failed an update starts unowned, and its removal keeps the package.
+A failed install that wrote its source without linking it takes back the source of its own latest request. An earlier possible publication never becomes desired state over a later request without a source.
 
 ## Why it works this way
 

@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Models\AptRepository;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * A Node's record of each signed apt source Orbit may have on disk, and whether that record still proves the files
@@ -61,6 +62,15 @@ final class AptSourceTrust
         }
     }
 
+    /** @param array<string, mixed> $definition a definition a run left on disk unchanged, with preferences as its owned members need */
+    public static function prove(int $nodeId, array $definition): void
+    {
+        $record = AptRepository::query()->where('node_id', $nodeId)->where('name', self::name($definition))->first();
+        if ($record !== null && ToolDefinition::sameRepository($record->definition, $definition)) {
+            $record->update(['verified' => true]);
+        }
+    }
+
     /** @param array<string, mixed> $definition the definition Orbit's own successful write published */
     public static function record(int $nodeId, array $definition): AptRepository
     {
@@ -78,6 +88,34 @@ final class AptSourceTrust
 
         return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
             ['definition' => $definition, 'verified' => false]);
+    }
+
+    /**
+     * The sources Orbit may still have on disk that no Tool names, by name: a full convergence removes their files, and a phase that
+     * did so forgets them. A colliding package name cannot hide one, because a source is its own cleanup route.
+     *
+     * @return list<string>
+     */
+    public static function orphans(int $nodeId): array
+    {
+        return ValidatedData::stringList(self::unnamed($nodeId)->orderBy('name')->pluck('name')->all());
+    }
+
+    /** @param list<string> $names the orphans an admitted convergence removed, forgotten only while still no Tool names them */
+    public static function forgetOrphans(int $nodeId, array $names): void
+    {
+        if ($names !== []) {
+            self::unnamed($nodeId)->whereIn('name', $names)->delete();
+        }
+    }
+
+    /** @return Builder<AptRepository> */
+    private static function unnamed(int $nodeId): Builder
+    {
+        return AptRepository::query()->where('node_id', $nodeId)
+            ->whereNotExists(static fn ($query) => $query->from('tools')->where('tools.node_id', $nodeId)
+                ->where(static fn ($named) => $named->whereColumn('tools.apt_repository_id', 'apt_repositories.id')
+                    ->orWhereColumn('tools.desired_repository->name', 'apt_repositories.name')));
     }
 
     /** @param array<string, mixed> $definition */

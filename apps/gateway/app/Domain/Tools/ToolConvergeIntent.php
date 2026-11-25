@@ -127,9 +127,12 @@ final readonly class ToolConvergeIntent
             return ! is_array($nodes) || in_array($nodeId, array_column($nodes, 'node_id'), true) ? [ToolManagerName::ConnServer->value] : [];
         }
         if ($writer->kind === 'node.converge' || $writer->kind === 'tool.converge') {
-            $packages = data_get($input, $writer->kind === 'node.converge' ? '_converge.intent.tools' : 'intent.tools');
+            $intent = $writer->kind === 'node.converge' ? '_converge.intent' : 'intent';
+            $packages = data_get($input, $intent.'.tools');
+            // Removing a source no Tool names writes apt's files like an apt Tool.
+            $orphans = data_get($input, $intent.'.orphan_sources');
 
-            return is_array($packages) ? self::scopes($packages) : ['*'];
+            return is_array($packages) ? self::scopes([...$packages, ...(is_array($orphans) && $orphans !== [] ? [['manager' => 'apt']] : [])]) : ['*'];
         }
         $manager = $input['manager'] ?? (is_string($writer->lock_key) ? substr(strrchr($writer->lock_key, ':') ?: ':', 1) : null);
 

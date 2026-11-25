@@ -45,12 +45,15 @@ final readonly class ToolConvergeProjection implements DirectOperationProjection
         $code = ! $completed || ! $cleanup ? 'operation.native_failed' : (in_array('failed', array_column($tools, 'status'), true) ? 'tool.converge_failed' : null);
         $success = $code === null && ($data['status'] ?? null) === 'succeeded';
 
-        return DB::transaction(function () use ($operation, $data, $plans, $tools, $code, $changed, $cleanup, $success): Operation {
+        return DB::transaction(function () use ($operation, $data, $plans, $tools, $code, $changed, $cleanup, $success, $completed, $intent): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->observations->record(ValidatedData::integer($operation->node_id), $plans, $tools);
+            $this->observations->record(ValidatedData::integer($operation->node_id), $plans, $tools, $completed);
+            if ($completed) {
+                AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
+            }
 
             return $this->direct->project($locked, [...$data, 'status' => $success ? 'succeeded' : 'failed', 'error_code' => $success ? null : ($code ?? 'operation.native_failed')],
                 ['changed' => $changed, 'tools' => $tools, 'cleanup_complete' => $cleanup,

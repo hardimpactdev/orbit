@@ -52,7 +52,11 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->toolObservations->record(ValidatedData::integer($operation->node_id), $admitted, $tools);
+            $this->toolObservations->record(ValidatedData::integer($operation->node_id), $admitted, $tools, data_get($result, 'phases.4.status') === 'succeeded');
+            if (data_get($result, 'phases.4.status') === 'succeeded') {
+                // The Tools phase removed the files of the sources no Tool named at admission.
+                AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
+            }
             if (in_array(data_get($result, 'phases.4.status'), ['unchanged', 'skipped'], true)) {
                 // The Tools phase did not run, so it wrote no source: the trust its admission suspended holds again.
                 AptSourceTrust::restorePlans(ValidatedData::integer($operation->node_id), array_values($admitted));

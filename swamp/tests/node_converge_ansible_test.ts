@@ -537,6 +537,26 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("the Tools phase names every file of each source no Tool names, and only valid source names", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tools"))) as Array<Record<string, unknown>>;
+        const removal = tasks.find((task) => task.name === "Remove the Orbit apt sources no Tool names")!;
+        assertEquals(removal.become, true);
+        await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{ hosts: "localhost", connection: "local", gather_facts: false,
+            vars: { intent: { orphan_sources: ["one", "../escape", "two-x"] } },
+            tasks: [{ name: "Name the files", "ansible.builtin.debug": { msg: (removal["ansible.builtin.file"] as { path: string }).path }, loop: removal.loop }] }]));
+        const result = await new Deno.Command("ansible-playbook", { args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" } }).output();
+        const output = new TextDecoder().decode(result.stdout);
+        assertEquals(result.code, 0, output);
+        assertEquals([...output.matchAll(/"msg": "([^"]+)"/g)].map((match) => match[1]), [
+            "/etc/apt/sources.list.d/orbit-one.sources", "/etc/apt/keyrings/orbit-one.gpg", "/etc/apt/preferences.d/orbit-one.pref",
+            "/etc/apt/sources.list.d/orbit-two-x.sources", "/etc/apt/keyrings/orbit-two-x.gpg", "/etc/apt/preferences.d/orbit-two-x.pref",
+        ]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("the apt repair refreshes even default sources as root without elevating control helpers", async () => {
     const folder = await Deno.makeTempDir();
     try {
@@ -571,11 +591,15 @@ switch (mode) {
         const local = task[0].block.flatMap((item) => [item, ...(Array.isArray(item.block) ? item.block as Array<Record<string, unknown>> : [])])
             .filter((item) => item.delegate_to === "localhost");
         assertEquals(local.length, 5);
-        // The preferences follow ownership: written only after the Tool is verified, never by the source repair before it.
+        // The source's preferences are written with the source, before candidate selection, and only a rescue rewrites them:
+        // without this Tool when it was not acquired. No preference write follows a verified Tool.
         const names = task[0].block.map((item) => item.name);
-        assertEquals(names.indexOf("Limit the repository to its owned Tools") > names.indexOf("Verify the Tool postcondition"), true);
+        assertEquals(names.indexOf("Compute the preferences of this Tool's source") < names.indexOf("Reconcile a recorded apt repository"), true);
+        assertEquals(names.some((name) => String(name).includes("preferences") && names.indexOf(name) > names.indexOf("Verify the Tool postcondition")), false);
+        const rescue = (task[0] as unknown as { rescue: Array<Record<string, unknown>> }).rescue.map((item) => item.name);
+        assertEquals(rescue, ["Restore the source preferences without this unacquired Tool", "Record this Tool failure and continue the loop"]);
         const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
-        assertEquals(repository.some((item) => JSON.stringify(item).includes("preferences.d")), false);
+        assertEquals(repository.at(-1)!.name, "Limit every repository to its owned Tools and this Tool");
         assertEquals(local.every((item) => item.become === false), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });

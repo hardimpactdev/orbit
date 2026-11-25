@@ -30,9 +30,13 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
         return argv;
     }
     if (mode === "pins") {
-        // After this Tool is verified: its plan's owned members, itself, and the Tools of its source this run already installed.
+        // Before candidate selection: its plan's owned members, the Tools of its source this run already installed, and itself;
+        // the restore variant leaves itself out unless Orbit already owns it.
         const packages = [...new Set([...input.repository_packages, ...payload.installed])].sort();
-        return { repository_preferences: commands({ ...input, repository_packages: packages }).repository_preferences };
+        const { repository_preferences, repository_preferences_restore } = commands({
+            ...input, repository_packages: packages, package_owned: payload.tool.owned === true,
+        });
+        return { repository_preferences, repository_preferences_restore };
     }
     const raw = inventory(input, step(payload.version), step(payload.query), payload.os ? step(payload.os) : null);
     const { facts, present } = writeInventory(raw);

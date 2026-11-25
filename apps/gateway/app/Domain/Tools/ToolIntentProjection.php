@@ -39,6 +39,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     {
         $public = ValidatedData::object($data['result'] ?? []);
         $result = $this->nativeResult($operation, $data, $public);
+        $evidence = $this->evidence($operation, $public);
         $data['error_code'] = $result['error_code'] ?? ($data['error_code'] ?? null);
         $result = array_intersect_key($result, array_flip([
             'native_error_code', 'manager_version', 'installed_version', 'installed_coordinate', 'outcome', 'block', 'error_code', 'repository_removed',
@@ -60,12 +61,12 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             throw new ResourceOperationException('operation.result_invalid', 'The Tool outcome is invalid.', 422);
         }
 
-        return DB::transaction(function () use ($operation, $data, $result): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $evidence): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
             $projected = $this->direct->project($operation, $data, array_diff_key($result, ['installed_coordinate' => true]));
             if (! $terminal && $projected->status->terminal()) {
-                $this->projectState($projected, $result);
+                $this->projectState($projected, $result, $evidence);
             }
 
             return $projected;
@@ -137,12 +138,39 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     }
 
     /**
+     * What the run itself proves, whatever its overall status (docs/reference/tools.md#ownership):
+     * - `acquired`: Orbit's own package write was verified present;
+     * - `released`: the package was absent at the start of a removal, or its removal was verified;
+     * - `pins_proven`: the run left the source's key and file alone and its preferences as the owned members need them.
+     *
+     * @param  array<string, mixed>  $native
+     * @return array{acquired: bool, released: bool, pins_proven: bool}
+     */
+    private function evidence(Operation $operation, array $native): array
+    {
+        $decision = ValidatedData::object($native['decision'] ?? []);
+        $observation = ValidatedData::object($native['observation'] ?? []);
+        $decoded = NativeRunResult::stepStatus($native, 'Decode package state') === 'succeeded' && ($observation['compliant'] ?? false) === true;
+        $removal = $operation->kind === 'tool.remove';
+        $untouched = static fn (string $step): bool => in_array(NativeRunResult::stepStatus($native, $step), [null, 'skipped'], true);
+
+        return [
+            'acquired' => ! $removal && ($decision['mutate'] ?? false) === true && $decoded && ($observation['present'] ?? false) === true,
+            'released' => $removal && ($decision['ready'] ?? false) === true
+                && (($decision['remove'] ?? null) === false || ($decoded && ($observation['absent'] ?? false) === true)),
+            'pins_proven' => ! $removal && is_array($operation->input['repository'] ?? null) && ($operation->input['repository_given'] ?? false) !== true
+                && ($untouched('Pin repository packages') || NativeRunResult::stepStatus($native, 'Restore repository pins') === 'succeeded'),
+        ];
+    }
+
+    /**
      * The reviewed Tool charts: install recorded its Tool as installing at admission; a failed manager setup drops it and
      * fails the manager; any other failure marks the Tool failed. Repository definitions change only on success (R2).
      *
      * @param  array<string, mixed>  $result
+     * @param  array{acquired: bool, released: bool, pins_proven: bool}  $evidence
      */
-    private function projectState(Operation $operation, array $result): void
+    private function projectState(Operation $operation, array $result, array $evidence): void
     {
         $status = $operation->status;
         $verb = substr($operation->kind, 5);
@@ -181,9 +209,14 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             if ($status === OperationStatus::Cancelled && ! $published) {
                 return;
             }
+            if ($evidence['pins_proven'] && is_array($input['repository'] ?? null)) {
+                AptSourceTrust::prove(ValidatedData::integer($operation->node_id), ValidatedData::object($input['repository']));
+            }
+            // A verified write stays Orbit's whatever failed after it; a confirmed absence ends Orbit's claim on the package.
+            $owned = $evidence['acquired'] || ($tool !== null && $tool->owned && ! $evidence['released']);
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $operation->error_code === 'tool.package_already_installed'
-                ? $tool->installed_version : ($result['installed_coordinate'] ?? $tool->installed_version),
-                'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code]);
+                ? $tool->installed_version : ($evidence['released'] ? null : ($result['installed_coordinate'] ?? $tool->installed_version)),
+                'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code, 'owned' => $owned]);
 
             return;
         }
@@ -192,11 +225,15 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             // package itself is gone or was never Orbit's.
             if (($input['remove_repository'] ?? false) === true && ($result['repository_removed'] ?? false) !== true) {
                 $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => null, 'failed_operation' => ToolOperation::Remove,
-                    'error_code' => 'tool.repository_failed']);
+                    'error_code' => 'tool.repository_failed', 'owned' => false]);
 
                 return;
             }
             $tool?->delete();
+            if (($input['remove_repository'] ?? false) !== true && is_array($input['repository'] ?? null)) {
+                // The surviving members' preferences were rewritten from the verified record the removal was admitted with.
+                AptSourceTrust::prove(ValidatedData::integer($operation->node_id), ValidatedData::object($input['repository']));
+            }
             if (($result['repository_removed'] ?? false) === true && is_int($input['repository_id'] ?? null)) {
                 AptRepository::query()->whereKey($input['repository_id'])->delete();
             }

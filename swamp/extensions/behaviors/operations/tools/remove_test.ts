@@ -1,5 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { behavior, removalDecision, RemoveInput } from "./remove.ts";
+import * as native from "./native.ts";
+import { preferences } from "./native.ts";
 const probe = (
     input: ReturnType<typeof fixture>["input"],
     facts: unknown,
@@ -158,4 +160,38 @@ Deno.test("removals use one manager argv with no shipped code", async () => {
         assertEquals(value.remove.includes("-c"), false);
         assertEquals(value.plan.includes("-c"), false);
     }
+});
+Deno.test("an Orbit source always restricts every other package of its origins, and its restore drops an unowned acting package", () => {
+    const repository = {
+        name: "proof",
+        uris: ["https://vendor.example.test/apt"],
+        suites: ["stable"],
+        components: ["main"],
+        signing_key: {
+            url: "https://vendor.example.test/key.asc",
+            fingerprint: "A".repeat(40),
+        },
+    };
+    const wildcard =
+        'Package: *\nPin: origin "vendor.example.test"\nPin-Priority: 1\n';
+    assertEquals(preferences(repository, []), wildcard);
+    const commands = native.commands({
+        manager: "apt",
+        package: "tree",
+        platform: "linux",
+        architecture: "x86_64",
+        user: "orbit",
+        repository,
+        repository_packages: ["nano", "tree"],
+        remove_repository: false,
+        package_owned: false,
+    });
+    assertEquals(
+        commands.repository_preferences,
+        preferences(repository, ["nano", "tree"]),
+    );
+    assertEquals(
+        commands.repository_preferences_restore,
+        preferences(repository, ["nano"]),
+    );
 });

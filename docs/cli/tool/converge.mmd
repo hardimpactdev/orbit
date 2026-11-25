@@ -28,6 +28,8 @@ sequenceDiagram
     %%> Result:
     %%> - install missing packages and apply exact desired versions; leave existing unpinned packages alone
     %%> - do not run core, role, network, or host Conn phases
+    %%> - write each apt source's preferences before candidate selection, and rewrite them without a package the run did not acquire
+    %%> - without Tool IDs, remove the files of every recorded source no Tool names; the Gateway forgets it only after the phase succeeded
     SW-->>GW: Report changes<br/>and observed versions
     CLI->>GW: Follow the Operation
     GW-->>CLI: Terminal receipt

@@ -24,6 +24,15 @@
     apply: { tags: [tools] }
   loop: "{{ intent.tools }}"
   loop_control: { loop_var: tool, label: "{{ tool.id }}" }
+# A source no Tool names any more, such as one an earlier attempt may have published, leaves the Node with its key and preferences.
+# A failure here fails the phase, so the Gateway forgets a source only after its files are gone.
+- name: Remove the Orbit apt sources no Tool names
+  ansible.builtin.file: { path: "{{ item[1] | replace('@', item[0]) }}", state: absent }
+  loop: >-
+    {{ (intent.orphan_sources | default([])) | select('match', '^[a-z][a-z0-9-]*$')
+       | product(['/etc/apt/sources.list.d/orbit-@.sources', '/etc/apt/keyrings/orbit-@.gpg', '/etc/apt/preferences.d/orbit-@.pref']) | list }}
+  loop_control: { label: "{{ item[0] }}" }
+  become: true
 - name: Record bounded Tool results
   ansible.builtin.copy:
     dest: "{{ orbit_run }}/tools-result.json"

@@ -49,8 +49,9 @@ final readonly class ToolConvergeObservations
 
     /** @param array<int, array<string, mixed>> $plans
      * @param  list<array<string, mixed>>  $observations
+     * @param  bool  $completed  whether the Tools phase finished: only then did every source write, refusal restore included, succeed
      */
-    public function record(int $nodeId, array $plans, array $observations): void
+    public function record(int $nodeId, array $plans, array $observations, bool $completed): void
     {
         foreach ($observations as $observation) {
             $id = ValidatedData::integer($observation['id']);
@@ -77,7 +78,8 @@ final readonly class ToolConvergeObservations
                 ToolManagerRecord::query()->whereKey($tool->tool_manager_id)->where('status', '!=', LifecycleStatus::Active->value)
                     ->update(['status' => LifecycleStatus::Active->value, 'failed_step' => null, 'error_code' => null]);
                 if (is_array($repository = $plan['repository'] ?? null)) {
-                    $tool->apt_repository_id = AptSourceTrust::record($nodeId, ValidatedData::object($repository))->id;
+                    $tool->apt_repository_id = $completed ? AptSourceTrust::record($nodeId, ValidatedData::object($repository))->id
+                        : AptSourceTrust::suspect($nodeId, ValidatedData::object($repository))->id;
                 }
             }
             if ($tool->isDirty()) {

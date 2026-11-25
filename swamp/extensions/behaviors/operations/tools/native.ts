@@ -12,8 +12,21 @@ type Input =
         | "repository_packages"
         | "remove_repository"
     >
-    & { user: string; kind?: string; desired_version?: string | null };
+    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
+/** Apt preferences of one Orbit source: priority 990 for the listed packages, and 1 for every other package from its origins. */
+export function preferences(
+    repo: ToolInput["repository"],
+    packages: string[],
+): string {
+    return repo === null ? "" : repo.uris.map((uri) => {
+        const origin = new URL(uri).hostname;
+        const preferred = packages.length === 0
+            ? ""
+            : `Package: ${packages.join(" ")}\nPin: origin "${origin}"\nPin-Priority: 990\n\n`;
+        return `${preferred}Package: *\nPin: origin "${origin}"\nPin-Priority: 1\n`;
+    }).join("\n");
+}
 const object = (v: unknown) => z.record(z.string(), z.unknown()).parse(v);
 export function stdout(step: Step, absent = false): string {
     if (
@@ -114,10 +127,14 @@ export function commands(input: Input) {
         scope,
         remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
-        repository_preferences: repo === null ? "" : repo.uris.map((uri) => {
-            const origin = new URL(uri).hostname;
-            return `Package: ${input.repository_packages.join(" ")}\nPin: origin "${origin}"\nPin-Priority: 990\n\nPackage: *\nPin: origin "${origin}"\nPin-Priority: 1\n`;
-        }).join("\n"),
+        repository_preferences: preferences(repo, input.repository_packages),
+        // After a refusal or failure the acting package is not Orbit's, so the source keeps preferring only the owned ones.
+        repository_preferences_restore: preferences(
+            repo,
+            input.package_owned !== false
+                ? input.repository_packages
+                : input.repository_packages.filter((name) => name !== input.package),
+        ),
         repository: input.repository ??
             {
                 name: "unused",

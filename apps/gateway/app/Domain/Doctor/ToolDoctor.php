@@ -30,7 +30,7 @@ final readonly class ToolDoctor
         $facts = [];
         $unavailable = ToolDoctorIssueCode::NotInstalled->value;
         $mismatch = ToolDoctorIssueCode::VersionMismatch->value;
-        foreach (Tool::query()->where('node_id', $check->node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get() as $tool) {
+        foreach (Tool::query()->where('node_id', $check->node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get()->reject->withdrawn() as $tool) {
             $check->read($tool->id, [$unavailable, $mismatch], function () use ($check, $tool, &$facts, $unavailable, $mismatch): void {
                 $manager = $this->managers->find($tool->manager->name) ?? throw new UnexpectedValueException;
                 $name = $manager->name();

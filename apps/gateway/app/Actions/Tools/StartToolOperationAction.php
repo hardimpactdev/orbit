@@ -98,8 +98,8 @@ final readonly class StartToolOperationAction
                 return $operation;
             }
 
-            if ($repository !== null && ($input['repository_given'] || $removeRepository)) {
-                // The record is the cleanup handle and trust state of a source this run may publish or remove.
+            if ($repository !== null) {
+                // The record is the cleanup handle and trust state of a source this run may publish, remove or repin.
                 $input['repository_id'] = AptSourceTrust::suspect($nodeId, $repository)->id;
             }
             $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
@@ -159,8 +159,9 @@ final readonly class StartToolOperationAction
                 if ($tool !== null) {
                     // An idle installing record is a first install whose run ended without a projection: cancelled, unreadable or
                     // timed out. The manager lock keeps it from overlapping a run that could still write it.
+                    // A withdrawn Tool only lets its removal finish: adopting it would take back the package its removal released.
                     $retryable = $tool->status === ToolStatus::Installed
-                        || ($tool->status === ToolStatus::Failed && ($verb === 'adopt' || $verb === 'remove' || $tool->failed_operation?->value === $verb))
+                        || ($tool->withdrawn() ? $verb === 'remove' : ($tool->status === ToolStatus::Failed && ($verb === 'adopt' || $verb === 'remove' || $tool->failed_operation?->value === $verb)))
                         || ($tool->status === ToolStatus::Installing && $verb !== 'update');
                     // A host Conn membership records a service, not a package Orbit installed, so ownership does not apply to it.
                     if (! $retryable || ($verb === 'update' && ! $tool->owned && $manager->name() !== ToolManagerName::ConnServer)) {
