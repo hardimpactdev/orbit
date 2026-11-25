@@ -66,15 +66,47 @@ final readonly class ToolDefinitionResolver
             }
             if (! $removing) {
                 self::assertRepositoryIdentity($member, new ToolDefinition(null, null, $desired));
-                if (! ToolDefinition::sameRepository($desired, $repository)) {
-                    throw new ResourceOperationException('tool.repository_conflict', 'A Node can admit only one definition of a signed apt repository.', 409);
-                }
+                self::assertSharedRepository($desired, $repository);
             }
             $packages[] = $member->package;
         }
         sort($packages, SORT_STRING);
 
         return $packages;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $shared
+     * @param  array<string, mixed>  $repository
+     */
+    public static function assertSharedRepository(?array $shared, array $repository): void
+    {
+        if (! ToolDefinition::sameRepository($shared, $repository)) {
+            throw new ResourceOperationException('tool.repository_conflict', 'A Node can admit only one definition of a signed apt repository.', 409);
+        }
+    }
+
+    /**
+     * Whether the Node's recorded source of this name still proves what is on disk. A failed write that shares the source
+     * may have published another key or source after it, so the record proves nothing until a write succeeds again.
+     *
+     * @param  array<string, mixed>|null  $recorded
+     * @param  array<string, mixed>  $repository
+     * @param  iterable<Tool>  $members
+     */
+    public static function repositoryVerified(?array $recorded, array $repository, iterable $members): bool
+    {
+        if (! ToolDefinition::sameRepository($recorded, $repository)) {
+            return false;
+        }
+        foreach ($members as $member) {
+            if ($member->status === ToolStatus::Failed && $member->manager->name === ToolManagerName::Apt->value
+                && in_array($repository['name'], [$member->desired_repository['name'] ?? null, $member->aptRepository?->name], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function validate(ToolManager $manager, ToolDefinition $definition): void

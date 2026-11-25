@@ -59,6 +59,11 @@
       {{ linux_current.stat.islnk | default(false) and linux_before_healthy and withdrawal_activity.stdout == 'active'
          and (not withdrawal_previous or withdrawal_previous.completed | default(false)) }}
 
+# A replay of a finished withdrawal only checks it again: a failed check never brings the retired service back.
+- name: Determine whether this replays a finished withdrawal
+  ansible.builtin.set_fact:
+    withdrawal_replay: "{{ withdrawal_previous.completed | default(false) and not withdrawal_fresh }}"
+
 - name: Require a verified release or a matching recovery record
   ansible.builtin.assert:
     that: >-
@@ -139,6 +144,7 @@
             node_result: { node_id: "{{ node_id | int }}", outcome: withdrawn, previous_version: "{{ withdrawal.version }}" }
       rescue:
         - name: Restore the old health and enablement
+          when: not withdrawal_replay
           block:
             - name: Restore the old release and restart its unit
               ansible.builtin.include_tasks: conn-server-linux-start.yml

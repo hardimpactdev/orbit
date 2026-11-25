@@ -182,7 +182,7 @@ type Options = { nodes: Server[]; probe?: "read" | "wrong"; dropProbeSsh?: boole
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
     // `slowStarts` modules over ssh each take 15 s to start.
-    slowStarts?: number; verbose?: boolean; withdraw?: boolean; failStop?: boolean; resumeWithdrawal?: "stopped" | "unlinked" };
+    slowStarts?: number; verbose?: boolean; withdraw?: boolean; failStop?: boolean; resumeWithdrawal?: "stopped" | "unlinked" | "completed" };
 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 /** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
@@ -263,10 +263,10 @@ async function rollout(options: Options) {
         if (options.resumeWithdrawal) {
             Deno.writeTextFileSync(`${folder}/disabled`, "");
             const path = `${folder}/linux/current`;
-            if (options.resumeWithdrawal === "unlinked") Deno.removeSync(path);
+            if (options.resumeWithdrawal !== "stopped") Deno.removeSync(path);
             Deno.writeTextFileSync(`${folder}/linux/.orbit-conn-withdrawal.json`, JSON.stringify({
                 identity: { path, service: "conn-server", health_url: `http://127.0.0.1:${port}/health` },
-                target: `${folder}/${old}`, version: "0.4.2", enablement: "enabled", completed: false,
+                target: `${folder}/${old}`, version: "0.4.2", enablement: "enabled", completed: options.resumeWithdrawal === "completed",
             }), { mode: 0o600 });
         }
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -361,6 +361,14 @@ test("Linux withdrawal resumes after the stop or unlink without restarting or se
         assertEquals(run.result.nodes, [{ node_id: 45, outcome: "withdrawn", previous_version: "0.4.2" }]);
         assertEquals([run.linux, run.running, run.releases, run.systemctl, run.noticed], [null, "down", ["0.4.2"], [], []]);
     }
+});
+
+test("a replayed finished withdrawal whose check fails is not restored, even when another service answers on its port", async () => {
+    const run = await rollout({ nodes: [{ platform: "linux", notify: true }], withdraw: true, notice: true, resumeWithdrawal: "completed",
+        health: () => Response.json({ server: "other" }) });
+    assert(!run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.withdraw_failed", rolled_back: false }]);
+    assertEquals([run.linux, run.running, run.systemctl, run.noticed], [null, "down", [], []]);
 });
 
 test("managed Conn dry runs report observed health rather than the selected replacement", async () => {

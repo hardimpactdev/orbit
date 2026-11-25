@@ -12,6 +12,7 @@ use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolPolicy;
 use App\Models\ConnServerNode;
 use App\Models\Tool;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 final readonly class ManageToolPolicyAction
@@ -52,9 +53,14 @@ final readonly class ManageToolPolicyAction
             $after = $mode === 'file' ? $this->policy->fromFile($path) : new ActiveToolPolicy('database', null);
             $tools = $this->memberships();
             $snapshot = $this->snapshot($before, $tools);
+            $sources = [];
             foreach ($tools as $tool) {
                 $current = $this->definition($before, $tool);
                 ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
+                if ($current->repository !== null) {
+                    $shared = $sources[$tool->node_id][ValidatedData::string($current->repository['name'])] ??= $current->repository;
+                    ToolDefinitionResolver::assertSharedRepository($shared, $current->repository);
+                }
                 if ($mode === 'file') {
                     $target = $this->definition($after, $tool);
                     ToolDefinitionResolver::assertRepositoryIdentity($tool, $target);

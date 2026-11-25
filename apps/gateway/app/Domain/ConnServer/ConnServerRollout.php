@@ -73,6 +73,19 @@ final readonly class ConnServerRollout
             && ($dryRun || (data_get($receipt->result, 'nodes.0.thread_read') === true && $this->noObservedVersionDrift($canary, $pin->version)));
     }
 
+    /** A canary apply proves the release only after the latest canary check passed. */
+    private function proven(?Operation $probe, ?Operation $check, ConnServerRelease $pin, ConnServerNode $canary): bool
+    {
+        return $probe !== null && $check !== null && $probe->id > $check->id
+            && $this->passed($check, $pin, $canary, true) && $this->passed($probe, $pin, $canary, false);
+    }
+
+    /** A canary apply admitted before a newer check proves nothing, so the next apply is keyed after that check. */
+    private function staleProbe(?Operation $probe, ?Operation $check): bool
+    {
+        return $probe !== null && $check !== null && $probe->id < $check->id;
+    }
+
     public function releasePin(?string $version = null): ConnServerRelease
     {
         try {
@@ -89,13 +102,11 @@ final readonly class ConnServerRollout
         if (! $pin?->releaseCanary) {
             return null;
         }
+        // Without one designated canary enrolled at this release, the automatic pass leaves every Conn service alone.
         $configured = $this->servers();
         $servers = $this->reviewedTargets($configured, $this->policy->active(), $pin);
-        if ($servers->isNotEmpty()) {
-            $this->requireCanary($configured);
-        }
         $canary = $servers->firstWhere('canary', true);
-        if ($canary === null) {
+        if ($canary === null || $configured->where('canary', true)->count() !== 1) {
             return null;
         }
         $key = $this->fingerprint($pin, $canary);
@@ -104,8 +115,11 @@ final readonly class ConnServerRollout
         if (! $this->passed($check, $pin, $canary, true)) {
             return $check;
         }
-        $probe = $this->receipt($key, 'canary') ?? $this->releaseOperation($pin, $key, 'canary', $onlyCanary, 'gateway-release');
-        if (! $this->passed($probe, $pin, $canary, false)) {
+        $probe = $this->receipt($key, 'canary');
+        if ($probe === null || $this->staleProbe($probe, $check)) {
+            $probe = $this->releaseOperation($pin, $key, 'canary', $onlyCanary, 'gateway-release', after: $probe === null ? null : $check->id);
+        }
+        if (! $this->proven($probe, $check, $pin, $canary)) {
             return $probe;
         }
         $rest = $servers->skip(1);
@@ -201,17 +215,21 @@ final readonly class ConnServerRollout
         }
         $probe = $this->receipt($key, 'canary');
         if ($scope === 'canary') {
-            if ($probe !== null && $this->passed($probe, $pin, $canary, false)) {
+            if ($probe !== null && $this->proven($probe, $check, $pin, $canary)) {
                 return $probe;
             }
-            $dryPassed = $this->passed($check, $pin, $canary, true);
+            if (! $this->passed($check, $pin, $canary, true)) {
+                return $this->retry($pin, $key, 'check', $selected, $check, $triggeredBy, $requestId, $retryOperationId);
+            }
+            if ($this->staleProbe($probe, $check)) {
+                return $this->releaseOperation($pin, $key, 'canary', $selected, $triggeredBy, $requestId, after: $check?->id);
+            }
 
-            return $this->retry($pin, $key, $dryPassed ? 'canary' : 'check', $selected,
-                $dryPassed ? $probe : $check, $triggeredBy, $requestId, $retryOperationId);
+            return $this->retry($pin, $key, 'canary', $selected, $probe, $triggeredBy, $requestId, $retryOperationId);
         }
 
         if ($scope !== 'fleet' || $canaryOperationId === null || $probe?->id !== $canaryOperationId
-            || ! $this->passed($probe, $pin, $canary, false)) {
+            || ! $this->proven($probe, $check, $pin, $canary)) {
             throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
         }
         $pinIdentity = $this->pinIdentity($pin);

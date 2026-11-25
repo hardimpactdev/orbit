@@ -418,3 +418,82 @@ it('records a successful cask build change as a change in both executors', funct
     $results->record($node->id, $plans, $observed);
     expect($tool->refresh()->installed_version)->toBe('1.5.13,602');
 });
+
+it('refuses to leave file mode while two Tools on one Node define a shared apt source differently', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $verified = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    foreach (['nano', 'tree'] as $package) {
+        policyTool($node, $package, '1.10')->update(['apt_repository_id' => $verified->id, 'desired_repository' => $source]);
+    }
+    $entry = static fn (string $package, array $repository): array => ['manager' => 'apt', 'package' => $package, 'version' => '1.10', 'repository' => $repository];
+    $path = policyFile([$entry('nano', $source), $entry('tree', $source)]);
+    $policy = app(ManageToolPolicyAction::class);
+    $policy->change('file', $path);
+    $snapshots = DB::table('tool_policy_snapshots')->count();
+    policyFile([$entry('nano', $source), $entry('tree', policySignedRepository('1.1'))], $path);
+
+    expect(fn () => $policy->change('database', null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+    expect($policy->show()['mode'])->toBe('file')->and(DB::table('tool_policy_snapshots')->count())->toBe($snapshots)
+        ->and(Tool::query()->pluck('desired_repository')->all())->toBe([$source, $source]);
+});
+
+it('removes a first install that failed at manager setup as membership only after a sibling repaired the manager', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $operations = app(StartToolOperationAction::class);
+    $failed = $operations->execute('install', $node->id, 'composer', 'laravel/installer', null, version: '5.18.0');
+    policyComplete($failed, 'failed', ['steps' => ['Set up the Tool Manager' => ['status' => 'failed']]]);
+    $tool = Tool::query()->findOrFail($failed->input['tool_id']);
+    $sibling = $operations->execute('install', $node->id, 'composer', 'phpunit/phpunit', null, version: '12.0.0');
+    policyComplete($sibling, 'succeeded', ['decision' => ['ready' => true, 'manager_version' => '2.8.0'], 'observation' => ['installed_version' => '12.0.0'],
+        'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+    expect($tool->refresh()->manager->status->value)->toBe('active');
+
+    $removal = $operations->execute('remove', $node->id, 'composer', $tool->package, null, $tool);
+    expect($removal->status->value)->toBe('succeeded')->and($removal->result['execution'])->toBe('membership_only')
+        ->and($tool->fresh())->toBeNull()->and(Tool::query()->where('package', 'phpunit/phpunit')->exists())->toBeTrue();
+});
+
+it('relinquishes record-only memberships without a native SSH host key but still requires one for physical work', function (): void {
+    policySwamp();
+    $node = policyNode('host');
+    $node->forceFill(['ssh_host_key' => null, 'ssh_host_key_type' => null])->save();
+    $operations = app(StartToolOperationAction::class);
+    $legacy = policyTool($node, 'dpkg-repack', null);
+    expect($operations->execute('remove', $node->id, 'apt', 'dpkg-repack', null, $legacy)->result['execution'])->toBe('membership_only')
+        ->and(app(ManageToolPolicyAction::class)->show('catalog')['document']['packages'])->toBe([]);
+
+    $manager = ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'composer', 'status' => 'failed']);
+    $failed = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'laravel/installer', 'desired_version' => '5.18.0',
+        'status' => 'failed', 'failed_operation' => 'install', 'error_code' => 'tool.manager_provision_failed']);
+    $cancel = $operations->execute('remove', $node->id, 'composer', 'laravel/installer', null, $failed);
+    expect($cancel->result['execution'])->toBe('membership_only')->and($cancel->input)->not->toHaveKey('ssh')->and($failed->fresh())->toBeNull();
+
+    $tree = policyTool($node, 'tree', '1.10');
+    expect(fn () => $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('swamp.ssh_target_unavailable'));
+    expect($tree->fresh())->not->toBeNull();
+});
+
+it('rewrites a recorded apt source after a failed same-name change may have replaced it on disk', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.10');
+    $original = policySignedRepository('1.10');
+    $verified = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $original]);
+    $tool->update(['apt_repository_id' => $verified->id, 'desired_repository' => $original]);
+    $operations = app(StartToolOperationAction::class);
+    $change = $operations->execute('update', $node->id, 'apt', 'tree', null, $tool, policySignedRepository('1.1'), '2.0');
+    expect($change->input['repository_given'])->toBeTrue();
+    policyComplete($change, 'failed', ['steps' => ['Publish the signing key' => ['status' => 'succeeded'], 'Write the apt source' => ['status' => 'succeeded'],
+        'Refresh apt source' => ['status' => 'succeeded'], 'Apply the package' => ['status' => 'failed']]]);
+
+    $revert = $operations->execute('update', $node->id, 'apt', 'tree', null, $tool->refresh(), $original, '1.10');
+    expect($revert->input)->toMatchArray(['repository' => $original, 'repository_given' => true]);
+    policyComplete($revert, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'],
+        'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+    $revert->update(['lock_key' => null]);
+    expect($operations->execute('update', $node->id, 'apt', 'tree', null, $tool->refresh())->input['repository_given'])->toBeFalse();
+});

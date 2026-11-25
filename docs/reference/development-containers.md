@@ -229,6 +229,8 @@ To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"w
 
 Orbit retains the old release and a root-owned recovery record in the installation directory. It attempts to restore the old service and its enablement if stopping or unlinking fails. If the run is interrupted after the record is written, repeat the explicit withdrawal; Orbit verifies the recorded service and completes the stop or unlink without sending another notice.
 
+Repeating a completed withdrawal checks it again. If that check fails, for example because another service answers on the old port, the Node fails with `conn_server.withdraw_failed`, and Orbit leaves the withdrawn service stopped and unlinked.
+
 If the unit is inactive and has no matching recovery record, Orbit refuses with `conn_server.withdraw_recovery_required`. Verify and restore the configured service before trying again.
 
 Withdrawal does not modify a container or uninstall its shared Conn Server. The endpoint refuses Mac service withdrawal; use the service owner's procedure for retiring its LaunchAgent. Restore the configured Linux unit and release before reenrolling a physically withdrawn service.
@@ -241,9 +243,11 @@ Scope `canary` reaches the canary alone. Scope `fleet` reaches the canary first 
 
 `bin/conn-release-pin` checks the tagged commit and verifies both published files against their SHA-256 manifests and GitHub asset digests. It updates the host release catalog, the Linux pin in `core.yaml`, the container launch transcript, and the Gateway convergence fixture. It retains prior host releases and does not change `tools.yaml` or any Node's desired version. A repeat verifies the existing pins; older proposals and different bytes under the same version are refused.
 
-A generated host release sets `release_canary: true`. The Gateway release fleet pass starts a dry run only when the designated canary is a Tool member and desires that exact release under the active policy. Otherwise it proceeds without changing any standalone Conn service. A missing, unreadable, or invalid serving host catalog blocks the fleet phase with `conn_server.release_catalog_unavailable`. To start independently of a Gateway release, enroll the canary at the reviewed coordinate and run `scope: canary` with `dry_run: true`, then `dry_run: false`.
+A generated host release sets `release_canary: true`. The Gateway release fleet pass starts a dry run only when the designated canary is a Tool member and desires that exact release under the active policy. Otherwise, including when no Node is the designated canary, it proceeds without changing any standalone Conn service. A missing, unreadable, or invalid serving host catalog blocks the fleet phase with `conn_server.release_catalog_unavailable`. To start independently of a Gateway release, enroll the canary at the reviewed coordinate and run `scope: canary` with `dry_run: true`, then `dry_run: false`.
 
 The update reads a known thread through the authenticated local CLI before accepting the new service. As the Conn Server user, create `~/.config/orbit/conn-canary.json` with `thread_id` and the absolute `state_dir` containing `server-runtime.json`. The probe compares the authenticated response's thread ID and omits the thread contents. Failure holds the release and, after a swap, restores and verifies the prior service. To retry a failed stage, submit its ID in `retry_operation_id`.
+
+A canary update proves the release only if it is newer than the latest canary dry run and that dry run passed. After a newer check fails, neither the canary nor promotion advances; once a fresh check passes, `scope: canary` with `dry_run: false` starts a new canary update, and promotion needs that new receipt.
 
 The fleet dry run checks only enrolled, nonwithdrawn followers whose exact desired version matches the canary's. Run `scope: fleet` with `dry_run: true` to read that result. If the targets or their settings change, rerun the check using its prior ID in `retry_operation_id`. Then promote with `{"scope":"fleet","dry_run":false,"canary_operation_id":<successful canary ID>}`. A changed artifact or canary requires new proof. A different desired pin, a withdrawn membership, and a service without membership are not promoted.
 

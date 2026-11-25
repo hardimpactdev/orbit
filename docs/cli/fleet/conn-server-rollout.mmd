@@ -14,11 +14,11 @@ sequenceDiagram
   %%> When:
   %%> - an operator posts `{"dry_run", "scope"}` to `POST /api/v1/fleet/conn-server/rollout`; both are required, so no default reaches the whole fleet
   %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
-  %%> - the release fleet pass admits the reviewed dry run and canary update only if the canary's Tool desires that exact release
+  %%> - the release fleet pass admits the reviewed dry run and canary update only if one Node is the canary and its Tool desires that exact release; otherwise it leaves Conn alone
   %%> Requirements:
   %%> - resolve the exact host release from the active file catalog or the Node's desired version; an override cannot change managed intent
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
-  %%> - a gated promotion requires a passing canary operation ID and a checked dry run for every remaining Node
+  %%> - a gated promotion requires a passing canary operation ID, newer than the latest canary check, which passed, and a checked dry run for every remaining Node
   %%> Picks:
   %%> - `canary`: one Node; `fleet`: enrolled, nonwithdrawn followers on the reviewed version, otherwise canary first; `nodes`: named records in request order
   %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope

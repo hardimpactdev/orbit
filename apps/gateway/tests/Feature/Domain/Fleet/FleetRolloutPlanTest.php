@@ -361,7 +361,7 @@ it('holds the release fleet phase only when the serving reviewed release matches
     $canary = Node::query()->findOrFail($this->nodes['dev']);
     $canary->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-canary']);
     ConnServerNode::query()->create(['node_id' => $canary->id, 'platform' => 'linux', 'path' => '/opt/conn-server/current',
-        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => true]);
+        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => $setup !== 'follower']);
     $desired = $setup === 'previous' ? '0.5.2' : $current;
     $tools = app(StartToolOperationAction::class);
     $enroll = $tools->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $desired);
@@ -381,10 +381,11 @@ it('holds the release fleet phase only when the serving reviewed release matches
             ->and($check->input['intent']['dry_run'])->toBeTrue();
     } else {
         expect($rollouts->count())->toBe(0)
-            ->and($release->fresh()->phases['fleet'])->not->toHaveKey('conn_server_operation_id');
+            ->and($release->fresh()->phases['fleet'])->not->toHaveKey('conn_server_operation_id')
+            ->and($release->fresh()->phases['fleet']['error_code'] ?? null)->toBeNull();
     }
     expect($member->fresh()?->desired_version)->toBe($setup === 'withdrawn' ? null : $desired);
-})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn']]);
+})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn'], 'follower without a designated canary' => ['follower']]);
 
 it('recovers the previous host digest from a recipe containing the reviewed standalone Conn pin', function (): void {
     $previous = $this->base.'/previous-recipe';

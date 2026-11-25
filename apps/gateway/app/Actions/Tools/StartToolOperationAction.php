@@ -58,7 +58,7 @@ final readonly class StartToolOperationAction
 
         return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, $version, function (array $admitted) use ($verb, $nodeId, $managerName, $package): Operation {
             ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'definition' => $definition] = $admitted;
+                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_verified' => $repositoryVerified, 'definition' => $definition] = $admitted;
             if ($manager->name() === ToolManagerName::ConnServer) {
                 return app(ConnServerToolMembership::class)->record($verb, $nodeId, $tool, $definition, request()->attributes->getString('orbit.request_id'));
             }
@@ -67,15 +67,17 @@ final readonly class StartToolOperationAction
             $input = [
                 ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
                 'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-                'repository_packages' => $repositoryPackages, 'repository_given' => $repository !== null && $verb !== 'remove'
-                    && ! ToolDefinition::sameRepository($repositoryRecord?->definition, $repository),
+                'repository_packages' => $repositoryPackages, 'repository_given' => $repository !== null && $verb !== 'remove' && ! $repositoryVerified,
                 'tool_id' => $tool?->id,
                 'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                 'protected_packages' => $protected,
                 'manager_ready' => $record?->status === LifecycleStatus::Active,
-                'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-                'setup' => $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null,
             ];
+            if (! $relinquish) {
+                // Only physical work needs the native SSH target and manager setup.
+                $input['ssh'] = app(SwampSshExecutionInput::class)->forNode($node);
+                $input['setup'] = $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null;
+            }
             $requestId = request()->attributes->getString('orbit.request_id');
             if ($verb === 'install' && $tool === null) {
                 // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
@@ -123,7 +125,7 @@ final readonly class StartToolOperationAction
      * @template T
      *
      * @param  array<string, mixed>|null  $repository
-     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, definition: ToolDefinition}): T  $then
+     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_verified: bool, definition: ToolDefinition}): T  $then
      * @return T
      */
     private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then): mixed
@@ -158,9 +160,11 @@ final readonly class StartToolOperationAction
                 }
                 $protected = $this->protection->forNode($node, $manager->name());
                 $hostOwned = in_array($package, $protected, true);
+                // A first install that failed before Orbit touched or observed its package owns nothing on the Node,
+                // whatever a sibling Tool later did to the shared manager.
                 $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || ($tool?->status === ToolStatus::Failed
                     && $tool->installed_version === null && $tool->failed_operation === ToolOperation::Install
-                    && ($record->status === LifecycleStatus::Failed
+                    && (in_array($tool->error_code, ['tool.manager_provision_failed', 'tool.manager_unavailable'], true)
                         || ($tool->error_code === 'tool.version_probe_failed' && $tool->desired_repository === null && $tool->aptRepository === null))));
                 if ($hostOwned && ! $relinquish) {
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
@@ -175,15 +179,17 @@ final readonly class StartToolOperationAction
                 $repository = $relinquish ? null : ($verb === 'remove' ? ($currentRepository->definition ?? $tool?->desired_repository) : $definition->repository);
                 $repositoryRecord = $currentRepository;
                 $repositoryPackages = [];
+                $repositoryVerified = false;
                 if ($repository !== null) {
                     $repositoryName = $repository['name'];
                     $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repositoryName)->first();
                     $members = Tool::query()->with(['aptRepository', 'manager'])->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)->get();
                     $repositoryPackages = $this->definitions->repositoryPackages($active, $repository, $members, $package, $verb === 'remove');
+                    $repositoryVerified = ToolDefinitionResolver::repositoryVerified($repositoryRecord?->definition, $repository, $members);
                 }
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'definition' => $definition]);
+                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_verified' => $repositoryVerified, 'definition' => $definition]);
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.') && $error->errorCode !== 'conn_server.pin_unavailable') {
