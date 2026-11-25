@@ -38,7 +38,8 @@ final readonly class ConnServerRolloutProjection implements DirectOperationProje
             $terminal = $operation->status->terminal();
             $operation = $this->direct->project($operation, $data, $result);
             $intent = ValidatedData::object($operation->input['intent']);
-            if ($terminal || ! $operation->status->terminal() || ($intent['dry_run'] ?? true) !== false
+            if ($terminal || ! $operation->status->terminal() || ($intent['withdraw'] ?? false) === true
+                || ($result['dry_run'] ?? null) !== ($intent['dry_run'] ?? null)
                 || ($result['version'] ?? null) !== ($intent['version'] ?? null) || ! is_string($intent['version'] ?? null)) {
                 return $operation;
             }
@@ -49,9 +50,17 @@ final readonly class ConnServerRolloutProjection implements DirectOperationProje
                 }
             }
             foreach (is_array($result['nodes'] ?? null) ? $result['nodes'] : [] as $observation) {
-                if (is_array($observation) && is_int($observation['node_id'] ?? null) && ($observation['outcome'] ?? null) === 'updated'
-                    && isset($admitted[$observation['node_id']])) {
-                    Tool::query()->whereKey($admitted[$observation['node_id']])->where('node_id', $observation['node_id'])->update(['installed_version' => $intent['version']]);
+                if (! is_array($observation) || ! is_int($observation['node_id'] ?? null) || ! isset($admitted[$observation['node_id']])) {
+                    continue;
+                }
+                $observed = match ($observation['outcome'] ?? null) {
+                    'updated' => $intent['dry_run'] === false ? $intent['version'] : null,
+                    'checked', 'held' => $observation['observed_version'] ?? null,
+                    'failed' => ($observation['rolled_back'] ?? null) === true ? ($observation['observed_version'] ?? null) : null,
+                    default => null,
+                };
+                if (is_string($observed) && strlen($observed) <= 255 && preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\z/D', $observed) === 1) {
+                    Tool::query()->whereKey($admitted[$observation['node_id']])->where('node_id', $observation['node_id'])->update(['installed_version' => $observed]);
                 }
             }
 

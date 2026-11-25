@@ -20,7 +20,7 @@ inputs:
         linux: {type: object}
         notice: {type: object}
         nodes: {type: array, minItems: 1}
-      required: [version, dry_run, mac, linux, notice, nodes]
+      required: [dry_run, notice, nodes]
       additionalProperties: false
     # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
     execution_secrets: {type: object, properties: {}, additionalProperties: false}

@@ -19,7 +19,7 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     const steps = workflow.jobs.flatMap((job) => job.steps);
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
-    assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
+    assertEquals(workflow.inputs.properties.intent.required, ["dry_run", "notice", "nodes"]);
     assertEquals(steps[1].task.inputs.run, 'timeout 13220 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
@@ -161,7 +161,7 @@ if grep -qx "$v" "$FIXTURE/exit-systemctl" 2>/dev/null; then echo down > "$FIXTU
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
 };
 
-type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean; service?: string };
+type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean; service?: string; managed?: boolean };
 type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
     // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
     args?: string; listen?: string;
@@ -174,7 +174,7 @@ type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; vali
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
     // `slowStarts` modules over ssh each take 15 s to start.
-    slowStarts?: number; verbose?: boolean; withdraw?: boolean; failStop?: boolean };
+    slowStarts?: number; verbose?: boolean; withdraw?: boolean; failStop?: boolean; resumeWithdrawal?: "stopped" | "unlinked" };
 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 /** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
@@ -191,6 +191,7 @@ async function rollout(options: Options) {
     try {
         const old = options.releases === "first" || options.releases === "blocked" ? "linux/0.4.2" : "linux/releases/0.4.2";
         for (const dir of ["bin", "run", "home/Applications", "build/Conn Server.app/Contents", old, `linux-build/${options.topFolder ?? "conn-server-0.5.0-linux-x64"}`]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        Deno.chmodSync(`${folder}/linux`, 0o755);
         for (const [name, text] of Object.entries(shims)) {
             Deno.writeTextFileSync(`${folder}/bin/${name}`, text);
             Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -214,7 +215,7 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/version`, "0.5.0");
         Deno.writeTextFileSync(`${folder}/linux-build/${top}/conn-server`, "");
         new Deno.Command("tar", { args: ["-czf", `${folder}/conn-server.tar.gz`, "-C", `${folder}/linux-build`, top] }).outputSync();
-        Deno.writeTextFileSync(`${folder}/running`, options.down ? "down" : "0.4.2");
+        Deno.writeTextFileSync(`${folder}/running`, options.down || options.resumeWithdrawal ? "down" : "0.4.2");
         Deno.writeTextFileSync(`${folder}/broken`, (options.broken ?? []).map((v) => `${v}\n`).join(""));
         if (options.prompt) Deno.writeTextFileSync(`${folder}/prompt`, options.prompt);
         if (options.promptOnStart) Deno.writeTextFileSync(`${folder}/prompt-on-start`, options.promptOnStart);
@@ -239,14 +240,27 @@ async function rollout(options: Options) {
             return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: options.name ?? "conn-server", version: running });
         });
         const port = server.addr.port;
+        if (options.resumeWithdrawal) {
+            Deno.writeTextFileSync(`${folder}/disabled`, "");
+            const path = `${folder}/linux/current`;
+            if (options.resumeWithdrawal === "unlinked") Deno.removeSync(path);
+            Deno.writeTextFileSync(`${folder}/linux/.orbit-conn-withdrawal.json`, JSON.stringify({
+                identity: { path, service: "conn-server", health_url: `http://127.0.0.1:${port}/health` },
+                target: `${folder}/${old}`, version: "0.4.2", enablement: "enabled", completed: false,
+            }), { mode: 0o600 });
+        }
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
-            version: "0.5.0", dry_run: options.dryRun ?? false, ...(options.withdraw ? { withdraw: true } : {}),
-            mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
-            linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
+            dry_run: options.dryRun ?? false, ...(options.withdraw ? { withdraw: true } : {}),
+            ...(!options.withdraw || options.sha ? {
+                version: "0.5.0",
+                mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
+                linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
+            } : {}),
             notice: options.noticeCommand ? { url: null, command: options.noticeCommand }
                 : options.notice ? { url: options.noticeUrl?.(port) ?? `http://127.0.0.1:${port}/notice`, command: null } : { url: null, command: null },
             nodes: options.nodes.map((node, index) => ({
                 node_id: 45 + index,
+                ...(node.managed ? { tool_id: 11 } : {}),
                 ssh: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: user, host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
                 server: node.platform === "mac"
                     ? { platform: "mac", path: "~/Applications/Conn Server.app", service: node.service ?? "com.nckrtl.conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false }
@@ -307,16 +321,33 @@ test("a Linux withdrawal checks without stopping, then stops and unlinks or rest
     const dry = await rollout({ ...input, dryRun: true });
     assert(dry.ok, dry.output);
     assertEquals([dry.result.nodes[0].outcome, dry.linux, dry.systemctl, dry.noticed], ["checked", "0.4.2", [], []]);
-    const applied = await rollout(input);
+    const applied = await rollout({ ...input, sha: "0".repeat(64) });
     assert(applied.ok, applied.output);
     assertEquals(applied.result.nodes, [{ node_id: 45, outcome: "withdrawn", previous_version: "0.4.2" }]);
-    assertEquals([applied.linux, applied.running, applied.releases, applied.noticed.length], [null, "down", ["0.4.2"], 1]);
+    assertEquals([applied.linux, applied.running, applied.releases], [null, "down", ["0.4.2"]]);
+    assertEquals(applied.noticed, [{ node_id: 45, version: "0.4.2", event: "conn_server.withdrawal" }]);
     assertEquals(applied.systemctl.map((call) => call.split(" ")[0]), ["disable", "stop"]);
     const failed = await rollout({ ...input, failStop: true });
     assert(!failed.ok, failed.output);
     assertEquals(failed.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.withdraw_failed", rolled_back: true }]);
     assertEquals([failed.linux, failed.running], ["0.4.2", "0.4.2"]);
     assertEquals(failed.systemctl.map((call) => call.split(" ")[0]), ["disable", "stop", "restart", "enable"]);
+});
+
+test("Linux withdrawal resumes after the stop or unlink without restarting or sending the notice again", async () => {
+    for (const resumeWithdrawal of ["stopped", "unlinked"] as const) {
+        const run = await rollout({ nodes: [{ platform: "linux", notify: true }], withdraw: true, notice: true, resumeWithdrawal });
+        assert(run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "withdrawn", previous_version: "0.4.2" }]);
+        assertEquals([run.linux, run.running, run.releases, run.systemctl, run.noticed], [null, "down", ["0.4.2"], [], []]);
+    }
+});
+
+test("managed Conn dry runs report observed health rather than the selected replacement", async () => {
+    const run = await rollout({ nodes: [{ platform: "mac", managed: true, canary: true }, { platform: "linux", managed: true }], dryRun: true });
+    assert(run.ok, run.output);
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "checked", observed_version: "0.4.2" }, { node_id: 46, outcome: "checked", observed_version: "0.4.2" }]);
+    assertEquals([run.launchctl, run.systemctl], [[], []]);
 });
 
 test("a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too", async () => {

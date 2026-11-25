@@ -8,6 +8,7 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ObservedPackages;
 use App\Domain\Tools\ToolDefinitionResolver;
+use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolPolicy;
 use App\Domain\Tools\VersionConstraint;
@@ -33,23 +34,27 @@ final readonly class ToolDoctor
             $check->read($tool->id, [$unavailable, $mismatch], function () use ($check, $tool, &$facts, $unavailable, $mismatch): void {
                 $manager = $this->managers->find($tool->manager->name) ?? throw new UnexpectedValueException;
                 $name = $manager->name();
-                if (! array_key_exists($name->value, $facts)) {
-                    $facts[$name->value] = ObservedPackages::find($check->node, $name);
-                }
-                $fact = $facts[$name->value];
-                if ($fact === null || $fact->observedAt->lessThan(now()->subSeconds(self::FactSeconds))) {
-                    throw new UnexpectedValueException;
-                }
                 try {
                     $definition = $this->definitions->resolve('update', $manager, $tool->package, $tool, null, null, null, $this->policy->active());
                 } catch (ResourceOperationException $error) {
                     throw new UnexpectedValueException(previous: $error);
                 }
-                $package = $fact->packages[$tool->package] ?? null;
-                if ($package === null) {
+                if ($name === ToolManagerName::ConnServer) {
+                    $version = $tool->installed_version ?? throw new UnexpectedValueException;
+                } else {
+                    if (! array_key_exists($name->value, $facts)) {
+                        $facts[$name->value] = ObservedPackages::find($check->node, $name);
+                    }
+                    $fact = $facts[$name->value];
+                    if ($fact === null || $fact->observedAt->lessThan(now()->subSeconds(self::FactSeconds))) {
+                        throw new UnexpectedValueException;
+                    }
+                    $package = $fact->packages[$tool->package] ?? null;
+                    $version = $package === null ? null : ($package->version() ?? throw new UnexpectedValueException);
+                }
+                if ($version === null) {
                     $check->issue($unavailable, $tool->id, $tool->package, 'The managed Tool is not installed.', 'installed', 'absent');
                 } else {
-                    $version = $package->version() ?? throw new UnexpectedValueException;
                     $normalized = $manager->normalizeVersion($version);
                     if (($definition->version !== null && ! $definition->matches($name, $version))
                         || ($definition->constraint !== null && ($normalized === null || ! $this->constraints->allows($normalized, $definition->constraint)))) {

@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
+import { convergeResult, phases, toolConvergeResult } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
 import { codeDigest, convergeInput, phaseCode, phaseDigests, phaseInputs, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
@@ -56,6 +56,13 @@ Deno.test("converge reports all phases, live no-op counts and measured elapsed t
         assertEquals(result.changed, 0);
         assertEquals(result.elapsed_seconds, 7);
         assertEquals(result.failed_phase, undefined);
+        const completed = [{ id: 5, status: "installed", installed_version: "1.10" }];
+        await Deno.writeTextFile(`${folder}/tools-result.json`, JSON.stringify(completed));
+        await Deno.writeTextFile(`${folder}/tools.json`, "");
+        await Deno.writeTextFile(`${folder}/tools-meta.json`, JSON.stringify({ exit_code: 124, elapsed_seconds: 8900 }));
+        const timedOut = await convergeResult(folder);
+        assertEquals([timedOut.failed_phase, timedOut.tools], ["tools", completed]);
+        assertEquals(await toolConvergeResult(folder), { changed: 0, tools: completed, succeeded: false });
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

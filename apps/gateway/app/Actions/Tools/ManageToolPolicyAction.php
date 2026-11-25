@@ -10,6 +10,7 @@ use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolPolicy;
+use App\Models\ConnServerNode;
 use App\Models\Tool;
 use Illuminate\Support\Facades\DB;
 
@@ -100,7 +101,10 @@ final readonly class ManageToolPolicyAction
                 'failed_operation' => $tool->failed_operation?->value, 'error_code' => $tool->error_code];
         }
 
-        return ['schema' => 1, ...$this->state($policy), 'memberships' => $rows,
+        $conn = ConnServerNode::query()->orderBy('node_id')->get(['node_id', 'tool_withdrawn'])
+            ->map(static fn (ConnServerNode $server): array => ['node_id' => $server->node_id, 'withdrawn' => $server->tool_withdrawn])->all();
+
+        return ['schema' => 1, ...$this->state($policy), 'memberships' => $rows, 'conn_server_rollout' => $conn,
             'catalog' => $policy->mode === 'file' ? $this->catalog($policy, []) : null];
     }
 

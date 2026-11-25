@@ -281,6 +281,11 @@ it('budgets all admitted Tools without capping membership and keeps shared repos
     $operation = $converge->execute($node, 'test', [$tools['nano'], $tools['ed']]);
     expect(array_column($operation->input['intent']['tools'], 'id'))->toBe([$tools['nano'], $tools['ed']])
         ->and($operation->input['intent']['tools'][0]['repository_packages'])->toBe(['ed', 'nano', 'ripgrep', 'tree']);
+    $operation->update(['status' => 'succeeded', 'lock_key' => null]);
+    $control = SwampNodeFixture::ensure();
+    $control->accessibleNodes()->attach($node);
+    $accepted = $this->withServerVariables(['REMOTE_ADDR' => $control->wireguard_ip])->postJson("/api/v1/nodes/{$node->id}/tools/converge", ['tool_ids' => array_values($tools)])->assertAccepted();
+    expect(array_column(Operation::query()->findOrFail($accepted->json('data.id'))->input['intent']['tools'], 'id'))->toBe(array_values($tools));
 });
 
 it('resolves only selected packages and their shared signed apt sources', function (): void {

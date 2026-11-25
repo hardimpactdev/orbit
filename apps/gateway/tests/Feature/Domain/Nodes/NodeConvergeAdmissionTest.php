@@ -972,6 +972,11 @@ it('converges each Node whose host inputs changed with the full Node converge, a
         $member->forceFill(['release_inputs' => ['host' => $member->is($next) ? $inputs->host(node: $next) : ReleaseNodeInputs::NodeScope.str_repeat('d', 64),
             'agent' => app(AgentDelivery::class)->pin($member), 'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($member))]])->save();
     }
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    foreach (['tree', 'nano', 'ed', 'ripgrep'] as $package) {
+        Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id, 'package' => $package,
+            'desired_version' => '1.10', 'installed_version' => '1.10', 'status' => 'installed']);
+    }
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
 
@@ -984,6 +989,7 @@ it('converges each Node whose host inputs changed with the full Node converge, a
             ->and($capture['intent']['release_roles_only'] ?? false)->toBeFalse()
             ->and($capture['intent']['automatic'])->toBeTrue()
             ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
+            ->and(array_column($capture['intent']['tools'], 'package'))->toBe($member->is($this->node) ? ['tree', 'nano', 'ed', 'ripgrep'] : [])
             ->and($capture['release_inputs']['host'])->toBe($inputs->host(node: $member))
             ->and($release->refresh()->phases['fleet']['nodes'][$member->id]['host'])->toBe('pending');
         succeedConverge($converge);

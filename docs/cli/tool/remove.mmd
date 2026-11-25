@@ -17,10 +17,11 @@ sequenceDiagram
   %%> - `orbit tool:remove 31 --yes`
   %%> - syntax: `<tool> [--yes] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Tool<br/>task #5135 · ripgrep on Node 12
-  alt record-only role cleanup or host Conn membership
+  alt protected host software, failed manager setup, or host Conn membership
     Note over GW: Delete only the record<br/>no run, package stays
     %%> Why:
     %%> - the recipe owns the package; removing it would break the role
+    %%> - a never-installed Tool can be withdrawn after manager setup fails
     %%> - withdrawing a host Conn membership leaves the service running and excludes it from future release rollouts
     GW-->>CLI: Tool removed<br/>package or service kept
   else Orbit installed it

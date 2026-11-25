@@ -72,34 +72,38 @@ final readonly class ConnServerRollout
             $servers = collect($nodeIds)->map(fn (int $id): ConnServerNode => $servers->firstWhere('node_id', $id)
                 ?? throw new ResourceOperationException('conn_server.membership_withdrawn', 'A selected Node is not enrolled for Conn Server rollout.', 409));
         }
-        $release = $this->releases->find($version);
-        if ($release === null) {
-            throw new ResourceOperationException('conn_server.pin_unavailable', 'The requested Conn Server host release is not in the release catalog.', 409);
-        }
         $members = Tool::query()->with('manager', 'aptRepository')->whereIn('node_id', $servers->pluck('node_id'))
             ->where('package', ConnServerToolManager::Package)->whereHas('manager', static fn ($query) => $query->where('name', ToolManagerName::ConnServer->value))
             ->get()->keyBy('node_id');
+        $active = $withdraw ? null : $this->policy->active();
         $selectedVersion = null;
         foreach ($servers as $server) {
             $this->tools->assertIdle($server->node_id, [ToolManagerName::ConnServer->value]);
+            if ($withdraw) {
+                continue;
+            }
             $member = $members->get($server->node_id);
-            $desired = $member === null ? $release->version : $this->definitions->resolve('update', $this->manager, $member->package, $member,
-                null, null, null, $this->policy->active())->version;
+            $legacyOverride = $active?->mode === 'database' && $member === null ? $version : null;
+            $desired = $this->definitions->resolve('update', $this->manager, ConnServerToolManager::Package, $member, $legacyOverride, null, null, $active)->version;
             if (($version !== null && $version !== $desired) || ($selectedVersion !== null && $selectedVersion !== $desired)) {
                 throw new ResourceOperationException('conn_server.release_conflict', 'Selected Nodes must desire the same release. Use an explicit Node scope, or update the Tool memberships.', 409);
             }
             $selectedVersion = $desired;
         }
-        $pin = $this->releases->find($selectedVersion) ?? $release;
+        $pin = $withdraw ? null : $this->releases->find($selectedVersion);
+        if (! $withdraw && $pin === null) {
+            throw new ResourceOperationException('conn_server.pin_unavailable', 'The requested Conn Server host release is not in the release catalog.', 409);
+        }
         $notice = Config::array('orbit.conn.server_rollout_notice');
 
         return $this->start->execute(self::Kind, 'fleet', SwampNode::id(), SwampNode::id(), ['intent' => [
-            'version' => $pin->version,
             'dry_run' => $dryRun,
-            ...($withdraw ? ['withdraw' => true] : []),
-            'mac' => ['url' => $pin->mac->artifact->location, 'sha256' => $pin->mac->artifact->digest,
-                'bundle_id' => $pin->mac->bundleId, 'team_id' => $pin->mac->teamId],
-            'linux' => ['url' => $pin->linux->location, 'sha256' => $pin->linux->digest],
+            ...($pin === null ? ['withdraw' => true] : [
+                'version' => $pin->version,
+                'mac' => ['url' => $pin->mac->artifact->location, 'sha256' => $pin->mac->artifact->digest,
+                    'bundle_id' => $pin->mac->bundleId, 'team_id' => $pin->mac->teamId],
+                'linux' => ['url' => $pin->linux->location, 'sha256' => $pin->linux->digest],
+            ]),
             'notice' => ['url' => $notice['url'] ?? null, 'command' => $notice['command'] ?? null],
             'nodes' => $servers->map(fn (ConnServerNode $server): array => ['node_id' => $server->node_id, 'ssh' => $this->ssh->forNode($server->node),
                 ...($members->has($server->node_id) ? ['tool_id' => $members->get($server->node_id)?->id] : []),

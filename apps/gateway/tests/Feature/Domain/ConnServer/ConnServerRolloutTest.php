@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tools\ManageToolPolicyAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\ConnServer\ConnServerRolloutProjection;
+use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\FactDoctor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -13,11 +16,14 @@ use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
 use App\Models\ConnServerNode;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Tool;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -173,5 +179,74 @@ it('admits physical withdrawal only for one explicitly named and previously with
     expect(fn () => $rollout->admit(true, 'nodes', [$linux->id]))->toThrow(ResourceOperationException::class, 'not enrolled');
     $run = $rollout->admit(true, 'nodes', [$linux->id], withdraw: true);
     expect($run->input['intent'])->toMatchArray(['withdraw' => true, 'dry_run' => true]);
-    expect(array_column($run->input['intent']['nodes'], 'node_id'))->toBe([$linux->id]);
+    expect(array_column($run->input['intent']['nodes'], 'node_id'))->toBe([$linux->id])
+        ->and($run->input['intent'])->not->toHaveKeys(['version', 'linux', 'mac']);
+});
+
+it('requires an exact active file coordinate for a migrated host without enrolling it', function (): void {
+    $node = connServerNode('canary', 61, ['canary' => true]);
+    $policy = app(ManageToolPolicyAction::class);
+    $path = TestOrbitHome::scratch('conn-tools.yaml');
+    File::ensureDirectoryExists(dirname($path));
+    file_put_contents($path, json_encode(['schema' => 1, 'packages' => []], JSON_THROW_ON_ERROR));
+    $policy->change('file', $path);
+    $rollout = app(ConnServerRollout::class);
+    expect(fn () => $rollout->admit(false, 'nodes', [$node->id], version: '0.5.2'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.not_in_catalog'));
+    file_put_contents($path, json_encode(['schema' => 1, 'packages' => [['manager' => 'conn-server', 'package' => 'conn-server', 'version' => '0.5.1']]], JSON_THROW_ON_ERROR));
+    expect(fn () => $rollout->admit(false, 'nodes', [$node->id], version: '0.5.2'))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.release_conflict'));
+    expect(Operation::count())->toBe(0);
+    $run = $rollout->admit(false, 'nodes', [$node->id]);
+    expect($run->input['intent']['version'])->toBe('0.5.1')->and($run->input['intent']['nodes'][0])->not->toHaveKey('tool_id')
+        ->and(Tool::count())->toBe(0);
+});
+
+it('keeps identical Conn requests unchanged and replays keyed withdrawal through Tool authorization', function (): void {
+    $node = connServerNode('linux', 61, ['canary' => true, 'platform' => 'linux', 'path' => '/opt/conn-server/current', 'service' => 'conn-server']);
+    $node->update(['platform' => 'linux', 'architecture' => 'x86_64']);
+    $control = SwampNodeFixture::ensure();
+    $control->accessibleNodes()->attach($node);
+    $this->withServerVariables(['REMOTE_ADDR' => $control->wireguard_ip]);
+    $policy = app(ManageToolPolicyAction::class);
+    $before = $policy->show('snapshot')['document'];
+    $payload = ['node_id' => $node->id, 'manager' => 'conn-server', 'package' => 'conn-server', 'desired_version' => '0.5.2'];
+    $install = $this->postJson('/api/v1/tools', $payload)->assertAccepted()->assertJsonPath('data.result.outcome', 'applied');
+    $tool = Tool::query()->findOrFail($install->json('data.result.tool_id'));
+    $tool->update(['installed_version' => '0.5.2']);
+    $this->postJson('/api/v1/tools', $payload)->assertAccepted()->assertJsonPath('data.result.outcome', 'unchanged')
+        ->assertJsonPath('data.result.installed_version', '0.5.2');
+    $this->postJson("/api/v1/tools/{$tool->id}/update", ['desired_version' => '0.5.2'])->assertAccepted()->assertJsonPath('data.result.outcome', 'unchanged');
+    $this->postJson("/api/v1/tools/{$tool->id}/update", ['desired_version' => '0.5.1'])->assertAccepted()->assertJsonPath('data.result.outcome', 'applied')
+        ->assertJsonPath('data.result.installed_version', '0.5.2');
+    $remove = $this->withHeader('Idempotency-Key', 'retry-withdrawal')->deleteJson("/api/v1/tools/{$tool->id}")->assertAccepted();
+    $this->deleteJson("/api/v1/tools/{$tool->id}")->assertAccepted()->assertJsonPath('data.id', $remove->json('data.id'))
+        ->assertJsonPath('data.result.tool_id', $tool->id);
+    expect(Tool::count())->toBe(0)->and(Operation::query()->where('kind', 'tool.remove')->count())->toBe(1);
+    $after = $policy->show('snapshot')['document'];
+    expect($after['memberships'])->toBe($before['memberships'])
+        ->and($before['conn_server_rollout'])->toBe([['node_id' => $node->id, 'withdrawn' => false]])
+        ->and($after['conn_server_rollout'])->toBe([['node_id' => $node->id, 'withdrawn' => true]]);
+    $policy->change('file', null);
+    $policy->change('database', null);
+    expect($policy->show('snapshot')['document'])->toBe($after);
+});
+
+it('checks managed Conn in Doctor against protected health observations, not the selected replacement', function (): void {
+    $node = connServerNode('linux', 61, ['canary' => true, 'platform' => 'linux', 'path' => '/opt/conn-server/current', 'service' => 'conn-server']);
+    $node->update(['platform' => 'linux', 'architecture' => 'x86_64']);
+    $ops = app(StartToolOperationAction::class);
+    $member = Tool::query()->findOrFail($ops->execute('install', $node->id, 'conn-server', 'conn-server', null, version: '0.5.2')->result['tool_id']);
+    $doctor = fn (): array => app(FactDoctor::class)->report([$node], [DoctorFamily::Tool])->toArray()['nodes'][0]['families'][0];
+    expect($doctor())->toMatchArray(['checked' => 1, 'status' => 'unverifiable']);
+    $rollout = app(ConnServerRollout::class);
+    $complete = static function (Operation $run, array $observation): void {
+        $run->update(['state' => ['swamp_run_id' => 'fixture']]);
+        app(ConnServerRolloutProjection::class)->apply($run, ['run_id' => 'fixture', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
+            'finished_at' => now()->toAtomString(), 'result' => ['version' => $run->input['intent']['version'], 'dry_run' => $run->input['intent']['dry_run'], 'nodes' => [$observation]]]);
+    };
+    $complete($rollout->admit(true, 'canary'), ['node_id' => $node->id, 'outcome' => 'checked', 'observed_version' => '0.5.1']);
+    expect($member->fresh()->installed_version)->toBe('0.5.1')->and($doctor()['issues'][0])->toMatchArray(['code' => 'tool.version_mismatch', 'expected' => '0.5.2', 'observed' => '0.5.1']);
+    $complete($rollout->admit(false, 'canary'), ['node_id' => $node->id, 'outcome' => 'updated']);
+    expect($member->fresh()->installed_version)->toBe('0.5.2')->and($doctor())->toMatchArray(['checked' => 1, 'status' => 'healthy', 'issues' => []]);
 });

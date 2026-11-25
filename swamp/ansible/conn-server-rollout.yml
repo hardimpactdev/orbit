@@ -44,6 +44,13 @@
         fail_msg: conn_server.withdraw_scope_invalid
         quiet: true
 
+    - name: Require replacement artifacts for a rollout
+      when: not (intent.withdraw | default(false))
+      ansible.builtin.assert:
+        that: intent.version is defined and intent.mac is defined and intent.linux is defined
+        fail_msg: conn_server.pin_unavailable
+        quiet: true
+
     - name: Start with no Node results
       ansible.builtin.file: { path: "{{ run }}/nodes", state: directory, mode: "0700" }
 
@@ -67,6 +74,7 @@
         ansible_ssh_private_key_file: "{{ item.ssh.identity_file }}"
         server: "{{ item.server }}"
         node_id: "{{ item.node_id }}"
+        managed_tool: "{{ item.tool_id is defined }}"
       loop: "{{ intent.nodes }}"
       loop_control: { label: "{{ item.node_id }}" }
 
@@ -79,7 +87,7 @@
     run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
     run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
     intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
-    version: "{{ intent.version }}"
+    version: "{{ intent.version | default(none) }}"
     # The health wait: up to 60 rounds of a prompt read and a /health read, 2 s apart, for at most health_seconds per server start.
     health_rounds: 60
     health_delay: 2
@@ -105,7 +113,8 @@
               {{ {'node_id': node_id | int, 'outcome': 'failed',
                   'reason': ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
                             else 'conn_server.step_failed',
-                  'rolled_back': rolled_back | default(false)} }}
+                  'rolled_back': rolled_back | default(false)}
+                  | combine({'observed_version': recovered_version} if managed_tool and recovered_version is defined and rolled_back | default(false) else {}) }}
 
     - name: Write the Node's result
       delegate_to: localhost
@@ -158,7 +167,7 @@
             dest: "{{ run }}/result.json"
             mode: "0600"
             content: >-
-              {{ {'version': intent.version, 'dry_run': intent.dry_run, 'error_code': error_code,
+              {{ {'version': none if intent.withdraw | default(false) else intent.version, 'dry_run': intent.dry_run, 'error_code': error_code,
                   'nodes': nodes + (not_reached | from_json)} | to_json }}
 
         - name: Fail the phase on a failed Node or a held canary

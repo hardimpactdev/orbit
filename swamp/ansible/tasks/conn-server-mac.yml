@@ -147,12 +147,16 @@
     (mac_requirements.results[0].stdout_lines | select('match', '^designated') | list)
     != (mac_requirements.results[1].stdout_lines | select('match', '^designated') | list)
   ansible.builtin.set_fact:
-    node_result: { node_id: "{{ node_id | int }}", outcome: held, reason: designated_requirement_changed }
+    node_result: >-
+      {{ {'node_id': node_id | int, 'outcome': 'held', 'reason': 'designated_requirement_changed'}
+         | combine({'observed_version': mac_previous_version} if managed_tool else {}) }}
 
 - name: Record a checked Node of a dry run
   when: node_result is not defined and intent.dry_run
   ansible.builtin.set_fact:
-    node_result: { node_id: "{{ node_id | int }}", outcome: checked }
+    node_result: >-
+      {{ {'node_id': node_id | int, 'outcome': 'checked'}
+         | combine({'observed_version': mac_previous_version} if managed_tool else {}) }}
 
 - name: Decide the swap
   ansible.builtin.set_fact:
@@ -252,6 +256,7 @@
             - name: Note whether the old server answers
               ansible.builtin.set_fact:
                 rolled_back: "{{ mac_healthy }}"
+                recovered_version: "{{ mac_previous_version }}"
           rescue:
             - name: Note that the old server does not answer
               ansible.builtin.set_fact:

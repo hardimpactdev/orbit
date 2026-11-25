@@ -518,16 +518,19 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
         const aptVersion = await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dpkg"] }).output();
         assertEquals(aptVersion.code, 0);
         const observed = new TextDecoder().decode(aptVersion.stdout);
+        const dashVersion = new TextDecoder().decode((await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dash"] }).output()).stdout);
         const protectedApt = { id: 3, manager: "apt", package: "tree", protected: ["tree"], repository: null };
         const unavailable = { id: 4, manager: "brew-cask", package: "font-orbit-test", protected: [], repository: null, manager_unavailable: true };
         const matchingApt = { id: 5, manager: "apt", package: "dpkg", protected: [], repository: null, desired_version: observed };
-        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt]);
+        const matchingDash = { ...matchingApt, id: 6, package: "dash", desired_version: dashVersion };
+        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt, matchingDash]);
         assertEquals(phase.code, 0, phase.output);
         assertMatch(phase.output, /tool\.package_protected/);
         assertMatch(phase.output, /tool\.manager_unsupported/);
         assertMatch(phase.output, /Refresh applicable apt candidate metadata[\s\S]*?skipping: \[localhost\]/);
         assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null },
-            { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed }]);
+            { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed },
+            { id: 6, status: "installed", installed_version: dashVersion }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

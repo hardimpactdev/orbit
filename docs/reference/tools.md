@@ -53,11 +53,11 @@ packages:
 
 Export before switching so you have a copy of the current policy and memberships.
 
-1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json` to preserve membership, desired coordinates, and observations.
+1. Inspect the mode with `orbit tool:mode`. Save `orbit tool:mode --export=snapshot --json` to preserve membership, desired coordinates, observations, and the rollout eligibility of configured host Conn Servers.
 2. To enter file mode with existing Tools, use `orbit tool:mode --export=catalog --json`. Write its `document` to `tools.yaml` on the Gateway, then run `orbit tool:mode:set file --catalog=/absolute/path/tools.yaml`. Omit `--catalog` to use the shipped file.
 3. To return to database mode, run `orbit tool:mode:set database`. The database takes the current file coordinates and any unapplied signed source definitions for the existing memberships. It keeps observed versions and verified sources separate.
 
-A catalog cannot express different desired coordinates for the same manager and package across Nodes, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation. Activation also refuses missing or different coordinates and waits for running Tool Operations to finish. A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
+A catalog cannot express different desired coordinates for the same manager and package across Nodes, or a database Tool without an exact version. Export reports `tool.mode_conflict` rather than selecting one version or inferring a pin from observation. Activation also refuses missing or different coordinates, a removed or renamed verified source, and any active or retained Tool execution hold. A successful change stores a snapshot of the prior policy and returns its `snapshot_id`; it starts no Node Operation. The same contracts are available through `GET /api/v1/tool-policy`, `PUT /api/v1/tool-policy`, and the Gateway MCP tools.
 
 ## Desired and installed versions
 
@@ -97,9 +97,9 @@ Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o
 
 ### Host Conn Server membership
 
-`orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only`. They do not claim an installed version before a verified rollout.
+`orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only` and return `unchanged` when membership and the desired release already match.
 
-Use the explicit [rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or to retire a withdrawn Linux service. General Tool convergence does not execute host service intent. A host rollout never changes the required container Conn release.
+Use the explicit [rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or to retire a withdrawn Linux service. Doctor compares a managed service with the last version verified through protected rollout health checks, not with package inventory. A dry run can refresh that observation without changing the service. Before any verified health observation, Doctor reports the Tool as unverifiable. General Tool convergence does not execute host service intent. A host rollout never changes the required container Conn release.
 
 ## Project environments in the Vite+ store
 
@@ -113,7 +113,7 @@ Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `un
 
 ## Protected packages
 
-Orbit protects essential host and manager packages from installation, update, adoption (`adoption_block: protected`), removal, or convergence (`tool.package_protected`, 409). `conn-server` is reserved for the dedicated host rollout and container recipe, not a generic package write:
+Orbit protects essential host and manager packages from optional installation, update, adoption (`adoption_block: protected`), and convergence (`tool.package_protected`, 409). This includes host prerequisites such as Caddy, Valkey, and Docker CE. Removing a historical Tool membership for protected software relinquishes the record only; the host package stays installed. `conn-server` is reserved for the dedicated host rollout and container recipe, not a generic package write:
 
 | Manager | Protected package names |
 | --- | --- |
@@ -145,17 +145,19 @@ Adoption requires a single installed version, no adoption block, and constraint 
 
 ### Homebrew casks
 
-On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accepts unqualified official `homebrew/cask/<token>` casks with `https` URLs, lowercase SHA-256 checksums (`no_check` refused), and user-home or Homebrew-prefix artifacts (fonts, binaries, man pages, completions). Install and update set `HOMEBREW_FORCE_API_AUTO_UPDATE` on both platforms, and cask versions with comma-separated build suffixes (such as `1.5.13,5999302598852608`) compare SemVer before the comma while tracking the full version string. Casks targeting `/Applications`, system paths, package installers, or privileged uninstalls return `authorization_required`; preflight/postflight/arbitrary scripts and disabled casks return `unsupported_artifact`.
+On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accepts unqualified official `homebrew/cask/<token>` casks with `https` URLs, lowercase SHA-256 checksums (`no_check` refused), and user-home or Homebrew-prefix artifacts (fonts, binaries, man pages, completions). Install and update set `HOMEBREW_FORCE_API_AUTO_UPDATE` on both platforms. A comma-separated build suffix is part of the exact coordinate and stays in Tool records and snapshots, while direct install and update receipts display the version before the comma. SemVer constraints apply to that abbreviated version. Casks targeting `/Applications`, system paths, package installers, or privileged uninstalls return `authorization_required`; preflight/postflight/arbitrary scripts and disabled casks return `unsupported_artifact`.
 
 ## Remove a Tool
 
-`tool:remove` returns HTTP `202` with an Operation (or completes immediately if the package is role-owned or never recorded an installed version). For `apt`, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`.
+`tool:remove` returns HTTP `202` with an Operation. It removes only the record for a protected or role-owned package, or cancels a pending first install that failed during manager setup without installing the package first. For an apt package removal, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`.
 
 ## Signed apt repositories
 
 An `apt` Tool definition can include a `repository` object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). In database mode pass it as JSON on install, adoption, or update; in file mode declare it in the catalog. Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for declared packages, `1` for other packages from that host). Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
 
 Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
+
+All Tools sharing a repository on one Node must agree on its definition. An unchanged verified source does not need another key download on a direct write, but the apt preference still follows membership. A failed write retains the requested repository separately from the last verified source. Remove the membership before dropping or renaming a verified source; neither convergence nor a mode switch can bypass that rule.
 
 ## Why it works this way
 

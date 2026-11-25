@@ -22,14 +22,19 @@ final readonly class ConnServerToolMembership
     public function record(string $verb, int $nodeId, ?Tool $tool, ToolDefinition $definition, string $requestId): Operation
     {
         $server = ConnServerNode::query()->where('node_id', $nodeId)->firstOrFail();
-        if ($verb === 'install' && $tool !== null) {
+        $unchanged = $verb !== 'remove' && $tool !== null && ! $server->tool_withdrawn
+            && $definition->sameAs(new ToolDefinition($tool->desired_version, $tool->version_constraint, null));
+        if ($verb === 'install' && $tool !== null && ! $unchanged) {
             throw new ResourceOperationException('tool.package_already_installed', 'Update the existing Conn Server membership instead.', 409);
         }
 
         return $this->operations->record('tool.'.$verb, 'node_tools', $nodeId, $nodeId,
-            ['manager' => ToolManagerName::ConnServer->value, 'package' => ConnServerToolManager::Package, 'desired_version' => $definition->version, 'intent_only' => true],
-            ['outcome' => 'applied', 'installed_version' => $tool?->installed_version, 'execution' => 'membership_only'], 'operator', $requestId,
-            ToolManagerName::ConnServer->operationLockKey($nodeId), static function () use ($verb, $nodeId, $server, $tool, $definition): array {
+            ['manager' => ToolManagerName::ConnServer->value, 'package' => ConnServerToolManager::Package, 'desired_version' => $definition->version, 'intent_only' => true, 'tool_id' => $tool?->id],
+            ['outcome' => $unchanged ? 'unchanged' : 'applied', 'installed_version' => $tool?->installed_version, 'execution' => 'membership_only'], 'operator', $requestId,
+            ToolManagerName::ConnServer->operationLockKey($nodeId), static function () use ($verb, $nodeId, $server, $tool, $definition, $unchanged): array {
+                if ($unchanged) {
+                    return ['tool_id' => $tool?->id];
+                }
                 if ($verb === 'remove') {
                     $server->update(['tool_withdrawn' => true]);
                     $tool?->delete();
