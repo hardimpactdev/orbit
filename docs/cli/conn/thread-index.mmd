@@ -45,7 +45,8 @@ sequenceDiagram
   %%> Result:
   %%> - in the list at once; a container row's state stays null until the next read of its server
   %%> - a host row has no next read: the list shows it with `state` null, `needs_input` false and no last-message times, also for rows written before host reads ended
-  %%> - a host row's `project_id` comes only from the librarian's filing; a manual filing in Conn does not reach it
+  %%> - only the librarian's filing sets a host row's `project_id`; nothing updates it afterwards, so a manual filing or unfiling in Conn does not reach it
+  %%> - a host row indexed before the host poll was removed keeps the `project_id` that its last poll read
   C->>GW: List threads<br/>GET /conn/threads?project=
   %%> Requires:
   %%> - node access, as for the server list: only servers whose Node the caller reaches
