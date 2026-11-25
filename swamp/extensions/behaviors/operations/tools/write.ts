@@ -52,8 +52,10 @@ export function before(
     facts: z.infer<typeof Facts>,
     present: boolean,
 ): boolean {
+    // A present package that Orbit never installed, adopted or observed for this Tool is never taken over.
     if (
-        present && input.kind === "tool.install" && input.installed_version === null
+        present && input.kind === "tool.install" &&
+        (input.installed_version === null || !input.package_owned)
     ) throw new ToolRefusal("tool.package_already_installed");
     if (input.kind === "tool.update" && !present) {
         throw new ToolRefusal("tool.version_probe_failed");
@@ -147,7 +149,7 @@ function choose(input: Input, phase: Phase): Decision {
 }
 export const behavior = {
     type: "@nckrtl/tool-write-command",
-    version: "2026.11.02.7",
+    version: "2026.11.25.1",
     resources: {
         assets: { schema: Public, lifetime: "1d", garbageCollection: 10 },
         decision: { schema: Public, lifetime: "1d", garbageCollection: 10 },

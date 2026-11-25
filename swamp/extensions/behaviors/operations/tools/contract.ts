@@ -33,7 +33,8 @@ export const Input = z.object({
     intent_only: z.boolean().default(false),
     repository: Repository.nullable().default(null),
     remove_repository: z.boolean().default(false),
-    /** False for a Tool whose package Orbit never installed or observed: its removal cleans only Orbit's apt source. */
+    /** False for a Tool whose package Orbit never installed, adopted or observed: install refuses a present package and removal
+     * cleans only Orbit's apt source. */
     package_owned: z.boolean().default(true),
     repository_packages: z.array(
         z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/),

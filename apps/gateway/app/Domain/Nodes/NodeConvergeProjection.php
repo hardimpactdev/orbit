@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\AptSourceTrust;
 use App\Domain\Tools\ToolConvergeObservations;
 use App\Models\Node;
 use App\Models\Operation;
@@ -52,6 +53,10 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
                 return $locked;
             }
             $this->toolObservations->record(ValidatedData::integer($operation->node_id), $admitted, $tools);
+            if (in_array(data_get($result, 'phases.4.status'), ['unchanged', 'skipped'], true)) {
+                // The Tools phase did not run, so it wrote no source: the trust its admission suspended holds again.
+                AptSourceTrust::restorePlans(ValidatedData::integer($operation->node_id), array_values($admitted));
+            }
 
             $phases = $result['phases'];
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);

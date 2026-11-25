@@ -3,6 +3,7 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import { convergeResult, phases, toolConvergeResult } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
 import { codeDigest, convergeInput, phaseCode, phaseDigests, phaseInputs, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
+import { ToolRefusal } from "../extensions/behaviors/operations/tools/contract.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 import { entries, resolvePhases, shared as sharedFiles } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
@@ -257,7 +258,7 @@ Deno.test("failure before input preparation still publishes a failed terminal an
     assertEquals(result.phases.map((phase: { status: string }) => phase.status), ["failed", ...Array(6).fill("skipped")]);
 });
 
-const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [] } };
+const apt = { node_id: 7, user: "orbit", tool: { manager: "apt", package: "tree", version_constraint: "^2.2", protected: [], owned: true } };
 const aptFacts = { version: { rc: 0, stdout: "apt 3.1.16 (amd64)" }, query: { rc: 0, stdout: "tree\tinstall ok installed\t2.2.1-1\n" } };
 Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retries and exact pins without removals", () => {
     // Retain the live package policy formerly covered beside the retired VM role.
@@ -296,6 +297,14 @@ Deno.test("Node snapshot packages use direct HTTPS configuration, bounded retrie
 
 Deno.test("matching Tool inventory is a read-only no-op", () => {
     assertEquals(toolState("inspect", { ...apt, ...aptFacts }), { installed_version: "2.2.1-1", needs_write: false });
+});
+Deno.test("a present package is never taken over for a Tool Orbit does not own, whatever its last status", () => {
+    for (const tool_status of ["installing", "failed", null]) {
+        const unowned = { ...apt, tool: { ...apt.tool, owned: false, tool_status, installed_version: tool_status === "failed" ? "2.2.1-1" : null } };
+        assertThrows(() => toolState("inspect", { ...unowned, ...aptFacts }), ToolRefusal, "tool.package_already_installed");
+        const absent = { ...aptFacts, query: { rc: 1, stdout: "", stderr: "dpkg-query: no packages found matching tree" } };
+        assertEquals(toolState("inspect", { ...unowned, ...absent }), { installed_version: null, needs_write: true });
+    }
 });
 Deno.test("an out-of-constraint candidate is rejected before returning write argv", () => {
     assertThrows(() => toolState("candidate", { ...apt, ...aptFacts, candidate: { rc: 0, stdout: "tree:\n  Candidate: 3.0.0-1\n" } }));
@@ -632,6 +641,14 @@ Deno.test("a repeat with another Operation ID and freshly written secrets skips 
 function intentFields(text: string): string[] {
     return [...text.matchAll(/(?<![.\w])(?:converge_)?intent\b(?:\.([a-z_]+)|\[['"]([a-z_]+)['"]\]|(?=\s*(?:\||\}\}|\)|,)))/g)].map((match) => match[1] ?? match[2] ?? "*");
 }
+
+Deno.test("an unproven apt source in a Tool plan moves the tools digest, so a skipped phase never hides its repair", async () => {
+    const tool = (repository_verified: boolean) => ({ tools: [{ id: 3, manager: "apt", package: "tree", repository: { name: "proof" }, repository_verified }] });
+    const verified = await prepared({}, { intent: { ...tool(true), recipe: "{}" } });
+    assertEquals((await prepared(verified.phases.digests, { intent: { ...tool(true), recipe: "{}" }, operationId: 42 })).phases.unchanged, [...skippable]);
+    const unproven = await prepared(verified.phases.digests, { intent: { ...tool(false), recipe: "{}" }, operationId: 42 });
+    assertEquals(unproven.phases.unchanged.includes("tools"), false);
+});
 
 Deno.test("a phase's own intent fields and run folder entries are read by no other skippable phase", async () => {
     const root = new URL("../ansible", import.meta.url).pathname;

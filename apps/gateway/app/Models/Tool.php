@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $installed_version
  * @property ToolOperation|null $failed_operation
  * @property string|null $error_code
+ * @property bool $owned
  * @property-read Node $node
  * @property-read ToolManagerRecord $manager
  */
@@ -42,6 +43,7 @@ final class Tool extends Model
         'installed_version',
         'failed_operation',
         'error_code',
+        'owned',
     ];
 
     /** @return BelongsTo<Node, $this> */
@@ -69,6 +71,7 @@ final class Tool extends Model
             'status' => ToolStatus::class,
             'failed_operation' => ToolOperation::class,
             'desired_repository' => 'array',
+            'owned' => 'boolean',
         ];
     }
 }

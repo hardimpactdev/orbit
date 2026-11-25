@@ -23,7 +23,6 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
-use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolPackageProtection;
@@ -35,7 +34,6 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
-use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
@@ -100,10 +98,11 @@ final readonly class StartToolOperationAction
                 return $operation;
             }
 
-            $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
-            if ($operation->wasRecentlyCreated && $repository !== null && ($input['repository_given'] || $removeRepository)) {
-                AptSourceTrust::suspect($nodeId, ValidatedData::string($repository['name']));
+            if ($repository !== null && ($input['repository_given'] || $removeRepository)) {
+                // The record is the cleanup handle and trust state of a source this run may publish or remove.
+                $input['repository_id'] = AptSourceTrust::suspect($nodeId, $repository)->id;
             }
+            $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
             if ($verb !== 'remove' && $operation->wasRecentlyCreated) {
                 $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);
             }
@@ -158,32 +157,39 @@ final readonly class StartToolOperationAction
                     $this->refuse('tool.state_invalid');
                 }
                 if ($tool !== null) {
+                    // An idle installing record is a first install whose run ended without a projection: cancelled, unreadable or
+                    // timed out. The manager lock keeps it from overlapping a run that could still write it.
                     $retryable = $tool->status === ToolStatus::Installed
-                        || ($tool->status === ToolStatus::Failed && ($verb === 'adopt' || $verb === 'remove' || $tool->failed_operation?->value === $verb));
-                    if (! $retryable) {
+                        || ($tool->status === ToolStatus::Failed && ($verb === 'adopt' || $verb === 'remove' || $tool->failed_operation?->value === $verb))
+                        || ($tool->status === ToolStatus::Installing && $verb !== 'update');
+                    // A host Conn membership records a service, not a package Orbit installed, so ownership does not apply to it.
+                    if (! $retryable || ($verb === 'update' && ! $tool->owned && $manager->name() !== ToolManagerName::ConnServer)) {
                         $this->refuse('tool.state_invalid');
                     }
                 }
                 $protected = $this->protection->forNode($node, $manager->name());
                 $hostOwned = in_array($package, $protected, true);
-                // A Tool owns its package only once Orbit installed, adopted or observed it for that Tool: a first install that
-                // never got there owns nothing, whatever its retries or a sibling did since. Its removal only clears the record,
-                // or, when its apt source may have been written, cleans that source without touching the package.
-                $owned = ! ($tool?->status === ToolStatus::Failed && $tool->installed_version === null && $tool->failed_operation === ToolOperation::Install);
-                $source = $tool?->aptRepository->definition ?? $tool?->desired_repository;
-                $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || (! $owned && $source === null));
+                // Uninstall authority is the Tool's recorded ownership alone: Orbit installed, adopted or converged its package. No
+                // failure, retry, status or sibling changes it. Without it, removal clears only the record, or, when the Tool's apt
+                // source may be on disk, cleans that source and its pins without touching the package or needing its manager.
+                $owned = $tool !== null && $tool->owned;
+                $sourceName = $tool?->aptRepository->name ?? $tool?->desired_repository['name'] ?? null;
+                $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || (! $owned && $sourceName === null));
                 if ($hostOwned && ! $relinquish) {
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
                 }
-                if (! $relinquish && $verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
+                $sourceOnly = $verb === 'remove' && ! $owned;
+                if (! $relinquish && ! $sourceOnly && $verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
                     $this->refuse('tool.manager_unavailable');
                 }
 
                 $active = app(ToolPolicy::class)->active();
                 $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, $active);
-                $currentRepository = $tool?->aptRepository;
-                $repository = $relinquish ? null : ($verb === 'remove' ? ($currentRepository->definition ?? $tool?->desired_repository) : $definition->repository);
-                $repositoryRecord = $currentRepository;
+                // A removal cleans or repins the source as the Node's record now defines it, so surviving members keep their current origin.
+                $removing = $verb === 'remove' && $sourceName !== null && ! $relinquish
+                    ? AptRepository::query()->where('node_id', $nodeId)->where('name', $sourceName)->first() : null;
+                $repository = $relinquish ? null : ($verb === 'remove' ? ($removing->definition ?? $tool?->desired_repository) : $definition->repository);
+                $repositoryRecord = $verb === 'remove' ? $removing : $tool?->aptRepository;
                 $repositoryPackages = [];
                 if ($repository !== null) {
                     $repositoryName = $repository['name'];

@@ -17,26 +17,26 @@ sequenceDiagram
   %%> - `orbit tool:remove 31 --yes`
   %%> - syntax: `<tool> [--yes] [--idempotency-key=KEY] [--json]`
   Note over GW: Validate, lock the Tool<br/>task #5135 · ripgrep on Node 12
-  alt protected host software, a Tool Orbit never owned without an apt source, or host Conn membership
+  alt protected host software, a Tool Orbit does not own and whose apt source was never written, or host Conn membership
     Note over GW: Delete only the record<br/>no run, package stays
     %%> Why:
     %%> - the recipe owns the package; removing it would break the role
-    %%> - a Tool owns its package only once Orbit installed, adopted or observed it for that Tool; a refused or failed retry or a sibling's repair does not change that
+    %%> - a Tool owns its package only when Orbit recorded it: a successful install, an adoption or a convergence that installed it; no failure, retry, cleanup or sibling changes that
     %%> - withdrawing a host Conn membership leaves the service running and excludes it from future release rollouts
     GW-->>CLI: Tool removed<br/>package or service kept
-  else Orbit installed it, or a never-owned Tool's apt source may be on disk
+  else Orbit owns the package, or an unowned Tool's apt source may be on disk
     GW->>SW: Start run, full intent<br/>operation-tool-write
     GW-->>CLI: 202 Accepted<br/>task #5135
     SW->>SW: Prepare native SSH<br/>admitted intent · pinned host key
     SW->>N: Remove the Tool<br/>native SSH
     %%> Scope:
     %%> - remove the apt source when no membership needs it; otherwise repin only the remaining packages
-    %%> - `package_owned: false` keeps a package Orbit never owned and cleans only its apt source or pins
+    %%> - `package_owned: false` skips the package plan, keeps the package and cleans only its apt source or pins, from the source as the Node now records it
     %%> - a removal that would also remove a held recipe package is refused
     SW->>N: Read resulting state<br/>native SSH
     alt check passes
       SW-->>GW: Run succeeded
-      Note over GW: Delete the Tool record
+      Note over GW: Delete the Tool record<br/>or keep it failed until source and pins are gone
     else the removal fails
       SW--xGW: Run failed<br/>error_code
       Note over GW: Mark the Tool failed

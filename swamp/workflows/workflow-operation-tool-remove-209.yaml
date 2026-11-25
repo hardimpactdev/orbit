@@ -37,7 +37,7 @@ jobs:
   - name: Plan the removal
     labels: {role: swamp}
     dependsOn: [{step: Read manager version, condition: {type: succeeded}}, {step: Read installed package, condition: {type: succeeded}}, {step: Read macOS version, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ !(inputs.intent.manager in ["apt", "brew"]) }}
+    guard: ${{ !(inputs.intent.manager in ["apt", "brew"]) || ("package_owned" in inputs.intent && !inputs.intent.package_owned) }}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "plan-the-removal-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "plan-the-removal-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps["Prepare package commands"].outputs.plan }}'}}
   - name: Choose package action
     labels: {role: swamp}

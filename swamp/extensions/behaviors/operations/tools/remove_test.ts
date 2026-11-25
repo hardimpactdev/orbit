@@ -121,15 +121,14 @@ Deno.test("a package Orbit does not own is never removed, even when it is a remo
         const { input, facts } = fixture(manager);
         assertEquals(probe(input, facts).remove, true);
         const unowned = RemoveInput.parse({ ...input, package_owned: false });
-        assertEquals(probe(unowned, facts), {
-            ready: true,
-            remove: false,
-            manager_version: "3.0",
-        });
+        const cleanup = { ready: true, remove: false, manager_version: null };
+        assertEquals(probe(unowned, facts), cleanup);
         assertEquals(
-            probe(unowned, facts, { packages: ["hello", "other"] }).remove,
-            false,
+            probe(unowned, facts, { packages: ["hello", "other"] }),
+            cleanup,
         );
+        // An unknown package fails the removal simulation and its facts may be unreadable; neither stops the source cleanup.
+        assertEquals(removalDecision(unowned, null), cleanup);
     }
 });
 

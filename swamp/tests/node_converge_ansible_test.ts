@@ -513,6 +513,7 @@ for (const runtime of ["the compiled Swamp binary", "a missing Deno launcher"]) 
 }
 
 Deno.test("with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds", async () => {
+    // A present package is taken over only for a Tool Orbit owns; `coreutils` stands in for one installed without Orbit.
     const folder = await Deno.makeTempDir();
     try {
         const aptVersion = await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dpkg"] }).output();
@@ -521,16 +522,18 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
         const dashVersion = new TextDecoder().decode((await new Deno.Command("dpkg-query", { args: ["-W", "-f=${Version}", "dash"] }).output()).stdout);
         const protectedApt = { id: 3, manager: "apt", package: "tree", protected: ["tree"], repository: null };
         const unavailable = { id: 4, manager: "brew-cask", package: "font-orbit-test", protected: [], repository: null, manager_unavailable: true };
-        const matchingApt = { id: 5, manager: "apt", package: "dpkg", protected: [], repository: null, desired_version: observed };
+        const matchingApt = { id: 5, manager: "apt", package: "dpkg", protected: [], repository: null, desired_version: observed, owned: true };
         const matchingDash = { ...matchingApt, id: 6, package: "dash", desired_version: dashVersion };
-        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt, matchingDash]);
+        const unowned = { id: 7, manager: "apt", package: "coreutils", protected: [], repository: null, owned: false, tool_status: "installing" };
+        const phase = await toolsPhase(folder, Deno.execPath(), [protectedApt, unavailable, matchingApt, matchingDash, unowned]);
         assertEquals(phase.code, 0, phase.output);
         assertMatch(phase.output, /tool\.package_protected/);
         assertMatch(phase.output, /tool\.manager_unsupported/);
+        assertMatch(phase.output, /tool\.package_already_installed/);
         assertMatch(phase.output, /Refresh applicable apt candidate metadata[\s\S]*?skipping: \[localhost\]/);
         assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null },
             { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed },
-            { id: 6, status: "installed", installed_version: dashVersion }]);
+            { id: 6, status: "installed", installed_version: dashVersion }, { id: 7, status: "failed", installed_version: null }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

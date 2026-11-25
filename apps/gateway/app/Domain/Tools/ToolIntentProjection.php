@@ -96,7 +96,9 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
                 $result['installed_coordinate'] = null;
                 $result['outcome'] = 'applied';
                 if (($operation->input['remove_repository'] ?? false) === true) {
-                    $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded';
+                    // Both steps allow failure; only both together confirm the source and its preferences are gone.
+                    $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded'
+                        && NativeRunResult::stepStatus($native, 'Remove repository pins') === 'succeeded';
                 }
             } elseif (array_key_exists('installed_version', $observation)) {
                 // The raw coordinates tell a new cask build from the same one.
@@ -166,8 +168,9 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;
         if ($status !== OperationStatus::Succeeded) {
             // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel. One whose
-            // run may already have published its apt source stays as a failed Tool instead, so its removal can clean that source.
-            $published = $tool?->status === ToolStatus::Installing && ($input['repository_given'] ?? false) === true;
+            // run may already have written its apt source, key or pins stays as a failed Tool instead, so its removal can clean them.
+            $published = $tool?->status === ToolStatus::Installing && is_array($input['repository'] ?? null)
+                && ($status !== OperationStatus::Cancelled || isset($operation->state['swamp_run_id']));
             if ($tool?->status === ToolStatus::Installing && ! $published && (($managerFailed && $tool->desired_repository === null
                 && $tool->desired_version === null && $tool->version_constraint === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
@@ -185,8 +188,15 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             return;
         }
         if ($verb === 'remove') {
+            // The last member's cleanup of its apt source is best-effort, so an unconfirmed one keeps the Tool as its retry handle; the
+            // package itself is gone or was never Orbit's.
+            if (($input['remove_repository'] ?? false) === true && ($result['repository_removed'] ?? false) !== true) {
+                $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => null, 'failed_operation' => ToolOperation::Remove,
+                    'error_code' => 'tool.repository_failed']);
+
+                return;
+            }
             $tool?->delete();
-            // Dropping the last Tool's apt source is best-effort; a kept source stays recorded for a later cleanup.
             if (($result['repository_removed'] ?? false) === true && is_int($input['repository_id'] ?? null)) {
                 AptRepository::query()->whereKey($input['repository_id'])->delete();
             }
@@ -197,7 +207,8 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         if ($tool === null && $record !== null) {
             $tool = $this->createTool($operation, $record);
         }
-        $tool?->update(['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'installed_version' => $result['installed_coordinate'] ?? null, 'failed_operation' => null, 'error_code' => null]);
+        // A successful install refused any package that was present without Orbit, so the package is now Orbit's (docs/reference/tools.md#remove-a-tool).
+        $tool?->update(['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'owned' => true, 'installed_version' => $result['installed_coordinate'] ?? null, 'failed_operation' => null, 'error_code' => null]);
     }
 
     /** The admitted repository definition, stored once the run succeeded. */

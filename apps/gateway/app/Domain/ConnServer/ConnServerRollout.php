@@ -90,18 +90,24 @@ final readonly class ConnServerRollout
         return $check === null ? null : ($this->failedObservation($canary, $key, $check->id) ?? $check);
     }
 
-    /** The latest finished run after `$after` that reached the canary and did not pass there; this pin's canary applies retry on their own. */
+    /**
+     * The latest finished run after `$after` whose evidence about the canary is a failure: its own outcome there, not the run's status
+     * or another Node's. A run that never reached the canary (`not_reached`, or cancelled before it ran) proves nothing; an update run
+     * that may have reached it without reporting it leaves its state unknown. This pin's own canary applies retry on their own.
+     */
     private function failedObservation(ConnServerNode $canary, string $key, int $after): ?Operation
     {
         $runs = Operation::query()->where('kind', self::Kind)->where('id', '>', $after)->orderByDesc('id')->get();
         foreach ($runs as $run) {
-            $reached = in_array($canary->node_id, array_column((array) data_get($run->input, 'intent.nodes', []), 'node_id'), true);
+            $targeted = in_array($canary->node_id, array_column((array) data_get($run->input, 'intent.nodes', []), 'node_id'), true);
             $ownApply = data_get($run->input, 'release_pin') === $key && data_get($run->input, 'release_stage') === 'canary';
-            if (! $run->status->terminal() || ! $reached || $ownApply) {
+            if (! $run->status->terminal() || ! $targeted || $ownApply) {
                 continue;
             }
             $outcome = data_get(collect((array) ($run->result['nodes'] ?? []))->firstWhere('node_id', $canary->node_id), 'outcome');
-            if ($run->status !== OperationStatus::Succeeded || ! in_array($outcome, ['checked', 'updated'], true)) {
+            $ran = isset($run->state['swamp_run_id']) || $run->attempts > 0;
+            $unknown = $outcome === null && $ran && data_get($run->input, 'intent.dry_run') === false;
+            if ($unknown || ($outcome !== null && ! in_array($outcome, ['checked', 'updated', 'not_reached'], true))) {
                 return $run;
             }
         }
@@ -246,7 +252,8 @@ final readonly class ConnServerRollout
         }
         if ($dryRun) {
             if ($rest->isEmpty()) {
-                return $this->run($pin, $reviewed, true, false, $triggeredBy, $requestId);
+                // With no follower, the fleet dry run is the canary check, with its receipt and retry identity.
+                return $this->retry($pin, $key, 'check', $reviewed, $latest, $triggeredBy, $requestId, $retryOperationId);
             }
             $preflight = $this->receipt($key, 'preflight');
 
@@ -254,17 +261,14 @@ final readonly class ConnServerRollout
         }
         $probe = $this->receipt($key, 'canary');
         if ($scope === 'canary') {
-            if ($probe !== null && $this->proven($probe, $check, $pin, $canary, $key)) {
+            // A retry ID names one attempt: it retries the stage that attempt belongs to, or is stale. It never returns another receipt.
+            if ($retryOperationId === null && $probe !== null && $this->proven($probe, $check, $pin, $canary, $key)) {
                 return $probe;
             }
             if (! $this->passed($latest, $pin, $canary, true)) {
                 return $this->retry($pin, $key, 'check', $selected, $latest, $triggeredBy, $requestId, $retryOperationId);
             }
-            if ($this->staleProbe($probe, $check)) {
-                if ($retryOperationId !== null) {
-                    throw new ResourceOperationException('conn_server.retry_stale', 'The canary check passed after that attempt. Start the canary update without a retry ID.', 409);
-                }
-
+            if ($retryOperationId === null && $this->staleProbe($probe, $check)) {
                 return $this->releaseOperation($pin, $key, 'canary', $selected, $triggeredBy, $requestId, after: $check?->id);
             }
 
@@ -277,6 +281,17 @@ final readonly class ConnServerRollout
         }
         $pinIdentity = $this->pinIdentity($pin);
         $promotion = $this->receipt($pinIdentity, 'promotion');
+        if ($retryOperationId !== null) {
+            // The retry created for this attempt, whether it is still running or finished; otherwise only the latest attempt retries.
+            $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
+                ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
+            if ($retry !== null) {
+                return $retry;
+            }
+            if ($promotion?->id !== $retryOperationId) {
+                throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
+            }
+        }
         $pending = $rest;
         if ($promotion !== null) {
             if (! $promotion->status->terminal() || ($promotion->status !== OperationStatus::Succeeded && $retryOperationId === null)) {
@@ -307,14 +322,6 @@ final readonly class ConnServerRollout
         }
 
         if ($retryOperationId !== null) {
-            $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
-                ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
-            if ($retry !== null) {
-                return $retry;
-            }
-            if ($promotion?->id !== $retryOperationId) {
-                throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
-            }
             $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
         }
 

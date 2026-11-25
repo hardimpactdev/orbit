@@ -72,6 +72,8 @@ final readonly class ToolConvergeObservations
                 $tool->installed_version = $observation['installed_version'];
             }
             if ($tool->status === ToolStatus::Installed) {
+                // The helper refuses a present package for a Tool Orbit does not own, so an installed observation is Orbit's package.
+                $tool->owned = true;
                 ToolManagerRecord::query()->whereKey($tool->tool_manager_id)->where('status', '!=', LifecycleStatus::Active->value)
                     ->update(['status' => LifecycleStatus::Active->value, 'failed_step' => null, 'error_code' => null]);
                 if (is_array($repository = $plan['repository'] ?? null)) {

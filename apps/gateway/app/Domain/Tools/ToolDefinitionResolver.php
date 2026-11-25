@@ -39,9 +39,11 @@ final readonly class ToolDefinitionResolver
         return $definition;
     }
 
+    /** A Tool keeps its source name until removal cleans it: its verified source, or the one an earlier attempt may have published. */
     public static function assertRepositoryIdentity(?Tool $tool, ToolDefinition $definition): void
     {
-        if ($tool?->aptRepository !== null && ($definition->repository['name'] ?? null) !== $tool->aptRepository->name) {
+        $current = $tool?->aptRepository->name ?? $tool?->desired_repository['name'] ?? null;
+        if ($current !== null && ($definition->repository['name'] ?? null) !== $current) {
             throw new ResourceOperationException('tool.repository_conflict', 'Remove the Tool membership before changing its repository name.', 409);
         }
     }

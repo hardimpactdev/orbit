@@ -32,7 +32,8 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
     const raw = inventory(input, step(payload.version), step(payload.query), payload.os ? step(payload.os) : null);
     const { facts, present } = writeInventory(raw);
     const version = present ? facts.versions![0] as string : null;
-    if (mode === "inspect" && present && input.tool_status === "failed" && input.installed_version === null) {
+    // A package Orbit never installed, adopted or observed for this Tool is not taken over, whatever the Tool's last status.
+    if (mode === "inspect" && present && payload.tool.owned !== true) {
         throw new ToolRefusal("tool.package_already_installed");
     }
     const matching = version !== null && allows(input, version) && exactMatches(input, version);

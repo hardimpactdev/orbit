@@ -7,6 +7,7 @@ namespace App\Domain\Tools;
 use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -51,6 +52,9 @@ final readonly class ToolConvergeIntent
             $package = new AdmittedToolPackage($node, $manager->name(), $tool->package, $definition, $tool, $tool->manager, $protected)->toArray();
             if ($definition->repository !== null) {
                 $package['repository_packages'] = $this->definitions->repositoryPackages($active, $definition->repository, $tools, $tool->package, false);
+                // Part of the Tools phase digest: an unproven source makes a Node converge run that phase instead of skipping it.
+                $package['repository_verified'] = AptSourceTrust::verified(
+                    AptRepository::query()->where('node_id', $node->id)->where('name', $definition->repository['name'])->first(), $definition->repository);
             }
             if (! $manager->supportsNode($node)) {
                 $package['manager_unavailable'] = true;

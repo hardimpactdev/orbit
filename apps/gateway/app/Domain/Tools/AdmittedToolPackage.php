@@ -29,7 +29,7 @@ final readonly class AdmittedToolPackage
             'user' => $this->node->user, 'platform' => $this->node->platform, 'architecture' => $this->node->architecture,
             'version_constraint' => $this->definition->constraint, 'desired_version' => $this->definition->version,
             'repository' => $this->definition->repository, 'id' => $this->tool?->id, 'manager_id' => $this->record?->id,
-            'tool_status' => $this->tool?->status->value, 'installed_version' => $this->tool?->installed_version,
+            'tool_status' => $this->tool?->status->value, 'installed_version' => $this->tool?->installed_version, 'owned' => $this->tool->owned ?? false,
             'protected' => $this->protected,
         ];
     }

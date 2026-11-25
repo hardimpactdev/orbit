@@ -57,6 +57,11 @@ Deno.test("refusals happen before any write: silent adoption, missing updates an
         false,
         "1.0.0",
     ]);
+    // A version observed for a Tool Orbit does not own is no claim on the package.
+    const unowned = decide(input({ tool_id: 1, tool_status: "failed", installed_version: "1.0.0", package_owned: false }), {
+        facts: { ...facts, versions: ["1.0.0"] },
+    });
+    assertEquals(unowned.error_code, "tool.package_already_installed");
 });
 
 Deno.test("the constraint blocks an install, an update stays unchanged on the same version, and no candidate fails", () => {

@@ -51,11 +51,11 @@ final readonly class ToolAdoption
         $record ??= ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $manager->name()->value, 'status' => LifecycleStatus::Active]);
         $repositoryId = null;
         if ($repository !== null) {
-            $repositoryId = AptSourceTrust::record($node->id, $repository)->id;
+            $repositoryId = AptSourceTrust::adopt($node->id, $repository)->id;
         }
         $outcome = $tool?->status === ToolStatus::Installed ? ToolOutcome::Unchanged : ToolOutcome::Applied;
         $tool ??= new Tool(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $package, 'version_constraint' => $constraint]);
-        $tool->fill(['status' => ToolStatus::Installed, 'installed_version' => $version, 'version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id,
+        $tool->fill(['status' => ToolStatus::Installed, 'owned' => true, 'installed_version' => $version, 'version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id,
             'failed_operation' => null, 'error_code' => null])->save();
 
         return [$tool, $outcome];
