@@ -19,18 +19,18 @@ sequenceDiagram
   %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
   %%> Picks:
-  %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order; scope `nodes`: the named records alone, in the request's order
+  %%> - scope `canary`: the canary alone; scope `fleet`: remaining records in Node order for a gated pin, otherwise canary first; scope `nodes`: the named records alone, in the request's order
   %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope
   GW->>SW: Start run, full intent<br/>conn-server-rollout
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
-  %%> - at most four Nodes, so the 13,220 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 13,620 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
     %%> - Mac: `launchctl print gui/<uid>/<label>` checks the configured LaunchAgent before staging, including in a dry run, or `conn_server.service_not_loaded`
-    %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
+    %%> - checks reachability, then downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
     %%> - Mac: `codesign --verify --strict --deep`, the pin's `TeamIdentifier` and bundle id, or `conn_server.signature_invalid`, `team_mismatch`, `bundle_mismatch`
     %%> - Linux: the unit's `ExecStart` is `<current>/conn-server` and the tarball holds `conn-server-<X>-linux-x64/conn-server`, or `conn_server.layout_mismatch`
     %%> - Linux: `/health` on the unit's `--host`, or 127.0.0.1 when it has none or a wildcard, answers 200 with `server: conn-server` and a version, or `conn_server.health_unreachable`
@@ -68,11 +68,11 @@ sequenceDiagram
         %%> - waits for `server: conn-server` and the pin's exact version
         %%> - Mac: uses the same direct probe and response checks as the preflight read
       end
-      alt /health names the version
+      alt /health names the version and the canary thread read succeeds
         opt release canary
-        SW->>N: Read the known thread through Conn CLI before accepting the swap
-      end
-      Note over N: Remove the backup<br/>updated
+          SW->>N: Read the known thread through Conn CLI
+        end
+        Note over N: Remove the backup<br/>updated
       else the swap, restart, prompt or health fails
         SW->>N: Roll back<br/>restore and restart
         %%> What it does:

@@ -20,7 +20,7 @@ Deno.test("the rollout runs one tagged phase of the shipped playbook between the
     assertEquals(steps.map((step) => step.name), ["input", "Roll out", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Roll out", condition: { type: "always" } }]);
     assertEquals(workflow.inputs.properties.intent.required, ["version", "dry_run", "mac", "linux", "notice", "nodes"]);
-    assertEquals(steps[1].task.inputs.run, 'timeout 13220 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
+    assertEquals(steps[1].task.inputs.run, 'timeout 13620 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags rollout "$ORBIT_ANSIBLE/conn-server-rollout.yml"');
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 

@@ -236,6 +236,7 @@ additionalFiles:
   - ansible/instance-server-switch.yml
   - ansible/conn-environment-restart.yml
   - ansible/conn-server-rollout.yml
+  - ansible/files/conn-server-probe.py
   - ansible/tasks/conn-server-mac.yml
   - ansible/tasks/conn-server-mac-start.yml
   - ansible/tasks/conn-server-mac-round.yml

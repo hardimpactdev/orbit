@@ -27,9 +27,9 @@
     #   starts of 480 s: a 60 s kickstart and a health wait of health_seconds + 240 s), so 3120 s.
     #   Linux: checks 1100 s, then the swap 1350 s (notice 60, releases folder 20, release folder 20, unpack 120, two starts of
     #   565 s: a 40 s relink, a 100 s restart and 61 health reads of up to 5 s, 2 s apart), so 2450 s.
-    # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
+    # node_seconds adds 260 s for the reachability and authenticated read checks, the SSH set-up and the tasks without a timeout.
     max_nodes: 4
-    node_seconds: 3280
+    node_seconds: 3380
   tasks:
     - name: Refuse more Nodes than the run's deadline covers
       ansible.builtin.assert:
@@ -84,6 +84,18 @@
   tasks:
     - name: Roll out on the Node
       block:
+        - name: Check Node reachability
+          ansible.builtin.ping:
+          register: conn_reachability
+          ignore_unreachable: true
+          timeout: 60
+
+        - name: Refuse an unreachable Node
+          ansible.builtin.assert:
+            that: conn_reachability is not unreachable
+            fail_msg: conn_server.node_unreachable
+            quiet: true
+
         - name: Roll out on a Mac
           when: server.platform == 'mac'
           ansible.builtin.include_tasks: tasks/conn-server-mac.yml
@@ -112,7 +124,7 @@
 
     # A failed Node, or a canary that held, stops the run: no later Node is reached.
     - name: Stop the run
-      when: node_result.outcome == 'failed' or (server.canary and node_result.outcome == 'held')
+      when: not intent.dry_run and (node_result.outcome == 'failed' or ((server.canary or intent.stop_on_hold | default(false)) and node_result.outcome == 'held'))
       ansible.builtin.meta: end_play
 
 - name: Report the rollout
@@ -144,6 +156,7 @@
         error_code: >-
           {{ 'conn_server.node_failed' if nodes | selectattr('outcome', 'equalto', 'failed') | list
              else 'conn_server.canary_held' if nodes | selectattr('outcome', 'equalto', 'held') | selectattr('node_id', 'in', canary) | list
+             else 'conn_server.node_held' if (intent.stop_on_hold | default(false)) and nodes | selectattr('outcome', 'equalto', 'held') | list
              else none }}
       block:
         - name: Write the result

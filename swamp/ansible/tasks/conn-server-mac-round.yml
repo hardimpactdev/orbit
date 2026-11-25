@@ -25,19 +25,19 @@
         mac_prompt_text: "{{ mac_prompt.stdout | trim }}"
 
     - name: Fail on a prompt that is not ours
-      when: mac_prompt_text | length > 0 and (not mac_prompt_expected or intent.probe_thread | default(false))
+      when: mac_prompt_text | length > 0 and not mac_prompt_expected
       ansible.builtin.set_fact:
         mac_prompt_error: conn_server.unexpected_prompt
 
     - name: Allow the expected prompt
-      when: mac_prompt_text | length > 0 and mac_prompt_expected and not (intent.probe_thread | default(false))
+      when: mac_prompt_text | length > 0 and mac_prompt_expected
       ansible.builtin.command:
         argv: [osascript, -e, 'tell application "System Events" to click button "Allow" of window 1 of process "UserNotificationCenter"']
       changed_when: true
       timeout: 60
 
     - name: Record the allowed prompt
-      when: mac_prompt_text | length > 0 and mac_prompt_expected and not (intent.probe_thread | default(false))
+      when: mac_prompt_text | length > 0 and mac_prompt_expected
       ansible.builtin.set_fact:
         mac_answered: "{{ mac_answered + [mac_prompt_text] }}"
 

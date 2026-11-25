@@ -158,8 +158,18 @@
             executable: python3
           become: true
           become_user: "{{ server.user }}"
+          register: conn_thread_probe
+          no_log: true
+          failed_when: false
           changed_when: false
           timeout: 60
+
+        - name: Require an authenticated canary read
+          when: intent.probe_thread | default(false)
+          ansible.builtin.assert:
+            that: conn_thread_probe.rc | default(1) == 0
+            fail_msg: conn_server.canary_thread_unreadable
+            quiet: true
 
         - name: Record the updated Node
           ansible.builtin.set_fact:
