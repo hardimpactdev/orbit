@@ -40,7 +40,7 @@ const timeout = (file: string, name: string) => {
 
 // Over SSH, a module on mini took 10 s from the start of its python3 to its own code (run 33436), which tripped a 10 s step.
 Deno.test("every module that a Mac Node runs has a task timeout of at least 60 s", () => {
-    const controller = ["ansible.builtin.set_fact", "ansible.builtin.assert", "ansible.builtin.include_tasks", "ansible.builtin.meta"];
+    const controller = ["ansible.builtin.set_fact", "ansible.builtin.assert", "ansible.builtin.debug", "ansible.builtin.include_tasks", "ansible.builtin.meta"];
     const modules = macFiles.flatMap((file) => tasks(file).filter((task) => !task.block && task.delegate_to !== "localhost"
         && !Object.keys(task).some((key) => controller.includes(key))).map((task) => ({ file, name: task.name, timeout: task.timeout })));
     assert(modules.length >= 20, `${modules.length}`);
@@ -56,12 +56,13 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     // its task timeouts.
     const round = tasks("conn-server-mac-round.yml").reduce((sum, task) => sum + (task.timeout ?? 0), 0);
     const macStart = timeout("conn-server-mac-start.yml", "Kickstart the LaunchAgent in the gui domain") + health_seconds + round;
-    // The checks before the download and after it; the designated requirements are read for two bundles.
+    // The checks before the download and after it; the designated requirements are read for two bundles, then the running version.
     const macChecks = mac("Read the home folder and the uid", "Check that the Conn Server is installed", "Make the staging folder",
-        "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer") + 2 * mac("Read the designated requirements");
+        "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer", "Read the running version")
+        + 2 * mac("Read the designated requirements");
     // The swap's other steps: the notice from the worker, two renames, the rollback's two reads and two renames.
     const notice = timeout("conn-server-notice.yml", "Post the notice") + timeout("conn-server-notice.yml", "Run the notice command");
-    const macSwap = mac("Read the running version", "Make the backup folder", "Move the installed bundle into the backup", "Put the new bundle on the same path",
+    const macSwap = mac("Make the backup folder", "Move the installed bundle into the backup", "Put the new bundle on the same path",
         "Set the new bundle aside", "Restore the backup on the same path") + notice + 2 * mac("Read the backup and what holds the bundle's path");
     // A Linux start: a 40 s relink, a 100 s restart and the health wait: `retries: health_rounds` reads after the first, so
     // health_rounds + 1 reads of up to 5 s, health_delay apart.
@@ -347,10 +348,9 @@ test("a Linux Node whose /health names another server is not updated, as on a Ma
     for (const platform of ["mac", "linux"] as const) {
         const run = await rollout({ nodes: [{ platform, canary: true }], name: "t3" });
         assert(!run.ok, run.output);
-        // A Linux Node reads the running server before any change, so it fails in its checks.
-        const reason = platform === "linux" ? "conn_server.health_unreachable" : "conn_server.health_check_failed";
-        assertEquals([run.result.nodes[0].outcome, run.result.nodes[0].reason], ["failed", reason]);
-        assertEquals([run.installed, run.linux], ["0.4.2", "0.4.2"]);
+        // Each platform reads the running server before any change, so it fails in its checks.
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_unreachable", rolled_back: false }]);
+        assertEquals([run.installed, run.linux, run.launchctl, run.systemctl], ["0.4.2", "0.4.2", [], []]);
     }
 });
 
@@ -406,6 +406,20 @@ test("a Linux Node whose running server does not answer 200 with its version fai
     }
 });
 
+test("a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too", async () => {
+    for (const dryRun of [true, false]) {
+        const run = await rollout({ nodes: [{ platform: "mac", canary: true }], dryRun, down: true });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_unreachable", rolled_back: false }]);
+        assertEquals([run.installed, run.launchctl, run.backups], ["0.4.2", [], []]);
+    }
+    // A healthy Mac still reaches checked in a dry run and updated in a real one, with the old version it read in its checks.
+    const dry = await rollout({ nodes: [{ platform: "mac", canary: true }], dryRun: true });
+    assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true }] });
+    assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2", prompts: [] }]);
+});
+
 test("a Node set to notify posts the notice before its restart; with no target set, nothing is sent", async () => {
     const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "mac", notify: true }], notice: true });
     assert(run.ok, run.output);
@@ -438,6 +452,8 @@ test("run as the workflow runs it, over ssh with no connection override, a Mac d
     assert(dry.ok, dry.output);
     assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
     assertEquals([dry.installed, dry.launchctl], ["0.4.2", []]);
+    // The first step logs where its module runs: the python3 on PATH, the working folder, TMPDIR and the module's payload folder.
+    assert(/"python3=\/\S+python3 pwd=\/\S* TMPDIR=\S* module_tmp=\/\S*\/ansible_\S*command_payload_\S+ ?"/.test(dry.output), dry.output);
     // The notice is sent from the worker too, before the Node that is set to notify restarts.
     const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "mac", notify: true }], notice: true, ssh: true });
     assert(run.ok, run.output);

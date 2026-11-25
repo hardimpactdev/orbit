@@ -3,11 +3,23 @@
 # open() and can hang any command. No task timeout is under 60 s: over SSH, a module on mini took 10 s from the start of its python3
 # to its own code (run 33436). The job only ever starts through `launchctl kickstart -k gui/<uid>/<label>`, never from this SSH
 # session's own security session. Sets `node_result`; a failed check fails with its public code as the message.
+
+# The read's fourth line says where a module runs, to find why modules on mini start about 10 s late over SSH: the python3 on PATH, the
+# working folder, TMPDIR and this module's payload folder, which AnsiballZ makes in the system temp folder.
 - name: Read the home folder and the uid
-  ansible.builtin.command: { argv: [sh, -c, 'printf "%s\n%s\n%s" "$HOME" "$(id -u)" "$(id -un)"'] }
+  ansible.builtin.command:
+    argv:
+      - sh
+      - -c
+      - >-
+        printf "%s\n%s\n%s\npython3=%s pwd=%s TMPDIR=%s module_tmp=%s" "$HOME" "$(id -u)" "$(id -un)" "$(which python3)" "$(pwd)"
+        "${TMPDIR-}" "$(ls -d "${TMPDIR:-/tmp}"/ansible_*command_payload_* 2>/dev/null | tr '\n' ' ')"
   register: mac_who
   changed_when: false
   timeout: 60
+
+- name: Log where the modules run
+  ansible.builtin.debug: { msg: "{{ mac_who.stdout_lines[3] }}" }
 
 - name: Name the paths of the Node
   vars:
@@ -100,6 +112,23 @@
   changed_when: false
   timeout: 60
 
+# Before any change, in a dry run too, the running server must answer /health with 200, `server: conn-server` and its version, as on
+# Linux, so the rollback has a version to check; anything else fails the Node.
+- name: Read the running version
+  ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
+  register: mac_before
+  failed_when: false
+  timeout: 60
+
+- name: Refuse a running server that does not answer with its version
+  ansible.builtin.assert:
+    that:
+      - mac_before.status | default(-1) | int == 200
+      - mac_before.json.server | default('') == 'conn-server'
+      - mac_before.json.version | default('', true) | string | length > 0
+    fail_msg: conn_server.health_unreachable
+    quiet: true
+
 # A different requirement resets the TCC grants that the installed bundle holds, so the Node holds and installs nothing.
 - name: Hold on a changed designated requirement
   when: >-
@@ -120,12 +149,6 @@
 - name: Swap and restart
   when: mac_swap
   block:
-    - name: Read the running version
-      ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
-      register: mac_before
-      failed_when: false
-      timeout: 60
-
     - name: Send the notice before the restart
       when: server.notify_before_restart
       ansible.builtin.include_tasks: conn-server-notice.yml
@@ -175,7 +198,7 @@
             node_result:
               node_id: "{{ node_id | int }}"
               outcome: updated
-              previous_version: "{{ mac_before.json.version | default(none) }}"
+              previous_version: "{{ mac_before.json.version }}"
               prompts: "{{ mac_answered }}"
       rescue:
         - name: Name the cause
@@ -212,7 +235,7 @@
             - name: Start the old server and wait for its health
               ansible.builtin.include_tasks: conn-server-mac-start.yml
               vars:
-                expected_version: "{{ mac_before.json.version | default('') }}"
+                expected_version: "{{ mac_before.json.version }}"
 
             - name: Note whether the old server answers
               ansible.builtin.set_fact:

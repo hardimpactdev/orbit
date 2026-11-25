@@ -246,24 +246,25 @@ On a Mac, the checks come first. The phase:
 
 1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
 2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
-3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
-4. stops here in a dry run (`checked`).
+3. reads the running server's version from `/health`, as below (`conn_server.health_unreachable`);
+4. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
+5. stops here in a dry run (`checked`).
 
 Then the swap and the restart. The phase:
 
-5. sends the notice, when the record asks for one;
-6. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
-7. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
-8. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
-9. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
-10. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
-11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. No round starts after 180 s.
+6. sends the notice, when the record asks for one;
+7. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
+8. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
+9. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+10. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
+11. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
+12. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. No round starts after 180 s.
 
 From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when the old version answers.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed.
 
-A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. A Mac reads it on 127.0.0.1. Every Linux `/health` read uses that address, never through a proxy. Before any change, the running server must answer that read with 200, `server: conn-server` and a version, so a rollback always has the old version to check. Any other answer, or none, fails the Node with `conn_server.health_unreachable`.
+A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. A Mac reads it on 127.0.0.1. Every Linux `/health` read uses that address, never through a proxy. Before any change, in a dry run too, the running server on either platform must answer that read with 200, `server: conn-server` and a version, so a rollback always has the old version to check. Any other answer, or none, fails the Node with `conn_server.health_unreachable`, and nothing is installed or restarted.
 
 A Linux Node makes the `releases` folder beside `current` when it does not exist yet, as on a Node set up before this rollout; a failure to make it is `conn_server.step_failed`. It unpacks the tarball into a new `releases/<X>-<run>` folder, which `mkdir` without `-p` refuses when it exists (`conn_server.backup_exists`), moves `current` to it with one rename, restarts the unit and checks `/health` in the same way. Any failure from the relink until `/health` answers points `current` back and restarts again.
 
