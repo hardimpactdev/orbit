@@ -33,8 +33,8 @@ final readonly class ToolDefinitionResolver
             if ($tool !== null && $constraint !== null && $tool->version_constraint !== $constraint) {
                 throw new ResourceOperationException('tool.constraint_conflict', 'The Tool already has a different constraint.', 409);
             }
-            $definition = new ToolDefinition($version ?? $tool?->desired_version ?? ($manager->name() === ToolManagerName::ConnServer ? $this->conn->find(null)?->version : null), $constraint ?? $tool?->version_constraint,
-                $repository ?? $tool?->desired_repository ?? $tool?->aptRepository?->definition);
+            $pin = $version ?? $tool->desired_version ?? ($manager->name() === ToolManagerName::ConnServer ? $this->conn->find(null)?->version : null);
+            $definition = new ToolDefinition($pin, $constraint ?? $tool?->version_constraint, $repository ?? $tool->desired_repository ?? $tool?->aptRepository?->definition);
         }
         $this->validate($manager, $definition);
 

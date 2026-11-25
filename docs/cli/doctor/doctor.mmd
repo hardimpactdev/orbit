@@ -17,7 +17,7 @@ sequenceDiagram
     %%> - when heartbeats stop, it marks the Node offline, shown in the web dashboard and in node:list and node:show
   end
   loop continuously, on change
-    Note over A: Observe Node state<br/>services, disk, ufw, bridge health, packages
+    Note over A: Observe Node state<br/>disk, services, UFW, packages
     A->>GW: Report observations<br/>with observed_at
     %%> How:
     %%> - at start, on change, and on recurring confirmation

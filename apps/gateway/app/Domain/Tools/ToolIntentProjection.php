@@ -200,6 +200,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         if (! is_array($definition)) {
             return null;
         }
+        $definition = ValidatedData::object($definition);
         $record = AptRepository::query()->firstOrCreate(['node_id' => $operation->node_id, 'name' => $definition['name']], ['definition' => $definition]);
         if (! ToolDefinition::sameRepository($record->definition, $definition)) {
             $record->update(['definition' => $definition]);

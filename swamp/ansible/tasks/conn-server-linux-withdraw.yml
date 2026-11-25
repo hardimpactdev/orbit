@@ -21,8 +21,15 @@
 
     - name: Stop and unlink the verified service
       block:
-        - name: Disable and stop the unit
-          ansible.builtin.systemd_service: { name: "{{ server.service }}", enabled: false, state: stopped }
+        - name: Disable the unit before stopping it
+          ansible.builtin.command: { argv: [systemctl, disable, --, "{{ server.service }}"] }
+          when: withdrawal_enabled.stdout == 'enabled'
+          changed_when: true
+          become: true
+          timeout: 60
+        - name: Stop the disabled unit
+          ansible.builtin.command: { argv: [systemctl, stop, --, "{{ server.service }}"] }
+          changed_when: true
           become: true
           timeout: 120
         - name: Remove the active release link but keep the release as a backup
@@ -30,10 +37,16 @@
           changed_when: true
           become: true
           timeout: 20
+        - name: Verify that the unit is now inactive
+          ansible.builtin.command: { argv: [timeout, "20", systemctl, is-active, --, "{{ server.service }}"] }
+          become: true
+          changed_when: false
+          register: withdrawal_active
+          failed_when: withdrawal_active.rc != 3 or withdrawal_active.stdout != 'inactive'
         - name: Verify that the old service no longer answers
           ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, return_content: true, timeout: 5 }
           register: withdrawn_health
-          failed_when: (withdrawn_health.status | default(-1) | int) != -1
+          failed_when: (withdrawn_health.status | default(-1) | int) == 200 or withdrawn_health.json.server | default('') == 'conn-server'
           timeout: 20
         - name: Record the withdrawn Node and recovery release
           ansible.builtin.set_fact:
@@ -47,7 +60,9 @@
                 linux_target: "{{ linux_current.stat.lnk_source }}"
                 expected_version: "{{ linux_before.json.version }}"
             - name: Restore the old unit enablement
-              ansible.builtin.systemd_service: { name: "{{ server.service }}", enabled: "{{ withdrawal_enabled.stdout == 'enabled' }}" }
+              ansible.builtin.command: { argv: [systemctl, enable, --, "{{ server.service }}"] }
+              when: withdrawal_enabled.stdout == 'enabled'
+              changed_when: true
               become: true
               timeout: 20
             - name: Note whether the old server answers again

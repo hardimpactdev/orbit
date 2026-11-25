@@ -29,6 +29,7 @@ cases = [
   "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
   "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
+  "the apt repair refreshes even default sources as root without elevating control helpers",
   "the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host",
   "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
   "the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first",
@@ -39,7 +40,7 @@ cases = [
   "a hand converge selects the recorded CLI release",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 106 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1), plus 4s for the two CLI ownership cases (local 1.7s x 2.1)
+cost = 123 # ESTIMATE: previous 106s plus 17s for the privileged refresh case and the added literal round-trip and eligibility cases (about 8s locally x 2.1).
 inputs = [
   "apps/gateway/resources/machine-software/core.yaml",
   "bin/swamp-shape-gate",

@@ -26,12 +26,12 @@ sequenceDiagram
   else Orbit installed it
     GW->>SW: Start run, full intent<br/>operation-tool-write
     GW-->>CLI: 202 Accepted<br/>task #5135
-    SW->>SW: Prepare native SSH commands<br/>admitted intent · pinned host key
+    SW->>SW: Prepare native SSH<br/>admitted intent · pinned host key
     SW->>N: Remove the Tool<br/>native SSH
     %%> Scope:
     %%> - remove the apt source when no membership needs it; otherwise repin only the remaining packages
     %%> - a removal that would also remove a held recipe package is refused
-    SW->>N: Read the resulting package state<br/>native SSH
+    SW->>N: Read resulting state<br/>native SSH
     alt check passes
       SW-->>GW: Run succeeded
       Note over GW: Delete the Tool record

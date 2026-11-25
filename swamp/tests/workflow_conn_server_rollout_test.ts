@@ -144,7 +144,18 @@ exec /bin/sh -c "$command"`,
     // `show` prints the unit's ExecStart as systemd does; the program is $FIXTURE_EXEC and its arguments follow `serve`.
     systemctl: `#!/bin/sh
 if [ "$1" = show ]; then echo "{ path=$FIXTURE_EXEC ; argv[]=$FIXTURE_EXEC serve $FIXTURE_ARGS ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }"; exit 0; fi
+if [ "$1" = is-enabled ]; then
+  if [ -f "$FIXTURE/disabled" ]; then echo disabled; exit 1; else echo enabled; exit 0; fi
+fi
+if [ "$1" = is-active ]; then
+  if [ "$(cat "$FIXTURE/running")" = down ]; then echo inactive; exit 3; else echo active; exit 0; fi
+fi
 echo "$*" >> "$FIXTURE/systemctl"
+case "$1" in
+  disable) touch "$FIXTURE/disabled"; exit 0 ;;
+  stop) echo down > "$FIXTURE/running"; [ ! -f "$FIXTURE/exit-stop" ]; exit $? ;;
+  enable) rm -f "$FIXTURE/disabled"; exit 0 ;;
+esac
 v=$(cat "$FIXTURE_LINUX/current/version")
 if grep -qx "$v" "$FIXTURE/exit-systemctl" 2>/dev/null; then echo down > "$FIXTURE/running"; exit 1; fi
 if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/running"; else echo "$v" > "$FIXTURE/running"; fi`,
@@ -163,7 +174,7 @@ type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; vali
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
     // `slowStarts` modules over ssh each take 15 s to start.
-    slowStarts?: number; verbose?: boolean };
+    slowStarts?: number; verbose?: boolean; withdraw?: boolean; failStop?: boolean };
 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 /** The names in a folder, null when it does not exist, and "file" when a file stands in its place. */
@@ -210,6 +221,7 @@ async function rollout(options: Options) {
         if (options.stale) Deno.writeTextFileSync(`${folder}/stale`, "");
         if (options.slowStarts) Deno.writeTextFileSync(`${folder}/slow-starts`, `${options.slowStarts}`);
         if (options.exitOn) Deno.writeTextFileSync(`${folder}/exit-${options.exitOn}`, "0.5.0\n");
+        if (options.failStop) Deno.writeTextFileSync(`${folder}/exit-stop`, "");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
         const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
@@ -228,7 +240,7 @@ async function rollout(options: Options) {
         });
         const port = server.addr.port;
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
-            version: "0.5.0", dry_run: options.dryRun ?? false,
+            version: "0.5.0", dry_run: options.dryRun ?? false, ...(options.withdraw ? { withdraw: true } : {}),
             mac: { url: `file://${folder}/conn-server.zip`, sha256: options.sha ?? await sha(`${folder}/conn-server.zip`), bundle_id: "com.nckrtl.conn-server", team_id: "9SVJ4SYB9B" },
             linux: { url: `file://${folder}/conn-server.tar.gz`, sha256: options.sha ?? await sha(`${folder}/conn-server.tar.gz`) },
             notice: options.noticeCommand ? { url: null, command: options.noticeCommand }
@@ -265,7 +277,7 @@ async function rollout(options: Options) {
             output,
             result,
             installed: Deno.readTextFileSync(`${app}/Contents/version`),
-            linux: Deno.readTextFileSync(`${folder}/linux/current/version`),
+            linux: read("linux/current/version")[0] ?? null,
             releases: listed(`${folder}/linux/releases`),
             launchctl: read("launchctl"), launchctlPrint: read("launchctl-print"), systemctl: read("systemctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             running: Deno.readTextFileSync(`${folder}/running`).trim(),
@@ -288,6 +300,23 @@ test("a Mac canary checks, swaps the bundle on the same path, kickstarts in the 
     assertEquals(run.launchctlPrint, [run.launchctl[0].replace("kickstart -k ", "print ")]);
     assert(/^kickstart -k gui\/\d+\/com\.nckrtl\.conn-server$/.test(run.launchctl[0]), run.launchctl[0]);
     assertEquals(run.backups, []);
+});
+
+test("a Linux withdrawal checks without stopping, then stops and unlinks or restores the old service after a failed stop", async () => {
+    const input: Options = { nodes: [{ platform: "linux", canary: true, notify: true }], withdraw: true, notice: true };
+    const dry = await rollout({ ...input, dryRun: true });
+    assert(dry.ok, dry.output);
+    assertEquals([dry.result.nodes[0].outcome, dry.linux, dry.systemctl, dry.noticed], ["checked", "0.4.2", [], []]);
+    const applied = await rollout(input);
+    assert(applied.ok, applied.output);
+    assertEquals(applied.result.nodes, [{ node_id: 45, outcome: "withdrawn", previous_version: "0.4.2" }]);
+    assertEquals([applied.linux, applied.running, applied.releases, applied.noticed.length], [null, "down", ["0.4.2"], 1]);
+    assertEquals(applied.systemctl.map((call) => call.split(" ")[0]), ["disable", "stop"]);
+    const failed = await rollout({ ...input, failStop: true });
+    assert(!failed.ok, failed.output);
+    assertEquals(failed.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.withdraw_failed", rolled_back: true }]);
+    assertEquals([failed.linux, failed.running], ["0.4.2", "0.4.2"]);
+    assertEquals(failed.systemctl.map((call) => call.split(" ")[0]), ["disable", "stop", "restart", "enable"]);
 });
 
 test("a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too", async () => {

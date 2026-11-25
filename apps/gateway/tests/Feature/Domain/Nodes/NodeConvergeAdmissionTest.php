@@ -46,6 +46,8 @@ use App\Models\GatewayRelease;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -605,6 +607,20 @@ it('holds only a full-scope converge record for a scoped converge', function (ar
     'base after a full converge' => [['base' => true], true, true],
     'base after a role Operation' => [['base' => true], false, false],
 ]);
+
+it('admits actual Tool intent in a full run without mistaking its own hold for another writer', function (): void {
+    $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+    $tool = Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id,
+        'package' => 'tree', 'desired_version' => '1.10', 'installed_version' => '1.1', 'status' => 'installed']);
+    $this->postJson($this->url, [])->assertAccepted();
+    $full = Operation::query()->sole();
+    expect($full->input['_converge']['tool_scope'])->toBeTrue()
+        ->and($full->input['_converge']['intent']['tools'][0])->toMatchArray(['id' => $tool->id, 'desired_version' => '1.10', 'installed_version' => '1.1']);
+    $full->update(['status' => 'succeeded', 'lock_key' => null]);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $base = Operation::query()->whereKeyNot($full->id)->sole();
+    expect($base->input['_converge']['tool_scope'])->toBeFalse()->and($base->input['_converge']['intent']['tools'])->toBe([]);
+});
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
     // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.

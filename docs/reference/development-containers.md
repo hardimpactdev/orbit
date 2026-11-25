@@ -221,7 +221,9 @@ Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), 
 
 Withdrawing the Tool membership excludes the Node from later release rollouts without changing the running service. An explicit Node selection of a withdrawn member is refused. Enrolling the configured service again restores its eligibility.
 
-To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"withdraw":true,"dry_run":true}` to the rollout endpoint. The dry run verifies the configured unit, active release layout, and current health without stopping it. Repeat with `dry_run: false` to notify users where configured, disable and stop the service, and unlink `current`. Orbit retains the old release for recovery and attempts to restore the service and its previous enablement if the stop or unlink fails. Withdrawal does not modify a container or uninstall its shared Conn Server. The endpoint refuses Mac service withdrawal; use the service owner's procedure for retiring its LaunchAgent. Restoring a physically withdrawn host service requires restoring the configured unit and release before reenrolling it.
+To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"withdraw":true,"dry_run":true}` to the rollout endpoint. The dry run verifies the configured unit, active release layout, and current health without stopping it. Repeat with `dry_run: false` to notify users where configured, disable and stop the service, and unlink `current`. Orbit retains the old release for recovery and attempts to restore the service and its previous enablement if the stop or unlink fails.
+
+Withdrawal does not modify a container or uninstall its shared Conn Server. The endpoint refuses Mac service withdrawal; use the service owner's procedure for retiring its LaunchAgent. Restore the configured Linux unit and release before reenrolling a physically withdrawn service.
 
 A Gateway migration changes Node 8's recorded LaunchAgent label from `com.nckrtl.t3-headless` to `com.nckrtl.conn-server`. It leaves other service records and the loaded job itself alone.
 

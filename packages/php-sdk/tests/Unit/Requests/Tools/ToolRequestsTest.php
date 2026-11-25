@@ -6,6 +6,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
+use Orbit\Sdk\Requests\Tools\ConvergeToolsRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
@@ -56,7 +57,13 @@ describe('tool requests', function (): void {
         'adopt' => [new AdoptToolRequest(2, 'apt', 'jq'), Method::POST, '/api/v1/tools/adopt', []],
         'update' => [new UpdateToolRequest(41), Method::POST, '/api/v1/tools/41/update', []],
         'remove' => [new RemoveToolRequest(41), Method::DELETE, '/api/v1/tools/41', []],
+        'converge' => [new ConvergeToolsRequest(12), Method::POST, '/api/v1/nodes/12/tools/converge', []],
     ]);
+
+    it('sends explicit Tool IDs only when a converge batch is selected', function (): void {
+        expect(new ConvergeToolsRequest(12)->body()->all())->toBe([])
+            ->and(new ConvergeToolsRequest(12, toolIds: [41, 42])->body()->all())->toBe(['tool_ids' => [41, 42]]);
+    });
 
     it('omits only a null version constraint from install bodies', function (): void {
         expect(new InstallToolRequest(12, 'vp', '@openai/codex')->body()->all())

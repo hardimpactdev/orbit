@@ -19,11 +19,13 @@ On an Instance host, the Node family also reads the [bridge refresh health](/ref
 
 On a Gateway that runs in a release container, Doctor checks host Caddy and Incus. Use the Process commands to inspect Horizon and the scheduler inside the serving release.
 
+The Tool family checks each managed package against the active Gateway policy and its agent's package facts. An old or missing observation is unverifiable, not evidence that the package is absent.
+
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`doctor`](/cli/doctor/doctor) | Read current Node, role-service, Process and firewall state. |
+| [`doctor`](/cli/doctor/doctor) | Read current Node, role service, Process, firewall, and Tool state. |
 
 ## Why it works this way
 

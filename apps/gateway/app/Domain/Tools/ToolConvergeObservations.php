@@ -37,7 +37,7 @@ final readonly class ToolConvergeObservations
                 $this->invalid();
             }
             $desired = $plan['desired_version'] ?? null;
-            if ($observation['status'] === 'installed' && is_string($desired) && is_string($version) && ! new ToolDefinition($desired, null, null)->matches(ToolManagerName::from(ValidatedData::string($plan['manager'])), $version)) {
+            if ($observation['status'] === 'installed' && is_string($desired) && ! new ToolDefinition($desired, null, null)->matches(ToolManagerName::from(ValidatedData::string($plan['manager'])), $version)) {
                 $this->invalid();
             }
             $observations[] = $observation;
@@ -60,7 +60,7 @@ final readonly class ToolConvergeObservations
             }
             $tool->desired_version = ValidatedData::nullableString($plan['desired_version'] ?? null);
             $tool->version_constraint = ValidatedData::nullableString($plan['version_constraint']);
-            $tool->desired_repository = is_array($plan['repository'] ?? null) ? $plan['repository'] : null;
+            $tool->desired_repository = is_array($plan['repository'] ?? null) ? ValidatedData::object($plan['repository']) : null;
             $tool->status = $observation['status'] === 'installed' ? ToolStatus::Installed : ToolStatus::Failed;
             $repair = $tool->installed_version !== null || ($plan['tool_status'] ?? null) === ToolStatus::Installed->value
                 || $tool->failed_operation === ToolOperation::Update;

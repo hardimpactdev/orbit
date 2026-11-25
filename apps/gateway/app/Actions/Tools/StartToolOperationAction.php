@@ -166,7 +166,7 @@ final readonly class StartToolOperationAction
                 $active = app(ToolPolicy::class)->active();
                 $definition = $this->definitions->resolve($verb, $manager, $package, $tool, $version, $constraint, $repository, $active);
                 $currentRepository = $tool?->aptRepository;
-                $repository = $verb === 'remove' ? ($currentRepository?->definition ?? $tool?->desired_repository) : $definition->repository;
+                $repository = $verb === 'remove' ? ($currentRepository->definition ?? $tool?->desired_repository) : $definition->repository;
                 if ($currentRepository !== null && $repository !== null && $repository['name'] !== $currentRepository->name) {
                     $this->refuse('tool.repository_conflict');
                 }

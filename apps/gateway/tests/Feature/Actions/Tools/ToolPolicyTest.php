@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tools\ManageToolPolicyAction;
+use App\Actions\Tools\ScanToolInventoryAction;
 use App\Actions\Tools\StartToolConvergeAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Operations\OperationStore;
@@ -14,6 +15,7 @@ use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Models\AptRepository;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -149,6 +151,17 @@ it('never admits existing Conn Server or role packages to generic convergence', 
     expect(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
 });
 
+it('blocks discovered host recipe apt packages but not names used only in a container folder', function (): void {
+    $node = policyNode('host');
+    NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'packages', 'subject' => 'apt', 'digest' => str_repeat('a', 64),
+        'observed_at' => now(), 'received_at' => now(), 'data' => ['scope' => '/var/lib/dpkg/status',
+            'packages' => [['name' => 'containerd', 'version' => '2.0'], ['name' => 't3', 'version' => '1.0']]]]);
+    $packages = app(ScanToolInventoryAction::class)->execute($node->id)->managers[3]->packages;
+    expect($packages[0]->package)->toBe('containerd')->and($packages[0]->adoptionBlock)->toBe('protected')
+        ->and($packages[1]->package)->toBe('t3')->and($packages[1]->adoptionBlock)->toBeNull();
+    expect(fn () => app(StartToolOperationAction::class)->adopt($node->id, 'apt', 'containerd', null, null, null))->toThrow(ToolOperationException::class);
+});
+
 it('keeps the signed source requested by a failed install and retries at the same coordinate', function (): void {
     policySwamp();
     $node = policyNode('dev');
@@ -267,4 +280,24 @@ it('keeps an unavailable cask local and a failed existing Tool repair eligible f
         ->and($tree->refresh()->failed_operation)->toBe(ToolOperation::Update);
     $correct = app(StartToolOperationAction::class)->execute('update', $node->id, 'apt', 'tree', null, $tree, version: '1.0-1');
     expect($correct->input['desired_version'])->toBe('1.0-1');
+});
+
+it('records a successful cask build change as a change in both executors', function (): void {
+    policySwamp();
+    $node = policyNode('mac');
+    $node->update(['platform' => 'macos', 'architecture' => 'arm64']);
+    $manager = ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'brew-cask', 'status' => 'active']);
+    $tool = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'sample',
+        'desired_version' => '1.5.13,600', 'installed_version' => '1.5.13,600', 'status' => 'installed']);
+    $run = app(StartToolOperationAction::class)->execute('update', $node->id, 'brew-cask', 'sample', null, $tool, version: '1.5.13,601');
+    policyComplete($run, 'succeeded', ['decision' => ['ready' => true, 'installed_version' => '1.5.13', 'installed_coordinate' => '1.5.13,600'],
+        'observation' => ['installed_version' => '1.5.13', 'installed_coordinate' => '1.5.13,601'],
+        'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+    expect($run->refresh()->result['outcome'])->toBe('applied')->and($tool->refresh()->installed_version)->toBe('1.5.13,601');
+    $tool->update(['desired_version' => '1.5.13,602']);
+    $plans = array_column(app(ToolConvergeIntent::class)->capture($node), null, 'id');
+    $results = app(ToolConvergeObservations::class);
+    $observed = $results->validate([['id' => $tool->id, 'status' => 'installed', 'installed_version' => '1.5.13,602']], $plans, true);
+    $results->record($node->id, $plans, $observed);
+    expect($tool->refresh()->installed_version)->toBe('1.5.13,602');
 });

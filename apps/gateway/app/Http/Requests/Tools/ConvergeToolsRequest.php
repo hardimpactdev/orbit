@@ -19,8 +19,9 @@ final class ConvergeToolsRequest extends FormRequest
     /** @return list<int>|null */
     public function toolIds(): ?array
     {
+        /** @var list<int|string>|null $ids */
         $ids = $this->validated('tool_ids');
 
-        return is_array($ids) ? array_values(array_map(intval(...), $ids)) : null;
+        return $ids === null ? null : array_map(intval(...), $ids);
     }
 }

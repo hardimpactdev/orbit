@@ -451,7 +451,7 @@ async function compiledSwamp(folder: string) {
     await Deno.chmod(path, 0o755);
     return path;
 }
-async function toolsPhase(folder: string, runtime: string, tools: unknown[] | null = null) {
+async function toolsPhase(folder: string, runtime: string, tools: unknown[] | null = null, helper = toolHelper) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("tools")));
     for (const task of tasks) {
         const imported = task["ansible.builtin.import_tasks"];
@@ -461,7 +461,7 @@ async function toolsPhase(folder: string, runtime: string, tools: unknown[] | nu
     const tool = { id: 3, manager: "apt", package: "tree", version_constraint: null, protected: ["tree"], repository: null };
     await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
         hosts: "localhost", connection: "local", gather_facts: false, tasks,
-        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: toolHelper, orbit_run: folder },
+        vars: { intent: { node_id: 7, user: "orbit", tools: tools ?? [tool] }, converge_deno: runtime, converge_tool_helper: helper, orbit_run: folder },
     }]));
     const result = await new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
@@ -528,6 +528,44 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
         assertMatch(phase.output, /Refresh applicable apt candidate metadata[\s\S]*?skipping: \[localhost\]/);
         assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null },
             { id: 4, status: "failed", installed_version: null }, { id: 5, status: "installed", installed_version: observed }]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the apt repair refreshes even default sources as root without elevating control helpers", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const helper = `${folder}/helper.ts`;
+        const refresh = `${folder}/refresh-euid`;
+        const installed = `${folder}/installed`;
+        await Deno.writeTextFile(installed, "1.0");
+        await Deno.writeTextFile(refresh, "");
+        await Deno.writeTextFile(helper, String.raw`
+const mode = Deno.args[0];
+const input = mode === "check" ? {} : JSON.parse(await new Response(Deno.stdin.readable).text());
+const observed = ${JSON.stringify(installed)};
+const refreshed = ${JSON.stringify(refresh)};
+switch (mode) {
+  case "check": console.log('{"ready":true}'); break;
+  case "plan": console.log(JSON.stringify({version:["/bin/true"], inventory:["cat", observed],
+    refresh:${JSON.stringify(["/bin/sh", "-c", 'id -u > "$1"', "fixture", refresh])}, candidate:["/bin/true"]})); break;
+  case "inspect": console.log(JSON.stringify({needs_write: input.query.stdout !== "2.0"})); break;
+  case "candidate":
+    if (Deno.readTextFileSync(refreshed).trim() !== "0") throw new Error("no privileged refresh before selection");
+    console.log(JSON.stringify({write:${JSON.stringify(["/bin/sh", "-c", 'printf 2.0 > "$1"', "fixture", installed])}})); break;
+  case "verify": console.log(JSON.stringify({installed_version: input.query.stdout})); break;
+}`);
+        const tool = { id: 3, manager: "apt", package: "tree", desired_version: "2.0", protected: [], repository: null };
+        const phase = await toolsPhase(folder, Deno.execPath(), [tool], helper);
+        assertEquals(phase.code, 0, phase.output);
+        assertEquals(phase.recorded, [{ id: 3, status: "installed", installed_version: "2.0" }], phase.output);
+        assertEquals((await Deno.readTextFile(refresh)).trim(), "0");
+        const task = parse(await Deno.readTextFile(taskPath("node-converge-tool"))) as Array<{ block: Array<Record<string, unknown>> }>;
+        const source = task[0].block.find((item) => item.name === "Reconcile a recorded apt repository")!;
+        assertEquals(source["ansible.builtin.include_tasks"], { file: "node-converge-tool-repository.yml", apply: { become: true, timeout: 45 } });
+        const local = task[0].block.flatMap((item) => [item, ...(Array.isArray(item.block) ? item.block as Array<Record<string, unknown>> : [])])
+            .filter((item) => item.delegate_to === "localhost");
+        assertEquals(local.length, 4);
+        assertEquals(local.every((item) => item.become === false), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

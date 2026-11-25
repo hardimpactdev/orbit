@@ -59,7 +59,7 @@ final readonly class NodeDesiredConvergeInput
             $copies = [...$copies, ...$plan['execution_secrets']];
         }
 
-        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook, $release, $cli), 'execution_secrets' => $copies];
+        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook, $release, $cli, $operation->id), 'execution_secrets' => $copies];
     }
 
     /**
@@ -156,11 +156,11 @@ final readonly class NodeDesiredConvergeInput
      * @param  list<array<string,mixed>>  $plans
      * @return array<string,mixed>
      */
-    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook, bool $release = false, ?DesiredCliReleaseData $cli = null): array
+    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook, bool $release = false, ?DesiredCliReleaseData $cli = null, ?int $owner = null): array
     {
         $delivery = app(AgentDelivery::class);
         $recipe = new RecipeLoader()->source();
-        $tools = $all ? app(ToolConvergeIntent::class)->capture($node, $operation->id) : [];
+        $tools = $all ? app(ToolConvergeIntent::class)->capture($node, $owner) : [];
         $network = null;
         if (($all || in_array('vpn', $roles, true) || in_array('router', $roles, true)) && $hub !== null && $node->wireguard_ip !== null) {
             $network = app(NodeNetworkConvergeInput::class)->converge($node);

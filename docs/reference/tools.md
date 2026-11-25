@@ -74,7 +74,9 @@ The manager must still offer the version, and the version must meet any SemVer c
 
 ## Converge registered Tools
 
-Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches. Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit at most three Tools per run and run Ansible from the Swamp control Node over pinned SSH. Use `--tool-id=ID` on `tool:converge` to select batches on larger Nodes. Direct installs, updates, and removals use native SSH with the same admission and package policy.
+Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches.
+
+Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit at most three Tools per run and run Ansible from the Swamp control Node over pinned SSH. Use `--tool-id=ID` on `tool:converge` to select batches on larger Nodes. Direct package installs, updates, and removals use native SSH with the same admission and package policy.
 
 ## Where Tools run and Tool Managers
 
@@ -115,9 +117,11 @@ Orbit protects essential host and manager packages from installation, update, ad
 
 | Manager | Protected package names |
 | --- | --- |
-| `apt` | Packages installed by the release's host recipe profiles, including role prerequisites, Git and its rollback helper, and Node bootstrap packages. A package used only inside a container does not reserve the host name. |
+| `apt` | Host recipe profiles, Git and its rollback helper, and Node bootstrap packages |
 | `brew` | `wireguard-tools`, `wireguard-go` |
 | `vp` | `pnpm` |
+
+A package used only inside a container does not reserve the host name.
 
 ### Role-owned PHP packages
 

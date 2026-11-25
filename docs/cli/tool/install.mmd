@@ -25,7 +25,7 @@ sequenceDiagram
   %%> - `conn-server` on a configured host records membership and the desired release without a Swamp run; an explicit rollout applies it
   GW->>SW: Start run, full intent<br/>operation-tool-write
   GW-->>CLI: 202 Accepted<br/>task #5133
-  SW->>SW: Prepare native SSH commands<br/>admitted intent · pinned host key
+  SW->>SW: Prepare native SSH<br/>admitted intent · pinned host key
   opt --repository
     SW->>SW: Verify the signing key<br/>fetch · fingerprint on 209
     %%> Why on 209:
@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - only this Tool can change
   %%> Version:
   %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
-  SW->>N: Read the resulting package state<br/>native SSH
+  SW->>N: Read resulting state<br/>native SSH
   alt check passes
     SW-->>GW: Run succeeded
     Note over GW: Record the version<br/>Tool: installed 14.1.0
