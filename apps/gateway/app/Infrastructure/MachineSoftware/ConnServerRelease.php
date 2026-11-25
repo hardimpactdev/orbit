@@ -6,5 +6,5 @@ namespace App\Infrastructure\MachineSoftware;
 
 final readonly class ConnServerRelease
 {
-    public function __construct(public string $version, public ArtifactPin $linux, public MacAppPin $mac) {}
+    public function __construct(public string $version, public ArtifactPin $linux, public MacAppPin $mac, public bool $releaseCanary = false) {}
 }

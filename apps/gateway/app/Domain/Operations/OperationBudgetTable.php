@@ -42,10 +42,10 @@ final class OperationBudgetTable
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,
-        // The 13220 s rollout phase (at most four Nodes of up to 3280 s each, every one's download, checks, swap and rollback with
+        // The 13620 s rollout phase (at most four Nodes of up to 3380 s each, each download, checks, canary probe, swap and rollback with
         // their task timeouts, swamp/ansible/conn-server-rollout.yml), a 30 s queue wait, input, result and cleanup, rounded up to
         // five minutes. No live sample yet.
-        'fleet.conn_server_rollout' => 13800,
+        'fleet.conn_server_rollout' => 14200,
         // One placed 85 s T3 phase, plus the input, receipt and cleanup step bounds and their queue allowances.
         'conn.launch_inspect' => 300,
         'conn.launch_dispatch' => 300,

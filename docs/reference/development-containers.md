@@ -205,7 +205,7 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The core recipe pins the Linux `conn-server` `0.5.2` tarball, the T3 server `0.1.10`, and `chrome-headless-shell` `157.0.8103.78`. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The core recipe pins the Linux Conn Server tarball, T3, and `chrome-headless-shell`. The Conn launch check uses the contract version reported by the pinned release. `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
@@ -217,9 +217,9 @@ The agent folder part `conn-server` in `core.yaml` pins the Linux x64 asset and 
 
 In file mode, the active Tool catalog must define the release even for a configured service without a [Tool membership](/reference/tools#host-conn-server-membership). In database mode, a member's desired release governs; for a configured service not yet enrolled, pass `version` or omit it for the release catalog default. The rollout does not enroll those services.
 
-If an explicit `version` disagrees with the policy, or the selected Nodes desire different releases, Orbit refuses with `conn_server.release_conflict`; select the Nodes of one release explicitly. An unavailable release returns `conn_server.pin_unavailable`.
+If an explicit `version` disagrees with policy, Orbit refuses with `conn_server.release_conflict`. For earlier releases without a canary gate, all selected Nodes must desire the same release; select Nodes explicitly if their versions differ. An unavailable release returns `conn_server.pin_unavailable`.
 
-The Gateway release ships `conn-server-releases.yaml`, which gives each host release its exact Linux x64 and macOS arm64 asset URLs and SHA-256 checksums. The macOS entry also names the signed `Conn Server.app` bundle and Developer ID team. The app uses the hardened runtime and is not notarized. Changing the host catalog does not change container digests or start an Operation.
+The Gateway release ships `conn-server-releases.yaml`, which gives each host release its exact Linux x64 and macOS arm64 asset URLs and SHA-256 checksums. The macOS entry also names the signed `Conn Server.app` bundle and Developer ID team. The app uses the hardened runtime and is not notarized. The host catalog is not an input to container digests.
 
 Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), `path` (the `.app` bundle, which may start with `~/`, or the Linux `current` link), `service` (the LaunchAgent label or the systemd unit), `port` (of `/health`), `user` (the user that runs it; on a Mac, the SSH user), `canary` and `notify_before_restart`.
 
@@ -235,9 +235,25 @@ Withdrawal does not modify a container or uninstall its shared Conn Server. The 
 
 A Gateway migration changes Node 8's recorded LaunchAgent label from `com.nckrtl.t3-headless` to `com.nckrtl.conn-server`. It leaves other service records and the loaded job itself alone.
 
-Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. Scope `nodes` reaches the Nodes that `node_ids` names, one to four, in the request's order; it adds no canary and puts none first. An id without a record, a repeated id, or `node_ids` with another scope is refused with a validation error. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a fleet without exactly one canary (`conn_server.canary_unset`).
+Scope `canary` reaches the canary alone. Scope `fleet` reaches the canary first on an ungated release and the eligible followers on a reviewed release. Scope `nodes` reaches one to four IDs in request order; on a reviewed release it can check but not update. An unknown or repeated ID fails validation. Fleet and canary runs require a configured, nonwithdrawn canary (`conn_server.canary_unset`).
 
-The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 13,220 s, covers at most four Nodes of 3,280 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
+##### Reviewed releases and promotion
+
+`bin/conn-release-pin` checks the tagged commit and verifies both published files against their SHA-256 manifests and GitHub asset digests. It updates the host release catalog, the Linux pin in `core.yaml`, the container launch transcript, and the Gateway convergence fixture. It retains prior host releases and does not change `tools.yaml` or any Node's desired version. A repeat verifies the existing pins; older proposals and different bytes under the same version are refused.
+
+A generated host release sets `release_canary: true`. The Gateway release fleet pass starts a dry run only when the designated canary is a Tool member and desires that exact release under the active policy. Otherwise it proceeds without changing any standalone Conn service. A missing, unreadable, or invalid serving host catalog blocks the fleet phase with `conn_server.release_catalog_unavailable`. To start independently of a Gateway release, enroll the canary at the reviewed coordinate and run `scope: canary` with `dry_run: true`, then `dry_run: false`.
+
+The update reads a known thread through the authenticated local CLI before accepting the new service. As the Conn Server user, create `~/.config/orbit/conn-canary.json` with `thread_id` and the absolute `state_dir` containing `server-runtime.json`. The probe compares the authenticated response's thread ID and omits the thread contents. Failure holds the release and, after a swap, restores and verifies the prior service. To retry a failed stage, submit its ID in `retry_operation_id`.
+
+The fleet dry run checks only enrolled, nonwithdrawn followers whose exact desired version matches the canary's. Run `scope: fleet` with `dry_run: true` to read that result. If the targets or their settings change, rerun the check using its prior ID in `retry_operation_id`. Then promote with `{"scope":"fleet","dry_run":false,"canary_operation_id":<successful canary ID>}`. A changed artifact or canary requires new proof. A different desired pin, a withdrawn membership, and a service without membership are not promoted.
+
+To continue a failed promotion, send its ID as `retry_operation_id` with the same canary receipt. Orbit skips installations already recorded as updated, matching Node, Tool membership, platform, service and path. Changed SSH or notice settings alone do not make an updated installation eligible again. Orbit holds retries when results are incomplete or a changed Node did not roll back; inspect those Nodes before a manual repair.
+
+Replaying an `Idempotency-Key` with identical input returns the first Operation even if a later stage is ready. Use a new key for a new stage or explicit retry; a reused key with different input returns `409 operation.idempotency_conflict`.
+
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A dry run reports each Node even when an earlier check fails. During an update a failure stops the run. A held canary or a hold during promotion also stops it. Later Nodes report `not_reached`.
+
+The phase's deadline, 13,620 s, covers at most four Nodes of 3,380 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
 
 On a Mac, before staging any files, Orbit runs `launchctl print gui/<uid>/<label>` for the configured LaunchAgent. A missing job fails the Node with `conn_server.service_not_loaded` in both dry runs and rollouts. Orbit keeps the command output out of the logs because it can contain the job's environment.
 
@@ -259,7 +275,7 @@ Then the swap and the restart. The phase:
 11. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
 12. waits up to about 3 minutes for a valid `/health` response with the selected release's exact version. No round starts after 180 s.
 
-From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
+From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed, timed out or lost SSH also starts rollback. The Node stays held when Orbit cannot reconnect and verify recovery. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed.
 

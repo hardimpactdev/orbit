@@ -188,15 +188,32 @@
     - name: Install and start the new server
       block:
         # Both renames stay on the bundle's own volume, and the new bundle takes the same path, so the TCC grants stay.
+        - name: Mark the promotion write boundary
+          ansible.builtin.set_fact: { conn_write_started: true }
+
         - name: Move the installed bundle into the backup
           ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.app"] }
           changed_when: true
           timeout: 60
+          register: conn_transport_step
+          ignore_unreachable: true
+
+        - name: Check transport after move the installed bundle into the backup
+          ansible.builtin.include_tasks: conn-server-require-transport.yml
+          vars:
+            conn_transport_result: "{{ conn_transport_step }}"
 
         - name: Put the new bundle on the same path
           ansible.builtin.command: { argv: [mv, "{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"] }
           changed_when: true
           timeout: 60
+          register: conn_transport_step
+          ignore_unreachable: true
+
+        - name: Check transport after put the new bundle on the same path
+          ansible.builtin.include_tasks: conn-server-require-transport.yml
+          vars:
+            conn_transport_result: "{{ conn_transport_step }}"
 
         - name: Start the new server and wait for its health
           ansible.builtin.include_tasks: conn-server-mac-start.yml
@@ -209,10 +226,32 @@
             fail_msg: "{{ mac_prompt_error or 'conn_server.health_check_failed' }}"
             quiet: true
 
+        - name: Verify the client can read the canary thread
+          when: intent.probe_thread | default(false)
+          ansible.builtin.script:
+            cmd: 'files/conn-server-probe.py {{ (mac_app + "/Contents/MacOS/conn-server") | quote }} {{ server.port | int }}'
+            executable: python3
+          become: false
+          become_user: "{{ server.user }}"
+          register: conn_thread_probe
+          ignore_unreachable: true
+          no_log: true
+          failed_when: false
+          changed_when: false
+          timeout: 60
+
+        - name: Require an authenticated canary read
+          when: intent.probe_thread | default(false)
+          ansible.builtin.assert:
+            that: conn_thread_probe is not unreachable and conn_thread_probe.rc | default(1) == 0
+            fail_msg: conn_server.canary_thread_unreadable
+            quiet: true
+
         - name: Record the updated Node
           ansible.builtin.set_fact:
             node_result: >-
               {{ {'node_id': node_id | int, 'outcome': 'updated', 'previous_version': mac_previous_version, 'prompts': mac_answered}
+                 | combine({'thread_read': true} if intent.probe_thread | default(false) else {})
                  | combine({'observed_version': mac_health_version} if managed_tool else {}) }}
       rescue:
         - name: Name the cause
@@ -227,19 +266,42 @@
           ansible.builtin.stat: { path: "{{ item }}", get_checksum: false }
           loop: ["{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"]
           register: mac_placed
+          ignore_unreachable: true
           timeout: 60
+
+        - name: Verify transport before restoring the backup
+          ansible.builtin.assert:
+            that:
+              - mac_placed is not unreachable
+              - mac_placed.results | selectattr('unreachable', 'defined') | selectattr('unreachable') | list | length == 0
+            fail_msg: conn_server.transport_lost
+            quiet: true
 
         - name: Set the new bundle aside
           when: mac_placed.results[0].stat.exists and mac_placed.results[1].stat.exists
           ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.failed.app"] }
           changed_when: true
           timeout: 60
+          register: conn_transport_step
+          ignore_unreachable: true
+
+        - name: Check transport after set the new bundle aside
+          ansible.builtin.include_tasks: conn-server-require-transport.yml
+          vars:
+            conn_transport_result: "{{ conn_transport_step }}"
 
         - name: Restore the backup on the same path
           when: mac_placed.results[0].stat.exists
           ansible.builtin.command: { argv: [mv, "{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"] }
           changed_when: true
           timeout: 60
+          register: conn_transport_step
+          ignore_unreachable: true
+
+        - name: Check transport after restore the backup on the same path
+          ansible.builtin.include_tasks: conn-server-require-transport.yml
+          vars:
+            conn_transport_result: "{{ conn_transport_step }}"
 
         # `rolled_back` says whether the old server answers again; a failed restart leaves it false. With the old bundle never
         # moved, nothing restarted and nothing is restored.

@@ -14,23 +14,24 @@ sequenceDiagram
   %%> When:
   %%> - an operator posts `{"dry_run", "scope"}` to `POST /api/v1/fleet/conn-server/rollout`; both are required, so no default reaches the whole fleet
   %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
-  %%> - nothing starts it from a pin change
+  %%> - the release fleet pass admits the reviewed dry run and canary update only if the canary's Tool desires that exact release
   %%> Requirements:
-  %%> - `version` selects an exact release in the host catalog, or `conn_server.pin_unavailable`; omitting it selects the default host release
+  %%> - resolve the exact host release from the active file catalog or the Node's desired version; an override cannot change managed intent
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
+  %%> - a gated promotion requires a passing canary operation ID and a checked dry run for every remaining Node
   %%> Picks:
-  %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order; scope `nodes`: the named records alone, in the request's order
+  %%> - `canary`: one Node; `fleet`: enrolled, nonwithdrawn followers on the reviewed version, otherwise canary first; `nodes`: named records in request order
   %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope
   GW->>SW: Start run, full intent<br/>conn-server-rollout
   %%> Input:
-  %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
+  %%> - version, dry run, artifacts and signing identity, notice, and pinned SSH targets; withdrawal names one withdrawn Linux service and needs no replacement asset
   %%> Requirements:
-  %%> - at most four Nodes, so the 13,220 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 13,620 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
     %%> - Mac: `launchctl print gui/<uid>/<label>` checks the configured LaunchAgent before staging, including in a dry run, or `conn_server.service_not_loaded`
-    %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
+    %%> - checks reachability, then downloads the selected asset into staging and checks its SHA-256, or `conn_server.hash_mismatch`
     %%> - Mac: `codesign --verify --strict --deep`, the selected release's `TeamIdentifier` and bundle id, or `conn_server.signature_invalid`, `team_mismatch`, `bundle_mismatch`
     %%> - Linux: the unit's `ExecStart` is `<current>/conn-server` and the tarball holds `conn-server-<X>-linux-x64/conn-server`, or `conn_server.layout_mismatch`
     %%> - Linux: `/health` on the unit's `--host`, or 127.0.0.1 when it has none or a wildcard, answers 200 with `server: conn-server` and a version, or `conn_server.health_unreachable`
@@ -38,7 +39,7 @@ sequenceDiagram
     alt Mac: staged `codesign -dr -` differs from the installed bundle
       Note over N: Hold, install nothing<br/>held
       %%> Why:
-      %%> - a new designated requirement resets the TCC grants; a held canary stops the run, a held later Node does not
+      %%> - a new designated requirement resets the TCC grants; a hold stops a gated promotion or a canary update; earlier pins hold only the affected follower
     else dry run
       Note over N: Stop after the checks<br/>checked
     else checks pass
@@ -68,7 +69,10 @@ sequenceDiagram
         %%> - waits for `server: conn-server` and the pin's exact version
         %%> - Mac: uses the same direct probe and response checks as the preflight read
       end
-      alt /health names the version
+      alt /health names the version and the canary thread read succeeds
+        opt release canary
+          SW->>N: Read the known thread<br/>authenticated Conn CLI
+        end
         Note over N: Remove the backup<br/>updated
       else the swap, restart, prompt or health fails
         SW->>N: Roll back<br/>restore and restart
@@ -79,14 +83,14 @@ sequenceDiagram
     end
   end
   Note over SW: Write each Node's result<br/>result
-  alt no Node failed and the canary did not hold
+  alt no failed Node or blocking hold
     SW-->>GW: Run succeeded
     %%> Result:
     %%> - the Operation result lists each Node's outcome: `updated`, `checked` or `held`
-  else a Node fails, or the canary holds
+  else a Node fails or a hold stops the run
     SW--xGW: Run failed<br/>NODE · error_code
     %%> Result:
-    %%> - `error_code` is `conn_server.node_failed`, or `conn_server.canary_held` when the canary held
+    %%> - `error_code` is `conn_server.node_failed`, `conn_server.canary_held` for a held canary, or `conn_server.node_held` during promotion
     %%> Why stop:
     %%> - later Nodes are not visited and report `not_reached`, so one bad release reaches at most one Node
   end

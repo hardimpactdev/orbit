@@ -43,7 +43,7 @@ Inspect or validate the recipe from the Gateway:
 php artisan orbit:machine-recipe --validate [--validate-ubuntu] [--role=<role>] [--architecture=amd64] [--json]
 ```
 
-Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combining `core.yaml` with the pinned agent delivery manifest).
+Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity, combining `core.yaml` with the pinned agent delivery manifest. The [standalone Conn Server rollout](/reference/development-containers#conn-server-rollout) uses a separate host release catalog and never changes the core digest.
 
 ### Shared Instance folders
 

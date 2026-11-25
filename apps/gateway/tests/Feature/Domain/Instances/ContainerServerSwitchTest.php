@@ -323,11 +323,17 @@ describe('switching a container server to conn', function (): void {
             ->and(array_key_exists('server_import_seconds', $wake()->input))->toBeFalse();
     });
 
-    it('names the contract version in each server program version line', function (ContainerServer $server, string $line, string $version): void {
-        expect(preg_match('/'.$server->versionPattern().'/', $line, $match))->toBe(1)
-            ->and($match[1])->toBe($version);
-    })->with([
-        't3' => [ContainerServer::T3, 't3 v0.1.7', '0.1.7'],
-        'conn' => [ContainerServer::Conn, 'conn-server 0.5.2 (T3 server 0.1.10 contract, contract digest 2b83411d59ae)', '0.1.10'],
-    ]);
+    it('names the contract version in the T3 program version line', function (): void {
+        expect(preg_match('/'.ContainerServer::T3->versionPattern().'/', 't3 v0.1.7', $match))->toBe(1)
+            ->and($match[1])->toBe('0.1.7');
+    });
+
+    it('names the launch contract version published by the pinned Conn Server', function (): void {
+        $release = json_decode((string) file_get_contents(__DIR__.'/../../../Fixtures/conn-server-release.json'), true, flags: JSON_THROW_ON_ERROR);
+        $recipe = json_decode((string) file_get_contents(resource_path('machine-software/core.yaml')), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($release['version'])->toBe($recipe['instances']['agent']['conn-server']['version'])
+            ->and(preg_match('/'.ContainerServer::Conn->versionPattern().'/', $release['version_output'], $match))->toBe(1)
+            ->and($match[1])->toBe($release['launch_version']);
+    });
 });

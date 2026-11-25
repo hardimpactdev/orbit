@@ -29,6 +29,7 @@ use Orbit\Extensions\AiRouter\Actions\AdmitAiRouterTaskGuardAction;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterTaskGuardRelease;
+use Tests\Support\ServingRecipeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -70,7 +71,7 @@ beforeEach(function (): void {
     // A verified release of the commit, served from the release layout, with fleet rollout and the default refresh off.
     $this->base = sys_get_temp_dir().'/orbit-guard-release-'.bin2hex(random_bytes(4));
     $release = $this->base.'/releases/'.substr(GuardReleaseCommit, 0, 12);
-    mkdir($release.'/apps/gateway', 0700, true);
+    ServingRecipeFixture::write($release.'/apps/gateway');
     file_put_contents($release.'/REVISION', GuardReleaseCommit."\n");
     symlink('releases/'.substr(GuardReleaseCommit, 0, 12), $this->base.'/orbit');
     config(['fleet.rollout' => false, 'instances.nested_fleet_refresh' => false, 'app.version' => GuardReleaseCommit,

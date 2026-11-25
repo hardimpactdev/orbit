@@ -6,7 +6,9 @@ use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Tools\StartToolOperationAction;
 use App\Data\Fleet\DesiredCliReleaseData;
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
@@ -46,6 +48,7 @@ use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\Cluster;
+use App\Models\ConnServerNode;
 use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -61,8 +64,10 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\InstancePool;
 use Tests\Support\ObservedReleaseInputs;
+use Tests\Support\ServingRecipeFixture;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -74,7 +79,7 @@ beforeEach(function (): void {
     // A verified release of the commit, served from the release layout, with its CLI release published.
     $this->base = sys_get_temp_dir().'/orbit-fleet-plan-'.bin2hex(random_bytes(4));
     $release = $this->base.'/releases/'.substr(RolloutCommit, 0, 12);
-    mkdir($release.'/apps/gateway', 0700, true);
+    ServingRecipeFixture::write($release.'/apps/gateway');
     file_put_contents($release.'/REVISION', RolloutCommit."\n");
     symlink('releases/'.substr(RolloutCommit, 0, 12), $this->base.'/orbit');
     file_put_contents($this->base.'/cli.json', json_encode(['number' => 9001, 'checksums_url' => 'https://example.test/SHA256SUMS',
@@ -325,6 +330,55 @@ it('retains the minute retry after partial admission and admits CI callers when 
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });
 
+it('fails the fleet phase before admitting work when the serving Conn host catalog cannot be validated', function (string $problem): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/conn-server-releases.yaml';
+    if ($problem === 'missing') {
+        File::delete($path);
+    } else {
+        File::put($path, '{');
+    }
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet'])->toBe([
+            'status' => 'failed', 'nodes' => [], 'error_code' => 'conn_server.release_catalog_unavailable',
+        ])
+        ->and(Operation::query()->count())->toBe(0);
+})->with(['missing', 'malformed']);
+
+it('holds the release fleet phase only when the serving reviewed release matches the Conn canary policy', function (bool $matching): void {
+    Queue::fake();
+    SwampNodeFixture::ensure();
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/conn-server-releases.yaml';
+    $catalog = Yaml::parseFile($path);
+    $catalog['default'] = '0.5.2';
+    $catalog['releases']['0.5.2']['release_canary'] = true;
+    File::put($path, Yaml::dump($catalog, 6));
+
+    $canary = Node::query()->findOrFail($this->nodes['dev']);
+    $canary->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-canary']);
+    ConnServerNode::query()->create(['node_id' => $canary->id, 'platform' => 'linux', 'path' => '/opt/conn-server/current',
+        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => true]);
+    app(StartToolOperationAction::class)->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $matching ? '0.5.2' : '0.5.1');
+
+    $next = app(ContinueReleaseFleetAction::class)->execute($release);
+    $rollouts = Operation::query()->where('kind', ConnServerRollout::Kind);
+    if ($matching) {
+        $check = $rollouts->sole();
+        expect($next)->toBe(15)
+            ->and($release->fresh()->phases['fleet']['conn_server_operation_id'])->toBe($check->id)
+            ->and(array_column($check->input['intent']['nodes'], 'node_id'))->toBe([$canary->id])
+            ->and($check->input['intent']['dry_run'])->toBeTrue();
+    } else {
+        expect($rollouts->count())->toBe(0)
+            ->and($release->fresh()->phases['fleet'])->not->toHaveKey('conn_server_operation_id');
+    }
+})->with(['matching release' => [true], 'deliberate older pin' => [false]]);
+
 it('marks only the Node whose host inputs changed for a host converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
@@ -363,6 +417,7 @@ function previousReleaseCommit(string $changed): string
     foreach (['apps/gateway/resources', 'apps/gateway/app', 'swamp'] as $folder) {
         File::deleteDirectory($repository.'/'.$folder);
     }
+    ServingRecipeFixture::write($repository.'/apps/gateway');
 
     return $approved;
 }
@@ -653,7 +708,7 @@ it('preserves every prior host approval before an early halt and across a supers
     symlink(dirname(base_path(), 2), $this->base.'/releases/'.$matching);
     $nextCommit = str_repeat('d', 40);
     $nextPath = 'releases/'.substr($nextCommit, 0, 12);
-    mkdir($this->base.'/'.$nextPath.'/apps/gateway', 0700, true);
+    ServingRecipeFixture::write($this->base.'/'.$nextPath.'/apps/gateway');
     file_put_contents($this->base.'/'.$nextPath.'/REVISION', $nextCommit."\n");
     symlink($nextPath, $this->base.'/orbit-next');
     rename($this->base.'/orbit-next', $this->base.'/orbit');
@@ -709,8 +764,6 @@ it('admits every Node of a verified release at once at midday, then refreshes th
     // One nested-fleet default on the app-dev Node, which the release refresh deploys to the release commit.
     $dev = Node::query()->findOrFail($this->nodes['dev']);
     $dev->update(['settings' => ['nested_fleet' => true]]);
-    // A nested-fleet host's role inputs read the machine-software recipe of the served release.
-    File::copyDirectory(base_path('resources/machine-software'), config('orbit.gateway_checkout').'/resources/machine-software');
     app(AllocateInstanceBridgeAction::class)->execute($dev);
     $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
         'default_branch' => 'main', 'root' => '.']);
@@ -873,8 +926,6 @@ it('fingerprints plan-only Instance host changes without reacting to the bridge 
     $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
     $recipe = '/resources/machine-software/core.yaml';
     $gateway = $this->base.'/orbit/apps/gateway';
-    mkdir(dirname($gateway.$recipe), 0700, true);
-    copy(base_path().$recipe, $gateway.$recipe);
     $host = app(InstanceHostIntent::class);
     $inputs = app(ReleaseNodeInputs::class);
     $beforePlan = $host->for($node);

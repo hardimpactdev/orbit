@@ -34,20 +34,25 @@ cases = [
   "a run with more Nodes than its deadline covers is refused before any Node is reached",
   "a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none",
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
+  "the release canary reads its thread before keeping the update and rolls back a wrong thread",
+  "an SSH reset during the canary thread read rolls back the updated Mac",
+  "an SSH reset during the Mac swap or Linux restart restores the original server",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 641
+cost = 636
 # Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
 slices = 4
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/conn-server-rollout.yml",
+  "swamp/ansible/files/conn-server-probe.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/conn-server-linux-start.yml",
   "swamp/ansible/tasks/conn-server-linux-withdraw.yml",
+  "swamp/ansible/tasks/conn-server-require-transport.yml",
   "swamp/ansible/tasks/conn-server-linux.yml",
   "swamp/ansible/tasks/conn-server-mac-health.yml",
   "swamp/ansible/tasks/conn-server-mac-round.yml",
@@ -93,3 +98,7 @@ inputs = [
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause" = 11
   "every module that a Mac Node runs has a task timeout of at least 60 s" = 2
   "over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked" = 63
+
+  "the release canary reads its thread before keeping the update and rolls back a wrong thread" = 18
+  "an SSH reset during the canary thread read rolls back the updated Mac" = 12
+  "an SSH reset during the Mac swap or Linux restart restores the original server" = 24

@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace App\Infrastructure\MachineSoftware;
 
 use InvalidArgumentException;
+use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 final class ConnServerReleases
 {
     public function find(?string $version): ?ConnServerRelease
     {
-        $document = Yaml::parseFile(resource_path('machine-software/conn-server-releases.yaml'));
+        $checkout = config()->string('orbit.gateway_checkout');
+        $file = 'machine-software/conn-server-releases.yaml';
+        try {
+            $document = Yaml::parseFile(is_link(dirname($checkout, 2)) ? $checkout.'/resources/'.$file : resource_path($file));
+        } catch (ParseException $failure) {
+            throw new InvalidArgumentException('The serving Conn Server release catalog is unreadable or invalid.', previous: $failure);
+        }
 
         return $this->select($document, $version);
     }
@@ -30,6 +37,9 @@ final class ConnServerReleases
         if (! preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\z/', $version) || ! is_array($release = $releases[$version])) {
             throw new InvalidArgumentException('Expected an exact Conn Server release.');
         }
+        if (array_key_exists('release_canary', $release) && ! is_bool($release['release_canary'])) {
+            throw new InvalidArgumentException('Expected a boolean Conn Server release canary flag.');
+        }
         $mac = $release['macos_arm64'] ?? null;
         if (! is_array($mac) || ! is_string($bundle = $mac['bundle_id'] ?? null) || $bundle !== 'com.nckrtl.conn-server'
             || ! is_string($team = $mac['team_id'] ?? null) || ! preg_match('/\A[A-Z0-9]{10}\z/', $team)) {
@@ -37,7 +47,7 @@ final class ConnServerReleases
         }
 
         return new ConnServerRelease($version, $this->artifact($version, 'linux-x64.tar.gz', $release['linux_x64'] ?? null),
-            new MacAppPin($this->artifact($version, 'macos-arm64.zip', $mac), $bundle, $team));
+            new MacAppPin($this->artifact($version, 'macos-arm64.zip', $mac), $bundle, $team), $release['release_canary'] ?? false);
     }
 
     private function artifact(string $version, string $suffix, mixed $data): ArtifactPin

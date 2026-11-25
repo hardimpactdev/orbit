@@ -17,6 +17,8 @@ final class AdmitConnServerRolloutRequest extends FormRequest
             'withdraw' => ['sometimes', 'boolean'],
             'version' => ['sometimes', 'string', 'max:40', 'regex:/\A[0-9]+\.[0-9]+\.[0-9]+\z/'],
             'node_ids' => ['required_if:scope,nodes', 'prohibited_unless:scope,nodes', 'array', 'min:1', 'max:4'],
+            'canary_operation_id' => ['prohibited_unless:scope,fleet', 'integer', 'min:1'],
+            'retry_operation_id' => ['prohibited_if:scope,nodes', 'integer', 'min:1'],
             'node_ids.*' => ['integer', 'distinct', 'exists:conn_server_nodes,node_id']];
     }
 }

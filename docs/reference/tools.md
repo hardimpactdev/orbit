@@ -26,7 +26,7 @@ Classify a package by what consumes it and where it runs, not by the name of its
 | Shared container runtime under `/opt/orbit-runtime` | The runtime section of `core.yaml`; Projects and Instances retain their runtime and driver selection. |
 | Shared container agent software under `/opt/orbit-agent` | The agent section of `core.yaml`, including the Linux Conn Server required by task copies. |
 | An optional host package selected for a Node | A Gateway Tool record. The active Tool mode assigns the version, constraint, and source. |
-| A Conn Server running as a host service | Gateway Tool membership can pin a release. Only an explicit [Conn Server rollout](/reference/development-containers#conn-server-rollout) changes the service. Neither Tool convergence nor container convergence updates it. |
+| A Conn Server running as a host service | Gateway Tool membership pins a release. Only the protected [Conn Server rollout](/reference/development-containers#conn-server-rollout) changes the service. Neither Tool convergence nor container convergence updates it. |
 
 ## Tool modes
 
@@ -99,7 +99,7 @@ Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o
 
 `orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only` and return `unchanged` when membership and the desired release already match.
 
-Use the explicit [rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or to retire a withdrawn Linux service. Doctor compares a managed service with the last version verified through protected rollout health checks, not with package inventory. A dry run can refresh that observation without changing the service. Before any verified health observation, Doctor reports the Tool as unverifiable. General Tool convergence does not execute host service intent. A host rollout never changes the required container Conn release.
+Use the [protected rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or retire a withdrawn Linux service. A Gateway release can run the reviewed canary only if that Node has opted in and desires the exact release. Promoting it requires an explicit request and fresh checks on the matching followers. A release does not enroll services, change Node pins, or act on withdrawn members. Doctor compares a managed service with the last version verified through protected rollout health checks, not package inventory. A dry run can refresh that observation without changing the service. Before any verified observation, Doctor reports the Tool as unverifiable. A host rollout never changes the required container Conn release.
 
 ## Project environments in the Vite+ store
 
