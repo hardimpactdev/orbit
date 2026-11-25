@@ -19,9 +19,17 @@ final class ConvergeToolsRequest extends FormRequest
     /** @return list<int>|null */
     public function toolIds(): ?array
     {
-        /** @var list<int|string>|null $ids */
         $ids = $this->validated('tool_ids');
+        if ($ids === null) {
+            return null;
+        }
+        assert(is_array($ids) && array_is_list($ids));
 
-        return $ids === null ? null : array_map(intval(...), $ids);
+        return array_map(static function (mixed $id): int {
+            $integer = filter_var($id, FILTER_VALIDATE_INT);
+            assert(is_int($integer));
+
+            return $integer;
+        }, $ids);
     }
 }
