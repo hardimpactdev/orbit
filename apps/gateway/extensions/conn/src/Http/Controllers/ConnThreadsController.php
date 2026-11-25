@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Controllers;
 
+use App\Console\Scheduling\GatewaySchedule;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -14,7 +15,9 @@ use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
 use Orbit\Extensions\Conn\Http\Requests\ListConnThreadsRequest;
 use Orbit\Extensions\Conn\Http\Requests\RecordConnThreadRequest;
+use Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Throwable;
 
 /** The thread index of registered Conn servers (docs/reference/conn.md#thread-index). */
 final class ConnThreadsController extends Controller
@@ -42,7 +45,10 @@ final class ConnThreadsController extends Controller
         ]);
     }
 
-    /** The write-through of a thread that Conn started; a repeat updates its title. */
+    /**
+     * The write-through of a thread that Conn started; a repeat updates its title. A host server's call also queues the librarian
+     * (docs/reference/conn.md#the-thread-librarian); a failure to queue it is reported and never changes the response.
+     */
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function store(RecordConnThreadRequest $request, ConnEnvironment $environment, ConnServerAccess $access, ConnThreadIndex $index): JsonResponse
     {
@@ -50,6 +56,13 @@ final class ConnThreadsController extends Controller
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
         $access->assert($caller, $environment);
         ['thread' => $thread, 'created' => $created] = $index->record($environment, $request->threadId(), $request->title());
+        if ($environment->instance_id === null) {
+            try {
+                GatewaySchedule::dispatch(new DiscoverConnThreadJob($environment->id, $request->threadId()));
+            } catch (Throwable $error) {
+                report($error);
+            }
+        }
 
         return response()->json([
             'data' => ConnThreadData::fromModel($thread)->toArray(),

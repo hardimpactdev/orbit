@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use GuzzleHttp\Promise\PromiseInterface;
@@ -15,7 +16,10 @@ use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
+use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob;
+use Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob;
 use Orbit\Extensions\Conn\Jobs\PollConnHostThreadsJob;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnThreadClassification;
@@ -89,6 +93,19 @@ function librarianQueuedJob(): ClassifyConnThreadJob
 function librarianRun(ClassifyConnThreadJob $job): void
 {
     app()->call([$job, 'handle']);
+}
+
+/** The host Conn Server's write-through of the thread, which stands for its first user message. */
+function librarianPush(object $test, string $title = 'Fix the index'): TestResponse
+{
+    return $test->withServerVariables(['REMOTE_ADDR' => $test->host->wireguard_ip])
+        ->postJson('/api/v1/conn/environments/env-host/threads', ['thread_id' => 'general-thread', 'title' => $title]);
+}
+
+/** Runs the latest push's queued discovery, as a worker would. */
+function librarianRunPush(): void
+{
+    app()->call([Queue::pushed(DiscoverConnThreadJob::class)->last(), 'handle']);
 }
 
 function librarianWrites(array $frames): array
@@ -190,12 +207,15 @@ it('does not refile when someone unfiles during the model call', function (): vo
     expect(librarianWrites($this->rpc))->toBeEmpty();
 });
 
-it('does not classify a checkout thread', function (): void {
+it('does not classify a checkout thread, and decides that once', function (): void {
     $this->thread['projectId'] = 'repo-id';
     librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
     librarianHostPoll();
-    librarianRun(librarianQueuedJob());
-    expect(librarianWrites($this->rpc))->toBeEmpty();
+    librarianHostPoll();
+    Queue::assertNotPushed(ClassifyConnThreadJob::class);
+    expect(librarianWrites($this->rpc))->toBeEmpty()
+        ->and(collect($this->rpc)->where('tag', 'server.getConfig'))->toHaveCount(1)
+        ->and(ConnThreadClassification::query()->sole())->completed_at->not->toBeNull()->result->toBeNull();
 });
 
 it('does not backfill threads created before the host’s first librarian poll', function (): void {
@@ -287,4 +307,151 @@ it('gives up after three failed model attempts and later polls do not requeue th
     $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
         ->assertOk()->assertJsonPath('data.0.project_id', null)
         ->assertJsonPath('data.0.classification', ['result' => 'given_up', 'error_code' => 'conn.ai_router_invalid_response']);
+});
+
+describe('the push', function (): void {
+    it('queues the librarian for a new host General thread and files it, with an unchanged response', function (): void {
+        $calls = 0;
+        librarianHttpFake($this, function () use (&$calls): PromiseInterface {
+            $calls++;
+
+            return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+        });
+        $response = librarianPush($this);
+        $response->assertCreated()->assertExactJson(['data' => ['environment_id' => 'env-host', 'instance_id' => null,
+            'project_id' => null, 'thread_id' => 'general-thread', 'title' => 'Fix the index', 'state' => null, 'needs_input' => false,
+            'last_user_message_at' => null, 'last_run_completed_at' => null, 'seen_at' => now()->toIso8601String(), 'classification' => null],
+            'meta' => ['request_id' => $response->json('meta.request_id')]]);
+        expect($response->json('meta.request_id'))->toBeString()->not->toBe('');
+        Http::assertNothingSent();
+        Queue::assertPushedOn('tasks', DiscoverConnThreadJob::class);
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+
+        librarianRunPush();
+        librarianRun(librarianQueuedJob());
+        expect($calls)->toBe(1)->and(librarianWrites($this->rpc))->toHaveCount(1);
+        librarianPush($this, 'Fix the index again')->assertOk()->assertJsonPath('data.title', 'Fix the index again')
+            ->assertJsonPath('data.classification.result', 'existing');
+    });
+
+    it('queues nothing for an ineligible thread', function (Closure $arrange): void {
+        librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+        $arrange->call($this);
+        librarianPush($this)->assertCreated();
+        librarianRunPush();
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        expect(librarianWrites($this->rpc))->toBeEmpty();
+    })->with([
+        'filed' => [function (): void {
+            $this->thread['orbitProject'] = ['id' => 19, 'slug' => 'existing'];
+        }],
+        'unfiled' => [function (): void {
+            $this->thread['orbitProject'] = null;
+        }],
+        'child' => [function (): void {
+            $this->thread['lineage'] = ['parentThreadId' => 'parent'];
+        }],
+        'delegated child' => [function (): void {
+            $this->thread['delegatedFrom'] = ['threadId' => 'parent'];
+        }],
+        'archived' => [function (): void {
+            $this->archived = true;
+        }],
+        'checkout project' => [function (): void {
+            $this->thread['projectId'] = 'repo-id';
+        }],
+        'created before the cutoff' => [function (): void {
+            $this->thread['createdAt'] = now()->subDay()->toIso8601String();
+        }],
+        'completed receipt' => [function (): void {
+            ConnThreadClassification::query()->create(['conn_environment_id' => $this->environment->id, 'thread_id' => 'general-thread',
+                'result' => ['result' => 'given_up', 'error_code' => 'conn.ai_router_unavailable'], 'completed_at' => now()]);
+        }],
+    ]);
+
+    it('queues nothing for a container server', function (): void {
+        $instance = Instance::query()->forceCreate(['node_id' => $this->host->id, 'project_id' => $this->project->id, 'name' => 'clone',
+            'checkout_path' => '/workspace/clone', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false]);
+        $this->environment->forceFill(['instance_id' => $instance->id])->save();
+        Http::fake();
+        librarianPush($this)->assertCreated()->assertJsonPath('data.instance_id', $instance->id);
+        Queue::assertNothingPushed();
+        Http::assertNothingSent();
+    });
+
+    it('records the thread when the librarian cannot be queued', function (): void {
+        Queue::shouldReceive('connection')->andThrow(new RuntimeException('Redis is down.'));
+        librarianPush($this)->assertCreated()->assertJsonPath('data.thread_id', 'general-thread');
+    });
+
+    it('classifies once when a push and a poll meet, in either order', function (bool $pushFirst): void {
+        $calls = 0;
+        librarianHttpFake($this, function () use (&$calls): PromiseInterface {
+            $calls++;
+
+            return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+        });
+        // The unique lock holds the second trigger off while the first trigger's job waits.
+        if ($pushFirst) {
+            librarianPush($this)->assertCreated();
+            librarianRunPush();
+            librarianHostPoll();
+            Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+            $job = librarianQueuedJob();
+        } else {
+            librarianHostPoll();
+            $job = librarianQueuedJob();
+            librarianPush($this)->assertOk();
+            librarianRunPush();
+            Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+        }
+        librarianRun($job);
+        // Once the job ends and frees its lock, the completed receipt keeps a later trigger, or a copy that passed the lock, from asking again.
+        Queue::releaseUniqueJobLocks();
+        librarianHostPoll();
+        librarianPush($this)->assertOk();
+        librarianRunPush();
+        Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+        librarianRun(new ClassifyConnThreadJob($job->environmentId, $job->threadId, $job->connProjectId, $job->connWorkspaceRoot));
+        expect($calls)->toBe(1)->and(librarianWrites($this->rpc))->toHaveCount(1);
+    })->with(['push first' => [true], 'poll first' => [false]]);
+
+    it('reads again while the first message is not readable, then files it without a failure', function (): void {
+        Sleep::fake();
+        $messages = $this->messages;
+        $this->messages = [$messages[0]];
+        $slept = 0;
+        Sleep::whenFakingSleep(function () use ($messages, &$slept): void {
+            if (++$slept === 2) {
+                $this->messages = $messages;
+            }
+        });
+        librarianHttpFake($this, static fn () => librarianModelResponse(['result' => 'existing', 'project_id' => test()->project->id, 'reason' => 'Orbit.']));
+        librarianPush($this)->assertCreated();
+        librarianRunPush();
+        librarianRun(librarianQueuedJob());
+        Sleep::assertSleptTimes(2);
+        Sleep::assertSequence([Sleep::for(2)->seconds(), Sleep::for(2)->seconds()]);
+        expect(librarianWrites($this->rpc))->toHaveCount(1)
+            ->and(ConnThreadClassification::query()->sole()->result['result'])->toBe('existing');
+    });
+
+    it('leaves the receipt open when the first message stays unreadable, so a later poll classifies it', function (): void {
+        Sleep::fake();
+        $messages = $this->messages;
+        $this->messages = [$messages[0]];
+        librarianHttpFake($this, static fn () => librarianModelResponse(['result' => 'existing', 'project_id' => test()->project->id, 'reason' => 'Orbit.']));
+        librarianPush($this)->assertCreated();
+        librarianRunPush();
+        librarianRun(librarianQueuedJob());
+        Sleep::assertSleptTimes(3);
+        Http::assertSentCount(1 + 1 + 4);
+        expect(ConnThreadClassification::query()->count())->toBe(0)->and(librarianWrites($this->rpc))->toBeEmpty();
+
+        Queue::releaseUniqueJobLocks();
+        $this->messages = $messages;
+        librarianHostPoll();
+        librarianRun(librarianQueuedJob());
+        expect(librarianWrites($this->rpc))->toHaveCount(1);
+    });
 });

@@ -66,7 +66,8 @@ The scheduler also dispatches these background jobs on the queue:
 
 - `ReconcileSwampOperations` (every minute on `operations`, unique 300 s): reads terminal results of open Swamp runs and records pass timestamps for [`gateway:status`](/cli/gateway/status).
 - `ReconcileExecutorWakes` (every 5 seconds on `operations-prompt`): relays committed wake notices and leases completion or hook handoffs ([Wake handoff recovery](/reference/executor#wake-handoff-recovery)).
-- `PollConnHostThreadsJob` (every 5 seconds on `tasks`, unique for 30 seconds): refreshes registered host Conn servers and queues [librarian jobs](/reference/conn#the-thread-librarian) for new threads.
+- `PollConnHostThreadsJob` (every 5 seconds on `tasks`, unique for 30 seconds): refreshes registered host Conn servers and queues [librarian jobs](/reference/conn#the-thread-librarian) for new threads whose push never came.
+- `DiscoverConnThreadJob` (on `tasks`, from a host Conn Server's `POST .../threads`): the librarian's trigger. It reads that server's shell and queues `ClassifyConnThreadJob` on `tasks` for an eligible thread.
 - `CloseWebSocketOperations`, `CheckDevelopmentDeployments`, `PollSwampScheduledResults`, and `InstanceRemovalReaper::Trigger`: periodic lifecycle reconciliation jobs.
 - `AdmitFleetRollout` (daily at 03:05 Europe/Amsterdam), `AdmitFleetReboot` (daily at 03:06 Europe/Amsterdam), and `CheckFleetRebootConfirmation` (every 5 minutes): fleet maintenance passes.
 

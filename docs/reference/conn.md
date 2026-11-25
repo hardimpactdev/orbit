@@ -125,7 +125,7 @@ When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.manag
 
 ## Thread index
 
-`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread before the next poll. A host thread has no `instance_id`; its `project_id` is its Conn filing, or `null` for General. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
+`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread before the next poll. Its body is `{thread_id, title}`; it answers `201` with the row, or `200` when the row existed. A host thread has no `instance_id`; its `project_id` is its Conn filing, or `null` for General. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
 
 The Gateway stores host rows separately so enabling host indexing does not rewrite the existing container index.
 
@@ -133,7 +133,17 @@ While Conn and the Gateway queue are enabled, the scheduler queues a host poll e
 
 ### The thread librarian
 
-After the first user message in a top-level General thread on a registered host Conn Server (0.5.2 or later), a Gateway job normally decides within about 15 seconds. It uses only the title (255 characters), first user-authored message (4,000 characters), and the Orbit Projects visible to the host's Node. Each Project includes its ID, slug, name, and a short description based on its repository or Node.
+After the first user message in a top-level General thread on a registered host Conn Server (0.5.2 or later), a Gateway job normally decides within about 15 seconds.
+
+The trigger is a push. When a thread gets its first user message, the host Conn Server calls `POST /api/v1/conn/environments/{environment}/threads` with `{thread_id, title}`, authenticated as its Node by its WireGuard address. The Gateway records the row and queues a job, then answers; it does not read the Conn Server inside the request. A call for a container server starts nothing.
+
+A failure to queue the job, a missing model setting, a disabled Conn extension, or an unreachable Conn Server never changes the response.
+
+The queued job reads that server's shell and applies the same rules as the host poll: the host's cutoff, a top-level thread with no Orbit filing that is not delegated or archived, in the scratch project, and no completed decision. The push stands for the first user message.
+
+The host poll every five seconds is only the fallback: it finds and classifies an eligible thread that lists a user-authored message when its push never came. A thread is classified at most once, however pushes and polls interleave.
+
+A push can arrive before its first message is readable. The job then reads the thread again, every 2 seconds, four reads in all. This wait is not a failure: when the message stays unreadable, the thread stays undecided, and a later poll that sees the message classifies it. A thread outside the scratch project is refused once and not read again. It uses only the title (255 characters), first user-authored message (4,000 characters), and the Orbit Projects visible to the host's Node. Each Project includes its ID, slug, name, and a short description based on its repository or Node.
 
 The first successful librarian poll sets a permanent cutoff for each host. Threads created before that poll began are out of scope. A later poll picks up eligible threads missed during a gap and uses their first user message, even after more turns.
 
