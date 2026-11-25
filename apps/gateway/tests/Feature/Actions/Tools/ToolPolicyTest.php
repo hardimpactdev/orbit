@@ -6,6 +6,7 @@ use App\Actions\Tools\ManageToolPolicyAction;
 use App\Actions\Tools\ScanToolInventoryAction;
 use App\Actions\Tools\StartToolConvergeAction;
 use App\Actions\Tools\StartToolOperationAction;
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolConvergeIntent;
@@ -260,7 +261,7 @@ it('can cancel or repair a pinned first install after manager setup failed', fun
     }
 })->with([false, true]);
 
-it('bounds a converge batch while keeping repository preferences for unselected memberships', function (): void {
+it('budgets all admitted Tools without capping membership and keeps shared repository preferences', function (): void {
     policySwamp();
     $node = policyNode('dev');
     $source = policySignedRepository();
@@ -271,12 +272,53 @@ it('bounds a converge batch while keeping repository preferences for unselected 
         $tools[$package] = $tool->id;
     }
     $converge = app(StartToolConvergeAction::class);
-    expect(fn () => $converge->execute($node, 'test'))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.batch_too_large'));
+    $whole = $converge->execute($node, 'test');
+    expect(array_column($whole->input['intent']['tools'], 'id'))->toBe(array_values($tools))
+        ->and($whole->input['intent']['tools_seconds'])->toBe(8900)->and($whole->input['run_budget_seconds'])->toBe(9100);
+    $whole->update(['status' => 'succeeded', 'lock_key' => null]);
     $foreign = policyTool(policyNode('other', 11), 'tree', '1.10');
     expect(fn () => $converge->execute($node, 'test', [$foreign->id]))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.scope_invalid'));
     $operation = $converge->execute($node, 'test', [$tools['nano'], $tools['ed']]);
     expect(array_column($operation->input['intent']['tools'], 'id'))->toBe([$tools['nano'], $tools['ed']])
         ->and($operation->input['intent']['tools'][0]['repository_packages'])->toBe(['ed', 'nano', 'ripgrep', 'tree']);
+});
+
+it('resolves only selected packages and their shared signed apt sources', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $nano = policyTool($node, 'nano', '1.10');
+    $ed = policyTool($node, 'ed', '1.10');
+    $plain = static fn (Tool $tool): array => ['manager' => 'apt', 'package' => $tool->package, 'version' => '1.10'];
+    $source = policySignedRepository();
+    $path = policyFile([$plain($nano), $plain($ed)]);
+    app(ManageToolPolicyAction::class)->change('file', $path);
+    policyFile([$plain($nano)], $path);
+    $converge = app(StartToolConvergeAction::class);
+    $run = $converge->execute($node, 'test', [$nano->id]);
+    expect(array_column($run->input['intent']['tools'], 'id'))->toBe([$nano->id]);
+    $run->update(['status' => 'succeeded', 'lock_key' => null]);
+    expect(fn () => $converge->execute($node, 'test'))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.not_in_catalog'));
+    policyFile([[...$plain($nano), 'repository' => $source], [...$plain($ed), 'repository' => policySignedRepository('other')]], $path);
+    expect(fn () => $converge->execute($node, 'test', [$nano->id]))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+});
+
+it('allows disjoint Tool writers but preserves the overlapping and global policy fences', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $other = policyNode('other', 11);
+    $tool = policyTool($node, 'tree', '1.10');
+    $operations = app(StartToolOperationAction::class);
+    $rollout = Operation::query()->create(['kind' => ConnServerRollout::Kind, 'node_id' => $other->id, 'target_id' => $other->id,
+        'target_type' => 'fleet', 'triggered_by' => 'operator', 'status' => 'running', 'sequence' => 0, 'input' => ['intent' => ['nodes' => [['node_id' => $other->id]]]]]);
+    $converge = app(StartToolConvergeAction::class)->execute($node, 'test', [$tool->id]);
+    expect($converge->status->terminal())->toBeFalse();
+    expect($operations->execute('install', $node->id, 'composer', 'laravel/installer', null, version: '5.18.0')->status->terminal())->toBeFalse();
+    expect($operations->execute('install', $other->id, 'apt', 'nano', null)->status->terminal())->toBeFalse();
+    expect(fn () => $operations->execute('install', $node->id, 'apt', 'nano', null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(fn () => app(ToolConvergeIntent::class)->assertIdle($other->id, ['conn-server']))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    app(ToolConvergeIntent::class)->assertIdle($node->id, ['conn-server']);
+    expect(fn () => app(ManageToolPolicyAction::class)->change('file', null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.mode_busy'));
+    expect($rollout->fresh()->status->value)->toBe('running');
 });
 
 it('admits the remaining preference packages for both membership changes and refuses unilateral trust changes', function (): void {

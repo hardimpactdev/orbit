@@ -610,12 +610,13 @@ it('holds only a full-scope converge record for a scoped converge', function (ar
 
 it('admits actual Tool intent in a full run without mistaking its own hold for another writer', function (): void {
     $manager = ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
-    $tool = Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id,
-        'package' => 'tree', 'desired_version' => '1.10', 'installed_version' => '1.1', 'status' => 'installed']);
+    $tools = array_map(fn (string $package): Tool => Tool::query()->create(['node_id' => $this->node->id, 'tool_manager_id' => $manager->id,
+        'package' => $package, 'desired_version' => '1.10', 'installed_version' => '1.10', 'status' => 'installed']), ['tree', 'nano', 'ed', 'ripgrep']);
     $this->postJson($this->url, [])->assertAccepted();
     $full = Operation::query()->sole();
     expect($full->input['_converge']['tool_scope'])->toBeTrue()
-        ->and($full->input['_converge']['intent']['tools'][0])->toMatchArray(['id' => $tool->id, 'desired_version' => '1.10', 'installed_version' => '1.1']);
+        ->and(array_column($full->input['_converge']['intent']['tools'], 'id'))->toBe(array_column($tools, 'id'))
+        ->and($full->input['_converge']['intent']['tools_seconds'])->toBe(8900)->and($full->input['run_budget_seconds'])->toBe(15600);
     $full->update(['status' => 'succeeded', 'lock_key' => null]);
     $this->postJson($this->url, ['base' => true])->assertAccepted();
     $base = Operation::query()->whereKeyNot($full->id)->sole();

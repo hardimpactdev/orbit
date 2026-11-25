@@ -104,3 +104,11 @@
     - name: Record this Tool failure and continue the loop
       ansible.builtin.set_fact:
         tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'failed', 'installed_version': none}] }}"
+- name: Checkpoint completed Tool observations
+  ansible.builtin.copy:
+    dest: "{{ orbit_run }}/tools-result.json"
+    content: "{{ tool_results | to_json }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  changed_when: false

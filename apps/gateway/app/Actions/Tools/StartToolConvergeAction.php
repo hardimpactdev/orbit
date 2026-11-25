@@ -33,14 +33,15 @@ final readonly class StartToolConvergeAction
                 throw new ResourceOperationException('tool.node_unmanaged', 'Tool convergence requires an active, SSH-managed Node.', 409);
             }
             $tools = $this->intent->capture($node, ids: $toolIds);
-            $lock = "node_tools:{$node->id}:all";
             if ($tools === []) {
                 return $this->start->record('tool.converge', 'node_tools', $node->id, $node->id, ['tools' => []],
-                    ['changed' => 0, 'tools' => [], 'outcome' => 'unchanged', 'cleanup_complete' => true], 'operator', $requestId, $lock);
+                    ['changed' => 0, 'tools' => [], 'outcome' => 'unchanged', 'cleanup_complete' => true], 'operator', $requestId);
             }
-            $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => $tools, 'ssh' => $this->ssh->forNode($node)];
+            $scopes = implode('+', ToolConvergeIntent::scopes($tools));
+            $seconds = ToolConvergeIntent::phaseSeconds(count($tools));
+            $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => $tools, 'tools_seconds' => $seconds, 'ssh' => $this->ssh->forNode($node)];
 
-            return $this->start->execute('tool.converge', 'node_tools', $node->id, $node->id, ['intent' => $intent], 'operator', $requestId, lockKey: $lock);
+            return $this->start->execute('tool.converge', 'node_tools', $node->id, $node->id, ['intent' => $intent, 'run_budget_seconds' => $seconds + 200], 'operator', $requestId, lockKey: "node_tools:{$node->id}:converge:{$scopes}");
         });
     }
 }

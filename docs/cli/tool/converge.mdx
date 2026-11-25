@@ -10,7 +10,7 @@ orbit tool:converge --node=ID [--tool-id=TOOL ...] [--idempotency-key=KEY] [--js
 
 Use this command on a managed Linux or macOS Node to reconcile Tools without changing roles, core software, or networks. A catalog entry without membership on that Node does not install. The Operation reports `changed` and the observed version of each reconciled Tool.
 
-Each run admits at most three Tools. If the Node has more, repeat `--tool-id` to select a batch of its Tool IDs. The HTTP and MCP inputs use `tool_ids`.
+Omit `--tool-id` to reconcile all eligible Tools on the Node. Repeat it to select only specific Tool IDs. Unrelated catalog entries are not required for a selected run, but Tools using the same signed apt source must agree on its definition. The HTTP and MCP inputs use `tool_ids`.
 
 ## How it works
 

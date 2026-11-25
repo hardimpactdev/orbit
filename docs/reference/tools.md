@@ -76,7 +76,7 @@ The manager must still offer the version, and the version must meet any SemVer c
 
 Run `orbit tool:converge --node=ID` on Linux or macOS to reconcile only the Node's registered Tools. It applies exact desired versions and restores missing packages without installing catalog-only entries. For a database Tool without a pin, convergence leaves a compatible installed package in place; `tool:update` asks the manager for a new candidate. A repeated convergence reports zero changes once the Node matches.
 
-Linux full [`node:converge`](/cli/node/converge) includes Tools; role-only and base-only runs do not. Both forms admit at most three Tools per run and run Ansible from the Swamp control Node over pinned SSH. Use `--tool-id=ID` on `tool:converge` to select batches on larger Nodes. Direct package installs, updates, and removals use native SSH with the same admission and package policy.
+Linux full [`node:converge`](/cli/node/converge) includes all eligible Tools; role-only and base-only runs do not. Use `--tool-id=ID` on `tool:converge` to select specific memberships without resolving unrelated catalog entries. Packages sharing a signed apt source must agree on that source even if only one is selected. Convergence runs Ansible from the Swamp control Node over pinned SSH. The phase deadline scales with the number of selected Tools, up to the execution limit. If the phase times out, Orbit retains completed Tool observations. Direct package installs, updates, and removals use native SSH with the same admission and package policy.
 
 ## Where Tools run and Tool Managers
 

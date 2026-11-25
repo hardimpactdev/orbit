@@ -17,8 +17,8 @@ sequenceDiagram
   Note over GW: Admit registered Tools<br/>with desired coordinates
   %%> Requirements:
   %%> - the Node is active and SSH-managed on Linux or macOS
-  %%> - the caller has access to the Node and no competing Tool write is active
-  %%> - admit at most three registered Tools; an explicit selection must belong to this Node
+  %%> - the caller has access to the Node and no competing write owns a selected manager on this Node
+  %%> - admit all eligible Tools, or only the selected memberships; verify shared signed sources
   alt no registered Tools
     GW-->>CLI: Complete · changed 0
   else registered Tools

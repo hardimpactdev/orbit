@@ -1,9 +1,4 @@
 ---
-- name: Bound the batch to the Tools phase deadline
-  ansible.builtin.assert:
-    that: intent.tools | length <= 3
-    fail_msg: tool.batch_too_large
-    quiet: true
 - name: Start the independent Tool observations
   ansible.builtin.set_fact: { tool_results: [] }
 - name: Run the Tool helper once before judging any Tool

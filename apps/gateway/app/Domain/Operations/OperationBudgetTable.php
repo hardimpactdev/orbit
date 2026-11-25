@@ -100,8 +100,8 @@ final class OperationBudgetTable
         // the restores before the first batch, between batches and after the last (about 16 s each), and a re-mint with its readiness check and
         // the new `base` (about 150 s); about 1,900 s x 1.5, rounded up to five minutes. Replace with the 14-day p95 after the first success.
         'proof.verify' => 3000,
-        // Five 900 s phases, roles up to 1,800 s, a 6,800 s Tools batch, and 400 s for setup and results.
-        'node.converge' => 13500,
+        // Five 900 s phases, roles up to 1,800 s, and 400 s for setup and results, plus the captured Tools phase.
+        'node.converge' => 'run_budget_seconds',
         // The migrate path declares 4,830 s, including the 150 s pre-cutover Node preparation phase.
         // Round up to 5,100, plus 600 s for admission and settlement. This lower bound includes restore/cleanup,
         // but not undeclared work or dynamic repetitions.
@@ -138,9 +138,8 @@ final class OperationBudgetTable
         // phases plus margin. Replace with the 14-day p95 once repository installs have native history.
         'tool.install' => 1500,
         'tool.update' => 1500,
-        // A sequential phase for at most three admitted Tools: 2,100 s each (bounded observations, source repair,
-        // metadata refresh, package write and verification), 500 s phase overhead, then 200 s for dispatch and result.
-        'tool.converge' => 7000,
+        // 2,100 s per admitted Tool, 500 s phase overhead, then 200 s for dispatch and result.
+        'tool.converge' => 'run_budget_seconds',
     ];
 
     /**
@@ -149,7 +148,7 @@ final class OperationBudgetTable
      *
      * @var array<string,int>
      */
-    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800, 'instance.rollback' => 900];
+    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800, 'instance.rollback' => 900, 'node.converge' => 13500, 'tool.converge' => 7000];
 
     /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a fixed budget below. */
     public static function longestFixedSeconds(): int

@@ -19,6 +19,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolConvergeIntent;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -98,7 +99,7 @@ final readonly class StartNodeConvergeAction
                     $snapshot['held_digests'] = $held;
                 }
                 // Dispatch is deferred until this reservation transaction commits.
-                $operation->input = [...$operation->input, '_converge' => [
+                $operation->input = [...$operation->input, 'run_budget_seconds' => ToolConvergeIntent::phaseSeconds(count($snapshot['intent']['tools'])) + 6700, '_converge' => [
                     ...$snapshot, 'tool_scope' => $toolScope, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
                 ]];
                 $operation->save();

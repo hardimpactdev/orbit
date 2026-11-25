@@ -46,6 +46,37 @@ final readonly class ToolDefinitionResolver
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $repository
+     * @param  iterable<Tool>  $members
+     * @return list<string>
+     */
+    public function repositoryPackages(ActiveToolPolicy $active, array $repository, iterable $members, string $package, bool $removing): array
+    {
+        $packages = $removing ? [] : [$package];
+        $name = $repository['name'];
+        foreach ($members as $member) {
+            if ($member->manager->name !== ToolManagerName::Apt->value || $member->package === $package) {
+                continue;
+            }
+            $observed = $member->aptRepository?->definition;
+            $desired = $active->mode === 'file' ? $active->definition(ToolManagerName::Apt->value, $member->package)?->repository : ($member->desired_repository ?? $observed);
+            if (($desired['name'] ?? null) !== $name && ($observed['name'] ?? null) !== $name) {
+                continue;
+            }
+            if (! $removing) {
+                self::assertRepositoryIdentity($member, new ToolDefinition(null, null, $desired));
+                if (! ToolDefinition::sameRepository($desired, $repository)) {
+                    throw new ResourceOperationException('tool.repository_conflict', 'A Node can admit only one definition of a signed apt repository.', 409);
+                }
+            }
+            $packages[] = $member->package;
+        }
+        sort($packages, SORT_STRING);
+
+        return $packages;
+    }
+
     public function validate(ToolManager $manager, ToolDefinition $definition): void
     {
         if (! $this->constraints->isValid($definition->constraint)) {

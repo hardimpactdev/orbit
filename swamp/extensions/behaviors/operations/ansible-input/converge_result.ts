@@ -37,16 +37,22 @@ const Report = z.object({ stats: z.record(z.string(), Stats), plays: z.array(z.u
 const Timing = z.object({ exit_code: z.number().int(), elapsed_seconds: z.number().finite().nonnegative() }).strict();
 
 export async function toolConvergeResult(folder: string) {
+    let tools: z.infer<typeof Result.shape.tools> = [];
     try {
+        tools = await toolObservations(folder);
         const report = Report.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools.json`)));
-        const tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
         const target = report.stats.target;
-        const succeeded = target !== undefined && Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0) &&
-            new Set(tools.map((tool) => tool.id)).size === tools.length;
+        const succeeded = target !== undefined && Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0);
         return { changed: target?.changed ?? 0, tools, succeeded };
     } catch {
-        return { changed: 0, tools: [], succeeded: false };
+        return { changed: 0, tools, succeeded: false };
     }
+}
+
+async function toolObservations(folder: string) {
+    const tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
+    if (new Set(tools.map((tool) => tool.id)).size !== tools.length) throw new Error("Duplicate Tool observations");
+    return tools;
 }
 
 const Fields = z.record(z.string(), z.unknown());
@@ -133,6 +139,7 @@ export async function convergeResult(folder: string) {
             status = "unchanged";
         } else if (!failed) {
             try {
+                if (name === "tools") tools = await toolObservations(folder);
                 const timing = Timing.parse(JSON.parse(await Deno.readTextFile(`${folder}/${name}-meta.json`)));
                 elapsed = timing.elapsed_seconds;
                 const report = Report.parse(JSON.parse(await Deno.readTextFile(`${folder}/${name}.json`)));
@@ -147,10 +154,6 @@ export async function convergeResult(folder: string) {
                         .parse(JSON.parse(await Deno.readTextFile(`${folder}/roles-result.json`)));
                     browserTrust = receipt.browser_trust;
                     deferredRestarts = receipt.t3_restart_deferred;
-                }
-                if (name === "tools") {
-                    tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
-                    if (new Set(tools.map((tool) => tool.id)).size !== tools.length) status = "failed";
                 }
             } catch {
                 // A missing, truncated or malformed callback is a phase failure, never a claimed no-op.

@@ -81,7 +81,7 @@ final readonly class ConnServerRollout
             ->get()->keyBy('node_id');
         $selectedVersion = null;
         foreach ($servers as $server) {
-            $this->tools->assertIdle($server->node_id);
+            $this->tools->assertIdle($server->node_id, [ToolManagerName::ConnServer->value]);
             $member = $members->get($server->node_id);
             $desired = $member === null ? $release->version : $this->definitions->resolve('update', $this->manager, $member->package, $member,
                 null, null, null, $this->policy->active())->version;

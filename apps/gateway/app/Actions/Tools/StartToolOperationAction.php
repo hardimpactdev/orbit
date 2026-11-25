@@ -131,8 +131,8 @@ final readonly class StartToolOperationAction
         try {
             return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then): mixed {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
-                app(ToolConvergeIntent::class)->assertIdle($nodeId);
                 $manager = $this->manager($node, $managerName);
+                app(ToolConvergeIntent::class)->assertIdle($nodeId, [$manager->name()->scope()->value]);
                 if (! $manager->validatePackage($package)) {
                     $this->refuse('tool.package_invalid', 422);
                 }
@@ -178,22 +178,8 @@ final readonly class StartToolOperationAction
                 if ($repository !== null) {
                     $repositoryName = $repository['name'];
                     $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repositoryName)->first();
-                    $repositoryPackages = $verb === 'remove' ? [] : [$package];
-                    $others = Tool::query()->with('aptRepository')->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)
-                        ->when($tool !== null, static fn ($query) => $query->whereKeyNot($tool?->id))->get();
-                    foreach ($others as $other) {
-                        $desired = $active->mode === 'file' ? $active->definition($managerName, $other->package)?->repository : $other->desired_repository;
-                        $observed = $other->aptRepository?->definition;
-                        if (($desired['name'] ?? null) !== $repositoryName && ($observed['name'] ?? null) !== $repositoryName) {
-                            continue;
-                        }
-                        if ($verb !== 'remove' && ! ToolDefinition::sameRepository($desired ?? $observed, $repository)) {
-                            $this->refuse('tool.repository_conflict');
-                        }
-                        $repositoryPackages[] = $other->package;
-                    }
-                    $repositoryPackages = array_values(array_unique($repositoryPackages));
-                    sort($repositoryPackages, SORT_STRING);
+                    $members = Tool::query()->with(['aptRepository', 'manager'])->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)->get();
+                    $repositoryPackages = $this->definitions->repositoryPackages($active, $repository, $members, $package, $verb === 'remove');
                 }
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
