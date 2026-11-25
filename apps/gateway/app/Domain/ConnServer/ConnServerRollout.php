@@ -180,7 +180,10 @@ final readonly class ConnServerRollout
         });
     }
 
-    /** @param Collection<int, ConnServerNode> $servers @return Collection<int, ConnServerNode> */
+    /**
+     * @param  Collection<int, ConnServerNode>  $servers
+     * @return Collection<int, ConnServerNode>
+     */
     private function remainingPromotionNodes(string $pin, Collection $servers): Collection
     {
         $completed = [];
@@ -191,6 +194,9 @@ final readonly class ConnServerRollout
                 throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
             }
             foreach ($results as $result) {
+                if (! is_array($result)) {
+                    throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
+                }
                 if (($result['outcome'] ?? null) === 'updated') {
                     $completed[] = $result['node_id'];
                 }
