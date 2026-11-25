@@ -6,7 +6,6 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -52,11 +51,7 @@ final readonly class ToolAdoption
         $record ??= ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $manager->name()->value, 'status' => LifecycleStatus::Active]);
         $repositoryId = null;
         if ($repository !== null) {
-            $repositoryRecord = AptRepository::query()->firstOrCreate(['node_id' => $node->id, 'name' => $repository['name']], ['definition' => $repository]);
-            if (! ToolDefinition::sameRepository($repositoryRecord->definition, $repository)) {
-                $repositoryRecord->update(['definition' => $repository]);
-            }
-            $repositoryId = $repositoryRecord->id;
+            $repositoryId = AptSourceTrust::record($node->id, $repository)->id;
         }
         $outcome = $tool?->status === ToolStatus::Installed ? ToolOutcome::Unchanged : ToolOutcome::Applied;
         $tool ??= new Tool(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $package, 'version_constraint' => $constraint]);

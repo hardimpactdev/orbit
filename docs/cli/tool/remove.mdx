@@ -14,7 +14,7 @@ orbit tool:remove <tool> [--yes] [--idempotency-key=KEY] [--json]
 
 Without `--yes`, the command reads the Tool first. An unknown ID fails there with `http.404`. In a terminal, the command describes the effect and asks for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits with `input.cancelled` and changes nothing. Without a terminal, the command fails with `input.confirmation_required`.
 
-For [protected host packages](/reference/tools#protected-packages), including role-owned PHP packages such as `php8.5-xml`, the command deletes only the Tool record and leaves the package installed. It can also cancel a first install that failed during manager setup without installing the package first. A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
+For [protected host packages](/reference/tools#protected-packages), including role-owned PHP packages such as `php8.5-xml`, the command deletes only the Tool record and leaves the package installed. It also deletes only the record of a Tool that Orbit never installed, adopted or observed, such as a first install that failed or was refused, even after a retry or after another Tool repaired the manager. If that first install may already have written its apt source, the removal runs on the Node to clean the source and leaves the package alone. A failed removal keeps the Tool as `failed`. Run the same command again to retry. [Remove a Tool](/reference/tools#remove-a-tool) lists each outcome.
 
 For a [host Conn Server](/reference/tools#host-conn-server-membership), remove withdraws the Tool from rollout without stopping the service. It does not change container Conn.
 

@@ -6,7 +6,6 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AptRepository;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Support\ValidatedData;
@@ -76,8 +75,7 @@ final readonly class ToolConvergeObservations
                 ToolManagerRecord::query()->whereKey($tool->tool_manager_id)->where('status', '!=', LifecycleStatus::Active->value)
                     ->update(['status' => LifecycleStatus::Active->value, 'failed_step' => null, 'error_code' => null]);
                 if (is_array($repository = $plan['repository'] ?? null)) {
-                    $source = AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => $repository['name']], ['definition' => $repository]);
-                    $tool->apt_repository_id = $source->id;
+                    $tool->apt_repository_id = AptSourceTrust::record($nodeId, ValidatedData::object($repository))->id;
                 }
             }
             if ($tool->isDirty()) {

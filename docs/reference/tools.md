@@ -151,7 +151,13 @@ On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accept
 
 ## Remove a Tool
 
-`tool:remove` returns HTTP `202` with an Operation. It removes only the record for a protected or role-owned package, or cancels a first install that failed during manager setup before Orbit installed or observed that package, even after another Tool repaired the shared manager. These record-only removals need no SSH target or host key; physical removals do. For an apt package removal, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`.
+`tool:remove` returns HTTP `202` with an Operation. It removes only the record for a protected or role-owned package.
+
+A Tool owns its package only once Orbit installed, adopted, or observed it for that Tool. For a first install that never got there, removal deletes only the record, whatever the failure, a refused or failed retry, or another Tool's repair of the shared manager. Record-only removals need no SSH target or host key.
+
+If that first install may have written its apt source, the removal runs with `package_owned: false`: it cleans the source or repins the remaining packages and never removes the package. A refused or cancelled first install that may have published its source stays as a failed Tool for that cleanup.
+
+For an apt package removal, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`.
 
 ## Signed apt repositories
 
@@ -159,9 +165,13 @@ An `apt` Tool definition can include a `repository` object (`name`, `uris`, `sui
 
 Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
 
+### Source trust
+
 All Tools sharing a repository on one Node must agree on its definition. An unchanged verified source does not need another key download on a direct write, but the apt preference still follows membership. A failed write retains the requested repository separately from the last verified source.
 
-A failed write may already have replaced the key or source on disk. Until a later write succeeds, Orbit treats the recorded source as unverified, so the next direct write publishes the key and source again. Remove the membership before dropping or renaming a verified source; neither convergence nor a mode switch can bypass that rule. A mode switch also refuses `tool.repository_conflict` while two Tools on one Node define a shared source differently.
+A write may change the key or source on disk before it fails, is cancelled, times out, or returns an unreadable result. So admitting a direct write that publishes or removes the source, or a convergence that includes it, marks the recorded source unverified. Only a write that succeeds marks it verified again. While it is unverified, the next direct write publishes the key and source again. An older failure does not outlive a later verified write.
+
+Remove the membership before dropping or renaming a verified source; neither convergence nor a mode switch can bypass that rule. A mode switch also refuses `tool.repository_conflict` while two Tools on one Node define a shared source differently.
 
 ## Why it works this way
 

@@ -12,7 +12,8 @@ export type RemovalDecision = {
     error_code?: string;
     manager_version: string | null;
 };
-/** Refuse a removal from its plan: unreadable facts, a Composer non-root, an unsafe cask, or an apt or brew plan that removes more. */
+/** Refuse a removal from its plan: unreadable facts, a Composer non-root, an unsafe cask, or an apt or brew plan that removes more. A package
+ * Orbit does not own is never removed. */
 export function removalDecision(
     input: Input,
     phase: Record<string, unknown> | null,
@@ -22,6 +23,13 @@ export function removalDecision(
         if (phase === null) throw new ToolRefusal("tool.version_probe_failed");
         const { facts, present } = writeInventory(phase.facts);
         managerVersion = facts.manager_version!;
+        if (!input.package_owned) {
+            return {
+                ready: true,
+                remove: false,
+                manager_version: managerVersion,
+            };
+        }
         if (
             present && input.manager === "composer" &&
             !facts.roots?.includes(input.package)
@@ -60,7 +68,7 @@ export function removalDecision(
 }
 export const behavior = {
     type: "@nckrtl/tool-remove-command",
-    version: "2026.11.02.3",
+    version: "2026.11.25.1",
     resources: {
         assets: {
             schema: z.record(z.string(), z.unknown()),

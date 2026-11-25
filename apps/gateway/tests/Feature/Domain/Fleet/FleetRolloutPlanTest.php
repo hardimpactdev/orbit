@@ -6,6 +6,7 @@ use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Tools\ManageToolPolicyAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\ConnServer\ConnServerRollout;
@@ -361,13 +362,19 @@ it('holds the release fleet phase only when the serving reviewed release matches
     $canary = Node::query()->findOrFail($this->nodes['dev']);
     $canary->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-canary']);
     ConnServerNode::query()->create(['node_id' => $canary->id, 'platform' => 'linux', 'path' => '/opt/conn-server/current',
-        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => $setup !== 'follower']);
+        'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => ! str_starts_with($setup, 'follower')]);
     $desired = $setup === 'previous' ? '0.5.2' : $current;
     $tools = app(StartToolOperationAction::class);
     $enroll = $tools->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $desired);
     $member = Tool::query()->findOrFail($enroll->result['tool_id']);
     if ($setup === 'withdrawn') {
         $tools->execute('remove', $canary->id, 'conn-server', 'conn-server', null, $member);
+    }
+    if ($setup === 'follower, unreadable Tool catalog') {
+        $catalog = $this->base.'/tools.json';
+        File::put($catalog, json_encode(['schema' => 1, 'packages' => [['manager' => 'conn-server', 'package' => 'conn-server', 'version' => $desired]]], JSON_THROW_ON_ERROR));
+        app(ManageToolPolicyAction::class)->change('file', $catalog);
+        File::delete($catalog);
     }
 
     $next = app(ContinueReleaseFleetAction::class)->execute($release);
@@ -385,7 +392,8 @@ it('holds the release fleet phase only when the serving reviewed release matches
             ->and($release->fresh()->phases['fleet']['error_code'] ?? null)->toBeNull();
     }
     expect($member->fresh()?->desired_version)->toBe($setup === 'withdrawn' ? null : $desired);
-})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn'], 'follower without a designated canary' => ['follower']]);
+})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn'], 'follower without a designated canary' => ['follower'],
+    'follower without a designated canary, unreadable Tool catalog' => ['follower, unreadable Tool catalog']]);
 
 it('recovers the previous host digest from a recipe containing the reviewed standalone Conn pin', function (): void {
     $previous = $this->base.'/previous-recipe';

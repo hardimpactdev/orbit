@@ -86,29 +86,6 @@ final readonly class ToolDefinitionResolver
         }
     }
 
-    /**
-     * Whether the Node's recorded source of this name still proves what is on disk. A failed write that shares the source
-     * may have published another key or source after it, so the record proves nothing until a write succeeds again.
-     *
-     * @param  array<string, mixed>|null  $recorded
-     * @param  array<string, mixed>  $repository
-     * @param  iterable<Tool>  $members
-     */
-    public static function repositoryVerified(?array $recorded, array $repository, iterable $members): bool
-    {
-        if (! ToolDefinition::sameRepository($recorded, $repository)) {
-            return false;
-        }
-        foreach ($members as $member) {
-            if ($member->status === ToolStatus::Failed && $member->manager->name === ToolManagerName::Apt->value
-                && in_array($repository['name'], [$member->desired_repository['name'] ?? null, $member->aptRepository?->name], true)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     public function validate(ToolManager $manager, ToolDefinition $definition): void
     {
         if (! $this->constraints->isValid($definition->constraint)) {

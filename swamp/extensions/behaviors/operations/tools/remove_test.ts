@@ -116,6 +116,23 @@ Deno.test("cask removal refuses ambiguous tokens, arbitrary uninstall scripts an
         );
     }
 });
+Deno.test("a package Orbit does not own is never removed, even when it is a removable root", () => {
+    for (const manager of ["apt", "composer"]) {
+        const { input, facts } = fixture(manager);
+        assertEquals(probe(input, facts).remove, true);
+        const unowned = RemoveInput.parse({ ...input, package_owned: false });
+        assertEquals(probe(unowned, facts), {
+            ready: true,
+            remove: false,
+            manager_version: "3.0",
+        });
+        assertEquals(
+            probe(unowned, facts, { packages: ["hello", "other"] }).remove,
+            false,
+        );
+    }
+});
+
 Deno.test("apt eligibility refuses empty, unread or wider plans", () => {
     const { input, facts } = fixture("apt");
     for (const packages of [[], ["hello", "shared"], ["other"]]) {

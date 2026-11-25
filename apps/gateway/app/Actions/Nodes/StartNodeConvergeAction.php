@@ -19,6 +19,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\AptSourceTrust;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Models\Node;
 use App\Models\Operation;
@@ -90,6 +91,7 @@ final readonly class StartNodeConvergeAction
                     $snapshot['intent'] = $intent;
                 }
                 $tools = RouteExecutionProof::objects($snapshot['intent']['tools']);
+                AptSourceTrust::suspectPlans($node->id, $tools);
                 $toolSeconds = ToolConvergeIntent::phaseSeconds(count($tools));
                 $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic, ...($tools === [] ? [] : ['tools_seconds' => $toolSeconds])];
                 $snapshot['release_inputs'] = [

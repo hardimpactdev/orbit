@@ -73,11 +73,40 @@ final readonly class ConnServerRollout
             && ($dryRun || (data_get($receipt->result, 'nodes.0.thread_read') === true && $this->noObservedVersionDrift($canary, $pin->version)));
     }
 
-    /** A canary apply proves the release only after the latest canary check passed. */
-    private function proven(?Operation $probe, ?Operation $check, ConnServerRelease $pin, ConnServerNode $canary): bool
+    /** A canary apply proves the release only after the latest canary check passed, with no failed canary observation since. */
+    private function proven(?Operation $probe, ?Operation $check, ConnServerRelease $pin, ConnServerNode $canary, string $key): bool
     {
         return $probe !== null && $check !== null && $probe->id > $check->id
-            && $this->passed($check, $pin, $canary, true) && $this->passed($probe, $pin, $canary, false);
+            && $this->passed($check, $pin, $canary, true) && $this->passed($probe, $pin, $canary, false)
+            && $this->failedObservation($canary, $key, $check->id) === null;
+    }
+
+    /**
+     * The canary check that decides the next stage: the keyed check, or a later finished run of any scope or stage that
+     * reached the canary's Node and did not pass there, such as a failed `nodes` or fleet dry run.
+     */
+    private function latestCheck(?Operation $check, ConnServerNode $canary, string $key): ?Operation
+    {
+        return $check === null ? null : ($this->failedObservation($canary, $key, $check->id) ?? $check);
+    }
+
+    /** The latest finished run after `$after` that reached the canary and did not pass there; this pin's canary applies retry on their own. */
+    private function failedObservation(ConnServerNode $canary, string $key, int $after): ?Operation
+    {
+        $runs = Operation::query()->where('kind', self::Kind)->where('id', '>', $after)->orderByDesc('id')->get();
+        foreach ($runs as $run) {
+            $reached = in_array($canary->node_id, array_column((array) data_get($run->input, 'intent.nodes', []), 'node_id'), true);
+            $ownApply = data_get($run->input, 'release_pin') === $key && data_get($run->input, 'release_stage') === 'canary';
+            if (! $run->status->terminal() || ! $reached || $ownApply) {
+                continue;
+            }
+            $outcome = data_get(collect((array) ($run->result['nodes'] ?? []))->firstWhere('node_id', $canary->node_id), 'outcome');
+            if ($run->status !== OperationStatus::Succeeded || ! in_array($outcome, ['checked', 'updated'], true)) {
+                return $run;
+            }
+        }
+
+        return null;
     }
 
     /** A canary apply admitted before a newer check proves nothing, so the next apply is keyed after that check. */
@@ -102,24 +131,30 @@ final readonly class ConnServerRollout
         if (! $pin?->releaseCanary) {
             return null;
         }
-        // Without one designated canary enrolled at this release, the automatic pass leaves every Conn service alone.
+        // Without one designated, enrolled canary, the automatic pass leaves every Conn service alone and reads no Tool policy.
         $configured = $this->servers();
+        $designated = $configured->where('canary', true);
+        $designee = $designated->first();
+        if ($designated->count() !== 1 || $designee === null || $designee->tool_withdrawn || $designee->managedTool === null) {
+            return null;
+        }
         $servers = $this->reviewedTargets($configured, $this->policy->active(), $pin);
         $canary = $servers->firstWhere('canary', true);
-        if ($canary === null || $configured->where('canary', true)->count() !== 1) {
+        if ($canary === null) {
             return null;
         }
         $key = $this->fingerprint($pin, $canary);
         $onlyCanary = $servers->take(1);
         $check = $this->receipt($key, 'check') ?? $this->releaseOperation($pin, $key, 'check', $onlyCanary, 'gateway-release');
-        if (! $this->passed($check, $pin, $canary, true)) {
-            return $check;
+        $latest = $this->latestCheck($check, $canary, $key);
+        if (! $this->passed($latest, $pin, $canary, true)) {
+            return $latest;
         }
         $probe = $this->receipt($key, 'canary');
         if ($probe === null || $this->staleProbe($probe, $check)) {
             $probe = $this->releaseOperation($pin, $key, 'canary', $onlyCanary, 'gateway-release', after: $probe === null ? null : $check->id);
         }
-        if (! $this->proven($probe, $check, $pin, $canary)) {
+        if (! $this->proven($probe, $check, $pin, $canary, $key)) {
             return $probe;
         }
         $rest = $servers->skip(1);
@@ -201,9 +236,13 @@ final readonly class ConnServerRollout
         $rest = $reviewed->skip(1);
 
         $key = $this->fingerprint($pin, $canary);
+        if ($scope === 'canary' && $retryOperationId !== null && ($replay = $this->retried($key, $retryOperationId, $dryRun ? ['check'] : ['check', 'canary'])) !== null) {
+            return $replay;
+        }
         $check = $this->receipt($key, 'check');
+        $latest = $this->latestCheck($check, $canary, $key);
         if ($scope === 'canary' && $dryRun) {
-            return $this->retry($pin, $key, 'check', $selected, $check, $triggeredBy, $requestId, $retryOperationId);
+            return $this->retry($pin, $key, 'check', $selected, $latest, $triggeredBy, $requestId, $retryOperationId);
         }
         if ($dryRun) {
             if ($rest->isEmpty()) {
@@ -215,13 +254,17 @@ final readonly class ConnServerRollout
         }
         $probe = $this->receipt($key, 'canary');
         if ($scope === 'canary') {
-            if ($probe !== null && $this->proven($probe, $check, $pin, $canary)) {
+            if ($probe !== null && $this->proven($probe, $check, $pin, $canary, $key)) {
                 return $probe;
             }
-            if (! $this->passed($check, $pin, $canary, true)) {
-                return $this->retry($pin, $key, 'check', $selected, $check, $triggeredBy, $requestId, $retryOperationId);
+            if (! $this->passed($latest, $pin, $canary, true)) {
+                return $this->retry($pin, $key, 'check', $selected, $latest, $triggeredBy, $requestId, $retryOperationId);
             }
             if ($this->staleProbe($probe, $check)) {
+                if ($retryOperationId !== null) {
+                    throw new ResourceOperationException('conn_server.retry_stale', 'The canary check passed after that attempt. Start the canary update without a retry ID.', 409);
+                }
+
                 return $this->releaseOperation($pin, $key, 'canary', $selected, $triggeredBy, $requestId, after: $check?->id);
             }
 
@@ -229,7 +272,7 @@ final readonly class ConnServerRollout
         }
 
         if ($scope !== 'fleet' || $canaryOperationId === null || $probe?->id !== $canaryOperationId
-            || ! $this->proven($probe, $check, $pin, $canary)) {
+            || ! $this->proven($probe, $check, $pin, $canary, $key)) {
             throw new ResourceOperationException('conn_server.canary_required', 'Promote the serving pin with scope fleet and its successful canary_operation_id.', 409);
         }
         $pinIdentity = $this->pinIdentity($pin);
@@ -417,6 +460,13 @@ final readonly class ConnServerRollout
             ...($server->managedTool === null ? [] : ['tool_id' => $server->managedTool->id]),
             'server' => ['platform' => $server->platform, 'path' => $server->path, 'service' => $server->service, 'port' => $server->port,
                 'user' => $server->user, 'canary' => $server->canary, 'notify_before_restart' => $server->notify_before_restart]];
+    }
+
+    /** @param list<string> $stages */
+    private function retried(string $key, int $retryId, array $stages): ?Operation
+    {
+        return Operation::query()->where('kind', self::Kind)->where('input->release_pin', $key)
+            ->whereIn('input->release_stage', $stages)->where('input->retry_operation_id', $retryId)->first();
     }
 
     /** @param Collection<int, ConnServerNode> $servers */

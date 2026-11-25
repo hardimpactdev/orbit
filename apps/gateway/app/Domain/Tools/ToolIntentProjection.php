@@ -31,7 +31,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready',
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready', 'package_owned',
         ]))], 'ssh' => $operation->input['ssh']];
     }
 
@@ -165,15 +165,17 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $toolId = $input['tool_id'] ?? null;
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;
         if ($status !== OperationStatus::Succeeded) {
-            // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel.
-            if ($tool?->status === ToolStatus::Installing && (($managerFailed && $tool->desired_repository === null
+            // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel. One whose
+            // run may already have published its apt source stays as a failed Tool instead, so its removal can clean that source.
+            $published = $tool?->status === ToolStatus::Installing && ($input['repository_given'] ?? false) === true;
+            if ($tool?->status === ToolStatus::Installing && ! $published && (($managerFailed && $tool->desired_repository === null
                 && $tool->desired_version === null && $tool->version_constraint === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
                 $tool->delete();
 
                 return;
             }
-            if ($status === OperationStatus::Cancelled) {
+            if ($status === OperationStatus::Cancelled && ! $published) {
                 return;
             }
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $operation->error_code === 'tool.package_already_installed'
@@ -205,13 +207,8 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         if (! is_array($definition)) {
             return null;
         }
-        $definition = ValidatedData::object($definition);
-        $record = AptRepository::query()->firstOrCreate(['node_id' => $operation->node_id, 'name' => $definition['name']], ['definition' => $definition]);
-        if (! ToolDefinition::sameRepository($record->definition, $definition)) {
-            $record->update(['definition' => $definition]);
-        }
 
-        return $record->id;
+        return AptSourceTrust::record(ValidatedData::integer($operation->node_id), ValidatedData::object($definition))->id;
     }
 
     private function createTool(Operation $operation, ToolManagerRecord $record): Tool
