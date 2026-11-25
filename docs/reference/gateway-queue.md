@@ -30,7 +30,7 @@ Horizon runs six queues on the `gateway` connection across five supervisors. The
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | Scheduled commands, approved commit publishing, new container [workspace baselines](/reference/development-containers#workspace-work-state), Conn push notifications (`SendConnPushJob`), and the [thread librarian](/reference/conn#the-thread-librarian) jobs that a host Conn Server's thread push queues (`DiscoverConnThreadJob`, `ClassifyConnThreadJob`) |
+| `tasks` | 3 | Scheduled commands, approved commit publishing, new container [workspace baselines](/reference/development-containers#workspace-work-state), Conn push notifications (`SendConnPushJob`), and the [thread librarian](/reference/conn#the-thread-librarian) jobs that a host Conn Server's thread push or the host poll queues (`DiscoverConnThreadJob`, `ClassifyConnThreadJob`) |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, Swamp credential renewals, and batch metadata pruning |
 | `builds` | 2 | Base snapshot refresh admission and image Operations |
 | `operations` | 1 | Serialized Swamp reconciliation, schedule fires, Route promotions, and registry closes |
@@ -66,6 +66,7 @@ The scheduler also dispatches these background jobs on the queue:
 
 - `ReconcileSwampOperations` (every minute on `operations`, unique 300 s): reads terminal results of open Swamp runs and records pass timestamps for [`gateway:status`](/cli/gateway/status).
 - `ReconcileExecutorWakes` (every 5 seconds on `operations-prompt`): relays committed wake notices and leases completion or hook handoffs ([Wake handoff recovery](/reference/executor#wake-handoff-recovery)).
+- `PollConnHostThreadsJob` (every 5 seconds on `tasks`, unique for 30 seconds): refreshes registered host Conn servers. It also queues [librarian jobs](/reference/conn#the-thread-librarian) for new threads whose push it missed.
 - `CloseWebSocketOperations`, `CheckDevelopmentDeployments`, `PollSwampScheduledResults`, and `InstanceRemovalReaper::Trigger`: periodic lifecycle reconciliation jobs.
 - `AdmitFleetRollout` (daily at 03:05 Europe/Amsterdam), `AdmitFleetReboot` (daily at 03:06 Europe/Amsterdam), and `CheckFleetRebootConfirmation` (every 5 minutes): fleet maintenance passes.
 

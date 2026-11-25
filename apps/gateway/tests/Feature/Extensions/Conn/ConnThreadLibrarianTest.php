@@ -10,6 +10,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use GuzzleHttp\Promise\PromiseInterface;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Queue\WorkerOptions;
@@ -21,6 +22,7 @@ use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Domain\T3ServerException;
 use Orbit\Extensions\Conn\Jobs\ClassifyConnThreadJob;
 use Orbit\Extensions\Conn\Jobs\DiscoverConnThreadJob;
+use Orbit\Extensions\Conn\Jobs\PollConnHostThreadsJob;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnThread;
 use Orbit\Extensions\Conn\Models\ConnThreadClassification;
@@ -121,6 +123,12 @@ function librarianRealQueue(object $test): void
 function librarianRunPush(): void
 {
     app()->call([Queue::pushed(DiscoverConnThreadJob::class)->last(), 'handle']);
+}
+
+/** The scheduled host poll, run as a worker would. */
+function librarianHostPoll(): void
+{
+    app()->call([new PollConnHostThreadsJob, 'handle']);
 }
 
 function librarianWrites(array $frames): array
@@ -483,16 +491,113 @@ describe('a filing whose reply was lost', function (): void {
     })->with(['filed to another Project' => [['id' => 19, 'slug' => 'existing']], 'unfiled by hand' => [null]]);
 });
 
-it('lists host rows without activity, also rows written before host reads ended', function (): void {
-    librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
-    ConnThread::hostQuery()->insert(['conn_environment_id' => $this->environment->id, 'thread_id' => 'old-thread', 'title' => 'Old',
-        'state' => 'running', 'needs_input' => true, 'last_user_message_at' => now()->subHour(), 'last_run_completed_at' => now()->subMinute(),
-        'seen_at' => now()->subMinute()]);
-    librarianPush($this, 'Old again', 'old-thread')->assertOk();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
-        ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0', [
-            'environment_id' => 'env-host', 'instance_id' => null, 'project_id' => null, 'thread_id' => 'old-thread', 'title' => 'Old again',
-            'state' => null, 'needs_input' => false, 'last_user_message_at' => null, 'last_run_completed_at' => null,
-            'seen_at' => now()->toIso8601String(), 'classification' => null,
-        ]);
+describe('the host poll, the fallback for a push that never came', function (): void {
+    it('indexes a host whose push never came and files its General thread after the first user message', function (): void {
+        $calls = 0;
+        librarianHttpFake($this, function () use (&$calls): PromiseInterface {
+            $calls++;
+
+            return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+        });
+        $event = collect(app(Schedule::class)->events())->firstWhere('description', PollConnHostThreadsJob::class);
+        expect($event->repeatSeconds)->toBe(5);
+
+        $authoredAt = $this->thread['latestUserAuthoredMessageAt'];
+        $this->thread['latestUserAuthoredMessageAt'] = null;
+        librarianHostPoll();
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.thread_id', 'general-thread')
+            ->assertJsonPath('data.0.instance_id', null)->assertJsonPath('meta.environments.0.environment_id', 'env-host');
+
+        $this->thread['latestUserAuthoredMessageAt'] = $authoredAt;
+        librarianHostPoll();
+        librarianRun(librarianQueuedJob());
+        expect($calls)->toBe(1)->and(librarianWrites($this->rpc))->toHaveCount(1);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads?project='.$this->project->id)
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.project_id', $this->project->id);
+    });
+
+    it('does not backfill threads created before the host’s first librarian pass', function (): void {
+        $this->thread['createdAt'] = now()->subSecond()->toIso8601String();
+        librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+        librarianHostPoll();
+        librarianPushed($this);
+        Queue::assertNotPushed(ClassifyConnThreadJob::class);
+        expect(DB::table('conn_librarian_watermarks')->sole()->started_at_ms)->toBe(now()->getTimestampMs());
+    });
+
+    it('classifies a thread once when its push and a poll interleave', function (string $order): void {
+        $calls = 0;
+        librarianHttpFake($this, function () use (&$calls): PromiseInterface {
+            $calls++;
+
+            return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+        });
+        if ($order === 'push first') {
+            librarianPushed($this);
+            librarianHostPoll();
+        } else {
+            librarianHostPoll();
+            librarianPushed($this);
+        }
+        Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+        $job = librarianQueuedJob();
+        librarianRun($job);
+        // After the job frees its lock, the completed receipt keeps the next push, poll or a stray copy from asking again.
+        Queue::releaseUniqueJobLocks();
+        librarianHostPoll();
+        librarianPushed($this);
+        librarianRun(new ClassifyConnThreadJob($job->environmentId, $job->threadId, $job->connProjectId, $job->connWorkspaceRoot));
+        Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+        expect($calls)->toBe(1)->and(librarianWrites($this->rpc))->toHaveCount(1)
+            ->and(ConnThread::hostQuery()->sole()->orbit_project_id)->toBe($this->project->id);
+    })->with(['push first', 'poll first']);
+
+    it('lists the stored activity of a host row and refreshes it from the shell', function (): void {
+        librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+        ConnThread::hostQuery()->insert(['conn_environment_id' => $this->environment->id, 'thread_id' => 'general-thread', 'title' => 'Old',
+            'state' => 'running', 'needs_input' => true, 'last_user_message_at' => now()->subHour(), 'last_run_completed_at' => now()->subMinute(),
+            'seen_at' => now()->subMinute()]);
+        $list = fn (): TestResponse => $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
+            ->assertOk()->assertJsonCount(1, 'data');
+        $list()->assertJsonPath('data.0.state', 'running')->assertJsonPath('data.0.needs_input', true)
+            ->assertJsonPath('data.0.last_user_message_at', now()->subHour()->toIso8601String())
+            ->assertJsonPath('data.0.last_run_completed_at', now()->subMinute()->toIso8601String());
+
+        ConnThreadClassification::query()->create(['conn_environment_id' => $this->environment->id, 'thread_id' => 'general-thread',
+            'result' => ['result' => 'none'], 'completed_at' => now()]);
+        $this->thread = [...$this->thread, 'status' => 'idle', 'latestRunCompletedAt' => now()->toIso8601String()];
+        librarianHostPoll();
+        $list()->assertJsonPath('data.0.state', 'idle')->assertJsonPath('data.0.needs_input', false)
+            ->assertJsonPath('data.0.last_user_message_at', now()->subSeconds(2)->toIso8601String())
+            ->assertJsonPath('data.0.last_run_completed_at', now()->toIso8601String());
+    });
+
+    it('follows a manual move or unfiling in Conn without asking the model again', function (): void {
+        $calls = 0;
+        librarianHttpFake($this, function () use (&$calls): PromiseInterface {
+            $calls++;
+
+            return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+        });
+        $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'type' => 'generic']);
+        librarianPushed($this);
+        librarianRun(librarianQueuedJob());
+        $list = fn (int $project): TestResponse => $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])
+            ->getJson('/api/v1/conn/threads?project='.$project)->assertOk();
+        $list($this->project->id)->assertJsonCount(1, 'data');
+
+        $this->thread['orbitProject'] = ['id' => $other->id, 'slug' => 'other'];
+        librarianHostPoll();
+        $list($this->project->id)->assertJsonCount(0, 'data');
+        $list($other->id)->assertJsonCount(1, 'data')->assertJsonPath('data.0.project_id', $other->id);
+
+        unset($this->thread['orbitProject']);
+        Queue::releaseUniqueJobLocks();
+        librarianHostPoll();
+        expect(ConnThread::hostQuery()->sole()->orbit_project_id)->toBeNull();
+        Queue::assertPushedTimes(ClassifyConnThreadJob::class, 1);
+        expect($calls)->toBe(1)->and(librarianWrites($this->rpc))->toHaveCount(1);
+    });
 });

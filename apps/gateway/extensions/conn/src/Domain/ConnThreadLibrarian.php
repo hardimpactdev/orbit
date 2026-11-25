@@ -38,10 +38,21 @@ final readonly class ConnThreadLibrarian
     ) {}
 
     /**
-     * The push: the host's Conn Server recorded a thread, which stands for its first user message. A top-level General thread with no
-     * Orbit filing, created at or after the host's cutoff, in the scratch project, with no completed receipt, gets one classification
-     * job. One outside the scratch project gets a completed receipt, so a later push does not ask the server again.
+     * The poll, the fallback for a push that never came: every thread the host's shell lists with a user-authored message.
+     *
+     * @param  array<array-key, mixed>  $shell
      */
+    public function discover(ConnEnvironment $environment, array $shell, CarbonImmutable $observedAt): void
+    {
+        if (! AiRouterThreadClassifier::configured() || ! is_array($shell['threads'] ?? null)) {
+            return;
+        }
+        $this->admit($environment, $shell, array_filter($shell['threads'],
+            static fn (mixed $thread): bool => is_array($thread) && is_string($thread['latestUserAuthoredMessageAt'] ?? null)),
+            $observedAt->getTimestampMs());
+    }
+
+    /** The push: the host's Conn Server recorded a thread, which stands for its first user message. */
     public function pushed(DiscoverConnThreadJob $job): void
     {
         if (! $this->extensions->enabled('conn') || ! AiRouterThreadClassifier::configured()) {
@@ -54,27 +65,55 @@ final readonly class ConnThreadLibrarian
         $shell = $this->http->shell($environment->url, $environment->admin_session);
         $thread = collect(is_array($shell['threads'] ?? null) ? $shell['threads'] : [])
             ->first(static fn (mixed $thread): bool => is_array($thread) && ($thread['id'] ?? null) === $job->threadId);
-        $general = self::unassignedTopLevel($thread);
-        if (! is_array($thread) || ! is_string($thread['createdAt'] ?? null)) {
+        if (is_array($thread) && is_string($thread['createdAt'] ?? null)) {
+            // A host's first push sets its cutoff at the pushed thread's creation, so that thread is in scope and an older one is not.
+            $this->admit($environment, $shell, [$thread], CarbonImmutable::parse($thread['createdAt'])->getTimestampMs());
+        }
+    }
+
+    /**
+     * The one eligibility rule of push and poll. A top-level General thread with no Orbit filing, created at or after the host's cutoff,
+     * whose Conn project is the scratch project and that has no completed receipt, gets the classification job, unique per thread. One
+     * outside the scratch project gets a completed receipt, so it is not asked about again.
+     *
+     * @param  array<array-key, mixed>  $shell
+     * @param  array<array-key, mixed>  $threads
+     */
+    private function admit(ConnEnvironment $environment, array $shell, array $threads, int $startedAtMs): void
+    {
+        $cutoff = $this->cutoff($environment, $startedAtMs);
+        $roots = [];
+        foreach (is_array($shell['projects'] ?? null) ? $shell['projects'] : [] as $project) {
+            if (is_array($project) && is_string($project['id'] ?? null) && is_string($project['workspaceRoot'] ?? null)) {
+                $roots[$project['id']] = $project['workspaceRoot'];
+            }
+        }
+        $candidates = [];
+        foreach ($threads as $thread) {
+            if (self::unassignedTopLevel($thread) && is_string($thread['id'] ?? null) && is_string($thread['projectId'] ?? null)
+                && isset($roots[$thread['projectId']])
+                && is_string($thread['createdAt'] ?? null) && CarbonImmutable::parse($thread['createdAt'])->getTimestampMs() >= $cutoff) {
+                $candidates[$thread['id']] = $thread['projectId'];
+            }
+        }
+        if ($candidates === []) {
             return;
         }
-        $createdAt = CarbonImmutable::parse($thread['createdAt'])->getTimestampMs();
-        $projectId = $thread['projectId'] ?? null;
-        $root = collect(is_array($shell['projects'] ?? null) ? $shell['projects'] : [])
-            ->first(static fn (mixed $project): bool => is_array($project) && is_string($projectId) && ($project['id'] ?? null) === $projectId);
-        $root = is_array($root) ? ($root['workspaceRoot'] ?? null) : null;
-        if ($createdAt < $this->cutoff($environment, $createdAt) || ! $general || ! is_string($projectId) || ! is_string($root)) {
+        $completed = ConnThreadClassification::query()->where('conn_environment_id', $environment->id)
+            ->whereNotNull('completed_at')->whereIn('thread_id', array_keys($candidates))->get(['thread_id'])
+            ->map(static fn (ConnThreadClassification $classification): string => $classification->thread_id)->all();
+        $candidates = array_diff_key($candidates, array_fill_keys($completed, true));
+        if ($candidates === []) {
             return;
         }
-        $classification = new ClassifyConnThreadJob($environment->id, $job->threadId, $projectId, $root);
-        $receipt = $this->receipt($classification);
-        if ($receipt->completed_at !== null) {
-            return;
-        }
-        if (self::inScratch($root, $this->orchestration->scratchWorkspaceRoot($environment))) {
-            GatewaySchedule::dispatch($classification);
-        } else {
-            $this->complete($receipt);
+        $scratch = $this->orchestration->scratchWorkspaceRoot($environment);
+        foreach ($candidates as $threadId => $projectId) {
+            $job = new ClassifyConnThreadJob($environment->id, (string) $threadId, $projectId, $roots[$projectId]);
+            if (self::inScratch($job->connWorkspaceRoot, $scratch)) {
+                GatewaySchedule::dispatch($job);
+            } else {
+                $this->complete($this->receipt($job));
+            }
         }
     }
 
@@ -92,8 +131,7 @@ final readonly class ConnThreadLibrarian
         if ($receipt->completed_at !== null) {
             return;
         }
-        if (! $this->http->supportsThreadFiling($environment->url)
-            || ! self::inScratch($job->connWorkspaceRoot, $this->orchestration->scratchWorkspaceRoot($environment))) {
+        if (! $this->http->supportsThreadFiling($environment->url)) {
             $this->complete($receipt);
 
             return;
@@ -207,13 +245,13 @@ final readonly class ConnThreadLibrarian
         return ConnThreadClassification::query()->firstOrNew(['conn_environment_id' => $job->environmentId, 'thread_id' => $job->threadId]);
     }
 
-    /** The host's cutoff: the creation time of the first thread a push brought, stored once, so an older thread is never classified. */
-    private function cutoff(ConnEnvironment $environment, int $createdAtMs): int
+    /** The host's permanent cutoff, stored once by its first librarian pass, push or poll: an older thread is never classified. */
+    private function cutoff(ConnEnvironment $environment, int $startedAtMs): int
     {
-        DB::table('conn_librarian_watermarks')->insertOrIgnore(['conn_environment_id' => $environment->id, 'started_at_ms' => $createdAtMs]);
+        DB::table('conn_librarian_watermarks')->insertOrIgnore(['conn_environment_id' => $environment->id, 'started_at_ms' => $startedAtMs]);
 
         $stored = DB::table('conn_librarian_watermarks')->where('conn_environment_id', $environment->id)->value('started_at_ms');
 
-        return is_numeric($stored) ? (int) $stored : $createdAtMs;
+        return is_numeric($stored) ? (int) $stored : $startedAtMs;
     }
 }

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Conn thread index (docs/reference/conn.md#thread-index): the Gateway keeps a row per live thread on registered host and container servers. It polls container servers; host servers push each thread. The librarian can file a new top-level General host thread in a separate Gateway job, with no Operation or Swamp run.
+  %% Conn thread index (docs/reference/conn.md#thread-index): the Gateway keeps a row per live thread on registered host and container servers. The librarian can file a new top-level General host thread in a separate Gateway job, with no Operation or Swamp run.
   %% status: draft
   %% command: none · minute poll, GET /conn/threads, POST /conn/environments/{environment_id}/threads
   %% kind: conn.thread_index
@@ -10,19 +10,20 @@ sequenceDiagram
   participant C as API caller<br/>a device · MCP
   participant GW as Gateway<br/>Conn layer
   participant T3 as Conn server<br/>host or container
-  Note over GW: Poll container servers<br/>every minute
+  Note over GW: Poll registered servers<br/>hosts 5 s · containers 1 min
   %%> When:
   %%> - every minute while the operator switch `ORBIT_CONN_THREAD_INDEX_POLL` is on and Conn is enabled; off by default
   %%> - a unique job on the `problems` queue, behind task work; never on `operations`
+  %%> - every 5 seconds for host servers while Conn and the Gateway queue are enabled
   %%> Which servers:
-  %%> - every container server whose Instance runs; host servers are never polled
+  %%> - registered host servers and every container server whose Instance runs
   %%> Skips, with the reason on the server's record:
   %%> - an asleep or stopped Instance, `conn.environment_asleep`: it is not read and keeps its rows
   %%> - an ended session, `conn.session_expired`: its renewal comes first
   GW->>T3: Read every shell at once<br/>GET /api/orchestration/shell
   %%> How:
   %%> - the admin session the Gateway holds and renews, with `x-t3-orchestration-protocol: 2`
-  %%> - all in one pool; the read takes at most 10 seconds
+  %%> - each group in one pool; the host read takes at most 2 seconds, the container read takes at most 10 seconds
   %%> On failure:
   %%> - a server that does not answer, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
   %%> - a failed write of one server's rows is reported and skipped with `conn.index_write_failed`; the pass goes on
@@ -40,20 +41,17 @@ sequenceDiagram
   %%> - node access to the server's Node
   %%> Also:
   %%> - a task copy's turn records its T3 thread the same way when its projection commits
-  %%> - a host Conn Server records each thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response
+  %%> - a host Conn Server records each thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response; the host poll is the fallback
   GW-->>C: Row recorded<br/>201 · 200 on a repeat
   %%> Result:
-  %%> - in the list at once; a container row's state stays null until the next read of its server
-  %%> - a host row has no next read: the list shows it with `state` null, `needs_input` false and no last-message times, also for rows written before host reads ended
-  %%> - only the librarian's filing sets a host row's `project_id`; nothing updates it afterwards, so a manual filing or unfiling in Conn does not reach it
-  %%> - a host row indexed before the host poll was removed keeps the `project_id` that its last poll read
+  %%> - in the list at once; state stays null until the next read
   C->>GW: List threads<br/>GET /conn/threads?project=
   %%> Requires:
   %%> - node access, as for the server list: only servers whose Node the caller reaches
   %%> Narrows by:
   %%> - `project` or `instance`, both optional
   %%> Reads:
-  %%> - the index only: browsing never reads a server; `meta.environments[].read_at` says how fresh each container server's rows are; a host server is never read
+  %%> - the index only: browsing never reads a server; `meta.environments[].read_at` says how fresh each server's rows are
   opt --instance, rows older than 10 s
     GW->>T3: Read one server through<br/>at most 0.5 s · switch on
     %%> When:
@@ -71,7 +69,7 @@ sequenceDiagram
   GW-->>C: Rows with seen_at<br/>meta.environments
   %%> Returns:
   %%> - the rows, newest user message first, and each covered server with `power_state`, `read_at` and `read_error`
-  %%> - host rows have no `instance_id`, no activity and no last-message time, so they follow the rows that have one; they include the librarian's `classification` after a decision
+  %%> - host rows have no `instance_id` and include the librarian's `classification` after a decision
   %%> - an asleep server's rows are its last read, with their `seen_at`
   Note over GW: Last read before a sleep<br/>instance.sleep admission
   %%> When:

@@ -125,40 +125,34 @@ When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.manag
 
 ## Thread index
 
-`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread; its body is `{thread_id, title}`, and it answers `201` with the row, or `200` when the row existed. A host thread has no `instance_id`. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
+`GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread before the next poll; its body is `{thread_id, title}`, and it answers `201` with the row, or `200` when the row existed. A host thread has no `instance_id`; its `project_id` is its Conn filing, or `null` for General. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
 
-The Gateway stores host rows separately from the container index. Nothing polls a host server: each host thread enters the index when its Conn Server pushes it, and the Gateway schedules no read for host threads. So a host row carries no activity. The list returns it with `state` `null`, `needs_input` `false`, and `null` for `last_user_message_at` and `last_run_completed_at`, also for rows written before host reads ended. Only the librarian's filing sets a host row's `project_id`. Nothing updates it afterwards: a manual filing or unfiling in Conn does not reach it. A row indexed before the host poll was removed keeps the `project_id` that its last poll read.
+The Gateway stores host rows separately so enabling host indexing does not rewrite the existing container index.
 
-A container row's `state` stays `null` until the next read of its server; host servers have no next read.
-
-`ORBIT_CONN_THREAD_INDEX_POLL=true` enables the container poll: `conn:threads:read` runs every minute on the `problems` queue. A failed read keeps that server's last rows and reports the failure in `meta.environments[].read_error`.
+While Conn and the Gateway queue are enabled, the scheduler queues a host poll every five seconds. It is the fallback for a push that never came: it adds the threads of a host whose Conn Server does not push. It also keeps each host row's activity and Conn filing current, including a manual move or unfiling in Conn. `ORBIT_CONN_THREAD_INDEX_POLL=true` also enables the separate container poll: `conn:threads:read` runs every minute on the `problems` queue. A failed read keeps that server's last rows and reports the failure in `meta.environments[].read_error`.
 
 ### The thread librarian
 
-The librarian files a new top-level General thread on a registered host Conn Server (0.5.2 or later) into an Orbit Project. Its only trigger is the push.
+The librarian files a new top-level General thread on a registered host Conn Server (0.5.2 or later) into an Orbit Project. Its trigger is the push. When a thread gets its first user message, the host Conn Server calls `POST /api/v1/conn/environments/{environment}/threads` with `{thread_id, title}`, authenticated as its Node by its WireGuard address. The Gateway records the row, queues `DiscoverConnThreadJob`, and answers; it does not read the Conn Server inside the request. A call for a container server queues nothing. Once a POST is accepted, a failure to queue the job never changes its response.
 
-When a thread gets its first user message, the host Conn Server calls `POST /api/v1/conn/environments/{environment}/threads` with `{thread_id, title}`. It authenticates as its Node by its WireGuard address. The Gateway records the row, queues `DiscoverConnThreadJob`, and answers; it does not read the Conn Server inside the request. A call for a container server queues nothing. The Conn Server calls again on a repeat, which answers `200`.
-
-While Conn is disabled, the POST answers the existing `409 extension.disabled` and records nothing. Once a POST is accepted, a failure to queue the job never changes its response. A missing model setting, an unreachable Conn Server, or Conn disabled after the POST makes the job do nothing.
-
-The job reads that server's shell and queues one classification job when the pushed thread is eligible:
+The host poll is the fallback: it finds a thread whose push never came once the shell lists a user-authored message. Push and poll apply one rule, and an eligible thread gets one `ClassifyConnThreadJob`, unique per thread:
 
 - it was created at or after the host's cutoff;
 - it is top-level, not delegated or archived, and has no Orbit filing;
 - its Conn project is the scratch project;
 - it has no completed decision.
 
-The first push for a host stores that thread's creation time as the host's permanent cutoff, so that thread is eligible and an older one is not. A thread outside the scratch project is refused once and not read again. A completed decision is never revisited, and a unique job per thread keeps two pushes from classifying it twice.
+The first librarian pass for a host, push or poll, sets its permanent cutoff: the pushed thread's creation time, or the time the poll began. Threads created before it are out of scope. A thread outside the scratch project is refused once and not read again. A completed decision is never revisited, so a push and a poll, or two pushes, classify a thread at most once. A missing model setting, an unreachable Conn Server, or Conn disabled after the POST makes the push's job do nothing; the poll still finds the thread later.
 
-A push can arrive before its thread or first message is readable. The job then reads the thread again, every 2 seconds, four reads in all, and judges each read on that read's thread. A thread that becomes filed or otherwise ineligible during the wait is refused without a model call. The wait is not a failure: when the message stays unreadable, the thread stays undecided, and the next push for it can classify it.
+A push can arrive before its thread or first message is readable. The job then reads the thread again, every 2 seconds, four reads in all, and judges each read on that read's thread. The wait is not a failure: when the message stays unreadable, the thread stays undecided, and a later push or poll classifies it, using its first user message even after more turns.
 
 The model gets only the title (255 characters), the first user-authored message (4,000 characters), and the Orbit Projects visible to the host's Node. Each Project includes its ID, slug, name, and a short description based on its repository or Node.
 
-Set `ANTHROPIC_BASE_URL` to a model endpoint on [Orbit's AI router](/reference/ai-router) reachable from the Gateway, and `ORBIT_MODEL_KEY` to the credential for that endpoint. The job calls `claude-haiku-5-5` at medium effort through the router's Claude subscription pool. It needs no Anthropic API key. Without the model settings, pushes are still recorded, without classification. The Gateway's session on the Conn Server needs `orchestration:read` and `orchestration:operate`.
+Set `ANTHROPIC_BASE_URL` to a model endpoint on [Orbit's AI router](/reference/ai-router) reachable from the Gateway, and `ORBIT_MODEL_KEY` to the credential for that endpoint. The job calls `claude-haiku-5-5` at medium effort through the router's Claude subscription pool. It needs no Anthropic API key. Without the model settings, host indexing continues without classification. The Gateway's session on the Conn Server needs `orchestration:read` and `orchestration:operate`.
 
 The thread index exposes the librarian's `classification`: `existing` with a Project ID and a short reason, `new` with a suggested name and slug, or `none`. Only an `existing` answer can change Conn. Already-filed threads and threads manually returned to General are skipped. The Gateway retains the answer across archiving and never creates a Project from a suggestion. It doesn't store the message.
 
-A model outage or invalid answer leaves the thread unfiled. The job has at most three attempts, with retries after 15 seconds and then 60 seconds. On exhaustion the index shows `given_up` with the last `error_code`, and later pushes do not restart the job.
+A model outage or invalid answer leaves the thread unfiled. The job has at most three attempts, with retries after 15 seconds and then 60 seconds. On exhaustion the index shows `given_up` with the last `error_code`, and later pushes and polls do not restart the job.
 
 ## Tasks panel
 
