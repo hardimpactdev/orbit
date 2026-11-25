@@ -24,15 +24,17 @@ jobs:
   - name: Read manager version
     labels: {role: swamp}
     dependsOn: [{step: Prepare package commands, condition: {type: succeeded}}]
+    guard: ${{ ("package_owned" in inputs.intent && !inputs.intent.package_owned) }}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-manager-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-manager-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps["Prepare package commands"].outputs.version }}'}}
   - name: Read installed package
     labels: {role: swamp}
     dependsOn: [{step: Prepare package commands, condition: {type: succeeded}}]
+    guard: ${{ ("package_owned" in inputs.intent && !inputs.intent.package_owned) }}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-installed-package-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-installed-package-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps["Prepare package commands"].outputs.inventory }}', okExitCodes: [0, 1]}}
   - name: Read macOS version
     labels: {role: swamp}
     dependsOn: [{step: Prepare package commands, condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.platform != "macos" || inputs.intent.manager != "brew-cask" }}
+    guard: ${{ inputs.intent.platform != "macos" || inputs.intent.manager != "brew-cask" || ("package_owned" in inputs.intent && !inputs.intent.package_owned) }}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-macos-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-macos-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', /usr/bin/sw_vers, -productVersion]}}
   - name: Plan the removal
     labels: {role: swamp}
@@ -42,8 +44,8 @@ jobs:
   - name: Choose package action
     labels: {role: swamp}
     dependsOn: [{step: Plan the removal, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    task: {type: behavior, behaviorType: '@nckrtl/tool-remove-command', behaviorName: '${{ "tr-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ steps["Read manager version"] }}', query: '${{ steps["Read installed package"] }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}'}}
-    guard: ${{ !("Read manager version" in steps) || !("Read installed package" in steps) }}
+    task: {type: behavior, behaviorType: '@nckrtl/tool-remove-command', behaviorName: '${{ "tr-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ "Read manager version" in steps ? steps["Read manager version"] : null }}', query: '${{ "Read installed package" in steps ? steps["Read installed package"] : null }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}'}}
+    guard: ${{ !("Prepare package commands" in steps) || (!("package_owned" in inputs.intent && !inputs.intent.package_owned) && (!("Read manager version" in steps) || !("Read installed package" in steps))) }}
   - name: Remove the package
     labels: {role: swamp}
     dependsOn: [{step: Choose package action, condition: {type: succeeded}}]

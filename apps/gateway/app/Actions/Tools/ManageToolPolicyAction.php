@@ -55,6 +55,9 @@ final readonly class ManageToolPolicyAction
             $snapshot = $this->snapshot($before, $tools);
             $sources = [];
             foreach ($tools as $tool) {
+                if ($tool->withdrawn()) {
+                    continue;
+                }
                 $current = $this->definition($before, $tool);
                 ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
                 if ($current->repository !== null) {
@@ -121,6 +124,9 @@ final readonly class ManageToolPolicyAction
     {
         $entries = $policy->packages;
         foreach ($tools as $tool) {
+            if ($tool->withdrawn()) {
+                continue;
+            }
             $definition = $this->definition($policy, $tool);
             if ($definition->version === null) {
                 $this->conflict('floating_coordinate', $tool->id);

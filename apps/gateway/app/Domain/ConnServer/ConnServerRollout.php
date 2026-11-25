@@ -242,7 +242,14 @@ final readonly class ConnServerRollout
         $rest = $reviewed->skip(1);
 
         $key = $this->fingerprint($pin, $canary);
-        if ($scope === 'canary' && $retryOperationId !== null && ($replay = $this->retried($key, $retryOperationId, $dryRun ? ['check'] : ['check', 'canary'])) !== null) {
+        // A retry ID names one finished attempt. Its retry, once created, is the answer to every repeat, whatever the followers or the
+        // canary's settings are now; otherwise the stage below retries only that stage's latest finished attempt, or refuses it as stale.
+        $stages = match (true) {
+            $scope === 'canary' => $dryRun ? ['check'] : ['check', 'canary'],
+            $dryRun => ['check', 'preflight'],
+            default => ['promotion'],
+        };
+        if ($retryOperationId !== null && ($replay = $this->retried($retryOperationId, $stages)) !== null) {
             return $replay;
         }
         $check = $this->receipt($key, 'check');
@@ -281,16 +288,10 @@ final readonly class ConnServerRollout
         }
         $pinIdentity = $this->pinIdentity($pin);
         $promotion = $this->receipt($pinIdentity, 'promotion');
-        if ($retryOperationId !== null) {
-            // The retry created for this attempt, whether it is still running or finished; otherwise only the latest attempt retries.
-            $retry = Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pinIdentity)
-                ->where('input->release_stage', 'promotion')->where('input->retry_operation_id', $retryOperationId)->first();
-            if ($retry !== null) {
-                return $retry;
-            }
-            if ($promotion?->id !== $retryOperationId) {
-                throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
-            }
+        if ($retryOperationId !== null && ($promotion?->id !== $retryOperationId || ! $promotion->status->terminal()
+            || $promotion->status === OperationStatus::Succeeded)) {
+            // A queued, running or successful promotion has nothing to retry; a new follower needs a promotion without a retry ID.
+            throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest finished, unsuccessful promotion for this pin.', 409);
         }
         $pending = $rest;
         if ($promotion !== null) {
@@ -299,7 +300,7 @@ final readonly class ConnServerRollout
             }
             if ($promotion->status === OperationStatus::Succeeded) {
                 $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
-                if ($pending->isEmpty() || $retryOperationId !== null) {
+                if ($pending->isEmpty()) {
                     return $promotion;
                 }
             }
@@ -469,11 +470,15 @@ final readonly class ConnServerRollout
                 'user' => $server->user, 'canary' => $server->canary, 'notify_before_restart' => $server->notify_before_restart]];
     }
 
-    /** @param list<string> $stages */
-    private function retried(string $key, int $retryId, array $stages): ?Operation
+    /**
+     * The retry already made for one attempt. Attempt IDs are unique, so it does not depend on the release key.
+     *
+     * @param  list<string>  $stages
+     */
+    private function retried(int $retryId, array $stages): ?Operation
     {
-        return Operation::query()->where('kind', self::Kind)->where('input->release_pin', $key)
-            ->whereIn('input->release_stage', $stages)->where('input->retry_operation_id', $retryId)->first();
+        return Operation::query()->where('kind', self::Kind)->whereIn('input->release_stage', $stages)
+            ->where('input->retry_operation_id', $retryId)->first();
     }
 
     /** @param Collection<int, ConnServerNode> $servers */

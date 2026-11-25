@@ -58,6 +58,15 @@ final class Tool extends Model
         return $this->belongsTo(ToolManagerRecord::class, 'tool_manager_id');
     }
 
+    /**
+     * A removal was requested and has not finished: the row only lets `tool:remove` retry the cleanup. It is no membership, so
+     * convergence, apt preferences and the catalog leave it out (docs/reference/tools.md#remove-a-tool).
+     */
+    public function withdrawn(): bool
+    {
+        return $this->status === ToolStatus::Failed && $this->failed_operation === ToolOperation::Remove;
+    }
+
     /** @return BelongsTo<AptRepository, $this> */
     public function aptRepository(): BelongsTo
     {

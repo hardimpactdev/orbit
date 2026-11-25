@@ -25,6 +25,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\TestOrbitHome;
 
@@ -544,8 +545,19 @@ it('cleans the apt source of a refused first install without removing the packag
     $tool = Tool::query()->findOrFail($install->input['tool_id']);
     expect($tool->only(['status', 'installed_version', 'error_code']))->toMatchArray(['installed_version' => null, 'error_code' => 'tool.package_already_installed'])
         ->and($tool->status->value)->toBe('failed');
+    if ($shared) {
+        // The refused run may have written the source: repinning the surviving `nano` waits for a write that proves it again.
+        expect(fn () => $operations->execute('remove', $node->id, 'apt', 'tree', null, $tool))
+            ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
+        $nano = Tool::query()->where('node_id', $node->id)->where('package', 'nano')->sole();
+        $proof = $operations->execute('update', $node->id, 'apt', 'nano', null, $nano);
+        expect($proof->input)->toMatchArray(['repository_given' => true, 'repository_packages' => ['nano']]);
+        policyComplete($proof, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'],
+            'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+        $proof->update(['lock_key' => null]);
+    }
 
-    $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tool);
+    $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tool->refresh());
     expect($removal->status->terminal())->toBeFalse()->and($removal->input)->toHaveKey('ssh')
         ->and($removal->input)->toMatchArray(['package_owned' => false, 'repository' => $source, 'remove_repository' => ! $shared,
             'repository_packages' => $shared ? ['nano'] : []])
@@ -579,10 +591,9 @@ it('keeps an apt source unverified after any write that may have changed it unti
         expect($write->input['repository_given'])->toBeTrue();
         policyComplete($write, 'failed', ['steps' => ['Write the apt source' => ['status' => 'succeeded'], 'Apply the package' => ['status' => 'failed']]]);
         $write->update(['lock_key' => null]);
-        $remove = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree->refresh());
-        expect($remove->input)->toMatchArray(['remove_repository' => false, 'repository_packages' => ['nano']]);
-        policyComplete($remove, 'succeeded', ['decision' => ['ready' => true], 'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
-        $remove->update(['lock_key' => null]);
+        // Removing the failed member would repin `nano` from a source no write has proven since.
+        expect(fn () => $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree->refresh()))
+            ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
     } else {
         $write = $operations->execute('update', $node->id, 'apt', 'tree', null, $tree, policySignedRepository('1.1'), '2.0');
         expect($write->input['repository_given'])->toBeTrue();
@@ -633,36 +644,69 @@ it('trusts a verified source again after a later successful write despite an old
     expect($given)->toBe([true, false, false])->and($nano->refresh()->status->value)->toBe('failed');
 });
 
-it('backfills ownership, source trust and cleanup handles from what the previous release stored', function (): void {
-    $node = policyNode('dev');
-    $definition = static fn (string $name): array => [...policySignedRepository(), 'name' => $name];
-    $sources = [];
-    foreach (['clean', 'failed', 'cancelled', 'unconfirmed'] as $name) {
-        $sources[$name] = AptRepository::query()->create(['node_id' => $node->id, 'name' => $name, 'definition' => $definition($name)]);
+/**
+ * The preceding release's own records of each history (tests/Fixtures/preceding-release-tool-histories.json, written by that release's
+ * Gateway), migrated by this release's migrations.
+ *
+ * @return array<string, array{node_id: int, tool_id?: int}>
+ */
+function policyPrecedingHistories(): array
+{
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/preceding-release-tool-histories.json')), true, flags: JSON_THROW_ON_ERROR);
+    $ours = require database_path('migrations/2027_03_28_000001_record_tool_ownership_and_source_trust.php');
+    $desired = require database_path('migrations/2027_03_27_000000_add_desired_tool_repository.php');
+    $ours->down();
+    $desired->down();
+    foreach (['nodes', 'tool_managers', 'apt_repositories', 'tools', 'operations', 'node_facts'] as $table) {
+        $columns = array_flip(Schema::getColumnListing($table));
+        foreach ($fixture['tables'][$table] as $row) {
+            if ($table !== 'nodes' || $row['id'] !== SwampNodeFixture::Id) {
+                DB::table($table)->insert(array_intersect_key($row, $columns));
+            }
+        }
     }
-    $installed = policyTool($node, 'ed', '1.0');
-    $failedUpdate = policyTool($node, 'tree', '1.10');
-    $failedUpdate->update(['status' => 'failed', 'failed_operation' => 'update', 'desired_repository' => $definition('failed')]);
-    $firstInstall = policyTool($node, 'jq', null);
-    $firstInstall->update(['status' => 'failed', 'failed_operation' => 'install', 'installed_version' => '1.6']);
-    $run = static fn (string $kind, string $status, array $input, array $more = []): Operation => Operation::query()->create([
-        'kind' => $kind, 'node_id' => $node->id, 'target_id' => $node->id, 'target_type' => 'node_tools', 'triggered_by' => 'operator',
-        'status' => $status, 'sequence' => 0, 'input' => $input, ...$more]);
-    $run('tool.update', 'cancelled', ['repository' => $definition('cancelled'), 'repository_given' => true]);
-    $run('tool.remove', 'succeeded', ['repository' => $definition('unconfirmed'), 'remove_repository' => true], ['result' => ['repository_removed' => false]]);
-    $run('tool.install', 'failed', ['manager' => 'apt', 'package' => 'orphan', 'tool_id' => 999, 'desired_version' => '2.0', 'version_constraint' => null,
-        'repository' => $definition('orphaned'), 'repository_given' => true], ['error_code' => 'tool.package_already_installed']);
-    $migration = require database_path('migrations/2027_03_28_000001_record_tool_ownership_and_source_trust.php');
-    $migration->down();
-    $migration->up();
+    $desired->up();
+    $ours->up();
 
-    expect(DB::table('apt_repositories')->orderBy('id')->pluck('verified', 'name')->map(static fn (mixed $value): bool => (bool) $value)->all())
-        ->toBe(['clean' => true, 'failed' => false, 'cancelled' => false, 'unconfirmed' => false])
-        ->and(Tool::query()->whereIn('id', [$installed->id, $failedUpdate->id, $firstInstall->id])->orderBy('id')->pluck('owned')->all())->toBe([true, true, false]);
-    $handle = Tool::query()->where('package', 'orphan')->sole();
-    expect($handle->only(['owned', 'installed_version', 'desired_version', 'error_code']))->toBe(['owned' => false, 'installed_version' => null,
-        'desired_version' => '2.0', 'error_code' => 'tool.package_already_installed'])
-        ->and($handle->status->value)->toBe('failed')->and($handle->desired_repository)->toBe($definition('orphaned'));
+    return $fixture['histories'];
+}
+
+it('migrates preceding-release histories by affirmative ownership, latest source evidence and cleanup handles that are never memberships', function (): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $operations = app(StartToolOperationAction::class);
+    $tool = static fn (string $history, string $package = 'tree', string $manager = 'apt'): ?Tool => Tool::query()->where('node_id', $histories[$history]['node_id'])
+        ->where('package', $package)->whereHas('manager', static fn ($query) => $query->where('name', $manager))->first();
+    $source = static fn (string $history, string $name): ?AptRepository => AptRepository::query()->where('node_id', $histories[$history]['node_id'])->where('name', $name)->first();
+    $plans = static fn (string $history): array => array_column(app(ToolConvergeIntent::class)->capture(Node::query()->findOrFail($histories[$history]['node_id'])), 'id');
+    $remove = static function (Tool $tool) use ($operations): Operation {
+        $operation = $operations->execute('remove', $tool->node_id, $tool->manager->name, $tool->package, null, $tool);
+        $operation->update(['lock_key' => null]);
+
+        return $operation;
+    };
+
+    // B1: ownership follows affirmative acquisition, never the last failed verb.
+    expect($tool('B1a')->only(['owned', 'installed_version']))->toBe(['owned' => false, 'installed_version' => null])
+        ->and($remove($tool('B1a'))->result['execution'])->toBe('membership_only')
+        ->and($tool('B1b')->owned)->toBeTrue()->and($remove($tool('B1b'))->input['package_owned'])->toBeTrue()
+        ->and($tool('converged')->owned)->toBeTrue();
+    // B6: every source the preceding release may have published keeps a way to clean it, without granting ownership.
+    expect($tool('B6a')->desired_repository['name'])->toBe('refresh')->and($tool('B6a')->owned)->toBeFalse()
+        ->and($remove($tool('B6a'))->input)->toMatchArray(['package_owned' => false, 'remove_repository' => true]);
+    foreach ([['B6b', 'tree', 'cancelled'], ['B6d', 'ripgrep', 'brewname'], ['unconfirmed', 'tree', 'unconfirmed']] as [$history, $package, $name]) {
+        $handle = $tool($history, $package);
+        expect($handle?->withdrawn())->toBeTrue()->and($handle->owned)->toBeFalse()->and($handle->desired_repository['name'])->toBe($name)
+            ->and($plans($history))->not->toContain($handle->id)->and($source($history, $name)?->verified)->toBeFalse()
+            ->and($remove($handle)->input)->toMatchArray(['package_owned' => false, 'repository' => $handle->desired_repository, 'remove_repository' => true]);
+    }
+    expect($tool('B6d', 'ripgrep', 'brew')->owned)->toBeTrue()
+        ->and($operations->execute('update', $histories['B6c']['node_id'], 'apt', 'nano', null, $tool('B6c', 'nano'))->input)
+        ->toMatchArray(['repository_given' => true, 'repository_packages' => ['nano']]);
+    // B7: a later confirmed removal wins over the earlier refused attempt.
+    expect(Tool::query()->where('node_id', $histories['B7']['node_id'])->exists())->toBeFalse()->and($plans('B7'))->toBe([]);
+    // B8: an adoption, even one after the removal, is no evidence that Orbit published the source.
+    expect($source('B8a', 'adopted')->verified)->toBeFalse()->and($source('B8b', 'stale')->verified)->toBeFalse();
 });
 
 /** A complete source-only removal: the package step is skipped and the source and its pins are removed. */
@@ -835,4 +879,75 @@ it('captures each convergence plan with the trust of its source so an unproven s
     expect(app(ToolConvergeIntent::class)->capture($node)[0]['repository_verified'])->toBeTrue();
     $record->update(['verified' => false]);
     expect(app(ToolConvergeIntent::class)->capture($node)[0]['repository_verified'])->toBeFalse();
+});
+
+it('pins only owned members, so a refused package never follows a sibling write or convergence to the vendor', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    $nano = policyTool($node, 'nano', '1.10');
+    $nano->update(['apt_repository_id' => $record->id, 'desired_repository' => $source]);
+    $tree = policyRefusedInstall($node, $source);
+    expect($tree->owned)->toBeFalse();
+    $record->update(['verified' => true]);
+
+    $update = app(StartToolOperationAction::class)->execute('update', $node->id, 'apt', 'nano', null, $nano);
+    expect($update->input['repository_packages'])->toBe(['nano']);
+    $update->update(['status' => 'cancelled', 'lock_key' => null]);
+    $record->update(['verified' => true]);
+    $plans = array_column(app(ToolConvergeIntent::class)->capture($node), 'repository_packages', 'package');
+    expect($plans)->toBe(['nano' => ['nano'], 'tree' => ['nano', 'tree']]);
+});
+
+it('refuses to repin surviving members from a source an interrupted origin move left unproven', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $origin = policySignedRepository();
+    $moved = [...$origin, 'uris' => ['https://moved.example.test/apt']];
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $origin]);
+    $nano = policyTool($node, 'nano', '1.10');
+    $nano->update(['apt_repository_id' => $record->id, 'desired_repository' => $origin]);
+    $tree = policyRefusedInstall($node, $origin);
+    $record->update(['verified' => true]);
+    $operations = app(StartToolOperationAction::class);
+    $tree->update(['desired_repository' => $moved]);
+    $move = $operations->execute('update', $node->id, 'apt', 'nano', null, $nano, $moved, '1.10');
+    expect($move->input)->toMatchArray(['repository' => $moved, 'repository_given' => true]);
+    $move->update(['status' => 'cancelled', 'lock_key' => null]);
+
+    expect(fn () => $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree->refresh()))
+        ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
+    expect($record->refresh()->definition)->toBe($origin)->and($record->verified)->toBeFalse();
+});
+
+it('keeps a withdrawn Tool out of convergence while its cleanup is retried', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    $tree = policyTool($node, 'tree', '1.10');
+    $tree->update(['apt_repository_id' => $record->id, 'desired_repository' => $source]);
+    $removal = app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', 'tree', null, $tree);
+    policyCleaned($removal, pins: false);
+    expect($tree->refresh()->failed_operation)->toBe(ToolOperation::Remove)->and($tree->status->value)->toBe('failed')
+        ->and(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
+    expect(fn () => app(StartToolConvergeAction::class)->execute($node, 'test', [$tree->id]))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.scope_invalid'));
+    expect(app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', 'tree', null, $tree)->input)
+        ->toMatchArray(['package_owned' => true, 'remove_repository' => true]);
+});
+
+it('binds every unproven source to the converge that captures it, so each converge runs the Tools phase until a write proves it', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    policyTool($node, 'tree', '1.10')->update(['apt_repository_id' => $record->id, 'desired_repository' => $source]);
+    $capture = static fn (int $owner): array => array_intersect_key(app(ToolConvergeIntent::class)->capture($node, $owner)[0],
+        array_flip(['repository_verified', 'repository_proof_run']));
+    expect($capture(41))->toBe(['repository_verified' => true]);
+    $record->update(['verified' => false]);
+    expect($capture(42))->toBe(['repository_verified' => false, 'repository_proof_run' => 42])
+        ->and($capture(43))->toBe(['repository_verified' => false, 'repository_proof_run' => 43]);
 });

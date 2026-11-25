@@ -49,6 +49,8 @@ final readonly class ToolDefinitionResolver
     }
 
     /**
+     * The packages a write pins to the source: the acting one and every owned membership sharing it.
+     *
      * @param  array<string, mixed>  $repository
      * @param  iterable<Tool>  $members
      * @return list<string>
@@ -58,7 +60,7 @@ final readonly class ToolDefinitionResolver
         $packages = $removing ? [] : [$package];
         $name = $repository['name'];
         foreach ($members as $member) {
-            if ($member->manager->name !== ToolManagerName::Apt->value || $member->package === $package) {
+            if ($member->manager->name !== ToolManagerName::Apt->value || $member->package === $package || $member->withdrawn()) {
                 continue;
             }
             $observed = $member->aptRepository?->definition;
@@ -70,7 +72,11 @@ final readonly class ToolDefinitionResolver
                 self::assertRepositoryIdentity($member, new ToolDefinition(null, null, $desired));
                 self::assertSharedRepository($desired, $repository);
             }
-            $packages[] = $member->package;
+            // Apt prefers Orbit's source only for packages Orbit owns: a membership still waiting for its first install, such as one
+            // refused because the package was already there, never pins an independently installed package to the vendor.
+            if ($member->owned) {
+                $packages[] = $member->package;
+            }
         }
         sort($packages, SORT_STRING);
 

@@ -97,6 +97,31 @@
       become: false
       changed_when: false
       register: tool_verified
+    # Apt prefers Orbit's source only for packages Orbit owns: those this Tool's plan names, this Tool, and the Tools from the same
+    # source that this run already verified. A refused or failed Tool never reaches this point, so it never pins its package.
+    - name: Compute the preferences of the verified Tool's source
+      when: tool.manager == 'apt' and tool.repository is not none
+      vars:
+        tool_run_installed: >-
+          {{ intent.tools | selectattr('manager', 'equalto', 'apt') | rejectattr('repository', 'none')
+             | selectattr('id', 'in', tool_results | selectattr('status', 'equalto', 'installed') | map(attribute='id') | list)
+             | selectattr('repository.name', 'equalto', tool.repository.name) | map(attribute='package') | list }}
+      ansible.builtin.command:
+        argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", pins]
+        stdin: "{{ {'tool': tool, 'node_id': intent.node_id, 'user': intent.user, 'installed': tool_run_installed} | to_json }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      register: tool_pins
+    - name: Limit the repository to its owned Tools
+      when: tool.manager == 'apt' and tool.repository is not none
+      ansible.builtin.copy:
+        dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
+        content: "{{ (tool_pins.stdout | from_json).repository_preferences }}"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
     - name: Record only the bounded successful observation
       ansible.builtin.set_fact:
         tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'installed', 'installed_version': (tool_verified.stdout | from_json).installed_version}] }}"

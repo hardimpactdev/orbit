@@ -37,7 +37,7 @@ final readonly class ToolConvergeIntent
         $protectedPackages = [];
         $tools = Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get();
         foreach ($tools as $tool) {
-            if ($ids !== null && ! in_array($tool->id, $ids, true)) {
+            if (($ids !== null && ! in_array($tool->id, $ids, true)) || $tool->withdrawn()) {
                 continue;
             }
             $manager = $this->managers->find($tool->manager->name);
@@ -52,9 +52,13 @@ final readonly class ToolConvergeIntent
             $package = new AdmittedToolPackage($node, $manager->name(), $tool->package, $definition, $tool, $tool->manager, $protected)->toArray();
             if ($definition->repository !== null) {
                 $package['repository_packages'] = $this->definitions->repositoryPackages($active, $definition->repository, $tools, $tool->package, false);
-                // Part of the Tools phase digest: an unproven source makes a Node converge run that phase instead of skipping it.
+                // Part of the Tools phase digest. An unproven source is bound to this Operation, so every Node converge runs the phase
+                // until a write proves the source, however many times its trust was lost since the last recorded digest.
                 $package['repository_verified'] = AptSourceTrust::verified(
                     AptRepository::query()->where('node_id', $node->id)->where('name', $definition->repository['name'])->first(), $definition->repository);
+                if (! $package['repository_verified'] && $owner !== null) {
+                    $package['repository_proof_run'] = $owner;
+                }
             }
             if (! $manager->supportsNode($node)) {
                 $package['manager_unavailable'] = true;

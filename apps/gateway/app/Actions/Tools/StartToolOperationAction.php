@@ -196,6 +196,11 @@ final readonly class StartToolOperationAction
                     $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repositoryName)->first();
                     $members = Tool::query()->with(['aptRepository', 'manager'])->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)->get();
                     $repositoryPackages = $this->definitions->repositoryPackages($active, $repository, $members, $package, $verb === 'remove');
+                    // Repinning survivors names the source's origins. Only a proven record says which origins are on disk; after an
+                    // uncertain write, a write of a surviving member republishes the source first.
+                    if ($verb === 'remove' && $repositoryPackages !== [] && ! AptSourceTrust::verified($repositoryRecord, $repository)) {
+                        $this->refuse('tool.repository_unverified');
+                    }
                 }
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,

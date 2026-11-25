@@ -821,3 +821,39 @@ it('keys a canary-only fleet dry run as the canary check, so a repeated retry re
     expect($rollout->admit(true, 'fleet', retryOperationId: $check->id)->id)->toBe($retry->id)
         ->and(Operation::query()->where('kind', ConnServerRollout::Kind)->count())->toBe($count + 1);
 });
+
+it('retries a promotion only through its own finished, unsuccessful attempt, whatever followers enrolled since', function (): void {
+    [$rollout, $pin, $canary, $follower, $probe] = provenConnCanary();
+    $stale = fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.retry_stale');
+    $promotion = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id);
+    expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id, retryOperationId: $promotion->id))->toThrow($stale);
+    finishConnRollout($promotion, 'succeeded', [['node_id' => $follower->id, 'outcome' => 'updated']]);
+    $late = connServerNode('late', 60, []);
+    enrollConnServer($late);
+    $preflight = Operation::query()->where('input->release_stage', 'preflight')->latest('id')->first();
+    $recheck = $rollout->admit(true, 'fleet', retryOperationId: $preflight->id);
+    expect(array_column($recheck->input['intent']['nodes'], 'node_id'))->toBe([$follower->id, $late->id]);
+    finishConnRollout($recheck, 'succeeded', [['node_id' => $follower->id, 'outcome' => 'checked'], ['node_id' => $late->id, 'outcome' => 'checked']]);
+
+    expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id, retryOperationId: $promotion->id))->toThrow($stale);
+    $next = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id);
+    expect($next->id)->not->toBe($promotion->id)->and(array_column($next->input['intent']['nodes'], 'node_id'))->toBe([$late->id]);
+});
+
+it('returns the retry of a canary-only fleet check for its attempt after a follower enrolls', function (): void {
+    connServerPin(static function (array &$pin): void {
+        $pin['release_canary'] = true;
+    });
+    $canary = connServerNode('canary', 62, ['canary' => true]);
+    enrollConnServer($canary);
+    $rollout = app(ConnServerRollout::class);
+    $check = $rollout->releaseGate($rollout->releasePin());
+    finishConnRollout($check, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'checked']]);
+    $retry = $rollout->admit(true, 'fleet', retryOperationId: $check->id);
+    expect($retry->input['retry_operation_id'])->toBe($check->id);
+
+    enrollConnServer(connServerNode('follower', 61, []));
+    expect($rollout->admit(true, 'fleet', retryOperationId: $check->id)->id)->toBe($retry->id);
+    finishConnRollout($retry, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'checked']]);
+    expect($rollout->admit(true, 'fleet', retryOperationId: $check->id)->id)->toBe($retry->id);
+});

@@ -31,7 +31,8 @@ sequenceDiagram
     SW->>N: Remove the Tool<br/>native SSH
     %%> Scope:
     %%> - remove the apt source when no membership needs it; otherwise repin only the remaining packages
-    %%> - `package_owned: false` skips the package plan, keeps the package and cleans only its apt source or pins, from the source as the Node now records it
+    %%> - `package_owned: false` skips every package read and plan, keeps the package and cleans only its apt source or pins
+    %%> - repinning survivors needs a verified source, or `tool.repository_unverified`
     %%> - a removal that would also remove a held recipe package is refused
     SW->>N: Read resulting state<br/>native SSH
     alt check passes

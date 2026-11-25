@@ -570,7 +570,12 @@ switch (mode) {
         assertEquals(source["ansible.builtin.include_tasks"], { file: "node-converge-tool-repository.yml", apply: { become: true, timeout: 45 } });
         const local = task[0].block.flatMap((item) => [item, ...(Array.isArray(item.block) ? item.block as Array<Record<string, unknown>> : [])])
             .filter((item) => item.delegate_to === "localhost");
-        assertEquals(local.length, 4);
+        assertEquals(local.length, 5);
+        // The preferences follow ownership: written only after the Tool is verified, never by the source repair before it.
+        const names = task[0].block.map((item) => item.name);
+        assertEquals(names.indexOf("Limit the repository to its owned Tools") > names.indexOf("Verify the Tool postcondition"), true);
+        const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
+        assertEquals(repository.some((item) => JSON.stringify(item).includes("preferences.d")), false);
         assertEquals(local.every((item) => item.become === false), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });

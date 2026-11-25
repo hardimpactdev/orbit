@@ -159,19 +159,27 @@ A Tool owns its package only when Orbit recorded that ownership: a successful in
 
 An install or convergence never takes over a present package for a Tool Orbit does not own. Both refuse with `tool.package_already_installed`, including after a first install that was cancelled, timed out or returned an unreadable result. Such an interrupted first install stays `installing` until you retry or remove it. You cannot update a Tool Orbit does not own.
 
-For a Tool Orbit does not own, removal deletes only the record and needs no SSH target or host key. If an earlier attempt may have written its apt source, key or pins, the removal instead runs on the Node with `package_owned: false`. It skips the package plan and the manager check, cleans the source or repins the remaining members, and never removes the package. A refused or cancelled first install that may have written them stays as a failed Tool for that cleanup.
+For a Tool Orbit does not own, removal deletes only the record and needs no SSH target or host key. If an earlier attempt may have written its apt source or key, the removal instead runs on the Node with `package_owned: false`. It skips the manager check and every package read and plan, cleans the source or repins the remaining members, and never removes the package. A refused or cancelled first install that may have written them stays as a failed Tool for that cleanup.
+
+A Tool whose removal is unfinished stays `failed` with `failed_operation: remove`. It is not a membership: convergence, apt preferences, catalog export and mode changes leave it out, and only `tool:remove` acts on it.
 
 For an apt package removal, Orbit simulates removal first (`apt-get --simulate remove`) and refuses plans that remove any other package (`tool.removal_plan_unsafe`), then runs `dpkg --remove -- <package>` without purging configs or autoremoving. On success, the Tool row is deleted and the response reports `status: removed`, `outcome: applied`. When the last member's removal cannot confirm that both the source and its preference file are gone, the Tool stays `failed` with `tool.repository_failed`. Run the removal again to finish the cleanup.
+
+A removal that repins surviving members names the source's origins. Orbit refuses it with `tool.repository_unverified` while the source is unverified, because an uncertain write may have changed which origins are on disk. Update or converge a surviving member first: that write publishes the source again.
 
 ## Signed apt repositories
 
 An `apt` Tool definition can include a `repository` object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). In database mode pass it as JSON on install, adoption, or update; in file mode declare it in the catalog. Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for declared packages, `1` for other packages from that host). Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
 
-Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
+Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_unverified`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
 
 ### Source trust
 
-All Tools sharing a repository on one Node must agree on its definition. An unchanged verified source does not need another key download on a direct write, but the apt preference still follows membership. A failed write retains the requested repository separately from the last verified source.
+All Tools sharing a repository on one Node must agree on its definition. An unchanged verified source does not need another key download on a direct write.
+
+The apt preference follows ownership. It gives priority `990` only to packages Orbit owns that share the source, and to the package of the write itself. Both executors write it only after that package is installed and verified, so a refused or failed install never pins a package.
+
+A membership that has not acquired its package yet, such as one refused because the package was already there, is never pinned by a sibling's write. Within one convergence, a verified Tool also pins the Tools of its source that the same run installed before it. A failed write retains the requested repository separately from the last verified source.
 
 The Node keeps a record of each source Orbit may have on disk. Orbit creates it when it admits the first write that may publish the source, and deletes it only when a removal confirms the source and its preferences are gone.
 
@@ -179,13 +187,23 @@ A write may change the key or source on disk before it fails, is cancelled, time
 
 An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified.
 
-Each convergence plan carries whether its source was verified at admission. An unproven source therefore changes the Tools phase digest, and `node:converge` runs that phase instead of skipping it. When the Tools phase does not run, the trust its admission suspended is restored.
+Each convergence plan carries whether its source was verified at admission. A plan with an unproven source also carries the ID of the converge that captured it. So every `node:converge` runs the Tools phase until a write proves the source, however often its trust was lost since the last recorded digest. When the Tools phase does not run, the trust its admission suspended is restored.
 
 A removal cleans or repins a source as the record now defines it, so surviving members keep their current origin.
 
 Remove the membership before dropping or renaming a source that is verified or that an earlier attempt may have published; neither convergence nor a mode switch can bypass that rule. A mode switch also refuses `tool.repository_conflict` while two Tools on one Node define a shared source differently.
 
-The upgrade that adds these records marks a source unverified if a failed Tool references it, if its latest direct write did not succeed, or if a removal did not confirm the source was removed. It restores a failed, unowned Tool for each first install that the previous release dropped after it may have written its source, so you can remove it to clean that source.
+#### Upgrade from the preceding release
+
+The upgrade that adds these records replays the preceding release's Tool Operations in order.
+
+Ownership needs a success. A Tool is owned when it is installed, or when a direct install, a direct update or a node converge succeeded for it. A failed first install followed by a failed removal therefore stays unowned.
+
+Trust needs a write. A source is verified only when its latest event is a successful write with the recorded definition. An adoption is not a write, so a source known only from adoption starts unverified. The same holds for a source adopted again after a confirmed removal.
+
+Cleanup needs a handle. Orbit gives a source a withdrawn, unowned apt Tool when no Tool names the source and its latest event is not a confirmed removal. `tool:remove` then cleans it. A run counts as reaching the Node when it has an attempt or a bound native run, and a later confirmed removal wins over an earlier refused attempt.
+
+A failed install that wrote its source without linking it gets that source back as its desired source. Adoption leaves no Operation in the preceding release. So a Tool that was adopted and then failed an update starts unowned, and its removal keeps the package.
 
 ## Why it works this way
 

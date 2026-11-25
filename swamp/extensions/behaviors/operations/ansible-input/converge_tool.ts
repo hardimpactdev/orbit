@@ -14,7 +14,7 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
     const payload = z.object({
         tool: z.record(z.string(), z.unknown()), node_id: z.number().int().positive(), user: z.string(),
         version: z.unknown().optional(), query: z.unknown().optional(), candidate: z.unknown().optional(),
-        os: Observation.optional(), refresh: Observation.optional(),
+        os: Observation.optional(), refresh: Observation.optional(), installed: z.array(z.string()).default([]),
     }).parse(value);
     const input = { ...PackageInput.parse({ platform: "linux", architecture: "x86_64", ...payload.tool,
         node_id: payload.node_id, user: payload.user }), kind: "tool.install" as const, intent_only: false, materialize: null };
@@ -28,6 +28,11 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
             throw new ToolRefusal("tool.package_protected");
         }
         return argv;
+    }
+    if (mode === "pins") {
+        // After this Tool is verified: its plan's owned members, itself, and the Tools of its source this run already installed.
+        const packages = [...new Set([...input.repository_packages, ...payload.installed])].sort();
+        return { repository_preferences: commands({ ...input, repository_packages: packages }).repository_preferences };
     }
     const raw = inventory(input, step(payload.version), step(payload.query), payload.os ? step(payload.os) : null);
     const { facts, present } = writeInventory(raw);
