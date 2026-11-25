@@ -112,22 +112,19 @@
   changed_when: false
   timeout: 60
 
-# Before any change, in a dry run too, the running server must answer /health with 200, `server: conn-server` and its version, as on
-# Linux, so the rollback has a version to check; anything else fails the Node.
+# Record the running version before a hold, a dry run's result, or a swap. Rollback checks it after restarting the old bundle.
 - name: Read the running version
-  ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
-  register: mac_before
-  failed_when: false
-  timeout: 60
+  ansible.builtin.include_tasks: conn-server-mac-health.yml
 
 - name: Refuse a running server that does not answer with its version
   ansible.builtin.assert:
-    that:
-      - mac_before.status | default(-1) | int == 200
-      - mac_before.json.server | default('') == 'conn-server'
-      - mac_before.json.version | default('', true) | string | length > 0
+    that: mac_health_version is not none
     fail_msg: conn_server.health_unreachable
     quiet: true
+
+- name: Record the running version
+  ansible.builtin.set_fact:
+    mac_previous_version: "{{ mac_health_version }}"
 
 # A different requirement resets the TCC grants that the installed bundle holds, so the Node holds and installs nothing.
 - name: Hold on a changed designated requirement
@@ -198,7 +195,7 @@
             node_result:
               node_id: "{{ node_id | int }}"
               outcome: updated
-              previous_version: "{{ mac_before.json.version }}"
+              previous_version: "{{ mac_previous_version }}"
               prompts: "{{ mac_answered }}"
       rescue:
         - name: Name the cause
@@ -235,7 +232,7 @@
             - name: Start the old server and wait for its health
               ansible.builtin.include_tasks: conn-server-mac-start.yml
               vars:
-                expected_version: "{{ mac_before.json.version }}"
+                expected_version: "{{ mac_previous_version }}"
 
             - name: Note whether the old server answers
               ansible.builtin.set_fact:

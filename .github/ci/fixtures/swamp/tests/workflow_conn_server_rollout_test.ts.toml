@@ -19,6 +19,9 @@ cases = [
   "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1",
   "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too",
   "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too",
+  "Mac preflight rejects redirected, non-200 and malformed version responses",
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart",
+  "Mac restart and rollback each require a direct 200 with the intended version",
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent",
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
   "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
@@ -29,9 +32,8 @@ cases = [
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 450
-# Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
-# unit far below the ceiling.
+cost = 572
+# Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
 slices = 4
 inputs = [
   "bin/swamp-shape-gate",
@@ -42,6 +44,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/conn-server-linux-start.yml",
   "swamp/ansible/tasks/conn-server-linux.yml",
+  "swamp/ansible/tasks/conn-server-mac-health.yml",
   "swamp/ansible/tasks/conn-server-mac-round.yml",
   "swamp/ansible/tasks/conn-server-mac-start.yml",
   "swamp/ansible/tasks/conn-server-mac.yml",
@@ -68,6 +71,9 @@ inputs = [
   "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1" = 23
   "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too" = 26
   "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too" = 25
+  "Mac preflight rejects redirected, non-200 and malformed version responses" = 38
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart" = 28
+  "Mac restart and rollback each require a direct 200 with the intended version" = 56
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent" = 25
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback" = 2
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again" = 9

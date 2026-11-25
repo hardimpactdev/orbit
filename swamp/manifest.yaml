@@ -239,6 +239,7 @@ additionalFiles:
   - ansible/tasks/conn-server-mac.yml
   - ansible/tasks/conn-server-mac-start.yml
   - ansible/tasks/conn-server-mac-round.yml
+  - ansible/tasks/conn-server-mac-health.yml
   - ansible/tasks/conn-server-linux.yml
   - ansible/tasks/conn-server-linux-start.yml
   - ansible/tasks/conn-server-notice.yml

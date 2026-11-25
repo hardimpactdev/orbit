@@ -30,7 +30,8 @@ const tasks = (file: string): Task[] => {
     const flat = (task: Task): Task[] => [task, ...(task.block ?? []).flatMap(flat), ...(task.rescue ?? []).flatMap(flat)];
     return (parse(Deno.readTextFileSync(`${shipped}/tasks/${file}`)) as Task[]).flatMap(flat);
 };
-const macFiles = ["conn-server-mac.yml", "conn-server-mac-start.yml", "conn-server-mac-round.yml", "conn-server-notice.yml"];
+const macHealthFile = "conn-server-mac-health.yml";
+const macFiles = ["conn-server-mac.yml", "conn-server-mac-start.yml", "conn-server-mac-round.yml", macHealthFile, "conn-server-notice.yml"];
 /** The task timeout of the named task in a task file. */
 const timeout = (file: string, name: string) => {
     const task = tasks(file).find((task) => task.name === name);
@@ -54,12 +55,13 @@ Deno.test("the phase's deadline covers every Node's bounded worst case, so a run
     const mac = (...names: string[]) => names.reduce((sum, name) => sum + timeout("conn-server-mac.yml", name), 0);
     // A Mac start: the kickstart and the health wait, which starts no round after health_seconds; a round takes up to the sum of
     // its task timeouts.
-    const round = tasks("conn-server-mac-round.yml").reduce((sum, task) => sum + (task.timeout ?? 0), 0);
+    const macHealth = timeout(macHealthFile, "Read the health");
+    const round = tasks("conn-server-mac-round.yml").reduce((sum, task) => sum + (task.timeout ?? 0), macHealth);
     const macStart = timeout("conn-server-mac-start.yml", "Kickstart the LaunchAgent in the gui domain") + health_seconds + round;
     // The checks before the download and after it; the designated requirements are read for two bundles, then the running version.
     const macChecks = mac("Read the home folder and the uid", "Check that the Conn Server is installed", "Make the staging folder",
-        "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer", "Read the running version")
-        + 2 * mac("Read the designated requirements");
+        "Read the zip's SHA-256", "Unpack the zip", "Verify the staged signature", "Read the staged signer")
+        + 2 * mac("Read the designated requirements") + macHealth;
     // The swap's other steps: the notice from the worker, two renames, the rollback's two reads and two renames.
     const notice = timeout("conn-server-notice.yml", "Post the notice") + timeout("conn-server-notice.yml", "Run the notice command");
     const macSwap = mac("Make the backup folder", "Move the installed bundle into the backup", "Put the new bundle on the same path",
@@ -146,6 +148,9 @@ type Options = { nodes: Server[]; sha?: string; team?: string; dr?: string; vali
     args?: string; listen?: string;
     // `down` starts with the running server answering 503 and no version.
     down?: boolean;
+    // Override the direct health response before any restart, after the swap, or after rollback.
+    health?: (running: string, restarts: number) => Response | undefined;
+    proxy?: boolean;
     // The Linux layout: `first` keeps the old release outside a `releases` folder, which does not exist yet, as on a Node set up before
     // this rollout; `taken` already holds this run's release folder; `blocked` has a file where the `releases` folder goes.
     releases?: "first" | "taken" | "blocked"; noticeUrl?: (port: number) => string; noticeCommand?: string[]; ssh?: boolean;
@@ -199,6 +204,7 @@ async function rollout(options: Options) {
         if (options.exitOn) Deno.writeTextFileSync(`${folder}/exit-${options.exitOn}`, "0.5.0\n");
         const sha = async (path: string) => encodeHex(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path)));
         const noticed: unknown[] = [];
+        const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
         const server = Deno.serve({ port: 0, hostname: options.listen ?? "127.0.0.1", onListen() {} }, async (request) => {
             if (request.method === "POST") {
                 if (new URL(request.url).pathname !== "/notice") return new Response(null, { status: 500 });
@@ -206,6 +212,10 @@ async function rollout(options: Options) {
                 return new Response(null, { status: 204 });
             }
             const running = Deno.readTextFileSync(`${folder}/running`).trim();
+            if (options.health && new URL(request.url).pathname === "/health") {
+                const response = options.health(running, read("launchctl").length);
+                if (response) return response;
+            }
             return running === "down" ? new Response("down", { status: 503 }) : Response.json({ server: options.name ?? "conn-server", version: running });
         });
         const port = server.addr.port;
@@ -223,17 +233,22 @@ async function rollout(options: Options) {
                     : { platform: "linux", path: `${folder}/linux/current`, service: "conn-server", port, user, canary: node.canary ?? false, notify_before_restart: node.notify ?? false },
             })),
         }));
+        let proxyRequests = 0;
+        const proxy = options.proxy ? Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () => {
+            proxyRequests++;
+            return new Response(null, { status: 502 });
+        }) : undefined;
         const done = await new Deno.Command(playbook, {
             // With `ssh`, as the workflow runs it: no connection override, so the Nodes and localhost take the ssh connection plugin.
             args: ["-i", "localhost,", "--tags", "rollout", ...(options.ssh ? [] : ["-e", "ansible_connection=local"]), "-e", "ansible_become=false", "-e", `linux_releases_owner=${user}`,
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", "health_rounds=3", "-e", "health_delay=0", `${shipped}/conn-server-rollout.yml`],
             env: { HOME: `${folder}/home`, FIXTURE: folder, FIXTURE_APP: app, FIXTURE_LINUX: `${folder}/linux`, FIXTURE_EXEC: options.exec ?? `${folder}/linux/current/conn-server`, FIXTURE_ARGS: options.args ?? "", ORBIT_RUN: `${folder}/run`, ORBIT_RUN_ID: runId,
                 PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg`,
+                ...(proxy ? { http_proxy: `http://127.0.0.1:${proxy.addr.port}`, no_proxy: "", NO_PROXY: "" } : {}),
                 ...(options.ssh ? { ANSIBLE_SSH_EXECUTABLE: `${folder}/bin/ssh-node`, ANSIBLE_SSH_TRANSFER_METHOD: "piped",
                     ANSIBLE_SSH_ARGS: `-o ControlMaster=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=${folder}/run/known_hosts` } : {}) },
         }).output();
-        await server.shutdown();
-        const read = (name: string) => { try { return Deno.readTextFileSync(`${folder}/${name}`).trim().split("\n").filter(Boolean); } catch { return []; } };
+        await Promise.all([server.shutdown(), proxy?.shutdown()]);
         const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
         let result = null;
         try { result = JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)); } catch { /* no result: the phase stopped first */ }
@@ -246,6 +261,7 @@ async function rollout(options: Options) {
             releases: listed(`${folder}/linux/releases`),
             launchctl: read("launchctl"), systemctl: read("systemctl"), clicks: read("clicks"), noticed, promptLeft: read("prompt").length > 0,
             running: Deno.readTextFileSync(`${folder}/running`).trim(),
+            proxyRequests,
             backups: [...Deno.readDirSync(`${folder}/home/Applications`)].map((entry) => entry.name).filter((name) => name.includes("backup")),
         };
     } finally {
@@ -418,6 +434,58 @@ test("a Mac Node whose running server answers 503 without a version fails before
     assertEquals(dry.result.nodes, [{ node_id: 45, outcome: "checked" }]);
     const run = await rollout({ nodes: [{ platform: "mac", canary: true }] });
     assertEquals(run.result.nodes, [{ node_id: 45, outcome: "updated", previous_version: "0.4.2", prompts: [] }]);
+});
+
+function macHealth(version: unknown, status = 200) {
+    return Response.json({ server: "conn-server", version }, { status });
+}
+
+function redirectHealth() {
+    return new Response(null, { status: 302, headers: { Location: "/redirected-health" } });
+}
+
+test("Mac preflight rejects redirected, non-200 and malformed version responses", async () => {
+    for (const [label, response] of [
+        ["redirect", redirectHealth()],
+        ["non-200 with a version", macHealth("0.4.2", 503)],
+        ["whitespace", macHealth(" \t")],
+        ["number", macHealth(42)],
+        ["boolean", macHealth(true)],
+        ["object", macHealth({ version: "0.4.2" })],
+    ] as const) {
+        const run = await rollout({ nodes: [{ platform: "mac", canary: true }], dryRun: true, health: () => response.clone() });
+        assert(!run.ok, label);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_unreachable", rolled_back: false }], label);
+        assertEquals([run.installed, run.launchctl, run.backups], ["0.4.2", [], []], label);
+    }
+});
+
+test("Mac health bypasses the configured HTTP proxy before a swap and after each restart", async () => {
+    const nodes: Server[] = [{ platform: "mac", canary: true }];
+    const healthy = await rollout({ nodes, proxy: true });
+    assert(healthy.ok, healthy.output);
+    assertEquals([healthy.result.nodes[0].outcome, healthy.launchctl.length, healthy.proxyRequests], ["updated", 1, 0]);
+    const broken = await rollout({ nodes, proxy: true, broken: ["0.5.0"] });
+    assert(!broken.ok, broken.output);
+    assertEquals(broken.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: true }]);
+    assertEquals([broken.installed, broken.launchctl.length, broken.proxyRequests], ["0.4.2", 2, 0]);
+});
+
+test("Mac restart and rollback each require a direct 200 with the intended version", async () => {
+    const nodes: Server[] = [{ platform: "mac", canary: true }];
+    for (const [label, health, rolledBack] of [
+        ["503 on restart", (running: string, restarts: number) => restarts === 1 ? macHealth(running, 503) : undefined, true],
+        ["redirect on restart, 503 on rollback", (running: string, restarts: number) =>
+            restarts === 1 ? redirectHealth() : restarts === 2 ? macHealth(running, 503) : undefined, false],
+        ["redirect on rollback", (_running: string, restarts: number) =>
+            restarts === 1 ? macHealth("0.4.2") : restarts === 2 ? redirectHealth() : undefined, false],
+        ["wrong version on rollback", (_running: string, restarts: number) => restarts > 0 ? macHealth("0.6.0") : undefined, false],
+    ] as const) {
+        const run = await rollout({ nodes, health });
+        assert(!run.ok, label);
+        assertEquals(run.result.nodes, [{ node_id: 45, outcome: "failed", reason: "conn_server.health_check_failed", rolled_back: rolledBack }], label);
+        assertEquals([run.installed, run.launchctl.length, run.backups.length], ["0.4.2", 2, 1], label);
+    }
 });
 
 test("a Node set to notify posts the notice before its restart; with no target set, nothing is sent", async () => {
