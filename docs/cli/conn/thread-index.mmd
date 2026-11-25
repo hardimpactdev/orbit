@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Conn thread index (Conn plan slices O1 and O2, docs/reference/conn.md#thread-index): the Gateway keeps one row per thread of each container T3 server, so a device finds a Project's threads without connecting to every server, and connects only to the server of the thread it opens. The Gateway only reads, as the idle sleep's read does: no Operation, no Swamp run, no Node work. Host servers have no index.
+  %% Conn thread index (docs/reference/conn.md#thread-index): the Gateway keeps a row per live thread on registered host and container servers. The librarian can file a new top-level General host thread in a separate Gateway job, with no Operation or Swamp run.
   %% status: draft
   %% command: none · minute poll, GET /conn/threads, POST /conn/environments/{environment_id}/threads
   %% kind: conn.thread_index
@@ -9,20 +9,21 @@ sequenceDiagram
   %% lane T3 icon=server pill=target tone=purple
   participant C as API caller<br/>a device · MCP
   participant GW as Gateway<br/>Conn layer
-  participant T3 as T3 server<br/>in the container
-  Note over GW: Poll running servers<br/>conn:threads:read · every minute
+  participant T3 as Conn server<br/>host or container
+  Note over GW: Poll registered servers<br/>hosts 5 s · containers 1 min
   %%> When:
   %%> - every minute while the operator switch `ORBIT_CONN_THREAD_INDEX_POLL` is on and Conn is enabled; off by default
   %%> - a unique job on the `problems` queue, behind task work; never on `operations`
+  %%> - every 5 seconds for host servers while Conn and the Gateway queue are enabled
   %%> Which servers:
-  %%> - every container T3 server whose Instance runs
+  %%> - registered host servers and every container server whose Instance runs
   %%> Skips, with the reason on the server's record:
   %%> - an asleep or stopped Instance, `conn.environment_asleep`: it is not read and keeps its rows
   %%> - an ended session, `conn.session_expired`: its renewal comes first
   GW->>T3: Read every shell at once<br/>GET /api/orchestration/shell
   %%> How:
   %%> - the admin session the Gateway holds and renews, with `x-t3-orchestration-protocol: 2`
-  %%> - all servers in one pool; each has 3 seconds to connect and 10 in total
+  %%> - each group in one pool; the host read takes at most 2 seconds, the container read takes at most 10 seconds
   %%> On failure:
   %%> - a server that does not answer, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
   %%> - a failed write of one server's rows is reported and skipped with `conn.index_write_failed`; the pass goes on
@@ -35,9 +36,9 @@ sequenceDiagram
   %%> - message text; only the title
   C->>GW: Record a new thread<br/>POST .../threads
   %%> When:
-  %%> - the device started a thread on a container server it paired with
+  %%> - the device started a thread on a registered server it paired with
   %%> Requires:
-  %%> - node access to the server's Node; a host server is refused with `conn.thread_index_unsupported`
+  %%> - node access to the server's Node
   %%> Also:
   %%> - a task copy's turn records its T3 thread the same way when its projection commits
   GW-->>C: Row recorded<br/>201 · 200 on a repeat
@@ -67,6 +68,7 @@ sequenceDiagram
   GW-->>C: Rows with seen_at<br/>meta.environments
   %%> Returns:
   %%> - the rows, newest user message first, and each covered server with `power_state`, `read_at` and `read_error`
+  %%> - host rows have no `instance_id` and include the librarian's `classification` after a decision
   %%> - an asleep server's rows are its last read, with their `seen_at`
   Note over GW: Last read before a sleep<br/>instance.sleep admission
   %%> When:

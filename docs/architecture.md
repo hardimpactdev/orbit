@@ -7,6 +7,8 @@ description: "Orbit's components, trust model, Node roles, and how control, traf
 
 One central Gateway owns all fleet state in Orbit. When a human or agent requests a change, the Gateway validates permissions, records the intent, and hands execution to Swamp to apply on your Nodes. Nodes run your applications and report live status back to the fleet.
 
+The [Conn thread librarian](/reference/conn#the-thread-librarian) is an exception. The Gateway classifies a new General thread and updates its Conn metadata directly in a background job. It starts no Swamp workflow or fleet Operation.
+
 ## Components
 
 Each Orbit component lives in its own directory in the repository.

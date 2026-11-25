@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Data;
 
 use Orbit\Extensions\Conn\Models\ConnThread;
+use Orbit\Extensions\Conn\Models\ConnThreadClassification;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -15,8 +16,8 @@ final class ConnThreadData extends Data
 {
     public function __construct(
         public string $environmentId,
-        public int $instanceId,
-        public int $projectId,
+        public ?int $instanceId,
+        public ?int $projectId,
         public string $threadId,
         public string $title,
         public ?string $state,
@@ -24,6 +25,8 @@ final class ConnThreadData extends Data
         public ?string $lastUserMessageAt,
         public ?string $lastRunCompletedAt,
         public string $seenAt,
+        /** @var array<string, mixed>|null */
+        public ?array $classification,
     ) {}
 
     public static function fromModel(ConnThread $thread): self
@@ -33,7 +36,7 @@ final class ConnThreadData extends Data
         return new self(
             environmentId: $thread->environment->environment_id,
             instanceId: $thread->instance_id,
-            projectId: $thread->instance->project_id,
+            projectId: $thread->instance->project_id ?? $thread->orbit_project_id,
             threadId: $thread->thread_id,
             title: $thread->title,
             state: $thread->state,
@@ -41,6 +44,9 @@ final class ConnThreadData extends Data
             lastUserMessageAt: $thread->last_user_message_at?->toIso8601String(),
             lastRunCompletedAt: $thread->last_run_completed_at?->toIso8601String(),
             seenAt: $thread->seen_at->toIso8601String(),
+            classification: $thread->instance_id === null
+                ? ConnThreadClassification::forThread($thread->conn_environment_id, $thread->thread_id)->first()?->result
+                : null,
         );
     }
 
@@ -50,14 +56,14 @@ final class ConnThreadData extends Data
      *
      * @return array<string, mixed>
      */
-    public static function fromRow(\stdClass $row, string $environmentId, int $projectId): array
+    public static function fromRow(\stdClass $row, string $environmentId, ?int $instanceProjectId): array
     {
         $time = static fn (mixed $value): ?string => is_string($value) ? str_replace(' ', 'T', $value).'+00:00' : null;
 
         return [
             'environment_id' => $environmentId,
-            'instance_id' => (int) $row->instance_id,
-            'project_id' => $projectId,
+            'instance_id' => $row->instance_id === null ? null : (int) $row->instance_id,
+            'project_id' => $instanceProjectId ?? ($row->orbit_project_id === null ? null : (int) $row->orbit_project_id),
             'thread_id' => (string) $row->thread_id,
             'title' => (string) $row->title,
             'state' => is_string($row->state) ? $row->state : null,
@@ -65,6 +71,7 @@ final class ConnThreadData extends Data
             'last_user_message_at' => $time($row->last_user_message_at),
             'last_run_completed_at' => $time($row->last_run_completed_at),
             'seen_at' => (string) $time($row->seen_at),
+            'classification' => is_string($row->classification) ? json_decode($row->classification, associative: true) : null,
         ];
     }
 }

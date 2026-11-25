@@ -26,6 +26,8 @@ When any Operation (including `instance.deploy`, `instance.start`, and Swamp rec
 
 Container Process journal tails and unit state reads create no Operation; they use the narrow [direct transport exception](/reference/node-agent#commands). Automatic production deploy Activity entries and alerts also record without an Operation.
 
+The [Conn thread librarian](/reference/conn#the-thread-librarian) also runs outside Swamp: a Gateway background job calls the AI router and updates the thread's Conn metadata directly, without creating an Operation.
+
 ## Instance failure alerts
 
 Whenever `instance.create`, `instance.complete`, or `instance.deploy` enters `failed` or `interrupted`, the Gateway sends an immediate `instance.operation_failed` event to the [signed release webhook](/reference/gateway-recovery#webhook) after commit (recorded in Activity as `instance:failure-alert`). It includes IDs, kind, native run ID, failed step, and error code without inputs, secrets, or command output.

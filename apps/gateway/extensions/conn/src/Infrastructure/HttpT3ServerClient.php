@@ -132,6 +132,46 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         return $shells;
     }
 
+    public function supportsThreadFiling(string $baseUrl): bool
+    {
+        try {
+            $body = $this->json($baseUrl, 'health', fn (): Response => $this->request(timeout: 2.0)
+                ->get($this->endpoint($baseUrl, '/health')));
+        } catch (T3ServerException $error) {
+            if (($error->details['status'] ?? null) === 404) {
+                return false;
+            }
+
+            throw $error;
+        }
+        $version = $body['version'] ?? null;
+
+        return ($body['server'] ?? null) === 'conn-server' && is_string($version)
+            && preg_match('/\A\d+\.\d+\.\d+/', $version, $matches) === 1 && version_compare($matches[0], '0.5.2', '>=');
+    }
+
+    /** @return array<array-key, mixed>|null */
+    public function threadProjection(string $baseUrl, #[SensitiveParameter] string $adminSession, string $threadId): ?array
+    {
+        try {
+            $body = $this->json($baseUrl, 'thread snapshot', fn (): Response => $this->request($adminSession, timeout: 2.0)
+                ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])
+                ->get($this->endpoint($baseUrl, '/api/orchestration/threads/'.rawurlencode($threadId))));
+        } catch (T3ServerException $error) {
+            if (($error->details['status'] ?? null) === 404) {
+                return null;
+            }
+
+            throw $error;
+        }
+        $projection = $body['projection'] ?? null;
+        if (! is_array($projection) || ! is_array($projection['thread'] ?? null) || ! is_array($projection['messages'] ?? null)) {
+            throw T3ServerException::malformed($baseUrl, 'thread snapshot');
+        }
+
+        return $projection;
+    }
+
     private function request(#[SensitiveParameter] ?string $adminSession = null, ?PendingRequest $request = null, float $timeout = self::TIMEOUT_SECONDS): PendingRequest
     {
         $request = ($request ?? Http::createPendingRequest())->acceptJson()

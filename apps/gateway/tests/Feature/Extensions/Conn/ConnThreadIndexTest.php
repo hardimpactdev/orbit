@@ -294,7 +294,7 @@ describe('the list', function (): void {
         expect($all->json('data'))->toBe([[
             'environment_id' => 'env-clone', 'instance_id' => $tool->instance_id, 'project_id' => $this->project->id, 'thread_id' => 'on-env-clone',
             'title' => 'A thread', 'state' => 'idle', 'needs_input' => false, 'last_user_message_at' => null, 'last_run_completed_at' => null,
-            'seen_at' => '2026-11-14T11:59:55+00:00',
+            'seen_at' => '2026-11-14T11:59:55+00:00', 'classification' => null,
         ]])->and($all->json('meta.environments'))->toBe([[
             'environment_id' => 'env-clone', 'instance_id' => $tool->instance_id, 'power_state' => 'running', 'read_at' => '2026-11-14T11:59:55+00:00', 'read_error' => null,
         ]]);
@@ -373,7 +373,7 @@ describe('the write-through', function (): void {
         Exceptions::assertReported(QueryException::class);
     });
 
-    it('refuses a caller without node access, a host server and a missing body', function (): void {
+    it('records host threads and refuses a caller without node access or a missing body', function (): void {
         indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
         $stranger = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'stranger', 'status' => 'active', 'platform' => 'linux',
             'public_ssh_host' => '10.44.0.78', 'wireguard_ip' => '10.44.0.78', 'user' => 'orbit']));
@@ -381,10 +381,13 @@ describe('the write-through', function (): void {
             'admin_session' => 'host', 'admin_session_expires_at' => now()->addDays(20), 'registered_at' => now()]);
 
         threadsCall($stranger, 'POST', 'environments/env-clone/threads', ['thread_id' => 'x', 'title' => 'x'])->assertForbidden();
-        threadsCall($this->phone, 'POST', 'environments/env-host/threads', ['thread_id' => 'x', 'title' => 'x'])->assertStatus(409)
-            ->assertJsonPath('error.code', 'conn.thread_index_unsupported');
+        threadsCall($stranger, 'POST', 'environments/env-host/threads', ['thread_id' => 'x', 'title' => 'x'])->assertForbidden();
+        threadsCall($this->phone, 'POST', 'environments/env-host/threads', ['thread_id' => 'x', 'title' => 'x'])->assertCreated()
+            ->assertJsonPath('data.instance_id', null)->assertJsonPath('data.project_id', null)
+            ->assertJsonPath('data.classification', null);
+        threadsCall($this->phone, 'GET', 'threads')->assertOk()->assertJsonPath('data.0.environment_id', 'env-host');
         threadsCall($this->phone, 'POST', 'environments/env-clone/threads', ['title' => 'x'])->assertStatus(422);
-        expect(ConnThread::query()->count())->toBe(0);
+        expect(ConnThread::query()->count())->toBe(1);
     });
 
     it('records the thread of a task copy turn through the plug-in point, but not while Conn is off', function (): void {
