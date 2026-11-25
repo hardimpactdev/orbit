@@ -138,6 +138,11 @@ exit 0`,
 for a; do case "$a" in UserKnownHostsFile=*) known=\${a#UserKnownHostsFile=} ;; esac; done
 eval "host=\\\${$(($# - 1))}" && eval "command=\\\${$#}"
 grep -q "^$host " "$known" 2>/dev/null || { echo "Host key verification failed." >&2; exit 255; }
+if [ -f "$FIXTURE/drop-swap-ssh" ] && { [ ! -e "$FIXTURE_APP" ] || [ "$(cat "$FIXTURE_LINUX/current/version" 2>/dev/null)" = 0.5.0 ]; }; then
+  rm "$FIXTURE/drop-swap-ssh"
+  echo "Connection reset by peer" >&2
+  exit 255
+fi
 case "$command" in *python3*conn-server-probe.py*)
   if [ -f "$FIXTURE/drop-probe-ssh" ]; then rm "$FIXTURE/drop-probe-ssh"; echo "Connection reset by peer" >&2; exit 255; fi ;;
 esac
@@ -154,7 +159,7 @@ if grep -qx "$v" "$FIXTURE/broken" 2>/dev/null; then echo down > "$FIXTURE/runni
 };
 
 type Server = { platform: "mac" | "linux"; canary?: boolean; notify?: boolean; service?: string };
-type Options = { nodes: Server[]; probe?: "read" | "wrong"; dropProbeSsh?: boolean; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
+type Options = { nodes: Server[]; probe?: "read" | "wrong"; dropProbeSsh?: boolean; dropSwapSsh?: boolean; sha?: string; team?: string; dr?: string; valid?: boolean; broken?: string[]; prompt?: string; promptOnStart?: string; stale?: boolean; exec?: string; topFolder?: string; dryRun?: boolean; notice?: boolean; exitOn?: "launchctl" | "osascript" | "systemctl" | "mv-backup"; name?: string;
     // `args` are the Linux unit's arguments after `serve`; `listen` is the one address the /health server listens on.
     args?: string; listen?: string;
     // `down` starts with the running server answering 503 and no version.
@@ -196,6 +201,7 @@ async function rollout(options: Options) {
         Deno.writeTextFileSync(`${build}/Info.plist`, "<plist/>");
         Deno.writeTextFileSync(`${build}/version`, "0.5.0");
         Deno.writeTextFileSync(`${build}/sig`, `${options.valid === false ? "invalid" : "valid"} ${options.team ?? "9SVJ4SYB9B"} com.nckrtl.conn-server ${options.dr ?? "anchor-team-9SVJ4SYB9B"}\n`);
+        if (options.dropSwapSsh) Deno.writeTextFileSync(folder + "/drop-swap-ssh", "1");
         if (options.dropProbeSsh) Deno.writeTextFileSync(folder + "/drop-probe-ssh", "1");
         if (options.probe) {
             Deno.mkdirSync(build + "/MacOS");
@@ -615,4 +621,17 @@ test("an SSH reset during the canary thread read rolls back the updated Mac", as
     assertEquals(run.result.nodes[0].reason, "conn_server.canary_thread_unreadable");
     assertEquals(run.result.nodes[0].rolled_back, true);
     assertEquals(run.running, "0.4.2");
+});
+
+
+test("an SSH reset during the Mac swap or Linux restart restores the original server", async () => {
+    for (const platform of ["mac", "linux"] as const) {
+        const run = await rollout({ nodes: [{ platform, canary: true }, { platform }], dropSwapSsh: true, ssh: true });
+        assert(!run.ok, run.output);
+        assertEquals(run.result.nodes[0].reason, "conn_server.transport_lost");
+        assertEquals(run.result.nodes[0].rolled_back, true);
+        assertEquals(run.result.nodes[1].outcome, "not_reached");
+        assertEquals(platform === "mac" ? run.installed : run.linux, "0.4.2");
+        assertEquals(run.running, "0.4.2");
+    }
 });

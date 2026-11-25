@@ -87,7 +87,7 @@ sequenceDiagram
     SW-->>GW: Run succeeded
     %%> Result:
     %%> - the Operation result lists each Node's outcome: `updated`, `checked` or `held`
-  else a Node fails, or the canary holds
+  else a Node fails or a hold stops the run
     SW--xGW: Run failed<br/>NODE · error_code
     %%> Result:
     %%> - `error_code` is `conn_server.node_failed`, `conn_server.canary_held` for a held canary, or `conn_server.node_held` during promotion
