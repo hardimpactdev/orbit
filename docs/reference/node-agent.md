@@ -223,6 +223,8 @@ The systemd unit runs as `root` with `NoNewPrivileges=yes`, `ProtectSystem=stric
 
 Run the Rust workspace checks (`cargo test`, `cargo clippy`) as a normal user; see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
 
+GitHub Actions builds the test profile without debug information to leave room for tests, Clippy, and cache saving in the four-minute agent job. Debug assertions, local builds, and release profiles stay unchanged.
+
 ## Releases
 
 A [CLI release](/reference/cli-binaries#published-releases) builds and publishes agent and executor binaries whenever `apps/agent` changes:
