@@ -205,7 +205,7 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.1` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
