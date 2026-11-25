@@ -186,6 +186,35 @@ jobs:
         working-directory: apps/web
       - uses: ./.github/actions/web-browsers
 
+  agent-test-caches:
+    # As for the Gateway caches: main runs no tests, so this job saves the Cargo cache that the Rust agent job of a
+    # pull request or a merge queue run reads. It gates nothing. An entry with the exact key is only read: the
+    # repository's cache is full and drops an entry that no run read for a few days. After a lockfile change the
+    # newest entry restores and the build is short. A new compiler or a dropped entry builds from nothing: 3 minutes
+    # for both commands (run 45636265861), then the save. A cut save leaves main without the cache, so this one job
+    # has 5 minutes.
+    name: Warm the Rust agent cache
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/agent-cargo-cache
+        id: cargo
+        with:
+          save: true
+      # Clippy reuses the dependencies that `cargo check` builds, and every checkout builds the workspace crates
+      # again, so these two commands build all that a later run can reuse.
+      - name: Build the dependencies of the Rust agent job
+        if: steps.cargo.outputs.cache-hit != 'true'
+        working-directory: apps/agent
+        run: |
+          cargo check --locked --all-targets
+          scripts/check-crates test --locked --no-run
+
   cli:
     name: CLI build
     needs: changes
@@ -552,21 +581,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
-      - name: Prepare stable Rust
-        id: rust
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          rustup default stable
-          echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            apps/agent/target
-          key: agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}
-          restore-keys: |
-            agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-
+      - uses: ./.github/actions/agent-cargo-cache
       - run: cargo check --locked --all-targets
       - name: Test the agent and composed extension crates
         run: scripts/check-crates test --locked
