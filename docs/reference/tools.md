@@ -97,7 +97,7 @@ Linux `apt` installs and updates wait up to 300 seconds for busy dpkg locks (`-o
 
 ### Host Conn Server membership
 
-`orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION --yes` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only`. They do not claim an installed version before a verified rollout.
+`orbit tool:install conn-server --node=ID --manager=conn-server --tool-version=VERSION` enrolls a configured service in database mode and records its exact desired release. In file mode omit `--tool-version` and declare `manager: conn-server`, `package: conn-server`, and the quoted release version in the active catalog. `tool:update` records a desired release without restarting anything; `tool:remove` withdraws the membership from rollout selection without stopping the service. Package discovery cannot adopt the host service. The install and update Operations report `execution: membership_only`. They do not claim an installed version before a verified rollout.
 
 Use the explicit [rollout](/reference/development-containers#conn-server-rollout) to apply the desired release or to retire a withdrawn Linux service. General Tool convergence does not execute host service intent. A host rollout never changes the required container Conn release.
 

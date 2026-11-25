@@ -15,7 +15,7 @@ orbit tool:install [package] --node=ID [--manager=MANAGER] [--tool-version=VERSI
 | Option | Meaning |
 | --- | --- |
 | `--node=ID` | Numeric Node ID. |
-| `--manager=MANAGER` | `apt`, `vp`, `composer`, `brew`, or `brew-cask`, limited to those the Node supports. In a terminal, the command offers the Node's `active` and `uninstalled` managers. Otherwise it fails with `tool.manager_required`. |
+| `--manager=MANAGER` | `apt`, `vp`, `composer`, `brew`, `brew-cask`, or `conn-server`, limited to those the Node supports. In a terminal, the command offers the Node's `active` and `uninstalled` managers. Otherwise it fails with `tool.manager_required`. |
 | `--tool-version=VERSION` | Exact manager-native version, in database mode. |
 | `--constraint=CONSTRAINT` | Optional SemVer range, in database mode. |
 
@@ -30,6 +30,8 @@ orbit tool:install ripgrep --node=12 --manager=brew
 Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a compatible verified bottle. `brew-cask` manages supported official Homebrew casks on Linux and macOS. On Linux, the Node must already have Homebrew, and the cask must ship a Linux build, as `antigravity-cli` does.
 
 The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. A failed package phase retains the Tool for retry or removal. List Tools to find that record; the Operation holds the failure code and steps.
+
+For a configured [host Conn Server](/reference/tools#host-conn-server-membership), install records membership and the desired release without starting or changing the service. Apply the release with a separate rollout.
 
 ## How it works
 

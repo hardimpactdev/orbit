@@ -12,6 +12,8 @@ In database mode, `--tool-version` sets an exact desired version. Without it, Or
 
 The result is `applied` when the version changed and `unchanged` when it did not. A floating candidate outside the stored constraint gives `blocked_by_constraint`; an unavailable exact version fails without substituting another version.
 
+For a [host Conn Server](/reference/tools#host-conn-server-membership), update records the desired release without changing the service. Apply the release with a separate rollout.
+
 ## How it works
 
 <div className="flow-at" data-chart="tool/update"></div>
