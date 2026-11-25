@@ -1,0 +1,47 @@
+sequenceDiagram
+  %% The PHP symbol index of a running Laravel default and its seed, with nothing else of a deployment (docs/reference/development-containers.md#prepare-the-index-of-a-running-default): the container's `php_index` and `seed` phases in one play, so the default's working tree, its untracked files included, stays as it is.
+  %% status: draft
+  %% command: none · `php artisan instances:php-index <instance-id>...` on the Gateway host
+  %% kind: instance.php_index
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>workflow execution
+  participant N as app-dev Node<br/>default container
+  Note over GW: Admit the index refresh<br/>one Operation per default
+  %%> Started by:
+  %%> - `php artisan instances:php-index <instance-id> [<instance-id>...]`, one JSON line per Instance: `{"instance":ID,"operation":ID}` or `{"instance":ID,"skipped":"CODE","reason":"..."}`; exit `1` when any was skipped
+  %%> Requirements:
+  %%> - the Project's default of a Laravel source on a Node whose one app role is an active `app-dev` (`PhpSymbolIndex`), else `instance.php_index_ineligible`
+  %%> - a container default: a host checkout is `operation.kind_unavailable`
+  %%> - active, with a recorded seed and no unfinished Operation, else `instance.lifecycle_busy`
+  %%> - running: a stopped container is `process.target_inactive`; the run never starts one
+  %%> - not in the nested Incus project: a nested-fleet or proof default is `instance.php_index_unsupported`
+  %%> Result:
+  %%> - an Operation with the container intent and `seed_commit`, the seed the Gateway records for clones; budget 900 s
+  GW->>SW: Start run, full intent<br/>operation-instance-php-index
+  SW->>N: Check the seed's commit<br/>Ansible · tags php_index
+  %%> What it does:
+  %%> - reads the default's HEAD and requires `seed_commit`
+  %%> On failure:
+  %%> - another HEAD, as after a failed deployment: `instance.php_index_seed_moved` before any build or snapshot; the recorded seed stays for clones, and the next passed deployment moves both
+  SW->>N: Build the index as agent<br/>Ansible · tags php_index
+  %%> What it does:
+  %%> - `agent` runs `phpactor index:build` at the application's folder, niced, within 600 s; Phpactor keeps its index at `~/.cache/phpactor/index/<folder>-<md5(path)[:6]>`
+  %%> - an unchanged fingerprint (`~/.cache/orbit-php-index.json`) starts no Phpactor; a new one waits as pending until the seed holds it
+  %%> - a runtime folder that predates Phpactor, with neither its `phpactor` part nor `bin/phpactor`, skips the work: the result has `php_index_skipped` and no seed is retaken; a missing `php`, or a shipped `bin/phpactor` that is missing or not executable, fails with `instance.php_index_failed`
+  %%> On failure:
+  %%> - a failed or late build: `instance.php_index_failed` with Phpactor's reason; no seed is taken, so the old seed stays
+  SW->>N: Retake the seed<br/>Ansible · tags seed
+  %%> What it does:
+  %%> - first requires again that the commit it names the seed after is `seed_commit`, as a commit may land during the build: otherwise `instance.php_index_seed_moved`, and no snapshot is created or deleted
+  %%> - only when the index changed: stops the Processes, takes `next-<HEAD>`, replaces `seed-<HEAD>` with it, starts the Processes again
+  %%> - then records the pending fingerprint, so a failed snapshot leaves the next run to build and retake again
+  %%> Not included:
+  %%> - no fetch, checkout, clean, reset or deploy step
+  %%> On failure:
+  %%> - the seed codes of a deployment's seed phase, such as `instance.container_seed_failed`; the old seed stays
+  SW-->>GW: Result<br/>commit · php_index_skipped
+  Note over GW: Record the Operation<br/>succeeded or failed with code

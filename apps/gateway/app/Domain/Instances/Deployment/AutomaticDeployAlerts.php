@@ -113,7 +113,7 @@ final readonly class AutomaticDeployAlerts
     /** @return array<string, mixed> */
     private function raise(ReleaseAlertKind $kind, Instance $instance, string $sha, ?InstanceDeployment $deployment, string $summary): array
     {
-        $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($instance->project->repositoryUrl());
 
         if (! $repository instanceof GitHubRepository) {
             return ['kind' => $kind->value, 'outcome' => 'skipped', 'reason' => 'repository_unsupported'];

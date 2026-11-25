@@ -1,0 +1,92 @@
+sequenceDiagram
+  %% One Ansible phase, conn-server-rollout.yml, visits the admitted Conn Server Nodes one at a time, in order. docs/reference/development-containers.md#conn-server-rollout.
+  %% status: draft
+  %% command: none · POST /api/v1/fleet/conn-server/rollout
+  %% kind: fleet.conn_server_rollout
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  Note over GW: Read the pin and<br/>the Conn Server Nodes
+  %%> When:
+  %%> - an operator posts `{"dry_run", "scope"}` to `POST /api/v1/fleet/conn-server/rollout`; both are required, so no default reaches the whole fleet
+  %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
+  %%> - nothing starts it from a pin change
+  %%> Requirements:
+  %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
+  %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
+  %%> Picks:
+  %%> - scope `canary`: the canary alone; scope `fleet`: the canary, then the other records in Node order; scope `nodes`: the named records alone, in the request's order
+  %%> - each record names platform, path, service, port, user and whether to notify before the restart; Nodes without one and container Conn Servers are out of scope
+  GW->>SW: Start run, full intent<br/>conn-server-rollout
+  %%> Input:
+  %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
+  %%> Requirements:
+  %%> - at most four Nodes, so the 13,220 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  loop each Node, in the admitted order
+    SW->>N: Download and check<br/>conn-server-rollout
+    %%> What it does:
+    %%> - Mac: `launchctl print gui/<uid>/<label>` checks the configured LaunchAgent before staging, including in a dry run, or `conn_server.service_not_loaded`
+    %%> - downloads the asset into a staging folder beside the install and checks its SHA-256, or `conn_server.hash_mismatch`
+    %%> - Mac: `codesign --verify --strict --deep`, the pin's `TeamIdentifier` and bundle id, or `conn_server.signature_invalid`, `team_mismatch`, `bundle_mismatch`
+    %%> - Linux: the unit's `ExecStart` is `<current>/conn-server` and the tarball holds `conn-server-<X>-linux-x64/conn-server`, or `conn_server.layout_mismatch`
+    %%> - Linux: `/health` on the unit's `--host`, or 127.0.0.1 when it has none or a wildcard, answers 200 with `server: conn-server` and a version, or `conn_server.health_unreachable`
+    %%> - Mac: a direct `/health` read on 127.0.0.1 with proxies and redirects disabled requires HTTP 200, `server: conn-server` and a nonblank version string, or `conn_server.health_unreachable`
+    alt Mac: staged `codesign -dr -` differs from the installed bundle
+      Note over N: Hold, install nothing<br/>held
+      %%> Why:
+      %%> - a new designated requirement resets the TCC grants; a held canary stops the run, a held later Node does not
+    else dry run
+      Note over N: Stop after the checks<br/>checked
+    else checks pass
+      opt the record asks for a notice
+        SW->>SW: Send the notice<br/>conn-server-notice
+        %%> What it does:
+        %%> - posts or runs `orbit.conn.server_rollout_notice` before anything changes; a failed notice fails the Node (`conn_server.notice_failed`)
+        %%> - logs neither the URL, the command nor their output
+      end
+      SW->>N: Back up and swap<br/>on the same path
+      %%> What it does:
+      %%> - Mac: a new backup folder (`conn_server.backup_exists` when it exists), the installed bundle into it, the staged bundle onto the same path, so TCC grants stay
+      %%> - Linux: a new `releases/<X>-<run>` folder, then `current` moves to it with one rename
+      SW->>N: Restart<br/>kickstart or systemctl
+      %%> What it does:
+      %%> - Mac: `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session; Linux: restarts the unit
+      %%> - never reads or prints a LaunchAgent plist; every command has a task timeout
+      loop each round, up to 180 s
+        opt Mac: a UserNotificationCenter prompt is pending
+          SW->>N: Answer the prompt<br/>System Events
+          %%> What it does:
+          %%> - reads the prompt's static texts and clicks Allow only on a Conn Server prompt for an expected permission
+          %%> - any other prompt fails the Node (`conn_server.unexpected_prompt`)
+        end
+        SW->>N: GET /health<br/>on 127.0.0.1 or the unit's --host
+        %%> What it does:
+        %%> - waits for `server: conn-server` and the pin's exact version
+        %%> - Mac: uses the same direct probe and response checks as the preflight read
+      end
+      alt /health names the version
+        Note over N: Remove the backup<br/>updated
+      else the swap, restart, prompt or health fails
+        SW->>N: Roll back<br/>restore and restart
+        %%> What it does:
+        %%> - Mac: sets the new bundle aside, puts the backup back on the path and kickstarts again; Linux: points `current` back and restarts
+        %%> - the Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version; `rolled_back` is true when health confirms the preflight version
+      end
+    end
+  end
+  Note over SW: Write each Node's result<br/>result
+  alt no Node failed and the canary did not hold
+    SW-->>GW: Run succeeded
+    %%> Result:
+    %%> - the Operation result lists each Node's outcome: `updated`, `checked` or `held`
+  else a Node fails, or the canary holds
+    SW--xGW: Run failed<br/>NODE · error_code
+    %%> Result:
+    %%> - `error_code` is `conn_server.node_failed`, or `conn_server.canary_held` when the canary held
+    %%> Why stop:
+    %%> - later Nodes are not visited and report `not_reached`, so one bad release reaches at most one Node
+  end

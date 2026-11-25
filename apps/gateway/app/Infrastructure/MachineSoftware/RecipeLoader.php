@@ -399,14 +399,19 @@ final readonly class RecipeLoader
                     continue;
                 }
                 $this->object($part, $field, [...($programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']),
-                    ...(property_exists($part, 'trust_module') ? ['trust_module'] : [])]);
+                    ...(property_exists($part, 'trust_module') ? ['trust_module'] : []), ...(property_exists($part, 'dev_only') ? ['dev_only'] : []),
+                    ...(property_exists($part, 'macos_arm64') ? ['macos_arm64'] : [])]);
+                // A development tool, such as a language server, that the production runtime folder leaves out.
+                $this->require(! property_exists($part, 'dev_only') || $part->dev_only === true, "{$field}.dev_only: expected true, or no field.");
                 $version = $this->text($part->version, "{$field}.version");
                 $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1, "{$field}.version: expected an exact version, not a channel or constraint.");
                 $artifacts = $this->object($part->artifacts, "{$field}.artifacts");
                 $this->require(array_keys(get_object_vars($artifacts)) === $architectures, "{$field}.artifacts: expected exactly one amd64 pin.");
                 $artifact = $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version);
                 $trustModule = property_exists($part, 'trust_module') ? $this->trustModule($part->trust_module, $folder, $artifact, $field) : null;
-                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule);
+                $this->require(! property_exists($part, 'macos_arm64') || $folder === 'agent', "{$field}.macos_arm64: expected only on an agent folder part.");
+                $macApp = property_exists($part, 'macos_arm64') ? $this->macApp($part->macos_arm64, "{$field}.macos_arm64", (string) $name, $version) : null;
+                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule, property_exists($part, 'dev_only'), $macApp);
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
             // Chromium in every container loads the runtime folder's one trust module (docs/reference/development-containers.md#trust).
@@ -423,6 +428,24 @@ final readonly class RecipeLoader
             'instances.runtime.chrome-headless-shell: expected the agent folder\'s headless Chrome pin.');
 
         return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php), $vitePlus);
+    }
+
+    /**
+     * The optional macOS arm64 app of an agent folder part's release (docs/reference/development-containers.md#conn-server-pin): the
+     * release's `<part>-<version>-macos-arm64.zip` and its SHA-256, with the bundle id and the Developer ID team id that its signature
+     * must name. A release without the zip leaves the field out.
+     */
+    private function macApp(mixed $value, string $field, string $name, string $version): MacAppPin
+    {
+        $raw = $this->object($value, $field, ['url', 'sha256', 'bundle_id', 'team_id']);
+        $artifact = $this->artifact((object) ['url' => $raw->url, 'sha256' => $raw->sha256], $field, $name, 'artifact', $version);
+        $this->require(str_ends_with($artifact->location, "/{$name}-{$version}-macos-arm64.zip"), "{$field}.url: expected the release's {$name}-{$version}-macos-arm64.zip.");
+        $bundleId = $this->text($raw->bundle_id, "{$field}.bundle_id");
+        $this->require(preg_match('/\A[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\z/', $bundleId) === 1, "{$field}.bundle_id: expected a reverse-DNS bundle id.");
+        $teamId = $this->text($raw->team_id, "{$field}.team_id");
+        $this->require(preg_match('/\A[A-Z0-9]{10}\z/', $teamId) === 1, "{$field}.team_id: expected a ten-character Developer ID team id.");
+
+        return new MacAppPin($artifact, $bundleId, $teamId);
     }
 
     /**

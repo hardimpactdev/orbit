@@ -116,6 +116,7 @@ additionalFiles:
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
   - ansible/instance_root_disk.py
+  - ansible/instance_php_index.py
   - ansible/instance_seed_files.py
   - ansible/instance_default_clean.py
   - ansible/instance_fleet_tunnel.py
@@ -234,6 +235,14 @@ additionalFiles:
   - ansible/instance-container-power.yml
   - ansible/instance-server-switch.yml
   - ansible/conn-environment-restart.yml
+  - ansible/conn-server-rollout.yml
+  - ansible/tasks/conn-server-mac.yml
+  - ansible/tasks/conn-server-mac-start.yml
+  - ansible/tasks/conn-server-mac-round.yml
+  - ansible/tasks/conn-server-mac-health.yml
+  - ansible/tasks/conn-server-linux.yml
+  - ansible/tasks/conn-server-linux-start.yml
+  - ansible/tasks/conn-server-notice.yml
   - ansible/operation-process-upgrade.yml
   - ansible/tasks/process-upgrade-verify.yml
   - ansible/conn-launch.yml

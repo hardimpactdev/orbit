@@ -148,7 +148,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
     {
         $admitted = ValidatedData::object($operation->input['project']);
         $project = Project::query()->find($operation->target_id);
-        if ($project === null || ! $project->maintenance || $project->repository_url !== ($admitted['repository'] ?? null)
+        if ($project === null || ! $project->maintenance || $project->repositoryUrl() !== ($admitted['repository'] ?? null)
             || $project->default_branch !== ($admitted['default_branch'] ?? null) || $project->task_check !== ($admitted['check'] ?? null)) {
             return;
         }
@@ -206,7 +206,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
         }
         $project = Project::query()->whereKey($operation->target_id)->lockForUpdate()->firstOrFail();
         $admittedProject = ValidatedData::object($operation->input['project']);
-        if (! $project->maintenance || $project->repository_url !== $admittedProject['repository'] || $project->default_branch !== $admittedProject['default_branch']
+        if (! $project->maintenance || $project->repositoryUrl() !== $admittedProject['repository'] || $project->default_branch !== $admittedProject['default_branch']
             || $project->task_check !== $admittedProject['check']) {
             return [...$result, 'admitted_group_ids' => [], 'admission_blocked' => 'project_settings_changed'];
         }

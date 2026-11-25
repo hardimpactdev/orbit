@@ -1,6 +1,6 @@
 ---
 title: "Projects"
-description: "How a Project records one repository, its type, its source access, and the source defaults that Instances inherit, and how create, update, and removal work."
+description: "How a Project records one repository, or none for a generic Project about a Node, its type, its source access, and the source defaults that Instances inherit, and how create, update, and removal work."
 covers:
   - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
   - "apps/gateway/app/{Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver},Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver}.php"
@@ -9,12 +9,12 @@ covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
   - "swamp/extensions/behaviors/{dependency_scanner.ts,_lib/service_detection.ts,_lib/{canonical_json,dependency_inventory,dependency_results,dependency_results_schema,project_schedule}.ts,_lib/maintenance/inspect.ts,operations/project-maintenance/**}"
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table,2027_01_14_120000_drop_project_node_exclusions_table}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_25_000000_add_generic_projects,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table,2027_01_14_120000_drop_project_node_exclusions_table}.php"
 ---
 
 # Projects
 
-A Project records one Git repository and the defaults for running it. New [Instances](/domains/applications) inherit its default branch and web root, and its type determines whether they get a Route and PHP-FPM. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
+A Project records one Git repository and the defaults for running it, or no repository at all when it is [generic](#generic-projects). New [Instances](/domains/applications) inherit its default branch and web root, and its type determines whether they get a Route and PHP-FPM. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
 
 ## Create a Project
 
@@ -45,10 +45,32 @@ Every Instance of a Project shares its type and serving capabilities:
 | `monorepo` | Explicit Routes only | Only on Routes targeting a Laravel source | No | none |
 | `laravel-package` | Explicit Routes only | No | Yes | none |
 | `node-package` | Explicit Routes only | No | Yes | none |
+| `generic` | None: a generic Project has no Instance | No | No root | none |
 
 A Route cannot target an Instance whose root is `.`; set a relative web root first. A `laravel-package` Project does not require an `artisan` file.
 
 A `monorepo` selects its PHP version from the root `composer.json` (or uses no PHP if absent) without requiring Laravel. Updating `source_access` or deploying a container `default` refreshes source facts (see [Container source facts](/reference/deployments#container-source-facts)). A `symfony-app` gets a Route and PHP-FPM pool without Laravel `.env` or config-cache writes (see [Symfony applications](/domains/applications#symfony-applications)).
+
+## Generic Projects
+
+A `generic` Project holds work and [Project Documents](/reference/project-documents) that belong to no repository, such as notes about one machine. It has no repository, default branch, root, source access, task check, checkout or Instance. Its `id` is an ordinary Project ID, so a Conn thread or a Project Document references it as it references any other Project.
+
+```bash
+orbit project:create mini generic --node=mini
+orbit project:list --node=11 --json
+```
+
+`POST /api/v1/projects` takes only `slug`, `name`, `code`, `type` and an optional `node_id` for a generic Project; any repository field fails validation, and `node_id` on another type does too. Creation reads no remote and captures no source facts. A retry with the same name, slug, code and `node_id` returns the existing Project.
+
+`node_id` names the one Node the Project is about, by its stable ID. At most one Project is about each Node: a second fails with `project.node_conflict`. Work on an application that a Node merely hosts belongs to that application's Project, not to the Node's. When the Node is removed, the Project stays and its `node_id` becomes `null`.
+
+A generic Project refuses every path that needs a repository with HTTP `409` `project.repository_required` before it writes anything; `instance:create` is one of them. `PATCH` changes only its `name` and `code`: a type change between `generic` and a repository type, a slug, and every repository or task field fail validation. Converting a Project between generic and a repository type is not supported.
+
+A generic Project is served by the Node it is about: a Node with access to that Node may show, list and update it. A generic Project without a Node is served by the Gateway alone.
+
+### Find the Project of a Node
+
+`GET /api/v1/projects?node_id=<id>` (`project:list --node`) lists only the Project about that Node, or none. The Node's ID finds it whatever the Node is named, and the list shows it only to a caller that reaches that Node.
 
 ## Source access
 
@@ -84,8 +106,9 @@ API responses, the SDK, MCP tools, and CLI JSON expose these fields:
 | `slug` | Unique lowercase identifier (at most 63 characters) used for checkout paths and generated domains. |
 | `name` | Display name (defaults to `slug`). |
 | `code` | Unique three-letter uppercase code used on Task cards. See [Project codes](#project-codes). |
-| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, or `node-package`. |
-| `repository_url` | HTTPS or SSH Git URL used for fetching. |
+| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, `node-package`, or `generic`. |
+| `repository_url` | HTTPS or SSH Git URL used for fetching; `null` for a generic Project. |
+| `node_id` | The Node a [generic Project](#generic-projects) is about, or `null`. |
 | `source_access` | `github_app` (default) or `gh_cli`. |
 | `default_branch` | Branch for `default` Instances and base for new branches. |
 | `root` | Repository-relative web root inherited by Instances (such as `public` or `apps/site/public`). |
@@ -99,6 +122,19 @@ API responses, the SDK, MCP tools, and CLI JSON expose these fields:
 | `task_implementer_*` | Default implementer `provider` (`claude`, `codex`, `antigravity`), `model`, and `effort` for [task copies](/reference/tasks#copy-turn-agents). |
 | `task_reviewer_*` | Default reviewer `provider`, `model`, and `effort` for task copies. |
 | `task_pr_mode` | Default [PR mode](/reference/tasks#task-group-modes) (`review_before_pr` or `pr_when_done`) for task copy groups. |
+
+### Project summary
+
+`GET /api/v1/projects` (`project:list`) adds a summary to each Project. Conn clients read it to tag a General thread to a Project, so Orbit stays the only registry of Projects. Any Node with access to at least one Node may call it. It lists the Projects with an Instance on a Node the caller can reach, and the generic Projects about such a Node; the Gateway sees every Project.
+
+| Field | Meaning |
+| --- | --- |
+| `repository` | The [repository identity](#repository-identity), such as `github.com/acme/site`, or `null` for a generic Project. It holds no credentials. |
+| `node_name` | The Node a generic Project is about, else the Node of its `default` Instance. `null` unless the caller has Gateway authority or access to that Node. |
+| `icon`, `color` | Always `null`: Orbit stores no Project icon or color. |
+| `instance_count` | The Project's Instances on Nodes the caller can reach; every Instance for the Gateway. |
+
+`project:show`, `project:create`, and `project:update` return no summary.
 
 ### Project codes
 
@@ -229,6 +265,8 @@ Orbit returns these error codes for Project requests:
 | --- | --- |
 | `project.identity_conflict` | A create retry differs from the stored Project. |
 | `project.repository_identity_conflict` | Another Project already owns that repository. |
+| `project.node_conflict` | Another Project is already about that Node. |
+| `project.repository_required` | The request needs a repository, and the Project is [generic](#generic-projects). |
 | `project.default_branch_unavailable` | Orbit cannot read the remote or the branch does not exist. |
 | `github.cli_unauthenticated` | `gh_cli` found no `gh` binary or `github.com` login for the Gateway's `orbit` user. |
 | `project.slug_conflict` | Another Project already uses that slug. |

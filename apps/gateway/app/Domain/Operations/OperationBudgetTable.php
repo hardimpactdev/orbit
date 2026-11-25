@@ -17,6 +17,9 @@ final class OperationBudgetTable
     public const array SecondsByKind = [
         // Bounded shared path and one-line phase (90 s), plus input, result and cleanup. No live sample yet.
         'instance.mail_update' => 120,
+        // The `php_index` and `seed` phases of one play: 630 s for the index (PhpSymbolIndex::Seconds and its exec) and 120 s for the seed,
+        // which the workflow step bounds at 750 s, plus 150 s for admission, the input and the result.
+        'instance.php_index' => 900,
         // No run yet. Basis: a 300 s download and unpack, the binary check, two restarts with their 10 s run checks (the upgrade and a
         // rollback), plus input, result and cleanup, rounded up to five minutes. Replace with the 14-day p95 after the first successes.
         'process.upgrade' => 600,
@@ -39,6 +42,10 @@ final class OperationBudgetTable
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,
+        // The 13220 s rollout phase (at most four Nodes of up to 3280 s each, every one's download, checks, swap and rollback with
+        // their task timeouts, swamp/ansible/conn-server-rollout.yml), a 30 s queue wait, input, result and cleanup, rounded up to
+        // five minutes. No live sample yet.
+        'fleet.conn_server_rollout' => 13800,
         // One placed 85 s T3 phase, plus the input, receipt and cleanup step bounds and their queue allowances.
         'conn.launch_inspect' => 300,
         'conn.launch_dispatch' => 300,

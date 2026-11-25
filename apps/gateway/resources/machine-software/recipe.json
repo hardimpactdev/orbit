@@ -1321,6 +1321,32 @@
                     "rg": "ripgrep-15.2.0-x86_64-unknown-linux-musl/rg"
                 }
             },
+            "laravel-lsp": {
+                "dev_only": true,
+                "version": "0.0.32",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/laravel/lsp/releases/download/v0.0.32/laravel-lsp",
+                        "sha256": "86d43f017b2247f1da428891a84a7db66d1f4443a0858301fe3a0d38482c5a51"
+                    }
+                },
+                "bin": {
+                    "laravel-lsp": "laravel-lsp"
+                }
+            },
+            "phpactor": {
+                "dev_only": true,
+                "version": "2026.11.22.0",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://github.com/phpactor/phpactor/releases/download/2026.11.22.0/phpactor.phar",
+                        "sha256": "1ae84e18348754a94ad28b14d3ec341aded0d2c082be61e155bc33fc42690659"
+                    }
+                },
+                "bin": {
+                    "phpactor": "phpactor.phar"
+                }
+            },
             "php-data-bridge": {
                 "version": "0.3.1",
                 "artifacts": {
@@ -1700,15 +1726,21 @@
                 }
             },
             "conn-server": {
-                "version": "0.4.2",
+                "version": "0.5.2",
                 "artifacts": {
                     "amd64": {
-                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.4.2/conn-server-0.4.2-linux-x64.tar.gz",
-                        "sha256": "91eb2e73ab69ce3a3493f3664d36181c1aeb56805bea71f22cf8683d624e9e65"
+                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-linux-x64.tar.gz",
+                        "sha256": "554766fc35583e2a2284a8c08581ce47dd729efef30315738eebd8f8ad35f539"
                     }
                 },
+                "macos_arm64": {
+                    "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-macos-arm64.zip",
+                    "sha256": "40d753aaa246e3137e4ed5cd5caa08586b2dc3eb33f281e5be144b0d3083bb9d",
+                    "bundle_id": "com.nckrtl.conn-server",
+                    "team_id": "9SVJ4SYB9B"
+                },
                 "bin": {
-                    "conn-server": "conn-server-0.4.2-linux-x64/conn-server"
+                    "conn-server": "conn-server-0.5.2-linux-x64/conn-server"
                 }
             },
             "chrome-headless-shell": {

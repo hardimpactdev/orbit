@@ -10,12 +10,14 @@ use App\Actions\Projects\ListProjectsAction;
 use App\Actions\Projects\ShowProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\ProjectData;
+use App\Data\Projects\ProjectSummaryData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Projects\ListProjectsRequest;
 use App\Http\Requests\Projects\StoreProjectRequest;
 use App\Http\Requests\Projects\UpdateProjectRequest;
 use App\Models\Node;
@@ -27,15 +29,20 @@ use Illuminate\Validation\ValidationException;
 final class ProjectsController extends Controller
 {
     #[RequiresNodeAccess(ServingNode::Collection)]
-    public function index(Request $request, ListProjectsAction $action): JsonResponse
+    public function index(ListProjectsRequest $request, ListProjectsAction $action): JsonResponse
     {
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 
+        $reachable = $action->reachableNodeIds($consumer);
+
         return response()->json([
             'data' => $action
-                ->handle($consumer)
-                ->map(static fn (Project $project): array => ProjectData::fromModel($project)->toArray())
+                ->handle($consumer, $request->nodeId())
+                ->map(static fn (Project $project): array => [
+                    ...ProjectData::fromModel($project)->toArray(),
+                    ...ProjectSummaryData::fromModel($project, $reachable)->toArray(),
+                ])
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),

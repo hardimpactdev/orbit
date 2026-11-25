@@ -1,0 +1,272 @@
+---
+# One Mac Node of the Conn Server rollout (conn-server-rollout.yml). Every command carries a task timeout: a pending TCC prompt blocks
+# open() and can hang any command. No task timeout is under 60 s: over SSH, a module on mini took 10 s from the start of its python3
+# to its own code (run 33436). The job only ever starts through `launchctl kickstart -k gui/<uid>/<label>`, never from this SSH
+# session's own security session. Sets `node_result`; a failed check fails with its public code as the message.
+
+# The read's fourth line says where a module runs, to find why modules on mini start about 10 s late over SSH: the python3 on PATH, the
+# working folder, TMPDIR and this module's payload folder, which AnsiballZ makes in the system temp folder.
+- name: Read the home folder and the uid
+  ansible.builtin.command:
+    argv:
+      - sh
+      - -c
+      - >-
+        printf "%s\n%s\n%s\npython3=%s pwd=%s TMPDIR=%s module_tmp=%s" "$HOME" "$(id -u)" "$(id -un)" "$(which python3)" "$(pwd)"
+        "${TMPDIR-}" "$(ls -d "${TMPDIR:-/tmp}"/ansible_*command_payload_* 2>/dev/null | tr '\n' ' ')"
+  register: mac_who
+  changed_when: false
+  timeout: 60
+
+- name: Log where the modules run
+  ansible.builtin.debug: { msg: "{{ mac_who.stdout_lines[3] }}" }
+
+- name: Name the paths of the Node
+  vars:
+    app: "{{ server.path | regex_replace('^~/', mac_who.stdout_lines[0] ~ '/') }}"
+  ansible.builtin.set_fact:
+    mac_app: "{{ app }}"
+    mac_uid: "{{ mac_who.stdout_lines[1] }}"
+    mac_stage: "{{ app | dirname }}/.conn-server-stage-{{ run_id }}"
+    mac_backup: "{{ app | dirname }}/.conn-server-backup-{{ run_id }}"
+    mac_target: "gui/{{ mac_who.stdout_lines[1] }}/{{ server.service }}"
+
+# The LaunchAgent runs in this user's gui domain; another user's job is not ours to restart.
+- name: Check that the SSH user runs the Conn Server
+  ansible.builtin.assert:
+    that: mac_who.stdout_lines[2] == server.user
+    fail_msg: conn_server.user_mismatch
+    quiet: true
+
+- name: Check that the Conn Server is installed
+  ansible.builtin.stat: { path: "{{ mac_app }}/Contents/Info.plist", get_checksum: false }
+  register: mac_installed
+  timeout: 60
+
+- name: Refuse a Node with no installed bundle
+  ansible.builtin.assert:
+    that: mac_installed.stat.exists
+    fail_msg: conn_server.not_installed
+    quiet: true
+
+# launchctl print can include the job's environment.
+- name: Read the loaded LaunchAgent
+  ansible.builtin.command: { argv: [launchctl, print, "{{ mac_target }}"] }
+  register: mac_service
+  changed_when: false
+  failed_when: false
+  no_log: true
+  timeout: 60
+
+- name: Refuse a Node without its LaunchAgent loaded
+  ansible.builtin.assert:
+    that: mac_service.rc == 0
+    fail_msg: conn_server.service_not_loaded
+    quiet: true
+
+- name: Make the staging folder
+  ansible.builtin.file: { path: "{{ mac_stage }}", state: directory, mode: "0700" }
+  timeout: 60
+
+- name: Download the zip
+  ansible.builtin.get_url: { url: "{{ intent.mac.url }}", dest: "{{ mac_stage }}/conn-server.zip", mode: "0600", timeout: 60 }
+  timeout: 900
+
+- name: Read the zip's SHA-256
+  ansible.builtin.stat: { path: "{{ mac_stage }}/conn-server.zip", checksum_algorithm: sha256 }
+  register: mac_zip
+  timeout: 60
+
+- name: Check the zip's SHA-256
+  ansible.builtin.assert:
+    that: mac_zip.stat.checksum == intent.mac.sha256
+    fail_msg: conn_server.hash_mismatch
+    quiet: true
+
+- name: Unpack the zip
+  ansible.builtin.command: { argv: [ditto, -x, -k, "{{ mac_stage }}/conn-server.zip", "{{ mac_stage }}/new"] }
+  changed_when: true
+  timeout: 120
+
+- name: Verify the staged signature
+  ansible.builtin.command: { argv: [codesign, --verify, --strict, --deep, "{{ mac_stage }}/new/Conn Server.app"] }
+  register: mac_verify
+  changed_when: false
+  failed_when: false
+  timeout: 120
+
+- name: Check the staged signature
+  ansible.builtin.assert:
+    that: mac_verify.rc == 0
+    fail_msg: conn_server.signature_invalid
+    quiet: true
+
+# codesign -dv prints its fields on stderr.
+- name: Read the staged signer
+  ansible.builtin.command: { argv: [codesign, -d, --verbose=2, "{{ mac_stage }}/new/Conn Server.app"] }
+  register: mac_signer
+  changed_when: false
+  timeout: 60
+
+- name: Check the team
+  ansible.builtin.assert:
+    that: ('TeamIdentifier=' ~ intent.mac.team_id) in mac_signer.stderr_lines
+    fail_msg: conn_server.team_mismatch
+    quiet: true
+
+- name: Check the bundle id
+  ansible.builtin.assert:
+    that: ('Identifier=' ~ intent.mac.bundle_id) in mac_signer.stderr_lines
+    fail_msg: conn_server.bundle_mismatch
+    quiet: true
+
+- name: Read the designated requirements
+  ansible.builtin.command: { argv: [codesign, -d, -r, "-", "{{ item }}"] }
+  loop: ["{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"]
+  register: mac_requirements
+  changed_when: false
+  timeout: 60
+
+# Record the running version before a hold, a dry run's result, or a swap. Rollback checks it after restarting the old bundle.
+- name: Read the running version
+  ansible.builtin.include_tasks: conn-server-mac-health.yml
+
+- name: Refuse a running server that does not answer with its version
+  ansible.builtin.assert:
+    that: mac_health_version is not none
+    fail_msg: conn_server.health_unreachable
+    quiet: true
+
+- name: Record the running version
+  ansible.builtin.set_fact:
+    mac_previous_version: "{{ mac_health_version }}"
+
+# A different requirement resets the TCC grants that the installed bundle holds, so the Node holds and installs nothing.
+- name: Hold on a changed designated requirement
+  when: >-
+    (mac_requirements.results[0].stdout_lines | select('match', '^designated') | list)
+    != (mac_requirements.results[1].stdout_lines | select('match', '^designated') | list)
+  ansible.builtin.set_fact:
+    node_result: { node_id: "{{ node_id | int }}", outcome: held, reason: designated_requirement_changed }
+
+- name: Record a checked Node of a dry run
+  when: node_result is not defined and intent.dry_run
+  ansible.builtin.set_fact:
+    node_result: { node_id: "{{ node_id | int }}", outcome: checked }
+
+- name: Decide the swap
+  ansible.builtin.set_fact:
+    mac_swap: "{{ node_result is not defined }}"
+
+- name: Swap and restart
+  when: mac_swap
+  block:
+    - name: Send the notice before the restart
+      when: server.notify_before_restart
+      ansible.builtin.include_tasks: conn-server-notice.yml
+
+    # A new backup folder per run: mkdir without -p refuses one that exists.
+    - name: Make the backup folder
+      ansible.builtin.command: { argv: [mkdir, -m, "0700", "{{ mac_backup }}"] }
+      register: mac_backup_made
+      changed_when: true
+      failed_when: false
+      timeout: 60
+
+    - name: Refuse an existing backup folder
+      ansible.builtin.assert:
+        that: mac_backup_made.rc == 0
+        fail_msg: conn_server.backup_exists
+        quiet: true
+
+    # From the move into the backup on, every failure up to a healthy /health restores the backup and restarts the old server,
+    # also when the move itself renamed the bundle and then failed or timed out.
+    - name: Install and start the new server
+      block:
+        # Both renames stay on the bundle's own volume, and the new bundle takes the same path, so the TCC grants stay.
+        - name: Move the installed bundle into the backup
+          ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.app"] }
+          changed_when: true
+          timeout: 60
+
+        - name: Put the new bundle on the same path
+          ansible.builtin.command: { argv: [mv, "{{ mac_stage }}/new/Conn Server.app", "{{ mac_app }}"] }
+          changed_when: true
+          timeout: 60
+
+        - name: Start the new server and wait for its health
+          ansible.builtin.include_tasks: conn-server-mac-start.yml
+          vars:
+            expected_version: "{{ version }}"
+
+        - name: Fail an unhealthy new server
+          ansible.builtin.assert:
+            that: mac_healthy
+            fail_msg: "{{ mac_prompt_error or 'conn_server.health_check_failed' }}"
+            quiet: true
+
+        - name: Record the updated Node
+          ansible.builtin.set_fact:
+            node_result:
+              node_id: "{{ node_id | int }}"
+              outcome: updated
+              previous_version: "{{ mac_previous_version }}"
+              prompts: "{{ mac_answered }}"
+      rescue:
+        - name: Name the cause
+          ansible.builtin.set_fact:
+            mac_failure: >-
+              {{ ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
+                 else 'conn_server.step_failed' }}
+            rolled_back: false
+
+        # The backup holds the old bundle once its move renamed it, whether or not the move or the new bundle's move then failed.
+        - name: Read the backup and what holds the bundle's path
+          ansible.builtin.stat: { path: "{{ item }}", get_checksum: false }
+          loop: ["{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"]
+          register: mac_placed
+          timeout: 60
+
+        - name: Set the new bundle aside
+          when: mac_placed.results[0].stat.exists and mac_placed.results[1].stat.exists
+          ansible.builtin.command: { argv: [mv, "{{ mac_app }}", "{{ mac_backup }}/Conn Server.failed.app"] }
+          changed_when: true
+          timeout: 60
+
+        - name: Restore the backup on the same path
+          when: mac_placed.results[0].stat.exists
+          ansible.builtin.command: { argv: [mv, "{{ mac_backup }}/Conn Server.app", "{{ mac_app }}"] }
+          changed_when: true
+          timeout: 60
+
+        # `rolled_back` says whether the old server answers again; a failed restart leaves it false. With the old bundle never
+        # moved, nothing restarted and nothing is restored.
+        - name: Restart the old server
+          when: mac_placed.results[0].stat.exists
+          block:
+            - name: Start the old server and wait for its health
+              ansible.builtin.include_tasks: conn-server-mac-start.yml
+              vars:
+                expected_version: "{{ mac_previous_version }}"
+
+            - name: Note whether the old server answers
+              ansible.builtin.set_fact:
+                rolled_back: "{{ mac_healthy }}"
+          rescue:
+            - name: Note that the old server does not answer
+              ansible.builtin.set_fact:
+                rolled_back: false
+
+        - name: Fail the Node after its rollback
+          ansible.builtin.assert:
+            that: false
+            fail_msg: "{{ mac_failure }}"
+            quiet: true
+
+    - name: Remove the backup after a healthy update
+      ansible.builtin.file: { path: "{{ mac_backup }}", state: absent }
+      timeout: 60
+
+- name: Remove the staging folder
+  ansible.builtin.file: { path: "{{ mac_stage }}", state: absent }
+  timeout: 60

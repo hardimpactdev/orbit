@@ -1,0 +1,56 @@
+---
+# One round of the Conn Server's start (conn-server-mac-start.yml): read the texts of a pending UserNotificationCenter prompt, click
+# "Allow" only on one that names Conn Server and an expected permission, then read /health.
+- name: Run the round
+  when: not mac_healthy and mac_prompt_error is none and now().timestamp() < mac_wait_until | float
+  block:
+    - name: Start the round with no prompt
+      ansible.builtin.set_fact:
+        mac_prompt_text: ""
+
+    - name: Read a pending prompt
+      ansible.builtin.command:
+        argv: [osascript, -e, 'tell application "System Events" to get value of every static text of every window of process "UserNotificationCenter"']
+      register: mac_prompt
+      changed_when: false
+      failed_when: false
+      timeout: 60
+
+    - name: Judge the prompt
+      when: mac_prompt.rc == 0 and mac_prompt.stdout | trim | length > 0
+      vars:
+        texts: "{{ mac_prompt.stdout | lower }}"
+      ansible.builtin.set_fact:
+        mac_prompt_expected: "{{ 'conn server' in texts and (tcc_expected | select('in', texts) | list | length > 0) }}"
+        mac_prompt_text: "{{ mac_prompt.stdout | trim }}"
+
+    - name: Fail on a prompt that is not ours
+      when: mac_prompt_text | length > 0 and not mac_prompt_expected
+      ansible.builtin.set_fact:
+        mac_prompt_error: conn_server.unexpected_prompt
+
+    - name: Allow the expected prompt
+      when: mac_prompt_text | length > 0 and mac_prompt_expected
+      ansible.builtin.command:
+        argv: [osascript, -e, 'tell application "System Events" to click button "Allow" of window 1 of process "UserNotificationCenter"']
+      changed_when: true
+      timeout: 60
+
+    - name: Record the allowed prompt
+      when: mac_prompt_text | length > 0 and mac_prompt_expected
+      ansible.builtin.set_fact:
+        mac_answered: "{{ mac_answered + [mac_prompt_text] }}"
+
+    - name: Probe the restarted server
+      when: mac_prompt_error is none
+      ansible.builtin.include_tasks: conn-server-mac-health.yml
+
+    - name: Note a healthy server
+      when: mac_prompt_error is none and mac_health_version == expected_version
+      ansible.builtin.set_fact:
+        mac_healthy: true
+
+    - name: Wait before the next round
+      when: not mac_healthy and mac_prompt_error is none
+      ansible.builtin.wait_for: { timeout: "{{ health_delay | int }}" }
+      timeout: 60

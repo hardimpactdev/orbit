@@ -66,9 +66,9 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $input = $operation->input;
         $instance = Instance::query()->findOrFail($operation->target_id);
         $appSource = $instance->project->source_access === ProjectSourceAccess::GitHubApp;
-        $source = $appSource ? app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repository_url,
+        $source = $appSource ? app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repositoryUrl(),
             'instance-migrate-source-'.$operation->id) : null;
-        $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
+        $repository = GitHubRepository::fromOrigin($instance->project->repositoryUrl());
         $container = ValidatedData::object($input['container']);
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
@@ -84,7 +84,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
             'instance_id' => $instance->id, 'instance_name' => $instance->name, 'ssh_execution' => $input['ssh_execution'],
             'container' => $container, 'migrate' => [...ValidatedData::object($input['migrate']),
                 ...($source === null ? [] : ['source' => [
-                    'repository' => $instance->project->repository_url,
+                    'repository' => $instance->project->repositoryUrl(),
                     'branch' => ValidatedData::string($instance->project->default_branch),
                     'access_denied_message' => $repository === null ? null : InstanceGitHubReadTokens::accessDeniedMessage(
                         app(GitHubAppStore::class)->credentials()->slug ?? '(not configured)', $repository),

@@ -394,7 +394,7 @@ final readonly class InstanceContainer
                         'destination_port' => InstanceDevPorts::First.'-'.InstanceDevPorts::Last, 'state' => 'enabled']] : [])]],
             // UFW on the Node, under one comment prefix per Instance, so its removal takes them all.
             'firewall' => [...($clone === null ? [] : $this->t3Firewall($instance, $runtime)), ...array_column($access, 'rule')],
-            'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
+            'mirror' => self::mirror($instance), 'repository' => $project->repositoryUrl(),
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
@@ -585,6 +585,8 @@ final readonly class InstanceContainer
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
                     ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
+                    // The Laravel application's folder, where `laravel-lsp-root` starts the language server (InstanceFolderPlan::LaravelLspRoot).
+                    .($instance->source_is_laravel === true ? 'ORBIT_APPLICATION='.InstanceEnvironmentRenderer::quote(self::application($instance))."\n" : '')
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
@@ -636,9 +638,12 @@ final readonly class InstanceContainer
      * a clone places only what differs (swamp/ansible/instance_seed_files.py). Per-copy files stay with the clone: its identity, model
      * key, settings with providers, proxy bypass and Instance file.
      *
+     * `$agentFolder`: the agent folder that a caller in its own transaction read before it (seedAgentFolder); null reads it here.
+     *
+     * @param  list<array<string, mixed>>|null  $agentFolder
      * @return list<array<string, mixed>>
      */
-    public function seedFiles(Instance $default, InstanceRuntime $runtime): array
+    public function seedFiles(Instance $default, InstanceRuntime $runtime, ?array $agentFolder = null): array
     {
         $folders = $this->folders();
         $gateway = Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0];
@@ -658,18 +663,31 @@ final readonly class InstanceContainer
         foreach (self::t3DropIns($conn, $folders) as $file) {
             $items[] = ['file' => ['path' => $file['path'], 'uid' => 0, 'gid' => 0, 'mode' => $file['mode'], 'content' => $file['content'], 'parents' => true]];
         }
-        // Instructions that cannot be read leave the folder to each clone, whose create reads and checks them again.
-        try {
-            $instructions = app(InstanceAgentInstructions::class);
-            $agentFolder = $instructions->intent($default->project, $instructions->read($default->project));
-            $items[] = ['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]];
-        } catch (ResourceOperationException) {
-        }
+        $items = [...$items, ...($agentFolder ?? $this->seedAgentFolder($default->project))];
         foreach (InstanceAgentInstructions::links() as $link) {
             $items[] = ['link' => [...$link, 'owner' => ['uid' => $agent, 'gid' => $agent]]];
         }
 
         return $items;
+    }
+
+    /**
+     * The agent folder item of a default's seed (seedFiles), with the Project's instructions. Their bodies cannot be read inside a
+     * database transaction (docs/reference/development-containers.md#agent-instructions). Instructions that cannot be read leave the
+     * folder to each clone, whose create reads and checks them again: no item.
+     *
+     * @return list<array{folder: array{path: string, files: list<array{path: string, content: string}>}}>
+     */
+    public function seedAgentFolder(Project $project): array
+    {
+        try {
+            $instructions = app(InstanceAgentInstructions::class);
+            $agentFolder = $instructions->intent($project, $instructions->read($project));
+        } catch (ResourceOperationException) {
+            return [];
+        }
+
+        return [['folder' => ['path' => $agentFolder['folder'], 'files' => $agentFolder['files']]]];
     }
 
     /**

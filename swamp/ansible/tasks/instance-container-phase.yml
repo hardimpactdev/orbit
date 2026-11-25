@@ -1786,7 +1786,8 @@
       changed_when: false
     - name: Issue the sessions
       ansible.builtin.command:
-        argv: "{{ as_agent + [container.clone.t3.t3, 'auth', 'session', 'issue', '--label', item, '--token-only'] }}"
+        # The Conn Server's Gateway session lasts 10 years (0.2.0 on); the TypeScript T3 server's stays dated and renewed.
+        argv: "{{ as_agent + [container.clone.t3.t3, 'auth', 'session', 'issue', '--label', item] + (['--ttl', '3650d'] if item == 'Orbit Gateway' and container.clone.t3.t3.endswith('/conn-server') else []) + ['--token-only'] }}"
       loop: [Orbit Gateway, Orbit Swamp]
       register: t3_sessions
       no_log: true
@@ -1890,6 +1891,60 @@
       ansible.builtin.command:
         argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'restore', container.inner_volume.pool, container.inner_volume.name, restore_seed] }}"
       changed_when: true
+
+# The index refresh of a running default (instance.php_index) names the seed that the Gateway records for its clones. Its seed phase
+# takes `seed-<HEAD>` and deletes every other seed, so a default whose HEAD moved past that seed (a failed deployment) is refused
+# before anything is built or snapshotted: the recorded seed stays for the clones, and the next passed deployment moves both.
+- name: Refuse an index refresh whose default moved past its recorded seed
+  tags: [php_index]
+  when: phase == 'php_index' and intent.seed_commit is defined
+  block:
+    - name: Read the default's commit
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}" }
+      register: php_index_head
+      changed_when: false
+    - name: Require the recorded seed's commit
+      ansible.builtin.assert:
+        that: php_index_head.stdout | trim == intent.seed_commit
+        fail_msg: instance.php_index_seed_moved
+        quiet: true
+
+# The Phpactor symbol index of a Laravel default on an app-dev Node, right before its seed, so a clone's first lookup reads the seed's
+# index (docs/reference/development-containers.md#php-symbol-index). Only an intent with `php_index` has it (PhpSymbolIndex). `agent`
+# runs it at the application's folder with the deploy steps' environment; an unchanged tree starts no Phpactor, and a changed one
+# reindexes only what changed, niced and within the intent's bound. A failed or late build fails the phase, so the old seed stays. A
+# runtime folder that predates Phpactor (the Node is not converged since the release) skips the work, and the result says why; a
+# runtime folder that ships it with a broken program fails.
+- name: Prepare the PHP symbol index
+  tags: [php_index]
+  when: phase == 'php_index' and container.php_index is defined
+  block:
+    - name: Build the index as agent at the application's folder
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', (container.php_index.seconds + 30) | string, 'incus', 'exec', '--project', container.project,
+              '--cwd', container.php_index.root, container.name, '--', 'runuser', '-u', 'agent', '--', '/usr/bin/env', '-i']
+             + container.environment
+             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), container.php_index.seconds | string,
+                 container.php_index.runtime] }}
+      register: php_index_built
+      changed_when: php_index_built.rc == 0 and (php_index_built.stdout | from_json).index != 'unchanged'
+    # A register is overwritten when the next phase includes this file and skips the task; a skipped set_fact keeps its fact.
+    - name: Name whether the index changed, for the seed
+      ansible.builtin.set_fact:
+        php_index_changed: "{{ php_index_built.changed and (php_index_built.stdout | from_json).index == 'updated' }}"
+        php_index_skipped: "{{ (php_index_built.stdout | from_json).reason | default('') }}"
+  rescue:
+    - name: Name why the index failed
+      ansible.builtin.set_fact:
+        php_index_failure:
+          detail: >-
+            {{ 'The PHP symbol index: '
+               ~ ((ansible_failed_result.stderr | default('') | string | trim)[-600:] or (ansible_failed_result.msg | default('') | string))
+               ~ '. The old seed stays.' }}
+    - name: Fail the index
+      ansible.builtin.fail:
+        msg: instance.php_index_failed
 
 # Orbit delivers the Swamp Club key of a nested fleet at each start into the tmpfs `/run`, so no seed holds it. The key file that was
 # placed by hand on the disk before that delivery refuses the seed before the seed changes anything. Only the path is tested.
@@ -1997,6 +2052,15 @@
         seed_volume_bases: >-
           {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^base-') | list)
              if container.inner_volume is defined else [] }}
+    # The index refresh (an intent with `seed_commit`) checked HEAD before its build, but a commit may land in the running default
+    # during it. The seed's name is read again above; before any snapshot is created or deleted it must still be the recorded seed's
+    # commit, or `seed-<HEAD>` would replace the seed that clones copy.
+    - name: Require the recorded seed's commit for the index refresh's seed
+      when: intent.seed_commit is defined
+      ansible.builtin.assert:
+        that: container_commit == intent.seed_commit
+        fail_msg: instance.php_index_seed_moved
+        quiet: true
     # An earlier retake stopped after its new seed was whole: every half of it is under `next-`. It takes the seed's name now. A new
     # seed that is not whole is dropped, so no seed is ever a pair of two retakes.
     - name: Finish an earlier retake of this seed
@@ -2054,7 +2118,7 @@
       loop: "{{ seed_volume_nexts }}"
       changed_when: true
     # Every passed deployment retakes the seed, also at the same commit: the default's caches and built files move on, and a clone must
-    # copy them as they are now. A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
+    # copy them as they are now. So does a run whose `php_index` phase changed the index (instance.php_index, PhpSymbolIndexRefresh). A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
     # failure restores a seed with the fleet, and after it, so the seed holds the refreshed fleet and its record.
     - name: Snapshot the container with the Processes stopped
       when: >-
@@ -2062,6 +2126,7 @@
         or (container.inner_volume is defined and seed_name not in seed_volume_names)
         or intent.deployment is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
+        or php_index_changed | default(false) | bool
       vars:
         # A half of this name exists: the new seed waits under `next-` until it is whole.
         seed_take: "{{ seed_next if seed_name in seed_names or seed_name in seed_volume_names else seed_name }}"
@@ -2182,6 +2247,16 @@
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--'] + units }}" }
           changed_when: false
+    # The new index's fingerprint becomes the recorded one only now that a seed holds the index: after a failed snapshot it stays
+    # pending, so the next run builds again and retakes the seed (instance_php_index.py `seeded`).
+    - name: Record the seeded index's fingerprint as agent
+      when: container.php_index is defined and php_index_changed | default(false) | bool
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '60', 'incus', 'exec', '--project', container.project, container.name, '--', 'runuser', '-u', 'agent', '--',
+              '/usr/bin/env', '-i'] + container.environment
+             + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_php_index.py'), 'seeded'] }}
+      changed_when: true
     - name: Clear the captured Node-store refresh marker as the app user
       when: intent.migrate is not defined and (node_runtime_result | default({})).get('seed_refresh_required', false)
       ansible.builtin.command:

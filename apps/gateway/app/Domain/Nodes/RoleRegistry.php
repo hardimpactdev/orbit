@@ -22,6 +22,7 @@ final readonly class RoleRegistry
             RoleName::Analytics,
             RoleName::CiRunner,
             RoleName::Swamp,
+            RoleName::Agent,
         ];
     }
 
@@ -29,6 +30,13 @@ final readonly class RoleRegistry
     public function removable(RoleName $role): bool
     {
         return $this->definition($role)->mutable || $role === RoleName::Router;
+    }
+
+    /** @return list<string> The roles that only the Gateway records; host convergence never takes them. */
+    public function recordOnly(): array
+    {
+        return array_values(array_map(static fn (RoleName $role): string => $role->value,
+            array_filter($this->names(), fn (RoleName $role): bool => $this->definition($role)->recordOnly)));
     }
 
     public function definition(RoleName $role): RoleDefinition
@@ -137,6 +145,16 @@ final readonly class RoleRegistry
                 // Moving the role means moving its Process and its publication; remove and add it instead.
                 relocatable: false,
                 conflicts: [RoleName::Gateway],
+            ),
+            // Marks a Node that hosts a host-level Conn server entry point (Linux or macOS). The Gateway only records it.
+            RoleName::Agent => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                relocatable: false,
+                metrics: false,
+                recordOnly: true,
             ),
         };
     }

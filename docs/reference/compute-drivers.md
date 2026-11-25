@@ -49,8 +49,12 @@ Canonical recipe JSON hashes to a deterministic SHA-256 recipe identity (combini
 
 Container hosts publish two read-only shared folders built from the recipe:
 
-- **`/opt/orbit-runtime` (`runtime`):** Static glibc PHP binaries, Composer, Vite+ runtime (`vp`), Node.js, pnpm, Bun, `chrome-headless-shell`, and the 26 pinned Chromium `browser-*` libraries and fonts.
+- **`/opt/orbit-runtime` (`runtime`):** Static glibc PHP binaries, Composer, Vite+ runtime (`vp`), Node.js, pnpm, Bun, ripgrep, `chrome-headless-shell`, and the 26 pinned Chromium `browser-*` libraries and fonts.
+  It also holds the official `laravel-lsp` PHAR and its `laravel-lsp-root` finder ([Laravel language server](/reference/development-containers#laravel-language-server)).
+  It also holds the `phpactor` PHAR, which a Laravel default runs for its [PHP symbol index](/reference/development-containers#php-symbol-index).
 - **`/opt/orbit-agent` (`agent`, `root:2750`):** `t3`, `conn-server`, `claude-code`, `codex`, `antigravity`, `chrome-headless-shell`, and `agent-browser`.
+
+An agent folder part may also pin its release's macOS arm64 app as `macos_arm64`: the zip, its SHA-256, and the bundle id and Developer ID team id of its signature. This is not a recipe architecture. No container host installs it, and the folder's plan and version leave it out. Only `conn-server` uses it today; see [Conn Server pin](/reference/development-containers#conn-server-pin).
 
 #### The Vite+ home
 

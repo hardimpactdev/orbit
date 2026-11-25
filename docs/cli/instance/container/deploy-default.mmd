@@ -89,13 +89,20 @@ sequenceDiagram
   end
   SW->>C: Finish the container<br/>Ansible · processes · seed · check
   %%> What it does:
-  %%> - one play runs the phases `processes`, `seed` and `check`, in this order; a nested-fleet default refreshes its fleet between `processes` and `seed`: container/fleet-refresh.mmd
+  %%> - one play runs the phases `processes`, `php_index`, `seed` and `check`, in this order; a nested-fleet default refreshes its fleet between `processes` and `php_index`: container/fleet-refresh.mmd
   %%> - the handlers a phase notifies run before the next phase starts, as with separate plays
   %%> Phase processes:
   %%> - installs the Project's new and changed development Process definitions as `orbit-*` units, with their environment files from the vault
   %%> - restarts a changed unit and removes a former environment file
   %%> - removes the unit and environment folder of a Process whose definition the Project removed; admission marked its record `removing`
   %%> - enables and starts each running unit and waits for it; a unit that does not become active fails with its name in the detail, and only its Process is recorded failed
+  %%> Phase php_index:
+  %%> - only a Laravel default on an active app-dev Node, whose intent has `php_index`; every other default skips it
+  %%> - `agent` runs Phpactor's `index:build` at the application's folder, after the deploy steps, at the lowest CPU and I/O priority and within 600 s; Phpactor finds its index under agent's home by itself, and reindexes only what changed
+  %%> - an unchanged tree (its fingerprint in `~/.cache/orbit-php-index.json`) starts no Phpactor
+  %%> - a failed or late build fails with `instance.php_index_failed` and Phpactor's reason in the detail; the seed is not taken, so the old seed stays
+  %%> - a Node whose runtime folder predates Phpactor (neither its `phpactor` part nor `bin/phpactor`: not converged since the release) skips the work: the deployment passes, its seed has no new index, and its result has `php_index_skipped`
+  %%> - a new fingerprint stays pending until the seed phase takes the seed that holds the index, so a failed snapshot leaves the next run to build and retake again
   %%> Phase seed:
   %%> - prepares a Node/Vite default’s private Node store as www-data before the existing snapshot stop/start boundary; this conversion itself never restarts a Process
   %%> - a converted store requires a new seed even at the same commit, so clones inherit it; older seeds remain slower but correct until the explicit deploy refreshes them

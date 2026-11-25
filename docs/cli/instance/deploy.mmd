@@ -153,9 +153,10 @@ sequenceDiagram
     %%> - a step with `inputs` is skipped when its inputs at the commit and its command are as at its last passed run in this workspace
     SW->>N: Finish the container<br/>Ansible · processes · seed · check
     %%> What it does:
-    %%> - one play runs the phases `processes`, `seed` and `check`, in this order; a nested-fleet default runs `fleet_refresh` between `processes` and `seed`
+    %%> - one play runs the phases `processes`, `php_index`, `seed` and `check`, in this order; a nested-fleet default runs `fleet_refresh` between `processes` and `php_index`
     %%> - `processes`: writes changed `orbit-*` units and new environment files from the vault, removes former ones, and restarts the changed units; stops and removes the units and environment folders of the Processes the run does not own, such as those marked `removing`; enables and starts each running unit and waits for it; on failure the detail names the unit that is not active
     %%> - `fleet_refresh`, nested-fleet default only: docs/cli/instance/container/fleet-refresh.mmd
+    %%> - `php_index`, a Laravel default on an active app-dev Node only (its intent has `php_index`): `agent` runs Phpactor's incremental `index:build` at the application's folder, niced and within 600 s; an unchanged tree starts no Phpactor; a failure is `instance.php_index_failed`, and the old seed stays (docs/reference/development-containers.md#php-symbol-index)
     %%> - `seed`: stops the units, snapshots `seed-<commit>`, starts them again on the new commit and deletes older seeds; a nested-fleet default retakes it at the same commit, and refuses a Club key file on its disk
     %%> - `check`: the branch is at the commit and the units are active
     %%> - the handlers a phase notifies run before the next phase starts, as with separate plays

@@ -1,0 +1,191 @@
+---
+# One Linux Node of the Conn Server rollout (conn-server-rollout.yml): the tarball unpacks into a new release folder beside
+# `current`, `current` moves to it, and systemd restarts the unit. Any failure from the relink until /health
+# answers points `current` back and restarts again.
+# `server.path` is the `current` link. Sets `node_result`; a failed check fails with its public code as the message.
+- name: Name the paths of the Node
+  ansible.builtin.set_fact:
+    linux_root: "{{ server.path | dirname }}"
+    linux_release: "{{ server.path | dirname }}/releases/{{ version }}-{{ run_id }}"
+    linux_stage: "{{ server.path | dirname }}/.stage-{{ run_id }}"
+
+- name: Read the current release
+  ansible.builtin.stat: { path: "{{ server.path }}", get_checksum: false }
+  register: linux_current
+  become: true
+  timeout: 20
+
+- name: Refuse a Node with no current release
+  ansible.builtin.assert:
+    that: linux_current.stat.islnk | default(false)
+    fail_msg: conn_server.not_installed
+    quiet: true
+
+- name: Make the staging folder
+  ansible.builtin.file: { path: "{{ linux_stage }}", state: directory, mode: "0700" }
+  become: true
+  timeout: 20
+
+- name: Download the tarball
+  ansible.builtin.get_url: { url: "{{ intent.linux.url }}", dest: "{{ linux_stage }}/conn-server.tar.gz", mode: "0600", timeout: 60 }
+  become: true
+  timeout: 900
+
+- name: Read the tarball's SHA-256
+  ansible.builtin.stat: { path: "{{ linux_stage }}/conn-server.tar.gz", checksum_algorithm: sha256 }
+  register: linux_tarball
+  become: true
+  timeout: 60
+
+- name: Check the tarball's SHA-256
+  ansible.builtin.assert:
+    that: linux_tarball.stat.checksum == intent.linux.sha256
+    fail_msg: conn_server.hash_mismatch
+    quiet: true
+
+# The layout this flow assumes, checked before any change and in a dry run too: the unit starts `<current>/conn-server`, and the
+# tarball holds `conn-server-<X>-linux-x64/conn-server`, whose top folder the unpack strips. Any other layout installs nothing.
+- name: Read the unit's program
+  ansible.builtin.command: { argv: [timeout, "20", systemctl, show, -p, ExecStart, --value, --, "{{ server.service }}"] }
+  register: linux_exec
+  changed_when: false
+  become: true
+
+- name: List the tarball
+  ansible.builtin.command: { argv: [timeout, "60", tar, -tzf, "{{ linux_stage }}/conn-server.tar.gz"] }
+  register: linux_listing
+  changed_when: false
+  become: true
+
+- name: Check the layout
+  ansible.builtin.assert:
+    that:
+      - ('path=' ~ server.path ~ '/conn-server ') in linux_exec.stdout
+      - ('conn-server-' ~ version ~ '-linux-x64/conn-server') in linux_listing.stdout_lines
+    fail_msg: conn_server.layout_mismatch
+    quiet: true
+
+# /health answers on the unit's `--host` (`--host=<addr>` or `--host <addr>` in ExecStart's argv), or on 127.0.0.1 when it has
+# none or a wildcard, never through a proxy. Before any change, in a dry run too, the running server must answer there with 200,
+# `server: conn-server` and its version, so the rollback has a version to check; anything else fails the Node.
+- name: Name the unit's health address
+  ansible.builtin.set_fact:
+    linux_health_url: >-
+      {%- set argv = linux_exec.stdout | regex_search('argv\\[\\]=([^;]*)', '\\1') | default([''], true) | first -%}
+      {%- set host = argv | regex_search('(?:^|\\s)--host(?:=|\\s+)(\\S+)', '\\1') | default([''], true) | first -%}
+      {%- set host = '127.0.0.1' if host in ['', '0.0.0.0', '::'] else host -%}
+      http://{{ '[' ~ host ~ ']' if ':' in host else host }}:{{ server.port }}/health
+
+- name: Read the running version
+  ansible.builtin.uri: { url: "{{ linux_health_url }}", use_proxy: false, return_content: true, timeout: 5 }
+  register: linux_before
+  failed_when: false
+  timeout: 20
+
+- name: Refuse a running server that does not answer with its version
+  ansible.builtin.assert:
+    that:
+      - linux_before.status | default(-1) | int == 200
+      - linux_before.json.server | default('') == 'conn-server'
+      - linux_before.json.version | default('', true) | string | length > 0
+    fail_msg: conn_server.health_unreachable
+    quiet: true
+
+- name: Record a checked Node of a dry run
+  when: intent.dry_run
+  ansible.builtin.set_fact:
+    node_result: { node_id: "{{ node_id | int }}", outcome: checked }
+
+- name: Swap and restart
+  when: not intent.dry_run
+  block:
+    - name: Send the notice before the restart
+      when: server.notify_before_restart
+      ansible.builtin.include_tasks: conn-server-notice.yml
+
+    # A Node set up before this rollout has no `releases` folder yet. Its failure is its own step, never backup_exists.
+    - name: Make the releases folder
+      ansible.builtin.file: { path: "{{ linux_release | dirname }}", state: directory, owner: "{{ linux_releases_owner }}", mode: "0755" }
+      become: true
+      timeout: 20
+
+    # A new release folder per run: mkdir without -p refuses one that exists. The old release stays as the backup.
+    - name: Make the release folder
+      ansible.builtin.command: { argv: [mkdir, -m, "0755", "{{ linux_release }}"] }
+      register: linux_release_made
+      changed_when: true
+      failed_when: false
+      become: true
+      timeout: 20
+
+    - name: Refuse an existing release folder
+      ansible.builtin.assert:
+        that: linux_release_made.rc == 0
+        fail_msg: conn_server.backup_exists
+        quiet: true
+
+    - name: Unpack the tarball
+      ansible.builtin.unarchive:
+        src: "{{ linux_stage }}/conn-server.tar.gz"
+        dest: "{{ linux_release }}"
+        remote_src: true
+        owner: "{{ server.user }}"
+        extra_opts: [--strip-components=1]
+      become: true
+      timeout: 120
+
+    # From here on, every failure up to a healthy /health points current back at the old release and restarts it.
+    - name: Install and start the new release
+      block:
+        - name: Point current at the new release
+          ansible.builtin.include_tasks: conn-server-linux-start.yml
+          vars:
+            linux_target: "{{ linux_release }}"
+            expected_version: "{{ version }}"
+
+        - name: Fail an unhealthy new server
+          ansible.builtin.assert:
+            that:
+              - linux_health.json.server | default('') == 'conn-server'
+              - linux_health.json.version | default('') == version
+            fail_msg: conn_server.health_check_failed
+            quiet: true
+
+        - name: Record the updated Node
+          ansible.builtin.set_fact:
+            node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
+      rescue:
+        - name: Name the cause
+          ansible.builtin.set_fact:
+            linux_failure: >-
+              {{ ansible_failed_result.msg if (ansible_failed_result.msg | default('') is match('^conn_server\.[a-z_]+$'))
+                 else 'conn_server.step_failed' }}
+            rolled_back: false
+
+        # `rolled_back` says whether the old server answers again; a failed restart leaves it false.
+        - name: Point current back at the old release
+          block:
+            - name: Restart the old release
+              ansible.builtin.include_tasks: conn-server-linux-start.yml
+              vars:
+                linux_target: "{{ linux_current.stat.lnk_source }}"
+                expected_version: "{{ linux_before.json.version | default('') }}"
+
+            - name: Note whether the old server answers
+              ansible.builtin.set_fact:
+                rolled_back: "{{ linux_health.json.version | default('') == linux_before.json.version | default(none) }}"
+          rescue:
+            - name: Note that the old server does not answer
+              ansible.builtin.set_fact:
+                rolled_back: false
+
+        - name: Fail the Node after its rollback
+          ansible.builtin.assert:
+            that: false
+            fail_msg: "{{ linux_failure }}"
+            quiet: true
+
+- name: Remove the staging folder
+  ansible.builtin.file: { path: "{{ linux_stage }}", state: absent }
+  become: true
+  timeout: 60

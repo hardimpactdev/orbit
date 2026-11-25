@@ -1,0 +1,23 @@
+---
+# Start the Conn Server's LaunchAgent in the gui domain and wait until /health names `expected_version`, answering the expected Conn
+# Server TCC prompt on the way (conn-server-mac.yml). Sets `mac_healthy`, `mac_answered` (the prompts it allowed) and, on any other
+# prompt, `mac_prompt_error`.
+- name: Start the wait
+  ansible.builtin.set_fact:
+    mac_healthy: false
+    mac_answered: []
+    mac_prompt_error: null
+    mac_wait_until: "{{ now().timestamp() + health_seconds | int }}"
+
+- name: Kickstart the LaunchAgent in the gui domain
+  ansible.builtin.command: { argv: [launchctl, kickstart, -k, "{{ mac_target }}"] }
+  changed_when: true
+  timeout: 60
+
+# One round reads a pending prompt and /health; the rounds end once the server answers, a prompt was not ours, or health_seconds
+# have passed. A round takes at most 240 s (its four 60 s task timeouts, the delay's wait among them), so the wait ends within
+# health_seconds + 240 s.
+- name: Wait for the server, answering its prompt
+  ansible.builtin.include_tasks: conn-server-mac-round.yml
+  loop: "{{ range(health_rounds | int) | list }}"
+  loop_control: { label: "{{ item }}" }

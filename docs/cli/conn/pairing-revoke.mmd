@@ -114,6 +114,8 @@ sequenceDiagram
     %%> - unmatched failures keep every pairing row unchanged; other failures mark only pairings whose sessions and links completed; task #5171 fails
     %%> - an unmatched revoke of one held pairing by its id proves nothing of it is left, so it is settled, unless its hold ran at admission: then it stays withdrawn, and the hold's end revokes it again by its id
     %%> - the next owed held revoke on env-beast starts; one whose hold still runs waits for that hold's end
+    %%> - an interrupted revoke of held pairings is admitted again at once by the same pairing ids
+    %%> - a failed one stays owed: the five-minute `conn:owed-work:advance` tick admits it again once 15 minutes have passed
     %%> Retry:
     %%> - use pairing_id to retry a revoked row whose session still lives; an empty retry fails with conn.revocation_unmatched
   end

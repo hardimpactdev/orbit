@@ -16,6 +16,7 @@ final class ListProjectsCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'project:list
+        {--node= : Only the generic Project about this Node: Node ID or registered name}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -31,7 +32,17 @@ final class ListProjectsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress($connector, new ListProjectsRequest, ProjectsResponse::class, ['List Projects', 'Fetching Projects', 'Fetched Projects'], dismiss: true);
+        $nodeId = null;
+
+        if ($this->option('node') !== null) {
+            $nodeId = $this->resolveNodeId($connector, $this->option('node'));
+
+            if ($nodeId === null) {
+                return self::FAILURE;
+            }
+        }
+
+        $response = $this->sendWithProgress($connector, new ListProjectsRequest($nodeId), ProjectsResponse::class, ['List Projects', 'Fetching Projects', 'Fetched Projects'], dismiss: true);
 
         if (! $response instanceof ProjectsResponse) {
             return self::FAILURE;
@@ -51,7 +62,7 @@ final class ListProjectsCommand extends GatewayCommand
                 $project->name,
                 $project->slug,
                 $project->type,
-                $project->repositoryUrl,
+                $project->repositoryUrl ?? '—',
                 $project->defaultBranch ?? '—',
                 $project->root ?? '—',
             ];

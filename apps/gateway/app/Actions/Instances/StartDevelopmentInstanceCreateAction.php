@@ -25,6 +25,7 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\OwnedDatabaseSlug;
+use App\Domain\Instances\PhpSymbolIndex;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
@@ -171,7 +172,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'name' => $name, 'name_converted_from' => DefaultInstanceName::convertedFrom($project, $data->name),
                 'root' => $root, 'domain' => $data->domain, 'branch_override' => $data->branch,
                 'checkout' => $instance->checkout_path, 'prepare_id' => $instance->source_prepare_id,
-                'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
+                'repository' => $project->repositoryUrl(), 'repository_identity' => $project->repository_identity,
                 'default_branch' => $project->default_branch,
                 'task_vm' => false,
                 'node_id' => $node->id, 'initial_status' => $instance->status->value, 'first_setup_pending' => $instance->first_setup_pending,
@@ -260,7 +261,8 @@ final readonly class StartDevelopmentInstanceCreateAction
                 // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts and a default's
                 // own database. A clone runs no deploy step and no database step: its completion copies the database. Its Route runs
                 // beside the copy, within the same 30 minutes.
-                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null || $source instanceof Instance ? 0 : 180);
+                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null || $source instanceof Instance ? 0 : 180)
+                    + PhpSymbolIndex::runSeconds($containerIntent);
 
                 return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
             }
@@ -462,6 +464,10 @@ final readonly class StartDevelopmentInstanceCreateAction
         // The default stays on the Project's default branch, which its deployments follow; a clone takes its own branch.
         $intent = [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
             $domain === null ? null : 'https://'.$domain), 'steps' => $steps];
+        // A Laravel default on an app-dev Node prepares its PHP symbol index before its first seed (PhpSymbolIndex).
+        if (! $source instanceof Instance && ($index = PhpSymbolIndex::intent($instance)) !== null) {
+            $intent['php_index'] = $index;
+        }
         // A clone's create fills its agent folder once: the copy keeps this version (docs/reference/development-containers.md#agent-instructions).
         if ($source instanceof Instance && is_array($intent['clone'] ?? null)) {
             $intent['clone']['agent_instructions'] = app(InstanceAgentInstructions::class)->intent($instance->project, $agentFiles);

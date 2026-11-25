@@ -28,18 +28,39 @@ final readonly class InstanceFolderPlan
         ."exec /usr/bin/btrfstune \"$@\"\n";
 
     /**
+     * Prints the Laravel application folder, the one with `artisan`, where a client starts `laravel-lsp` and sends its root URI
+     * (docs/reference/development-containers.md#laravel-language-server): the application folder that a clone's Instance file names,
+     * else the nearest folder at or above the given path (the working folder by default) with `artisan`, else the one folder below
+     * that path with it. It reads the Instance file and the workspace only, so a Project holds no Orbit setting.
+     */
+    public const string LaravelLspRoot = "#!/bin/sh\n# Managed by Orbit. Prints the folder with the Laravel application's artisan, where laravel-lsp starts.\nset -eu\n"
+        ."start=\${1:-.}\n"
+        ."application=\$(sed -n 's/^ORBIT_APPLICATION=\"\\(.*\\)\"\$/\\1/p' ".InstanceContainer::InstanceFile." 2>/dev/null | sed 's/\\\\\\(.\\)/\\1/g')\n"
+        ."if [ -n \"\$application\" ] && [ -f \"\$application/artisan\" ]; then\n  printf '%s\\n' \"\$application\"\n  exit 0\nfi\n"
+        ."folder=\$(cd \"\$start\" && pwd -P)\n"
+        ."while :; do\n  if [ -f \"\$folder/artisan\" ]; then\n    printf '%s\\n' \"\$folder\"\n    exit 0\n  fi\n"
+        ."  [ \"\$folder\" = / ] && break\n  folder=\$(dirname \"\$folder\")\ndone\n"
+        ."found=\$(find \"\$start\" \\( -name vendor -o -name node_modules -o -name .git \\) -prune -o -type f -name artisan -print)\n"
+        ."if [ -n \"\$found\" ] && [ \"\$(printf '%s\\n' \"\$found\" | wc -l)\" -eq 1 ]; then\n"
+        ."  cd \"\$(dirname \"\$found\")\" && pwd -P\n  exit 0\nfi\n"
+        ."echo \"laravel-lsp-root: no one Laravel application (artisan) at, above or below \$start\" >&2\nexit 1\n";
+
+    /**
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
-    public static function for(InstanceFolders $folders, bool $shift = true, string $runtimeRoot = InstanceHostIntent::RuntimeFolder): array
+    public static function for(InstanceFolders $folders, bool $shift = true, string $runtimeRoot = InstanceHostIntent::RuntimeFolder, bool $production = false): array
     {
         // Unshifted folders carry `shift: false`, so their versions differ: the agent's programs are open to everyone there.
         $mount = $shift ? [] : ['shift' => 'false'];
-        $runtime = ['path' => $runtimeRoot, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
+        // The production runtime folder of an app-prod Node leaves out the development tools, the parts the recipe marks
+        // `dev_only`, with their programs and the scripts that serve them (docs/reference/production-containers.md#the-pinned-runtime).
+        $pins = $production ? array_filter($folders->runtime, static fn (FolderPin $pin): bool => ! $pin->devOnly) : $folders->runtime;
+        $runtime = ['path' => $runtimeRoot, 'parts' => [...self::parts($pins), ...self::php($folders)]];
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
-        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune], ...$mount];
+        $runtime = [...$runtime, 'scripts' => ['btrfstune' => self::Btrfstune, ...($production ? [] : ['laravel-lsp-root' => self::LaravelLspRoot])], ...$mount];
         $agent = ['path' => InstanceHostIntent::AgentFolder, 'parts' => self::parts($folders->agent), 'notes' => InstanceNotes::all(), ...$mount];
 
         return ['runtime' => ['version' => self::version($runtime), ...$runtime], 'agent' => ['version' => self::version($agent), ...$agent]];

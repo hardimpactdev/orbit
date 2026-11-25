@@ -416,6 +416,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-instance-php-index": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-server-switch": {
    "result": "read-only",
    "cleanup": "idempotent"
@@ -427,6 +431,10 @@
    "cleanup": "idempotent"
   },
   "operation-conn-environment-restart": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
+  "operation-fleet-conn-server-rollout": {
    "result": "read-only",
    "cleanup": "idempotent"
   },

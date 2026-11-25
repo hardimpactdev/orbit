@@ -123,7 +123,7 @@ final readonly class NativeNodeRoleRuntimeInput
                 'node_id' => $node->id,
                 'nested' => $nested,
                 'incus' => $incus,
-                'folder' => InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node), '/opt/orbit-production-runtime')['runtime'],
+                'folder' => InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node), '/opt/orbit-production-runtime', production: true)['runtime'],
                 'browser_files' => InstanceImage::browser(),
             ];
         }

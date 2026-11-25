@@ -21,6 +21,7 @@ use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Http\Request;
+use Orbit\Extensions\Conn\Console\AdvanceConnOwedWorkCommand;
 use Orbit\Extensions\Conn\Console\EnrolConnManagedTargetCommand;
 use Orbit\Extensions\Conn\Console\PruneConnAttentionEventsCommand;
 use Orbit\Extensions\Conn\Console\ReadConnThreadsCommand;
@@ -35,6 +36,7 @@ use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
 use Orbit\Extensions\Conn\Domain\ConnReservations;
+use Orbit\Extensions\Conn\Domain\ConnServerLifetimes;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedNoticePublisher;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedRevocation;
@@ -44,6 +46,7 @@ use Orbit\Extensions\Conn\Domain\Push\ApnsJwtProvider;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Infrastructure\ConnActivityInputRedaction;
 use Orbit\Extensions\Conn\Infrastructure\HttpApnsClient;
+use Orbit\Extensions\Conn\Infrastructure\HttpConnServerLifetimes;
 use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
 
 /** The conn extension: Conn devices, shared profiles, and T3 server pairing ([Conn layer](/reference/conn)). */
@@ -52,6 +55,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         T3ServerClient::class => HttpT3ServerClient::class,
+        ConnServerLifetimes::class => HttpConnServerLifetimes::class,
         ConnManagedNoticePublisher::class => ReverbConnManagedNoticePublisher::class,
     ];
 
@@ -94,6 +98,7 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         TrimStrings::skipWhen(static fn (Request $request): bool => $request->is('api/v1/conn/broadcasting/auth'));
         $this->commands([
             RenewConnEnvironmentsCommand::class,
+            AdvanceConnOwedWorkCommand::class,
             ReadConnThreadsCommand::class,
             EnrolConnManagedTargetCommand::class,
             PruneConnAttentionEventsCommand::class,
@@ -103,6 +108,9 @@ final class ConnServiceProvider extends ExtensionServiceProvider
         // Hourly, so a container started after its session ended soon gets a new one; each tick admits only the due ones.
         $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {
             GatewaySchedule::command($schedule, 'conn:environments:renew', uniqueFor: 3000, overlapMinutes: 50)->hourly()
+                ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
+            // Owed revokes and cleanups that no Operation end or wake will admit, such as a failed one, start again (/reference/conn#owed-work).
+            GatewaySchedule::command($schedule, 'conn:owed-work:advance', uniqueFor: 240, overlapMinutes: 4)->everyFiveMinutes()
                 ->when(static fn (): bool => app(ExtensionStore::class)->enabled('conn'));
             // Every minute while the operator's switch is on, on `problems`, so it waits behind task work and never on `operations`.
             GatewaySchedule::command($schedule, 'conn:threads:read', uniqueFor: 120, overlapMinutes: 2, queue: GatewayQueue::Problems)->everyMinute()

@@ -363,7 +363,7 @@ Extensions can register release follow-up phases beside `fleet` (for example `ai
 
 ### Rollout set and order
 
-`fleet.rollout` includes every `active` managed Linux Node (with a WireGuard address and pinned SSH host key) that holds at least one active non-`gateway` role and is not the serving Gateway host. Roleless and macOS Nodes stay out and update via `orbit self-update`. The serving Gateway joins the verified release pass last for its own agent and workload roles.
+`fleet.rollout` includes every `active` managed Linux Node (with a WireGuard address and pinned SSH host key) that holds at least one active role other than `gateway` and a record-only role such as `agent` and is not the serving Gateway host. Roleless and macOS Nodes stay out and update via `orbit self-update`. The serving Gateway joins the verified release pass last for its own agent and workload roles.
 
 Nodes run one at a time in lowest-risk order (a Node with multiple roles joins its highest-risk group, ordered by Node ID inside each group):
 

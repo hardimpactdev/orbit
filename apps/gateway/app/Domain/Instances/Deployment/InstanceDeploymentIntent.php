@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\PhpSymbolIndex;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
@@ -45,8 +46,13 @@ final readonly class InstanceDeploymentIntent
         private ServiceMetricsProjection $metrics,
     ) {}
 
-    /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $rollback = false): array
+    /**
+     * `$agentFolder`: as InstanceContainer::seedFiles takes it.
+     *
+     * @param  list<array<string, mixed>>|null  $agentFolder
+     * @return array<string, mixed>
+     */
+    public function snapshot(Instance $instance, bool $rollback = false, ?array $agentFolder = null): array
     {
         $instance->refresh()->loadMissing(['project', 'node']);
         // An Instance that moves into a container takes no deployment until the move has ended.
@@ -70,10 +76,10 @@ final readonly class InstanceDeploymentIntent
                 'needs_vp' => ! $container && array_any($development, static fn (DevelopmentDeployStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
                 'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
                 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $instance->project->default_branch,
-                'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
+                'repository' => $instance->project->repositoryUrl(), 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 // A default holds the files every clone of it needs before its seed (InstanceContainer::seedFiles).
-                'container' => $runtime !== null ? self::container($instance, $runtime) : null,
+                'container' => $runtime !== null ? self::container($instance, $runtime, $agentFolder) : null,
                 ...($runtime === null ? [] : ExecutorPowerIntent::lifecycle($instance, $runtime)),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];
@@ -94,7 +100,7 @@ final readonly class InstanceDeploymentIntent
             'php_runtime' => $runtime, 'php_refresh' => $refresh,
             'project_id' => $instance->project_id, 'node_user' => $instance->node->user,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'branch' => $config->branch,
-            'repository' => $instance->project->repository_url,
+            'repository' => $instance->project->repositoryUrl(),
             'home' => $instance->production_home, 'user' => $instance->production_user,
             'relative_root' => $instance->root ?? $instance->project->root,
             'application_suffix' => ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root),
@@ -235,17 +241,21 @@ final readonly class InstanceDeploymentIntent
     /**
      * The container as the deployment runs it. A default also holds the files every clone of it needs before its seed
      * (InstanceContainer::seedFiles), and its seed records the digest of the services part it holds (InstanceContainer::servicesDigest).
+     * A Laravel default on an app-dev Node prepares its PHP symbol index before the seed (PhpSymbolIndex). `$agentFolder`: as
+     * InstanceContainer::seedFiles takes it.
      *
+     * @param  list<array<string, mixed>>|null  $agentFolder
      * @return array<string, mixed>
      */
-    private static function container(Instance $instance, InstanceRuntime $runtime): array
+    public static function container(Instance $instance, InstanceRuntime $runtime, ?array $agentFolder = null): array
     {
         $container = app(InstanceContainer::class)->intent($instance, $runtime);
         if ($instance->name !== DefaultInstanceName::Name) {
             return $container;
         }
 
-        return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime),
-            'services_digest' => InstanceContainer::servicesDigest($container)];
+        return [...$container, 'seed_files' => app(InstanceContainer::class)->seedFiles($instance, $runtime, $agentFolder),
+            'services_digest' => InstanceContainer::servicesDigest($container),
+            ...(($index = PhpSymbolIndex::intent($instance)) === null ? [] : ['php_index' => $index])];
     }
 }

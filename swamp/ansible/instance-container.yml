@@ -2,10 +2,10 @@
 # The container of a development Instance on its app-dev Node (docs/reference/development-containers.md#lifecycle): a Project's
 # default Instance, its first build (instance:create) and its development deployments (instance:deploy), and every other Instance,
 # a clone of the default's seed snapshot with T3. One tagged part per Swamp phase.
-#   create of the default: `container`, `workspace`, `processes`, `seed`, and `stop` after a failure.
+#   create of the default: `container`, `workspace`, `processes`, `php_index` and `seed` in one run, and `stop` after a failure.
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure. A clone of a
 #     nested-fleet default (its intent has `fleet`) runs `fleet_check` and `fleet_resume` after its start.
-#   deploy: `start` and `probe` (with `checkout_probe`), `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its
+#   deploy: `start` and `probe` (with `checkout_probe`), `fetch`, `checkout`, `processes`, `php_index`, `seed`, `check`. A nested-fleet default (its
 #     intent has `fleet`) adds `fleet_start` (its one fleet check) and `seed` right before `fetch`, `fleet_refresh` before the last `seed`, and after a failure
 #     `fleet_restore`, then `start` and `fleet_resume`. One run holds the phases that share their failure handling: `phases`, a
 #     comma-separated list in order with the same tags, such as `-e phases=start,fetch --tags start,fetch`.
@@ -116,7 +116,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(checkout_refusal_detail | default({})) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(checkout_refusal_detail | default({})) | combine(failure_container_detail) | combine(seed_failure | default({})) | combine(php_index_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
                   | combine(executor_carried) | combine(workspace_clean_carried | default({}))
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}

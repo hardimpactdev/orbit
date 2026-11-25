@@ -14,6 +14,7 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
@@ -117,12 +118,14 @@ final readonly class NodeFirewallRuleCatalog
     private function activeRoleClosesPublicSsh(Node $node): bool
     {
         if ($node->relationLoaded('roles')) {
+            $recordOnly = app(RoleRegistry::class)->recordOnly();
+
             return $node->roles->contains(
-                static fn (NodeRole $assignment): bool => $assignment->status === LifecycleStatus::Active,
+                static fn (NodeRole $assignment): bool => $assignment->status === LifecycleStatus::Active && ! in_array($assignment->role->value, $recordOnly, true),
             );
         }
 
-        return $node->roles()->where('status', LifecycleStatus::Active)->exists();
+        return $node->hostRoles()->where('status', LifecycleStatus::Active)->exists();
     }
 
     /** @return list<UfwManagedRule> */
@@ -145,7 +148,7 @@ final readonly class NodeFirewallRuleCatalog
             RoleName::AppProd => [],
             RoleName::Metrics, RoleName::Database => [],
             // WireGuard member trust already admits swamp.orbit on 443.
-            RoleName::WebSocket, RoleName::Swamp => [],
+            RoleName::WebSocket, RoleName::Swamp, RoleName::Agent => [],
             RoleName::Analytics => [
                 $this->rule('orbit:analytics-https', '443', $this->wireguardIp($node), 'orbit'),
                 ...$this->analyticsLocalStorage($node),

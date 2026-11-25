@@ -16,7 +16,7 @@ covers:
 
 `orbit node:add <name> [host]` enrolls a machine into the fleet or re-converges an existing Node after changing its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit while leaving it reachable over public SSH. See [`node`](/cli/node) for all command flags.
 
-Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey`, `node.add`, `node.remove`, and role workflows execute on the Swamp Node's workers over pinned SSH using the Swamp control key (`/etc/orbit/swamp-role-worker/ssh-identity`). No target Node needs its own Swamp worker.
+Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey`, `node.add`, `node.remove`, and role workflows execute on the Swamp Node's workers over pinned SSH using the Swamp control key (`/etc/orbit/swamp-role-worker/ssh-identity`). No target Node needs its own Swamp worker. `node.ssh_access_converge` writes Orbit's keys on a Linux Node with the official `@swamp/cfgmgmt/authorized_key` behavior, which reads the account with `getent`. macOS has no `getent`, so on a `macos` Node the run writes them with `@swamp/ssh` exec and finds the account's home with `dscl`.
 
 ### Per-Node Swamp worker
 
@@ -84,6 +84,8 @@ Admission and enrollment return typed error codes naming the failing check or st
 The role installs Incus and configures the restricted `orbit-ci` project, `orbitci0` bridge, `orbit-ci-egress` ACL (public IPv4 egress only; blocks private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6), and default runner profile (6 CPUs, 12 GiB RAM, 8,192 processes, unprivileged, no nesting, `/opt/orbit-runtime` mounted read-only). Runners use a dedicated `orbit-ci` ZFS or btrfs storage pool marked `user.orbit.ci-runner=true` beside `orbit-instances`.
 
 Each CI Node has a pool of [CI places](/reference/node-settings#ci-places) set via `orbit node:update <node> --ci-places=N` (with optional `--ci-proof-only`). [`tools/ci-runners/setup.sh`](https://github.com/hardimpactdev/orbit/blob/main/tools/ci-runners/setup.sh) creates, registers, moves (`setup.sh move NAME`), and verifies runner containers with the shared labels `self-hosted,Linux,X64,hardimpact,orbit-shard`. The Gateway never stores organization registration tokens.
+
+The role never changes the host's `default` pool. Once every runner is on `orbit-ci`, the operator removes an old `dir` `default` pool with `setup.sh drop_dir_pool`. It refuses before any change when the pool is not `dir` or holds anything but profiles. It points each profile's root at `orbit-instances`, the `orbit-ci` project's at `orbit-ci`, then deletes the pool.
 
 Before removing `ci-runner`, deregister and delete all runner containers; role removal refuses any non-empty `orbit-ci` project even with `--force`. `--purge-data` also removes the empty project, bridge, and ACL after cached images and custom volumes are removed.
 
@@ -245,6 +247,14 @@ Preparing a fresh Gateway uses the local `gateway-bootstrap` workflow (`swamp/wo
 
 Internal bootstrap commands `orbit:role-add`, `orbit:node-add`, `orbit:node-converge`, and `orbit:node-converge-digest --base` let a newly bootstrapped Gateway admit its own roles and converges locally.
 
+## Agent role
+
+`orbit node:role:add <node> agent` marks a Linux or macOS Node that hosts a Conn Server entry point: the host-level server where General threads start and orchestrate work across other Orbit Nodes. That server registers itself as the Node's host entry (one with no `instance_id`) in [`GET /api/v1/conn/environments`](/reference/conn#registration). Each entry of the Node shows `agent` in `roles`, and the host entry of the fleet's primary agent Node shows `is_primary_agent: true`. Removing the role drops `agent` from those entries; the registration itself stays.
+
+The role is only a Gateway record. Adding or removing it records the assignment and a succeeded Operation without SSH or a Swamp run, so a Node needs no managed access for it. A converge and a release leave it out, and a converge scoped to it, `node:converge --role=agent` or `node:role:add <node> agent --converge`, is refused (`validation.failed`, HTTP 422) before any Operation is recorded.
+
+Wherever Orbit decides whether a Node holds host work, it counts only its other roles: a Node with only `agent` stays out of the [fleet rollout](/reference/gateway-recovery#fleet-rollout), keeps public SSH, and is treated as roleless by enrollment and converge. Orbit does not install, start, or check the Conn Server; the Node's operator runs it. Mark the Node that should start General threads with [`node:update --primary-agent=true`](/cli/node/update#record-fields) when the fleet has more than one `agent` Node.
+
 ## Role compatibility
 
 Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `node.role_conflict` HTTP 422 on `node:add` and `node:role:relocate`):
@@ -260,7 +270,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. Role admission entry points vary by role:
+`router`, `metrics`, `websocket`, `swamp`, and `agent` share a Node with any role. Role admission entry points vary by role:
 
 | Role | `node:add --role` | `node:role:add` |
 | --- | --- | --- |
@@ -270,6 +280,7 @@ Conflicting roles cannot share a Node (`validation.failed` on `node:role:add`, `
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
 | `swamp` | No | Singleton |
 | `router` | No | No (use [`cluster:router:set`](/cli/cluster/router-set)) |
+| `agent` | No | Yes |
 
 ## Package sources
 
@@ -351,7 +362,7 @@ The Gateway multiplexes remote commands over one shared OpenSSH connection per N
 
 ## Public SSH
 
-Bootstrap opens `orbit:public-ssh-recovery` and enables UFW, then adds `orbit:wireguard-members` once the tunnel answers. Adding the first active role removes `orbit:public-ssh-recovery` so the Node is reachable only over WireGuard. Removing the last role restores `orbit:public-ssh-recovery` before deleting the assignment (`node.firewall_recovery_failed` if restoration fails).
+Bootstrap opens `orbit:public-ssh-recovery` and enables UFW, then adds `orbit:wireguard-members` once the tunnel answers. Adding the first active role removes `orbit:public-ssh-recovery` so the Node is reachable only over WireGuard. Removing the last role restores `orbit:public-ssh-recovery` before deleting the assignment. A record-only role such as `agent` neither closes nor keeps public SSH closed, so removing the last other role restores it while `agent` stays (`node.firewall_recovery_failed` if restoration fails).
 
 ## WireGuard hub
 

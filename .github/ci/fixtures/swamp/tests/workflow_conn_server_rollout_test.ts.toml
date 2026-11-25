@@ -1,0 +1,88 @@
+cases = [
+  "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret",
+  "every module that a Mac Node runs has a task timeout of at least 60 s",
+  "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
+  "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too",
+  "a zip whose SHA-256 differs fails the Node and installs nothing",
+  "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing",
+  "a changed designated requirement holds the canary, installs nothing and stops the run",
+  "a failed health check restores the backup, kickstarts the old server, fails the canary and stops the run",
+  "a same-identity swap answers the TCC prompt its start raises, leaves none unanswered, and /health names the version",
+  "a server that still answers the old version fails the /health version check and is rolled back",
+  "the expected Conn Server prompt is allowed; any other prompt fails the Node and rolls back",
+  "a Linux Node whose new release fails its health check points current back at the old release",
+  "a kickstart, Allow click or systemctl restart that exits non-zero restores the old version, which runs again",
+  "a Linux Node whose /health names another server is not updated, as on a Mac",
+  "a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too",
+  "after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks",
+  "a Linux Node reads /health on its unit's --host, in the check, the start and the rollback",
+  "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1",
+  "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too",
+  "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too",
+  "Mac preflight rejects redirected, non-200 and malformed version responses",
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart",
+  "Mac restart and rollback each require a direct 200 with the intended version",
+  "a Node set to notify posts the notice before its restart; with no target set, nothing is sent",
+  "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
+  "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
+  "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker",
+  "over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked",
+  "a run with more Nodes than its deadline covers is refused before any Node is reached",
+  "a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none",
+  "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
+]
+file = "swamp/tests/workflow_conn_server_rollout_test.ts"
+cost = 582
+# Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
+slices = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/conn-server-rollout.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/conn-server-linux-start.yml",
+  "swamp/ansible/tasks/conn-server-linux.yml",
+  "swamp/ansible/tasks/conn-server-mac-health.yml",
+  "swamp/ansible/tasks/conn-server-mac-round.yml",
+  "swamp/ansible/tasks/conn-server-mac-start.yml",
+  "swamp/ansible/tasks/conn-server-mac.yml",
+  "swamp/ansible/tasks/conn-server-notice.yml",
+  "swamp/workflows/workflow-operation-fleet-conn-server-rollout.yaml",
+]
+
+[case_costs]
+  "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret" = 2
+  "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version" = 11
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too" = 10
+  "a zip whose SHA-256 differs fails the Node and installs nothing" = 6
+  "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing" = 11
+  "a changed designated requirement holds the canary, installs nothing and stops the run" = 6
+  "a failed health check restores the backup, kickstarts the old server, fails the canary and stops the run" = 14
+  "a same-identity swap answers the TCC prompt its start raises, leaves none unanswered, and /health names the version" = 10
+  "a server that still answers the old version fails the /health version check and is rolled back" = 13
+  "the expected Conn Server prompt is allowed; any other prompt fails the Node and rolls back" = 19
+  "a Linux Node whose new release fails its health check points current back at the old release" = 10
+  "a kickstart, Allow click or systemctl restart that exits non-zero restores the old version, which runs again" = 29
+  "a Linux Node whose /health names another server is not updated, as on a Mac" = 23
+  "a Linux Node whose unit or tarball differs from the assumed layout fails before any change, in a dry run too" = 20
+  "after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks" = 21
+  "a Linux Node reads /health on its unit's --host, in the check, the start and the rollback" = 23
+  "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1" = 23
+  "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too" = 26
+  "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too" = 25
+  "Mac preflight rejects redirected, non-200 and malformed version responses" = 38
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart" = 28
+  "Mac restart and rollback each require a direct 200 with the intended version" = 56
+  "a Node set to notify posts the notice before its restart; with no target set, nothing is sent" = 25
+  "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback" = 2
+  "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again" = 9
+  "a failed notice URL or command fails the Node with its code before any change, and appears in no output" = 13
+  "a run with more Nodes than its deadline covers is refused before any Node is reached" = 2
+  "run as the workflow runs it, over ssh with no connection override, a Mac dry run writes its result from the worker" = 18
+  "a Linux Node set up before this rollout, with no releases folder, gets the folder and is updated; a dry run makes none" = 13
+  "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause" = 11
+  "every module that a Mac Node runs has a task timeout of at least 60 s" = 2
+  "over ssh, a Mac dry run whose first three modules each take 15 s to start still reaches checked" = 63

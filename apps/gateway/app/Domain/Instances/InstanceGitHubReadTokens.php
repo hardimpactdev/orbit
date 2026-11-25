@@ -303,14 +303,14 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         $instance = Instance::query()->find($operation->target_id);
         if ($operation->target_type !== 'instance' || ! $project instanceof Project || ! $instance instanceof Instance
             || $instance->id !== ($input['instance_id'] ?? null) || $instance->project_id !== $project->id
-            || ! ($instance->placedOnAppDev() || ($operation->kind === 'instance.clone' && $instance->placedOnAppProd())) || $instance->node_id !== $operation->node_id || ($input['repository'] ?? null) !== $project->repository_url
+            || ! ($instance->placedOnAppDev() || ($operation->kind === 'instance.clone' && $instance->placedOnAppProd())) || $instance->node_id !== $operation->node_id || ($input['repository'] ?? null) !== $project->repositoryUrl()
             || ($input['repository_identity'] ?? null) !== $project->repository_identity
-            || GitRepositoryIdentity::derive($project->repository_url) !== $project->repository_identity
+            || GitRepositoryIdentity::derive($project->repositoryUrl()) !== $project->repository_identity
             || $project->source_access === ProjectSourceAccess::GhCli) {
             throw $this->forbidden();
         }
 
-        return ['kind' => $operation->kind, 'repository' => $project->repository_url,
+        return ['kind' => $operation->kind, 'repository' => $project->repositoryUrl(),
             'repository_identity' => $project->repository_identity, 'source_access' => $project->source_access->value];
     }
 

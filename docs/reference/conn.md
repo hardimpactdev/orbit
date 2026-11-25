@@ -8,7 +8,7 @@ covers:
   - swamp/ansible/conn-*.yml
   - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/database/migrations/2027_03_22_000001_let_a_reserved_clone_take_its_name.php
+  - apps/gateway/database/migrations/{2027_03_22_000001_let_a_reserved_clone_take_its_name,2027_03_23_000000_add_primary_agent_to_nodes_table}.php
   - apps/gateway/database/migrations/*_conn_*.php
 ---
 
@@ -53,6 +53,8 @@ When a profile write commits, the Gateway broadcasts `conn.profile.updated` (`{ 
 
 A T3 server calls `POST /api/v1/conn/environments` with its environment ID and admin session. The calling Node owns that registration; another Node attempting to claim the same environment ID receives HTTP `409 conn.environment_owned`. If the owning Node is removed, only a peer with Gateway access can re-register the environment.
 
+Every entry in `GET /api/v1/conn/environments` also carries two additive fields from its registering Node: `roles` (the registering Node's active role names in canonical order, or `[]` when the Node was removed) and `is_primary_agent` (boolean). At most one active `agent`-role Node is the fleet's primary agent: the Node explicitly designated with `primary_agent: true` (`PATCH /api/v1/nodes/{node}` / `orbit node:update --primary-agent=true`, which takes Gateway access), or, when none is explicitly designated, the sole active `agent`-role Node. With zero or multiple undesignated `agent`-role Nodes, none is primary. `is_primary_agent` is `true` only on a host (non-Instance) server registered by that primary agent Node; Instance servers always return `is_primary_agent: false`.
+
 ### Unregister a host server
 
 Remove a stale host T3 server entry from the Gateway registry with `DELETE /api/v1/conn/environments/{environment_id}` ([`orbit conn:environment:unregister`](/cli/conn/environment-unregister), destructive MCP tool `conn-environment-unregister`) so it stops appearing in `conn:environment:list`.
@@ -60,6 +62,26 @@ Remove a stale host T3 server entry from the Gateway registry with `DELETE /api/
 Access is owner-scoped and requires Conn enabled plus node access to the registering Node (or Gateway access after Node removal), returning `node_access.required` (403) otherwise. Servers bound to a container Instance (`instance_id` set) refuse with `conn.environment_is_instance` (409); destroy the Instance instead. A running `conn.*` Operation on the server refuses with `operation.target_busy` (409).
 
 Removal is synchronous, local, and idempotent without contacting the T3 server. In one transaction, the Gateway deletes the environment row (`admin_session`), pairings, held sessions, cached threads, and managed target records. After commit, it drops attached thread references from profiles and deletes execution secret vault copies. It returns HTTP `200` with `{"environment_id": "...", "removed": true|false}`, and a still-running host T3 server that registers again reappears.
+
+T3 and the Conn Server refuse a session that revokes itself, so the Gateway's admin session stays valid on the server after the row goes. Unregister keeps it in a hidden `conn_owed_gateway_revokes` row that no server list reads. The owed-work reconcile revokes it only on a server whose `GET /health` names `conn-server` 0.5.0 or later. It calls `POST /api/auth/logout` with that session's own bearer and no body. A 401 means an earlier logout already revoked it, so the row goes either way. Against an older server the row stays owed.
+
+A host server that registers again with the same bearer uses that session again: the registration deletes the owed row for its environment or URL, and the reconcile drops without logout any owed row whose session a registered server holds. The reconcile holds no transaction or lock across a network call. After the `/health` gate, it reads the owed row again and stops if a registration deleted it, drops it without logout if a registered server holds its session, and otherwise logs out at once and then deletes the row.
+
+### Session lifetimes
+
+Orbit asks for sessions that last until revoked. The Conn Server stores `until-revoked` as its about 10-year cap and still answers a date, which the Gateway stores.
+
+The Gateway session of an Instance's Conn Server is issued with `--ttl 3650d`. Every Conn Server from 0.2.0 on takes it. The TypeScript T3 server keeps its 30-day session.
+
+Each pairing-token request sends `sessionTtl: "until-revoked"`. That covers held sessions and the pairing links that devices and peer links spend. The code itself still lasts 5 minutes. A server older than 0.5.0 ignores the field and grants 30 days.
+
+At a host server's registration and at an Instance's wake, the Gateway reads `GET /health`. On a `conn-server` of 0.5.0 or later, it calls `POST /api/auth/clients/extend` for the Gateway session and each held session that ends within a year, each with its own bearer.
+
+Only `GET /health` tells an old server, which gets no `extend`. A 409 `operation_forbidden` keeps a T3-carried session dated and renewed. A 404 means the session is gone. A gone held session is settled, and the Node's next read holds a new one. A gone Gateway session is recorded as ended, so the renewal issues a new one. A 400 `invalid_session_ttl` is logged as an error and keeps the session dated.
+
+Orbit does nothing for peer links: Conn owns them. The Gateway never extends a peer-link session, because the holder keeps the end it stored when it linked. A new link made with an until-revoked code lasts about 10 years on both sides. From Conn 0.5.1, the holder extends an existing dated link itself, with its own MCP bearer through `POST /api/auth/clients/extend`.
+
+The hourly renewal still runs. It renews only sessions within 7 days of their end, so it never renews a long-lived one. Revocation is unchanged: a revoke by session id ends a long-lived session at once.
 
 ### Instance servers
 
@@ -89,6 +111,14 @@ On container Instance T3 servers, devices never pair directly. On first `GET /ap
 
 `POST /api/v1/conn/environments/{environment}/sessions/cleanup` revokes stale sessions on a T3 server. Removing a Node access grant (`NodeAccessRemovalHook`) or removing a Node (`NodeRemovalHook`) automatically rotates profile event keys and cleans up held sessions.
 
+### Owed work
+
+A container T3 server's owed work lives in its rows, so it survives a Gateway restart: each withdrawn held session owes a revoke by its pairing id, and a `cleanup_version` above `cleanup_completed_version` owes the cleanup of earlier Gateway sessions.
+
+The end of a Conn Operation that holds the server (a hold, a revoke, a cleanup) and the Instance's wake admit the next owed revoke, then the cleanup, without the hourly tick. An interrupted revoke or cleanup is admitted again at once. A sleeping or removing Instance starts nothing until its wake. The Gateway stops serving a withdrawn session at once.
+
+The `conn:owed-work:advance` command runs every five minutes while Conn is on. It admits what no such event will. A revoke or cleanup that failed, as an unreachable host leaves it, is admitted again once 15 minutes have passed. A revoke that waited while the Gateway admin session had ended starts once a session is recorded. Work whose after-commit admission a crash lost starts at the next run. A withdrawn session past its recorded end owes nothing, because T3 refuses it already. One whose end is unknown owes its revoke until a revoke by its pairing id covers it, however old.
+
 ### Managed grant revocation
 
 When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.managed_disabled` while off), Conn enforces revision-fenced revocation of target grants using `conn_svc_` and `conn_mt_` credentials enrolled via `php artisan conn:managed-target:enrol`. Targets poll or receive grant revisions, acknowledge revocation leases, and reject stale tokens (`conn.managed_*` error codes).
@@ -103,7 +133,7 @@ When the `tasks` extension is enabled, Conn reads tasks and detail snapshots via
 
 ## Threads in an Orbit Project
 
-Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
+A General thread is tagged to a Project from the [Project summary](/reference/projects#project-summary) of `GET /api/v1/projects`, which also lists the [generic Projects](/reference/projects#generic-projects) about a reachable Node; Conn keeps no Project registry of its own. Conn lists cloneable Projects via `GET /api/v1/conn/projects` (pass `include_unavailable=1` to see readiness failures across 14 ordered checks), lists branches via `GET /api/v1/conn/projects/{project}/branches`, checks clone feasibility via `GET /api/v1/conn/projects/{project}/instances/check`, and creates a container clone via `POST /api/v1/conn/projects/{project}/instances`.
 
 Clone creation runs stable step names (`clone-container`, `clone-t3`, `clone-session-copy`, `clone-register`) and hands off to `instance.complete`. Inspect workspace git state via `GET /api/v1/conn/instances/{instance}/work`.
 

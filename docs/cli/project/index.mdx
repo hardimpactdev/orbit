@@ -1,7 +1,7 @@
 ---
 title: "project"
 sidebarTitle: "Overview"
-description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
+description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit, or no repository when it is generic."
 covers:
   - apps/cli/app/Commands/Project*/**
   - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
@@ -9,13 +9,13 @@ covers:
   - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
 ---
 
-A Project records one Git repository and the defaults for running it. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
+A Project records one Git repository and the defaults for running it; a [generic Project](/reference/projects#generic-projects) records none and may be about one Node. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`project:create`](/cli/project/create) | Create a Project from a slug, a type, and a repository URL. |
+| [`project:create`](/cli/project/create) | Create a Project from a slug, a type, and a repository URL, or a generic Project about a Node. |
 | [`project:list`](/cli/project/list) | List Projects. |
 | [`project:show`](/cli/project/show) | Show one Project. |
 | [`project:update`](/cli/project/update) | Change a Project and reconcile its Instances. |

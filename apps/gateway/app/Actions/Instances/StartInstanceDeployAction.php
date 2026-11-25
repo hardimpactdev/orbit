@@ -16,6 +16,7 @@ use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\PhpSymbolIndex;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -61,7 +62,7 @@ final readonly class StartInstanceDeployAction
             $this->writer->assertSwamp($instance);
             $this->assertRepositoryIdentity($instance);
         }
-        $configuration = $read = null;
+        $configuration = $read = $agentFolder = null;
         if ($instance->runtime()->exists()) {
             if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
                 return $existing;
@@ -70,11 +71,14 @@ final readonly class StartInstanceDeployAction
             InstanceMigration::assertSettled($instance);
             $configuration = $this->sourceConfiguration($instance);
             $project = $instance->project;
-            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repository_url, $project->source_access,
+            $read = app(CaptureProjectSourceFactsAction::class)->read($project->repositoryUrl(), $project->source_access,
                 (string) $project->default_branch, $project->root, $project->type, $commit);
+            // The seed's agent folder: the Project's instructions are read here, before the transaction
+            // (docs/reference/development-containers.md#agent-instructions).
+            $agentFolder = app(InstanceContainer::class)->seedAgentFolder($project);
         }
 
-        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $release, $configuration, $read): Operation {
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId, $automatic, $release, $configuration, $read, $agentFolder): Operation {
             $instance = Instance::query()->with(['node.roles', 'project'])->lockForUpdate()->findOrFail($instance->id);
             if ($automatic) {
                 $this->writer->assertSwamp($instance);
@@ -109,7 +113,7 @@ final readonly class StartInstanceDeployAction
                 // Render the runtime definitions only after capturing the deployed commit's facts.
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
             }
-            $deployment = $development ? $this->intent->snapshot($instance) : [
+            $deployment = $development ? $this->intent->snapshot($instance, agentFolder: $agentFolder) : [
                 'variant' => 'production-release', 'project_id' => $instance->project_id,
                 'steps' => array_map(static fn ($step): array => ['timeout_seconds' => $step->timeoutSeconds], app(InstanceDeploymentConfigResolver::class)->resolve($instance)->steps),
             ];
@@ -125,6 +129,8 @@ final readonly class StartInstanceDeployAction
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
                 'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps))
                     + (isset($deployment['fleet']) ? NestedFleetIntent::RunSeconds : 0)
+                    // A Laravel default on an app-dev Node prepares its PHP symbol index before its seed.
+                    + PhpSymbolIndex::runSeconds($deployment['container'] ?? null)
                     // The proof default first waits for its seed hold (docs/reference/development-containers.md#the-seed-hold).
                     + (is_array($deployment['container'] ?? null) && ($deployment['container']['seed_hold'] ?? false) === true ? ProofSeeds::HoldWaitSeconds : 0),
                 ...($commit === null ? [] : ['commit' => $commit])];
@@ -175,7 +181,7 @@ final readonly class StartInstanceDeployAction
     private function assertRepositoryIdentity(Instance $instance): void
     {
         $project = $instance->project()->firstOrFail();
-        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repository_url)) {
+        if ($project->repository_identity !== GitRepositoryIdentity::derive($project->repositoryUrl())) {
             throw new ResourceOperationException('deployment.repository_mismatch', 'The Project repository identity does not match its origin.', 409);
         }
     }

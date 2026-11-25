@@ -186,5 +186,12 @@ return [
         'managed_target_lock_wait_seconds' => 10,
         // iOS push notifications for Conn threads that need attention (docs/reference/conn.md#push-notifications): off by default.
         'push' => (bool) env('ORBIT_CONN_PUSH', false),
+        // The notice that the Conn Server rollout sends before it restarts a Node whose record asks for one
+        // (docs/reference/development-containers.md#conn-server-rollout): a URL that gets a JSON POST, or a command run on the Swamp
+        // worker with the Node id and the version as its last arguments. Neither is set by default, so no notice is sent.
+        'server_rollout_notice' => [
+            'url' => env('ORBIT_CONN_SERVER_ROLLOUT_NOTICE_URL') ?: null,
+            'command' => ($command = (string) env('ORBIT_CONN_SERVER_ROLLOUT_NOTICE_COMMAND', '')) === '' ? null : array_values(array_filter(explode(' ', $command), static fn (string $word): bool => $word !== '')),
+        ],
     ],
 ];

@@ -101,6 +101,7 @@ final class UpdateProjectRequest extends FormRequest
                 );
             }
 
+            $this->validateGenericType($validator);
             $this->validateSourceAccess($validator);
             $this->validateReviewAndMerge($validator);
 
@@ -122,6 +123,35 @@ final class UpdateProjectRequest extends FormRequest
                     : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
             }
         }];
+    }
+
+    /**
+     * A Project keeps whether it holds a repository: converting between generic and a repository type is not supported, and a
+     * generic Project takes none of the repository fields, nor a slug, whose change reconciles checkouts (projects.md#generic-projects).
+     */
+    private function validateGenericType(Validator $validator): void
+    {
+        $project = $this->route('project');
+
+        if (! $project instanceof Project) {
+            return;
+        }
+
+        $type = ProjectType::tryFrom($this->string('type')->toString());
+
+        if ($type !== null && $type->hasRepository() !== $project->type->hasRepository()) {
+            $validator->errors()->add('type', 'A Project cannot change between generic and a repository type.');
+        }
+
+        if ($project->type->hasRepository()) {
+            return;
+        }
+
+        foreach (['slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', 'default_auto_deploy', 'task_pr_mode', 'container_server', ...TaskAgent::fields('task_')] as $field) {
+            if ($this->exists($field)) {
+                $validator->errors()->add($field, "A generic Project takes no {$field}.");
+            }
+        }
     }
 
     public function payload(): UpdateProjectData

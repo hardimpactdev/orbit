@@ -31,7 +31,7 @@ final readonly class NodeNetworkConvergeInput
                 'observations' => [['public_key' => $node->wireguard_public_key, 'port' => $apply['port'], 'peers' => $peers, 'exact' => true]],
                 'endpoint_host' => null, 'probe_ip' => null];
         }
-        $apply = $this->capture($node, ! $node->roles()->exists());
+        $apply = $this->capture($node, ! $node->hostRoles()->exists());
         $peer = ValidatedData::object($apply['peer']);
         $endpoint = ValidatedData::string($peer['endpoint']);
         $portAt = strrpos($endpoint, ':');

@@ -80,7 +80,7 @@ final readonly class UpdateInstanceAction
             return;
         }
 
-        if ($project->source_access !== ProjectSourceAccess::GitHubApp || ! GitHubRepository::fromOrigin($project->repository_url) instanceof GitHubRepository) {
+        if ($project->source_access !== ProjectSourceAccess::GitHubApp || ! GitHubRepository::fromOrigin($project->repositoryUrl()) instanceof GitHubRepository) {
             throw new ResourceOperationException(
                 'instance.auto_deploy_gate_unreadable',
                 "Project [{$project->slug}] has the merge check [{$project->mergeCheckName()}], but the Gateway GitHub App cannot read its checks: the Project reads its repository through the GitHub CLI or is not on github.com. Remove the merge check or switch the Project to the GitHub App.",
