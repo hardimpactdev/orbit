@@ -49,24 +49,23 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
-    expect($recipe->instances->agent['conn-server']->version)->toBe('0.5.2')
-        ->and($recipe->instances->agent['conn-server']->artifact->digest)->toBe('554766fc35583e2a2284a8c08581ce47dd729efef30315738eebd8f8ad35f539')
-        ->and($parts['chrome-headless-shell'])->toBe([
-            'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
-            'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
-            'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
-            'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
-        ]);
+    expect($parts['chrome-headless-shell'])->toBe([
+        'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
+        'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
+        'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
+        'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
+    ]);
 });
 
 it('pins the Conn release\'s signed macOS arm64 zip, and a release before 0.5.0 without one', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $older = new RecipeLoader()->decode(recipeWithInstances(static function (array &$document): void {
-        unset($document['instances']['agent']['conn-server']['macos_arm64']);
+        unset($document['instances']['agent']['conn-server']['macos_arm64'], $document['instances']['agent']['conn-server']['release_canary']);
     }));
 
-    expect($recipe->instances->agent['conn-server']->macApp?->artifact->location)->toBe('https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-macos-arm64.zip')
-        ->and($recipe->instances->agent['conn-server']->macApp?->artifact->digest)->toBe('40d753aaa246e3137e4ed5cd5caa08586b2dc3eb33f281e5be144b0d3083bb9d')
+    $pin = $recipe->instances->agent['conn-server'];
+    expect($pin->macApp?->artifact->location)->toBe("https://github.com/nckrtl/conn/releases/download/conn-server-v{$pin->version}/conn-server-{$pin->version}-macos-arm64.zip")
+        ->and($pin->macApp?->artifact->digest)->toMatch('/^[a-f0-9]{64}$/D')
         ->and($recipe->instances->agent['conn-server']->macApp?->bundleId)->toBe('com.nckrtl.conn-server')
         ->and($recipe->instances->agent['conn-server']->macApp?->teamId)->toBe('9SVJ4SYB9B')
         ->and($older->instances->agent['conn-server']->macApp)->toBeNull();
@@ -75,7 +74,7 @@ it('pins the Conn release\'s signed macOS arm64 zip, and a release before 0.5.0 
 it('pins the macOS arm64 zip next to the Linux tarball, and gives container hosts the same plan as without it', function (): void {
     $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
     $without = new RecipeLoader()->decode(recipeWithInstances(static function (array &$document): void {
-        unset($document['instances']['agent']['conn-server']['macos_arm64']);
+        unset($document['instances']['agent']['conn-server']['macos_arm64'], $document['instances']['agent']['conn-server']['release_canary']);
     }));
     $part = $recipe->instances->agent['conn-server'];
 

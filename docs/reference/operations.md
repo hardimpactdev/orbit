@@ -5,7 +5,7 @@ covers:
   - apps/gateway/config/operation_versions.php
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**,Console/Commands/CheckOperationCleanupCommand.php,Console/Commands/RepairOperationFenceCommand.php}
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php,Jobs/Operations/**}
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_28_000000_add_operation_idempotency_keys,*route_publication_holds*,*pin_operation_versions,*fence_conn_launch_retries,*create_operation_cleanup_tasks}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_28_000000_add_operation_idempotency_keys,*create_operation_idempotency_aliases_table,*route_publication_holds*,*pin_operation_versions,*fence_conn_launch_retries,*create_operation_cleanup_tasks}.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -132,7 +132,7 @@ Start endpoints validate access, idempotency, and input, commit a `queued` Opera
 
 ### Retry a start with a key
 
-Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the existing Operation even after it ends; a different target or input returns `409 operation.idempotency_conflict`.
+Start endpoints accept `Idempotency-Key` (`1`–`128` chars of `A-Za-z0-9._:-`, case-sensitive, scoped per kind; required on automatic deploys and worker starts). Replaying the same key, target, and input returns `202` with the first Operation returned for that key even after it ends; a different target or input returns `409 operation.idempotency_conflict`. For a staged operation such as the Conn Server rollout, a replay still returns the original stage, not the next one.
 
 By default, fingerprints are portable across callers with access to the target. Endpoints declared with `bindCaller: true` (such as automatic deploys at `POST /api/v1/instances/{instance}/deploy/automatic`, keyed Conn starts, WebSocket app Operations, task pull-request merges, proof runs, and `node.base_inventory`) also bind `caller_node_id` and `command`, so a different caller Node replaying the same key receives `409 operation.idempotency_conflict`. Durable Conn launches (`POST /api/v1/conn/launches`) are an exception: they scope keys per caller Node (`keyed: false`), so two callers sending the same `Idempotency-Key` for the same target receive `202` with different launch IDs.
 
