@@ -160,7 +160,7 @@ final readonly class StartToolOperationAction
                 $hostOwned = in_array($package, $protected, true);
                 $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || ($tool?->status === ToolStatus::Failed
                     && $tool->installed_version === null && $tool->failed_operation === ToolOperation::Install
-                    && ($record?->status === LifecycleStatus::Failed
+                    && ($record->status === LifecycleStatus::Failed
                         || ($tool->error_code === 'tool.version_probe_failed' && $tool->desired_repository === null && $tool->aptRepository === null))));
                 if ($hostOwned && ! $relinquish) {
                     $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
