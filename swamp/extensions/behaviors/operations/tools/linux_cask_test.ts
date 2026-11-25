@@ -241,19 +241,27 @@ Deno.test("Linux casks record an installed comma-build version against the const
         write({
             tool_id: 1,
             tool_status: "failed",
+            installed_version: version,
             version_constraint: "^1.5",
         }),
         { facts: facts([version]) },
     );
-    assertEquals([retry.ready, retry.mutate, retry.installed_version], [
+    assertEquals([
+        retry.ready,
+        retry.mutate,
+        retry.installed_version,
+        retry.installed_coordinate,
+    ], [
         true,
         false,
         "1.5.13",
+        version,
     ]);
     const refused = decide(
         write({
             tool_id: 1,
             tool_status: "failed",
+            installed_version: version,
             version_constraint: "^2.0",
         }),
         { facts: facts([version]) },
@@ -397,7 +405,7 @@ Deno.test("a failed or stale Linux cask API refresh stops the candidate read", a
     ) {
         const repeat = (refresh: ReturnType<typeof ok>) =>
             behavior.methods.decide.execute({
-                input: write(changes),
+                input: write({ ...changes, installed_version: version }),
                 version: ok("Homebrew 7.0.13\n"),
                 query: ok(JSON.stringify({
                     formulae: [],
@@ -415,6 +423,23 @@ Deno.test("a failed or stale Linux cask API refresh stops the candidate read", a
         const fresh = await repeat(ok(""));
         assertEquals([fresh.ready, fresh.outcome], [true, "unchanged"]);
     }
+    const unobserved = await behavior.methods.decide.execute({
+        input: write({ tool_id: 1, tool_status: "failed" }),
+        version: ok("Homebrew 7.0.13\n"),
+        query: ok(
+            JSON.stringify({
+                formulae: [],
+                casks: [{ ...cask, installed: version }],
+            }),
+        ),
+        os: null,
+        check: null,
+        refresh: ok(""),
+    }, ctx);
+    assertEquals([unobserved.ready, unobserved.error_code], [
+        false,
+        "tool.package_already_installed",
+    ]);
 });
 
 Deno.test("the post-write read keeps the raw cask coordinate beside the public version", async () => {

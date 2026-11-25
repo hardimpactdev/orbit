@@ -29,7 +29,7 @@ orbit tool:install ripgrep --node=12 --manager=brew
 
 Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a compatible verified bottle. `brew-cask` manages supported official Homebrew casks on Linux and macOS. On Linux, the Node must already have Homebrew, and the cask must ship a Linux build, as `antigravity-cli` does.
 
-The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. A failed package phase retains the Tool for retry or removal. List Tools to find that record; the Operation holds the failure code and steps.
+The result is `applied` for a new install. A repeated install is `unchanged` when Orbit has already recorded the installation and the package satisfies the request. A failed package phase retains the Tool for retry or removal, but does not adopt a package that Orbit has not recorded as installed. List Tools to find that record; the Operation holds the failure code and steps.
 
 For a configured [host Conn Server](/reference/tools#host-conn-server-membership), install records membership and the desired release without starting or changing the service. Apply the release with a separate rollout.
 
