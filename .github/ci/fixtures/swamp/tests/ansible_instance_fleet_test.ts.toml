@@ -94,6 +94,7 @@ file = "swamp/tests/ansible_instance_fleet_test.ts"
 cost = 3612
 slices = 89
 inputs = [
+  "apps/gateway/resources/machine-software/core.yaml",
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
   "swamp/ansible/instance_fleet_shrink.py",
@@ -131,6 +132,18 @@ inputs = [
 
 # Ansible loads the tasks. The fixture supplies checkout object IDs through its Incus stand-in.
 parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
+
+[mandatory_cases]
+"apps/gateway/resources/machine-software/core.yaml" = [
+  "a refresh applies the checkout, converges the nested Gateway and then the app Nodes side by side, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
+  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file",
+  "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout",
+  "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads",
+  "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record",
+  "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release",
+  "a refresh without the Club key reads no Swamp release and installs none",
+]
 
 # One unit per case. Refreshed-boundary and seeded-record cases use the completed
 # four-worker local measurements in tools/tests/ci-fleet-cost-evidence.json:

@@ -415,6 +415,60 @@ class RegistrySelectionTest(unittest.TestCase):
         # The pool's speed factor sets every shared lane, so it selects the machinery canary like a budget change.
         self.assertEqual(self.changes(self.initial + '[runner-pool]\nslowest_runner_factor = 1.2\n'), ([], True))
 
+    def renamed_fixture(self):
+        file = 'swamp/process.ts'
+        old, new = 'swamp/old/resource.json', 'swamp/new/catalog.yaml'
+        helper = 'swamp/reader.yml'
+        (self.root / old).parent.mkdir(parents=True)
+        (self.root / old).write_text('{"version": 1}\n')
+        (self.root / file).write_text(f'check("/checkout/{old}")\ncheckOtherPhase()\n')
+        (self.root / helper).write_text('error: File not found: resource.json\n')
+        config = ('[budget]\ncapacity_gap = ["swamp/process.ts"]\n[fixtures]\ndefault = []\n'
+                  f'[[fixture]]\nfile = "{file}"\ncost = 220\nslices = 2\n'
+                  'inputs = ["swamp/reader.yml"]\n')
+        base = self.commit(config)
+        (self.root / new).parent.mkdir()
+        (self.root / old).rename(self.root / new)
+        (self.root / file).write_text(f'check("/checkout/{new}")\ncheckOtherPhase()\n')
+        (self.root / helper).write_text('error: File not found: catalog.yaml\n')
+        config = config.replace('"swamp/reader.yml"', f'"swamp/reader.yml", "{new}"')
+        config += f'[fixture.mandatory_cases]\n"{new}" = ["catalog"]\n'
+        head = self.commit(config)
+        table = {file: fixture(file, 220, [helper, new], cases=['catalog', 'other phase'],
+                               slices=2, mandatory_cases={new: ['catalog']}),
+                 'swamp/other.py': fixture('swamp/other.py', 110, [new])}
+        budget = {**BUDGET, 'capacity_gap': [file], 'pr_shards': 1, 'runner_shards': 1, 'shard_workers': 2}
+        return file, new, helper, config, table, budget, base, head
+
+    def test_a_verified_input_rename_reserves_its_cases_without_displacing_other_fixtures(self):
+        file, destination, _, _, table, budget, base, head = self.renamed_fixture()
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
+            paths = units.selection.changed_paths(base, head)
+            scoped = units.renamed_input_scopes(base, head, paths, budget, table)
+            self.assertEqual(scoped, {file: destination})
+            result = units.plan(paths, budget, table, [], registry_changed=[file], renamed_inputs=scoped)
+            self.assertCountEqual(names(result), [f'{file}#0/2', 'swamp/other.py'])
+            self.assertEqual(result['mandatory'], [{'file': file, 'cases': ['catalog'], 'units': [f'{file}#0/2']}])
+            self.assertNotIn('capacity', result)
+
+    def test_a_rename_with_other_source_or_cost_changes_keeps_the_fixture_mandatory(self):
+        file, destination, helper, config, table, budget, base, _ = self.renamed_fixture()
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
+            for path in (file, helper, None):
+                with self.subTest(path=path):
+                    if path:
+                        source = (self.root / path).read_text()
+                        (self.root / path).write_text(source + 'unexpected change\n')
+                    head = self.commit(config if path else config.replace('cost = 220', 'cost = 221'))
+                    paths = units.selection.changed_paths(base, head)
+                    scoped = units.renamed_input_scopes(base, head, paths, budget, table)
+                    self.assertEqual(scoped, {})
+                    result = units.plan(paths, budget, table, [], registry_changed=[file], renamed_inputs=scoped)
+                    self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
+                    self.assertCountEqual(names(result), [f'{file}#0/2', f'{file}#1/2'])
+                    if path:
+                        (self.root / path).write_text(source)
+
     def test_scheduling_metadata_alone_is_a_machinery_change(self):
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
         budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
