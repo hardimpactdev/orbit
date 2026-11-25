@@ -54,11 +54,11 @@ function cutOffBody(Request $request, array $options, string $body): PromiseInte
     return Create::rejectionFor(new ResponseTimeoutException('Operation timed out after 6000 milliseconds', $psrRequest, $partial));
 }
 
-/** A host server registered on its own Node. */
-function hostServer(string $name, string $url): ConnEnvironment
+/** A host server registered on its own Node, at its own WireGuard address. */
+function hostServer(string $name, string $url, string $wireguardIp): ConnEnvironment
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux',
-        'public_ssh_host' => $name.'.test', 'wireguard_ip' => '10.44.0.'.random_int(10, 200), 'user' => 'orbit']));
+        'public_ssh_host' => $name.'.test', 'wireguard_ip' => $wireguardIp, 'user' => 'orbit']));
 
     return ConnEnvironment::query()->create(['environment_id' => 'env-'.$name, 'label' => $name, 'url' => $url, 'node_id' => $node->id,
         'admin_session' => 'session-'.$name, 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
@@ -139,7 +139,7 @@ PHP;
 
 describe('the host poll', function (): void {
     it('reads host servers within six seconds', function (): void {
-        hostServer('mini', 'http://mini.test:3773');
+        hostServer('mini', 'http://mini.test:3773', '10.44.0.9');
         $client = new class implements T3ServerClient
         {
             public ?float $timeout = null;
@@ -179,8 +179,8 @@ describe('the host poll', function (): void {
     });
 
     it('records a cut-off host as unreachable while the other hosts read', function (): void {
-        $mini = hostServer('mini', 'http://mini.test:3773');
-        $nick = hostServer('nick', 'http://nick.test:3773');
+        $mini = hostServer('mini', 'http://mini.test:3773', '10.44.0.9');
+        $nick = hostServer('nick', 'http://nick.test:3773', '10.44.0.10');
         $shell = hostShell(1704);
         Http::fake([
             'http://mini.test:3773/*' => fn (Request $request, array $options) => cutOffBody($request, $options, $shell),
