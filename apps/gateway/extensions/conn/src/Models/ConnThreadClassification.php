@@ -11,7 +11,7 @@ use Illuminate\Support\Carbon;
 /**
  * The librarian's receipt survives a thread leaving the live index upon archiving.
  *
- * @property array{result: 'existing', project_id: int, reason: string}|array{result: 'new', name: string, slug: string}|array{result: 'none'}|null $result
+ * @property array{result: 'existing', project_id: int, reason: string}|array{result: 'new', name: string, slug: string}|array{result: 'none'}|array{result: 'given_up', error_code: string}|null $result
  * @property Carbon|null $completed_at
  */
 final class ConnThreadClassification extends Model

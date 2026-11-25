@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Infrastructure;
 
+use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
-use RuntimeException;
 
 /** Sends only the librarian's bounded input to Orbit's Claude subscription pool. */
 final readonly class AiRouterThreadClassifier
@@ -44,10 +44,10 @@ final readonly class AiRouterThreadClassifier
                     ], JSON_THROW_ON_ERROR)]],
                 ]);
         } catch (ConnectionException) {
-            throw new RuntimeException('Conn librarian could not reach ai-router.');
+            throw new ResourceOperationException('conn.ai_router_unreachable', 'Conn librarian could not reach ai-router.', 502);
         }
         if (! $response->successful()) {
-            throw new RuntimeException('Conn librarian ai-router request returned HTTP '.$response->status().'.');
+            throw new ResourceOperationException('conn.ai_router_request_failed', 'Conn librarian ai-router request returned HTTP '.$response->status().'.', 502);
         }
         $text = '';
         $content = $response->json('content');
@@ -87,6 +87,6 @@ final readonly class AiRouterThreadClassifier
             }
         }
 
-        throw new RuntimeException('Conn librarian received an invalid classification from ai-router.');
+        throw new ResourceOperationException('conn.ai_router_invalid_response', 'Conn librarian received an invalid classification from ai-router.', 502);
     }
 }

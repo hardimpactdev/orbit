@@ -21,8 +21,6 @@ use Orbit\Extensions\Conn\Models\ConnThreadClassification;
 /** Files a new host General thread once, without reading it again on later turns. */
 final readonly class ConnThreadLibrarian
 {
-    private const int DiscoverySeconds = 60;
-
     public function __construct(
         private ExtensionStore $extensions,
         private HttpT3ServerClient $http,
@@ -37,6 +35,11 @@ final readonly class ConnThreadLibrarian
         if (! AiRouterThreadClassifier::configured() || ! is_array($shell['projects'] ?? null) || ! is_array($shell['threads'] ?? null)) {
             return;
         }
+        if ($environment->librarian_started_at_ms === null) {
+            $environment->librarian_started_at_ms = $observedAt->getTimestampMs();
+            $environment->save();
+        }
+        $cutoff = $environment->librarian_started_at_ms;
         $roots = [];
         foreach ($shell['projects'] as $project) {
             if (is_array($project) && is_string($project['id'] ?? null) && is_string($project['workspaceRoot'] ?? null)) {
@@ -44,11 +47,10 @@ final readonly class ConnThreadLibrarian
             }
         }
         $candidates = [];
-        $cutoff = $observedAt->subSeconds(self::DiscoverySeconds);
         foreach ($shell['threads'] as $thread) {
             if (self::unassignedTopLevel($thread) && is_string($thread['id'] ?? null) && is_string($thread['projectId'] ?? null)
                 && isset($roots[$thread['projectId']]) && is_string($thread['latestUserAuthoredMessageAt'] ?? null)
-                && CarbonImmutable::parse($thread['latestUserAuthoredMessageAt'])->greaterThanOrEqualTo($cutoff)) {
+                && is_string($thread['createdAt'] ?? null) && CarbonImmutable::parse($thread['createdAt'])->getTimestampMs() >= $cutoff) {
                 $candidates[$thread['id']] = $thread['projectId'];
             }
         }
@@ -60,7 +62,7 @@ final readonly class ConnThreadLibrarian
             ->map(static fn (ConnThreadClassification $classification): string => $classification->thread_id)->all();
         foreach (array_diff_key($candidates, array_fill_keys($completed, true)) as $threadId => $projectId) {
             GatewaySchedule::dispatch(new ClassifyConnThreadJob($environment->id, (string) $threadId, $projectId,
-                $roots[$projectId], $cutoff->getTimestamp()));
+                $roots[$projectId]));
         }
     }
 
@@ -74,7 +76,7 @@ final readonly class ConnThreadLibrarian
             return;
         }
         $key = ['conn_environment_id' => $environment->id, 'thread_id' => $job->threadId];
-        $receipt = ConnThreadClassification::query()->firstOrNew($key);
+        $receipt = $this->receipt($job);
         if ($receipt->completed_at !== null) {
             return;
         }
@@ -100,12 +102,12 @@ final readonly class ConnThreadLibrarian
         $answer = $receipt->result;
         if ($answer === null) {
             $first = $this->firstAuthoredMessage($projection['messages'] ?? null);
-            if ($first === null || $first['createdAt']->getTimestamp() < $job->firstMessageCutoff || ! is_string($thread['title'] ?? null)) {
+            if ($first === null || ! is_string($thread['title'] ?? null)) {
                 $this->complete($receipt);
 
                 return;
             }
-            $answer = $this->classifier->classify($thread['title'], $first['text'], array_values($projects->map(static fn (Project $project): array => [
+            $answer = $this->classifier->classify($thread['title'], $first, array_values($projects->map(static fn (Project $project): array => [
                 'id' => $project->id,
                 'slug' => $project->slug,
                 'name' => $project->name,
@@ -125,6 +127,18 @@ final readonly class ConnThreadLibrarian
         $this->complete($receipt);
     }
 
+    public function giveUp(ClassifyConnThreadJob $job, string $errorCode): void
+    {
+        if (! ConnEnvironment::query()->whereKey($job->environmentId)->exists()) {
+            return;
+        }
+        $receipt = $this->receipt($job);
+        if ($receipt->completed_at === null) {
+            $receipt->result = ['result' => 'given_up', 'error_code' => $errorCode];
+            $this->complete($receipt);
+        }
+    }
+
     /** @phpstan-assert-if-true array<array-key, mixed> $thread */
     private static function unassignedTopLevel(mixed $thread): bool
     {
@@ -135,8 +149,7 @@ final readonly class ConnThreadLibrarian
             && ! array_key_exists('orbitProject', $thread);
     }
 
-    /** @return array{createdAt: CarbonImmutable, text: string}|null */
-    private function firstAuthoredMessage(mixed $messages): ?array
+    private function firstAuthoredMessage(mixed $messages): ?string
     {
         $first = null;
         foreach (is_array($messages) ? $messages : [] as $message) {
@@ -150,7 +163,7 @@ final readonly class ConnThreadLibrarian
             }
         }
 
-        return $first;
+        return $first['text'] ?? null;
     }
 
     /** @return array<array-key, mixed>|null */
@@ -163,5 +176,10 @@ final readonly class ConnThreadLibrarian
     {
         $receipt->completed_at = now();
         $receipt->save();
+    }
+
+    private function receipt(ClassifyConnThreadJob $job): ConnThreadClassification
+    {
+        return ConnThreadClassification::query()->firstOrNew(['conn_environment_id' => $job->environmentId, 'thread_id' => $job->threadId]);
     }
 }

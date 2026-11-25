@@ -1534,7 +1534,9 @@ def ref(cls):
                                'reason': {'type': 'string', 'maxLength': 160}}),
                 closed_object({'result': {'const': 'new'}, 'name': {'type': 'string', 'maxLength': 255},
                                'slug': {'type': 'string', 'maxLength': 63, 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}}),
-                closed_object({'result': {'const': 'none'}}), {'type': 'null'},
+                closed_object({'result': {'const': 'none'}}),
+                closed_object({'result': {'const': 'given_up'}, 'error_code': {'type': 'string'}}),
+                {'type': 'null'},
             ]}
         components[name] = {'type': 'object', 'properties': props}
         if name in REQUIRED_DATA_SCHEMAS:

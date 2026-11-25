@@ -23,7 +23,7 @@ use Orbit\Extensions\Conn\Models\ConnThreadClassification;
 uses(LazilyRefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->freezeTime();
+    $this->travelTo(now()->startOfSecond());
     $this->actualQueue = Queue::getFacadeRoot();
     Queue::fake();
     Http::preventStrayRequests();
@@ -37,7 +37,8 @@ beforeEach(function (): void {
         'node_id' => $this->host->id, 'admin_session' => 'test-admin-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
     $this->project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'type' => 'generic', 'node_id' => $this->host->id]);
     $this->thread = ['id' => 'general-thread', 'projectId' => 'scratch-id', 'title' => str_repeat('á', 300),
-        'status' => 'running', 'lineage' => ['parentThreadId' => null], 'latestUserAuthoredMessageAt' => now()->subSeconds(2)->toIso8601String()];
+        'status' => 'running', 'lineage' => ['parentThreadId' => null], 'createdAt' => now()->toIso8601String(),
+        'latestUserAuthoredMessageAt' => now()->subSeconds(2)->toIso8601String()];
     $this->firstText = 'Fix the Conn thread index in Orbit. '.str_repeat('é', 5000);
     $this->messages = [
         ['role' => 'user', 'createdBy' => 'agent', 'createdAt' => now()->subSeconds(4)->toIso8601String(), 'text' => 'ignored agent message'],
@@ -189,17 +190,51 @@ it('does not refile when someone unfiles during the model call', function (): vo
     expect(librarianWrites($this->rpc))->toBeEmpty();
 });
 
-it('does not classify a checkout thread or revisit an old first message', function (string $case): void {
-    if ($case === 'checkout') {
-        $this->thread['projectId'] = 'repo-id';
-    } else {
-        $this->messages[1]['createdAt'] = now()->subDay()->toIso8601String();
-    }
+it('does not classify a checkout thread', function (): void {
+    $this->thread['projectId'] = 'repo-id';
     librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
     librarianHostPoll();
     librarianRun(librarianQueuedJob());
     expect(librarianWrites($this->rpc))->toBeEmpty();
-})->with(['checkout', 'old conversation']);
+});
+
+it('does not backfill threads created before the host’s first librarian poll', function (): void {
+    $this->thread['createdAt'] = now()->subDay()->toIso8601String();
+    $this->messages[1]['createdAt'] = $this->thread['createdAt'];
+    librarianHttpFake($this, static fn () => throw new LogicException('The model must not be called.'));
+    librarianHostPoll();
+    $this->travel(2)->minutes();
+    $this->thread['latestUserAuthoredMessageAt'] = now()->toIso8601String();
+    librarianHostPoll();
+    Queue::assertNotPushed(ClassifyConnThreadJob::class);
+    expect($this->rpc)->toBeEmpty();
+});
+
+it('classifies a missed first message on the next poll even after the old window', function (bool $hasLaterMessage): void {
+    librarianHttpFake($this, function (Request $request): PromiseInterface {
+        expect(json_decode($request['messages'][0]['content'], associative: true)['first_message'])->toBe(mb_substr($this->firstText, 0, 4000));
+
+        return librarianModelResponse(['result' => 'existing', 'project_id' => $this->project->id, 'reason' => 'Orbit Gateway.']);
+    });
+    $this->archived = true;
+    librarianHostPoll();
+    Queue::assertNotPushed(ClassifyConnThreadJob::class);
+
+    $this->thread['createdAt'] = now()->addSecond()->toIso8601String();
+    $this->messages[1]['createdAt'] = now()->addSeconds(2)->toIso8601String();
+    $this->travel(2)->minutes();
+    if ($hasLaterMessage) {
+        $this->messages[2]['createdAt'] = now()->subSecond()->toIso8601String();
+        $this->thread['latestUserAuthoredMessageAt'] = $this->messages[2]['createdAt'];
+    } else {
+        unset($this->messages[2]);
+        $this->thread['latestUserAuthoredMessageAt'] = $this->messages[1]['createdAt'];
+    }
+    $this->archived = false;
+    librarianHostPoll();
+    librarianRun(librarianQueuedJob());
+    expect(librarianWrites($this->rpc))->toHaveCount(1);
+})->with(['only the first message' => [false], 'a later message arrived' => [true]]);
 
 it('releases the job for retry on a model failure and invalid JSON without filing', function (): void {
     Queue::swap($this->actualQueue);
@@ -225,4 +260,31 @@ it('releases the job for retry on a model failure and invalid JSON without filin
     }
     $worker->process('gateway', $connection->pop('tasks'), new WorkerOptions(maxTries: 1));
     expect(librarianWrites($this->rpc))->toHaveCount(1)->and(DB::table('jobs')->count())->toBe(0);
+});
+
+it('gives up after three failed model attempts and later polls do not requeue the thread', function (): void {
+    Queue::swap($this->actualQueue);
+    config(['queue.connections.gateway' => ['driver' => 'database', 'table' => 'jobs', 'queue' => 'tasks', 'retry_after' => 90]]);
+    $attempt = 0;
+    librarianHttpFake($this, static function () use (&$attempt): PromiseInterface {
+        return ++$attempt < 3 ? Http::response(['error' => 'fake outage'], 503)
+            : Http::response(['content' => [['type' => 'text', 'text' => 'invalid JSON']]]);
+    });
+    librarianHostPoll();
+    $connection = Queue::connection('gateway');
+    $worker = app('queue.worker');
+    foreach ([15, 60, 0] as $delay) {
+        $job = $connection->pop('tasks');
+        expect($job)->not->toBeNull();
+        expect(fn () => $worker->process('gateway', $job, new WorkerOptions(maxTries: 1)))->toThrow(RuntimeException::class, 'Conn librarian');
+        $this->travel($delay)->seconds();
+    }
+
+    expect($attempt)->toBe(3)->and(DB::table('jobs')->count())->toBe(0)->and(librarianWrites($this->rpc))->toBeEmpty();
+    $this->thread['latestUserAuthoredMessageAt'] = now()->toIso8601String();
+    librarianHostPoll();
+    expect(DB::table('jobs')->count())->toBe(0);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->host->wireguard_ip])->getJson('/api/v1/conn/threads')
+        ->assertOk()->assertJsonPath('data.0.project_id', null)
+        ->assertJsonPath('data.0.classification', ['result' => 'given_up', 'error_code' => 'conn.ai_router_invalid_response']);
 });
