@@ -95,8 +95,11 @@ ROOT = plan.ROOT
 
 # Unconditional infrastructure and policy: explicit exceptions so new jobs cannot evade the table.
 NON_CHECKS = {'ci-policy', 'changes', 'gateway-release', 'required', 'cli-release', 'proof-run', 'proof-eligibility', 'delivery', 'main-required',
-              'main-release-inputs', 'gateway-test-caches', 'web-test-caches'}
-OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'main-release-inputs', 'gateway-test-caches', 'web-test-caches'}
+              'main-release-inputs', 'gateway-test-caches', 'web-test-caches', 'agent-test-caches'}
+OTHER_DEPENDENCIES = {'required', 'cli-release', 'proof-run', 'delivery', 'main-required', 'main-release-inputs', 'gateway-test-caches', 'web-test-caches',
+                      'agent-test-caches'}
+# Jobs that gate nothing and may pass the 4 minutes of a check: nobody waits for them.
+UNGATED_LIMITS = {'proof-run': 275, 'agent-test-caches': 5}
 PROOF_GATE_TIMEOUT = "${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}"
 FIXTURES_CONDITION = "${{ !inputs.changed-only && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
 
@@ -127,7 +130,8 @@ def budget_errors(workflows, checks, fixture_budget):
                    'swamp/validate': 'swamp-validate', 'swamp/tests': 'swamp-tests'}.get(label, name)
             if caller is None and name in NON_CHECKS:
                 # The policy tests took 73 to 106 seconds on hosted runners (19 November 2026): two minutes cut a passing run.
-                expected = 275 if name == 'proof-run' else 1 if name == 'proof-eligibility' else PROOF_GATE_TIMEOUT if name == 'required' else 3 if name == 'ci-policy' else 2
+                # The job on main that saves the Cargo cache builds from nothing after a compiler change, then saves.
+                expected = UNGATED_LIMITS[name] if name in UNGATED_LIMITS else 1 if name == 'proof-eligibility' else PROOF_GATE_TIMEOUT if name == 'required' else 3 if name == 'ci-policy' else 2
             elif label in ('fixtures', 'self-hosted-fixtures'):
                 if 'shard_ceiling_seconds' not in fixture_budget:
                     reject(label, 'no entry in .github/ci/checks.toml')
@@ -162,7 +166,7 @@ def budget_errors(workflows, checks, fixture_budget):
             elif type(limit) is not int:
                 reject(label, 'timeout-minutes must be an integer')
             else:
-                if label != 'proof-run' and limit > 4:
+                if label not in UNGATED_LIMITS and limit > 4:
                     reject(label, 'timeout-minutes exceeds 4 minutes')
                 if expected is not None and limit != expected:
                     reject(label, f'timeout-minutes must equal ceiling rounded up: {expected}, got {limit}')
