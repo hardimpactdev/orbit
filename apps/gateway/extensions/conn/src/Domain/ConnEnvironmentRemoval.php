@@ -54,6 +54,7 @@ final readonly class ConnEnvironmentRemoval
             }
 
             ConnThread::query()->where('conn_environment_id', $environment->id)->delete();
+            ConnThread::hostQuery()->where('conn_environment_id', $environment->id)->delete();
             ConnReservation::query()
                 ->whereIn('conn_pairing_id', ConnPairing::query()->where('conn_environment_id', $environment->id)->select('id'))
                 ->update(['conn_pairing_id' => null]);

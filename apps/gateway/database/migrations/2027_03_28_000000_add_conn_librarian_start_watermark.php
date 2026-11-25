@@ -10,15 +10,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('conn_environments', function (Blueprint $table): void {
-            $table->unsignedBigInteger('librarian_started_at_ms')->nullable();
+        Schema::create('conn_librarian_watermarks', function (Blueprint $table): void {
+            $table->foreignId('conn_environment_id')->primary()->constrained()->cascadeOnDelete();
+            $table->unsignedBigInteger('started_at_ms');
         });
     }
 
     public function down(): void
     {
-        Schema::table('conn_environments', function (Blueprint $table): void {
-            $table->dropColumn('librarian_started_at_ms');
-        });
+        Schema::dropIfExists('conn_librarian_watermarks');
     }
 };

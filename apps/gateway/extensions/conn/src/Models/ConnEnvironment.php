@@ -31,7 +31,6 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $threads_read_at
  * @property string|null $threads_read_error
  * @property Carbon|null $threads_applied_at
- * @property int|null $librarian_started_at_ms
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node|null $node
@@ -99,7 +98,6 @@ final class ConnEnvironment extends Model
             'renewal_checked_at' => 'datetime',
             'threads_read_at' => 'datetime',
             'threads_applied_at' => 'datetime',
-            'librarian_started_at_ms' => 'integer',
         ];
     }
 }

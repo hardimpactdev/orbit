@@ -127,6 +127,8 @@ When `ORBIT_CONN_MANAGED_TARGETS=true` (default `false`; returns `404 conn.manag
 
 `GET /api/v1/conn/threads` lists threads from registered host and container servers that the caller can access. `POST /api/v1/conn/environments/{environment}/threads` records a thread before the next poll. A host thread has no `instance_id`; its `project_id` is its Conn filing, or `null` for General. A Project filter matches the host thread's filing or the container's Project. An Instance filter excludes host threads.
 
+The Gateway stores host rows separately so enabling host indexing does not rewrite the existing container index.
+
 While Conn and the Gateway queue are enabled, the scheduler queues a host poll every five seconds. `ORBIT_CONN_THREAD_INDEX_POLL=true` also enables the separate container poll: `conn:threads:read` runs every minute on the `problems` queue. A failed read keeps that server's last rows and reports the failure in `meta.environments[].read_error`.
 
 ### The thread librarian

@@ -10,6 +10,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Models\Node;
 use App\Models\Project;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Infrastructure\AiRouterThreadClassifier;
 use Orbit\Extensions\Conn\Infrastructure\ConnThreadOrchestration;
 use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
@@ -35,11 +36,7 @@ final readonly class ConnThreadLibrarian
         if (! AiRouterThreadClassifier::configured() || ! is_array($shell['projects'] ?? null) || ! is_array($shell['threads'] ?? null)) {
             return;
         }
-        if ($environment->librarian_started_at_ms === null) {
-            $environment->librarian_started_at_ms = $observedAt->getTimestampMs();
-            $environment->save();
-        }
-        $cutoff = $environment->librarian_started_at_ms;
+        $cutoff = $this->cutoff($environment, $observedAt);
         $roots = [];
         foreach ($shell['projects'] as $project) {
             if (is_array($project) && is_string($project['id'] ?? null) && is_string($project['workspaceRoot'] ?? null)) {
@@ -121,7 +118,7 @@ final readonly class ConnThreadLibrarian
             $current = $this->projection($environment, $job->threadId)['thread'] ?? null;
             if (self::unassignedTopLevel($current) && ($current['projectId'] ?? null) === $job->connProjectId) {
                 $this->orchestration->file($environment, $job->threadId, $project->id, $project->slug);
-                ConnThread::query()->where($key)->update(['orbit_project_id' => $project->id]);
+                ConnThread::hostQuery()->where($key)->update(['orbit_project_id' => $project->id]);
             }
         }
         $this->complete($receipt);
@@ -181,5 +178,18 @@ final readonly class ConnThreadLibrarian
     private function receipt(ClassifyConnThreadJob $job): ConnThreadClassification
     {
         return ConnThreadClassification::query()->firstOrNew(['conn_environment_id' => $job->environmentId, 'thread_id' => $job->threadId]);
+    }
+
+    private function cutoff(ConnEnvironment $environment, CarbonImmutable $observedAt): int
+    {
+        $watermarks = DB::table('conn_librarian_watermarks');
+        $stored = $watermarks->where('conn_environment_id', $environment->id)->value('started_at_ms');
+        if (is_numeric($stored)) {
+            return (int) $stored;
+        }
+        $startedAt = $observedAt->getTimestampMs();
+        $watermarks->insert(['conn_environment_id' => $environment->id, 'started_at_ms' => $startedAt]);
+
+        return $startedAt;
     }
 }

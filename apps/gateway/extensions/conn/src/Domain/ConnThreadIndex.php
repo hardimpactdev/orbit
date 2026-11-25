@@ -70,14 +70,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
         }
         // Each row takes its server's id and Project from the servers already loaded, and is read as a plain row (ConnThreadData::fromRow).
         $byId = $environments->keyBy('id');
-        $threads = array_values(ConnThread::query()->whereIn('conn_threads.conn_environment_id', $byId->keys())
-            ->when($project !== null, static fn (Builder $query) => $query->where(static fn (Builder $query) => $query->whereNotNull('instance_id')
-                ->orWhere('orbit_project_id', $project)))
-            ->leftJoin('conn_thread_classifications', static fn (JoinClause $join) => $join
-                ->on('conn_thread_classifications.conn_environment_id', '=', 'conn_threads.conn_environment_id')
-                ->on('conn_thread_classifications.thread_id', '=', 'conn_threads.thread_id'))
-            ->select('conn_threads.*', 'conn_thread_classifications.result as classification')
-            ->orderByRaw('last_user_message_at is null')->orderByDesc('last_user_message_at')->orderBy('conn_threads.id')->toBase()->get()
+        $threads = array_values($this->rows($environments, $project)
             ->map(static function (\stdClass $row) use ($byId): array {
                 $environment = $byId->get($row->conn_environment_id);
                 assert($environment instanceof ConnEnvironment);
@@ -86,6 +79,37 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             })->all());
 
         return ['environments' => $environments, 'threads' => $threads];
+    }
+
+    /**
+     * @param  Collection<int, ConnEnvironment>  $environments
+     * @return Collection<int, \stdClass>
+     */
+    private function rows(Collection $environments, ?int $project): Collection
+    {
+        $containerIds = [];
+        $hostIds = [];
+        foreach ($environments as $environment) {
+            if ($environment->instance_id === null) {
+                $hostIds[] = $environment->id;
+            } else {
+                $containerIds[] = $environment->id;
+            }
+        }
+        $fields = ['id', 'conn_environment_id', 'thread_id', 'title', 'state', 'needs_input', 'last_user_message_at', 'last_run_completed_at', 'seen_at'];
+        $containers = ConnThread::query()->whereIn('conn_environment_id', $containerIds)
+            ->select([...$fields, 'instance_id'])->selectRaw('null as orbit_project_id, null as classification');
+        $hostTable = ConnThread::HostTable;
+        $hosts = ConnThread::hostQuery()->whereIn("{$hostTable}.conn_environment_id", $hostIds)
+            ->when($project !== null, static fn (Builder $query) => $query->where('orbit_project_id', $project))
+            ->leftJoin('conn_thread_classifications', static fn (JoinClause $join) => $join
+                ->on('conn_thread_classifications.conn_environment_id', '=', "{$hostTable}.conn_environment_id")
+                ->on('conn_thread_classifications.thread_id', '=', "{$hostTable}.thread_id"))
+            ->select(array_map(static fn (string $field): string => "{$hostTable}.{$field}", $fields))
+            ->selectRaw('null as instance_id')->addSelect('orbit_project_id', 'conn_thread_classifications.result as classification');
+
+        return DB::query()->fromSub($containers->toBase()->unionAll($hosts->toBase()), 'thread_index')
+            ->orderByRaw('last_user_message_at is null')->orderByDesc('last_user_message_at')->orderBy('id')->orderBy('conn_environment_id')->get();
     }
 
     /** The operator's switch for container server reads. */
@@ -161,11 +185,17 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
     public function record(ConnEnvironment $environment, string $threadId, string $title, bool $seedTitle = false): array
     {
         $key = ['conn_environment_id' => $environment->id, 'thread_id' => $threadId];
-        $created = ! ConnThread::query()->where($key)->exists();
-        ConnThread::query()->upsert([[...$key, 'instance_id' => $environment->instance_id, 'title' => mb_substr($title, 0, self::TitleLength),
-            'seen_at' => CarbonImmutable::now()]], array_keys($key), $seedTitle ? ['instance_id', 'seen_at'] : ['instance_id', 'title', 'seen_at']);
+        $query = ConnThread::forEnvironment($environment)->where('thread_id', $threadId);
+        $created = ! $query->exists();
+        $attributes = [...$key, 'title' => mb_substr($title, 0, self::TitleLength), 'seen_at' => CarbonImmutable::now()];
+        $updates = $seedTitle ? ['seen_at'] : ['seen_at', 'title'];
+        if ($environment->instance_id !== null) {
+            $attributes['instance_id'] = $environment->instance_id;
+            $updates[] = 'instance_id';
+        }
+        $query->upsert([$attributes], array_keys($key), $updates);
 
-        return ['thread' => ConnThread::query()->where($key)->firstOrFail(), 'created' => $created];
+        return ['thread' => $query->firstOrFail(), 'created' => $created];
     }
 
     /** The task copy's write-through. A failure is reported and never fails the turn's projection. */
@@ -256,13 +286,15 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             if (is_string($applied) && CarbonImmutable::parse($applied)->isAfter($readAt)) {
                 return false;
             }
+            $query = ConnThread::forEnvironment($environment);
+            $ownerColumn = $instance === null ? 'orbit_project_id' : 'instance_id';
             foreach (array_chunk($threads, self::UpsertChunk) as $chunk) {
-                ConnThread::query()->upsert(array_map(static fn (array $thread): array => [...$thread, 'conn_environment_id' => $environment->id,
-                    'instance_id' => $instance, 'seen_at' => $readAt], $chunk), ['conn_environment_id', 'thread_id'],
-                    ['instance_id', 'title', 'state', 'needs_input', 'last_user_message_at', 'last_run_completed_at', 'orbit_project_id', 'seen_at']);
+                $query->upsert(array_map(static fn (array $thread): array => [...array_diff_key($thread, ['orbit_project_id' => true]),
+                    'conn_environment_id' => $environment->id, $ownerColumn => $instance ?? $thread['orbit_project_id'], 'seen_at' => $readAt], $chunk),
+                    ['conn_environment_id', 'thread_id'], [$ownerColumn, 'title', 'state', 'needs_input', 'last_user_message_at', 'last_run_completed_at', 'seen_at']);
             }
             // Every listed thread now has this read's time; an older row is one the shell no longer lists.
-            ConnThread::query()->where('conn_environment_id', $environment->id)->where('seen_at', '<', $readAt)->delete();
+            $query->where('seen_at', '<', $readAt)->delete();
             $environment->forceFill(['threads_applied_at' => $readAt]);
             $this->recordTry($environment, $readAt, null);
 
@@ -282,7 +314,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
         }
 
         return ['environment_id' => $environment->environment_id, 'instance_id' => $environment->instance_id, 'outcome' => 'skipped',
-            'reason' => $reason, 'threads' => ConnThread::query()->where('conn_environment_id', $environment->id)->count(), 'bytes' => 0];
+            'reason' => $reason, 'threads' => ConnThread::forEnvironment($environment)->count(), 'bytes' => 0];
     }
 
     /**

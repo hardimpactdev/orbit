@@ -355,6 +355,13 @@ describe('attention routes', function (): void {
         ]))->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
         expect(array_keys($wrongThread->json('error.details')))->toContain('thread_id');
 
+        $otherHost = push_environment('env-other-host', $this->otherServing);
+        ConnThread::hostQuery()->create(['conn_environment_id' => $otherHost->id, 'thread_id' => 'thread-belongs-to-other-host',
+            'title' => 'Other host thread', 'seen_at' => now()]);
+        push_call($this->phone, 'POST', "environments/{$this->environmentId}/attention", push_attention_payload($this->environmentId, [
+            'thread_id' => 'thread-belongs-to-other-host',
+        ]))->assertUnprocessable()->assertJsonValidationErrors('thread_id', 'error.details');
+
         // attention_cleared with non-null kind fails; with null kind succeeds.
         $badCleared = push_call($this->phone, 'POST', "environments/{$this->environmentId}/attention", push_attention_payload($this->environmentId, [
             'type' => 'attention_cleared',

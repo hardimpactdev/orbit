@@ -31,12 +31,13 @@ final class ConnThreadData extends Data
 
     public static function fromModel(ConnThread $thread): self
     {
-        $thread->loadMissing(['environment', 'instance']);
+        $isHost = $thread->getTable() === ConnThread::HostTable;
+        $thread->loadMissing($isHost ? ['environment'] : ['environment', 'instance']);
 
         return new self(
             environmentId: $thread->environment->environment_id,
-            instanceId: $thread->instance_id,
-            projectId: $thread->instance->project_id ?? $thread->orbit_project_id,
+            instanceId: $isHost ? null : $thread->instance_id,
+            projectId: $isHost ? $thread->orbit_project_id : $thread->instance?->project_id,
             threadId: $thread->thread_id,
             title: $thread->title,
             state: $thread->state,
@@ -44,7 +45,7 @@ final class ConnThreadData extends Data
             lastUserMessageAt: $thread->last_user_message_at?->toIso8601String(),
             lastRunCompletedAt: $thread->last_run_completed_at?->toIso8601String(),
             seenAt: $thread->seen_at->toIso8601String(),
-            classification: $thread->instance_id === null
+            classification: $isHost
                 ? ConnThreadClassification::forThread($thread->conn_environment_id, $thread->thread_id)->first()?->result
                 : null,
         );

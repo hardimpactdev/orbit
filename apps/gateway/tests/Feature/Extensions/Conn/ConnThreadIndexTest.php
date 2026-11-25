@@ -387,7 +387,10 @@ describe('the write-through', function (): void {
             ->assertJsonPath('data.classification', null);
         threadsCall($this->phone, 'GET', 'threads')->assertOk()->assertJsonPath('data.0.environment_id', 'env-host');
         threadsCall($this->phone, 'POST', 'environments/env-clone/threads', ['title' => 'x'])->assertStatus(422);
-        expect(ConnThread::query()->count())->toBe(1);
+        expect(ConnThread::query()->count())->toBe(0)->and(ConnThread::hostQuery()->sole()->thread_id)->toBe('x');
+        threadsCall($this->phone, 'POST', 'environments/env-clone/threads', ['thread_id' => 'instance-thread', 'title' => 'Instance thread'])->assertCreated();
+        threadsCall($this->phone, 'GET', 'threads')->assertOk()->assertJsonPath('data.*.thread_id', ['instance-thread', 'x']);
+        threadsCall($this->phone, 'GET', 'threads?project='.$this->project->id)->assertOk()->assertJsonPath('data.*.thread_id', ['instance-thread']);
     });
 
     it('records the thread of a task copy turn through the plug-in point, but not while Conn is off', function (): void {

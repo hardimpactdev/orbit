@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Models;
 
 use App\Models\Instance;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -29,6 +30,20 @@ use Illuminate\Support\Carbon;
  */
 final class ConnThread extends Model
 {
+    public const string HostTable = 'conn_host_threads';
+
+    /** @return Builder<self> */
+    public static function hostQuery(): Builder
+    {
+        return (new self)->setTable(self::HostTable)->newQuery();
+    }
+
+    /** @return Builder<self> */
+    public static function forEnvironment(ConnEnvironment $environment): Builder
+    {
+        return ($environment->instance_id === null ? self::hostQuery() : self::query())->where('conn_environment_id', $environment->id);
+    }
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
