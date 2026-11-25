@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Requests\Fleet\AdmitConnServerRolloutRequest;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\ConnServerNode;
 use App\Models\Node;
 use App\Models\Operation;
@@ -172,6 +173,18 @@ function finishConnRollout(Operation $operation, string $status, array $nodes): 
     ]])->save();
 }
 
+it('reads the standalone Conn pin without resolving the Orbit Agent delivery manifest', function (): void {
+    connServerPin(static function (array &$recipe): void {
+        $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    });
+    app()->instance(AgentDelivery::class, new AgentDelivery(config()->string('orbit.gateway_checkout').'/missing-manifest.json', '/unused'));
+
+    $pin = app(ConnServerRollout::class)->releasePin();
+
+    expect($pin?->version)->toBe('0.5.2')
+        ->and($pin?->releaseCanary)->toBeTrue();
+});
+
 it('records a follower SSH blocker without invalidating the verified canary', function (): void {
     connServerPin(static function (array &$recipe): void {
         $recipe['instances']['agent']['conn-server']['release_canary'] = true;
@@ -181,11 +194,12 @@ it('records a follower SSH blocker without invalidating the verified canary', fu
     $other->forceFill(['ssh_host_key' => null, 'ssh_host_fingerprint' => null])->save();
 
     $rollout = app(ConnServerRollout::class);
-    $check = $rollout->releaseGate();
+    $pin = $rollout->releasePin();
+    $check = $rollout->releaseGate($pin);
     finishConnRollout($check, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'checked']]);
-    $probe = $rollout->releaseGate();
+    $probe = $rollout->releaseGate($pin);
     finishConnRollout($probe, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'updated', 'thread_read' => true]]);
-    expect($rollout->releaseGate())->toBeNull();
+    expect($rollout->releaseGate($pin))->toBeNull();
 
     $preflight = Operation::query()->where('input->release_stage', 'preflight')->sole();
     expect($preflight->result['error_code'])->toBe('conn_server.preflight_blocked')
@@ -202,23 +216,24 @@ it('resumes a pin from its durable receipts and authorizes exactly one promotion
     $mini = connServerNode('mini', 61, ['notify_before_restart' => true]);
     $nick = connServerNode('nick', 60, []);
     $rollout = app(ConnServerRollout::class);
-    $check = $rollout->releaseGate();
+    $pin = $rollout->releasePin();
+    $check = $rollout->releaseGate($pin);
     expect($check->input['intent']['dry_run'])->toBeTrue()
-        ->and($rollout->releaseGate()->id)->toBe($check->id);
+        ->and($rollout->releaseGate($pin)->id)->toBe($check->id);
     finishConnRollout($check, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'checked']]);
-    $probe = $rollout->releaseGate();
+    $probe = $rollout->releaseGate($pin);
     expect($probe->input['intent']['dry_run'])->toBeFalse()
         ->and($probe->input['intent']['probe_thread'])->toBeTrue();
     finishConnRollout($probe, 'failed', [['node_id' => $vm->id, 'outcome' => 'failed', 'rolled_back' => true]]);
     expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id))->toThrow(ResourceOperationException::class)
-        ->and($rollout->releaseGate()->id)->toBe($probe->id);
+        ->and($rollout->releaseGate($pin)->id)->toBe($probe->id);
 
     $retry = $rollout->admit(false, 'canary', retryOperationId: $probe->id);
     expect($retry->id)->not->toBe($probe->id)
         ->and($rollout->admit(false, 'canary', retryOperationId: $probe->id)->id)->toBe($retry->id);
     finishConnRollout($retry, 'succeeded', [['node_id' => $vm->id, 'outcome' => 'updated', 'thread_read' => true]]);
-    expect($rollout->releaseGate())->toBeNull()
-        ->and(app(ConnServerRollout::class)->releaseGate())->toBeNull();
+    expect($rollout->releaseGate($pin))->toBeNull()
+        ->and(app(ConnServerRollout::class)->releaseGate($pin))->toBeNull();
     $preflight = Operation::query()->where('input->release_stage', 'preflight')->sole();
     expect($preflight->input['intent']['dry_run'])->toBeTrue()
         ->and(array_column($preflight->input['intent']['nodes'], 'node_id'))->toBe([$mini->id, $nick->id]);
@@ -260,5 +275,5 @@ it('resumes a pin from its durable receipts and authorizes exactly one promotion
         $pin['artifacts']['amd64']['sha256'] = str_repeat('c', 64);
     });
     expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $retry->id))->toThrow(ResourceOperationException::class, 'successful canary_operation_id')
-        ->and($rollout->releaseGate()->id)->not->toBe($check->id);
+        ->and($rollout->releaseGate($rollout->releasePin())->id)->not->toBe($check->id);
 });

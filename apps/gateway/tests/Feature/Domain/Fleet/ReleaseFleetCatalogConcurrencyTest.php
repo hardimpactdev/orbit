@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\ServingRecipeFixture;
 use Tests\Support\SwampNodeFixture;
 
 afterEach(function (): void {
@@ -36,7 +37,7 @@ beforeEach(function (): void {
     $root = sys_get_temp_dir().'/orbit-fleet-catalog-'.bin2hex(random_bytes(8));
     $this->commit = 'ca7a109'.str_repeat('0', 33);
     $releasePath = $root.'/releases/'.substr($this->commit, 0, 12);
-    mkdir($releasePath.'/apps/gateway', 0700, true);
+    ServingRecipeFixture::write($releasePath.'/apps/gateway');
     $database = $root.'/gateway.sqlite3';
     $default = DB::getDefaultConnection();
     $connections = ['fleet-catalog', 'unrelated-writer'];

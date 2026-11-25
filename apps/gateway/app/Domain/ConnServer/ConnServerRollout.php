@@ -18,6 +18,7 @@ use App\Models\Operation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 final readonly class ConnServerRollout
 {
@@ -61,10 +62,18 @@ final readonly class ConnServerRollout
             && ($dryRun || data_get($receipt->result, 'nodes.0.thread_read') === true);
     }
 
-    /** The release pass holds the release lock and database writer. It resumes from durable Operations. */
-    public function releaseGate(): ?Operation
+    public function releasePin(): ?FolderPin
     {
-        $pin = $this->recipes->currentRecipe()->instances?->agent['conn-server'] ?? null;
+        try {
+            return $this->recipes->source()->instances?->agent['conn-server'] ?? null;
+        } catch (InvalidArgumentException $failure) {
+            throw new ResourceOperationException('conn_server.recipe_unavailable', 'The serving Gateway recipe is missing, unreadable, or invalid.', 409, $failure);
+        }
+    }
+
+    /** The release pass holds the release lock and database writer. It resumes from durable Operations. */
+    public function releaseGate(?FolderPin $pin): ?Operation
+    {
         if (! $pin?->releaseCanary) {
             return null;
         }
@@ -240,7 +249,7 @@ final readonly class ConnServerRollout
 
     private function pin(): FolderPin
     {
-        $pin = $this->recipes->currentRecipe()->instances?->agent['conn-server'] ?? null;
+        $pin = $this->releasePin();
         if ($pin?->macApp === null) {
             throw new ResourceOperationException('conn_server.pin_unavailable', 'The Conn Server pin names no macOS arm64 app.', 409);
         }

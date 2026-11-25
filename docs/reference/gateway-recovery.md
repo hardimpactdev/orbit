@@ -347,7 +347,7 @@ A verified Gateway release triggers two distinct layers of fleet work:
 - **Agent and CLI delivery (`fleet.rollout`):** Delivers the pinned `orbit-agent` binary (and packaged CLI on `ci-runner` Nodes) in risk order via `operation-fleet-rollout`. Trigger manually via `POST /api/v1/fleet/rollout`.
 - **Verified release fleet pass:** Runs automatically after a Gateway release verifies and daily at 03:05 Europe/Amsterdam with rollout or refresh enabled.
 
-A Conn Server release can require proof from a standalone canary. The pass dry-runs and updates that Node first. A failed canary holds the pass. Its Operation shows the failure and rollback result. The [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains how to retry the failed stage and promote the verified pin.
+The fleet pass validates the serving recipe before admitting work. A Conn Server release can require proof from a standalone canary. The pass dry-runs and updates that Node first. A failed canary holds the pass. Its Operation shows the failure and rollback result. The [Conn Server rollout](/reference/development-containers#conn-server-rollout) explains how to retry the failed stage and promote the verified pin.
 
 During the verified release fleet pass, each eligible Node (with the serving Gateway Node last) runs delivery and then admits either a scoped role `node.converge` (when role inputs changed) or a full `node.converge` (when host inputs changed). Once all Nodes are `current`, `phases.fleet.status` becomes `current` and default refresh and seed publication may advance.
 

@@ -37,6 +37,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
@@ -55,7 +56,7 @@ use Throwable;
  * @phpstan-type HostCheck array{host: string, accept: bool, known: bool}
  * @phpstan-type RoleInputs array<int, array{role:string,digest:string}>
  * @phpstan-type NodeInputs array{approved: string|null, host: HostCheck|Throwable, roles: RoleInputs|Throwable, gateway: RoleInputs|Throwable}
- * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>}
+ * @phpstan-type Prepared array{baselines: array<int, string|null>, legacy: Legacy|null, nodes: array<int, NodeInputs>, conn_server_pin: FolderPin|ResourceOperationException|null}
  */
 final readonly class ContinueReleaseFleetAction
 {
@@ -259,8 +260,15 @@ final readonly class ContinueReleaseFleetAction
      */
     private function prepare(GatewayRelease $release, array $members): array
     {
-        $prepared = ['baselines' => $this->hostBaselines($release->previous_release_id, $members), 'legacy' => null, 'nodes' => []];
+        $prepared = ['baselines' => $this->hostBaselines($release->previous_release_id, $members), 'legacy' => null, 'nodes' => [], 'conn_server_pin' => null];
         if (! config('fleet.rollout')) {
+            return $prepared;
+        }
+        try {
+            $prepared['conn_server_pin'] = app(ConnServerRollout::class)->releasePin();
+        } catch (ResourceOperationException $failure) {
+            $prepared['conn_server_pin'] = $failure;
+
             return $prepared;
         }
         $inputs = app(ReleaseNodeInputs::class);
@@ -343,8 +351,14 @@ final readonly class ContinueReleaseFleetAction
             return 10;
         }
 
+        $pin = $prepared['conn_server_pin'];
+        if ($pin instanceof ResourceOperationException) {
+            $this->save($release, [...$phase, 'error_code' => $pin->errorCode], 'failed');
+
+            return null;
+        }
         try {
-            $canary = app(ConnServerRollout::class)->releaseGate();
+            $canary = app(ConnServerRollout::class)->releaseGate($pin);
         } catch (ResourceOperationException $failure) {
             if ($failure->errorCode === 'operation.target_busy') {
                 return 15;
