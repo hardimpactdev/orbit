@@ -122,7 +122,7 @@ return new class extends Migration
         }
         DB::table('tools')->insert(['node_id' => $nodeId, 'tool_manager_id' => $manager, 'package' => $latest['package'], 'owned' => false,
             'desired_repository' => json_encode($latest['definition'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-            'status' => 'failed', 'failed_operation' => 'remove', 'error_code' => 'tool.repository_failed', 'created_at' => now(), 'updated_at' => now()]);
+            'status' => 'failed', 'failed_operation' => 'remove', 'error_code' => null, 'created_at' => now(), 'updated_at' => now()]);
     }
 
     /** @return array<string, mixed> */
