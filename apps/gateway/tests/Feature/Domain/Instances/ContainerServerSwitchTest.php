@@ -328,6 +328,6 @@ describe('switching a container server to conn', function (): void {
             ->and($match[1])->toBe($version);
     })->with([
         't3' => [ContainerServer::T3, 't3 v0.1.7', '0.1.7'],
-        'conn' => [ContainerServer::Conn, 'conn-server 0.5.2 (T3 server 0.1.10 contract, contract digest 2b83411d59ae)', '0.1.10'],
+        'conn' => [ContainerServer::Conn, 'conn-server 0.5.3 (T3 server 0.1.10 contract, contract digest 3d1546a4ad84)', '0.1.10'],
     ]);
 });
