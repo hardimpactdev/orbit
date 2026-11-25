@@ -100,8 +100,7 @@ final readonly class HttpT3ServerClient implements T3ServerClient
 
     public function shell(string $baseUrl, #[SensitiveParameter] string $adminSession): array
     {
-        return $this->json($baseUrl, 'shell', fn (): Response => $this->request($adminSession)
-            ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])
+        return $this->json($baseUrl, 'shell', fn (): Response => $this->orchestration($this->request($adminSession))
             ->get($this->endpoint($baseUrl, '/api/orchestration/shell')));
     }
 
@@ -113,8 +112,8 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         $timeout = min($timeoutSeconds, self::TIMEOUT_SECONDS);
         $responses = Http::pool(function (Pool $pool) use ($servers, $timeout): void {
             foreach ($servers as $key => $server) {
-                $this->request($server['session'], $pool->as((string) $key), $timeout)
-                    ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])->get($this->endpoint($server['url'], '/api/orchestration/shell'));
+                $this->orchestration($this->request($server['session'], $pool->as((string) $key), $timeout))
+                    ->get($this->endpoint($server['url'], '/api/orchestration/shell'));
             }
         }, concurrency: 0);
         $shells = [];
@@ -154,8 +153,7 @@ final readonly class HttpT3ServerClient implements T3ServerClient
     public function threadProjection(string $baseUrl, #[SensitiveParameter] string $adminSession, string $threadId): ?array
     {
         try {
-            $body = $this->json($baseUrl, 'thread snapshot', fn (): Response => $this->request($adminSession, timeout: 2.0)
-                ->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2'])
+            $body = $this->json($baseUrl, 'thread snapshot', fn (): Response => $this->orchestration($this->request($adminSession, timeout: 2.0))
                 ->get($this->endpoint($baseUrl, '/api/orchestration/threads/'.rawurlencode($threadId))));
         } catch (T3ServerException $error) {
             if (($error->details['status'] ?? null) === 404) {
@@ -181,6 +179,15 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         return $adminSession === null ? $request : $request->withToken($adminSession);
     }
 
+    /**
+     * An orchestration read: the protocol version, and a gzip request, since a large shell is megabytes of JSON. Guzzle sends no
+     * Accept-Encoding of its own and decodes the body it asked for.
+     */
+    private function orchestration(PendingRequest $request): PendingRequest
+    {
+        return $request->withHeaders([self::ORCHESTRATION_PROTOCOL_HEADER => '2', 'Accept-Encoding' => 'gzip']);
+    }
+
     private function endpoint(string $baseUrl, string $path): string
     {
         return rtrim($baseUrl, '/').$path;
@@ -196,6 +203,12 @@ final readonly class HttpT3ServerClient implements T3ServerClient
             $response = $send();
         } catch (ConnectionException $exception) {
             throw T3ServerException::unreachable($baseUrl, $exception);
+        }
+
+        // A pooled request that times out after the headers comes back as a response with the body cut off; curl's error marks it.
+        $handlerError = $response->transferStats?->getHandlerErrorData();
+        if ($handlerError !== null && $handlerError !== 0) {
+            throw T3ServerException::unreachable($baseUrl);
         }
 
         if (! $response->successful()) {

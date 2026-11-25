@@ -131,6 +131,8 @@ The Gateway stores host rows separately so enabling host indexing does not rewri
 
 While Conn and the Gateway queue are enabled, the scheduler queues a host poll every five seconds. `ORBIT_CONN_THREAD_INDEX_POLL=true` also enables the separate container poll: `conn:threads:read` runs every minute on the `problems` queue. A failed read keeps that server's last rows and reports the failure in `meta.environments[].read_error`.
 
+The host poll reads every host server at once and waits at most 6 seconds for each. The largest host shell measured, 5.26 MB, took about 2.1 seconds over WireGuard. The poll job runs at most 15 seconds and never overlaps itself, so the rest of its time goes to the rows and the librarian. Every shell read asks for `Accept-Encoding: gzip` and decodes a gzip answer. A body cut off by the timeout counts as a server that did not answer: `conn.server_unreachable`, never `conn.response_invalid`.
+
 ### The thread librarian
 
 After the first user message in a top-level General thread on a registered host Conn Server (0.5.2 or later), a Gateway job normally decides within about 15 seconds. It uses only the title (255 characters), first user-authored message (4,000 characters), and the Orbit Projects visible to the host's Node. Each Project includes its ID, slug, name, and a short description based on its repository or Node.

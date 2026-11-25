@@ -34,6 +34,13 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
     /** The bound of the poll's request to one server: the client's own 10 seconds. */
     public const float PassTimeoutSeconds = 10.0;
 
+    /**
+     * The bound of the host poll's request to one host server. The largest host shell measured, 5.26 MB on mini, took up to 2.1 seconds
+     * to download; 6 seconds is about three times that and below the client's own 10. The poll job runs at most 15 seconds and never
+     * overlaps itself, so 9 seconds remain for the rows and the librarian.
+     */
+    public const float HostPassTimeoutSeconds = 6.0;
+
     /** The bound of the last read before a sleep, which a sleep's caller waits for. */
     public const float SleepReadTimeoutSeconds = 3.0;
 
@@ -130,7 +137,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
 
     public function hostPass(ConnThreadLibrarian $librarian): void
     {
-        $this->refresh(ConnEnvironment::query()->whereNull('instance_id')->whereNotNull('node_id')->orderBy('id')->get(), 2.0, $librarian);
+        $this->refresh(ConnEnvironment::query()->whereNull('instance_id')->whereNotNull('node_id')->orderBy('id')->get(), self::HostPassTimeoutSeconds, $librarian);
     }
 
     /**

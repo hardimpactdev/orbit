@@ -22,10 +22,10 @@ sequenceDiagram
   %%> - an ended session, `conn.session_expired`: its renewal comes first
   GW->>T3: Read every shell at once<br/>GET /api/orchestration/shell
   %%> How:
-  %%> - the admin session the Gateway holds and renews, with `x-t3-orchestration-protocol: 2`
-  %%> - each group in one pool; the host read takes at most 2 seconds, the container read takes at most 10 seconds
+  %%> - the admin session the Gateway holds and renews, with `x-t3-orchestration-protocol: 2` and `Accept-Encoding: gzip`
+  %%> - each group in one pool; the host read takes at most 6 seconds, the container read takes at most 10 seconds
   %%> On failure:
-  %%> - a server that does not answer, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
+  %%> - a server that does not answer, or whose body the timeout cuts off, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
   %%> - a failed write of one server's rows is reported and skipped with `conn.index_write_failed`; the pass goes on
   T3-->>GW: Threads and run state<br/>title · status · pending request
   Note over GW: Write the server's rows<br/>conn_threads
