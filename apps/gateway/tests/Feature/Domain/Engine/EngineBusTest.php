@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Executor\SignedExecutorOrder;
 use App\Infrastructure\Engine\EngineBus;
 use Basis\Nats\Client;
 use Basis\Nats\Message\Payload;
@@ -17,6 +18,8 @@ final class IdleTestClient extends Client
 
     public ?Payload $dispatched = null;
 
+    public array $requests = [];
+
     public function ping(): bool
     {
         $this->pings++;
@@ -29,6 +32,8 @@ final class IdleTestClient extends Client
 
     public function dispatch(string $name, mixed $payload, ?float $timeout = null): mixed
     {
+        $this->requests[$name][] = $payload;
+
         return $this->dispatched;
     }
 }
@@ -66,6 +71,21 @@ it('replaces a connection that sat idle and no longer answers a ping', function 
     $second->throwOnPing = true;
     $this->travel(11)->seconds();
     expect($bus->client())->not->toBe($second)->and($made)->toHaveCount(3);
+});
+
+it('still sets up the consumer once and publishes orders from callers without a claim', function (): void {
+    $client = new IdleTestClient;
+    $client->dispatched = new Payload('{"seq":1}');
+    $bus = new EngineBus(static fn (): Client => $client);
+
+    $bus->publishOrder(3, new SignedExecutorOrder('first.fixture', '7:first', 'nonce-first', 1000));
+    $bus->publishOrder(3, new SignedExecutorOrder('second.fixture', '7:second', 'nonce-second', 1000));
+
+    expect(array_keys($client->requests))->toBe(['$JS.API.CONSUMER.CREATE.ORDERS.node-3', 'orbit.node.3.orders'])
+        ->and($client->requests['$JS.API.CONSUMER.CREATE.ORDERS.node-3'])->toHaveCount(1);
+    $orders = $client->requests['orbit.node.3.orders'];
+    expect(array_map(static fn (Payload $order): string => $order->body, $orders))->toBe(['first.fixture', 'second.fixture'])
+        ->and(array_map(static fn (Payload $order): string => $order->getHeader('Nats-Msg-Id'), $orders))->toBe(['nonce-first', 'nonce-second']);
 });
 
 it('reads node_targets from the Node capability report and defaults to empty for older executors', function (): void {

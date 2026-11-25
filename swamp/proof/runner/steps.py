@@ -54,6 +54,10 @@ class Unrun(Exception):
     """A precondition did not hold: the case is unrun."""
 
 
+class Failed(Exception):
+    """An assertion failed and dependent steps cannot continue."""
+
+
 def ufw_rows(run, node):
     text = run.fleet.sh(node, 'ufw status numbered').stdout
     rows = []
@@ -1089,6 +1093,31 @@ def busy_node(run, args):
     return []
 
 
+def clone_fixture(run, args):
+    from clone_lifecycle import CloneLane, ProofFailure
+
+    run.clone_lane = CloneLane(run, fleet_module)
+    try:
+        run.clone_lane.setup(**args)
+    except ProofFailure as error:
+        return [str(error)]
+    return []
+
+
+def clone_step(method):
+    def step(run, args):
+        from clone_lifecycle import ProofFailure, ProofInfrastructure
+
+        try:
+            getattr(run.clone_lane, method)(**args)
+        except ProofInfrastructure as error:
+            raise Infra(str(error)) from None
+        except ProofFailure as error:
+            raise Failed(str(error)) from None
+        return []
+    return step
+
+
 def cleanup(run):
     """End what a case started on its own. The held write goes on when its lock ends, and the next case must not meet its Operation:
     wait for the CLI of the held write to end, then put the real ufw back. A failed case also gets a restore of `base`."""
@@ -1099,6 +1128,8 @@ def cleanup(run):
     run.background.clear()
     for node in sorted(run.shimmed):
         remove_shim(run, node)
+    if lane := getattr(run, 'clone_lane', None):
+        lane.cleanup()
 
 
 def unbuilt(name):
@@ -1113,4 +1144,6 @@ FUNCTIONS.update({'fault': fault, 'busy_node': busy_node, 'ipv6_addresses': ipv6
                   'node_access_remove': node_access_remove, 'node_fixture': node_fixture, 'recorded_request': recorded_request,
                   'executor_key': executor_key, 'executor_order': executor_order,
                   'executor_publish': executor_publish, 'executor_round_trip': executor_round_trip,
-                  'executor_lost_result': executor_lost_result, 'executor_power': executor_power})
+                  'executor_lost_result': executor_lost_result, 'executor_power': executor_power,
+                  'clone_fixture': clone_fixture, 'clone_create': clone_step('create'), 'clone_destroy': clone_step('destroy'),
+                  'clone_compare': clone_step('compare'), 'clone_cleanup': clone_step('cleanup')})

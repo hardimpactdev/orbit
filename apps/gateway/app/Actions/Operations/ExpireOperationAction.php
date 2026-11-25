@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Operations;
 
+use App\Domain\Engine\Engine;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationTimeout;
@@ -21,14 +22,14 @@ final readonly class ExpireOperationAction
     public function execute(Operation $operation): Operation
     {
         $deadline = OperationRunBudgets::deadline($operation);
-        if ($operation->status->terminal() || $deadline === null || $deadline->isFuture() || ! DirectOperation::owns($operation)) {
+        if ($operation->status->terminal() || $deadline === null || $deadline->isFuture() || ! DirectOperation::owns($operation) || Engine::requiresReceipt($operation)) {
             return $operation;
         }
 
         return DB::transaction(function () use ($operation): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $deadline = OperationRunBudgets::deadline($current);
-            if ($current->status->terminal() || $deadline === null || $deadline->isFuture()) {
+            if ($current->status->terminal() || $deadline === null || $deadline->isFuture() || Engine::requiresReceipt($current)) {
                 return $current;
             }
             $state = $current->state ?? [];

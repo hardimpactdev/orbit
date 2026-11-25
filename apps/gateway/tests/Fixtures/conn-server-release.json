@@ -1,5 +1,5 @@
 {
-  "version": "0.5.2",
+  "version": "0.5.3",
   "launch_version": "0.1.10",
-  "version_output": "conn-server 0.5.2 (T3 server 0.1.10 contract, contract digest 2b83411d59ae)"
+  "version_output": "conn-server 0.5.3 (T3 server 0.1.10 contract, contract digest 3d1546a4ad84)"
 }
