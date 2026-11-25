@@ -70,7 +70,7 @@ A catalog cannot express different desired coordinates for the same manager and 
 | `brew`, `brew-cask` | The current supported formula or cask version, including a formula revision (`2.1.0_1`) or cask build suffix (`1.5.13,600`). Orbit does not add taps or fetch older bottles. |
 | `conn-server` | An exact checksummed host release from `conn-server-releases.yaml`. It is separate from the container agent pin. |
 
-The manager must still offer the version, and the version must meet any SemVer constraint. Orbit refuses an unavailable coordinate instead of substituting a different version. Package downloads and removals retain the manager's source, verification, scope, and dependency rules.
+The manager must still offer the version, and the version must meet any SemVer constraint. For Homebrew formulae and casks, constraints use the version without the revision or build suffix; exact pins include it. Orbit refuses an unavailable coordinate instead of substituting a different version. Package downloads and removals retain the manager's source, verification, scope, and dependency rules.
 
 ## Converge registered Tools
 

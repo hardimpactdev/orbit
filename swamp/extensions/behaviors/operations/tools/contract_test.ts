@@ -1,6 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import {
     allows,
+    exactMatches,
     Input,
     normalizeVersion,
     validateConstraint,
@@ -39,7 +40,11 @@ Deno.test("constraint validation refuses malformed ranges and preserves manager 
         assertThrows(() => validateConstraint(input(raw)));
     }
     assertEquals(normalizeVersion("1:1.25.0-2ubuntu4", "apt"), "1.25.0");
-    assertEquals(normalizeVersion("25.8.1_1", "brew"), null);
+    assertEquals(normalizeVersion("25.8.1_1", "brew"), "25.8.1");
+    const formula = { manager: "brew", desired_version: "25.8.1_1" } as const;
+    assertEquals(exactMatches(formula, "25.8.1_1"), true);
+    assertEquals(exactMatches(formula, "25.8.1"), false);
+    assertEquals(exactMatches(formula, "25.8.1_2"), false);
     assertEquals(normalizeVersion("3.003", "brew-cask"), null);
     assertEquals(normalizeVersion("v1.2", "vp"), "1.2.0");
     assertEquals(allows(input(null), "unparseable"), true);
