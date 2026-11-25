@@ -48,6 +48,8 @@ Address every blocking finding and repeat affected checks before merging.
 | `proof-run` | Selected command proofs when `ORBIT_PROOF_ENABLED=true` |
 | `ci-policy` | Runner policy, workflow hygiene, and `checks.toml` checks |
 
+Pull requests and merge queue runs read the caches that `main` saved. `main` runs no tests, so three jobs there save those caches and gate nothing: `gateway-test-caches`, `web-test-caches`, and `agent-test-caches`. The `agent` job only restores the Cargo cache (the registry, Git dependencies, and `apps/agent/target`) and never saves it. After a lockfile change it starts from the newest entry built by the same compiler on the same operating system and architecture, and Cargo rebuilds what changed.
+
 Local `bin/ci-units run` timing files (`ci-unit-times.json`) are ignored by Git and rejected by `Required checks` if force-added.
 
 ### One PHP build in CI

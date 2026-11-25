@@ -1,0 +1,49 @@
+name: Restore the Rust agent Cargo cache
+description: Select stable Rust, then restore the Cargo registry, Git dependencies and apps/agent/target.
+# A pull request and a merge queue run read the caches of main, and no other run reads what they save. Main runs no
+# tests, so its own job saves this cache and every other job only restores it. A job that restores has no save to wait
+# for: a save after a cold build ran past the time limit and cancelled a job whose checks had all passed.
+inputs:
+  save:
+    description: Save the cache when the job ends and no entry has its exact key. Only the job on main sets it.
+    default: 'false'
+outputs:
+  cache-hit:
+    description: The string true when an entry with the exact key was restored.
+    value: ${{ steps.restore.outputs.cache-hit || steps.cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare stable Rust
+      id: rust
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --component clippy
+        rustup default stable
+        echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    # The exact key names the manifests and the lockfile. After they change, the newest entry of the same operating
+    # system, architecture and compiler restores, and Cargo rebuilds what its fingerprints say changed.
+    - name: Restore the Cargo cache
+      id: restore
+      if: inputs.save != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          apps/agent/target
+        key: agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}
+        restore-keys: |
+          agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-
+    - name: Restore the Cargo cache and save it when the job ends
+      id: cache
+      if: inputs.save == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          apps/agent/target
+        key: agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-${{ hashFiles('apps/agent/Cargo.lock', 'apps/agent/Cargo.toml', 'apps/agent/crates/**/Cargo.toml', 'apps/gateway/extensions/*/agent/Cargo.toml') }}
+        restore-keys: |
+          agent-cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust.outputs.version }}-
