@@ -412,9 +412,11 @@ function fleetBus(): MachineBus
         /** @var list<int> */
         public array $orders = [];
 
-        public function publishOrder(int $node, SignedExecutorOrder $order): void
+        public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void
         {
-            $this->orders[] = $node;
+            if ($claim === null || $claim()) {
+                $this->orders[] = $node;
+            }
         }
 
         public function publishStart(int $operation): void

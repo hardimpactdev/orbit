@@ -128,7 +128,7 @@ it('puts step content into the Node\'s content keys and leaves only its hash in 
         /** @var list<array{int, string}> */
         public array $puts = [];
 
-        public function publishOrder(int $node, SignedExecutorOrder $order): void {}
+        public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void {}
 
         public function publishStart(int $operation): void {}
 

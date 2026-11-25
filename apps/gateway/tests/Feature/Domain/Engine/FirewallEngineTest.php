@@ -41,8 +41,11 @@ final class FakeMachineBus implements MachineBus
 
     public int $failNext = 0;
 
-    public function publishOrder(int $node, SignedExecutorOrder $order): void
+    public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void
     {
+        if ($claim !== null && ! $claim()) {
+            return;
+        }
         if ($this->failNext > 0) {
             $this->failNext--;
             throw new RuntimeException('engine.publish_failed');

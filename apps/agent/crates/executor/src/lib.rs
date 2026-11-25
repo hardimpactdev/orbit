@@ -197,9 +197,16 @@ fn destroy_failure(code: &str, detail: &str) -> Outcome {
         start
     };
     let tail = detail[start..].trim();
+    let diagnostic = if !tail.is_empty() {
+        Some(tail.to_owned())
+    } else if start > 0 {
+        Some("The incomplete native diagnostic line was omitted.".to_owned())
+    } else {
+        None
+    };
     Outcome::Failed {
         code: code.to_owned(),
-        detail: (!tail.is_empty()).then(|| tail.to_owned()),
+        detail: diagnostic,
     }
 }
 
@@ -396,6 +403,26 @@ mod tests {
             !detail.contains("disposable-"),
             "do not journal the original values"
         );
+    }
+
+    #[test]
+    fn destroy_failure_marks_an_oversized_final_line_as_recorded_without_returning_it() {
+        let oversized = format!("earlier line\n{}", "resource fixture é ".repeat(300));
+        for detail in [&oversized, &format!("{oversized}\n")] {
+            let receipt = serde_json::to_value(destroy_failure("instance.removal_incomplete", detail))
+                .expect("receipt");
+            assert_eq!(
+                receipt,
+                serde_json::json!({
+                    "status": "failed",
+                    "code": "instance.removal_incomplete",
+                    "detail": "The incomplete native diagnostic line was omitted."
+                })
+            );
+        }
+        let empty = serde_json::to_value(destroy_failure("instance.removal_incomplete", ""))
+            .expect("receipt without diagnostic");
+        assert!(empty.get("detail").is_none());
     }
 
     #[test]

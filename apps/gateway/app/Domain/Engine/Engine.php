@@ -379,9 +379,7 @@ final readonly class Engine
             $input = $definition->input($operation, $step->name, $run);
             $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
             $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
-            if ($this->claimPublication($step, $order->expiresMs)) {
-                $this->bus->publishOrder($step->node_id, $order);
-            }
+            $this->bus->publishOrder($step->node_id, $order, fn (): bool => $this->claimPublication($step, $order->expiresMs));
         } catch (Throwable $exception) {
             Log::warning('Could not send the signed removal order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
         }

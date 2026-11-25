@@ -79,11 +79,11 @@ The engine accepts `--force` for one container clone in development. The clone c
 
 The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
 
-Preparing an order or scheduling its deadline does not publish it. The removal can still be cancelled at that point. Just before publishing, the Gateway records the first order's signed expiry under the same Operation lock used by cancellation. From then on, a lost acknowledgement, cancellation, expiry, or order refusal cannot release the Instance lock: none proves that the Node did not act.
+The removal can still be cancelled during order preparation, deadline scheduling, and setup of the Node's order consumer. After setup and just before publishing, the Gateway checks cancellation and records the first order's signed expiry under the same Operation lock. From then on, a lost order acknowledgement, cancellation, expiry, or order refusal cannot release the Instance lock: none proves that the Node did not act.
 
 The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
 
-A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`.
+A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`. If no complete line fits in the tail, the error records that the diagnostic was omitted rather than exposing part of a line.
 
 ### instance.fleet
 
