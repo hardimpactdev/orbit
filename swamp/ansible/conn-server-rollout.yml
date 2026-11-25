@@ -2,7 +2,7 @@
 # The rollout of the pinned Conn Server to the Nodes that run one (docs/reference/development-containers.md#conn-server-rollout).
 # The Gateway admitted the pin's version, its macOS arm64 zip and Linux tarball, the Nodes' records (platform, path, service, port,
 # user, canary, notice) canary first, and the notice target, if any.
-#   rollout: one Node at a time. A Mac Node downloads the zip and checks its SHA-256, the signature, the team and the bundle id, and
+#   rollout: one Node at a time. A Mac Node checks its loaded LaunchAgent, downloads the zip, checks its SHA-256, signature, team and bundle id, and
 #   holds when the staged bundle's designated requirement differs from the installed one's, because its TCC grants would reset. Else it
 #   backs up the installed bundle into a new backup folder, swaps the staged bundle onto the same path, kickstarts the LaunchAgent in
 #   the gui domain, answers the expected Conn Server TCC prompt, and waits for /health to name the version. A Linux Node does the same
@@ -22,9 +22,9 @@
     intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
     # The workflow's `timeout` covers max_nodes x node_seconds, so no Node's rollback is cut by the run's deadline. A Node's worst
     # case is the sum of the task timeouts on its longest path, a failed start and its rollback:
-    #   Mac: checks 1560 s (download 900, unpack 120, verify 120, signer and two requirements 180, the rest 240), then the swap 1500 s
-    #   (read 60, notice 60, backup folder 60, two renames 120, the rollback's reads 120 and two renames 120, two starts of 480 s:
-    #   a 60 s kickstart and a health wait of health_seconds + 240 s), so 3060 s.
+    #   Mac: checks 1680 s (download 900, unpack 120, verify 120, signer and two requirements 180, the running version 60, the rest
+    #   300), then the swap 1440 s (notice 60, backup folder 60, two renames 120, the rollback's reads 120 and two renames 120, two
+    #   starts of 480 s: a 60 s kickstart and a health wait of health_seconds + 240 s), so 3120 s.
     #   Linux: checks 1100 s, then the swap 1350 s (notice 60, releases folder 20, release folder 20, unpack 120, two starts of
     #   565 s: a 40 s relink, a 100 s restart and 61 health reads of up to 5 s, 2 s apart), so 2450 s.
     # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.

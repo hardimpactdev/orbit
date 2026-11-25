@@ -1,0 +1,22 @@
+---
+# Read the version from the Mac's own listener. A failed or invalid probe sets mac_health_version to null.
+- name: Read the health
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ server.port }}/health"
+    use_proxy: false
+    follow_redirects: none
+    return_content: true
+    timeout: 5
+  register: mac_health_response
+  failed_when: false
+  timeout: 60
+
+- name: Validate the health response
+  vars:
+    body: "{{ mac_health_response.json | default({}) }}"
+    reported_version: "{{ body.version | default(none) }}"
+  ansible.builtin.set_fact:
+    mac_health_version: >-
+      {{ reported_version if mac_health_response.status | default(-1) == 200
+         and body.server | default('') == 'conn-server'
+         and reported_version is string and reported_version | trim | length > 0 else none }}

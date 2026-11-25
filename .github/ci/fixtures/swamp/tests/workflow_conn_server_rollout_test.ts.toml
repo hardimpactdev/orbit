@@ -3,6 +3,7 @@ cases = [
   "every module that a Mac Node runs has a task timeout of at least 60 s",
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback",
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version",
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too",
   "a zip whose SHA-256 differs fails the Node and installs nothing",
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing",
   "a changed designated requirement holds the canary, installs nothing and stops the run",
@@ -18,6 +19,10 @@ cases = [
   "a Linux Node reads /health on its unit's --host, in the check, the start and the rollback",
   "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1",
   "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too",
+  "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too",
+  "Mac preflight rejects redirected, non-200 and malformed version responses",
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart",
+  "Mac restart and rollback each require a direct 200 with the intended version",
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent",
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again",
   "a failed notice URL or command fails the Node with its code before any change, and appears in no output",
@@ -28,9 +33,8 @@ cases = [
   "an existing release folder fails with backup_exists, and a releases folder that cannot be made fails with its own cause",
 ]
 file = "swamp/tests/workflow_conn_server_rollout_test.ts"
-cost = 425
-# Local runs in tasks 6221, 6232 and 6236: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. Four slices keep each
-# unit far below the ceiling.
+cost = 582
+# Local runs in tasks 6221, 6232, 6236 and 6240: largest case time + 25%, rounded up + 1 s; ESTIMATES until a complete hosted run. CI balances the slices by the recorded case times.
 slices = 4
 inputs = [
   "bin/swamp-shape-gate",
@@ -41,6 +45,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/conn-server-linux-start.yml",
   "swamp/ansible/tasks/conn-server-linux.yml",
+  "swamp/ansible/tasks/conn-server-mac-health.yml",
   "swamp/ansible/tasks/conn-server-mac-round.yml",
   "swamp/ansible/tasks/conn-server-mac-start.yml",
   "swamp/ansible/tasks/conn-server-mac.yml",
@@ -51,6 +56,7 @@ inputs = [
 [case_costs]
   "the rollout runs one tagged phase of the shipped playbook between the input and the result, and takes no secret" = 2
   "a Mac canary checks, swaps the bundle on the same path, kickstarts in the gui domain and answers /health with the version" = 11
+  "a Mac Node with the wrong LaunchAgent label fails before staging, in a dry run too" = 10
   "a zip whose SHA-256 differs fails the Node and installs nothing" = 6
   "a bundle signed by another team, or with an invalid signature, fails the Node and installs nothing" = 11
   "a changed designated requirement holds the canary, installs nothing and stops the run" = 6
@@ -66,6 +72,10 @@ inputs = [
   "a Linux Node reads /health on its unit's --host, in the check, the start and the rollback" = 23
   "a Linux unit without --host, or with a wildcard one, reads /health on 127.0.0.1" = 23
   "a Linux Node whose running server does not answer 200 with its version fails before any change, in a dry run too" = 26
+  "a Mac Node whose running server answers 503 without a version fails before any change, in a dry run too" = 25
+  "Mac preflight rejects redirected, non-200 and malformed version responses" = 38
+  "Mac health bypasses the configured HTTP proxy before a swap and after each restart" = 28
+  "Mac restart and rollback each require a direct 200 with the intended version" = 56
   "a Node set to notify posts the notice before its restart; with no target set, nothing is sent" = 25
   "the phase's deadline covers every Node's bounded worst case, so a run-level timeout never cuts a rollback" = 2
   "a move into the backup that renames the bundle and then fails restores the old bundle, which runs again" = 9

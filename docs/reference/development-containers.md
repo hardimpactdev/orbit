@@ -9,7 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance_php_index.py,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-{task-copy-turn,instance-php-index}.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
-  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/2027_03_25_000000_create_conn_server_nodes_table.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
+  - {swamp/ansible/t3_copy_rpc.mjs,apps/gateway/app/{Domain/ConnServer/**,Models/ConnServerNode.php,Http/Requests/Fleet/AdmitConnServerRolloutRequest.php},apps/gateway/database/migrations/{2027_03_25_000000_create_conn_server_nodes_table,2027_03_26_000000_rename_node_8_conn_server_service}.php,swamp/{workflows/workflow-operation-fleet-conn-server-rollout.yaml,ansible/conn-server-rollout.yml,ansible/tasks/conn-server-*.yml,tests/workflow_conn_server_rollout_test.ts}}
 ---
 
 # Instance containers
@@ -205,7 +205,7 @@ Loopback socket proxies on `127.0.0.1:1025` and `127.0.0.1:2525` forward contain
 
 ### Container server
 
-Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.1` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
+Projects select `container_server` (`conn` by default, or `t3`; task copies always use `conn`). The recipe pins `conn-server` `0.5.2` (keeping the T3 server `0.1.10` contract and `chrome-headless-shell` `157.0.8103.78`), with its Linux tarball and its [macOS arm64 zip](#conn-server-pin). `/etc/orbit/instance` gates `t3.service` so default Instances never boot T3.
 
 #### Conn Server pin
 
@@ -246,30 +246,35 @@ Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), 
 
 Scope `canary` reaches the canary alone; `fleet` reaches the canary, then the other Nodes. Scope `nodes` reaches the Nodes that `node_ids` names, one to four, in the request's order; it adds no canary and puts none first. An id without a record, a repeated id, or `node_ids` with another scope is refused with a validation error. A request without a scope is refused with a validation error, so no default reaches the whole fleet. The Gateway refuses a pin without `macos_arm64` (`conn_server.pin_unavailable`) and a fleet without exactly one canary (`conn_server.canary_unset`).
 
-The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 13,280 s, covers at most four Nodes of 3,280 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
+The run is one Ansible phase, `conn-server-rollout.yml`, that visits the admitted Nodes one at a time, in the admitted order. A failed Node, or a canary that holds, stops the run; later Nodes report `not_reached`. The phase's deadline, 13,220 s, covers at most four Nodes of 3,280 s each: every Node's worst case, the sum of its task timeouts through a failed start and its rollback, with the health wait bounded by time. So the deadline never cuts a rollback. A run with more Nodes fails before it reaches one (`conn_server.too_many_nodes`).
 
-On a Mac, the checks come first. The phase:
+On a Mac, before staging any files, Orbit runs `launchctl print gui/<uid>/<label>` for the configured LaunchAgent. A missing job fails the Node with `conn_server.service_not_loaded` in both dry runs and rollouts. Orbit keeps the command output out of the logs because it can contain the job's environment.
+
+The phase then checks the release:
 
 1. downloads the zip into a staging folder beside the bundle and checks its SHA-256 (`conn_server.hash_mismatch`);
 2. checks `codesign --verify --strict --deep` (`conn_server.signature_invalid`), the pin's `TeamIdentifier` (`conn_server.team_mismatch`) and bundle id (`conn_server.bundle_mismatch`);
-3. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
-4. stops here in a dry run (`checked`).
+3. reads the running server's version from `/health`, as below (`conn_server.health_unreachable`);
+4. compares `codesign -dr -` of the staged and the installed bundle. A difference holds the Node (`held`, `designated_requirement_changed`) and installs nothing, because the TCC grants would reset;
+5. stops here in a dry run (`checked`).
 
 Then the swap and the restart. The phase:
 
-5. sends the notice, when the record asks for one;
-6. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
-7. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
-8. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
-9. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
-10. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
-11. waits up to about 3 minutes for `/health` to answer `server: conn-server` and the pin's version. No round starts after 180 s.
+6. sends the notice, when the record asks for one;
+7. makes a new backup folder for the run. `mkdir` refuses one that exists (`conn_server.backup_exists`).
+8. moves the installed bundle into the backup folder, and the staged bundle onto the same path. The TCC grants stay.
+9. runs `launchctl kickstart -k gui/<uid>/<label>`, never a start from the SSH session itself;
+10. reads a pending `UserNotificationCenter` prompt through System Events in each round of the health wait.
+11. clicks **Allow** only on a prompt that names Conn Server and an expected permission. Any other prompt fails the Node (`conn_server.unexpected_prompt`).
+12. waits up to about 3 minutes for a valid `/health` response with the pin's exact version. No round starts after 180 s.
 
-From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when the old version answers.
+From the move into the backup on, any failure before `/health` answers puts the backup back on the path and kickstarts again. That covers a failed move, a failed or timed-out kickstart or **Allow** click, and a `/health` that never names the version. A move that renamed the bundle and then failed or timed out counts too. The Node fails with its cause, `conn_server.health_check_failed` when `/health` never names the version, and `rolled_back` is true when a valid response reports the exact preflight version.
 
 Every command has a task timeout, because a pending prompt blocks `open()`. The run never reads or prints a LaunchAgent plist. Before any change, and in a dry run too, a Linux Node checks the layout the flow assumes: the unit's `ExecStart` program is `<current>/conn-server`, and the tarball holds `conn-server-<X>-linux-x64/conn-server`. Any other layout fails the Node with `conn_server.layout_mismatch`, and nothing is installed.
 
-A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. A Mac reads it on 127.0.0.1. Every Linux `/health` read uses that address, never through a proxy. Before any change, the running server must answer that read with 200, `server: conn-server` and a version, so a rollback always has the old version to check. Any other answer, or none, fails the Node with `conn_server.health_unreachable`.
+A Linux Node then reads `/health` on the address its unit listens on: `--host=<addr>` or `--host <addr>` in the `ExecStart` argv, or 127.0.0.1 when there is none or it is `0.0.0.0` or `::`. Linux disables proxies for every health read.
+
+A Mac reads `/health` on 127.0.0.1 with proxies and redirects disabled. A valid Mac response has HTTP status 200, `server: conn-server` and a version string with at least one non-whitespace character. Before any change, including in a dry run, the running server must report its version so a rollback can check it. Linux also requires HTTP 200, `server: conn-server` and a version in this check. Any other answer, or none, fails the Node with `conn_server.health_unreachable`, and nothing is installed or restarted.
 
 A Linux Node makes the `releases` folder beside `current` when it does not exist yet, as on a Node set up before this rollout; a failure to make it is `conn_server.step_failed`. It unpacks the tarball into a new `releases/<X>-<run>` folder, which `mkdir` without `-p` refuses when it exists (`conn_server.backup_exists`), moves `current` to it with one rename, restarts the unit and checks `/health` in the same way. Any failure from the relink until `/health` answers points `current` back and restarts again.
 

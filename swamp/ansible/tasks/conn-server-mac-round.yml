@@ -41,16 +41,12 @@
       ansible.builtin.set_fact:
         mac_answered: "{{ mac_answered + [mac_prompt_text] }}"
 
-    - name: Read the health
+    - name: Probe the restarted server
       when: mac_prompt_error is none
-      ansible.builtin.uri: { url: "http://127.0.0.1:{{ server.port }}/health", return_content: true, timeout: 5 }
-      register: mac_health
-      failed_when: false
-      timeout: 60
+      ansible.builtin.include_tasks: conn-server-mac-health.yml
 
     - name: Note a healthy server
-      when: mac_prompt_error is none and (mac_health.json | default({})).server | default('') == 'conn-server'
-        and (mac_health.json | default({})).version | default('') == expected_version
+      when: mac_prompt_error is none and mac_health_version == expected_version
       ansible.builtin.set_fact:
         mac_healthy: true
 

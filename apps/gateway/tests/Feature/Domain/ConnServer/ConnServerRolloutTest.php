@@ -67,11 +67,11 @@ it('admits the pinned release for every Conn Server Node, canary first, from the
 
     expect($operation->kind)->toBe('fleet.conn_server_rollout')
         ->and(app(DirectOperation::class)->definition('fleet.conn_server_rollout')['workflow'])->toBe('operation-fleet-conn-server-rollout')
-        ->and($intent['version'])->toBe('0.5.1')
+        ->and($intent['version'])->toBe('0.5.2')
         ->and($intent['dry_run'])->toBeTrue()
-        ->and($intent['mac'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-macos-arm64.zip',
+        ->and($intent['mac'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-macos-arm64.zip',
             'sha256' => str_repeat('b', 64), 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B'])
-        ->and($intent['linux'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-linux-x64.tar.gz',
+        ->and($intent['linux'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.2/conn-server-0.5.2-linux-x64.tar.gz',
             'sha256' => str_repeat('a', 64)])
         ->and($intent['notice'])->toBe(['url' => null, 'command' => null])
         ->and(array_column($intent['nodes'], 'node_id'))->toBe([$vm->id, $mini->id])
