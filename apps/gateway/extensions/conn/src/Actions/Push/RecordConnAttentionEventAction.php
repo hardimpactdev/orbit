@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Conn\Actions\Push;
 
 use App\Domain\Shared\ResourceOperationException;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
@@ -42,10 +43,11 @@ final readonly class RecordConnAttentionEventAction
             ]);
         }
 
-        if (ConnThread::query()
+        $belongsElsewhere = static fn (Builder $threads): bool => $threads
             ->where('thread_id', $payload['thread_id'])
             ->where('conn_environment_id', '!=', $environment->id)
-            ->exists()) {
+            ->exists();
+        if ($belongsElsewhere(ConnThread::query()) || $belongsElsewhere(ConnThread::hostQuery())) {
             throw ValidationException::withMessages([
                 'thread_id' => ['The thread does not belong to this environment.'],
             ]);

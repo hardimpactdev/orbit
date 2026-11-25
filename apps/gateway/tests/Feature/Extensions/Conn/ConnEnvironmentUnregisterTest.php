@@ -157,26 +157,8 @@ it('unregisters a host server, removes its pairings, held sessions, managed targ
         'committed_at' => now()->toIso8601String(),
     ]);
 
-    // Cached thread row (even if created on a host server)
-    $project = Project::query()->create([
-        'name' => 'Tool',
-        'slug' => 'tool',
-        'type' => ProjectType::NodePackage,
-        'repository_url' => 'https://github.com/example/tool.git',
-        'default_branch' => 'main',
-        'root' => '.',
-        'source_access' => ProjectSourceAccess::GitHubApp,
-    ]);
-    $dummyInstance = Instance::query()->create([
-        'project_id' => $project->id,
-        'node_id' => $this->host->id,
-        'name' => 'dummy',
-        'checkout_path' => '/srv/dummy',
-        'status' => 'active',
-    ]);
-    ConnThread::query()->create([
+    ConnThread::hostQuery()->create([
         'conn_environment_id' => $environment->id,
-        'instance_id' => $dummyInstance->id,
         'thread_id' => 'thread-stale-1',
         'title' => 'Stale thread',
         'seen_at' => now(),
@@ -230,7 +212,7 @@ it('unregisters a host server, removes its pairings, held sessions, managed targ
         ->and(ConnManagedTarget::query()->where('conn_environment_id', $environment->id)->exists())->toBeFalse()
         ->and(ConnManagedToken::query()->where('conn_managed_target_id', $target->id)->exists())->toBeFalse()
         ->and(ConnManagedRevision::query()->where('conn_managed_target_id', $target->id)->exists())->toBeFalse()
-        ->and(ConnThread::query()->where('conn_environment_id', $environment->id)->exists())->toBeFalse()
+        ->and(ConnThread::hostQuery()->where('conn_environment_id', $environment->id)->exists())->toBeFalse()
         ->and($profile->fresh()?->settings['attachedThreads']['threads'])->toBe([
             ['environmentId' => $other->environment_id, 'threadId' => 't-2'],
         ])

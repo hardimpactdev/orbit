@@ -23,8 +23,11 @@ final class FailureStepBus implements MachineBus
     /** @var list<string> */
     public array $sent = [];
 
-    public function publishOrder(int $node, SignedExecutorOrder $order): void
+    public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void
     {
+        if ($claim !== null && ! $claim()) {
+            return;
+        }
         $payload = json_decode((string) base64_decode(explode('.', $order->wire)[0], true), true, flags: JSON_THROW_ON_ERROR);
         $this->sent[] = explode(':', $payload['operation'])[1];
     }

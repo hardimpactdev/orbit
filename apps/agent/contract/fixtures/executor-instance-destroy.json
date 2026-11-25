@@ -1,0 +1,20 @@
+{
+    "now_ms": 1800000000000,
+    "public_key": "D2NzNWuGro6p86KVFoB4iiLKLbSpm0D86RXu6hiIN/k=",
+    "fields": {
+        "action": "instance.destroy",
+        "node": "7",
+        "target": "12",
+        "operation": "42:remove",
+        "nonce": "00000000000000000000000000000001",
+        "expires_ms": 1800000008000,
+        "input": {
+            "project": "orbit-instances-nested",
+            "name": "instance-12",
+            "pool": "orbit-instances",
+            "acl": "instance-12",
+            "inner_volume": "inner-12"
+        }
+    },
+    "wire": "eyJhY3Rpb24iOiJpbnN0YW5jZS5kZXN0cm95Iiwibm9kZSI6IjciLCJ0YXJnZXQiOiIxMiIsIm9wZXJhdGlvbiI6IjQyOnJlbW92ZSIsIm5vbmNlIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDEiLCJleHBpcmVzX21zIjoxODAwMDAwMDA4MDAwLCJpbnB1dCI6eyJwcm9qZWN0Ijoib3JiaXQtaW5zdGFuY2VzLW5lc3RlZCIsIm5hbWUiOiJpbnN0YW5jZS0xMiIsInBvb2wiOiJvcmJpdC1pbnN0YW5jZXMiLCJhY2wiOiJpbnN0YW5jZS0xMiIsImlubmVyX3ZvbHVtZSI6ImlubmVyLTEyIn19.zr4it4pXEEv2kWF7DnW2WoCFWKqQXBZ+ZtWOGNP8c/N+hQKQ8jrGnZgE5hSLakYpMsoBiizaqIxNxIfspmiqCA=="
+}

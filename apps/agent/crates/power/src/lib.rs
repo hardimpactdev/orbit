@@ -279,6 +279,22 @@ impl Power {
         self.discard_stopped_with(&self.incus, id)
     }
 
+    /// Removes all executor freeze artifacts after signed destruction proved the admitted container absent.
+    /// The caller holds the Instance's executor lock.
+    ///
+    /// # Errors
+    /// Returns a reader, target or state I/O error.
+    pub fn discard_destroyed(&self, id: &str) -> io::Result<()> {
+        if !valid_id(id) {
+            return Err(invalid("unknown_target"));
+        }
+        self.await_readers(id)?;
+        match fs::remove_dir_all(self.state.join(id)) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
+    }
+
     fn discard_stopped_with(&self, api: &dyn Api, id: &str) -> io::Result<()> {
         if !valid_id(id)
             || api

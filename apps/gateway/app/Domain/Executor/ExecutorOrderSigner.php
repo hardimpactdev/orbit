@@ -18,11 +18,14 @@ use SensitiveParameter;
  */
 final readonly class ExecutorOrderSigner
 {
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names', 'instance.destroy'];
 
     public const int MaxWireBytes = 4096;
 
     public const int ExpiresAfterMs = 5000;
+
+    /** The most time a Node accepts on an order at verification (MAX_EXPIRY_AHEAD_MS in the executor). */
+    public const int MaxExpiryAheadMs = 10_000;
 
     /**
      * An engine order may wait in its Node's JetStream consumer while the Node reconnects. The executor refuses an expiry more

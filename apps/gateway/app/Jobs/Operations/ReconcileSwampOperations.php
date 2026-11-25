@@ -239,7 +239,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $deadline = OperationRunBudgets::deadline($operation);
             $expired = $deadline !== null && ! $deadline->isFuture();
             $this->expireAtDeadline($operation, $expired, $expire);
-            if (! $expired) {
+            if (! $expired || Engine::requiresReceipt($operation)) {
                 app(Engine::class)->nudgeIfStalled($operation);
             }
 

@@ -23,6 +23,7 @@
 
 mod checkout;
 mod club;
+mod destroy;
 mod env;
 mod fetch;
 mod fleet;
@@ -37,6 +38,7 @@ mod tests;
 
 pub use checkout::checkout;
 pub use club::club_key;
+pub use destroy::destroy;
 pub use fetch::fetch_branch;
 pub use fleet::fleet_ready;
 pub use names::names;
@@ -57,12 +59,12 @@ pub(crate) const INCUS: &str = "/usr/bin/incus";
 const CURL: &str = "/usr/bin/curl";
 const SOCKET: &str = "/var/lib/incus/unix.socket";
 
-/// Why the primitive failed: a stable code, and a detail for the executor's log only.
+/// Why the primitive failed: a stable code and an internal diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failure {
     /// The code the receipt carries.
     pub code: &'static str,
-    /// What the executor logs. Never sent to the Gateway.
+    /// The diagnostic before redaction and bounding for any public receipt.
     pub detail: String,
 }
 

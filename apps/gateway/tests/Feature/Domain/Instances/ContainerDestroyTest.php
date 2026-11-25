@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceUnregisterAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
+use App\Domain\Engine\Engine;
+use App\Domain\Engine\EngineKinds;
+use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\MachineBus;
+use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\ContainerModelRoute;
@@ -16,6 +23,7 @@ use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRemovalReaper;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -28,6 +36,8 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Engine\EngineBus;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -42,12 +52,17 @@ use App\Models\InstanceRemoval;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 use App\Models\Process;
 use App\Models\Route;
+use Basis\Nats\Client;
+use Basis\Nats\Message\Payload;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Mockery\MockInterface;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -84,6 +99,10 @@ beforeEach(function (): void {
 
         public function receive(float $timeoutSeconds): array
         {
+            if ($this->last['type'] === 'workflow.run') {
+                return [['id' => $this->last['id'], 'type' => 'event', 'event' => ['kind' => 'started',
+                    'workflowName' => 'operation-instance-destroy', 'runId' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']]];
+            }
             $key = $this->last['payload']['key'] ?? '';
             if ($this->last['type'] === 'vault.put') {
                 $this->values[$key] = $this->last['payload']['value'];
@@ -152,6 +171,350 @@ function destroyTerminal(Operation $operation, string $status, array $result = [
 
     return ['status' => $status, 'run_id' => 'destroy-run', 'result' => $result, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()];
 }
+
+function signedDestroy(Instance $clone): Operation
+{
+    $clone->node->accessibleNodes()->syncWithoutDetaching([$clone->node_id]);
+    $id = test()->withServerVariables(['REMOTE_ADDR' => $clone->node->wireguard_ip])
+        ->deleteJson('/api/v1/instances/'.$clone->id, ['force' => true])->assertAccepted()->json('data.id');
+
+    return Operation::query()->findOrFail($id);
+}
+
+function configureDestroyEngine(): void
+{
+    $pair = sodium_crypto_sign_keypair();
+    config(['orbit.engine.kinds' => ['instance.destroy'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($pair))]);
+}
+
+function destroyBus(): MockInterface
+{
+    configureDestroyEngine();
+
+    return test()->mock(MachineBus::class);
+}
+
+function destroyOrderBus(Closure $dispatch, ?Closure $subscribe = null): void
+{
+    configureDestroyEngine();
+    $client = new class($dispatch, $subscribe) extends Client
+    {
+        public function __construct(private readonly Closure $respond, private readonly ?Closure $subscribe)
+        {
+            parent::__construct();
+        }
+
+        public function dispatch(string $name, mixed $payload, ?float $timeout = null): mixed
+        {
+            return ($this->respond)($name, $payload);
+        }
+
+        public function ping(): bool
+        {
+            return true;
+        }
+
+        public function subscribeRequests(bool $force = false): void
+        {
+            $this->subscribe?->__invoke();
+        }
+    };
+    app()->instance(MachineBus::class, new EngineBus(static fn (): Client => $client));
+}
+
+it('holds the signed removal and the Instance lock until the executor repeats its terminal receipt', function (): void {
+    $default = destroyDefault();
+    $clone = destroyClone($default);
+    $savedRuntime = $clone->runtime()->firstOrFail();
+    $operation = null;
+    $sent = [];
+    $recordedExpiries = [];
+    $subjects = [];
+    destroyOrderBus(function (string $subject, mixed $payload) use ($clone, &$operation, &$sent, &$recordedExpiries, &$subjects): object {
+        $subjects[] = $subject;
+        if (str_starts_with($subject, '$JS.API.DIRECT.GET.KV_NODES.')) {
+            return new Payload('{"actions":["instance.destroy"]}');
+        }
+        if (str_starts_with($subject, '$JS.API.CONSUMER.CREATE.ORDERS.')) {
+            return (object) [];
+        }
+        if ($subject === 'orbit.engine.start') {
+            throw new RuntimeException('start acknowledgement lost');
+        }
+        if ($subject === "orbit.node.{$clone->node_id}.orders" && $payload instanceof Payload) {
+            $recordedExpiries[] = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail()->first_order_expires_ms;
+            $sent[] = json_decode((string) base64_decode(explode('.', $payload->body)[0], true), true, flags: JSON_THROW_ON_ERROR);
+            if (count($sent) === 1) {
+                throw new RuntimeException('order publish acknowledgement lost');
+            }
+        }
+
+        return new Payload('{"seq":1}');
+    });
+    $operation = signedDestroy($clone);
+    $lock = OperationStore::lockKey('instance', $clone->id);
+    app(StartSwampRun::class)->start($operation);
+    $operation->refresh();
+    expect($operation->state['swamp_run_id'])->toBe(EngineRun::runIdOf($operation->id))
+        ->and($operation->lock_key)->toBe($lock)->and($clone->refresh()->status)->toBe(InstanceState::Removing);
+    $engine = app(Engine::class);
+    $engine->nudgeIfStalled($operation);
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    expect(array_slice($subjects, -3))->toBe(["orbit.engine.schedule.{$operation->id}.remove.1",
+        '$JS.API.CONSUMER.CREATE.ORDERS.node-'.$clone->node_id, "orbit.node.{$clone->node_id}.orders"]);
+    expect($sent)->toHaveCount(1)
+        ->and($sent[0])->toMatchArray(['action' => 'instance.destroy', 'target' => (string) $clone->id, 'operation' => $operation->id.':remove',
+            'input' => ['project' => $savedRuntime->incus_project, 'name' => $savedRuntime->container_name,
+                'pool' => 'orbit-instances', 'acl' => $savedRuntime->container_name]]);
+
+    app(CancelOperationAction::class)->execute($operation);
+    $this->travel(601)->seconds();
+    app(ExpireOperationAction::class)->execute($operation->refresh());
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    expect($sent)->toHaveCount(2)->and($sent[1]['nonce'])->not->toBe($sent[0]['nonce'])
+        ->and($recordedExpiries)->toBe([$sent[0]['expires_ms'], $sent[0]['expires_ms']])
+        ->and($sent[1]['input'])->toBe($sent[0]['input'])->and($sent[1]['operation'])->toBe($sent[0]['operation']);
+    $line = ['action' => 'instance.destroy', 'target' => (string) $clone->id, 'operation' => $operation->id.':remove'];
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'refused', 'reason' => 'action_not_enabled']]);
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'failed', 'code' => 'executor.order_expired']]);
+    $engine->onReceipt(['node' => $clone->node_id + 1, 'line' => [...$line, 'status' => 'done']]);
+    $replay = ['status' => 'refused', 'reason' => 'replayed_nonce', 'operation' => $line['operation']];
+    foreach (['operation' => ($operation->id + 1).':remove', 'target' => (string) $default->id, 'action' => 'instance.stop'] as $field => $wrong) {
+        $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$replay, 'first' => [...$line, 'status' => 'done', $field => $wrong]]]);
+    }
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$replay, 'first' => [...$line, 'status' => 'done', 'operation' => $operation->id.':other']]]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->lock_key)->toBe($lock)
+        ->and($clone->runtime()->exists())->toBeTrue()
+        ->and(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($clone, true)))->toBe('operation.target_busy');
+
+    $receipt = ['node' => $clone->node_id, 'line' => [...$replay, 'first' => [...$line, 'status' => 'done', 'repeat' => true]]];
+    $engine->onReceipt($receipt);
+    $engine->onReceipt($receipt);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)->and($operation->lock_key)->toBeNull()
+        ->and($operation->result)->toBe(['removed' => true])->and($clone->fresh())->toBeNull()->and($default->runtime()->exists())->toBeTrue()
+        ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail()->late)->toBe(1)
+        ->and(array_column($this->socket->messages, 'type'))->not->toContain('workflow.run');
+});
+
+it('cancels signed removal that never reached publication', function (string $point): void {
+    $clone = destroyClone(destroyDefault());
+    $bus = destroyBus();
+    $bus->shouldReceive('nodeActions')->once()->andReturn(['instance.destroy']);
+    $bus->shouldReceive('publishStart', 'nudge')->once();
+    $bus->shouldNotReceive('publishOrder');
+    $operation = signedDestroy($clone);
+    $engine = app(Engine::class);
+    app(StartSwampRun::class)->start($operation);
+    $key = config('orbit.executor.signing_key');
+    if ($point === 'signer unavailable') {
+        config(['orbit.executor.signing_key' => null]);
+        $bus->shouldNotReceive('scheduleDeadline');
+    } else {
+        $bus->shouldReceive('scheduleDeadline')->once()->andThrow(new RuntimeException('deadline not published'));
+    }
+    $engine->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    config(['orbit.executor.signing_key' => $key]);
+    $step = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail();
+    expect($step->first_sent_ms)->not->toBeNull()->and($step->first_order_expires_ms)->toBeNull()
+        ->and($operation->refresh()->lock_key)->not->toBeNull();
+    if ($operation->cancel_requested_at === null) {
+        $engine->onReceipt(['node' => $clone->node_id, 'line' => ['operation' => $operation->id.':remove',
+            'action' => 'instance.destroy', 'target' => (string) $clone->id, 'status' => 'done']]);
+        expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+        app(CancelOperationAction::class)->execute($operation);
+    }
+    $this->travel(16)->seconds();
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)->and($operation->lock_key)->toBeNull()
+        ->and($clone->runtime()->exists())->toBeTrue()->and($step->refresh()->sends)->toBe(1);
+})->with(['signer unavailable', 'deadline unavailable']);
+
+it('cancels before the signed order is handed to NATS', function (string $point): void {
+    $clone = destroyClone(destroyDefault());
+    $operation = null;
+    $subjects = [];
+    $consumerExpiries = [];
+    destroyOrderBus(function (string $subject) use ($point, &$operation, &$subjects, &$consumerExpiries): object {
+        $subjects[] = $subject;
+        if (str_starts_with($subject, '$JS.API.DIRECT.GET.KV_NODES.')) {
+            return new Payload('{"actions":["instance.destroy"]}');
+        }
+        if (str_starts_with($subject, 'orbit.engine.schedule.') && $point === 'cancel while scheduling the deadline') {
+            app(CancelOperationAction::class)->execute($operation);
+        }
+        if (str_starts_with($subject, '$JS.API.CONSUMER.CREATE.ORDERS.')) {
+            $consumerExpiries[] = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail()->first_order_expires_ms;
+            if ($point === 'consumer setup failed') {
+                throw new RuntimeException('consumer setup failed');
+            }
+            if ($point === 'cancel during consumer setup') {
+                app(CancelOperationAction::class)->execute($operation);
+            }
+
+            return (object) [];
+        }
+
+        return new Payload('{"seq":1}');
+    }, function () use ($point, &$operation): void {
+        if ($point === 'cancel during reply subscription setup') {
+            app(CancelOperationAction::class)->execute($operation);
+        }
+    });
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    $engine = app(Engine::class);
+    $engine->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    $step = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail();
+    expect($consumerExpiries)->toBe([null])->and($step->first_order_expires_ms)->toBeNull()
+        ->and($operation->refresh()->lock_key)->toBe(OperationStore::lockKey('instance', $clone->id));
+    if ($point === 'consumer setup failed') {
+        app(CancelOperationAction::class)->execute($operation);
+    }
+    $this->travel(16)->seconds();
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+
+    expect($subjects)->not->toContain("orbit.node.{$clone->node_id}.orders")
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Cancelled)->and($operation->lock_key)->toBeNull()
+        ->and($step->refresh()->sends)->toBe(1)->and($clone->runtime()->exists())->toBeTrue();
+})->with(['consumer setup failed', 'cancel during consumer setup', 'cancel during reply subscription setup', 'cancel while scheduling the deadline']);
+
+it('starts the entire Swamp destroy if its admitted plan or executor is outside the slice', function (string $case): void {
+    $clone = destroyClone(destroyDefault(), migrated: $case === 'not a clone');
+    if ($case === 'process') {
+        Process::query()->create(['node_id' => $clone->node_id, 'name' => 'worker', 'owner_type' => Instance::MorphAlias, 'owner_id' => $clone->id,
+            'runtime' => 'systemd', 'runtime_config' => ['command' => ['node', 'worker.js']], 'status' => 'active']);
+    }
+    $bus = destroyBus();
+    $bus->shouldReceive('nodeActions')->with($clone->node_id)->times($case === 'not advertised' ? 1 : 0)->andReturn(['instance.stop']);
+    $bus->shouldNotReceive('publishStart', 'publishOrder');
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    $run = array_values(array_filter($this->socket->messages, static fn (array $message): bool => $message['type'] === 'workflow.run'));
+    expect($run)->toHaveCount(1)->and($run[0]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and(Engine::owns($operation->refresh()))->toBeFalse()
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->exists())->toBeFalse();
+})->with(['not a clone', 'process', 'not advertised']);
+
+it('does not select signed removal for other admitted obligations or altered ownership', function (string $path, mixed $value): void {
+    $clone = destroyClone(destroyDefault());
+    $bus = destroyBus();
+    $bus->shouldNotReceive('nodeActions');
+    $operation = signedDestroy($clone);
+    $input = $operation->input;
+    data_set($input, $path, $value);
+    $operation->input = $input;
+
+    expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
+})->with([
+    'route' => ['members.0.route_id', 42],
+    'secondary route' => ['additional_route_ids', [42]],
+    'server, including Valkey' => ['direct_destroy.database.servers', [['server_id' => 8]]],
+    'SQLite' => ['direct_destroy.database.sqlite', [['id' => 8]]],
+    'custom teardown' => ['direct_destroy.teardown', [['id' => 8]]],
+    'pending create or completion' => ['after_operation_id', 8],
+    'CI hold' => ['container_destroy.ci_hold', true],
+    'default' => ['name', 'default'],
+    'unforced' => ['force', false],
+    'different owned volume' => ['container_destroy.inner_volume', 'inner-987654'],
+]);
+
+it('stops resending before an order could outlive the journal and projects a late terminal refusal', function (int $offset, int $attempts): void {
+    $clone = destroyClone(destroyDefault());
+    $bus = destroyBus();
+    $bus->shouldReceive('nodeActions')->once()->andReturn(['instance.destroy']);
+    $bus->shouldReceive('publishStart', 'nudge')->once();
+    $bus->shouldReceive('scheduleDeadline')->times($attempts);
+    $expiries = [];
+    $bus->shouldReceive('publishOrder')->times($attempts)->andReturnUsing(function (int $node, SignedExecutorOrder $order, Closure $claim) use (&$expiries): void {
+        if ($claim()) {
+            $expiries[] = $order->expiresMs;
+        }
+    });
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $firstExpiry = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail()->first_order_expires_ms;
+    $horizon = $firstExpiry - ExecutorOrderSigner::MaxExpiryAheadMs + ExecutorJournalLookup::RetentionMs;
+    $this->travelTo(Carbon::createFromTimestampMs($horizon - ExecutorOrderSigner::StepExpiresAfterMs + $offset));
+    $engine = app(Engine::class);
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    expect($expiries)->toBe($attempts === 2 ? [$firstExpiry, $horizon] : [$firstExpiry]);
+    $this->travelTo(Carbon::createFromTimestampMs($horizon + 60_000));
+    app(CancelOperationAction::class)->execute($operation);
+    app(ExpireOperationAction::class)->execute($operation->refresh());
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    $engine->nudgeIfStalled($operation->refresh());
+    $line = ['operation' => $operation->id.':remove', 'action' => 'instance.destroy', 'target' => (string) $clone->id];
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'refused', 'reason' => 'expired']]);
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'failed', 'code' => 'executor.order_expired']]);
+
+    $step = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail();
+    expect($step->resend_at_ms)->toBeNull()->and($step->sends)->toBe($attempts)
+        ->and($operation->status)->toBe(OperationStatus::Running)
+        ->and($operation->lock_key)->toBe(OperationStore::lockKey('instance', $clone->id))
+        ->and(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($clone, true)))->toBe('operation.target_busy');
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => [...$line, 'status' => 'refused', 'reason' => 'replayed_nonce',
+        'first' => [...$line, 'status' => 'failed', 'code' => 'instance.removal_dataset_taken']]]);
+    $removal = InstanceRemoval::query()->findOrFail($operation->input['removal_id']);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->lock_key)->toBeNull()
+        ->and($operation->error_code)->toBe('instance.removal_dataset_taken')->and($operation->failed_step)->toBe('Delete the container')
+        ->and($removal->status)->toBe(InstanceRemovalStatus::Failed)->and($removal->failed_step)->toBe(InstanceRemovalStep::RuntimeCleanup)
+        ->and(InstanceRemovalReaper::stuck($removal))->toBeTrue()
+        ->and($clone->refresh()->status)->toBe(InstanceState::Removing)->and($clone->runtime()->exists())->toBeTrue();
+})->with(['last valid expiry' => [0, 2], 'expiry would cross the horizon' => [1, 1], 'journal can have compacted' => [60_000, 1]]);
+
+it('records bounded redacted signed removal diagnostics in the public Operation', function (string $code, string $label, bool $omitted = false): void {
+    $clone = destroyClone(destroyDefault());
+    $clone->environmentValues()->create(['env_key' => 'CUSTOM_VALUE', 'env_value' => 'disposable-env-sentinel']);
+    $bus = destroyBus();
+    $bus->shouldReceive('nodeActions')->once()->andReturn(['instance.destroy']);
+    $bus->shouldReceive('publishStart', 'scheduleDeadline')->once();
+    $bus->shouldReceive('publishOrder')->once()->andReturnUsing(static fn (int $node, SignedExecutorOrder $order, Closure $claim): bool => $claim());
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    $engine = app(Engine::class);
+    $engine->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $detail = $omitted ? 'The incomplete native diagnostic line was omitted.' : str_repeat("Ressource occupée\n", 500)
+        .'Error: could not clean disposable-env-sentinel at https://user:disposable-url-sentinel@example.test/owned';
+    $engine->onReceipt(['node' => $clone->node_id, 'line' => ['operation' => $operation->id.':remove', 'action' => 'instance.destroy',
+        'target' => (string) $clone->id, 'status' => 'failed', 'code' => $code, 'detail' => $detail]]);
+
+    $error = OperationData::fromModel($operation->refresh())->error;
+    $step = OperationEngineStep::query()->where('operation_id', $operation->id)->firstOrFail();
+    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->failed_step)->toBe($label)
+        ->and($error['stderr_recorded'])->toBeTrue()->and($error['detail'])->toBe($step->error_detail)
+        ->and(strlen($error['detail']))->toBeLessThanOrEqual(4096)->and(mb_check_encoding($error['detail'], 'UTF-8'))->toBeTrue()
+        ->and($error['detail'])->toContain($omitted ? $detail : 'Error: could not clean [REDACTED] at https://[REDACTED]@example.test/owned')
+        ->not->toContain('disposable-env-sentinel', 'disposable-url-sentinel');
+})->with([
+    'stop' => ['instance.removal_stop_failed', 'Stop the container'],
+    'delete' => ['instance.removal_incomplete', 'Delete the container'],
+    'dataset refusal' => ['instance.removal_dataset_taken', 'Delete the container'],
+    'discard' => ['instance.power_discard_failed', 'Delete the container'],
+    'recorded but omitted' => ['instance.removal_incomplete', 'Delete the container', true],
+]);
+
+it('does not bind or dispatch signed removal while another Operation holds the Instance lock', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $lock = OperationStore::lockKey('instance', $clone->id);
+    $other = Operation::query()->create(['kind' => 'instance.sleep', 'target_type' => 'instance', 'target_id' => $clone->id,
+        'node_id' => $clone->node_id, 'status' => OperationStatus::Running, 'lock_key' => $lock, 'input' => [], 'state' => []]);
+    $bus = destroyBus();
+    $bus->shouldReceive('nodeActions')->once()->andReturn(['instance.destroy']);
+    $bus->shouldNotReceive('publishStart', 'publishOrder');
+    $operation = signedDestroy($clone);
+
+    expect(containerRefusal(fn () => app(StartSwampRun::class)->start($operation)))->toBe('operation.target_busy')
+        ->and($other->refresh()->lock_key)->toBe($lock)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->state)->not->toHaveKey('swamp_run_id')
+        ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->status)->toBe(InstanceRemovalStatus::Failed)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->exists())->toBeFalse();
+});
 
 it('keeps container default destruction unavailable in this clone-only slice', function (bool $force): void {
     $default = destroyDefault();

@@ -57,6 +57,7 @@ use App\Models\Operation;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Tool;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -347,37 +348,43 @@ it('fails the fleet phase before admitting work when the serving Conn host catal
         ->and(Operation::query()->count())->toBe(0);
 })->with(['missing', 'malformed']);
 
-it('holds the release fleet phase only when the serving reviewed release matches the Conn canary policy', function (bool $matching): void {
+it('holds the release fleet phase only when the serving reviewed release matches the Conn canary policy', function (string $setup): void {
     Queue::fake();
     SwampNodeFixture::ensure();
     config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     $path = config()->string('orbit.gateway_checkout').'/resources/machine-software/conn-server-releases.yaml';
-    $catalog = Yaml::parseFile($path);
-    $catalog['default'] = '0.5.2';
-    $catalog['releases']['0.5.2']['release_canary'] = true;
-    File::put($path, Yaml::dump($catalog, 6));
+    File::copy(resource_path('machine-software/conn-server-releases.yaml'), $path);
+    $current = Yaml::parseFile($path)['default'];
 
     $canary = Node::query()->findOrFail($this->nodes['dev']);
     $canary->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-canary']);
     ConnServerNode::query()->create(['node_id' => $canary->id, 'platform' => 'linux', 'path' => '/opt/conn-server/current',
         'service' => 'conn-server', 'port' => 3773, 'user' => 'orbit', 'canary' => true]);
-    app(StartToolOperationAction::class)->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $matching ? '0.5.2' : '0.5.1');
+    $desired = $setup === 'previous' ? '0.5.2' : $current;
+    $tools = app(StartToolOperationAction::class);
+    $enroll = $tools->execute('install', $canary->id, 'conn-server', 'conn-server', null, version: $desired);
+    $member = Tool::query()->findOrFail($enroll->result['tool_id']);
+    if ($setup === 'withdrawn') {
+        $tools->execute('remove', $canary->id, 'conn-server', 'conn-server', null, $member);
+    }
 
     $next = app(ContinueReleaseFleetAction::class)->execute($release);
     $rollouts = Operation::query()->where('kind', ConnServerRollout::Kind);
-    if ($matching) {
+    if ($setup === 'matching') {
         $check = $rollouts->sole();
         expect($next)->toBe(15)
             ->and($release->fresh()->phases['fleet']['conn_server_operation_id'])->toBe($check->id)
             ->and(array_column($check->input['intent']['nodes'], 'node_id'))->toBe([$canary->id])
+            ->and($check->input['intent']['version'])->toBe($current)
             ->and($check->input['intent']['dry_run'])->toBeTrue();
     } else {
         expect($rollouts->count())->toBe(0)
             ->and($release->fresh()->phases['fleet'])->not->toHaveKey('conn_server_operation_id');
     }
-})->with(['matching release' => [true], 'deliberate older pin' => [false]]);
+    expect($member->fresh()?->desired_version)->toBe($setup === 'withdrawn' ? null : $desired);
+})->with(['opted into serving release' => ['matching'], 'deliberate older pin' => ['previous'], 'withdrawn' => ['withdrawn']]);
 
 it('recovers the previous host digest from a recipe containing the reviewed standalone Conn pin', function (): void {
     $previous = $this->base.'/previous-recipe';

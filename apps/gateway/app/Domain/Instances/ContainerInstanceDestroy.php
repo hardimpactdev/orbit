@@ -86,6 +86,7 @@ final readonly class ContainerInstanceDestroy
 
         return ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
             'acl' => $runtime->container_name, 'pool' => InstanceHostIntent::Pool,
+            ...($runtime->clone_source_instance_id === null ? [] : ['clone_source_instance_id' => $runtime->clone_source_instance_id]),
             'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
             // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
             'asleep_marker' => InstancePower::markerPath($instance),

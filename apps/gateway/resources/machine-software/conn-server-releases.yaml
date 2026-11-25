@@ -1,5 +1,5 @@
 {
-    "default": "0.5.2",
+    "default": "0.5.3",
     "releases": {
         "0.5.1": {
             "linux_x64": {
@@ -24,6 +24,19 @@
                 "bundle_id": "com.nckrtl.conn-server",
                 "team_id": "9SVJ4SYB9B"
             }
+        },
+        "0.5.3": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.3/conn-server-0.5.3-linux-x64.tar.gz",
+                "sha256": "1a4561e3089ba298641b7e2483f805b03533a490b604cf1f14510110352daeb2"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.3/conn-server-0.5.3-macos-arm64.zip",
+                "sha256": "621306c3d65cdee68773fe2f47de1c1c33fae6ecd9223d3e635d9a14fa790bf6",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            },
+            "release_canary": true
         }
     }
 }

@@ -14,6 +14,8 @@ covers:
 
 # Node agent
 
+The agent binary also serves signed executor orders in a separate service mode. [Executor actions](/reference/executor#action-primitives), including `instance.destroy`, are not observer commands.
+
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
@@ -110,7 +112,7 @@ The observer tails Instance, Process, or Schedule logs only while an active [liv
 
 The observer fetches `GET /api/v1/agent/log-streams` (up to 16 active streams) on channel join, on `log-streams.changed`, and every 15 seconds while streaming. If the list cannot be fetched for 60 seconds, all active streams end with `list_unavailable`.
 
-Supported sources are `laravel` (`storage/logs/laravel*.log`, rejecting symlinks and root-owned files), `journal` (`journalctl --unit <unit> --output short-iso --utc` for `orbit-process-*` and `orbit-schedule-*` units), and `docker` (containers matching `orbit-process-{id}-{name}` with `orbit.managed=true`). Lines are redacted with the Gateway's secret patterns before transmission and bounded to 8 KiB per line, 256 KiB initial batch, 32 KiB/s per stream, and 256 KiB/s per agent.
+Supported sources are `laravel` (`storage/logs/laravel*.log`, rejecting symlinks and root-owned files), `journal` (`journalctl --unit <unit> --output short-iso --utc` for `orbit-process-*` and `orbit-schedule-*` units), and `docker` (containers matching `orbit-process-{id}-{name}` with `orbit.managed=true`). Lines are redacted with the Gateway's secret patterns before transmission and bounded to 8 KiB per line, 256 KiB initial batch, 32 KiB/s per stream, and 256 KiB/s per agent. The same Node redactor also sanitizes signed removal diagnostics before the executor journals them.
 
 ## Commands
 
@@ -220,6 +222,8 @@ The systemd unit runs as `root` with `NoNewPrivileges=yes`, `ProtectSystem=stric
 ## Checks
 
 Run the Rust workspace checks (`cargo test`, `cargo clippy`) as a normal user; see [Bun and Rust projects](/reference/bun-and-rust-projects#node-agent).
+
+GitHub Actions builds the test profile without debug information to leave room for tests, Clippy, and cache saving in the four-minute agent job. Debug assertions, local builds, and release profiles stay unchanged.
 
 ## Releases
 

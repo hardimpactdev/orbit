@@ -36,7 +36,7 @@ final readonly class ExecutorJournalLookup
     public const string Unit = 'orbit-executor.service';
 
     /** The executor keeps done records this long (DONE_RETENTION_MS); an older order's absence proves nothing. */
-    private const int RetentionMs = 86_400_000;
+    public const int RetentionMs = 86_400_000;
 
     /** The Node has not finished the order yet, or its clock has not passed the order's expiry: ask again later. */
     public const string Open = 'open';

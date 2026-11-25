@@ -57,11 +57,16 @@ function connServerPin(?Closure $change = null): void
     if ($change !== null) {
         $change($release);
     }
+    serveConnServerCatalog(Yaml::dump($catalog, 6));
+}
+
+function serveConnServerCatalog(string $catalog): void
+{
     $home = sys_get_temp_dir().'/conn-server-rollout-'.bin2hex(random_bytes(4));
     test()->recipeHomes = [...test()->recipeHomes, $home];
     mkdir($home.'/releases/'.str_repeat('a', 12).'/apps/gateway/resources/machine-software', 0700, true);
     symlink('releases/'.str_repeat('a', 12), $home.'/orbit');
-    file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/conn-server-releases.yaml', Yaml::dump($catalog, 6));
+    file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/conn-server-releases.yaml', $catalog);
     config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
 }
 
@@ -508,47 +513,50 @@ it('resumes a pin from its durable receipts and authorizes exactly one promotion
 });
 
 it('promotes only matching enrolled Nodes and rechecks when the promotion targets change', function (): void {
-    connServerPin(static function (array &$pin): void {
-        $pin['release_canary'] = true;
-    });
+    $catalog = File::get(resource_path('machine-software/conn-server-releases.yaml'));
+    serveConnServerCatalog($catalog);
+    $current = Yaml::parse($catalog)['default'];
+    $olderPin = '0.5.2';
     $canary = connServerNode('canary', 60, ['canary' => true]);
     $matching = connServerNode('matching', 61, []);
     $older = connServerNode('older', 62, []);
     $withdrawn = connServerNode('withdrawn', 63, []);
     $unselected = connServerNode('unselected', 64, []);
-    $canaryTool = enrollConnServer($canary, '0.5.1');
-    $olderTool = enrollConnServer($older, '0.5.1');
-    $matchingTool = enrollConnServer($matching);
-    $removed = enrollConnServer($withdrawn);
+    $canaryTool = enrollConnServer($canary, $olderPin);
+    $olderTool = enrollConnServer($older, $olderPin);
+    $matchingTool = enrollConnServer($matching, $current);
+    $removed = enrollConnServer($withdrawn, $current);
     $tools = app(StartToolOperationAction::class);
     $tools->execute('remove', $withdrawn->id, 'conn-server', 'conn-server', null, $removed);
     $rollout = app(ConnServerRollout::class);
     $pin = $rollout->releasePin();
 
-    expect($rollout->releaseGate($pin))->toBeNull()
+    expect($pin->releaseCanary)->toBeTrue()
+        ->and($rollout->releaseGate($pin))->toBeNull()
         ->and(Operation::query()->where('kind', ConnServerRollout::Kind)->count())->toBe(0);
-    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool, version: '0.5.2');
+    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool, version: $current);
     $check = $rollout->releaseGate($pin);
-    expect(array_column($check->input['intent']['nodes'], 'node_id'))->toBe([$canary->id]);
+    expect($check->input['intent']['version'])->toBe($current)
+        ->and(array_column($check->input['intent']['nodes'], 'node_id'))->toBe([$canary->id]);
     finishConnRollout($check, 'succeeded', [['node_id' => $canary->id, 'outcome' => 'checked']]);
     $probe = $rollout->releaseGate($pin);
     $probe->update(['state' => ['swamp_run_id' => 'fixture']]);
     app(ConnServerRolloutProjection::class)->apply($probe, ['run_id' => 'fixture', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
-        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.2', 'dry_run' => false,
-            'nodes' => [['node_id' => $canary->id, 'outcome' => 'updated', 'thread_read' => true, 'observed_version' => '0.5.2']]]]);
-    expect($rollout->releaseGate($pin))->toBeNull()->and($canaryTool->fresh()->installed_version)->toBe('0.5.2');
+        'finished_at' => now()->toAtomString(), 'result' => ['version' => $current, 'dry_run' => false,
+            'nodes' => [['node_id' => $canary->id, 'outcome' => 'updated', 'thread_read' => true, 'observed_version' => $current]]]]);
+    expect($rollout->releaseGate($pin))->toBeNull()->and($canaryTool->fresh()->installed_version)->toBe($current);
     $preflight = $rollout->admit(true, 'fleet');
     expect(array_column($preflight->input['intent']['nodes'], 'node_id'))->toBe([$matching->id]);
     finishConnRollout($preflight, 'succeeded', [['node_id' => $matching->id, 'outcome' => 'checked']]);
-    expect(fn () => $rollout->admit(false, 'nodes', [$matching->id], version: '0.5.2'))
+    expect(fn () => $rollout->admit(false, 'nodes', [$matching->id], version: $current))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.canary_required'));
     $promotion = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id);
     expect(array_column($promotion->input['intent']['nodes'], 'node_id'))->toBe([$matching->id])
         ->and(array_column($promotion->input['intent']['nodes'], 'tool_id'))->toBe([$matchingTool->id])
-        ->and($olderTool->fresh()->desired_version)->toBe('0.5.1');
+        ->and($olderTool->fresh()->desired_version)->toBe($olderPin);
     finishConnRollout($promotion, 'succeeded', [['node_id' => $matching->id, 'outcome' => 'updated']]);
 
-    enrollConnServer($unselected);
+    enrollConnServer($unselected, $current);
     expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.preflight_required'));
     $recheck = $rollout->admit(true, 'fleet', retryOperationId: $preflight->id);
@@ -558,13 +566,13 @@ it('promotes only matching enrolled Nodes and rechecks when the promotion target
     expect(array_column($continued->input['intent']['nodes'], 'node_id'))->toBe([$unselected->id]);
     finishConnRollout($continued, 'succeeded', [['node_id' => $unselected->id, 'outcome' => 'updated']]);
 
-    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: '0.5.1');
+    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: $olderPin);
     $downgrade = $rollout->admit(false, 'nodes', [$canary->id]);
     $downgrade->update(['state' => ['swamp_run_id' => 'fixture-downgrade']]);
     app(ConnServerRolloutProjection::class)->apply($downgrade, ['run_id' => 'fixture-downgrade', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
-        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.1', 'dry_run' => false,
-            'nodes' => [['node_id' => $canary->id, 'outcome' => 'updated', 'observed_version' => '0.5.1']]]]);
-    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: '0.5.2');
+        'finished_at' => now()->toAtomString(), 'result' => ['version' => $olderPin, 'dry_run' => false,
+            'nodes' => [['node_id' => $canary->id, 'outcome' => 'updated', 'observed_version' => $olderPin]]]]);
+    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: $current);
     expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.canary_required'));
     $retry = $rollout->admit(false, 'canary', retryOperationId: $probe->id);

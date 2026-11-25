@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn shared_cases_match_the_gateway_implementation() {
         let cases: Vec<Case> =
-            serde_json::from_str(include_str!("../../tests/redaction_cases.json")).unwrap();
+            serde_json::from_str(include_str!("../../../tests/redaction_cases.json")).unwrap();
         assert!(cases.len() >= 50);
         for case in cases {
             let input = case.input.expand();

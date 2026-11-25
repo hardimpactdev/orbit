@@ -65,6 +65,8 @@ pub enum Action {
     /// Give a reserved copy its final name and branch, and restart its T3 for its label (docs/reference/conn.md#reserve-a-clone).
     /// Its target is the copy.
     InstanceNames,
+    /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
+    InstanceDestroy,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -79,7 +81,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -100,6 +102,7 @@ impl Action {
         Self::InstanceSpareVolume,
         Self::InstanceFleetReady,
         Self::InstanceNames,
+        Self::InstanceDestroy,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -121,7 +124,7 @@ impl Action {
             | Self::InstanceStop
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady
-            | Self::InstanceNames => {
+            | Self::InstanceNames | Self::InstanceDestroy => {
                 Family::Instance
             }
         }
@@ -149,7 +152,7 @@ impl Action {
             | Self::InstanceCheckout
             | Self::InstanceT3
             | Self::InstanceStop
-            | Self::InstanceNames => {
+            | Self::InstanceNames | Self::InstanceDestroy => {
                 TargetKind::Instance
             }
         }
@@ -175,6 +178,7 @@ impl Action {
             Self::InstanceClubKey => "instance.club_key",
             Self::InstanceCopyVolume => "instance.copy_volume",
             Self::InstanceStop => "instance.stop",
+            Self::InstanceDestroy => "instance.destroy",
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
             Self::InstanceNames => "instance.names",
@@ -209,6 +213,7 @@ impl FromStr for Action {
             "instance.club_key" => Ok(Self::InstanceClubKey),
             "instance.copy_volume" => Ok(Self::InstanceCopyVolume),
             "instance.stop" => Ok(Self::InstanceStop),
+            "instance.destroy" => Ok(Self::InstanceDestroy),
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             "instance.names" => Ok(Self::InstanceNames),

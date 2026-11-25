@@ -91,6 +91,25 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
     };
     (dir, power, api)
 }
+
+#[test]
+fn destroy_discards_the_executor_state_for_only_the_removed_instance() {
+    let (_directory, power, _api) = fixture();
+    let removed = power.state.join("2");
+    let sibling = power.state.join("20");
+    for folder in [&removed, &sibling] {
+        fs::create_dir_all(folder).expect("freeze directory");
+        for artifact in ["plan.json", "limits.json", "receipt.json", "plan.tmp"] {
+            fs::write(folder.join(artifact), "disposable fixture").expect("freeze artifact");
+        }
+    }
+    assert!(power.discard_destroyed("02").is_err());
+    power.discard_destroyed("2").expect("discard");
+    power.discard_destroyed("2").expect("repeat without state");
+    assert!(!removed.exists());
+    assert_eq!(fs::read_dir(sibling).expect("sibling's state").count(), 4);
+}
+
 #[test]
 fn limits_record_includes_every_non_max_value_before_open_and_restores_exactly() {
     let (_dir, power, api) = fixture();
@@ -281,6 +300,7 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::InstanceStop
             | orbit_executor_core::action::Action::InstanceSpareVolume
             | orbit_executor_core::action::Action::InstanceFleetReady
+            | orbit_executor_core::action::Action::InstanceDestroy
             | orbit_executor_core::action::Action::InstanceNames => {
                 panic!("power actions only")
             }

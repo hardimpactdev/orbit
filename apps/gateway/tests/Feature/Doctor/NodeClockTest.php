@@ -18,7 +18,7 @@ function clock_bus(?bool $clock): MachineBus
     {
         public function __construct(private ?bool $clock) {}
 
-        public function publishOrder(int $node, SignedExecutorOrder $order): void {}
+        public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void {}
 
         public function publishStart(int $operation): void {}
 

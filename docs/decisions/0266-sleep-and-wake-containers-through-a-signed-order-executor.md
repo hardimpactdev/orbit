@@ -78,7 +78,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The executor
 
 **Key custody.** The secret key sits in the Gateway's secret store, readable by `orbit`. Any process that runs as `orbit` on the Gateway already reaches every Node with sudo over SSH, so one narrower signer process would protect nothing more. Each Node pins up to two public keys in `/etc/orbit/executor/gateway.pub`, which the role convergence writes. Two keys allow a rotation without a gap.
 
-**Target truth.** The executor accepts a target only when the Instance's container exists in the Node's Incus. It reads this through the Incus local socket, which the observer cannot write. There is no target file.
+**Target truth.** Sleep and wake accept a target only when the Instance's container exists in the Node's Incus. They read this through the Incus local socket, which the observer cannot write. There is no target file. Discard and signed removal can still clean up or recover a receipt after the container is absent.
 
 ### The path
 
@@ -142,7 +142,7 @@ Engine choice stays on the Operation after admission, including across a setting
 
 A start or deploy admitted to resume a signed freeze requires a matching executor receipt. An already-running container that needs no resume or discard can still take its usual lifecycle path without a receipt.
 
-So every sleep and wake, whatever the caller (WebSocket, Swamp run, deploy, start), goes through one executor with one journal. Destroy sends no signed order yet: it removes both engines' files as plain cleanup after the container is gone. A signed destroy is a follow-up, Orbit task 5891.
+So every signed sleep and wake, whatever the caller (WebSocket, Swamp run, deploy, start), goes through one executor with one journal. Both the Swamp removal and [signed clone removal](/reference/gateway-engine#instancedestroy) discard both engines' freeze artifacts after the container is gone. A signed removal keeps the Instance fenced until the journal confirms how the order ended.
 
 ### Four rules for every signed outcome
 
@@ -192,7 +192,7 @@ Each slice is one small pull request. It starts by updating the [sleep](/cli/ins
 | 4 | Rust sleep: limits, Incus freeze, whole-subtree scan with bit 62, plan, reclaim, residual policy, asleep marker | 30 sleeps of a real clone with T3 and Vite; RAM and swap after each | **Yes** |
 | 5 | Rust wake with the pool: identity, pool of about 32 serving one target at a time, Incus unfreeze, limits, readiness, crash recovery | 30 wakes and a burst of 3 on a real clone; the Incus unfreeze cost; a SIGKILL test | **Yes** |
 | 6 | The wake inside the request: Gateway bound, Caddy sends the original request on, plain `503` otherwise | 50 visits to a sleeping clone, time to the app's first byte, against today's 1.5 s and 2.4 s | **Yes** |
-| 7 | Swamp calls the executor through the relay on the Node: deploy, start and the boot of a stopped container; destroy only removes both engines' files (signed destroy: task 5891) | WebSocket path down: the Operation fails `executor.not_accepted`; a start that resumes a signed freeze; a crossed order runs once | **Yes** |
+| 7 | Swamp calls the executor through the relay on the Node: deploy, start and the boot of a stopped container; Swamp destroy removes both engines' files | WebSocket path down: the Operation fails `executor.not_accepted`; a start that resumes a signed freeze; a crossed order runs once | **Yes** |
 | 8 | Remove the Python path: the helper, path unit, dispatcher, worker template, file flow, Ansible counter settle; absorb this ADR | The sleep and wake proofs of slices 4–7 still pass; nothing installs the old units | **Yes** |
 
 Slices 1–3 can run before group 5513 lands. Slices 4–8 need a nested `app-dev` Node that hosts real app containers.

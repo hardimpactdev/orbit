@@ -17,6 +17,8 @@ use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseInventory;
+use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\NestedFleetLayout;
@@ -57,6 +59,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
 use Tests\Support\ObservedReleaseInputs;
+use Tests\Support\ServingRecipeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -103,7 +106,22 @@ beforeEach(function (): void {
 afterEach(function (): void {
     app(SwampConnection::class)->release();
     fclose($this->manifest);
+    File::deleteDirectory($this->servingRelease ?? '');
 });
+
+/** Serve the shipped recipe without its Conn Server canary, from an in-place layout, so a release pass skips the canary gate. */
+function servingReleaseCheckout(string $commit): string
+{
+    if (isset(test()->servingRelease)) {
+        return test()->servingRelease.'/orbit/apps/gateway';
+    }
+    test()->servingRelease = sys_get_temp_dir().'/orbit-converge-release-'.bin2hex(random_bytes(4));
+    ServingRecipeFixture::write(test()->servingRelease.'/releases/'.substr($commit, 0, 12).'/apps/gateway');
+    symlink('releases/'.substr($commit, 0, 12), test()->servingRelease.'/orbit');
+    test()->mock(GatewayReleaseObserver::class)->shouldReceive('inspect')->andReturn(new GatewayReleaseInventory(null, 'in_place', false, [], [], []));
+
+    return test()->servingRelease.'/orbit/apps/gateway';
+}
 
 it('captures base from recorded state, redacts its verifier and dispatches copies before exactly one workflow', function (): void {
     $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'failed', 'error_code' => 'earlier']);
@@ -722,7 +740,7 @@ it('keeps the release pending on a deferred T3 receipt and schedules a new role 
     $operation->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
         'result' => ['t3_restart_deferred' => ['orbit-instances/instance-7']]]);
     $commit = str_repeat('a', 40);
-    config(['app.version' => $commit, 'orbit.gateway_checkout' => base_path()]);
+    config(['app.version' => $commit, 'orbit.gateway_checkout' => servingReleaseCheckout($commit)]);
     $release = GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
         'phases' => ['fleet' => ['status' => 'pending', 'nodes' => [$this->node->id => ['node_id' => $this->node->id,
             'name' => $this->node->name, 'status' => 'running', 'role_operation_id' => $operation->id]]]]]);
@@ -743,7 +761,7 @@ it('keeps the release pending on a deferred T3 receipt and schedules a new role 
 function releaseWithRow(array $row): GatewayRelease
 {
     $commit = str_repeat('a', 40);
-    config(['app.version' => $commit, 'orbit.gateway_checkout' => base_path()]);
+    config(['app.version' => $commit, 'orbit.gateway_checkout' => servingReleaseCheckout($commit)]);
 
     return GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
         'phases' => ['fleet' => ['status' => 'pending', 'started_at' => now()->toISOString(), 'nodes' => [test()->node->id => ['node_id' => test()->node->id,
