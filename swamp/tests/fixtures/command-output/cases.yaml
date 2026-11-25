@@ -3264,6 +3264,10 @@ cases:
     libc6:i386: [2.42-0ubuntu2]
     tzdata: [2025b]
 non_command_output:
+- file: tasks/node-converge-tools.yml
+  task: Remove the Orbit apt sources no Tool names
+  field: loop
+  reason: Keeps only valid apt source names from the Gateway's intent before naming their files; it parses no command output.
 - file: conn-server-rollout.yml
   task: Record the failed Node
   field: ansible.builtin.set_fact.node_result
