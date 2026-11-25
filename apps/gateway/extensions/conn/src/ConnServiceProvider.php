@@ -17,7 +17,6 @@ use App\Domain\Nodes\NodeRemovalHook;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationRecordCoordinator;
 use App\Domain\Operations\OperationSecretSource;
-use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
@@ -49,7 +48,6 @@ use Orbit\Extensions\Conn\Infrastructure\ConnActivityInputRedaction;
 use Orbit\Extensions\Conn\Infrastructure\HttpApnsClient;
 use Orbit\Extensions\Conn\Infrastructure\HttpConnServerLifetimes;
 use Orbit\Extensions\Conn\Infrastructure\HttpT3ServerClient;
-use Orbit\Extensions\Conn\Jobs\PollConnHostThreadsJob;
 
 /** The conn extension: Conn devices, shared profiles, and T3 server pairing ([Conn layer](/reference/conn)). */
 final class ConnServiceProvider extends ExtensionServiceProvider
@@ -117,8 +115,6 @@ final class ConnServiceProvider extends ExtensionServiceProvider
             // Every minute while the operator's switch is on, on `problems`, so it waits behind task work and never on `operations`.
             GatewaySchedule::command($schedule, 'conn:threads:read', uniqueFor: 120, overlapMinutes: 2, queue: GatewayQueue::Problems)->everyMinute()
                 ->when(static fn (): bool => ConnThreadIndex::reads() && app(ExtensionStore::class)->enabled('conn'));
-            GatewaySchedule::job($schedule, new PollConnHostThreadsJob)->everyFiveSeconds()
-                ->when(static fn (): bool => GatewayQueueRedis::configured() && app(ExtensionStore::class)->enabled('conn'));
             GatewaySchedule::command($schedule, 'conn:push:prune-events', uniqueFor: 3600, overlapMinutes: 60, queue: GatewayQueue::Problems)->daily();
         });
     }

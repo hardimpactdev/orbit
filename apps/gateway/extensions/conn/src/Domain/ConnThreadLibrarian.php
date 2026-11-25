@@ -38,16 +38,10 @@ final readonly class ConnThreadLibrarian
     ) {}
 
     /**
-     * The poll: every thread of one host shell that lists a user-authored message.
-     *
-     * @param  array<array-key, mixed>  $shell
+     * The push: the host's Conn Server recorded a thread, which stands for its first user message. A top-level General thread with no
+     * Orbit filing, created at or after the host's cutoff, in the scratch project, with no completed receipt, gets one classification
+     * job. One outside the scratch project gets a completed receipt, so a later push does not ask the server again.
      */
-    public function discover(ConnEnvironment $environment, array $shell, CarbonImmutable $observedAt): void
-    {
-        $this->queueEligible($environment, $shell, static fn (array $thread): bool => is_string($thread['latestUserAuthoredMessageAt'] ?? null), $observedAt);
-    }
-
-    /** The push: the one thread that the host's Conn Server recorded, which stands for its first user message. */
     public function pushed(DiscoverConnThreadJob $job): void
     {
         if (! $this->extensions->enabled('conn') || ! AiRouterThreadClassifier::configured()) {
@@ -58,53 +52,29 @@ final readonly class ConnThreadLibrarian
             return;
         }
         $shell = $this->http->shell($environment->url, $environment->admin_session);
-        $this->queueEligible($environment, $shell, static fn (array $thread): bool => ($thread['id'] ?? null) === $job->threadId, CarbonImmutable::now());
-    }
-
-    /**
-     * The librarian's eligibility, for the poll and the push alike: a top-level General thread with no Orbit filing, created after the
-     * host's cutoff, in the scratch project, whose receipt is not completed. Each eligible thread gets one classification job; one
-     * outside the scratch project gets a completed receipt.
-     *
-     * @param  array<array-key, mixed>  $shell
-     * @param  \Closure(array<array-key, mixed>): bool  $selected
-     */
-    private function queueEligible(ConnEnvironment $environment, array $shell, \Closure $selected, CarbonImmutable $observedAt): void
-    {
-        if (! AiRouterThreadClassifier::configured() || ! is_array($shell['projects'] ?? null) || ! is_array($shell['threads'] ?? null)) {
+        $thread = collect(is_array($shell['threads'] ?? null) ? $shell['threads'] : [])
+            ->first(static fn (mixed $thread): bool => is_array($thread) && ($thread['id'] ?? null) === $job->threadId);
+        $general = self::unassignedTopLevel($thread);
+        if (! is_array($thread) || ! is_string($thread['createdAt'] ?? null)) {
             return;
         }
-        $cutoff = $this->cutoff($environment, $observedAt);
-        $roots = [];
-        foreach ($shell['projects'] as $project) {
-            if (is_array($project) && is_string($project['id'] ?? null) && is_string($project['workspaceRoot'] ?? null)) {
-                $roots[$project['id']] = $project['workspaceRoot'];
-            }
-        }
-        $candidates = [];
-        foreach ($shell['threads'] as $thread) {
-            if (self::unassignedTopLevel($thread) && $selected($thread) && is_string($thread['id'] ?? null) && is_string($thread['projectId'] ?? null)
-                && isset($roots[$thread['projectId']])
-                && is_string($thread['createdAt'] ?? null) && CarbonImmutable::parse($thread['createdAt'])->getTimestampMs() >= $cutoff) {
-                $candidates[$thread['id']] = $thread['projectId'];
-            }
-        }
-        if ($candidates === []) {
+        $createdAt = CarbonImmutable::parse($thread['createdAt'])->getTimestampMs();
+        $projectId = $thread['projectId'] ?? null;
+        $root = collect(is_array($shell['projects'] ?? null) ? $shell['projects'] : [])
+            ->first(static fn (mixed $project): bool => is_array($project) && is_string($projectId) && ($project['id'] ?? null) === $projectId);
+        $root = is_array($root) ? ($root['workspaceRoot'] ?? null) : null;
+        if ($createdAt < $this->cutoff($environment, $createdAt) || ! $general || ! is_string($projectId) || ! is_string($root)) {
             return;
         }
-        $completed = ConnThreadClassification::query()->where('conn_environment_id', $environment->id)
-            ->whereNotNull('completed_at')->whereIn('thread_id', array_keys($candidates))->get(['thread_id'])
-            ->map(static fn (ConnThreadClassification $classification): string => $classification->thread_id)->all();
-        $candidates = array_diff_key($candidates, array_fill_keys($completed, true));
-        $scratch = $candidates === [] ? null : $this->orchestration->scratchWorkspaceRoot($environment);
-        foreach ($candidates as $threadId => $projectId) {
-            $job = new ClassifyConnThreadJob($environment->id, (string) $threadId, $projectId, $roots[$projectId]);
-            if (self::inScratch($roots[$projectId], $scratch)) {
-                GatewaySchedule::dispatch($job);
-            } else {
-                // A thread outside the scratch project is refused once, so later polls do not ask the server again.
-                $this->complete($this->receipt($job));
-            }
+        $classification = new ClassifyConnThreadJob($environment->id, $job->threadId, $projectId, $root);
+        $receipt = $this->receipt($classification);
+        if ($receipt->completed_at !== null) {
+            return;
+        }
+        if (self::inScratch($root, $this->orchestration->scratchWorkspaceRoot($environment))) {
+            GatewaySchedule::dispatch($classification);
+        } else {
+            $this->complete($receipt);
         }
     }
 
@@ -122,19 +92,8 @@ final readonly class ConnThreadLibrarian
         if ($receipt->completed_at !== null) {
             return;
         }
-        if (! $this->http->supportsThreadFiling($environment->url)) {
-            $this->complete($receipt);
-
-            return;
-        }
-        $projection = $this->projection($environment, $job->threadId);
-        $thread = $projection['thread'] ?? null;
-        if (! self::unassignedTopLevel($thread) || ($thread['projectId'] ?? null) !== $job->connProjectId) {
-            $this->complete($receipt);
-
-            return;
-        }
-        if (! self::inScratch($job->connWorkspaceRoot, $this->orchestration->scratchWorkspaceRoot($environment))) {
+        if (! $this->http->supportsThreadFiling($environment->url)
+            || ! self::inScratch($job->connWorkspaceRoot, $this->orchestration->scratchWorkspaceRoot($environment))) {
             $this->complete($receipt);
 
             return;
@@ -142,18 +101,24 @@ final readonly class ConnThreadLibrarian
         $projects = $this->projects->handle($environment->node)->keyBy('id');
         $answer = $receipt->result;
         if ($answer === null) {
-            // A push can arrive before its first message is readable: read again a few times, and leave the receipt open when it is not.
-            for ($read = 1; ! self::authored($projection['messages'] ?? null) && $read < self::MessageReads; $read++) {
-                Sleep::for(self::MessageReadGapSeconds)->seconds();
+            // A push can arrive before the thread or its first message is readable: read again a few times, each read judged on its own
+            // thread, and leave the receipt open when the message stays unreadable.
+            for ($read = 1; ; $read++) {
                 $projection = $this->projection($environment, $job->threadId);
-            }
-            if (! self::authored($projection['messages'] ?? null)) {
-                return;
-            }
-            $first = $this->firstAuthoredMessage($projection['messages'] ?? null);
-            if ($first === null || ! is_string($thread['title'] ?? null)) {
-                $this->complete($receipt);
+                $thread = $projection['thread'] ?? null;
+                if ($projection !== null && (! self::unassignedTopLevel($thread) || ($thread['projectId'] ?? null) !== $job->connProjectId
+                    || ! is_string($thread['title'] ?? null))) {
+                    $this->complete($receipt);
 
+                    return;
+                }
+                $first = $this->firstAuthoredMessage($projection['messages'] ?? null);
+                if ($first !== null || $read === self::MessageReads) {
+                    break;
+                }
+                Sleep::for(self::MessageReadGapSeconds)->seconds();
+            }
+            if ($first === null || ! is_array($thread) || ! is_string($thread['title'] ?? null)) {
                 return;
             }
             $answer = $this->classifier->classify($thread['title'], $first, array_values($projects->map(static fn (Project $project): array => [
@@ -203,17 +168,6 @@ final readonly class ConnThreadLibrarian
         return $scratch !== null && rtrim($root, '/') === rtrim($scratch, '/');
     }
 
-    private static function authored(mixed $messages): bool
-    {
-        foreach (is_array($messages) ? $messages : [] as $message) {
-            if (is_array($message) && ($message['role'] ?? null) === 'user' && ($message['createdBy'] ?? null) === 'user') {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private function firstAuthoredMessage(mixed $messages): ?string
     {
         $first = null;
@@ -248,16 +202,13 @@ final readonly class ConnThreadLibrarian
         return ConnThreadClassification::query()->firstOrNew(['conn_environment_id' => $job->environmentId, 'thread_id' => $job->threadId]);
     }
 
-    private function cutoff(ConnEnvironment $environment, CarbonImmutable $observedAt): int
+    /** The host's cutoff: the creation time of the first thread a push brought, stored once, so an older thread is never classified. */
+    private function cutoff(ConnEnvironment $environment, int $createdAtMs): int
     {
-        $watermarks = DB::table('conn_librarian_watermarks');
-        $stored = $watermarks->where('conn_environment_id', $environment->id)->value('started_at_ms');
-        if (is_numeric($stored)) {
-            return (int) $stored;
-        }
-        $startedAt = $observedAt->getTimestampMs();
-        $watermarks->insert(['conn_environment_id' => $environment->id, 'started_at_ms' => $startedAt]);
+        DB::table('conn_librarian_watermarks')->insertOrIgnore(['conn_environment_id' => $environment->id, 'started_at_ms' => $createdAtMs]);
 
-        return $startedAt;
+        $stored = DB::table('conn_librarian_watermarks')->where('conn_environment_id', $environment->id)->value('started_at_ms');
+
+        return is_numeric($stored) ? (int) $stored : $createdAtMs;
     }
 }

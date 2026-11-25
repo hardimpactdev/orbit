@@ -21,10 +21,10 @@ use Orbit\Extensions\Conn\Models\ConnThread;
 use Throwable;
 
 /**
- * The thread index of registered Conn servers ([Thread index](/reference/conn#thread-index)). It reads each running server's shell
- * through the admin session the Gateway holds and keeps one row per thread, with no message text beyond the title. A thread that
- * leaves the shell leaves the index; an asleep or stopped server keeps its last rows. Container reads wait for the operator's
- * switch `orbit.conn.thread_index_poll`; host reads and the write-through of a new thread run without it.
+ * The thread index of registered Conn servers ([Thread index](/reference/conn#thread-index)). It reads each running container
+ * server's shell through the admin session the Gateway holds and keeps one row per thread, with no message text beyond the title. A
+ * thread that leaves the shell leaves the index; an asleep or stopped server keeps its last rows. Container reads wait for the
+ * operator's switch `orbit.conn.thread_index_poll`. A host server is never read: it pushes each thread through the write-through.
  */
 final readonly class ConnThreadIndex implements InstanceThreadContribution
 {
@@ -128,11 +128,6 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
         return $this->refresh(ConnEnvironment::query()->whereNotNull('instance_id')->with('instance.runtime')->orderBy('id')->get(), self::PassTimeoutSeconds);
     }
 
-    public function hostPass(ConnThreadLibrarian $librarian): void
-    {
-        $this->refresh(ConnEnvironment::query()->whereNull('instance_id')->whereNotNull('node_id')->orderBy('id')->get(), 2.0, $librarian);
-    }
-
     /**
      * Reads the given servers at once and records what each shell says. A server whose Instance does not run is not read and keeps
      * its rows; one whose session ended, or that does not answer within the bound, keeps its rows and records why.
@@ -140,7 +135,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
      * @param  Collection<int, ConnEnvironment>  $environments
      * @return list<array{environment_id: string, instance_id: ?int, outcome: string, reason: ?string, threads: int, bytes: int}>
      */
-    public function refresh(Collection $environments, float $timeoutSeconds, ?ConnThreadLibrarian $librarian = null): array
+    public function refresh(Collection $environments, float $timeoutSeconds): array
     {
         $now = CarbonImmutable::now();
         $results = [];
@@ -163,13 +158,6 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             $results[$id] = $this->contained($environment, fn (): array => $threads === null
                 ? $this->skipped($environment, $shell instanceof T3ServerException ? $shell->errorCode : 'conn.response_invalid', $now)
                 : $this->apply($environment, $threads, $now, strlen((string) json_encode($shell))));
-            if ($librarian !== null && is_array($shell) && $results[$id]['outcome'] === 'read') {
-                try {
-                    $librarian->discover($environment, $shell, $now);
-                } catch (Throwable $error) {
-                    report($error);
-                }
-            }
         }
         ksort($results);
 
@@ -232,7 +220,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
      * The index rows of one shell, or null when the shell is not one this index understands.
      *
      * @param  array<array-key, mixed>  $shell
-     * @return list<array{thread_id: string, title: string, state: ?string, needs_input: bool, last_user_message_at: ?CarbonImmutable, last_run_completed_at: ?CarbonImmutable, orbit_project_id: ?int}>|null
+     * @return list<array{thread_id: string, title: string, state: ?string, needs_input: bool, last_user_message_at: ?CarbonImmutable, last_run_completed_at: ?CarbonImmutable}>|null
      */
     public static function threads(array $shell): ?array
     {
@@ -251,8 +239,6 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
                 if (($status !== null && ! is_string($status)) || ($pending !== null && ! is_array($pending))) {
                     return null;
                 }
-                $orbitProject = $thread['orbitProject'] ?? null;
-                $orbitProjectId = is_array($orbitProject) ? ($orbitProject['id'] ?? null) : null;
                 $rows[] = [
                     'thread_id' => $thread['id'],
                     'title' => mb_substr($thread['title'], 0, self::TitleLength),
@@ -260,7 +246,6 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
                     'needs_input' => ConnAgentActivity::waitsForUser($pending),
                     'last_user_message_at' => self::time($thread['latestUserAuthoredMessageAt'] ?? $thread['latestUserMessageAt'] ?? null),
                     'last_run_completed_at' => self::time($thread['latestRunCompletedAt'] ?? null),
-                    'orbit_project_id' => is_int($orbitProjectId) && $orbitProjectId > 0 ? $orbitProjectId : null,
                 ];
             }
         } catch (Throwable) {
@@ -275,7 +260,7 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
      * the read began. A read that began before the server's last written read is dropped: it would bring back what that read removed.
      * A failed try does not count: only a written read orders the reads. Reads that begin within the same second are not ordered.
      *
-     * @param  list<array{thread_id: string, title: string, state: ?string, needs_input: bool, last_user_message_at: ?CarbonImmutable, last_run_completed_at: ?CarbonImmutable, orbit_project_id: ?int}>  $threads
+     * @param  list<array{thread_id: string, title: string, state: ?string, needs_input: bool, last_user_message_at: ?CarbonImmutable, last_run_completed_at: ?CarbonImmutable}>  $threads
      * @return array{environment_id: string, instance_id: ?int, outcome: string, reason: ?string, threads: int, bytes: int}
      */
     private function apply(ConnEnvironment $environment, array $threads, CarbonImmutable $readAt, int $bytes): array
@@ -287,11 +272,10 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
                 return false;
             }
             $query = ConnThread::forEnvironment($environment);
-            $ownerColumn = $instance === null ? 'orbit_project_id' : 'instance_id';
             foreach (array_chunk($threads, self::UpsertChunk) as $chunk) {
-                $query->upsert(array_map(static fn (array $thread): array => [...array_diff_key($thread, ['orbit_project_id' => true]),
-                    'conn_environment_id' => $environment->id, $ownerColumn => $instance ?? $thread['orbit_project_id'], 'seen_at' => $readAt], $chunk),
-                    ['conn_environment_id', 'thread_id'], [$ownerColumn, 'title', 'state', 'needs_input', 'last_user_message_at', 'last_run_completed_at', 'seen_at']);
+                $query->upsert(array_map(static fn (array $thread): array => [...$thread,
+                    'conn_environment_id' => $environment->id, 'instance_id' => $instance, 'seen_at' => $readAt], $chunk),
+                    ['conn_environment_id', 'thread_id'], ['instance_id', 'title', 'state', 'needs_input', 'last_user_message_at', 'last_run_completed_at', 'seen_at']);
             }
             // Every listed thread now has this read's time; an older row is one the shell no longer lists.
             $query->where('seen_at', '<', $readAt)->delete();

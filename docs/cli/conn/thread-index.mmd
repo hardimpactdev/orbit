@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Conn thread index (docs/reference/conn.md#thread-index): the Gateway keeps a row per live thread on registered host and container servers. The librarian can file a new top-level General host thread in a separate Gateway job, with no Operation or Swamp run.
+  %% Conn thread index (docs/reference/conn.md#thread-index): the Gateway keeps a row per live thread on registered host and container servers. It polls container servers; host servers push each thread. The librarian can file a new top-level General host thread in a separate Gateway job, with no Operation or Swamp run.
   %% status: draft
   %% command: none · minute poll, GET /conn/threads, POST /conn/environments/{environment_id}/threads
   %% kind: conn.thread_index
@@ -10,20 +10,19 @@ sequenceDiagram
   participant C as API caller<br/>a device · MCP
   participant GW as Gateway<br/>Conn layer
   participant T3 as Conn server<br/>host or container
-  Note over GW: Poll registered servers<br/>hosts 5 s · containers 1 min
+  Note over GW: Poll container servers<br/>every minute
   %%> When:
   %%> - every minute while the operator switch `ORBIT_CONN_THREAD_INDEX_POLL` is on and Conn is enabled; off by default
   %%> - a unique job on the `problems` queue, behind task work; never on `operations`
-  %%> - every 5 seconds for host servers while Conn and the Gateway queue are enabled
   %%> Which servers:
-  %%> - registered host servers and every container server whose Instance runs
+  %%> - every container server whose Instance runs; host servers are never polled
   %%> Skips, with the reason on the server's record:
   %%> - an asleep or stopped Instance, `conn.environment_asleep`: it is not read and keeps its rows
   %%> - an ended session, `conn.session_expired`: its renewal comes first
   GW->>T3: Read every shell at once<br/>GET /api/orchestration/shell
   %%> How:
   %%> - the admin session the Gateway holds and renews, with `x-t3-orchestration-protocol: 2`
-  %%> - each group in one pool; the host read takes at most 2 seconds, the container read takes at most 10 seconds
+  %%> - all in one pool; the read takes at most 10 seconds
   %%> On failure:
   %%> - a server that does not answer, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
   %%> - a failed write of one server's rows is reported and skipped with `conn.index_write_failed`; the pass goes on
@@ -41,7 +40,7 @@ sequenceDiagram
   %%> - node access to the server's Node
   %%> Also:
   %%> - a task copy's turn records its T3 thread the same way when its projection commits
-  %%> - a host Conn Server records a thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response
+  %%> - a host Conn Server records each thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response
   GW-->>C: Row recorded<br/>201 · 200 on a repeat
   %%> Result:
   %%> - in the list at once; state stays null until the next read
