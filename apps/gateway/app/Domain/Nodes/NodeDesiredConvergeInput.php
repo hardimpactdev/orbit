@@ -160,7 +160,7 @@ final readonly class NodeDesiredConvergeInput
     {
         $delivery = app(AgentDelivery::class);
         $recipe = new RecipeLoader()->source();
-        $tools = $all ? app(ToolConvergeIntent::class)->capture($node) : [];
+        $tools = $all ? app(ToolConvergeIntent::class)->capture($node, $operation->id) : [];
         $network = null;
         if (($all || in_array('vpn', $roles, true) || in_array('router', $roles, true)) && $hub !== null && $node->wireguard_ip !== null) {
             $network = app(NodeNetworkConvergeInput::class)->converge($node);

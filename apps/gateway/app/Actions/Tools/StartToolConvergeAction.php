@@ -31,7 +31,6 @@ final readonly class StartToolConvergeAction
             if ($node->status !== LifecycleStatus::Active || ! $this->eligibility->allows($node)) {
                 throw new ResourceOperationException('tool.node_unmanaged', 'Tool convergence requires an active, SSH-managed Node.', 409);
             }
-            $this->intent->assertIdle($node->id, direct: true);
             $tools = $this->intent->capture($node);
             $lock = "node_tools:{$node->id}:all";
             if ($tools === []) {

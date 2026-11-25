@@ -81,7 +81,8 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $decision = ValidatedData::object($native['decision'] ?? []);
         $observation = ValidatedData::object($native['observation'] ?? []);
         $result = array_intersect_key($decision, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
-        $result['installed_version'] = $observation['installed_version'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null;
+        $result['installed_version'] = $observation['installed_coordinate'] ?? $observation['installed_version']
+            ?? $decision['installed_coordinate'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null;
         if (($data['status'] ?? null) === 'succeeded') {
             if (NativeRunResult::stepStatus($native, 'Assert package state') !== 'succeeded' || ($decision['ready'] ?? false) !== true) {
                 throw new ResourceOperationException('operation.result_invalid', 'The native Tool end check is required.', 422);
@@ -93,7 +94,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
                     $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded';
                 }
             } elseif (array_key_exists('installed_version', $observation)) {
-                // The raw coordinates tell a new cask build from the same one; both show the same public version.
+                // The raw coordinates tell a new cask build from the same one.
                 $after = $observation['installed_coordinate'] ?? $observation['installed_version'];
                 $before = $decision['installed_coordinate'] ?? $decision['installed_version'] ?? null;
                 $result['outcome'] = $after === $before ? 'unchanged' : 'applied';
@@ -105,7 +106,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             } elseif (NativeRunResult::stepStatus($native, 'Assert the key fingerprint') === 'failed') {
                 $code = 'tool.repository_key_mismatch';
             } else {
-                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Write the apt source'] as $step) {
+                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Write the apt source', 'Reconcile remaining repository pins'] as $step) {
                     if (NativeRunResult::stepStatus($native, $step) === 'failed') {
                         $code = 'tool.repository_failed';
                         break;
@@ -160,7 +161,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $tool = is_int($toolId) ? Tool::query()->find($toolId) : null;
         if ($status !== OperationStatus::Succeeded) {
             // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel.
-            if ($tool?->status === ToolStatus::Installing && ($managerFailed || $status === OperationStatus::Cancelled
+            if ($tool?->status === ToolStatus::Installing && (($managerFailed && $tool->desired_repository === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
                 $tool->delete();
 
@@ -199,7 +200,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             return null;
         }
         $record = AptRepository::query()->firstOrCreate(['node_id' => $operation->node_id, 'name' => $definition['name']], ['definition' => $definition]);
-        if ($record->definition != $definition) {
+        if (! ToolDefinition::sameRepository($record->definition, $definition)) {
             $record->update(['definition' => $definition]);
         }
 
@@ -212,6 +213,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             'node_id' => $operation->node_id, 'tool_manager_id' => $record->id,
             'package' => $operation->input['package'], 'version_constraint' => $operation->input['version_constraint'],
             'desired_version' => $operation->input['desired_version'] ?? null,
+            'desired_repository' => $operation->input['repository'] ?? null,
             'status' => ToolStatus::Installing,
         ]);
     }

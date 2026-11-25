@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ActiveToolPolicy;
+use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolPolicy;
-use App\Models\Operation;
 use App\Models\Tool;
 use Illuminate\Support\Facades\DB;
 
@@ -44,8 +43,7 @@ final readonly class ManageToolPolicyAction
             if ($before->mode === $mode && $before->catalogPath === $path) {
                 return $this->state($before);
             }
-            if (Operation::query()->whereIn('status', OperationStatus::openValues())->where(static fn ($query) => $query->where('kind', 'like', 'tool.%')
-                ->orWhere(static fn ($nodes) => $nodes->where('kind', 'node.converge')->where('input->_converge->tool_scope', true)))->exists()) {
+            if (ToolConvergeIntent::writers()->exists()) {
                 throw new ResourceOperationException('tool.mode_busy', 'Wait for the running Tool Operations before changing mode.', 409);
             }
 
@@ -56,13 +54,11 @@ final readonly class ManageToolPolicyAction
                 $current = $this->definition($before, $tool);
                 if ($mode === 'file') {
                     $target = $this->definition($after, $tool);
-                    if ($target->toArray() != $current->toArray()) {
+                    if (! $target->sameAs($current)) {
                         $this->conflict('different_coordinate', $tool->id);
                     }
-                } elseif ($current->repository != $tool->aptRepository?->definition) {
-                    $this->conflict('unapplied_repository', $tool->id);
                 }
-                $tool->update(['desired_version' => $current->version, 'version_constraint' => $current->constraint]);
+                $tool->update(['desired_version' => $current->version, 'version_constraint' => $current->constraint, 'desired_repository' => $current->repository]);
             }
             $snapshotId = DB::table('tool_policy_snapshots')->insertGetId([
                 'document' => json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'created_at' => now(),
@@ -96,6 +92,7 @@ final readonly class ManageToolPolicyAction
             $rows[] = ['id' => $tool->id, 'node_id' => $tool->node_id, 'manager' => $tool->manager->name, 'package' => $tool->package,
                 'desired' => $desired?->toArray(), 'installed_version' => $tool->installed_version,
                 'admitted_version' => $tool->desired_version, 'admitted_constraint' => $tool->version_constraint,
+                'admitted_repository' => $tool->desired_repository,
                 'recorded_repository' => $tool->aptRepository?->definition, 'status' => $tool->status->value,
                 'failed_operation' => $tool->failed_operation?->value, 'error_code' => $tool->error_code];
         }
@@ -116,7 +113,7 @@ final readonly class ManageToolPolicyAction
                 $this->conflict('floating_coordinate', $tool->id);
             }
             $key = $tool->manager->name.':'.$tool->package;
-            if (isset($entries[$key]) && $entries[$key]->toArray() != $definition->toArray()) {
+            if (isset($entries[$key]) && ! $entries[$key]->sameAs($definition)) {
                 $this->conflict('per_node_divergence', $tool->id);
             }
             $entries[$key] = $definition;
@@ -137,7 +134,7 @@ final readonly class ManageToolPolicyAction
             return $policy->definition($tool->manager->name, $tool->package) ?? $this->conflict('missing_catalog_entry', $tool->id);
         }
 
-        return new ToolDefinition($tool->desired_version, $tool->version_constraint, $tool->aptRepository?->definition);
+        return new ToolDefinition($tool->desired_version, $tool->version_constraint, $tool->desired_repository ?? $tool->aptRepository?->definition);
     }
 
     private function conflict(string $reason, int $toolId): never

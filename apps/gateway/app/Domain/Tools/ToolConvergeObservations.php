@@ -37,7 +37,7 @@ final readonly class ToolConvergeObservations
                 $this->invalid();
             }
             $desired = $plan['desired_version'] ?? null;
-            if (is_string($desired) && is_string($version) && ! new ToolDefinition($desired, null, null)->matches(ToolManagerName::from(ValidatedData::string($plan['manager'])), $version)) {
+            if ($observation['status'] === 'installed' && is_string($desired) && is_string($version) && ! new ToolDefinition($desired, null, null)->matches(ToolManagerName::from(ValidatedData::string($plan['manager'])), $version)) {
                 $this->invalid();
             }
             $observations[] = $observation;
@@ -60,12 +60,17 @@ final readonly class ToolConvergeObservations
             }
             $tool->desired_version = ValidatedData::nullableString($plan['desired_version'] ?? null);
             $tool->version_constraint = ValidatedData::nullableString($plan['version_constraint']);
+            $tool->desired_repository = is_array($plan['repository'] ?? null) ? $plan['repository'] : null;
             $tool->status = $observation['status'] === 'installed' ? ToolStatus::Installed : ToolStatus::Failed;
-            $tool->error_code = $tool->status === ToolStatus::Failed ? 'tool.install_failed' : null;
-            $tool->failed_operation = $tool->status === ToolStatus::Failed ? ToolOperation::Install : null;
+            $repair = $tool->installed_version !== null || ($plan['tool_status'] ?? null) === ToolStatus::Installed->value
+                || $tool->failed_operation === ToolOperation::Update;
+            $tool->failed_operation = $tool->status === ToolStatus::Failed ? ($repair ? ToolOperation::Update : ToolOperation::Install) : null;
+            $tool->error_code = $tool->status === ToolStatus::Failed
+                ? (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed')) : null;
+            if (is_string($observation['installed_version'])) {
+                $tool->installed_version = $observation['installed_version'];
+            }
             if ($tool->status === ToolStatus::Installed) {
-                $version = ValidatedData::string($observation['installed_version']);
-                $tool->installed_version = ($plan['manager'] ?? null) === 'brew-cask' ? explode(',', $version, 2)[0] : $version;
                 if (is_array($repository = $plan['repository'] ?? null)) {
                     $source = AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => $repository['name']], ['definition' => $repository]);
                     $tool->apt_repository_id = $source->id;

@@ -3,10 +3,16 @@
 declare(strict_types=1);
 
 use App\Actions\Tools\ManageToolPolicyAction;
+use App\Actions\Tools\StartToolConvergeAction;
 use App\Actions\Tools\StartToolOperationAction;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolConvergeIntent;
+use App\Domain\Tools\ToolConvergeObservations;
+use App\Domain\Tools\ToolIntentProjection;
+use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -14,6 +20,8 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
+use Tests\Support\SwampNodeFixture;
 use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
@@ -23,7 +31,28 @@ function policyNode(string $name, int $address = 10): Node
     return Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.'.$address, 'wireguard_ip' => '10.44.0.'.$address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fingerprint',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'test-host-key',
     ]));
+}
+
+function policySignedRepository(string $suite = '1.10'): array
+{
+    return ['name' => 'proof', 'uris' => ['https://example.test/apt'], 'suites' => [$suite], 'components' => ['main'],
+        'signing_key' => ['url' => 'https://example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
+}
+
+function policySwamp(): void
+{
+    Queue::fake();
+    config(['swamp.ssh_public_key' => 'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('k', 32)).' control']);
+    SwampNodeFixture::ensure();
+}
+
+function policyComplete(Operation $operation, string $status, array $result): void
+{
+    $operation->update(['state' => ['swamp_run_id' => 'test-run']]);
+    app(ToolIntentProjection::class)->apply($operation, ['run_id' => 'test-run', 'status' => $status,
+        'started_at' => now()->toAtomString(), 'finished_at' => now()->toAtomString(), 'result' => $result]);
 }
 
 function policyTool(Node $node, string $package, ?string $desired): Tool
@@ -44,20 +73,33 @@ function policyFile(array $packages, ?string $path = null): string
 }
 
 it('exports divergent per-Node pins without collapsing them into an unrepresentable catalog', function (): void {
-    $first = policyTool(policyNode('dev'), 'tree', '1.0-1');
-    $second = policyTool(policyNode('prod', 11), 'tree', '2.0-1');
+    $first = policyTool(policyNode('dev'), 'tree', '1.10');
+    $second = policyTool(policyNode('prod', 11), 'tree', '1.1');
     $policy = app(ManageToolPolicyAction::class);
 
     $rows = $policy->show('snapshot')['document']['memberships'];
     expect(array_column($rows, 'id'))->toBe([$first->id, $second->id])
-        ->and(array_column(array_column($rows, 'desired'), 'version'))->toBe(['1.0-1', '2.0-1'])
+        ->and(array_column(array_column($rows, 'desired'), 'version'))->toBe(['1.10', '1.1'])
         ->and(array_column($rows, 'installed_version'))->toBe(['1.0-1', '1.0-1']);
     expect(fn () => $policy->show('catalog'))->toThrow(fn (ResourceOperationException $error) => expect($error->details['reason'])->toBe('per_node_divergence'));
-    $path = policyFile([['manager' => 'apt', 'package' => 'tree', 'version' => '1.0-1']]);
+    $path = policyFile([['manager' => 'apt', 'package' => 'tree', 'version' => '1.1']]);
     expect(fn () => $policy->change('file', $path))->toThrow(fn (ResourceOperationException $error) => expect($error->details['reason'])->toBe('different_coordinate'));
     expect($policy->show()['mode'])->toBe('database')
         ->and(DB::table('tool_policy_snapshots')->count())->toBe(0)
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('compares nested signed repository values exactly for export and activation', function (): void {
+    $first = policyTool(policyNode('dev'), 'nano', '1.10');
+    $second = policyTool(policyNode('prod', 11), 'nano', '1.10');
+    $first->update(['desired_repository' => policySignedRepository()]);
+    $second->update(['desired_repository' => policySignedRepository('1.1')]);
+    $policy = app(ManageToolPolicyAction::class);
+
+    expect(fn () => $policy->show('catalog'))->toThrow(fn (ResourceOperationException $error) => expect($error->details['reason'])->toBe('per_node_divergence'));
+    $path = policyFile([['manager' => 'apt', 'package' => 'nano', 'version' => '1.10', 'repository' => policySignedRepository()]]);
+    expect(fn () => $policy->change('file', $path))->toThrow(fn (ResourceOperationException $error) => expect($error->details['reason'])->toBe('different_coordinate'));
+    expect($policy->show()['mode'])->toBe('database')->and(DB::table('tool_policy_snapshots')->count())->toBe(0);
 });
 
 it('applies file edits to admitted membership only and snapshots the effective and observed values on return', function (): void {
@@ -97,6 +139,97 @@ it('never admits existing Conn Server or role packages to generic convergence', 
     $node = policyNode('host');
     policyTool($node, 'conn-server', '1.0-1');
     policyTool($node, 'php8.5-cli', '1.0-1');
+    foreach (['containerd', 'apparmor', 'libnss3', 'dpkg-repack', 'sqlite3', 'postgresql-client', 'rsync'] as $package) {
+        $tool = policyTool($node, $package, '1.0-1');
+        $operations = app(StartToolOperationAction::class);
+        expect(fn () => $operations->execute('remove', $node->id, 'apt', $package, null, $tool))
+            ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.package_protected'));
+    }
 
     expect(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
+});
+
+it('keeps the signed source requested by a failed install and retries at the same coordinate', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
+    $operations = app(StartToolOperationAction::class);
+    $install = $operations->execute('install', $node->id, 'apt', 'tree', null, repository: $source, version: '1.10');
+    policyComplete($install, 'failed', ['steps' => ['Apply the package' => ['status' => 'failed']]]);
+
+    $membership = app(ManageToolPolicyAction::class)->show('snapshot')['document']['memberships'][0];
+    expect($membership)->toMatchArray(['recorded_repository' => null, 'desired' => ['version' => '1.10', 'constraint' => null, 'repository' => $source]])
+        ->and(app(ToolConvergeIntent::class)->capture($node)[0]['repository'])->toBe($source);
+    $retry = $operations->execute('install', $node->id, 'apt', 'tree', null);
+    expect($retry->input)->toMatchArray(['repository' => $source, 'desired_version' => '1.10', 'repository_given' => true]);
+});
+
+it('admits the remaining preference packages for both membership changes and refuses unilateral trust changes', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $reference = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    $tree = policyTool($node, 'tree', '1.10');
+    $tree->update(['apt_repository_id' => $reference->id, 'desired_repository' => $source]);
+    $operations = app(StartToolOperationAction::class);
+    $install = $operations->execute('install', $node->id, 'apt', 'nano', null, repository: $source, version: '1.10');
+    expect($install->input)->toMatchArray(['repository_packages' => ['nano', 'tree'], 'repository_given' => true]);
+    policyComplete($install, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'],
+        'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+
+    $entry = static fn (string $package, array $repository): array => ['manager' => 'apt', 'package' => $package, 'version' => '1.10', 'repository' => $repository];
+    $path = policyFile([$entry('tree', $source), $entry('nano', $source)]);
+    app(ManageToolPolicyAction::class)->change('file', $path);
+    policyFile([$entry('tree', policySignedRepository('1.1')), $entry('nano', $source)], $path);
+    expect(fn () => $operations->execute('update', $node->id, 'apt', 'tree', null, $tree))
+        ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+    expect(fn () => app(ToolConvergeIntent::class)->capture($node))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+    $remove = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree);
+    expect($remove->input)->toMatchArray(['repository_packages' => ['nano'], 'remove_repository' => false]);
+});
+
+it('holds admissions for retained timeout locks and old admitted Tools without holding role-only work', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.10');
+    $path = policyFile([['manager' => 'apt', 'package' => 'tree', 'version' => '1.10']]);
+    $fixture = ['node_id' => $node->id, 'target_id' => $node->id, 'target_type' => 'node_tools', 'triggered_by' => 'operator', 'sequence' => 0];
+    $timeout = Operation::query()->create([...$fixture, 'kind' => 'tool.update', 'status' => 'failed', 'error_code' => 'operation.timed_out',
+        'lock_key' => OperationStore::lockKey('node_tools', $node->id), 'input' => []]);
+    $policy = app(ManageToolPolicyAction::class);
+    $converge = app(StartToolConvergeAction::class);
+    expect(fn () => $converge->execute($node, 'test'))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(fn () => $policy->change('file', $path))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.mode_busy'));
+    $timeout->update(['lock_key' => null]);
+
+    $roleRun = Operation::query()->create([...$fixture, 'kind' => 'node.converge', 'status' => 'running',
+        'input' => ['_converge' => ['intent' => ['tools' => [['id' => $tool->id]]]]]]);
+    expect(fn () => app(StartToolOperationAction::class)->execute('update', $node->id, 'apt', 'tree', null, $tool))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(fn () => $policy->change('file', $path))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.mode_busy'));
+    $roleRun->update(['input' => ['_converge' => ['intent' => ['tools' => []]]]]);
+    expect($policy->change('file', $path)['mode'])->toBe('file');
+});
+
+it('keeps an unavailable cask local and a failed existing Tool repair eligible for direct correction', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tree = policyTool($node, 'tree', '2.0');
+    $manager = ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'brew-cask', 'status' => 'active']);
+    $cask = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $manager->id, 'package' => 'sample',
+        'desired_version' => '1.5.13,601', 'installed_version' => '1.5.13,600', 'status' => 'installed']);
+    $plans = array_column(app(ToolConvergeIntent::class)->capture($node), null, 'id');
+    expect($plans[$cask->id]['manager_unavailable'])->toBeTrue()->and($plans[$tree->id]['manager'])->toBe('apt');
+    $results = app(ToolConvergeObservations::class);
+    $failed = $results->validate([
+        ['id' => $tree->id, 'status' => 'failed', 'installed_version' => '1.0-1'],
+        ['id' => $cask->id, 'status' => 'failed', 'installed_version' => null],
+    ], $plans, true);
+    $results->record($node->id, $plans, $failed);
+    expect($cask->refresh()->installed_version)->toBe('1.5.13,600')->and($cask->error_code)->toBe('tool.manager_unsupported')
+        ->and($tree->refresh()->failed_operation)->toBe(ToolOperation::Update);
+    $correct = app(StartToolOperationAction::class)->execute('update', $node->id, 'apt', 'tree', null, $tree, version: '1.0-1');
+    expect($correct->input['desired_version'])->toBe('1.0-1');
 });

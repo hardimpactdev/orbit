@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
-use App\Domain\Nodes\RoleName;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
@@ -28,9 +27,13 @@ final readonly class ToolPackageProtection
         if ($manager !== ToolManagerName::Apt) {
             return [];
         }
-        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', 'conn-server', ...new RecipeLoader()->source()->gitPackages];
-        foreach (RoleName::cases() as $role) {
-            $packages = [...$packages, ...$this->bootstrapPackages->forRole($node, $role)];
+        $recipe = new RecipeLoader()->source();
+        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', 'conn-server', ...$recipe->gitPackages, $recipe->phpPolicy->rollbackTool];
+        foreach (array_unique(array_merge(...array_values($recipe->profiles))) as $name) {
+            $pin = $recipe->tools[$name];
+            if ($pin->package !== null || in_array($name, RecipeLoader::IncusPackages, true)) {
+                $packages[] = $pin->package ?? $name;
+            }
         }
 
         return array_values(array_unique($packages));
