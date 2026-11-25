@@ -306,7 +306,7 @@ it('pins the production Gateway runtime and Ansible input digests', function (Li
     'failed VPN role' => [LifecycleStatus::Active, LifecycleStatus::Failed],
     'removing VPN role' => [LifecycleStatus::Active, LifecycleStatus::Removing],
     'provisioning VPN role' => [LifecycleStatus::Active, LifecycleStatus::Provisioning],
-]);
+])->group('gateway-runtime-pin');
 
 it('moves only the serving Gateway runtime and keeps FPM through its first host rollback', function (): void {
     $base = TestOrbitHome::scratch('gateway-release-host');

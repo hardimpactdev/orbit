@@ -89,7 +89,7 @@ def read_contract(linux, binary_path, mac, version, sha, folder, version_output)
 
 def capture_fixture():
     test = ["vendor/bin/pest", "tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php",
-            "--filter", "keeps production Gateway runtime recipe", "--colors=never"]
+            "--group=gateway-runtime-pin", "--colors=never"]
     fixture = json.loads(GOLDEN.read_text())
     with tempfile.TemporaryDirectory() as folder:
         prefix = Path(folder) / "capture"
