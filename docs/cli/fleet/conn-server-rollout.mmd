@@ -83,7 +83,7 @@ sequenceDiagram
     end
   end
   Note over SW: Write each Node's result<br/>result
-  alt no Node failed and the canary did not hold
+  alt no failed Node or blocking hold
     SW-->>GW: Run succeeded
     %%> Result:
     %%> - the Operation result lists each Node's outcome: `updated`, `checked` or `held`

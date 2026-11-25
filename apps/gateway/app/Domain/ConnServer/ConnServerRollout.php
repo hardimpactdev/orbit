@@ -190,15 +190,16 @@ final readonly class ConnServerRollout
         foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pin)
             ->where('input->release_stage', 'promotion')->get() as $attempt) {
             $results = (array) ($attempt->result['nodes'] ?? []);
-            if (array_column($results, 'node_id') !== array_column((array) data_get($attempt->input, 'intent.nodes', []), 'node_id')) {
+            $targets = (array) data_get($attempt->input, 'intent.nodes', []);
+            if (array_column($results, 'node_id') !== array_column($targets, 'node_id')) {
                 throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
             }
-            foreach ($results as $result) {
+            foreach ($results as $index => $result) {
                 if (! is_array($result)) {
                     throw new ResourceOperationException('conn_server.promotion_outcome_unknown', 'Confirm which Nodes changed before another promotion can run.', 409);
                 }
                 if (($result['outcome'] ?? null) === 'updated') {
-                    $completed[] = $result['node_id'];
+                    $completed[] = $targets[$index];
                 }
                 if (($result['outcome'] ?? null) === 'failed' && ($result['rolled_back'] ?? false) === false
                     && ($result['changed'] ?? true) === true) {
@@ -207,7 +208,7 @@ final readonly class ConnServerRollout
             }
         }
 
-        return $servers->whereNotIn('node_id', $completed);
+        return $servers->reject(fn (ConnServerNode $server): bool => in_array($this->nodeIntent($server), $completed, true));
     }
 
     /** @param Collection<int, ConnServerNode> $servers */
@@ -293,12 +294,20 @@ final readonly class ConnServerRollout
         // Failed attempts remain as evidence. An explicit retry is keyed by the exact failed attempt it replaces.
         $identity = "conn-release:{$key}:{$stage}:".($retry ?? 'first');
 
-        return $this->idempotency->under(self::Kind, $identity, $identity, fn (): Operation => $this->run(
-            $pin, $servers, in_array($stage, ['check', 'preflight'], true), $stage === 'canary', $by, $requestId,
-            ['release_pin' => $key, 'release_stage' => $stage,
-                ...($retry === null ? [] : ['retry_operation_id' => $retry]),
-                ...($proof === null ? [] : ['canary_operation_id' => $proof])],
-        ));
+        $receipt = ['release_pin' => $key, 'release_stage' => $stage,
+            ...($retry === null ? [] : ['retry_operation_id' => $retry]),
+            ...($proof === null ? [] : ['canary_operation_id' => $proof])];
+
+        return $this->idempotency->under(self::Kind, $identity, $identity, function () use ($pin, $stage, $servers, $by, $requestId, $receipt): Operation {
+            if ($stage === 'promotion' && $servers->isEmpty()) {
+                return $this->start->record(self::Kind, 'fleet', SwampNode::id(), SwampNode::id(),
+                    [...$receipt, 'intent' => ['nodes' => []]],
+                    ['version' => $pin->version, 'dry_run' => false, 'nodes' => [], 'error_code' => null],
+                    $by, $requestId, lockKey: self::Lock);
+            }
+
+            return $this->run($pin, $servers, in_array($stage, ['check', 'preflight'], true), $stage === 'canary', $by, $requestId, $receipt);
+        });
     }
 
     /**

@@ -238,7 +238,21 @@ it('resumes a pin from its durable receipts and authorizes exactly one promotion
     $continued = $rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $promotion->id);
     expect(array_column($continued->input['intent']['nodes'], 'node_id'))->toBe([$nick->id])
         ->and($rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $promotion->id)->id)->toBe($continued->id);
-    finishConnRollout($continued, 'succeeded', [['node_id' => $nick->id, 'outcome' => 'updated']]);
+    finishConnRollout($continued, 'failed', [['node_id' => $nick->id, 'outcome' => 'updated']]);
+    ConnServerNode::query()->where('node_id', $mini->id)->update([
+        'path' => '~/Applications/Replacement Conn Server.app', 'service' => 'com.nckrtl.conn-server.replacement',
+    ]);
+    $newCheck = $rollout->admit(true, 'fleet', retryOperationId: $recheck->id);
+    finishConnRollout($newCheck, 'succeeded', [['node_id' => $mini->id, 'outcome' => 'checked'], ['node_id' => $nick->id, 'outcome' => 'checked']]);
+    $replacement = $rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $continued->id);
+    expect(array_column($replacement->input['intent']['nodes'], 'node_id'))->toBe([$mini->id])
+        ->and($replacement->input['intent']['nodes'][0]['server']['service'])->toBe('com.nckrtl.conn-server.replacement');
+    finishConnRollout($replacement, 'failed', [['node_id' => $mini->id, 'outcome' => 'updated']]);
+    $completed = $rollout->admit(false, 'fleet', canaryOperationId: $retry->id, retryOperationId: $replacement->id);
+    expect($completed->status->value)->toBe('succeeded')
+        ->and($completed->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($completed->input['intent']['nodes'])->toBe([])
+        ->and($rollout->admit(false, 'fleet', canaryOperationId: $retry->id)->id)->toBe($completed->id);
 
     connServerPin(static function (array &$recipe): void {
         $pin = &$recipe['instances']['agent']['conn-server'];
