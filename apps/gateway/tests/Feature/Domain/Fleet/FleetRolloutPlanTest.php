@@ -379,6 +379,29 @@ it('holds the release fleet phase only when the serving reviewed release matches
     }
 })->with(['matching release' => [true], 'deliberate older pin' => [false]]);
 
+it('recovers the previous host digest from a recipe containing the reviewed standalone Conn pin', function (): void {
+    $previous = $this->base.'/previous-recipe';
+    copyRolloutHostTree($previous);
+    $software = $previous.'/apps/gateway/resources/machine-software';
+    $recipe = json_decode(File::get($software.'/core.yaml'), true, flags: JSON_THROW_ON_ERROR);
+    $catalog = Yaml::parseFile(resource_path('machine-software/conn-server-releases.yaml'));
+    $recipe['instances']['agent']['conn-server']['macos_arm64'] = $catalog['releases'][$catalog['default']]['macos_arm64'];
+    $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    File::put($software.'/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+    File::delete($software.'/core.yaml');
+    $git = static fn (string ...$arguments) => Process::path($previous)->run(['git', '-c', 'user.name=test', '-c', 'user.email=test@example.test', ...$arguments])->throw();
+    $git('init', '-q');
+    $git('add', '-A');
+    $git('commit', '-q', '-m', 'previous release with reviewed Conn metadata');
+    $extracted = $this->base.'/extracted-host-tree';
+    File::ensureDirectoryExists($extracted);
+    $inputs = app(ReleaseNodeInputs::class);
+
+    $inputs->extractHostTree($previous, 'HEAD', $extracted);
+
+    expect($inputs->legacyHost($extracted))->toBe($inputs->legacyHost());
+});
+
 it('marks only the Node whose host inputs changed for a host converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);

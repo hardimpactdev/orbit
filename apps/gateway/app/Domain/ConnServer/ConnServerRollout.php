@@ -148,8 +148,8 @@ final readonly class ConnServerRollout
         }
         $selected = match ($scope) {
             'canary' => $eligible->take(1),
-            'nodes' => collect($nodeIds)->map(fn (int $id): ConnServerNode => $eligible->firstWhere('node_id', $id)
-                ?? throw new ResourceOperationException('conn_server.membership_withdrawn', 'A selected Node is not enrolled for Conn Server rollout.', 409)),
+            'nodes' => collect($nodeIds)->mapWithKeys(fn (int $id): array => [$id => $eligible->firstWhere('node_id', $id)
+                ?? throw new ResourceOperationException('conn_server.membership_withdrawn', 'A selected Node is not enrolled for Conn Server rollout.', 409)]),
             default => $eligible,
         };
         $active = $this->policy->active();
@@ -363,7 +363,7 @@ final readonly class ConnServerRollout
     }
 
     /**
-     * @param Collection<int, ConnServerNode> $servers
+     * @param  Collection<int, ConnServerNode>  $servers
      * @return Collection<int, ConnServerNode>
      */
     private function reviewedTargets(Collection $servers, ActiveToolPolicy $active, ConnServerRelease $pin): Collection
@@ -380,6 +380,7 @@ final readonly class ConnServerRollout
     {
         $ids = ConnServerNode::query()->pluck('node_id');
         Node::query()->whereIn('id', [...$ids, SwampNode::id()])->orderBy('id')->lockForUpdate()->get(['id']);
+
         return ConnServerNode::query()->with('node', 'managedTool.aptRepository')->whereIn('node_id', $ids)->orderByDesc('canary')->orderBy('node_id')->get();
     }
 

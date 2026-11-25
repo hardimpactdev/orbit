@@ -166,7 +166,7 @@ readonly class ReleaseNodeInputs
                 $agent = ValidatedData::object($instances['agent']);
                 if (isset($agent['conn-server'])) {
                     $conn = ValidatedData::object($agent['conn-server']);
-                    unset($conn['macos_arm64']);
+                    unset($conn['macos_arm64'], $conn['release_canary']);
                     $agent['conn-server'] = $conn;
                 }
                 $raw['instances'] = [...$instances, 'agent' => $agent];
