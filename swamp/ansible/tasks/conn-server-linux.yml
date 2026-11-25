@@ -169,7 +169,9 @@
 
         - name: Record the updated Node
           ansible.builtin.set_fact:
-            node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
+            node_result: >-
+              {{ {'node_id': node_id | int, 'outcome': 'updated', 'previous_version': linux_before.json.version}
+                 | combine({'observed_version': linux_health.json.version} if managed_tool else {}) }}
       rescue:
         - name: Name the cause
           ansible.builtin.set_fact:

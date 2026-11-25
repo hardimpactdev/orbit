@@ -213,7 +213,11 @@ The agent folder part `conn-server` in `core.yaml` pins the Linux x64 asset and 
 
 #### Conn Server rollout
 
-`POST /api/v1/fleet/conn-server/rollout` starts `fleet.conn_server_rollout` for Conn Servers running outside containers. It requires `dry_run` and `scope`; `node_ids` is only valid with scope `nodes`. In file mode, the active Tool catalog must define the release even for a configured service without a [Tool membership](/reference/tools#host-conn-server-membership). In database mode, a member's desired release governs; for a configured service not yet enrolled, pass `version` or omit it for the release catalog default. The rollout does not enroll those services. If an explicit `version` disagrees with the policy, or the selected Nodes desire different releases, Orbit refuses with `conn_server.release_conflict`; select the Nodes of one release explicitly. An unavailable release returns `conn_server.pin_unavailable`. Tool and container convergence cannot trigger this rollout.
+`POST /api/v1/fleet/conn-server/rollout` starts `fleet.conn_server_rollout` for Conn Servers running outside containers. It requires `dry_run` and `scope`; `node_ids` is only valid with scope `nodes`. Tool and container convergence cannot trigger this rollout.
+
+In file mode, the active Tool catalog must define the release even for a configured service without a [Tool membership](/reference/tools#host-conn-server-membership). In database mode, a member's desired release governs; for a configured service not yet enrolled, pass `version` or omit it for the release catalog default. The rollout does not enroll those services.
+
+If an explicit `version` disagrees with the policy, or the selected Nodes desire different releases, Orbit refuses with `conn_server.release_conflict`; select the Nodes of one release explicitly. An unavailable release returns `conn_server.pin_unavailable`.
 
 The Gateway release ships `conn-server-releases.yaml`, which gives each host release its exact Linux x64 and macOS arm64 asset URLs and SHA-256 checksums. The macOS entry also names the signed `Conn Server.app` bundle and Developer ID team. The app uses the hardened runtime and is not notarized. Changing the host catalog does not change container digests or start an Operation.
 
@@ -221,7 +225,11 @@ Each such Node has a `conn_server_nodes` record: `platform` (`mac` or `linux`), 
 
 Withdrawing the Tool membership excludes the Node from later release rollouts without changing the running service. An explicit Node selection of a withdrawn member is refused. Enrolling the configured service again restores its eligibility.
 
-To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"withdraw":true,"dry_run":true}` to the rollout endpoint. The dry run verifies the configured unit, active release layout, and current health without stopping it. Repeat with `dry_run: false` to notify users of the withdrawal, disable and stop the service, and unlink `current`. No replacement release or download is needed. Orbit retains the old release and a root-owned recovery record in the installation directory. It attempts to restore the old service and its enablement if stopping or unlinking fails. If the run is interrupted after the record is written, repeat the explicit withdrawal; Orbit verifies the recorded service and completes the stop or unlink without sending another notice.
+To retire the withdrawn Linux service, send `{"scope":"nodes","node_ids":[ID],"withdraw":true,"dry_run":true}` to the rollout endpoint. The dry run verifies the configured unit, active release layout, and current health without stopping it. Repeat with `dry_run: false` to notify users of the withdrawal, disable and stop the service, and unlink `current`. No replacement release or download is needed.
+
+Orbit retains the old release and a root-owned recovery record in the installation directory. It attempts to restore the old service and its enablement if stopping or unlinking fails. If the run is interrupted after the record is written, repeat the explicit withdrawal; Orbit verifies the recorded service and completes the stop or unlink without sending another notice.
+
+If the unit is inactive and has no matching recovery record, Orbit refuses with `conn_server.withdraw_recovery_required`. Verify and restore the configured service before trying again.
 
 Withdrawal does not modify a container or uninstall its shared Conn Server. The endpoint refuses Mac service withdrawal; use the service owner's procedure for retiring its LaunchAgent. Restore the configured Linux unit and release before reenrolling a physically withdrawn service.
 

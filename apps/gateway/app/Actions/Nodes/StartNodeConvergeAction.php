@@ -89,7 +89,9 @@ final readonly class StartNodeConvergeAction
                     }
                     $snapshot['intent'] = $intent;
                 }
-                $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic];
+                $tools = RouteExecutionProof::objects($snapshot['intent']['tools']);
+                $toolSeconds = ToolConvergeIntent::phaseSeconds(count($tools));
+                $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic, ...($tools === [] ? [] : ['tools_seconds' => $toolSeconds])];
                 $snapshot['release_inputs'] = [
                     'roles' => array_map(static fn (array $role): string => $role['digest'], $roleInputs),
                     'host' => ! $release && ! $base && $roles === null ? $releaseInputs['host'] ?? $inputs->host(node: $node) : null,
@@ -99,7 +101,7 @@ final readonly class StartNodeConvergeAction
                     $snapshot['held_digests'] = $held;
                 }
                 // Dispatch is deferred until this reservation transaction commits.
-                $operation->input = [...$operation->input, 'run_budget_seconds' => ToolConvergeIntent::phaseSeconds(count($snapshot['intent']['tools'])) + 6700, '_converge' => [
+                $operation->input = [...$operation->input, 'run_budget_seconds' => $toolSeconds + 6700, '_converge' => [
                     ...$snapshot, 'tool_scope' => $toolScope, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
                 ]];
                 $operation->save();

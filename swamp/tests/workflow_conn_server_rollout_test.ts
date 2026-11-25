@@ -465,9 +465,10 @@ test("a Linux Node whose unit or tarball differs from the assumed layout fails b
 });
 
 test("after the canary, the Linux Node moves current to a new release under systemd; a dry run only checks", async () => {
-    const run = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }] });
+    const run = await rollout({ nodes: [{ platform: "mac", canary: true, managed: true }, { platform: "linux", managed: true }] });
     assert(run.ok, run.output);
     assertEquals(run.result.nodes.map((node: { outcome: string }) => node.outcome), ["updated", "updated"]);
+    assertEquals(run.result.nodes.map((node: { observed_version: string }) => node.observed_version), ["0.5.0", "0.5.0"]);
     assertEquals(run.linux, "0.5.0");
     const dry = await rollout({ nodes: [{ platform: "mac", canary: true }, { platform: "linux" }], dryRun: true });
     assert(dry.ok, dry.output);

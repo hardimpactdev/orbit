@@ -211,11 +211,9 @@
 
         - name: Record the updated Node
           ansible.builtin.set_fact:
-            node_result:
-              node_id: "{{ node_id | int }}"
-              outcome: updated
-              previous_version: "{{ mac_previous_version }}"
-              prompts: "{{ mac_answered }}"
+            node_result: >-
+              {{ {'node_id': node_id | int, 'outcome': 'updated', 'previous_version': mac_previous_version, 'prompts': mac_answered}
+                 | combine({'observed_version': mac_health_version} if managed_tool else {}) }}
       rescue:
         - name: Name the cause
           ansible.builtin.set_fact:

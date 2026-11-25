@@ -157,7 +157,7 @@ it('records exact host Conn memberships through Tool writes and changes observat
     expect(fn () => $tools->execute('remove', $first->id, 'conn-server', 'conn-server', null, $membership))->toThrow(ResourceOperationException::class);
     $run->update(['state' => ['swamp_run_id' => 'fixture']]);
     app(ConnServerRolloutProjection::class)->apply($run, ['run_id' => 'fixture', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
-        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.1', 'dry_run' => false, 'nodes' => [['node_id' => $first->id, 'outcome' => 'updated']]]]);
+        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.1', 'dry_run' => false, 'nodes' => [['node_id' => $first->id, 'outcome' => 'updated', 'observed_version' => '0.5.1']]]]);
     $membership->refresh();
     $tools->execute('update', $first->id, 'conn-server', 'conn-server', null, $membership, version: '0.5.2');
     expect($membership->refresh()->installed_version)->toBe('0.5.1')->and($membership->desired_version)->toBe('0.5.2');
@@ -247,6 +247,8 @@ it('checks managed Conn in Doctor against protected health observations, not the
     };
     $complete($rollout->admit(true, 'canary'), ['node_id' => $node->id, 'outcome' => 'checked', 'observed_version' => '0.5.1']);
     expect($member->fresh()->installed_version)->toBe('0.5.1')->and($doctor()['issues'][0])->toMatchArray(['code' => 'tool.version_mismatch', 'expected' => '0.5.2', 'observed' => '0.5.1']);
-    $complete($rollout->admit(false, 'canary'), ['node_id' => $node->id, 'outcome' => 'updated']);
+    $complete($rollout->admit(false, 'canary'), ['node_id' => $node->id, 'outcome' => 'updated', 'observed_version' => '0.5.1']);
+    expect($member->fresh()->installed_version)->toBe('0.5.1');
+    $complete($rollout->admit(false, 'canary'), ['node_id' => $node->id, 'outcome' => 'updated', 'observed_version' => '0.5.2']);
     expect($member->fresh()->installed_version)->toBe('0.5.2')->and($doctor())->toMatchArray(['checked' => 1, 'status' => 'healthy', 'issues' => []]);
 });

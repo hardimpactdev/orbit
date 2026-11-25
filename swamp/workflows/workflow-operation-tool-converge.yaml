@@ -48,6 +48,7 @@ jobs:
           behaviorName: '${{ "tool-converge-ansible-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
+            timeout: 180010000
             run: |
               umask 077
               export ANSIBLE_CONFIG="$ORBIT_ANSIBLE/ansible.cfg"

@@ -33,7 +33,7 @@ final readonly class ConnServerToolMembership
             ['outcome' => $unchanged ? 'unchanged' : 'applied', 'installed_version' => $tool?->installed_version, 'execution' => 'membership_only'], 'operator', $requestId,
             ToolManagerName::ConnServer->operationLockKey($nodeId), static function () use ($verb, $nodeId, $server, $tool, $definition, $unchanged): array {
                 if ($unchanged) {
-                    return ['tool_id' => $tool?->id];
+                    return ['tool_id' => $tool->id];
                 }
                 if ($verb === 'remove') {
                     $server->update(['tool_withdrawn' => true]);

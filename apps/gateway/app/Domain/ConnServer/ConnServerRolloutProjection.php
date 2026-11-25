@@ -53,13 +53,15 @@ final readonly class ConnServerRolloutProjection implements DirectOperationProje
                 if (! is_array($observation) || ! is_int($observation['node_id'] ?? null) || ! isset($admitted[$observation['node_id']])) {
                     continue;
                 }
-                $observed = match ($observation['outcome'] ?? null) {
-                    'updated' => $intent['dry_run'] === false ? $intent['version'] : null,
-                    'checked', 'held' => $observation['observed_version'] ?? null,
-                    'failed' => ($observation['rolled_back'] ?? null) === true ? ($observation['observed_version'] ?? null) : null,
-                    default => null,
+                $observed = $observation['observed_version'] ?? null;
+                $verified = match ($observation['outcome'] ?? null) {
+                    'updated' => $intent['dry_run'] === false && $observed === $intent['version'],
+                    'checked' => $intent['dry_run'] === true,
+                    'held' => true,
+                    'failed' => $intent['dry_run'] === false && ($observation['rolled_back'] ?? null) === true,
+                    default => false,
                 };
-                if (is_string($observed) && strlen($observed) <= 255 && preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+\z/D', $observed) === 1) {
+                if ($verified && is_string($observed) && preg_match('/\A[0-9][0-9A-Za-z.+-]{0,254}\z/D', $observed) === 1) {
                     Tool::query()->whereKey($admitted[$observation['node_id']])->where('node_id', $observation['node_id'])->update(['installed_version' => $observed]);
                 }
             }

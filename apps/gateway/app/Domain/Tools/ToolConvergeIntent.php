@@ -33,6 +33,7 @@ final readonly class ToolConvergeIntent
     {
         $active = $this->policy->active();
         $packages = [];
+        $protectedPackages = [];
         $tools = Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get();
         foreach ($tools as $tool) {
             if ($ids !== null && ! in_array($tool->id, $ids, true)) {
@@ -42,7 +43,7 @@ final readonly class ToolConvergeIntent
             if ($manager === null || $manager->name() === ToolManagerName::ConnServer) {
                 continue;
             }
-            $protected = $this->protection->forNode($node, $manager->name());
+            $protected = $protectedPackages[$manager->name()->value] ??= $this->protection->forNode($node, $manager->name());
             if (in_array($tool->package, $protected, true) || ($manager instanceof ReservesRolePackages && $manager->roleOwns($tool->package))) {
                 continue;
             }
@@ -65,7 +66,10 @@ final readonly class ToolConvergeIntent
         return $packages;
     }
 
-    /** @param array<mixed> $packages @return list<string> */
+    /**
+     * @param  array<mixed>  $packages
+     * @return list<string>
+     */
     public static function scopes(array $packages): array
     {
         $scopes = [];

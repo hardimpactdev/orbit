@@ -113,7 +113,7 @@ Adoption block tokens are `protected`, `dependency`, `unsupported_artifact`, `un
 
 ## Protected packages
 
-Orbit protects essential host and manager packages from optional installation, update, adoption (`adoption_block: protected`), and convergence (`tool.package_protected`, 409). This includes host prerequisites such as Caddy, Valkey, and Docker CE. Removing a historical Tool membership for protected software relinquishes the record only; the host package stays installed. `conn-server` is reserved for the dedicated host rollout and container recipe, not a generic package write:
+Orbit protects essential host and manager packages from optional installation, update, adoption (`adoption_block: protected`), and convergence (`tool.package_protected`, 409). This includes host prerequisites such as Caddy, Valkey, and Docker CE. If a protected package still has a Tool record, removal deletes that record only; the host package stays installed. `conn-server` is reserved for the dedicated host rollout and container recipe, not a generic package write:
 
 | Manager | Protected package names |
 | --- | --- |

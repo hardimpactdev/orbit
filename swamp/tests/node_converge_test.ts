@@ -56,7 +56,7 @@ Deno.test("converge reports all phases, live no-op counts and measured elapsed t
         assertEquals(result.changed, 0);
         assertEquals(result.elapsed_seconds, 7);
         assertEquals(result.failed_phase, undefined);
-        const completed = [{ id: 5, status: "installed", installed_version: "1.10" }];
+        const completed = [{ id: 5, status: "installed" as const, installed_version: "1.10" }];
         await Deno.writeTextFile(`${folder}/tools-result.json`, JSON.stringify(completed));
         await Deno.writeTextFile(`${folder}/tools.json`, "");
         await Deno.writeTextFile(`${folder}/tools-meta.json`, JSON.stringify({ exit_code: 124, elapsed_seconds: 8900 }));

@@ -173,7 +173,7 @@ final readonly class NodeDesiredConvergeInput
             'cli' => $release ? null : app(CliConvergePlan::class)->nodeInput($node, $cli), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             ...(GatewayReleaseHost::retiredFpm($node) ? ['retired_gateway_fpm' => true] : []),
-            'tools' => $tools, 'tools_seconds' => ToolConvergeIntent::phaseSeconds(count($tools)), 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
+            'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
             // Only a Node whose roles enable an executor family carries the install (docs/reference/executor.md).
             ...(($executor = NodeExecutorInput::for($node)) === null ? [] : ['executor' => $executor]),
             ...($playbook === null ? [] : ['playbook' => $playbook]),
