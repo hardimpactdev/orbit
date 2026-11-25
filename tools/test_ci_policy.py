@@ -69,11 +69,11 @@ class RequiredGateTest(unittest.TestCase):
 
     def test_agent_lock_changes_reuse_cache_only_with_the_same_toolchain_and_platform(self):
         import re
-        caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        agent = caller.split('  agent:\n', 1)[1].split('\n  changes:\n', 1)[0]
-        primary = re.search(r'^          key: (.+)$', agent, re.M).group(1)
-        block = re.search(r'^          restore-keys: \|\n((?:            .+\n)+)', agent, re.M)
-        prefixes = [line.strip() for line in block.group(1).splitlines()] if block else []
+        import yaml
+        action = yaml.safe_load((ROOT / '.github/actions/agent-cargo-cache/action.yml').read_text())['runs']['steps']
+        restore = next(step for step in action if step.get('uses', '').startswith('actions/cache/restore@'))['with']
+        primary = restore['key']
+        prefixes = restore['restore-keys'].splitlines()
 
         def render(template, os='Linux', arch='X64', compiler='rust-A', lock='lock-A'):
             values = {'runner.os': os, 'runner.arch': arch, 'steps.rust.outputs.version': compiler}
@@ -89,6 +89,52 @@ class RequiredGateTest(unittest.TestCase):
             with self.subTest(changed=changed):
                 incompatible = render(primary, **changed)
                 self.assertFalse(any(incompatible.startswith(prefix) for prefix in restore))
+
+    def test_only_main_saves_the_agent_cargo_cache_and_the_agent_job_never_waits_for_a_save(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+        action = yaml.safe_load((ROOT / '.github/actions/agent-cargo-cache/action.yml').read_text())
+        steps = action['runs']['steps']
+        # A pull request and a merge queue run read the caches of main only, and nothing reads what they save. A save
+        # after a cold build ran past the Rust agent job's limit and cancelled it with every check passed (run
+        # 45636265861). So that job only restores, and the job on main saves under the key it reads.
+        restore = next(step for step in steps if step.get('uses', '').startswith('actions/cache/restore@'))
+        save = next(step for step in steps if step.get('uses', '').startswith('actions/cache@'))
+        self.assertEqual(2, sum('actions/cache' in step.get('uses', '') for step in steps))
+        self.assertEqual("inputs.save != 'true'", restore['if'])
+        self.assertEqual("inputs.save == 'true'", save['if'])
+        self.assertEqual(restore['with'], save['with'])
+        self.assertEqual({'~/.cargo/registry', '~/.cargo/git', 'apps/agent/target'}, set(save['with']['path'].splitlines()))
+        self.assertEqual('false', action['inputs']['save']['default'])
+        # The key names the compiler that the action's own step installed.
+        self.assertLess(next(index for index, step in enumerate(steps) if step.get('id') == 'rust'), steps.index(restore))
+        self.assertIn('steps.rust.outputs.version', save['with']['key'])
+
+        uses = './.github/actions/agent-cargo-cache'
+        agent = workflow['agent']
+        self.assertEqual([{'uses': uses}], [step for step in agent['steps'] if 'agent-cargo-cache' in step.get('uses', '')])
+        self.assertNotIn('actions/cache', json.dumps(agent))
+        self.assertEqual(4, agent['timeout-minutes'])
+
+        warm = workflow['agent-test-caches']
+        self.assertEqual(warm['if'], "github.ref == 'refs/heads/main' && github.event_name == 'push'")
+        self.assertNotIn('needs', warm)
+        self.assertNotIn('continue-on-error', json.dumps(warm))
+        self.assertNotIn('agent-test-caches', json.dumps(workflow['required']) + json.dumps(workflow['delivery']) + json.dumps(workflow['main-required']))
+        cache = next(step for step in warm['steps'] if step.get('uses') == uses)
+        self.assertEqual({'save': True}, cache['with'])
+        # An entry with the exact key needs no build. Otherwise the job builds what the Rust agent job compiles and
+        # runs no test: Clippy reuses the dependencies of `cargo check`.
+        build = warm['steps'][-1]
+        self.assertLess(warm['steps'].index(cache), len(warm['steps']) - 1)
+        self.assertEqual(build['if'], f"steps.{cache['id']}.outputs.cache-hit != 'true'")
+        self.assertEqual('apps/agent', build['working-directory'])
+        self.assertEqual(['cargo check --locked --all-targets', 'scripts/check-crates test --locked --no-run'], build['run'].splitlines())
+        commands = [step.get('run', '').strip() for step in agent['steps']]
+        self.assertIn('cargo check --locked --all-targets', commands)
+        self.assertIn('scripts/check-crates test --locked', commands)
+        # The agent job's limit stays; the job on main alone may take the minutes of a build from nothing and its save.
+        self.assertEqual(5, warm['timeout-minutes'])
 
     def test_the_merge_queue_run_is_the_one_run_on_the_tree_that_reaches_main(self):
         import yaml
