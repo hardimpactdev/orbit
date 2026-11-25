@@ -153,6 +153,18 @@ it('reaches only the named Nodes with scope nodes, in the order given, without t
         ->and($nodes[1]['server']['notify_before_restart'])->toBeTrue();
 });
 
+it('keeps a retained Conn rollout hold from the previous serving release', function (): void {
+    $first = connServerNode('canary', 60, ['canary' => true]);
+    $second = connServerNode('second', 61, []);
+    $rollout = app(ConnServerRollout::class);
+    $old = $rollout->admit(true, 'nodes', [$first->id]);
+    $old->update(['status' => 'failed', 'lock_key' => 'fleet:conn-server-rollout']);
+
+    expect(fn () => $rollout->admit(true, 'nodes', [$second->id]))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->where('kind', ConnServerRollout::Kind)->count())->toBe(1);
+});
+
 it('admits node_ids only with scope nodes, each with a Conn Server record', function (): void {
     $rules = new AdmitConnServerRolloutRequest()->rules();
     $vm = connServerNode('nick-vm', 62, ['canary' => true]);
@@ -544,6 +556,19 @@ it('promotes only matching enrolled Nodes and rechecks when the promotion target
     finishConnRollout($recheck, 'succeeded', [['node_id' => $matching->id, 'outcome' => 'checked'], ['node_id' => $unselected->id, 'outcome' => 'checked']]);
     $continued = $rollout->admit(false, 'fleet', canaryOperationId: $probe->id);
     expect(array_column($continued->input['intent']['nodes'], 'node_id'))->toBe([$unselected->id]);
+    finishConnRollout($continued, 'succeeded', [['node_id' => $unselected->id, 'outcome' => 'updated']]);
+
+    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: '0.5.1');
+    $downgrade = $rollout->admit(false, 'nodes', [$canary->id]);
+    $downgrade->update(['state' => ['swamp_run_id' => 'fixture-downgrade']]);
+    app(ConnServerRolloutProjection::class)->apply($downgrade, ['run_id' => 'fixture-downgrade', 'status' => 'succeeded', 'started_at' => now()->toAtomString(),
+        'finished_at' => now()->toAtomString(), 'result' => ['version' => '0.5.1', 'dry_run' => false,
+            'nodes' => [['node_id' => $canary->id, 'outcome' => 'updated', 'observed_version' => '0.5.1']]]]);
+    $tools->execute('update', $canary->id, 'conn-server', 'conn-server', null, $canaryTool->refresh(), version: '0.5.2');
+    expect(fn () => $rollout->admit(false, 'fleet', canaryOperationId: $probe->id))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('conn_server.canary_required'));
+    $retry = $rollout->admit(false, 'canary', retryOperationId: $probe->id);
+    expect($retry->input['intent']['probe_thread'])->toBeTrue()->and($retry->id)->not->toBe($probe->id);
 });
 
 it('uses the edited file coordinate without enrolling the legacy service or bypassing review', function (): void {

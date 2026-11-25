@@ -62,7 +62,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 **Tools.**
 
 - The Gateway keeps desired coordinates separate from observations. File mode has one `tools.yaml` and restricts membership to its entries; database mode can pin different exact manager releases on different Nodes.
-- Host Conn Server uses Gateway Tool membership but does not use the package executors. A protected, explicitly scoped rollout applies the recorded checksummed release. Withdrawing membership does not stop the service; retiring the Linux service also requires explicit rollout admission. Neither changes the separate container Conn pin.
+- Host Conn Server uses Gateway Tool membership but does not use the package executors. The Gateway release may test a reviewed host release only on a canary that desires it; promotion is explicit and reaches only matching memberships. Withdrawing membership does not stop the service; retiring the Linux service also requires explicit rollout admission. Neither changes the separate container Conn pin.
 - Mode activation preserves memberships and takes a snapshot before changing policy. Export refuses conflicts rather than picking a version. Existing Gateways start in database mode without changing any Node.
 - Direct Tool writes and Tools convergence use the same admission and package selection rules. Full Linux Node convergence includes Tools, role-only convergence does not, and `tool:converge` also runs on macOS.
 - Task copies require container Conn from the core agent folder. Host Conn uses its own checksummed release catalog and explicit rollout, retaining canary, health, signature, notice, and rollback checks. General convergence cannot update it.

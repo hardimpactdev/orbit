@@ -70,7 +70,7 @@ final readonly class ConnServerRollout
             && data_get($receipt->result, 'dry_run') === $dryRun
             && data_get($receipt->result, 'nodes.0.node_id') === $canary->node_id
             && data_get($receipt->result, 'nodes.0.outcome') === ($dryRun ? 'checked' : 'updated')
-            && ($dryRun || data_get($receipt->result, 'nodes.0.thread_read') === true);
+            && ($dryRun || (data_get($receipt->result, 'nodes.0.thread_read') === true && $this->noObservedVersionDrift($canary, $pin->version)));
     }
 
     public function releasePin(?string $version = null): ConnServerRelease
@@ -222,7 +222,7 @@ final readonly class ConnServerRollout
                 return $promotion;
             }
             if ($promotion->status === OperationStatus::Succeeded) {
-                $pending = $this->remainingPromotionNodes($pinIdentity, $rest);
+                $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
                 if ($pending->isEmpty() || $retryOperationId !== null) {
                     return $promotion;
                 }
@@ -254,7 +254,7 @@ final readonly class ConnServerRollout
             if ($promotion?->id !== $retryOperationId) {
                 throw new ResourceOperationException('conn_server.retry_stale', 'Retry the latest failed promotion for this pin.', 409);
             }
-            $pending = $this->remainingPromotionNodes($pinIdentity, $rest);
+            $pending = $this->remainingPromotionNodes($pin, $pinIdentity, $rest);
         }
 
         return $this->releaseOperation($pin, $pinIdentity, 'promotion', $pending, $triggeredBy, $requestId,
@@ -265,10 +265,10 @@ final readonly class ConnServerRollout
      * @param  Collection<int, ConnServerNode>  $servers
      * @return Collection<int, ConnServerNode>
      */
-    private function remainingPromotionNodes(string $pin, Collection $servers): Collection
+    private function remainingPromotionNodes(ConnServerRelease $pin, string $key, Collection $servers): Collection
     {
         $completed = [];
-        foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $pin)
+        foreach (Operation::query()->where('kind', self::Kind)->where('input->release_pin', $key)
             ->where('input->release_stage', 'promotion')->get() as $attempt) {
             $results = (array) ($attempt->result['nodes'] ?? []);
             $targets = (array) data_get($attempt->input, 'intent.nodes', []);
@@ -289,7 +289,15 @@ final readonly class ConnServerRollout
             }
         }
 
-        return $servers->reject(fn (ConnServerNode $server): bool => in_array($this->installationIdentity($this->nodeIntent($server)), $completed, true));
+        return $servers->reject(fn (ConnServerNode $server): bool => $this->noObservedVersionDrift($server, $pin->version)
+            && in_array($this->installationIdentity($this->nodeIntent($server)), $completed, true));
+    }
+
+    private function noObservedVersionDrift(ConnServerNode $server, string $version): bool
+    {
+        $observed = $server->managedTool?->installed_version;
+
+        return $observed === null || $observed === $version;
     }
 
     /** @return array{mixed, mixed, mixed, mixed, mixed} */
@@ -319,6 +327,7 @@ final readonly class ConnServerRollout
         if ($blockers === []) {
             return $this->releaseOperation($pin, $key, 'preflight', $servers, $by, $requestId, $retry);
         }
+        $this->assertNoActiveRollout();
         $identity = $this->stageKey($key, 'preflight', $retry);
         $nodes = $servers->map(static fn (ConnServerNode $server): array => isset($blockers[$server->node_id])
             ? ['node_id' => $server->node_id, 'outcome' => 'held', 'reason' => $blockers[$server->node_id]]
@@ -440,6 +449,7 @@ final readonly class ConnServerRollout
      */
     private function run(?ConnServerRelease $pin, Collection $servers, bool $dryRun, bool $probe, ?string $by, ?string $requestId, array $release = []): Operation
     {
+        $this->assertNoActiveRollout();
         foreach ($servers as $server) {
             $this->tools->assertIdle($server->node_id, [ToolManagerName::ConnServer->value]);
         }
@@ -457,5 +467,12 @@ final readonly class ConnServerRollout
             'notice' => ['url' => $notice['url'] ?? null, 'command' => $notice['command'] ?? null],
             'nodes' => $servers->map($this->nodeIntent(...))->values()->all(),
         ]], $by, $requestId, lockKey: self::Lock);
+    }
+
+    private function assertNoActiveRollout(): void
+    {
+        if (ToolConvergeIntent::writers()->where('kind', self::Kind)->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'Another Conn Server rollout holds the rollout lock.', 409);
+        }
     }
 }

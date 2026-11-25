@@ -667,13 +667,15 @@ test("an existing release folder fails with backup_exists, and a releases folder
 });
 
 test("the release canary reads its thread before keeping the update and rolls back a wrong thread", async () => {
-    const nodes: Server[] = [{ platform: "mac", canary: true }];
+    const nodes: Server[] = [{ platform: "mac", canary: true, managed: true }];
     const accepted = await rollout({ nodes, probe: "read" });
     assert(accepted.ok, accepted.output);
     assertEquals(accepted.result.nodes[0].thread_read, true);
+    assertEquals(accepted.result.nodes[0].observed_version, "0.5.0");
     const rejected = await rollout({ nodes, probe: "wrong" });
     assert(!rejected.ok, rejected.output);
     assertEquals([rejected.result.nodes[0].rolled_back, rejected.running], [true, "0.4.2"]);
+    assertEquals(rejected.result.nodes[0].observed_version, "0.4.2");
 });
 
 test("an SSH reset during the canary thread read rolls back the updated Mac", async () => {
