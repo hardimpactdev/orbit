@@ -23,7 +23,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: tool-converge-intent
+          behaviorName: '${{ "tool-converge-intent-" + string(inputs.node_id) }}'
           methodName: write
           inputs:
             intent: '${{ inputs.intent }}'
@@ -35,7 +35,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: tool-converge-prepare
+          behaviorName: '${{ "tool-converge-prepare-" + string(inputs.node_id) }}'
           methodName: toolConvergeInput
           inputs: {folder: '${{ "/tmp/orbit-ansible-" + run.id }}'}
       - name: Converge tools
@@ -68,6 +68,6 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
-          behaviorName: tool-converge-report
+          behaviorName: '${{ "tool-converge-report-" + string(inputs.node_id) }}'
           methodName: toolConvergeResult
           inputs: {folder: '${{ "/tmp/orbit-ansible-" + run.id }}'}

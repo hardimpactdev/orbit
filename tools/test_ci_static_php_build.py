@@ -1,6 +1,7 @@
 """The static PHP build id names its inputs, a stale pin fails, the craft file gets every value it needs, and main's proof
 accepts only glibc, shows the CLI-only extensions in the CLI only, and measures coverage."""
 import copy
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -61,6 +62,16 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertNotIn(shipped, ids)
         # The pin itself is not an input: recording the published SHA-256 keeps the build.
         self.assertEqual(self.changed(lambda r: r['instances']['php']['versions']['8.5'].update(sha256='a' * 64))['build'], shipped)
+
+    def test_only_the_verified_recipe_relocation_preserves_the_script_identity(self):
+        script = ROOT / 'bin/static-php-build'
+        published_identity = 'cb2d8e89909d2e21936e2329f6877e20971234e1e32b328c5b9cacdbb3096fcf'
+        self.assertEqual(build.script_identity(script), published_identity)
+        with tempfile.TemporaryDirectory() as scratch:
+            changed = Path(scratch) / script.name
+            changed.write_bytes(script.read_bytes() + b'\nprint("different build script")\n')
+            self.assertEqual(build.script_identity(changed), hashlib.sha256(changed.read_bytes()).hexdigest())
+            self.assertNotEqual(build.script_identity(changed), published_identity)
 
     def test_a_stale_pin_fails(self):
         stale = copy.deepcopy(RECIPE)

@@ -66,7 +66,7 @@ The observer reads each Tool Manager's local state files directly without invoki
 | `vp` | Vite+ home `bins/*.json` |
 | `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json` and `Caskroom/<cask>/<version>` |
 
-[`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node.
+[`tool:scan`](/reference/tools#discover-installed-packages) and [`tool:adopt`](/reference/tools#adopt-a-tool) read these stored facts without contacting the Node. The observer reports what is installed; the Gateway stores [Tool membership and desired versions](/reference/tools#tool-modes) separately.
 
 ### Environment key names
 

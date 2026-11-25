@@ -21,6 +21,8 @@ describe('tool responses', function (): void {
             ->toBe('@openai/codex')
             ->and($response->versionConstraint)
             ->toBe('^0.150')
+            ->and($response->desiredVersion)
+            ->toBe('0.150.1')
             ->and($response->status)
             ->toBe('installed')
             ->and($response->installedVersion)
@@ -40,6 +42,7 @@ describe('tool responses', function (): void {
                 'manager' => 'vp',
                 'package' => '@openai/codex',
                 'version_constraint' => '^0.150',
+                'desired_version' => '0.150.1',
                 'repository' => null,
                 'status' => 'installed',
                 'installed_version' => '0.150.0',
@@ -134,6 +137,7 @@ describe('tool responses', function (): void {
         $toolData['manager'] = $boundedName;
         $toolData['package'] = $boundedText;
         $toolData['version_constraint'] = '';
+        unset($toolData['desired_version']);
         $toolData['status'] = $boundedToken;
         $toolData['installed_version'] = $boundedText;
         $toolData['failed_operation'] = $boundedToken;
@@ -195,6 +199,7 @@ describe('tool responses', function (): void {
                     'manager' => 'vp',
                     'package' => '@openai/codex',
                     'version_constraint' => '^0.150',
+                    'desired_version' => '0.150.1',
                     'repository' => null,
                     'status' => 'installed',
                     'installed_version' => '0.150.0',
@@ -234,6 +239,7 @@ describe('tool responses', function (): void {
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'version constraint' => ['version_constraint'],
+        'desired version' => ['desired_version'],
         'installed version' => ['installed_version'],
         'failed operation' => ['failed_operation'],
         'outcome' => ['outcome'],
@@ -494,6 +500,7 @@ function tool_response_data(): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => '^0.150',
+        'desired_version' => '0.150.1',
         'repository' => null,
         'status' => 'installed',
         'installed_version' => '0.150.0',

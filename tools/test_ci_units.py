@@ -445,11 +445,24 @@ class RegistrySelectionTest(unittest.TestCase):
         with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
             paths = units.selection.changed_paths(base, head)
             scoped = units.renamed_input_scopes(base, head, paths, budget, table)
-            self.assertEqual(scoped, {file: destination})
+            self.assertEqual(scoped, {file: {destination}})
             result = units.plan(paths, budget, table, [], registry_changed=[file], renamed_inputs=scoped)
             self.assertCountEqual(names(result), [f'{file}#0/2', 'swamp/other.py'])
             self.assertEqual(result['mandatory'], [{'file': file, 'cases': ['catalog'], 'units': [f'{file}#0/2']}])
             self.assertNotIn('capacity', result)
+
+    def test_a_separate_phase_input_reserves_its_own_cases_during_a_verified_rename(self):
+        file, destination, helper, config, table, budget, base, _ = self.renamed_fixture()
+        (self.root / helper).write_text('new phase input data\n')
+        config = config.replace('[fixture.mandatory_cases]', f'phase_inputs = ["{helper}"]\n[fixture.mandatory_cases]')
+        head = self.commit(config + f'"{helper}" = ["other phase"]\n')
+        table[file]['mandatory_cases'][helper] = ['other phase']
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root):
+            paths = units.selection.changed_paths(base, head)
+            scoped = units.renamed_input_scopes(base, head, paths, budget, table)
+            self.assertEqual(scoped, {file: {destination, helper}})
+            result = units.plan(paths, budget, table, [], registry_changed=[file], renamed_inputs=scoped)
+            self.assertEqual(result['mandatory'][0]['cases'], ['catalog', 'other phase'])
 
     def test_a_rename_with_other_source_or_cost_changes_keeps_the_fixture_mandatory(self):
         file, destination, helper, config, table, budget, base, _ = self.renamed_fixture()

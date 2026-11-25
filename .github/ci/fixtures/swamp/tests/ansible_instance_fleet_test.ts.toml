@@ -127,11 +127,13 @@ inputs = [
   "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/instance_shape_tools.py",
+  "swamp/tests/fixtures/instance-fleet-refreshed.json",
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
 # Ansible loads the tasks. The fixture supplies checkout object IDs through its Incus stand-in.
 parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
+phase_inputs = ["swamp/ansible/fleet-converge-inputs.json", "swamp/tests/fixtures/instance-fleet-refreshed.json"]
 
 [mandatory_cases]
 "apps/gateway/resources/machine-software/core.yaml" = [
@@ -143,6 +145,15 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record",
   "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release",
   "a refresh without the Club key reads no Swamp release and installs none",
+]
+"swamp/ansible/fleet-converge-inputs.json" = [
+  "a changed input runs only its due parts: a swamp file the base converge reads converges",
+  "the next refresh repeats no part: a swamp file the base converge reads converges",
+  "a converge with changed tasks retakes base only for the changed Node and Gateway",
+]
+"swamp/tests/fixtures/instance-fleet-refreshed.json" = [
+  "the saved refreshed fleet boundary matches a real first refresh and start",
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
 ]
 
 # One unit per case. Refreshed-boundary and seeded-record cases use the completed

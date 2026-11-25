@@ -11,7 +11,9 @@
     "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
     "swamp/extensions/behaviors/operations/tools/constraints.ts",
     "swamp/extensions/behaviors/operations/tools/contract.ts",
+    "swamp/extensions/behaviors/operations/tools/homebrew.ts",
     "swamp/extensions/behaviors/operations/tools/native.ts",
+    "swamp/extensions/behaviors/operations/tools/write_policy.ts",
     "swamp/ansible/ansible.cfg",
     "swamp/ansible/build_vars.py",
     "swamp/ansible/requirements.txt",
@@ -27,6 +29,7 @@
     "swamp/ansible/tasks/node-converge-hub-filter-absent.yml",
     "swamp/ansible/tasks/node-converge-hub-prune.yml",
     "swamp/ansible/tasks/node-converge-replace.yml",
+    "swamp/ansible/tasks/node-converge-tools.yml",
     "swamp/ansible/tasks/node-executor.yml",
     "swamp/ansible/tasks/node-hub-source.yml",
     "swamp/ansible/tasks/node-kernel-policy.yml",
@@ -66,8 +69,8 @@
       "guard": "{{ intent.roles }}"
     },
     {
-      "file": "swamp/ansible/operation-node-converge.yml",
-      "include": "tasks/node-converge-tool.yml",
+      "file": "swamp/ansible/tasks/node-converge-tools.yml",
+      "include": "node-converge-tool.yml",
       "guard": "{{ intent.tools }}"
     },
     {

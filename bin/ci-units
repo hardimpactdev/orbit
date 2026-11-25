@@ -125,6 +125,10 @@ def configuration(path=TABLE):
                     any(not isinstance(name, str) or name not in fixture.get('cases', []) for name in cases) or \
                     len(cases) != len(set(cases)):
                 raise ValueError(f'{file}: mandatory_cases needs a declared input and unique case names')
+        phased = fixture.get('phase_inputs', [])
+        if not isinstance(phased, list) or any(not isinstance(path, str) or path not in mandatory or path == file or
+                                               any(char in path for char in '*?') for path in phased) or len(phased) != len(set(phased)):
+            raise ValueError(f'{file}: phase_inputs must list exact inputs with mandatory cases')
         parsed = fixture.get('parsed_yaml_inputs', [])
         if not isinstance(parsed, list) or any(
             not isinstance(path, str) or Path(path).suffix.lower() not in YAML_SUFFIXES or
@@ -355,7 +359,7 @@ def direct_files(paths, fixtures):
 
 
 def renamed_input_scopes(base, head, paths, budget, fixtures):
-    """Keep named cases mandatory for a resource move that only repoints the fixture and its other inputs."""
+    """Select the cases for a resource move and separate phase inputs, not cases whose code and inputs stayed put."""
     candidates = {file for file in budget['capacity_gap'] if file in paths and not fixtures[file].get('self_hosted')
                   and fixtures[file].get('mandatory_cases')}
     if not candidates:
@@ -388,6 +392,7 @@ def renamed_input_scopes(base, head, paths, budget, fixtures):
 
     def without_resource(entry, paths):
         return {**entry, 'inputs': [path for path in entry.get('inputs', []) if path not in paths],
+                'phase_inputs': [path for path in entry.get('phase_inputs', []) if path not in paths],
                 'mandatory_cases': {path: cases for path, cases in entry.get('mandatory_cases', {}).items() if path not in paths}}
 
     scopes = {}
@@ -395,18 +400,22 @@ def renamed_input_scopes(base, head, paths, budget, fixtures):
         entry, previous = new_entries.get(file), old_entries.get(file)
         if not entry or not previous or old_inventory.get(file) != new_inventory.get(file):
             continue
-        input_patterns = [selection_regex(path) for path in [*entry['inputs'], *previous.get('inputs', [])]]
+        prior_patterns = [selection_regex(path) for path in previous.get('inputs', [])]
+        input_patterns = [*prior_patterns, *(selection_regex(path) for path in entry['inputs'])]
         affected = {path for path in paths if path == file or any(regex.fullmatch(path) for regex in input_patterns)}
         mandatory = entry['mandatory_cases']
+        prior = previous.get('mandatory_cases', {})
         for new in mandatory.keys() & renames.keys():
             old = renames[new]
             resource = {old, new}
-            prior = previous.get('mandatory_cases', {})
-            if without_resource(previous, resource) != without_resource(entry, resource) or \
-                    not (set(prior.get(old, [])) | set(prior.get(new, []))).issubset(mandatory[new]):
+            phased = set(entry.get('phase_inputs', [])) & (affected - resource - {file})
+            if any(not any(regex.fullmatch(path) for regex in prior_patterns) for path in phased) or \
+                    without_resource(previous, resource | phased) != without_resource(entry, resource | phased) or \
+                    any(not set(prior.get(path, [])).issubset(mandatory[path]) for path in phased | {new}) or \
+                    not set(prior.get(old, [])).issubset(mandatory[new]):
                 continue
-            if new in affected and all(same_references(path, old, new) for path in affected - resource):
-                scopes[file] = new
+            if new in affected and all(same_references(path, old, new) for path in affected - resource - phased):
+                scopes[file] = phased | {new}
                 break
     return scopes
 
@@ -454,7 +463,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
         # A machinery change reserves the mandatory cases of the machinery canary files only.
         changed = machinery and file in budget['machinery_canary'] or file in paths or file in inventory_changed or \
             file in registry_changed
-        cases = (set(fixture['mandatory_cases'][renamed_inputs[file]]) if file in renamed_inputs else
+        cases = ({name for path in renamed_inputs[file] for name in fixture['mandatory_cases'][path]} if file in renamed_inputs else
                  {name for pattern, names in fixture.get('mandatory_cases', {}).items()
                   if changed or any(selection_regex(pattern).fullmatch(path) for path in paths) for name in names})
         if not cases:

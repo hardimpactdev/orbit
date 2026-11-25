@@ -27,6 +27,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parent.parent
 RECIPE = ROOT / 'apps/gateway/resources/machine-software/core.yaml'
 CRAFT = ROOT / 'tools/static-php/craft.yml'
+SOURCE_IDENTITIES = ROOT / 'tools/static-php/source-identities.json'
 CHECK = runpy.run_path(str(ROOT / 'swamp/ansible/library/orbit_static_php.py'))
 RELEASES = 'https://github.com/hardimpactdev/orbit/releases/download'
 PLATFORM = 'linux-x86_64'
@@ -39,12 +40,18 @@ class BuildError(Exception):
     pass
 
 
+def script_identity(path):
+    """Identify the build source, retaining the published identity of an audited relocation."""
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return json.loads(SOURCE_IDENTITIES.read_text()).get(digest, digest)
+
+
 def definitions(recipe=None):
     """Every static build the recipe defines, keyed by PHP version, with its computed build id and release names."""
     recipe = recipe or json.loads(RECIPE.read_text())
     section = recipe['instances']['php']
     craft = hashlib.sha256(CRAFT.read_bytes()).hexdigest()
-    script = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    script = script_identity(Path(__file__))
     builds = {}
     for version, pin in section['versions'].items():
         cli_extensions = section['cli_extensions']

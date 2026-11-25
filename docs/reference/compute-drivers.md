@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Domain/Compute}/**
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
-  - "{bin/{php-build,git-build-watch}}"
+  - "{bin/{php-build,git-build-watch,static-php-build},tools/static-php/source-identities.json}"
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools,2027_02_02_000000_add_task_vm_runtime}.php
   - swamp/workflows/{workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
@@ -77,6 +77,8 @@ Every Linux Node installs PHP from the same pinned Sury `.deb` package set (`cor
 ### Static PHP build
 
 Production and development containers use the static glibc PHP builds defined in `tools/static-php/craft.yml` and built via `bin/static-php-build` (`static-php.yml`, `orbit_static_php` release assets, configured in `instances.php`).
+
+Moving the recipe to `core.yaml` leaves the compiled PHP inputs unchanged. The builder records that exact script SHA-256 as equivalent to the previous one, so the published build ID, URL, and archive checksum stay the same. Any further script change gets its own SHA-256 and needs a new build.
 
 ## Prepare an Instance container host
 
