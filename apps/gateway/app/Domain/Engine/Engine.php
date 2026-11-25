@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -28,14 +30,15 @@ final readonly class Engine
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
     /**
-     * Records the Operation's steps and publishes its start event. A start that cannot be published throws, so the caller
-     * records a failed start and nothing is half-started.
+     * Records the Operation's steps and publishes its start event. A receipt-bound run binds with the steps and its reconciler
+     * retries an uncertain publish; other runs throw to the caller on a failed start.
      */
-    public function start(Operation $operation): void
+    public function start(Operation $operation, ?Closure $bind = null): void
     {
         $definition = $this->kinds->definition($operation->kind);
         $specs = $definition->steps($operation);
-        DB::transaction(function () use ($operation, $specs): void {
+        DB::transaction(function () use ($operation, $specs, $bind): void {
+            $bind?->__invoke();
             foreach ($specs as $spec) {
                 OperationEngineStep::query()->firstOrCreate(['operation_id' => $operation->id, 'name' => $spec->name], [
                     'node_id' => $spec->node, 'action' => $spec->action, 'target' => $spec->target, 'after' => $spec->after,
@@ -46,7 +49,14 @@ final readonly class Engine
             $state['engine'] = ['started_ms' => self::nowMs(), 'finished_ms' => null];
             $this->operations->change($operation, ['state' => $state]);
         });
-        $this->bus->publishStart($operation->id);
+        try {
+            $this->bus->publishStart($operation->id);
+        } catch (Throwable $exception) {
+            if (! self::requiresReceipt($operation)) {
+                throw $exception;
+            }
+            report($exception);
+        }
     }
 
     /**
@@ -84,7 +94,7 @@ final readonly class Engine
             if ($step === null || $step->node_id !== $node) {
                 return; // A receipt from another Node is not this step's.
             }
-            self::record($step, $line);
+            self::record($step, $line, self::requiresReceipt($operation));
         });
         $this->advance($operationId);
     }
@@ -111,6 +121,7 @@ final readonly class Engine
         $now = self::nowMs();
         $stalled = OperationEngineStep::query()->where('operation_id', $operation->id)
             ->where(static fn ($query) => $query->where('status', 'pending')
+                ->when(self::requiresReceipt($operation), static fn ($query) => $query->orWhereIn('status', ['done', 'failed']))
                 ->orWhere(static fn ($sent) => $sent->where('status', 'sent')->where('resend_at_ms', '<', $now - self::NudgeGraceMs)))
             ->exists();
         if (! $stalled) {
@@ -128,6 +139,11 @@ final readonly class Engine
         return ($operation->state['swamp_run_id'] ?? null) === EngineRun::runIdOf($operation->id);
     }
 
+    public static function requiresReceipt(Operation $operation): bool
+    {
+        return self::owns($operation) && $operation->kind === InstanceDestroyEngineFlow::Kind;
+    }
+
     private static function text(mixed $value): string
     {
         return is_string($value) ? $value : '';
@@ -143,7 +159,7 @@ final readonly class Engine
      *
      * @param  array<string, mixed>  $line
      */
-    private static function record(OperationEngineStep $step, array $line): void
+    private static function record(OperationEngineStep $step, array $line, bool $receiptBound = false): void
     {
         if (in_array($step->status, ['done', 'failed'], true)) {
             $step->update(['late' => $step->late + 1]);
@@ -154,8 +170,13 @@ final readonly class Engine
         $reason = self::text($line['reason'] ?? null);
         // A redelivered order's replay carries the first order's result once it exists: that result is the step's.
         if ($status === 'refused' && $reason === 'replayed_nonce' && is_array($line['first'] ?? null)) {
-            self::record($step, ValidatedData::object($line['first']));
+            self::record($step, ValidatedData::object($line['first']), $receiptBound);
 
+            return;
+        }
+        if ($receiptBound && ($step->first_sent_ms === null || ! in_array($status, ['done', 'failed'], true)
+            || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
+            || ($line['code'] ?? null) === 'executor.order_expired')) {
             return;
         }
         match (true) {
@@ -200,15 +221,18 @@ final readonly class Engine
             $now = self::nowMs();
             $steps = self::steps($operationId, lock: true);
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
+            $receiptBound = self::requiresReceipt($operation);
+            $mayCancel = ! $receiptBound || ! array_any($steps, static fn (OperationEngineStep $step): bool => $step->first_sent_ms !== null);
+            $cancel = $operation->cancel_requested_at !== null && $mayCancel;
             foreach ($steps as $step) {
-                if ($step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
+                if (! $receiptBound && $step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
                     $step->update(['status' => 'failed', 'done_ms' => $now, 'error_code' => 'engine.step_budget_exceeded']);
                 }
             }
             $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
             $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
             foreach ($steps as $step) {
-                if ($step->on_failure !== $failed) {
+                if ($step->on_failure !== $failed || ($receiptBound && $cancel)) {
                     continue; // A failed run sends no more of its own steps; a run without a failure none of its failure steps.
                 }
                 if ($step->on_failure && $step->status === 'pending' && ! array_all($step->after, $done)) {
@@ -232,7 +256,7 @@ final readonly class Engine
             $end = match (true) {
                 $failed => $rescued ? 'failed' : null,
                 array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
-                $operation->cancel_requested_at !== null => 'cancelled',
+                $cancel => 'cancelled',
                 default => null,
             };
             $state = $operation->state ?? [];
@@ -315,17 +339,16 @@ final readonly class Engine
                 $unsent[] = $name;
             }
         }
-        if ($invalid !== []) {
-            OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $invalid)->where('status', 'sent')
-                ->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.order_invalid']);
-        }
+        $failed = $invalid !== [] && OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $invalid)->where('status', 'sent')
+            ->when(self::requiresReceipt($operation), static fn ($query) => $query->where('sends', 1))
+            ->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.order_invalid']) > 0;
         if ($unsent !== []) {
             OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $unsent)->where('status', 'sent')
                 ->update(['status' => 'pending']);
             throw new RuntimeException('engine.publish_failed: '.implode(',', $unsent));
         }
 
-        return $invalid !== [];
+        return $failed;
     }
 
     /** Runs one Gateway step outside any transaction, records its result like a receipt, and advances. */

@@ -23,6 +23,7 @@
 
 mod checkout;
 mod club;
+mod destroy;
 mod env;
 mod fetch;
 mod fleet;
@@ -37,6 +38,7 @@ mod tests;
 
 pub use checkout::checkout;
 pub use club::club_key;
+pub use destroy::destroy;
 pub use fetch::fetch_branch;
 pub use fleet::fleet_ready;
 pub use names::names;

@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
+use crate::executor::ORDER_EXPIRED;
 use crate::ids::{Nonce, OperationId, TargetId};
 use crate::order::PowerCheck;
 
@@ -80,6 +81,12 @@ pub enum Outcome {
         /// The answer.
         stdout: String,
     },
+}
+
+impl Outcome {
+    pub(crate) fn ends_operation(&self, action: Action) -> bool {
+        action != Action::InstanceDestroy || !matches!(self, Self::Failed { code } if code == ORDER_EXPIRED)
+    }
 }
 
 /// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.
@@ -204,8 +211,9 @@ impl Live {
                 at_ms,
             } => {
                 self.open.remove(nonce);
-                self.done
-                    .insert(key.clone(), (*nonce, outcome.clone(), *at_ms));
+                if outcome.ends_operation(key.action) {
+                    self.done.insert(key.clone(), (*nonce, outcome.clone(), *at_ms));
+                }
             }
         }
     }

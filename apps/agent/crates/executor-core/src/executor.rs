@@ -377,7 +377,10 @@ impl<R: Run> Executor<R> {
         let outcome = self.runner.run(order);
         // The action ran; a lost done record only means a repeat runs it again after a crash, which every
         // action allows, so the result still goes back.
-        let _ = self.finish(order.nonce(), &key, &outcome, now_ms);
+        let written = self.finish(order.nonce(), &key, &outcome, now_ms);
+        if key.action == Action::InstanceDestroy {
+            written.map_err(|_| StateRefusal::JournalWrite)?;
+        }
         Ok(reply(&key, outcome, Source::Ran))
     }
 
@@ -403,6 +406,9 @@ impl<R: Run> Executor<R> {
             at_ms: now_ms,
         };
         let written = self.journal.append(&record);
+        if !outcome.ends_operation(key.action) || (key.action == Action::InstanceDestroy && written.is_err()) {
+            return written;
+        }
         let mut done = self.done.lock().expect("done map lock poisoned");
         done.retain(|_, finished| now_ms.saturating_sub(finished.at_ms) < DONE_RETENTION_MS);
         done.insert(
@@ -475,6 +481,87 @@ mod tests {
 
     const N1: &str = "00000000000000000000000000000001";
     const N2: &str = "00000000000000000000000000000002";
+    const N3: &str = "00000000000000000000000000000003";
+
+    fn destroy_order(nonce: &str) -> VerifiedOrder {
+        let mut fields = payload();
+        fields["action"] = "instance.destroy".into();
+        fields["target"] = "12".into();
+        fields["operation"] = "42:remove".into();
+        fields["nonce"] = nonce.into();
+        fields["input"] = serde_json::json!({"project":"orbit-instances-nested","name":"instance-12","pool":"orbit-instances","acl":"instance-12","inner_volume":"inner-12"});
+        let keys = pinned(1);
+        let enabled = Enabled::parse("instance").expect("valid");
+        let node = "7".parse().expect("id");
+        crate::order::check_with_target(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW,
+            |action, target| action == Action::InstanceDestroy && target.as_str() == "12").expect("valid destroy")
+    }
+
+    #[test]
+    fn destroy_an_expired_order_does_not_settle_a_fresh_nonce_even_after_restart() {
+        let directory = tempfile::tempdir().expect("scratch");
+        let path = directory.path().join("journal");
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+        let expired = destroy_order(N1);
+        let reply = executor.handle(&expired, expired.expires_ms()).expect("expires waiting for the lock");
+        assert_eq!(reply.outcome, Outcome::Failed { code: ORDER_EXPIRED.to_owned() });
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+        drop(executor);
+
+        let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+        assert_eq!(recovered, vec![]);
+        let reply = executor.handle(&destroy_order(N2), NOW).expect("fresh order can act");
+        assert_eq!(reply.outcome, Outcome::Done);
+        assert!(!reply.repeat);
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn destroy_repeat_after_a_lost_receipt_waits_for_its_target_recovery() {
+        let directory = tempfile::tempdir().expect("scratch");
+        let path = directory.path().join("journal");
+        let first = destroy_order(N1);
+        let key = DoneKey { operation: first.operation().clone(), action: first.action(), target: first.target().clone() };
+        let open = Record::Open { nonce: first.nonce(), key, expires_ms: first.expires_ms(), power_check: crate::order::PowerCheck::Default,
+            input: first.input().clone() };
+        std::fs::write(&path, format!("{}\n", serde_json::to_string(&open).expect("record"))).expect("journal before crash");
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (started, on_start) = std::sync::mpsc::channel();
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let runner = Gated { runs: Arc::clone(&runs), started: Mutex::new(started), gate: Arc::clone(&gate) };
+        let (executor, pending) = Executor::open(&path, runner, || NOW, |_| {}).expect("open");
+        let fresh = destroy_order(N2);
+        std::thread::scope(|scope| {
+            let recovery = scope.spawn(|| executor.recover(pending, || {}));
+            on_start.recv().expect("recovery holds the Instance lock");
+            let repeated = scope.spawn(|| executor.handle(&fresh, NOW));
+            let accepted = (0..100).any(|_| {
+                if records(&path).iter().any(|record| matches!(record, Record::Seen { nonce, .. } if nonce.to_string() == N2)) {
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                false
+            });
+            let held_runs = runs.load(Ordering::SeqCst);
+            let (open, opened) = &*gate;
+            *open.lock().expect("gate") = true;
+            opened.notify_all();
+            assert!(accepted, "fresh nonce was recorded while recovery held the lock");
+            assert_eq!(held_runs, 1, "the repeat did not enter the runner while recovery was active");
+            assert_eq!(recovery.join().expect("thread").expect("recovers")[0].outcome, Outcome::Done);
+            let reply = repeated.join().expect("thread").expect("repeat");
+            assert!(reply.repeat);
+            assert_eq!(reply.outcome, Outcome::Done);
+        });
+        drop(executor);
+        let (executor, recovered) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart after stored result");
+        assert_eq!(recovered, vec![]);
+        let reply = executor.handle(&destroy_order(N3), NOW).expect("replay stored receipt");
+        assert!(reply.repeat);
+        assert_eq!(reply.outcome, Outcome::Done);
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn an_order_runs_once_and_a_repeat_returns_the_first_result() {

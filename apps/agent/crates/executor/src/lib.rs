@@ -49,7 +49,7 @@ struct Families(orbit_executor_power::Power);
 impl Run for Families {
     fn target_exists(&self, action: Action, target: &orbit_executor_core::ids::TargetId) -> bool {
         // A discard after destroy must still be possible when Incus no longer has the container.
-        if action == Action::Discard {
+        if matches!(action, Action::Discard | Action::InstanceDestroy) {
             return target
                 .as_str()
                 .parse::<u64>()
@@ -159,9 +159,28 @@ impl Run for Families {
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
+            Action::InstanceDestroy => self.destroy(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames => instance(order),
+        }
+    }
+}
+
+impl Families {
+    fn destroy(&self, order: &VerifiedOrder) -> Outcome {
+        let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+        let id = order.target().as_str();
+        if let Err(failure) = orbit_executor_instance::destroy(&system, id, order.input()) {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            return Outcome::Failed { code: failure.code.to_owned() };
+        }
+        match self.0.discard_destroyed(id) {
+            Ok(()) => Outcome::Done,
+            Err(error) => {
+                log(&format!("{} {} could not discard executor power state: {error}", order.action(), order.operation()));
+                Outcome::Failed { code: "instance.power_discard_failed".to_owned() }
+            }
         }
     }
 }

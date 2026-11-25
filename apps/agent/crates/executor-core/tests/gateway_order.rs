@@ -1,9 +1,9 @@
 //! The Gateway signer's shared fixture (`apps/agent/contract/fixtures/executor-order.json`) passes `order::check` unchanged.
 //! The Gateway's Pest test checks the same fixture against its own signer, so both sides agree on the wire form.
 
-use orbit_executor_core::action::{Action, Enabled};
+use orbit_executor_core::action::{Action, Enabled, TargetKind};
 use orbit_executor_core::ids::NodeId;
-use orbit_executor_core::order::{check, Checks, OrderRefusal, PinnedKeys};
+use orbit_executor_core::order::{check, check_with_target, Checks, OrderRefusal, PinnedKeys};
 
 fn fixture() -> serde_json::Value {
     let text = std::fs::read_to_string(concat!(
@@ -12,6 +12,25 @@ fn fixture() -> serde_json::Value {
     ))
     .expect("the shared fixture is readable");
     serde_json::from_str(&text).expect("the shared fixture is JSON")
+}
+
+#[test]
+fn the_gateway_signed_destroy_preserves_the_instance_target_and_saved_identity() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!("../../../contract/fixtures/executor-instance-destroy.json")).expect("fixture");
+    let keys = PinnedKeys::parse(field(&fixture, "public_key")).expect("fixture key");
+    let enabled = Enabled::parse("instance").expect("valid");
+    let node = field(&fixture["fields"], "node").parse().expect("Node ID");
+    let checks = Checks { keys: &keys, enabled: &enabled, node: &node };
+    let now = fixture["now_ms"].as_u64().expect("now");
+    let wire = field(&fixture, "wire").as_bytes();
+    assert_eq!(check(wire, &checks, now), Err(OrderRefusal::UnknownTarget));
+    let order = check_with_target(wire, &checks, now, |action, target| {
+        assert_eq!(action, Action::InstanceDestroy);
+        assert_eq!(action.target_kind(), TargetKind::Instance);
+        target.as_str() == "12"
+    }).expect("the fixture verifies");
+    assert_eq!(order.operation().as_str(), "42:remove");
+    assert_eq!(order.input(), &fixture["fields"]["input"]);
 }
 
 fn field<'a>(fixture: &'a serde_json::Value, name: &str) -> &'a str {

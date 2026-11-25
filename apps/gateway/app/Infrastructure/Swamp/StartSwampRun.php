@@ -8,6 +8,7 @@ use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\InstanceDestroyEngineFlow;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
@@ -23,6 +24,7 @@ use App\Infrastructure\AgentView\WebSocketException;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -79,8 +81,18 @@ final readonly class StartSwampRun
             }
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
-                $this->bind($operation, EngineRun::runIdOf($operation->id));
-                app(Engine::class)->start($operation->refresh());
+                $runId = EngineRun::runIdOf($operation->id);
+                if ($operation->kind === InstanceDestroyEngineFlow::Kind) {
+                    $lock = OperationStore::lockKey('instance', $operation->target_id);
+                    try {
+                        app(Engine::class)->start($operation, fn () => $this->bind($operation, $runId, $lock));
+                    } catch (UniqueConstraintViolationException $exception) {
+                        throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the Instance lock.', 409, previous: $exception);
+                    }
+                } else {
+                    $this->bind($operation, $runId);
+                    app(Engine::class)->start($operation->refresh());
+                }
                 $outcome = 'started';
 
                 return;
@@ -191,14 +203,15 @@ final readonly class StartSwampRun
         return new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $caPath, $token);
     }
 
-    private function bind(Operation $operation, string $runId): void
+    private function bind(Operation $operation, string $runId, ?string $lockKey = null): void
     {
-        DB::transaction(function () use ($operation, $runId): void {
+        DB::transaction(function () use ($operation, $runId, $lockKey): void {
             $this->lock($operation);
             if (isset($operation->state['swamp_run_id'])) {
                 app(DirectOperation::class)->assertRun($operation, $runId);
             }
-            app(OperationStore::class)->change($operation, ['dispatched_at' => now(), 'state' => [...($operation->state ?? []), 'swamp_run_id' => $runId]]);
+            app(OperationStore::class)->change($operation, ['dispatched_at' => now(),
+                'state' => [...($operation->state ?? []), 'swamp_run_id' => $runId], ...($lockKey === null ? [] : ['lock_key' => $lockKey])]);
             // A cancel that arrived while the start was in flight goes on with the run's id, through the one forward rule.
             if ($operation->cancel_requested_at !== null) {
                 app(NativeRunCancellation::class)->request($operation);

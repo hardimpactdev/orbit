@@ -14,6 +14,8 @@ covers:
 
 # Node agent
 
+The agent binary also serves signed executor orders in a separate service mode. [Executor actions](/reference/executor#action-primitives), including `instance.destroy`, are not observer commands.
+
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.

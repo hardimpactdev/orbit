@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -93,6 +93,8 @@ Orders use the wire format `base64(payload).base64(signature)` (max 4 KB). Paylo
 
 Orders for the same target execute serially under a per-target lock; different targets run in parallel.
 
+`discard` and `instance.destroy` accept a canonical positive Instance ID even after Incus has removed its container. Destroy verifies that the saved Incus project, container, pool, ACL, and optional inner volume belong to that ID before taking any action. This lets a new order recover a lost receipt or finish cleanup without weakening the live-target check for sleep, wake, or graceful stop.
+
 ## The machine bus
 
 When `/etc/orbit/executor/nats.json` is present, `orbit-executor serve` also connects to the [Gateway engine](/reference/gateway-engine) NATS JetStream bus without credentials (admitted by WireGuard IP and guarded by `orbit_bus_guard` nftables so only `root` can connect).
@@ -114,7 +116,7 @@ The executor implements these action families:
 
 ### The instance family
 
-The `instance` family (enabled on `app-dev`) executes container clone creation steps from Gateway-rendered inputs with no delivered scripts:
+The `instance` family (enabled on `app-dev`) executes clone lifecycle steps from Gateway-rendered inputs with no delivered scripts:
 
 | Primitive | Work |
 | --- | --- |
@@ -124,6 +126,7 @@ The `instance` family (enabled on `app-dev`) executes container clone creation s
 | `instance.start` | Verifies NIC guards, unshifts ID maps, boots the copy, configures hostname and `/etc/hosts`, and runs `/usr/local/libexec/orbit-app-user` |
 | `instance.checkout` | Checks out the branch inside the copy, merges `.env` from the seed and Gateway render, and excludes `.env` in `info/exclude` |
 | `instance.t3` | Starts T3, waits up to 30 seconds for readiness, registers the project, and returns sessions (plus optional reserved-clone pairing) sealed to `seal_to` |
+| `instance.destroy` | Force-stops the saved clone, removes its owned Incus storage, ACL and firewall rules, and discards both engines' freeze state before returning `done` |
 
 When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor advertising `instance.t3_pairing` in `features`, it requests `POST /api/auth/pairing-token` using the Gateway session and seals T3's reply beside the sessions. A refused or unreachable pairing link never fails the step.
 
@@ -138,6 +141,8 @@ When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor adverti
 The executor appends JSON records to `/var/lib/orbit/executor/journal`: `seen` on acceptance, `open` before execution, and `done` after completion (orders that expire while waiting for a target lock record `executor.order_expired` without acting). A background syncer fsyncs once per second and compacts live records (active nonces, open orders, and 24 hours of done records) every 10 minutes or 10,000 writes.
 
 At startup, the executor creates the `journal.accepts` marker, marks any `seen`-without-`open` order as `executor.order_expired`, and replays any `open`-without-`done` order under its target lock before accepting new work on that target.
+
+For `instance.destroy`, an order that expires before taking the target lock never settles the step. A fresh nonce can still perform the removal. A terminal receipt is sent only after the executor appends its `done` record. After a lost receipt, a fresh order for the same step returns the stored result without repeating the deletion.
 
 ## The listener and the hand-off
 

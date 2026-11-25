@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -17,14 +17,14 @@ Operation kinds move off Swamp one at a time, per Operation. Each Operation runs
 
 ## Which kinds run on the engine
 
-For Operations started through `StartSwampRun` (`firewall.*`, `route.create`, `instance.create`, and `instance.complete`), `EngineKinds::routes()` chooses the engine when all of these hold:
+For Operations started through `StartSwampRun`, `EngineKinds::routes()` chooses the engine when all of these hold:
 
 - The engine defines a flow for the kind (`EngineKinds`).
 - The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
 - Every Node targeted by its steps has reported the required primitive.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
-When any condition fails, those four kinds fall back to their Swamp workflows. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback.
+When any condition fails, the entire Operation runs on its Swamp workflow. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback.
 
 For `instance.fleet`, the parent `instance.create` checks `EngineKinds::routes()` on a draft before admitting the wait. A failed check creates no fleet Operation; a passing check admits it and calls `Engine::start()` directly.
 
@@ -35,6 +35,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
+| `instance.destroy` | `remove` | `instance.destroy` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
@@ -71,6 +72,14 @@ The engine runs container clone creation (including task copies, Conn clones, Pr
 | `stop` | `clone` | Failure step that runs only when an earlier step fails. |
 
 The Gateway unseals the sessions without using a vault and records `route_publication: deferred` (`engine_completion`), leaving Route publication to `instance.complete` on Swamp.
+
+### instance.destroy
+
+The engine accepts `--force` for one container clone in development. The clone cannot be the default and must have a saved Incus identity. The plan cannot require Route withdrawal, database or Valkey cleanup, Process or Schedule teardown, custom teardown, a CI hold release, or waiting for a create or completion. The Node must advertise `instance.destroy`, independently of `instance.create`. Other removals keep their full Swamp workflow.
+
+The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
+
+A missing start or receipt leaves the Instance fenced. The Gateway resends the same step with a fresh nonce and accepts the Node's stored result after a restart. A cancellation, expiry, or order refusal does not release the lock after dispatch: none proves that the first order stopped. A terminal failure leaves the same removal intent for the existing retry rules.
 
 ### instance.fleet
 

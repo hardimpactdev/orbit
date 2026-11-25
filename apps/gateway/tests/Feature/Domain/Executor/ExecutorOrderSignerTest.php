@@ -47,15 +47,18 @@ it('signs an order for an Operation that verifies with its public key and holds 
         ->and($payload['expires_ms'])->toBe(1_800_000_005_000)->toBe($order->expiresMs);
 });
 
-it('builds the same payload bytes as the shared fixture that the executor verifies', function (): void {
-    $fixture = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/executor-order.json')), true, flags: JSON_THROW_ON_ERROR);
+it('builds the same payload bytes as the shared fixture that the executor verifies', function (string $file, int $expiry): void {
+    $fixture = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/'.$file)), true, flags: JSON_THROW_ON_ERROR);
     $fields = $fixture['fields'];
     [, $bytes, $signature] = executor_split($fixture['wire']);
 
-    expect(ExecutorOrderSigner::payload($fields['action'], $fields['node'], $fields['target'], $fields['operation'], $fields['nonce'], $fields['expires_ms']))->toBe($bytes)
+    expect(ExecutorOrderSigner::payload($fields['action'], $fields['node'], $fields['target'], $fields['operation'], $fields['nonce'], $fields['expires_ms'], input: $fields['input'] ?? []))->toBe($bytes)
         ->and(sodium_crypto_sign_verify_detached($signature, $bytes, (string) base64_decode($fixture['public_key'], true)))->toBeTrue()
-        ->and($fields['expires_ms'] - $fixture['now_ms'])->toBe(ExecutorOrderSigner::ExpiresAfterMs);
-});
+        ->and($fields['expires_ms'] - $fixture['now_ms'])->toBe($expiry);
+})->with([
+    'proof' => ['executor-order.json', ExecutorOrderSigner::ExpiresAfterMs],
+    'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
+]);
 
 it('gives every order a new nonce', function (): void {
     [$secret] = executor_test_keypair();
