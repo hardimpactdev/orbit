@@ -103,8 +103,9 @@ final class StreamWebSocketClient implements WebSocketClient
             'peer_name' => $endpoint->serverName,
             'verify_peer' => true,
             'verify_peer_name' => true,
-            'cafile' => $endpoint->caPath,
+            ...($endpoint->caPath === null ? [] : ['cafile' => $endpoint->caPath]),
         ]]);
+        $transport = $endpoint->secure ? 'tls' : 'tcp';
         $error = '';
         $errno = 0;
         set_error_handler(static function (int $_severity, string $message) use (&$error): bool {
@@ -115,7 +116,7 @@ final class StreamWebSocketClient implements WebSocketClient
 
         try {
             $stream = stream_socket_client(
-                "tls://{$endpoint->address}:{$endpoint->port}",
+                "{$transport}://{$endpoint->address}:{$endpoint->port}",
                 $errno,
                 $error,
                 $timeoutSeconds,
@@ -290,7 +291,7 @@ final class StreamWebSocketClient implements WebSocketClient
     private function handshake(WebSocketEndpoint $endpoint): void
     {
         $key = base64_encode(random_bytes(16));
-        $host = $endpoint->port === 443 ? $endpoint->serverName : "{$endpoint->serverName}:{$endpoint->port}";
+        $host = $endpoint->port === ($endpoint->secure ? 443 : 80) ? $endpoint->serverName : "{$endpoint->serverName}:{$endpoint->port}";
         $request = implode("\r\n", [
             "GET {$endpoint->path} HTTP/1.1",
             "Host: {$host}",
