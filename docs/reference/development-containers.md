@@ -240,7 +240,7 @@ The Conn release workflow checks the tagged commit, verifies both published file
 
 A generated pin sets `release_canary: true`. Once the Gateway serves that recipe, the release fleet pass starts with a dry run on `nick-vm`, the registered standalone canary. It then updates just that Node and reads a known thread through the authenticated local CLI. The Operation records the exact artifacts, Node, version and outcome. A failure holds convergence and, after the swap, restores and checks the previous version. After both canary stages pass, a fleet dry run reports the remaining standalone Nodes' checks.
 
-A missing, unreadable, or invalid serving recipe fails the release fleet phase with `conn_server.recipe_unavailable`. A valid recipe without a canary-enabled Conn Server pin lets ordinary fleet convergence proceed.
+A missing, unreadable, or invalid serving recipe fails the release fleet phase with `conn_server.recipe_unavailable`. When a valid recipe requires no canary, ordinary fleet convergence proceeds.
 
 Keep a persistent test thread on the canary. As its Conn Server user, put the thread ID and the absolute directory containing `server-runtime.json` in `~/.config/orbit/conn-canary.json`, for example `{"thread_id":"<thread UUID>","state_dir":"/Users/nckrtl/.conn/userdata"}`. The probe reads the serving loopback address and compares the authenticated response's thread ID. Its result omits the thread contents. To retry a failed canary stage, submit `{"scope":"canary","dry_run":false,"retry_operation_id":<failed operation id>}`. To rerun the remaining Nodes' dry run, send `scope: fleet` with `dry_run: true` and the previous dry run's ID in `retry_operation_id`.
 
