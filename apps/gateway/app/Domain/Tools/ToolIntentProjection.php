@@ -41,9 +41,9 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $result = $this->nativeResult($operation, $data, $public);
         $data['error_code'] = $result['error_code'] ?? ($data['error_code'] ?? null);
         $result = array_intersect_key($result, array_flip([
-            'native_error_code', 'manager_version', 'installed_version', 'outcome', 'block', 'error_code', 'repository_removed',
+            'native_error_code', 'manager_version', 'installed_version', 'installed_coordinate', 'outcome', 'block', 'error_code', 'repository_removed',
         ]));
-        foreach (['manager_version', 'installed_version'] as $field) {
+        foreach (['manager_version', 'installed_version', 'installed_coordinate'] as $field) {
             if (isset($result[$field]) && (! is_string($result[$field]) || $result[$field] === '' || strlen($result[$field]) > 255 || preg_match('/[\x00-\x1F\x7F]/', $result[$field]) === 1)) {
                 throw new ResourceOperationException('operation.result_invalid', 'The Tool version is invalid.', 422);
             }
@@ -63,7 +63,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         return DB::transaction(function () use ($operation, $data, $result): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $projected = $this->direct->project($operation, $data, $result);
+            $projected = $this->direct->project($operation, $data, array_diff_key($result, ['installed_coordinate' => true]));
             if (! $terminal && $projected->status->terminal()) {
                 $this->projectState($projected, $result);
             }
@@ -81,14 +81,19 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $decision = ValidatedData::object($native['decision'] ?? []);
         $observation = ValidatedData::object($native['observation'] ?? []);
         $result = array_intersect_key($decision, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
-        $result['installed_version'] = $observation['installed_coordinate'] ?? $observation['installed_version']
+        $result['installed_coordinate'] = $observation['installed_coordinate'] ?? $observation['installed_version']
             ?? $decision['installed_coordinate'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null;
+        $result['installed_version'] = $observation['installed_version'] ?? $decision['installed_version'] ?? $result['installed_coordinate'];
+        if (($operation->input['manager'] ?? null) === ToolManagerName::BrewCask->value && is_string($result['installed_version'])) {
+            $result['installed_version'] = explode(',', $result['installed_version'], 2)[0];
+        }
         if (($data['status'] ?? null) === 'succeeded') {
             if (NativeRunResult::stepStatus($native, 'Assert package state') !== 'succeeded' || ($decision['ready'] ?? false) !== true) {
                 throw new ResourceOperationException('operation.result_invalid', 'The native Tool end check is required.', 422);
             }
             if ($operation->kind === 'tool.remove') {
                 $result['installed_version'] = null;
+                $result['installed_coordinate'] = null;
                 $result['outcome'] = 'applied';
                 if (($operation->input['remove_repository'] ?? false) === true) {
                     $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded';
@@ -172,7 +177,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
                 return;
             }
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $operation->error_code === 'tool.package_already_installed'
-                ? $tool->installed_version : ($result['installed_version'] ?? $tool->installed_version),
+                ? $tool->installed_version : ($result['installed_coordinate'] ?? $tool->installed_version),
                 'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code]);
 
             return;
@@ -190,7 +195,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         if ($tool === null && $record !== null) {
             $tool = $this->createTool($operation, $record);
         }
-        $tool?->update(['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'installed_version' => $result['installed_version'] ?? null, 'failed_operation' => null, 'error_code' => null]);
+        $tool?->update(['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'installed_version' => $result['installed_coordinate'] ?? null, 'failed_operation' => null, 'error_code' => null]);
     }
 
     /** The admitted repository definition, stored once the run succeeded. */

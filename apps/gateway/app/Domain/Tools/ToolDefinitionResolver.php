@@ -26,9 +26,6 @@ final readonly class ToolDefinitionResolver
             }
             $definition = $active->definition($manager->name()->value, $package)
                 ?? throw new ResourceOperationException('tool.not_in_catalog', 'The package is not in the active Tool catalog.', 409);
-            if ($tool?->aptRepository !== null && ($definition->repository['name'] ?? null) !== $tool->aptRepository->name) {
-                throw new ResourceOperationException('tool.repository_conflict', 'Remove the Tool membership before changing its repository name.', 409);
-            }
         } else {
             if ($tool !== null && $constraint !== null && $tool->version_constraint !== $constraint) {
                 throw new ResourceOperationException('tool.constraint_conflict', 'The Tool already has a different constraint.', 409);
@@ -36,9 +33,17 @@ final readonly class ToolDefinitionResolver
             $pin = $version ?? $tool->desired_version ?? ($manager->name() === ToolManagerName::ConnServer ? $this->conn->find(null)?->version : null);
             $definition = new ToolDefinition($pin, $constraint ?? $tool?->version_constraint, $repository ?? $tool->desired_repository ?? $tool?->aptRepository?->definition);
         }
+        self::assertRepositoryIdentity($tool, $definition);
         $this->validate($manager, $definition);
 
         return $definition;
+    }
+
+    public static function assertRepositoryIdentity(?Tool $tool, ToolDefinition $definition): void
+    {
+        if ($tool?->aptRepository !== null && ($definition->repository['name'] ?? null) !== $tool->aptRepository->name) {
+            throw new ResourceOperationException('tool.repository_conflict', 'Remove the Tool membership before changing its repository name.', 409);
+        }
     }
 
     public function validate(ToolManager $manager, ToolDefinition $definition): void

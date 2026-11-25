@@ -138,14 +138,19 @@ it('keeps legacy observed versions floating and refuses a catalog export without
 });
 
 it('never admits existing Conn Server or role packages to generic convergence', function (): void {
+    policySwamp();
     $node = policyNode('host');
     policyTool($node, 'conn-server', '1.0-1');
     policyTool($node, 'php8.5-cli', '1.0-1');
-    foreach (['containerd', 'apparmor', 'libnss3', 'dpkg-repack', 'sqlite3', 'postgresql-client', 'rsync'] as $package) {
-        $tool = policyTool($node, $package, '1.0-1');
+    foreach (['containerd', 'apparmor', 'libnss3', 'dpkg-repack', 'sqlite3', 'postgresql-client', 'rsync', 'caddy', 'jq', 'python3-venv', 'valkey-server', 'docker-ce'] as $package) {
+        $tool = policyTool($node, $package, null);
         $operations = app(StartToolOperationAction::class);
-        expect(fn () => $operations->execute('remove', $node->id, 'apt', $package, null, $tool))
+        expect(fn () => $operations->execute('update', $node->id, 'apt', $package, null, $tool, version: '1.0-1'))
             ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.package_protected'));
+        expect(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
+        $removal = $operations->execute('remove', $node->id, 'apt', $package, null, $tool);
+        expect($removal->status->value)->toBe('succeeded')->and($removal->result['execution'])->toBe('membership_only')
+            ->and($removal->input['tool_id'])->toBe($tool->id)->and($tool->fresh())->toBeNull();
     }
 
     expect(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
@@ -153,13 +158,29 @@ it('never admits existing Conn Server or role packages to generic convergence', 
 
 it('blocks discovered host recipe apt packages but not names used only in a container folder', function (): void {
     $node = policyNode('host');
+    $owned = ['caddy', 'containerd', 'docker-ce', 'jq', 'python3-venv', 'valkey-server'];
     NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'packages', 'subject' => 'apt', 'digest' => str_repeat('a', 64),
         'observed_at' => now(), 'received_at' => now(), 'data' => ['scope' => '/var/lib/dpkg/status',
-            'packages' => [['name' => 'containerd', 'version' => '2.0'], ['name' => 't3', 'version' => '1.0']]]]);
+            'packages' => array_map(static fn (string $name): array => ['name' => $name, 'version' => '2.0'], [...$owned, 't3'])]]);
     $packages = app(ScanToolInventoryAction::class)->execute($node->id)->managers[3]->packages;
-    expect($packages[0]->package)->toBe('containerd')->and($packages[0]->adoptionBlock)->toBe('protected')
-        ->and($packages[1]->package)->toBe('t3')->and($packages[1]->adoptionBlock)->toBeNull();
-    expect(fn () => app(StartToolOperationAction::class)->adopt($node->id, 'apt', 'containerd', null, null, null))->toThrow(ToolOperationException::class);
+    $discovered = array_column($packages, 'adoptionBlock', 'package');
+    expect($discovered['t3'])->toBeNull();
+    foreach ($owned as $package) {
+        expect($discovered[$package])->toBe('protected');
+        expect(fn () => app(StartToolOperationAction::class)->adopt($node->id, 'apt', $package, null, null, null))
+            ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.adoption_unsupported'));
+    }
+});
+
+it('can relinquish an obsolete floating protected row and then activate file mode', function (): void {
+    policySwamp();
+    $node = policyNode('host');
+    $tool = policyTool($node, 'dpkg-repack', null);
+    $policy = app(ManageToolPolicyAction::class);
+    expect(fn () => $policy->show('catalog'))->toThrow(ResourceOperationException::class);
+    $removed = app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', $tool->package, null, $tool);
+    expect($removed->result['execution'])->toBe('membership_only')
+        ->and($policy->change('file', policyFile([]))['mode'])->toBe('file');
 });
 
 it('keeps the signed source requested by a failed install and retries at the same coordinate', function (): void {
@@ -194,6 +215,51 @@ it('keeps a failed signed-source update separate from the last verified source',
     expect($operations->execute('update', $node->id, 'apt', 'tree', null, $tool)->input)->toMatchArray(['repository' => $desired, 'desired_version' => '2.0']);
 });
 
+it('refuses to switch away from a catalog that clears or renames verified trust', function (bool $rename): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.10');
+    $source = policySignedRepository();
+    $verified = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    $tool->update(['apt_repository_id' => $verified->id, 'desired_repository' => $source]);
+    $entry = ['manager' => 'apt', 'package' => 'tree', 'version' => '1.10'];
+    $path = policyFile([[...$entry, 'repository' => $source]]);
+    $policy = app(ManageToolPolicyAction::class);
+    $policy->change('file', $path);
+    $snapshots = DB::table('tool_policy_snapshots')->count();
+    policyFile([$rename ? [...$entry, 'repository' => [...$source, 'name' => 'renamed']] : $entry], $path);
+    expect(fn () => $policy->change('database', null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+    expect($policy->show('snapshot')['mode'])->toBe('file')->and($tool->fresh()->desired_repository)->toBe($source)
+        ->and(DB::table('tool_policy_snapshots')->count())->toBe($snapshots);
+})->with([false, true]);
+
+it('can cancel or repair a pinned first install after manager setup failed', function (bool $repair): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $operations = app(StartToolOperationAction::class);
+    $install = $operations->execute('install', $node->id, 'composer', 'laravel/installer', null, version: '5.18.0');
+    policyComplete($install, 'failed', ['steps' => ['Set up the Tool Manager' => ['status' => 'failed']]]);
+    $tool = Tool::query()->findOrFail($install->input['tool_id']);
+    expect($tool->installed_version)->toBeNull()->and($tool->desired_version)->toBe('5.18.0')
+        ->and($tool->manager->status->value)->toBe('failed');
+    if ($repair) {
+        $plans = array_column(app(ToolConvergeIntent::class)->capture($node), null, 'id');
+        $observations = app(ToolConvergeObservations::class);
+        $observations->record($node->id, $plans, $observations->validate([
+            ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '5.18.0'],
+        ], $plans, true));
+        $tool->refresh();
+        expect($tool->manager->status->value)->toBe('active');
+    }
+    $removal = $operations->execute('remove', $node->id, 'composer', $tool->package, null, $tool);
+    if ($repair) {
+        expect($removal->status->terminal())->toBeFalse();
+    } else {
+        expect($removal->result['execution'])->toBe('membership_only')->and($tool->fresh())->toBeNull();
+        expect(app(ToolConvergeIntent::class)->capture($node))->toBe([]);
+    }
+})->with([false, true]);
+
 it('bounds a converge batch while keeping repository preferences for unselected memberships', function (): void {
     policySwamp();
     $node = policyNode('dev');
@@ -222,8 +288,12 @@ it('admits the remaining preference packages for both membership changes and ref
     $tree->update(['apt_repository_id' => $reference->id, 'desired_repository' => $source]);
     $operations = app(StartToolOperationAction::class);
     $install = $operations->execute('install', $node->id, 'apt', 'nano', null, repository: $source, version: '1.10');
-    expect($install->input)->toMatchArray(['repository_packages' => ['nano', 'tree'], 'repository_given' => true]);
+    expect($install->input)->toMatchArray(['repository_packages' => ['nano', 'tree'], 'repository_given' => false]);
     policyComplete($install, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'],
+        'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
+    $update = $operations->execute('update', $node->id, 'apt', 'tree', null, $tree);
+    expect($update->input)->toMatchArray(['repository_packages' => ['nano', 'tree'], 'repository_given' => false]);
+    policyComplete($update, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'],
         'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
 
     $entry = static fn (string $package, array $repository): array => ['manager' => 'apt', 'package' => $package, 'version' => '1.10', 'repository' => $repository];

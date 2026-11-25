@@ -62,8 +62,8 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/copy_file', behaviorName: '${{ "publish-the-signing-key-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/keyrings/orbit-" + steps["Prepare package commands"].outputs.repository.name + ".gpg" }}', mode: '0644', ensure: present, source: '${{ "/tmp/orbit-tool-keys/" + run.id + ".gpg" }}', owner: root, group: root}, inputs: {}}
   - name: Pin repository packages
     labels: {role: swamp}
-    dependsOn: [{step: Publish the signing key, condition: {type: succeeded}}]
-    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    dependsOn: [{step: Prepare package commands, condition: {type: succeeded}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.repository == null }}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "pin-repository-packages-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/preferences.d/orbit-" + steps["Prepare package commands"].outputs.repository.name + ".pref" }}', content: '${{ steps["Prepare package commands"].outputs.repository_preferences }}', mode: '0644', owner: root, ensure: present}, inputs: {}}
   - name: Write the apt source

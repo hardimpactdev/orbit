@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ActiveToolPolicy;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
+use App\Domain\Tools\ToolDefinitionResolver;
 use App\Domain\Tools\ToolPolicy;
 use App\Models\Tool;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,10 @@ final readonly class ManageToolPolicyAction
             $snapshot = $this->snapshot($before, $tools);
             foreach ($tools as $tool) {
                 $current = $this->definition($before, $tool);
+                ToolDefinitionResolver::assertRepositoryIdentity($tool, $current);
                 if ($mode === 'file') {
                     $target = $this->definition($after, $tool);
+                    ToolDefinitionResolver::assertRepositoryIdentity($tool, $target);
                     if (! $target->sameAs($current)) {
                         $this->conflict('different_coordinate', $tool->id);
                     }
