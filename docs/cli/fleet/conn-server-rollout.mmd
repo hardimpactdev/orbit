@@ -14,7 +14,7 @@ sequenceDiagram
   %%> When:
   %%> - an operator posts `{"dry_run", "scope"}` to `POST /api/v1/fleet/conn-server/rollout`; both are required, so no default reaches the whole fleet
   %%> - scope `nodes` also takes `node_ids`, one to four ids that each have a record, or a validation error; `node_ids` with another scope is refused
-  %%> - nothing starts it from a pin change
+  %%> - the release fleet pass admits the dry run and real canary for a pin with release_canary, and waits for the thread read before converging Nodes
   %%> Requirements:
   %%> - the agent folder's `conn-server` pin names a `macos_arm64` app, or `conn_server.pin_unavailable`
   %%> - exactly one `conn_server_nodes` record is the canary, or `conn_server.canary_unset`
@@ -25,7 +25,7 @@ sequenceDiagram
   %%> Input:
   %%> - version, dry run, the Linux tarball and macOS zip with their SHA-256, bundle id and team, the notice target, and each Node with its SSH target
   %%> Requirements:
-  %%> - at most four Nodes, so the 12,980 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
+  %%> - at most four Nodes, so the 13,220 s deadline covers each Node's worst case and its rollback, or `conn_server.too_many_nodes`
   loop each Node, in the admitted order
     SW->>N: Download and check<br/>conn-server-rollout
     %%> What it does:
@@ -66,7 +66,10 @@ sequenceDiagram
         %%> - waits for `server: conn-server` and the pin's version
       end
       alt /health names the version
-        Note over N: Remove the backup<br/>updated
+        opt release canary
+        SW->>N: Read the known thread through Conn CLI before accepting the swap
+      end
+      Note over N: Remove the backup<br/>updated
       else the swap, restart, prompt or health fails
         SW->>N: Roll back<br/>restore and restart
         %%> What it does:

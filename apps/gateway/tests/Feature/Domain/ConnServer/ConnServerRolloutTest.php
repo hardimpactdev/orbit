@@ -32,6 +32,15 @@ function connServerNode(string $name, int $address, array $server): Node
 function connServerPin(?Closure $change = null): void
 {
     $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    // A fixed release fixture lets the production recipe advance independently.
+    $release = &$recipe['instances']['agent']['conn-server'];
+    unset($release['release_canary']);
+    $release['version'] = '0.5.1';
+    $base = 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1';
+    $release['artifacts']['amd64'] = ['url' => $base.'-linux-x64.tar.gz', 'sha256' => str_repeat('a', 64)];
+    $release['macos_arm64']['url'] = $base.'-macos-arm64.zip';
+    $release['macos_arm64']['sha256'] = str_repeat('b', 64);
+    $release['bin']['conn-server'] = 'conn-server-0.5.1-linux-x64/conn-server';
     if ($change !== null) {
         $change($recipe);
     }
@@ -61,9 +70,9 @@ it('admits the pinned release for every Conn Server Node, canary first, from the
         ->and($intent['version'])->toBe('0.5.1')
         ->and($intent['dry_run'])->toBeTrue()
         ->and($intent['mac'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-macos-arm64.zip',
-            'sha256' => '55d20b2d01e6e3f9b1fc2491fa98cf3245208bb98295bd14faf96b47b98f32bd', 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B'])
+            'sha256' => str_repeat('b', 64), 'bundle_id' => 'com.nckrtl.conn-server', 'team_id' => '9SVJ4SYB9B'])
         ->and($intent['linux'])->toBe(['url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.1/conn-server-0.5.1-linux-x64.tar.gz',
-            'sha256' => '13e71798c9dc672f2b3d11aa28c74fb8f0748ffe3ce7d4a54dc7eab79e3fe124'])
+            'sha256' => str_repeat('a', 64)])
         ->and($intent['notice'])->toBe(['url' => null, 'command' => null])
         ->and(array_column($intent['nodes'], 'node_id'))->toBe([$vm->id, $mini->id])
         ->and($intent['nodes'][1]['server'])->toBe(['platform' => 'mac', 'path' => '~/Applications/Conn Server.app', 'service' => 'com.t3tools.t3code.service',
@@ -142,4 +151,27 @@ it('refuses a trigger that names no scope or another one, and no dry run choice'
         ->and(Validator::make(['dry_run' => false, 'scope' => 'all'], $rules)->errors()->keys())->toBe(['scope'])
         ->and(Validator::make(['scope' => 'canary'], $rules)->errors()->keys())->toBe(['dry_run'])
         ->and(Validator::make(['dry_run' => true, 'scope' => 'canary'], $rules)->passes())->toBeTrue();
+});
+
+it('requires a successful thread read from the current canary before admitting a promotion', function (): void {
+    connServerPin(static function (array &$recipe): void {
+        $recipe['instances']['agent']['conn-server']['release_canary'] = true;
+    });
+    $vm = connServerNode('nick-vm', 62, ['canary' => true]);
+    $mini = connServerNode('mini', 61, []);
+    $rollout = app(ConnServerRollout::class);
+    $check = $rollout->releaseGate();
+    expect($check->input['intent']['dry_run'])->toBeTrue()
+        ->and($rollout->releaseGate()->id)->toBe($check->id);
+    $check->forceFill(['status' => 'succeeded', 'lock_key' => null, 'result' => ['nodes' => [['node_id' => $vm->id, 'outcome' => 'checked']]]])->save();
+    $probe = $rollout->releaseGate();
+    expect($probe->input['intent']['dry_run'])->toBeFalse()
+        ->and($probe->input['intent']['probe_thread'])->toBeTrue();
+    $result = ['node_id' => $vm->id, 'outcome' => 'updated'];
+    $probe->forceFill(['status' => 'succeeded', 'lock_key' => null, 'result' => ['nodes' => [$result]]])->save();
+    expect(fn () => $rollout->admit(false, 'nodes', [$mini->id]))->toThrow(ResourceOperationException::class)
+        ->and($rollout->releaseGate()->id)->toBe($probe->id);
+    $probe->forceFill(['result' => ['nodes' => [$result + ['thread_read' => true]]]])->save();
+    expect($rollout->releaseGate())->toBeNull()
+        ->and($rollout->admit(false, 'nodes', [$mini->id])->input['intent']['nodes'][0]['node_id'])->toBe($mini->id);
 });

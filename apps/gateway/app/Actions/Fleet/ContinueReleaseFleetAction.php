@@ -6,6 +6,7 @@ namespace App\Actions\Fleet;
 
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Data\Fleet\DesiredCliReleaseData;
+use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
@@ -340,6 +341,28 @@ final readonly class ContinueReleaseFleetAction
         }
         if (FleetReboot::open() !== null || AdmitFleetRolloutAction::open()) {
             return 10;
+        }
+
+        try {
+            $canary = app(ConnServerRollout::class)->releaseGate();
+        } catch (ResourceOperationException $failure) {
+            if ($failure->errorCode === 'operation.target_busy') {
+                return 15;
+            }
+            $this->save($release, [...$phase, 'error_code' => $failure->errorCode], 'failed');
+
+            return null;
+        }
+        if ($canary !== null) {
+            $phase['conn_server_operation_id'] = $canary->id;
+            if ($canary->status->terminal()) {
+                $this->save($release, [...$phase, 'error_code' => $canary->error_code ?? 'conn_server.canary_failed'], 'failed');
+
+                return null;
+            }
+            $this->save($release, $phase, 'pending');
+
+            return 15;
         }
 
         // One pass visits each Node once, from its start until the phase settles. The next pass starts every Node afresh.

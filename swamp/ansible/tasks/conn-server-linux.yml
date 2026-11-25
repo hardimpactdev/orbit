@@ -151,9 +151,19 @@
             fail_msg: conn_server.health_check_failed
             quiet: true
 
+        - name: Verify the client can read the canary thread
+          when: intent.probe_thread | default(false)
+          ansible.builtin.script:
+            cmd: 'files/conn-server-probe.py {{ (server.path + "/conn-server") | quote }} {{ server.port | int }}'
+            executable: python3
+          become: true
+          become_user: "{{ server.user }}"
+          changed_when: false
+          timeout: 60
+
         - name: Record the updated Node
           ansible.builtin.set_fact:
-            node_result: { node_id: "{{ node_id | int }}", outcome: updated, previous_version: "{{ linux_before.json.version | default(none) }}" }
+            node_result: { node_id: "{{ node_id | int }}", outcome: updated, thread_read: "{{ true if intent.probe_thread | default(false) else omit }}", previous_version: "{{ linux_before.json.version | default(none) }}" }
       rescue:
         - name: Name the cause
           ansible.builtin.set_fact:

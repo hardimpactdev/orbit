@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Prepare the Orbit recipe change for a published nckrtl/conn server release."""
+import argparse
+import json
+import os
+import re
+import subprocess
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+RECIPE = ROOT / "apps/gateway/resources/machine-software/recipe.json"
+GATEWAY = ROOT / "apps/gateway"
+GOLDEN = GATEWAY / "tests/Fixtures/production-gateway-converge-main.json"
+
+
+def version_tuple(value):
+    if not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}", value, re.ASCII):
+        raise ValueError("Expected a stable server version")
+    return tuple(map(int, value.split(".")))
+
+
+def update(pin, version, release):
+    if release["tag_name"] != f"conn-server-v{version}" or release["draft"] or release["prerelease"]:
+        raise ValueError("Expected a published stable server release")
+    if version_tuple(version) < version_tuple(pin["version"]):
+        raise ValueError("Refusing an older release")
+    base = f"https://github.com/nckrtl/conn/releases/download/conn-server-v{version}/"
+    prefix = f"conn-server-{version}"
+    for name, target in [(f"{prefix}-linux-x64.tar.gz", pin["artifacts"]["amd64"]),
+                         (f"{prefix}-macos-arm64.zip", pin["macos_arm64"])]:
+        asset, = [item for item in release["assets"] if item["name"] == name]
+        digest = asset["digest"] or ""
+        if (asset["state"] != "uploaded" or asset["browser_download_url"] != base + name
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+            raise ValueError(f"Missing or invalid release asset: {name}")
+        if pin["version"] == version and target["sha256"] != digest[7:]:
+            raise ValueError("Published asset differs from the reviewed pin")
+        target.update(url=base + name, sha256=digest[7:])
+    if version != pin["version"]:
+        pin["release_canary"] = True
+    pin.update(version=version, bin={"conn-server": f"{prefix}-linux-x64/conn-server"})
+
+
+def capture_fixture():
+    test = ["vendor/bin/pest", "tests/Feature/Domain/Nodes/GatewayRuntimeFilesTest.php",
+            "--filter", "keeps production Gateway runtime recipe"]
+    fixture = json.loads(GOLDEN.read_text())
+    with tempfile.TemporaryDirectory() as folder:
+        prefix = Path(folder) / "capture"
+        # Changed hashes fail the old assertions. Require every capture and rerun
+        # all the assertions after replacing only the recipe-dependent fields.
+        subprocess.run(test, cwd=GATEWAY, env={**os.environ, "ORBIT_DNS_EQUALITY_EVIDENCE": str(prefix)})
+        for state, row in fixture["vpn_states"].items():
+            captured = json.loads(Path(f"{prefix}-{state.replace('/', '-')}.json").read_text())
+            for key in ("recipe_sha256", "converge_sha256", "ansible_vars_sha256"):
+                row[key] = captured[key]
+    GOLDEN.write_text(json.dumps(fixture, indent=2, ensure_ascii=False) + "\n")
+    subprocess.run(test, cwd=GATEWAY, check=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("version")
+    args = parser.parse_args()
+    version_tuple(args.version)
+    release = json.loads(subprocess.check_output(
+        ["gh", "api", f"repos/nckrtl/conn/releases/tags/conn-server-v{args.version}"]))
+    recipe = json.loads(RECIPE.read_text())
+    update(recipe["instances"]["agent"]["conn-server"], args.version, release)
+    result = json.dumps(recipe, indent=4, ensure_ascii=False) + "\n"
+    if RECIPE.read_text() != result:
+        RECIPE.write_text(result)
+        capture_fixture()
+
+
+if __name__ == "__main__":
+    main()

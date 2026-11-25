@@ -29,7 +29,7 @@
     #   565 s: a 40 s relink, a 100 s restart and 61 health reads of up to 5 s, 2 s apart), so 2450 s.
     # node_seconds adds 160 s for the SSH set-up and the tasks without a timeout.
     max_nodes: 4
-    node_seconds: 3220
+    node_seconds: 3280
   tasks:
     - name: Refuse more Nodes than the run's deadline covers
       ansible.builtin.assert:
