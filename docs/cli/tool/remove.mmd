@@ -36,7 +36,9 @@ sequenceDiagram
     SW->>N: Read resulting state<br/>native SSH
     alt check passes
       SW-->>GW: Run succeeded
-      Note over GW: Delete the Tool record<br/>or keep it failed until source and pins are gone
+      Note over GW: Delete the Tool record<br/>unless cleanup unconfirmed
+      %%> Last member:
+      %%> - an unconfirmed source or preference removal keeps the Tool failed with `tool.repository_failed` as its retry handle
     else the removal fails
       SW--xGW: Run failed<br/>error_code
       Note over GW: Mark the Tool failed
