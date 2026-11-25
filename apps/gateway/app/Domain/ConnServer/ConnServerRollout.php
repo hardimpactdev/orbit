@@ -127,7 +127,7 @@ final readonly class ConnServerRollout
             $check = $this->receipt($key, 'check');
             $probe = $this->receipt($key, 'canary');
             if ($scope === 'canary') {
-                if ($this->passed($probe, $pin, $canary, false)) {
+                if ($probe !== null && $this->passed($probe, $pin, $canary, false)) {
                     return $probe;
                 }
                 $dryPassed = $this->passed($check, $pin, $canary, true);
@@ -150,11 +150,12 @@ final readonly class ConnServerRollout
             }
             $preflight = $this->receipt($key, 'preflight');
             $targets = $rest->map($this->nodeIntent(...))->values()->all();
+            $results = (array) ($preflight?->result['nodes'] ?? []);
             if ($preflight?->status !== OperationStatus::Succeeded || data_get($preflight->result, 'version') !== $pin->version
                 || data_get($preflight->input, 'intent.nodes') !== $targets
                 || data_get($preflight->result, 'dry_run') !== true
-                || array_column($preflight->result['nodes'] ?? [], 'node_id') !== array_column($targets, 'node_id')
-                || array_unique(array_column($preflight->result['nodes'] ?? [], 'outcome')) !== ['checked']) {
+                || array_column($results, 'node_id') !== array_column($targets, 'node_id')
+                || array_unique(array_column($results, 'outcome')) !== ['checked']) {
                 throw new ResourceOperationException('conn_server.preflight_required', 'Repeat the fleet dry run until every remaining Node reports checked.', 409);
             }
 
@@ -224,7 +225,10 @@ final readonly class ConnServerRollout
         ));
     }
 
-    /** @param Collection<int, ConnServerNode> $servers @param array<string, int|string> $release */
+    /**
+     * @param  Collection<int, ConnServerNode>  $servers
+     * @param  array<string, int|string>  $release
+     */
     private function run(FolderPin $pin, Collection $servers, bool $dryRun, bool $probe, ?string $by, ?string $requestId, array $release = []): Operation
     {
         $mac = $pin->macApp ?? throw new \LogicException('The validated pin has no Mac app.');

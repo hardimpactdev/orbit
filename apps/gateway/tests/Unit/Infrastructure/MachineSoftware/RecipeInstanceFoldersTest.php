@@ -50,11 +50,11 @@ it('ships the Conn preview browser as a complete ZIP in the agent folder', funct
     $parts = array_column(InstanceFolderPlan::for($recipe->instances)['agent']['parts'], null, 'name');
 
     expect($parts['chrome-headless-shell'])->toBe([
-            'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
-            'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
-            'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
-            'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
-        ]);
+        'name' => 'chrome-headless-shell', 'version' => '157.0.8103.78',
+        'url' => 'https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip',
+        'archive' => 'zip', 'sha256' => 'f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a',
+        'bin' => ['chrome-headless-shell' => 'chrome-headless-shell-linux64/chrome-headless-shell'],
+    ]);
 });
 
 it('pins the Conn release\'s signed macOS arm64 zip, and a release before 0.5.0 without one', function (): void {
