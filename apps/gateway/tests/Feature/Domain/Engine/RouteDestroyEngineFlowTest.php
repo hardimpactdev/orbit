@@ -31,7 +31,7 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
     return (new Operation)->forceFill(['id' => 51, 'kind' => 'route.destroy', 'node_id' => 3, 'input' => [...[
         'route_id' => 9, 'offline' => false, 'route_private_development' => true, 'route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]]],
         'route_lifecycle' => ['plan' => $plan],
-        'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4'],
+        'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4,8.5', 'php_versions_after' => '8.4,8.5'],
             '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n")]],
     ], ...$input]]);
 }
@@ -83,7 +83,8 @@ it('leaves a removal the engine cannot reproduce exactly to Swamp', function (ar
     'a never-activated replacement' => [[], ['route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'new.orbit', 'replacement_of' => 4]]]]],
     'no captured file digests' => [[], ['route_guards' => []]],
     'a public Route or a Process proxy behind the Ingress' => [[], ['route_private_development' => false]],
-    'a PHP version whose last pool leaves' => [['pools' => ['php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => []]], []],
+    'a PHP version whose last pool leaves' => [[], ['route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4,8.5', 'php_versions_after' => '8.4'],
+        '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n")]]]],
     'an order over the signer\'s limit' => [['cleanup' => array_map(static fn (int $i): array => ['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => str_repeat('s', 60).$i]], range(1, 80))], []],
     'a pool on a Node the Route does not leave' => [['pools' => ['php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => [5]]], []],
 ]);
@@ -203,4 +204,12 @@ it('signs the guarded DNS and withdrawal orders in the wire shape the executor d
         ->and(array_keys($withdraw))->toBe(array_keys($fixture('executor-route-withdraw-site.json')))
         ->and($withdraw['caddy']['content'])->toBe(['blob' => ['sha256' => hash('sha256', "other.orbit {\n}\n")]])
         ->and($withdraw['php'][0]['content'])->toBe(['blob' => ['sha256' => hash('sha256', "[orbit]\n")]]);
+});
+
+it('admits a removal that writes no pool while a sibling keeps its own PHP version untouched', function (): void {
+    $operation = routeDestroyOperation(['pools' => ['acl' => [], 'url_lines' => [], 'env_files' => [], 'links' => [], 'lan' => [], 'caddy' => [],
+        'php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => []]]);
+
+    expect(array_column(app(RouteDestroyEngineFlow::class)->steps($operation), 'name'))->toContain('withdraw-3')
+        ->and(app(RouteDestroyEngineFlow::class)->input($operation, 'withdraw-3', new EngineRun(51, [], 0, null))['php'])->toBe([]);
 });

@@ -260,11 +260,21 @@ it('records no engine digests while route.destroy is not an engine kind', functi
     expect($operation->input['route_guards'])->toBe([]);
 });
 
-it('leaves a Process proxy Route\'s removal to Swamp from its captured placement', function (): void {
+it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from the captured placement', function (bool $process): void {
     config(['orbit.engine.kinds' => ['route.destroy']]);
     [$node] = destroyFleet();
-    [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
+    $route = destroyFixture($node, 'proxy', 'proxy');
+    if ($process) {
+        $managed = ManagedProcess::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'web', 'runtime' => 'docker',
+            'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['127.0.0.1:8080:8080/tcp']], 'desired_state' => 'running', 'status' => 'active']);
+        $route->customProxy()->update(['process_id' => $managed->id]);
+    }
+    [$operation] = destroyAdmission($route->refresh());
 
-    expect($operation->input['route_private_development'])->toBeFalse()
-        ->and(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
-});
+    expect($operation->input['route_private_development'])->toBe(! $process);
+    if ($process) {
+        expect(fn () => app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
+    } else {
+        expect(array_map(static fn ($step): string => $step->name, app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+    }
+})->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);

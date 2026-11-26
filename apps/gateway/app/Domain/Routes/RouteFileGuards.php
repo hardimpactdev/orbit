@@ -20,10 +20,14 @@ final readonly class RouteFileGuards
     public function __construct(private DevelopmentSiteRepository $sites, private NativeRoutePublicationInput $publications) {}
 
     /**
+     * With `$after`, the sites the Nodes serve once the write is done, each Node also records the PHP versions its shared pools
+     * keep (`php_versions_after`), so a withdrawal can tell a version that disappears from one it leaves untouched.
+     *
      * @param  list<int>  $nodes
+     * @param  Collection<int, DevelopmentSite>|null  $after
      * @return array<int, array<string, string>>
      */
-    public function capture(array $nodes): array
+    public function capture(array $nodes, ?Collection $after = null): array
     {
         $sites = $this->sites->all();
         $guards = [];
@@ -39,6 +43,8 @@ final readonly class RouteFileGuards
                 // The shared pools' PHP versions now: a withdrawal must keep each, or its Operation runs on Swamp.
                 'php_versions' => implode(',', array_keys((array) (ValidatedData::object($before['php'])['configurations'] ?? []))),
                 ...self::pools($before),
+                ...($after === null ? [] : ['php_versions_after' => implode(',', array_keys((array) (ValidatedData::object(
+                    $this->publications->snapshot($node, $after, true)['php'])['configurations'] ?? [])))]),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
                 'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
         }

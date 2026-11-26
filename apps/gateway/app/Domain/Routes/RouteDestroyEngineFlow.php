@@ -90,7 +90,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
             $input = $this->withdrawInput($operation, $node);
             // Every order must sign within the limit before anything starts.
             RouteEngineFlow::fits($input);
-            self::poolsKept($operation, $node, $input);
+            self::poolsKept($operation, $node);
             $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, $after, budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
         }
@@ -139,15 +139,14 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
     }
 
     /**
-     * Refuses a withdrawal that would leave a PHP version's pool without any site: the executor places desired pools only.
-     *
-     * @param  array<string, mixed>  $input
+     * Refuses a withdrawal that would leave a PHP version's pool without any site, by the pools the Node serves before and after
+     * it: the executor places desired pools only. A version the withdrawal leaves untouched is no reason to refuse.
      */
-    private static function poolsKept(Operation $operation, int $node, array $input): void
+    private static function poolsKept(Operation $operation, int $node): void
     {
-        $before = array_filter(explode(',', ValidatedData::string(self::guard($operation, $node)['php_versions'] ?? '')));
-        $after = array_map(static fn (array $pool): string => ValidatedData::string($pool['version']), RouteExecutionProof::objects($input['php']));
-        if (array_diff($before, $after) !== []) {
+        $guard = self::guard($operation, $node);
+        $versions = static fn (string $key): array => array_filter(explode(',', ValidatedData::string($guard[$key] ?? throw new EngineUnsupported('No captured pool membership.'))));
+        if (array_diff($versions('php_versions'), $versions('php_versions_after')) !== []) {
             throw new EngineUnsupported('A PHP version whose last pool leaves runs on Swamp.');
         }
     }
