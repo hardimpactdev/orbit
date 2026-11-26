@@ -65,20 +65,22 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. It writes only over the Caddyfile the Gateway rendered from. A repeat reports `applied: 0`.
 4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
 
-A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes for a surviving Route, and pool changes on a Node the Route does not leave stay on Swamp.
+A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, a public Route, a Process proxy, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes, a PHP version whose last pool leaves, and orders over the signer's limit stay on Swamp.
 
 ### route.update
 
 The engine runs a private Route's `--domain` change from the admitted `route_update.plan`. Its steps run in this order:
 
-1. `csr-<i>`, `sign-<i>`, `site-<node>`: The Node places the new leaves, the new `APP_URL` lines and a prepared Caddyfile that serves both names.
+1. `csr-<i>`, `sign-<i>`, `site-<node>`: The Node places the new leaves and a prepared Caddyfile that serves both names.
 2. `probe-<i>`: The Gateway probes the new name on each serving Node before any switch.
 3. `dns-<i>`: The guarded `dns.publish_records` moves the answers to the new name.
 4. `cutover`: The Gateway records the replacement authoritative and the old Route retiring.
 5. `grace`, `late-<node>`: After the 31-second grace, a new version of a scope the old site still names installs.
 6. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` writes the lasting Caddyfile over the prepared one and removes the old leaves. Another Route on the Node must still answer.
 
-A failure before the cutover keeps the old Route and marks the replacement failed. A failure or cancel after it keeps the replacement authoritative and the old Route retiring, so a retry recovers forward. `--publication`, public Routes, LAN rules, the Ingress edge, analytics changes and whole `.env` writes stay on Swamp. A Laravel development target rewrites its whole `.env`, so its update stays on Swamp. An update with no Node work still settles at admission with no run.
+A failure before the cutover keeps the old Route and marks the replacement failed. A failure or cancel after it keeps the replacement authoritative and the old Route retiring. A failed `cutover` step counts as after the cutover only when its transaction committed. The retry of a failure after the cutover runs on Swamp.
+
+The update holds its serving Nodes from admission, as a Route create does. `--publication`, public Routes, LAN rules, the Ingress edge, analytics changes, `APP_URL` writes and whole `.env` writes stay on Swamp. An update with no Node work still settles at admission with no run.
 
 ### instance.create
 

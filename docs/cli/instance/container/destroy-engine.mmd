@@ -24,7 +24,7 @@ sequenceDiagram
     %%> - development, `--force`, not the default name; a positive clone source that is not the Instance itself
     %%> - no `after_operation_id` (no wait for a create or completion) and no CI hold
     %%> - exactly one member, and it is this Instance, with `run_teardown: false`; the plan's Routes are an empty list
-    %%> - a member `route_id` or `additional_route_ids` only for private Routes with no LAN rule or Ingress edge, whose whole after-state the admission rendered (`route_engine`: each Node's Caddyfile, changed shared pools and DNS files without the Routes, with the digests of the files they replace); a PHP version whose pool empties refuses; every VPN Node with a DNS change reports `dns.guarded_records` and each serving Node `route.withdraw_site`
+    %%> - a member `route_id` or `additional_route_ids` only for private Routes with no LAN rule or Ingress edge, whose whole after-state the admission rendered (`route_engine`: each Node's Caddyfile, changed shared pools and DNS files without the Routes, with the digests of the files they replace); a PHP version whose pool empties refuses; each changed pool carries its rendered-from state; any order over the signer's 4 KB limit refuses; every VPN Node with a DNS change reports `dns.guarded_records` and each serving Node `route.withdraw_site`
     %%> - exactly one teardown entry, for this Instance, with no steps; no Processes, Schedules, database connections, database servers or SQLite files
     %%> - the saved identity is the signed contract: container and ACL `instance-42`, project `orbit-instances` or `orbit-instances-nested`, pool `orbit-instances`, mirror `/var/lib/orbit/instance-repositories/42.git`, firewall prefix `orbit:instance-42-`, the asleep marker, inner volume `inner-42` when present
     %%> - else `EngineUnsupported`, and the whole removal runs on Swamp
@@ -38,7 +38,7 @@ sequenceDiagram
       %%> Every step is receipt-bound like `remove`: a lost receipt resends the same step, the Node's journal answers its stored result, and the Instance stays fenced until a terminal receipt
       %%> A retry of a removal whose earlier run withdrew the Route (`route_withdrawn`) has none of these steps, as the Swamp run skips its withdraw
       Note over EN: Record the withdrawal<br/>free the Route Nodes
-      %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then the Route withdrawal holds go
+      %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then the Route withdrawal holds go; a refused release never fails the removal, and its line (`route_hold_released`, `route_hold_release_status`) is in the result, also after a later container failure
       %%> `remove` waits for it; a failed withdrawal fails the Operation as `route.withdrawal_failed` at "Withdraw the Route" (removal step `route_target_clear`) before the container is touched
     end
     EN->>N: Remove the clone<br/>instance.destroy · step remove
