@@ -46,13 +46,13 @@ sequenceDiagram
     end
     alt host systemd unit
       N-->>EN: Observed state<br/>loaded · inactive · disabled
-      %%> Read-back: LoadState=loaded, ActiveState=inactive (or failed after the stop), UnitFileState=disabled
+      %%> Read-back: LoadState=loaded, ActiveState=inactive exactly (`failed` or any other state fails the step), UnitFileState=disabled
     else Docker container, later
       N-->>EN: Observed state<br/>State.Status exited
       %%> Read-back: `docker inspect` State.Status is `exited`; `created` or any other status fails the step
     else Instance container unit, later
       C-->>EN: Observed state<br/>loaded · inactive · disabled
-      %%> Read-back inside the copy: the same unit properties as on a host
+      %%> Read-back inside the copy: LoadState=loaded, ActiveState=inactive exactly, UnitFileState=disabled
     end
     %%> A mismatch fails the step (`process.state_mismatch`), as the native assert does; success is projected only from this read-back
     %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state

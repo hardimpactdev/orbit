@@ -20,7 +20,7 @@ sequenceDiagram
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `instance.destroy` is in `ORBIT_ENGINE_KINDS`, and the Node reports `instance.destroy` in `$KV.NODES`, independently of `instance.create`
     %%> - InstanceDestroyEngineFlow accepts the plan, all of it checked against the saved intent:
-    %%> - the target is an Instance with a positive ID, equal to the intent's `instance_id`; the Operation's Node is positive and equals both the intent's and the saved plan's `node_id`
+    %%> - the target is an Instance with a positive ID, equal to the intent's `instance_id` and, checked on its own, to `container_destroy.instance_id`, the field that becomes the signed step's target; a plan that names 43 there refuses; the Operation's Node is positive and equals both the intent's and the saved plan's `node_id`
     %%> - development, `--force`, not the default name; a positive clone source that is not the Instance itself
     %%> - no `after_operation_id` (no wait for a create or completion) and no CI hold
     %%> - exactly one member, and it is this Instance, with no `route_id`, `run_teardown: false`; `additional_route_ids` and the plan's Routes are empty lists

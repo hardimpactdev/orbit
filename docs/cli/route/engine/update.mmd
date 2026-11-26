@@ -20,8 +20,8 @@ sequenceDiagram
   %%> Same validation as route/update.mmd; a domain change records the replacement Route `pending`, and the current Route stays authoritative until the cutover
   alt nothing to do on a Node
     Note over GW: Record the result<br/>no executor order
-    %%> As route/update.mmd: the value is already set, or the Route is not yet published and its replacement settles at once; the Gateway records the Operation's result and keeps its ID; an identical request is `route.update_unchanged`
-    GW-->>CLI: 200 OK<br/>result · Operation ID
+    %%> As route/update.mmd: the value is already set, or the Route is not yet published and its replacement settles at once; the Gateway records the Operation's result and answers `202` with its Operation data, as RoutesController::update does for every update; an identical request is `route.update_unchanged`; neither starts a run
+    GW-->>CLI: 202 Accepted<br/>Operation data, settled
     %%> The engine admits nothing here; no run, no Node order
   else Node work needed
     Note over GW: Hold the Route Nodes
@@ -80,7 +80,8 @@ sequenceDiagram
       else failure before the cutover
         EN--xGW: Failed step<br/>error_code · redacted detail
         Note over GW: Old Route authoritative<br/>replacement failed
-        %%> The old site and DNS still serve; finished steps stay, no rollback
+        %%> Gateway authority: the old Route stays authoritative and the replacement is `failed`
+        %%> What resolvers serve: finished steps stay, no rollback; a VPN Node whose DNS step already loaded the new records answers the new name and no longer the old one, while a Node whose step failed or never ran still answers the old name. The forward retry converges every VPN Node
       else failure after the cutover
         EN--xGW: Failed step<br/>error_code · redacted detail
         Note over GW: Replacement authoritative<br/>old Route retiring

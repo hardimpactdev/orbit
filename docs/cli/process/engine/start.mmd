@@ -52,7 +52,7 @@ sequenceDiagram
       %%> Read-back: `docker inspect` State.Status is `running`
     else Instance container unit, later
       C-->>EN: Observed state<br/>loaded · active · boot policy
-      %%> Read-back inside the copy: the same unit properties as on a host
+      %%> Read-back inside the copy, as instance-container-process.yml `Wait for the unit job and admitted state`: ActiveState=active with an empty `Job=` (no queued job), retried 10 times 1 s apart, then LoadState=loaded and the admitted UnitFileState; a still-queued job fails the step
     end
     %%> A mismatch fails the step (`process.state_mismatch`), as the native assert does; success is projected only from this read-back
     %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state

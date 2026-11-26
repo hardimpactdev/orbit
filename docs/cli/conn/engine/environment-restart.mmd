@@ -1,6 +1,6 @@
 sequenceDiagram
   %% conn.environment_restart on the Gateway engine: the `Restart T3` step of conn/environment-restart.mmd (workflow operation-conn-environment-restart) as one `instance` family primitive. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
-  %% Desired state: T3 answers with the machine name. A lost receipt never restarts T3 twice: the journal repeats the result, and a later send finds the label already right and restarts nothing.
+  %% Desired state: T3 answers with the machine name. A lost receipt never restarts T3 twice: the journal repeats a finished result, and an `attempt` journaled before the restart call stops an interrupted replay from calling it again; it reports the original `restart_at`.
   %% status: draft
   %% command: conn:environment-restart
   %% kind: conn.environment_restart
@@ -28,10 +28,10 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes): `conn.environment_restart` is in `ORBIT_ENGINE_KINDS`, the Node reports the T3 restart action, and the flow accepts the plan, else `EngineUnsupported`
     EN->>C: Restart T3 when idle<br/>name · processes · restart
-    %%> Answers `skipped` when the container no longer runs, `name_not_written` when /etc/machine-info lacks the name, `current` when T3 already answers with the name and the journal holds no attempt of this step: a right label alone has no `restart_at`, so it never projects `restarted`
+    %%> Answers `skipped` `stopped` or `frozen` when the container no longer runs, `name_not_written` when /etc/machine-info lacks the name, nothing for a right label: the Gateway admitted the restart because the label was not the name, and the step restarts as the Swamp step does. Its only no-action answers are those ConnEnvironmentRestartProjection accepts: `skipped` (`frozen`, `stopped`, `name_not_written`) and `busy` (`processes`, `processes_unreadable`)
     %%> Right before the restart, reads T3's service members once: a terminal or command answers `busy` `processes` (unreadable: `processes_unreadable`) and restarts nothing
     %%> Appends an `attempt` record with `restart_at` and syncs it, then `systemctl try-restart t3.service`; nothing else restarts, the kernel hostname stays
-    %%> `window_ms` counts from the journaled `restart_at`, so a recovered result reports the same window
+    %%> The receipt returns the journaled `restart_at`; the Gateway computes `window_ms` from the intent's thread `read_at` to that `restart_at` (ConnEnvironmentRestartProjection::window), so a recovered result reports the original window
     C-->>EN: Label read back<br/>restarted · window_ms
     %%> Readiness: reads the label on T3's port until it is the name, about 84 s at most; else `conn.t3_unready`, or `conn.t3_label_mismatch` for another label
     opt the receipt is lost
@@ -41,7 +41,7 @@ sequenceDiagram
       %%> - the Operation keeps its lock, so Instance 42 stays fenced; no other Operation and no Swamp run acts on it meanwhile
       %%> On the Node:
       %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
-      %%> - an `attempt` without `done` (the executor died after the restart call), on a resend or the startup replay of the `open` order: no second restart; it reads the label until the bound and answers `restarted` with `window_ms` from the journaled `restart_at`, or `conn.t3_unready`
+      %%> - an `attempt` without `done` (the executor died after the restart call), on a resend or the startup replay of the `open` order: no second restart; it reads the label until the bound and answers `restarted` with the original journaled `restart_at`, or `conn.t3_unready`
       %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
       C-->>EN: Stored result<br/>repeat: true
     end

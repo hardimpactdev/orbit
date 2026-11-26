@@ -40,7 +40,7 @@ sequenceDiagram
     %%> `instance.fetch_branch` answers `commit: null` as success when origin lacks the branch (a create starts from the seed then); for a sync that is a failure: a null commit fails the Operation as `tasks.default_branch_missing`, and no old mirror head is ever imported
     EN->>C: Import missing objects<br/>bundle · remote ref only
     %%> Input: the non-null mirror head that the fetch receipt returned, pinned in the step input, so a resend imports the same commit even when origin moved
-    %%> On the Node: reads which of `origin/<default>`, `task-42` and the pinned head the copy actually holds, and bundles `<head>` excluding only those commits as prerequisites
+    %%> On the Node: takes the copy's `origin/<default>` and `task-42` commits, keeps as prerequisites only those the mirror also holds (`cat-file -e`, as task-instance-workspace-phase.yml `Read which of the copy's commits the mirror holds`), and bundles `<head>` excluding them; an unpublished `task-42` commit the mirror lacks is never a prerequisite
     %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into the object store
     alt the copy already holds the head
       Note over C: No bundle to fetch<br/>the ref may still be stale
