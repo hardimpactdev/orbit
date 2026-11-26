@@ -321,10 +321,8 @@ impl LocalGit {
             ])
             .args(arguments)
             .current_dir(self.tree.path())
-            .env_clear()
             .env("HOME", self.tree.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("PATH", "/usr/bin:/bin")
             .output()
             .expect("git runs");
         assert!(
@@ -361,12 +359,10 @@ impl System for LocalGit {
         }
         let output = std::process::Command::new("/usr/bin/git")
             .args(&arguments)
-            .env_clear()
             .env("HOME", self.tree.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("PATH", "/usr/bin:/bin")
             .output()
             .map_err(|error| error.to_string())?;
         if output.status.success() {
