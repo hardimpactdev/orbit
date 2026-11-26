@@ -730,7 +730,9 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                 answer, wall, path, cpu = self.work_read(instance, via)
                 row[via] = {'answer': answer, 'wall_ms': wall, 'path': path, 'executor_cpu_ms': cpu}
             engine, ssh = ({key: value for key, value in row[via]['answer'].items() if key not in ('read_at', 'duration_ms')} for via in ('engine', 'ssh'))
-            require(engine == ssh, f'{label}: the executor and SSH readers disagree')
+            if engine != ssh:
+                self.record('work-read-disagreement', {'state': label, 'engine': engine, 'ssh': ssh})
+            require(engine == ssh, f'{label}: the executor and SSH readers disagree on {sorted(key for key in engine if engine[key] != ssh.get(key))}')
             require(engine['state'] == expect and engine['reason'] == reason, f'{label}: read {engine["state"]}/{engine["reason"]}, expected {expect}/{reason}')
             require(row['engine']['executor_cpu_ms'] >= WORK_CPU_MS > row['ssh']['executor_cpu_ms'],
                     f'{label}: the read did not take the path it names (executor CPU ms: signed {row["engine"]["executor_cpu_ms"]}, SSH {row["ssh"]["executor_cpu_ms"]})')
