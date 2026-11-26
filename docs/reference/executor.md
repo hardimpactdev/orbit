@@ -112,8 +112,12 @@ The executor implements these action families:
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
-| `route.withdraw_site` | `route` | Replaces the Caddyfile and PHP-FPM pools with the Gateway's render without the Route only when the live Caddyfile matches the rendered-from digest or already the desired bytes (otherwise `owned_revision_conflict`), removes the Route's leaf folders, reloads Caddy on every run, and reads Caddy's admin API back to confirm the Route's names are gone |
-| `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units. With the `dns.guarded_records` feature, each file may carry `from_sha256`: a file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict` before any write |
+| `route.withdraw_site` | `route` | Withdraws a Route from the Node: guarded Caddyfile and pools without it, leaf folders removed, Caddy reloaded, admin API read back |
+| `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
+
+`route.withdraw_site` replaces the live Caddyfile only when it still holds the bytes whose digest the Gateway rendered from, or already holds the desired bytes. Any other content refuses `owned_revision_conflict` before a write. It reloads Caddy on every run, also on a repeat that changes nothing. It then reads `127.0.0.1:2019/config/` and fails `route.withdraw_unverified` while Caddy still names a withdrawn domain.
+
+An executor with the `dns` family reports the `dns.guarded_records` feature. With it, each `dns.publish_records` file may carry `from_sha256`, the digest of the bytes the Gateway rendered from. A file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict`, and neither file is written.
 
 ### The instance family
 
