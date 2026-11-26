@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import tomllib
 from datetime import datetime
@@ -31,6 +32,12 @@ PROOF_RUST = '1.100.0'
 WORK_SAMPLES = 12
 # The least executor CPU a signed read spends (its Git and incus children); an SSH read spends none there.
 WORK_CPU_MS = 5
+# The bus watcher's whole life: longer than the work step, which stops it first.
+WORK_WATCH_SECONDS = 900
+# Time for a reply to reach the watcher after the Gateway's own answer.
+WORK_REPLY_GRACE = 0.3
+# The signed read's request budget, ContainerWorkspaceRead::RequestSeconds, and a margin for HTTP.
+WORK_REQUEST_MS = 4000 + 600
 
 
 class ProofFailure(Exception):
@@ -127,7 +134,8 @@ class CloneLane:
         self.installed = False
         self.closed = False
         self.firewall_added = False
-        self.conn_enabled = False
+        self.conn_before = None
+        self.watcher = None
 
     def record(self, name, data):
         self.run.evidence_text(name + '.json', json.dumps(data, indent=2) + '\n')
@@ -276,7 +284,8 @@ class CloneLane:
         def advertised():
             found = self.helper('capabilities', self.node_id)
             actions = found['actions']
-            return found if 'proof.noop' in actions and ('instance.clone' in actions) is enabled and (enabled or 'instance.destroy' not in actions) else None
+            return found if ('proof.noop' in actions and ('instance.clone' in actions) is enabled and ('instance.work_read' in actions) is enabled
+                             and (enabled or 'instance.destroy' not in actions)) else None
 
         return wait_for(advertised, f'executor did not advertise the expected capability ({enabled})', 15)
 
@@ -626,28 +635,100 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         """CPU time of the executor's unit, its children included: the signed read's Git runs there, the SSH reader's in an SSH session."""
         return int(self.systemctl(self.node, 'show', '-p', 'CPUUsageNSec', '--value', EXECUTOR_UNIT)) // 1_000_000
 
+    def watch_reads(self):
+        """Starts the bus watcher on the Gateway: every signed read order to app-dev and every reply, one JSON line each, kept in
+        `self.bus` with the Gateway's clock (the guests share the host's clock)."""
+        self.bus, self.bus_lock = [], threading.Lock()
+        guest = self.run.fleet.nodes['gateway']['instance']
+        self.watcher = subprocess.Popen(['incus', 'exec', guest, '--', 'runuser', '-u', 'orbit', '--', 'php', self.guest_helper, 'watch-reads',
+                                         str(self.node_id), str(WORK_WATCH_SECONDS)], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        require(self.watcher.stdout.readline().strip() == 'ready', 'the bus watcher did not start')
+
+        def follow():
+            for line in self.watcher.stdout:
+                if line.startswith('{'):
+                    with self.bus_lock:
+                        self.bus.append(json.loads(line))
+
+        threading.Thread(target=follow, daemon=True).start()
+
+    def stop_watch(self):
+        if getattr(self, 'watcher', None) is not None:
+            self.watcher.terminate()
+            self.watcher.wait(10)
+            self.guest('gateway', 'sh', '-c', 'pkill -f "clone-lifecycle[.]php watch-reads" || :')
+            self.watcher = None
+
+    def bus_between(self, instance, started, ended):
+        """The orders for `instance` sent inside [started, ended] (epoch ms) and the replies to them, the last replies included."""
+        time.sleep(WORK_REPLY_GRACE)
+        with self.bus_lock:
+            orders = [event for event in self.bus if event['event'] == 'order' and event['target'] == str(instance) and started <= event['at_ms'] <= ended]
+            inboxes = {event['send'] for event in orders}
+            replies = [event for event in self.bus if event['event'] == 'reply' and event['send'] in inboxes]
+        return orders, replies
+
+    def timed(self, method, instance, path, body=None, key=None):
+        """A Conn call with the signed reads it caused: (code, data, error, wall_ms, orders, replies)."""
+        started = int(time.time() * 1000)
+        answer = self.conn(method, path, body, key)
+        return (*answer, *self.bus_between(instance, started, int(time.time() * 1000)))
+
+    def attributed(self, via, answer, orders, replies):
+        """Which reader served a read, from the bus alone: a signed read has its executor order and a reply with this state; the
+        SSH reader sends none. Raises when the read did not take the path `via` names."""
+        if via == 'ssh':
+            require(not orders, f'an SSH read sent {len(orders)} signed orders')
+            return {'reader': 'ssh', 'orders': 0}
+        answered = [reply for reply in replies if reply['status'] == 'output' and reply['state'] == answer['state']]
+        require(orders and all(order['action'] == 'instance.work_read' for order in orders) and answered,
+                f'a signed read has no executor order and reply ({len(orders)} orders, {len(replies)} replies)')
+        return {'reader': 'executor', 'orders': len(orders), 'nonces': [order['nonce'] for order in orders],
+                'reply_state': answered[-1]['state']}
+
     def work_read(self, instance, via):
-        """One GET .../work on the path `via` names; the answer, its wall time and the executor's CPU milliseconds during it."""
+        """One GET .../work on the path `via` names; the answer, its wall time, its bus attribution and the executor's CPU ms."""
         self.set_capability(via == 'engine')
         before = self.executor_cpu()
-        code, answer, error, wall = self.conn('GET', f'instances/{instance}/work')
+        code, answer, error, wall, orders, replies = self.timed('GET', instance, f'instances/{instance}/work')
         require(code == 200 and answer['instance_id'] == instance, f'work read of {instance} via {via}: HTTP {code} {error.get("code")}')
-        return answer, wall, self.executor_cpu() - before
+        return answer, wall, self.attributed(via, answer, orders, replies), self.executor_cpu() - before
+
+    def operations_of(self, instance):
+        return self.db(f"SELECT count(*) AS total FROM operations WHERE kind='instance.destroy' AND target_id={instance}")
+
+    def refused_post(self, instance, key, expect, reason=None, details=None):
+        """An unacknowledged destroy POST that no GET just before it answered: its own fresh signed read must refuse it."""
+        held = self.operations_of(instance)
+        code, _data, error, wall, orders, replies = self.timed('POST', instance, f'instances/{instance}/destroy', {'acknowledge_unsaved': False}, key)
+        found = error.get('details') or {}
+        require(code == 409 and error.get('code') == 'instance.unsaved_work' and found.get('state') == expect and found.get('reason') == reason
+                and all(found.get(field) == value for field, value in (details or {}).items())
+                and held == self.operations_of(instance) and self.runtime(instance)['status'] == 'active',
+                f'the unacknowledged destroy ({expect}/{reason}) did not refuse with a fresh read and no Operation (HTTP {code} {error.get("code")})')
+        return {'code': code, 'error': error.get('code'), 'details': found, 'wall_ms': wall,
+                'read': self.attributed('engine', found, orders, replies)}
 
     def work(self, name, quiet):
         """The workspace work read (docs/cli/instance/container/work-read-engine.mmd) on running, dirty, stopped and asleep clones
-        through Conn's own calls: each state read by the signed executor read and by today's SSH reader, which must agree."""
+        through Conn's own calls: each state read by the signed executor read and by today's SSH reader, which must agree. The bus
+        watcher attributes every read to its reader."""
         instance, clean = self.clones[name]['instance'], self.clones[quiet]['instance']
-        states, reads = [], {'engine': [], 'ssh': []}
-        code, row, error = self.api('POST', 'extensions/conn/enable', {})
-        require(code == 200 and row['enabled'], f'could not enable the Conn extension: HTTP {code} {error}')
-        self.conn_enabled = True
+        states, reads, posts = [], {'engine': [], 'ssh': []}, {}
+        code, extensions, error = self.api('GET', 'extensions')
+        require(code == 200 and isinstance(extensions.get('conn'), bool), f'could not read the extension switches: HTTP {code} {error}')
+        if not extensions['conn']:
+            # Owned before the call: a lost answer still leaves cleanup to put the switch back to what it found.
+            self.conn_before = False
+            code, row, error = self.api('POST', 'extensions/conn/enable', {})
+            require(code == 200 and row['enabled'], f'could not enable the Conn extension: HTTP {code} {error}')
+        self.watch_reads()
 
         def both(label, expect, reason=None):
             row = {'state': label}
             for via in ('engine', 'ssh'):
-                answer, wall, cpu = self.work_read(instance, via)
-                row[via] = {'answer': answer, 'wall_ms': wall, 'executor_cpu_ms': cpu}
+                answer, wall, path, cpu = self.work_read(instance, via)
+                row[via] = {'answer': answer, 'wall_ms': wall, 'path': path, 'executor_cpu_ms': cpu}
             engine, ssh = ({key: value for key, value in row[via]['answer'].items() if key not in ('read_at', 'duration_ms')} for via in ('engine', 'ssh'))
             require(engine == ssh, f'{label}: the executor and SSH readers disagree')
             require(engine['state'] == expect and engine['reason'] == reason, f'{label}: read {engine["state"]}/{engine["reason"]}, expected {expect}/{reason}')
@@ -660,9 +741,9 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         for via in ('engine', 'ssh'):
             self.set_capability(via == 'engine')
             for _ in range(WORK_SAMPLES):
-                code, answer, _error, wall = self.conn('GET', f'instances/{instance}/work')
+                code, answer, _error, wall, orders, replies = self.timed('GET', instance, f'instances/{instance}/work')
                 require(code == 200 and answer['state'] == 'clean', f'latency sample via {via} was not clean')
-                reads[via].append({'wall_ms': wall, 'duration_ms': answer['duration_ms']})
+                reads[via].append({'wall_ms': wall, 'duration_ms': answer['duration_ms'], 'path': self.attributed(via, answer, orders, replies)})
         edits = {
             'tracked edit': ('f=$(git ls-files | head -n 1); printf "proof\\n" >> "$f"', 'git checkout -- "$(git ls-files | head -n 1)"'),
             'untracked file': ('printf "proof\\n" > orbit-proof-untracked.txt', 'rm orbit-proof-untracked.txt'),
@@ -675,26 +756,60 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
             both(label, 'dirty')
             self.workspace(instance, undo)
             both(label + ' undone', 'clean')
-        self.workspace(instance, edits['untracked file'][0])
-        dirty = both('dirty, running', 'dirty')
-        self.set_capability(True)
-        held = self.db(f"SELECT count(*) AS total FROM operations WHERE kind='instance.destroy' AND target_id={instance}")
-        refusal = self.conn('POST', f'instances/{instance}/destroy', {'acknowledge_unsaved': False}, name + '-unacknowledged')
-        require(refusal[0] == 409 and refusal[2].get('code') == 'instance.unsaved_work' and refusal[2]['details']['state'] == 'dirty'
-                and held == self.db(f"SELECT count(*) AS total FROM operations WHERE kind='instance.destroy' AND target_id={instance}")
-                and self.runtime(instance)['status'] == 'active', 'the unacknowledged destroy of a dirty clone did not refuse without effect')
 
-        # A read that the executor cannot answer is `unknown` `timeout`, never a guess: the reader is the executor, not SSH.
+        # The POST reads afresh: the last GET read clean, the workspace turns dirty, and the POST alone sees it.
+        self.set_capability(True)
+        self.workspace(instance, edits['untracked file'][0])
+        posts['dirty after a clean read'] = self.refused_post(instance, name + '-unacknowledged-dirty', 'dirty',
+                                                              details={'untracked': {'count': 1, 'names': ['orbit-proof-untracked.txt']}})
+        dirty = both('dirty, running', 'dirty')
+
+        # A lost reply: the executor sleeps through the first send's wait, the Gateway sends again with a fresh nonce, and the
+        # second reply answers within the request's one budget. No SSH: the bus carries both orders.
+        self.set_capability(True)
         self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        outcome, started = {}, int(time.time() * 1000)
+
+        def request():
+            outcome['answer'] = self.conn('GET', f'instances/{instance}/work')
+
+        caller = threading.Thread(target=request)
+        caller.start()
         try:
-            code, stalled, error, wall = self.conn('GET', f'instances/{instance}/work')
+            def second_send():
+                with self.bus_lock:
+                    sent = [event for event in self.bus if event['event'] == 'order' and event['target'] == str(instance) and event['at_ms'] >= started]
+                return sent if len(sent) >= 2 else None
+
+            wait_for(second_send, 'the Gateway did not send the read again after a lost reply', 6, 0.02)
         finally:
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
-        require(code == 200 and (stalled['state'], stalled['reason']) == ('unknown', 'timeout') and wall < 6000,
-                'a stalled executor did not give unknown/timeout within the read budget')
+            caller.join(25)
+        code, retried, error, wall = outcome['answer']
+        orders, replies = self.bus_between(instance, started, int(time.time() * 1000))
+        first, second = orders[0], orders[1]
+        late = [reply for reply in replies if reply['send'] == first['send']]
+        answered = [reply for reply in replies if reply['send'] == second['send'] and reply['status'] == 'output']
+        require(code == 200 and (retried['state'], retried['reason']) == ('dirty', None) and len(orders) == 2 and first['nonce'] != second['nonce']
+                and second['at_ms'] - first['at_ms'] >= 2000 and answered and answered[0]['state'] == 'dirty'
+                and wall < WORK_REQUEST_MS and second['budget_ms'] < first['budget_ms'],
+                f'a lost first reply was not read again with a fresh nonce inside the budget (HTTP {code}, {len(orders)} orders, {wall} ms)')
+        lost_reply = {'answer': retried, 'wall_ms': wall, 'orders': orders, 'replies': replies,
+                      'first_reply_after_its_wait_ms': (late[0]['at_ms'] - first['at_ms']) if late else None}
+
+        # A read that the executor cannot answer at all is `unknown` `timeout`, never a guess and never SSH.
+        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        try:
+            code, stalled, error, stalled_wall, stalled_orders, _replies = self.timed('GET', instance, f'instances/{instance}/work')
+        finally:
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+        require(code == 200 and (stalled['state'], stalled['reason']) == ('unknown', 'timeout') and stalled_wall < WORK_REQUEST_MS + 2000 and len(stalled_orders) == 2,
+                'a stalled executor did not give unknown/timeout after two sends within the read budget')
 
         self.incus('stop', f'instance-{instance}', '--project', POOL)
         both('stopped', 'unknown', 'stopped')
+        self.set_capability(True)
+        posts['stopped'] = self.refused_post(instance, name + '-unacknowledged-stopped', 'unknown', 'stopped')
         self.incus('start', f'instance-{instance}', '--project', POOL)
         wait_for(lambda: self.reachable(instance), f'Instance {instance} did not come back after its start', 90, 1)
         both('started again', 'dirty')
@@ -707,34 +822,45 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
 
         slept_container = container()
         asleep = both('asleep', 'unknown', 'asleep')
+        self.set_capability(True)
+        posts['asleep'] = self.refused_post(instance, name + '-unacknowledged-asleep', 'unknown', 'asleep')
         require(container() == slept_container and 'Running' not in slept_container, f'reading an asleep clone woke it ({slept_container} -> {container()})')
 
-        self.set_capability(True)
-        quiet_read = self.conn('GET', f'instances/{clean}/work')
-        require(quiet_read[1]['state'] == 'clean', 'the quiet clone is not clean')
         removals = {}
         for label, target, body in (('clean, unacknowledged', clean, {'acknowledge_unsaved': False}),
                                     ('asleep dirty, acknowledged', instance, {'acknowledge_unsaved': True})):
-            code, row, error, _wall = self.conn('POST', f'instances/{target}/destroy', body, f'{target}-destroy')
+            code, row, error, _wall, orders, replies = self.timed('POST', target, f'instances/{target}/destroy', body, f'{target}-destroy')
             require(code == 202, f'{label} destroy: HTTP {code} {error.get("code")}')
-            removals[label] = self.terminal(int(row['id']))
+            read = self.attributed('engine', {'state': 'clean'}, orders, replies) if body['acknowledge_unsaved'] is False else None
+            require(body['acknowledge_unsaved'] or read, f'{label} destroy was admitted without a fresh read')
+            require(not body['acknowledge_unsaved'] or not orders, f'{label} destroy read the workspace')
+            removals[label] = {'operation': int(row['id']), 'status': self.terminal(int(row['id']))['status'], 'read': read}
             require(self.runtime(target) is None, f'{label} destroy left the Instance')
+        self.stop_watch()
 
         def p50(values):
             ordered = sorted(values)
             return ordered[len(ordered) // 2] if len(ordered) % 2 else (ordered[len(ordered) // 2 - 1] + ordered[len(ordered) // 2]) / 2
 
-        latency = {via: {'samples': len(rows), 'p50_wall_ms': p50([row['wall_ms'] for row in rows]),
-                         'p50_read_ms': p50([row['duration_ms'] for row in rows]), 'reads': rows} for via, rows in reads.items()}
-        self.record('work-read', {'instance': instance, 'quiet': clean, 'states': states, 'latency': latency,
-                                  'unacknowledged_dirty_refusal': {'code': refusal[0], 'error': refusal[2]},
-                                  'dirty_details': dirty, 'stalled_executor': {'answer': stalled, 'wall_ms': wall},
+        latency = {via: {'samples': len(rows), 'attributed': sorted({row['path']['reader'] for row in rows}),
+                         'p50_wall_ms': p50([row['wall_ms'] for row in rows]), 'p50_read_ms': p50([row['duration_ms'] for row in rows]),
+                         'reads': rows} for via, rows in reads.items()}
+        self.record('work-read', {'instance': instance, 'quiet': clean, 'states': states, 'latency': latency, 'posts': posts,
+                                  'dirty_details': dirty, 'lost_reply': lost_reply,
+                                  'stalled_executor': {'answer': stalled, 'wall_ms': stalled_wall, 'orders': stalled_orders},
                                   'sleep': {'operation': sleep_row['id'], 'status': sleep_row['status'], 'answer': asleep, 'container': slept_container},
-                                  'removals': {label: {'operation': row['id'], 'status': row['status']} for label, row in removals.items()}})
+                                  'removals': removals})
 
     def cleanup(self):
         if not self.installed or self.closed:
             return
+        self.stop_watch()
+        if self.conn_before is not None:
+            code, extensions, error = self.api('GET', 'extensions')
+            require(code == 200, f'could not read the extension switches: HTTP {code} {error}')
+            if extensions['conn'] != self.conn_before:
+                code, _data, error = self.api('POST', 'extensions/conn/' + ('enable' if self.conn_before else 'disable'), {})
+                require(code == 200, f'could not put the Conn extension back: HTTP {code} {error}')
         if self.project is not None:
             self.set_capability(True)
             for name, clone in self.clones.items():
@@ -750,9 +876,6 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                 self.terminal(int(admitted['id']))
             code, _data, error = self.api('DELETE', f'projects/{self.project}')
             require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
-        if self.conn_enabled:
-            code, _data, error = self.api('POST', 'extensions/conn/disable', {})
-            require(code == 200, f'could not disable the Conn extension again: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'project_deleted': self.project, 'seed_deleted': self.default,
