@@ -232,7 +232,7 @@ return new class extends Migration
         }
 
         $latestOperation = ValidatedData::integer(DB::table('operations')->max('id') ?? 0);
-        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'error_code', 'updated_at']) as $tool) {
+        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'updated_at', 'error_code']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // or capture left failed, or gives it an installed version other than the one its history last recorded. No admission captured
