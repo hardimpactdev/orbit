@@ -71,7 +71,7 @@ A failed step records the Swamp chart's step name, such as `Withdraw site, remov
 
 The engine runs a private Route's `--domain` change from the admitted `route_update.plan`. Its steps run in this order:
 
-1. `csr-<i>`, `sign-<i>`, `site-<node>`: The new leaves and the prepared Caddyfile, which serves the old and the new name side by side, as `route.create` publishes them. The site also writes the new `APP_URL` lines.
+1. `csr-<i>`, `sign-<i>`, `site-<node>`: The new leaves and the prepared Caddyfile are published as `route.create` publishes them. The prepared Caddyfile serves both names. The site also writes the new `APP_URL` lines.
 2. `probe-<i>`: The Gateway probes the new name on each serving Node before any switch.
 3. `dns-<i>`: The guarded `dns.publish_records` moves the answers to the new name.
 4. `cutover`: The Gateway records the replacement authoritative and the old Route retiring.
