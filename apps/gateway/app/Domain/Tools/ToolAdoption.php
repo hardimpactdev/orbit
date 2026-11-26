@@ -55,8 +55,13 @@ final readonly class ToolAdoption
         }
         $outcome = $tool?->status === ToolStatus::Installed ? ToolOutcome::Unchanged : ToolOutcome::Applied;
         $tool ??= new Tool(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $package, 'version_constraint' => $constraint]);
-        $tool->fill(['status' => ToolStatus::Installed, 'owned' => true, 'installed_version' => $version, 'version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id,
-            'failed_operation' => null, 'error_code' => null])->save();
+        $tool->fill(['version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository]);
+        if (! $tool->exists) {
+            $tool->fill(['status' => ToolStatus::Installed, 'installed_version' => $version])->save();
+        }
+        // An adoption orders after every earlier Operation, so a late receipt never sets back what it recorded (Tool::adopt).
+        $tool->adopt(['status' => ToolStatus::Installed, 'apt_repository_id' => $repositoryId ?? $tool->apt_repository_id, 'failed_operation' => null, 'error_code' => null,
+            'version_constraint' => $constraint, 'desired_version' => $definition->version, 'desired_repository' => $definition->repository], $version);
 
         return [$tool, $outcome];
     }

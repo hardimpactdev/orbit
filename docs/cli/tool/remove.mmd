@@ -46,7 +46,7 @@ sequenceDiagram
       %%> Retry:
       %%> - run the same command again after a fix
       %%> - a timed-out removal, its start reply lost included, keeps no uninstall authority until its receipt or Swamp shows the package was never reached
-      %%> - a package step that ran at all, a nonzero exit included, ends uninstall authority even when absence was never confirmed
+      %%> - a package step that ran, a nonzero exit included, ends uninstall authority unless the check after it finds the package still present
     end
     loop every 2 s until terminal
       CLI->>GW: operation:show #5135

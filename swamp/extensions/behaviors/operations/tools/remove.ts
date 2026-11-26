@@ -65,7 +65,7 @@ export function removalDecision(
 }
 export const behavior = {
     type: "@nckrtl/tool-remove-command",
-    version: "2026.11.26.3",
+    version: "2026.11.26.4",
     resources: {
         assets: {
             schema: z.record(z.string(), z.unknown()),

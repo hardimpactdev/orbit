@@ -85,9 +85,9 @@ final readonly class ToolConvergeObservations
     }
 
     /**
-     * How a convergence's Tools phase ended, the same on time or late (the Operation then stays timed out): a phase that finished
-     * records every observation, proves each planned source and forgets the orphans it removed; a phase that never ran wrote nothing; a
-     * partial one records the Tools it verified installed and leaves each source uncertain.
+     * How a convergence's Tools phase ended, the same on time or late (the Operation then stays timed out). Every valid observation it
+     * reports counts, installed or failed, whatever the phase: a phase that finished also proves each source a Tool of it verified and
+     * forgets the orphans it removed; a phase that never ran wrote nothing; a partial one leaves each source uncertain.
      *
      * @param  array<int, array<string, mixed>>  $plans
      * @param  list<array<string, mixed>>  $observations  validated observations
@@ -97,8 +97,7 @@ final readonly class ToolConvergeObservations
     public function settle(Operation $operation, array $plans, array $observations, string $phase, array $orphans): void
     {
         $nodeId = ValidatedData::integer($operation->node_id);
-        $this->record($operation, $plans, $phase === 'completed' ? $observations
-            : array_values(array_filter($observations, static fn (array $tool): bool => $tool['status'] === 'installed')));
+        $this->record($operation, $plans, $observations);
         // A finished phase proves a source through a Tool of it verified installed; one whose Tools all failed may have left it half written.
         $installed = array_column(array_filter($observations, static fn (array $tool): bool => $tool['status'] === 'installed'), 'id');
         foreach ([true, false] as $verified) {

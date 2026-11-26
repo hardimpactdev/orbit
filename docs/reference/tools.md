@@ -159,13 +159,21 @@ A Tool owns its package only when Orbit acquired it: its own verified package wr
 
 A convergence's installed observation acquires the package only when its plan was admitted under this contract, whose helper refuses a present package Orbit does not own. A preceding-release request or convergence read after the upgrade therefore observes, never acquires. A verified write stays an acquisition even when a later step of the same run fails. Failures, refused or interrupted retries, and another Tool's repair of the shared manager never grant ownership.
 
-A removal that may have taken the package ends ownership. That covers a removal that verified the package gone, one that found it already absent, and one whose package step ran at all before absence was confirmed: it succeeded, was cut off, or failed. `dpkg --remove` can remove the package and still exit nonzero when another package's trigger fails. Any remaining cleanup is then the source's alone, and a retry never removes a replacement package installed since. Only a package step that never ran keeps the claim. A source-only cleanup never reads or touches the package, so it changes no ownership.
+A removal that may have taken the package ends ownership. That covers a removal that verified the package gone, one that found it already absent, and one whose package step ran without leaving the package in place. `dpkg --remove` can remove the package and still exit nonzero when another package's trigger fails. After a failed package step the run checks the package again.
+
+Only a package step that never ran, or one the check finds the package still present after, keeps the claim, as when a held dpkg lock refuses before any write. A check that finds it gone, or that could not read it, ends the claim.
+
+Any remaining cleanup is then the source's alone, and a retry never removes a replacement package installed since. A source-only cleanup never reads or touches the package, so it changes no ownership.
 
 The run's own receipt decides, whatever its end. A failed or cancelled run that recorded a verified acquisition or a confirmed absence keeps it, and so does the Tool row it applies to.
 
-A run that ends after the Gateway timed its Operation out counts the same way. The Operation stays failed with `operation.timed_out`, but when the reconciler reads the run's terminal, its receipt counts for the Tool as it would have on time. A convergence report read late records each Tool it verified installed. A Tools phase that finished proves its sources, one that never ran gives them back the trust they were admitted with, and a partial one proves nothing.
+A run that ends after the Gateway timed its Operation out counts the same way. The Operation stays failed with `operation.timed_out`, but when the reconciler reads the run's terminal, its receipt counts for the Tool as it would have on time. A convergence report counts each valid observation it carries, installed or failed, also when its phase was partial or its run was cancelled. A Tools phase that finished proves its sources; one that never ran wrote nothing; a partial one proves nothing.
 
-Receipts can arrive out of order, so each one changes only what no newer receipt changed. The Tool's state, its ownership and its installed version each keep the newest Operation whose receipt changed them, and so does a Tool Manager's state. A version counts only when the receipt observed it: a refused decision that repeats its admitted version observed nothing. A newer request that changed nothing, because it was refused before its package step or cancelled before its run, never hides an older receipt.
+Receipts can arrive out of order, so each one changes only what no newer receipt changed. The Tool's state, its ownership and its installed version each keep the newest Operation whose receipt changed them, and so does a Tool Manager's state. A version counts only when the receipt observed it: a refused decision that repeats its admitted version observed nothing.
+
+A refusal observed the version only when it read the package. A newer request that changed nothing, because it was refused before its package step or cancelled before its run, never hides an older receipt. An explicit adoption orders after every earlier Operation, so no late receipt sets back what it recorded.
+
+A run is given the uninstall authority its admission recorded. A request the preceding release queued, which recorded none, is given the authority the Tool holds when it is dispatched. Missing authority is none: the executor never removes a package without it, and an update refuses a package Orbit does not own.
 
 Desired state belongs to admissions: each direct request and each convergence sets it when admitted, and a mode switch sets it too, so no receipt sets it back. A removed Tool stays removed, and a receipt deletes a source record only while no newer Operation may have published it and no Tool links it.
 
@@ -211,15 +219,18 @@ The Node keeps a record of each source Orbit may have on disk. Orbit creates it 
 
 A write may change the key, source or preference on disk before it fails, is cancelled, times out, or returns an unreadable result. So each admitted direct write or removal that touches the source, and each convergence that includes it, is an open writer of the record until its end settles it, and the record is not verified meanwhile. Each end settles as one of three:
 
-- Proved: Orbit's own successful write or a removal that repinned the survivors.
+- Proved: Orbit's own successful write that published the key and source.
 - Proved too: a finished Tools phase that verified a Tool of the source installed.
 - Uncertain: a run that may have written, such as a partial phase.
 - Uncertain too: a failure after a source write, or an end without a readable receipt.
 - Unwritten: a run whose receipt shows each source write skipped, or that failed before any source write.
+- Unwritten too: a successful write admitted with a verified source, which skips publication, and a removal that repinned the survivors. Both rewrite preferences only.
 - Unwritten too: a run cancelled before it started, or one Swamp verifies never started.
 - Unwritten too: a convergence whose run recorded its Tools step skipped.
 
-The newest settled end decides. An older end, late or not, changes nothing a newer one settled, and an end that wrote nothing changes no trust: it only stops being a writer. The source is verified when the newest settled end proved the definition the record holds and no newer writer is open. Missing evidence is never a skip. A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
+The newest settled end decides. An older end, late or not, changes nothing a newer one settled, and an end that wrote nothing changes no trust: it only stops being a writer. The source is verified when the newest settled end proved the definition the record holds and no newer writer is open.
+
+Missing evidence is never a skip. A write that proves a source nothing recorded yet, such as a first publication the preceding release queued, records it. A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
 
 An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified. It settles the record unproven for the definition it names, newer than any Operation admitted before it, so no older end gives that definition trust.
 
@@ -241,7 +252,13 @@ An adoption keeps ownership. The preceding release recorded none, but every admi
 
 So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned. A version an interrupted or unchanged receipt explains stays an observation.
 
-Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing.
+Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing. A removal that failed after its decision may have reached the package, as the Gateway now reads such a receipt, so it ends the claim.
+
+Work still open at the upgrade is settled by the upgraded Gateway:
+- Queued, running and expired-but-unsettled work is an open writer of each source it may write.
+- A removal the preceding release expired with its run unsettled has its uninstall authority set aside, as the Gateway does at expiry.
+- Each Tool, Tool Manager and source keeps the order of the preceding release's newest receipt for it.
+- A late receipt of older work therefore never sets back newer work.
 
 Trust needs a write that ran. A source is verified only when its latest event is a successful write that published it (`repository_given: true`) with the recorded definition, or a converge whose Tools phase ran and installed a Tool from it. A write that skipped publication, and a converge whose Tools phase was skipped, neither prove nor doubt the source.
 

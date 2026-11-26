@@ -17,6 +17,8 @@ const base = {
     platform: "linux",
     architecture: "x86_64",
     tool_id: null,
+    // A Tool Orbit owns; the cases about an unowned one say so.
+    package_owned: true,
 };
 const input = (changes: Record<string, unknown> = {}) =>
     WriteInput.parse({ ...base, ...changes });
@@ -170,4 +172,21 @@ Deno.test("manager writes carry public arguments and no script source", async ()
             true,
         );
     }
+});
+
+Deno.test("an update of a package Orbit does not own refuses before any write, also one queued without ownership", () => {
+    const present = { facts: { ...facts, versions: ["1.0.0"] } };
+    for (const unowned of [{ package_owned: false }, { package_owned: undefined }]) {
+        const refused = decide(input({ kind: "tool.update", tool_id: 1, installed_version: "1.0.0", desired_version: "2.0.0", ...unowned }), present);
+        assertEquals([refused.ready, refused.mutate, refused.error_code], [false, false, "tool.state_invalid"]);
+    }
+});
+
+Deno.test("a refusal says whether it read the package, so a repeated admitted version is never taken for an observation", () => {
+    const read = decide(input({ kind: "tool.update", tool_id: 1, installed_version: "1.0.0", desired_version: "3.0.0" }), {
+        facts: { ...facts, versions: ["2.0.0"] }, refresh_error: "tool.candidate_version_probe_failed",
+    });
+    assertEquals([read.ready, read.installed_version, read.inventory_read], [false, "2.0.0", true]);
+    const unread = decide(input({ kind: "tool.update", tool_id: 1, installed_version: "1.0.0" }), { facts: { ...facts, versions: [null] } });
+    assertEquals([unread.ready, unread.installed_version, unread.inventory_read], [false, "1.0.0", false]);
 });

@@ -71,6 +71,8 @@ final class AptSourceTrust
     public static function settle(int $nodeId, string $name, int $operation, string $outcome, ?array $definition = null): void
     {
         $record = AptRepository::query()->where('node_id', $nodeId)->where('name', $name)->first();
+        // A write that published a source nothing recorded yet, a first publication the preceding release queued, records it.
+        $record ??= $outcome === 'proved' && $definition !== null ? self::handle($nodeId, $definition) : null;
         if ($record === null) {
             return;
         }

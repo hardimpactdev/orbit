@@ -54,12 +54,12 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ inputs.intent.manager == "apt" ? ["timeout","120","/usr/bin/env","LC_ALL=C","DEBIAN_FRONTEND=noninteractive","/usr/bin/dpkg","--remove","--",inputs.intent.package] : ["timeout","900"] + steps["Prepare package commands"].outputs.remove }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Check apt absence
     labels: {role: swamp}
-    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: failed}, {type: skipped}]}}]
     guard: ${{ !steps["Choose package action"].outputs.remove || inputs.intent.manager != "apt" }}
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "tool-apt-end-" + string(inputs.node_id) }}', methodName: check, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: absent}}
   - name: Check it is gone
     labels: {role: swamp}
-    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: failed}, {type: skipped}]}}]
     guard: ${{ !steps["Choose package action"].outputs.remove || inputs.intent.manager == "apt" }}
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tool-command-end-" + string(inputs.node_id) }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout","60"] + steps["Prepare package commands"].outputs.inventory }}', okExitCodes: [0, 1]}, globalArgs: {name: '${{ "tool-command-end-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Remove the apt source

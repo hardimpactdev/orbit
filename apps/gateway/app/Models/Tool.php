@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolStatus;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -81,6 +82,32 @@ final class Tool extends Model
      */
     public function receive(int $operation, array $state = [], ?bool $owned = null, ?string $version = null, bool $observed = false): void
     {
+        $this->receiveAt(self::order($operation), $state, $owned, $version, $observed);
+    }
+
+    /**
+     * An explicit adoption is newer than every receipt of an Operation admitted before it, the newest one included: it orders after
+     * the latest Operation, so no late receipt of that Operation sets back what it recorded.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    public function adopt(array $state, ?string $version): void
+    {
+        $this->receiveAt(self::order(ValidatedData::integer(Operation::query()->max('id') ?? 0)) + 1, $state, true, $version, true);
+    }
+
+    /** The order of an Operation's receipt among the Tool's changes; an adoption sits between two Operations. */
+    public static function order(int $operation): int
+    {
+        return $operation * 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function receiveAt(int $order, array $state, ?bool $owned, ?string $version, bool $observed): void
+    {
+        $operation = $order;
         $receipts = $this->receipts ?? [];
         $changes = [];
         if ($state !== [] && $operation >= ($receipts['state'] ?? 0)) {
@@ -132,6 +159,8 @@ final class Tool extends Model
     /** No newer Operation's receipt changed this row: an Operation may still act on it as a whole, deleting it for example. */
     public function currentFor(int $operation): bool
     {
+        $operation = self::order($operation);
+
         return max([0, ...array_filter(array_values($this->receipts ?? []), 'is_int')]) <= $operation;
     }
 

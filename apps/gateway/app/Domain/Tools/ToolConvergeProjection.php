@@ -62,17 +62,18 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         $intent = ValidatedData::object($operation->input['intent']);
         $plans = $this->plans($intent);
         $run = ValidatedData::object($data['native_run'] ?? []);
-        // A cancelled or interrupted run, or a report that cannot be used, leaves the sources as its own history shows.
-        $unreported = fn (array $projected): Operation => DB::transaction(function () use ($operation, $projected, $plans, $run): Operation {
+        // A cancelled or interrupted run, or a report that cannot be used, leaves the sources as its own history shows; the Tools a usable
+        // report checkpointed still count.
+        $unreported = fn (array $projected, array $tools = []): Operation => DB::transaction(function () use ($operation, $projected, $plans, $run, $tools): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (! $locked->status->terminal()) {
-                $this->observations->settle($locked, $plans, [], ToolConvergeObservations::phaseFromRun($run), []);
+                $this->observations->settle($locked, $plans, array_values(array_map(ValidatedData::object(...), $tools)), ToolConvergeObservations::phaseFromRun($run), []);
             }
 
             return $this->direct->project($locked, ...$projected);
         });
         if (in_array($data['status'] ?? null, ['cancelled', 'interrupted'], true)) {
-            return $unreported([$data, []]);
+            return $unreported([$data, []], $this->observations->lateObservations(ValidatedData::object($data['result'] ?? [])['tools'] ?? [], $plans, 'partial'));
         }
         $result = ValidatedData::object($data['result'] ?? []);
         $completed = ($result['succeeded'] ?? null) === true;

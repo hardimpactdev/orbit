@@ -16,6 +16,7 @@ function fixture(manager = "apt") {
         platform: manager === "brew-cask" ? "macos" : "linux",
         architecture: "x86_64",
         installed_version: "1.0",
+        package_owned: true,
     });
     const facts: Record<string, unknown> = {
         scope: "present",
@@ -131,6 +132,9 @@ Deno.test("a package Orbit does not own is never removed, even when it is a remo
         );
         // An unknown package fails the removal simulation and its facts may be unreadable; neither stops the source cleanup.
         assertEquals(removalDecision(unowned, null), cleanup);
+        // A request queued before the ownership contract carries no ownership: it never removes the package.
+        const { package_owned: _owned, ...queued } = input;
+        assertEquals(probe(RemoveInput.parse(queued), facts), cleanup);
     }
 });
 

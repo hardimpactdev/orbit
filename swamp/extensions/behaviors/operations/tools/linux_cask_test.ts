@@ -20,6 +20,7 @@ const base = {
     user: "orbit",
     platform: "linux",
     architecture: "x86_64",
+    package_owned: true,
 };
 const brew = { os_major: 0, prefix, home: "/home/orbit", token_count: 1 };
 const facts = (versions: string[]) => ({

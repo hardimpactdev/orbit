@@ -39,6 +39,8 @@ export type Decision = {
     installed_version: string | null;
     /** The raw installed coordinate, such as a cask's `1.5.13,<build>`, which tells a new build from the same one. */
     installed_coordinate?: string | null;
+    /** Whether a refused decision read the package; a ready one always did. */
+    inventory_read?: boolean;
     candidate_json: string;
 };
 const plain = (input: Input) => ({
@@ -59,6 +61,10 @@ export function before(
     ) throw new ToolRefusal("tool.package_already_installed");
     if (input.kind === "tool.update" && !present) {
         throw new ToolRefusal("tool.version_probe_failed");
+    }
+    // An update changes only a package Orbit owns, also one a request queued before the ownership contract asks for.
+    if (input.kind === "tool.update" && !input.package_owned) {
+        throw new ToolRefusal("tool.state_invalid");
     }
     if (input.desired_version !== null) {
         if (!present || !exactMatches(input, facts.versions![0]!)) return true;
@@ -81,7 +87,9 @@ export function decide(input: Input, phase: Phase): Decision {
 }
 function choose(input: Input, phase: Phase): Decision {
     let managerVersion: string | null = null,
-        installed = input.installed_version;
+        installed = input.installed_version,
+        read = false;
+    // `inventory_read` tells the Gateway the decision read the package: a refusal before that repeats the version it was admitted with.
     const refused = (code: string, native?: string): Decision => ({
         ready: false,
         mutate: false,
@@ -89,6 +97,7 @@ function choose(input: Input, phase: Phase): Decision {
         ...(native ? { native_error_code: native } : {}),
         manager_version: managerVersion,
         installed_version: installed,
+        inventory_read: read,
         candidate_json: "null",
     });
     if (phase === null) return refused("tool.version_probe_failed");
@@ -107,7 +116,8 @@ function choose(input: Input, phase: Phase): Decision {
             );
         }
         const { facts, present } = writeInventory(phase.facts);
-        installed = present ? facts.versions![0]! : installed;
+        installed = present ? facts.versions![0]! : null;
+        read = true;
         if (typeof phase.refresh_error === "string") {
             return refused(phase.refresh_error);
         }
@@ -149,7 +159,7 @@ function choose(input: Input, phase: Phase): Decision {
 }
 export const behavior = {
     type: "@nckrtl/tool-write-command",
-    version: "2026.11.26.3",
+    version: "2026.11.26.4",
     resources: {
         assets: { schema: Public, lifetime: "1d", garbageCollection: 10 },
         decision: { schema: Public, lifetime: "1d", garbageCollection: 10 },

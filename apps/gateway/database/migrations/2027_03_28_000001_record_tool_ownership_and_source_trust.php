@@ -46,6 +46,10 @@ return new class extends Migration
         // Per source name: its latest write event and that event's definition, the definitions it may have on disk since its last
         // confirmed write or removal, and the Operations that confirmed its removal.
         $sources = [];
+        // The newest Operation that changed each Tool Manager's state, by Node and name, and each Tool's removal the preceding release
+        // expired with its run unsettled, by Tool.
+        $managers = [];
+        $suspended = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
@@ -55,8 +59,40 @@ return new class extends Migration
             // A run that never reached the Node wrote nothing: no attempt and no bound native run.
             $ran = $operation->attempts > 0 || isset($state['swamp_run_id']);
             $succeeded = $operation->status === 'succeeded';
+            // Work still open at the upgrade, queued, running, or expired by the preceding release with its run unsettled, is settled by
+            // the upgraded Gateway when its end is read: its sources keep it as an open writer, and it changes no Tool here.
+            $terminal = in_array(data_get($state, 'native_timeout.native_terminal_status'), ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
+                || data_get($state, 'native_timeout.no_run_verified_at') !== null;
+            $expired = $operation->error_code === 'operation.timed_out' && ! $terminal;
+            $open = ! in_array($operation->status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true) || $expired;
             if ($operation->kind === 'node.converge') {
+                if ($open) {
+                    foreach ((array) data_get($input, '_converge.intent.tools', []) as $plan) {
+                        if (is_array($plan) && is_array($plan['repository'] ?? null) && is_string($plan['repository']['name'] ?? null)) {
+                            $this->writer($sources, $operation->node_id, $plan['repository']['name'], $operation->id, $plan['repository']);
+                        }
+                    }
+
+                    continue;
+                }
                 $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources);
+
+                continue;
+            }
+            $repository = is_array($input['repository'] ?? null) ? $input['repository'] : null;
+            if ($open) {
+                // A request still pending names the Tool's desired source, as a failed one does.
+                if (is_int($input['tool_id'] ?? null) && $operation->kind !== 'tool.remove') {
+                    $latest[$input['tool_id']] = ['operation' => $operation->id, 'repository' => $repository];
+                }
+                if ($repository !== null && is_string($repository['name'] ?? null)) {
+                    $this->writer($sources, $operation->node_id, $repository['name'], $operation->id, $repository);
+                }
+                // The preceding release did not set aside the authority of a removal it expired; the upgrade does, as the Gateway now
+                // does at expiry, until the run's end is read or Swamp verifies it never ran.
+                if ($expired && $operation->kind === 'tool.remove' && $ran && is_int($input['tool_id'] ?? null)) {
+                    $suspended[$input['tool_id']] = $operation->id;
+                }
 
                 continue;
             }
@@ -64,24 +100,35 @@ return new class extends Migration
             if ($tool !== null) {
                 // Admission captured the Tool's status and installed version (StartToolOperationAction).
                 $this->capture($tools, $tool, is_string($input['tool_status'] ?? null) ? $input['tool_status'] : null,
-                    is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null);
+                    is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null, $operation->id);
                 // Every projected end but a cancel set the Tool's status and installed version (ToolIntentProjection::projectState). Only
                 // the terminal of a bound native run is projected: an expiry, a refused or lost start, or another Gateway-side failure
                 // leaves the row as it was.
                 $projected = $succeeded || (isset($state['swamp_run_id']) && ($operation->error_code === null
                     || str_starts_with((string) $operation->error_code, 'tool.') || $operation->error_code === 'operation.native_failed'));
+                if ($projected) {
+                    $tools[$tool]['stamp'] = $operation->id * 2;
+                    if (is_string($input['manager'] ?? null)) {
+                        $managers[$operation->node_id][$input['manager']] = $operation->id;
+                    }
+                }
                 if ($operation->kind !== 'tool.remove' && $projected && in_array($operation->status, ['succeeded', 'failed', 'interrupted'], true)) {
                     $acquired = $succeeded && ($result['outcome'] ?? null) === 'applied';
                     $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
-                    $tools[$tool] = ['owned' => $tools[$tool]['owned'] || $acquired,
+                    $tools[$tool] = [...$tools[$tool], 'owned' => $tools[$tool]['owned'] || $acquired,
                         'installed' => $acquired ? 'acquired' : ($succeeded ? ($tools[$tool]['installed'] ?? 'observed') : $tools[$tool]['installed']),
                         'last' => $succeeded ? 'installed' : 'failed', 'version' => $succeeded ? $version : ($version ?? $tools[$tool]['version'])];
+                }
+                // A removal that may have reached its package, a nonzero exit included, ended the claim; only one that failed before its
+                // decision, or that its decision refused, left the package untouched.
+                if ($operation->kind === 'tool.remove' && $projected && in_array($operation->status, ['failed', 'interrupted'], true)
+                    && ! $this->untouchedPackage(data_get($state, 'native_failure.failed_step'), $operation->error_code)) {
+                    $tools[$tool]['owned'] = false;
                 }
                 if ($operation->kind !== 'tool.remove') {
                     $latest[$tool] = ['operation' => $operation->id, 'repository' => is_array($input['repository'] ?? null) ? $input['repository'] : null];
                 }
             }
-            $repository = is_array($input['repository'] ?? null) ? $input['repository'] : null;
             $name = $repository['name'] ?? null;
             if ($repository === null || ! is_string($name) || ! $ran) {
                 continue;
@@ -90,13 +137,29 @@ return new class extends Migration
             $this->note($sources, $operation->node_id, $name, $repository, $event, $operation->id);
         }
 
-        foreach (DB::table('tools')->get(['id', 'node_id', 'status', 'installed_version', 'apt_repository_id', 'desired_repository']) as $tool) {
+        $latestOperation = ValidatedData::integer(DB::table('operations')->max('id') ?? 0);
+        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'error_code', 'apt_repository_id', 'desired_repository']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // left failed, or gives it an installed version other than the one its history last recorded.
             $adopted = $history !== null && $tool->status === 'installed'
                 && ($history['last'] === 'failed' || ($tool->installed_version !== null && $tool->installed_version !== $history['version']));
             $changes = ['owned' => $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted)];
+            // Each field keeps the order of the preceding release's newest receipt for it; an adoption after them orders after the latest
+            // Operation (Tool::receive, Tool::adopt). A late receipt of an older Operation therefore never sets back a newer one.
+            $stamp = $adopted ? $latestOperation * 2 + 1 : ($history['stamp'] ?? null);
+            $receipts = $stamp === null ? [] : ['state' => $stamp, 'owner' => $stamp, 'version' => $stamp];
+            if (isset($suspended[$tool->id])) {
+                $receipts['suspended'] = ['operation' => $suspended[$tool->id], 'owned' => $changes['owned'], 'status' => $tool->status,
+                    'failed_operation' => $tool->failed_operation, 'error_code' => $tool->error_code];
+                $changes = [...$changes, 'owned' => false, 'status' => 'failed', 'failed_operation' => 'remove', 'error_code' => 'operation.timed_out'];
+            }
+            $changes['receipts'] = $receipts === [] ? null : json_encode($receipts, JSON_THROW_ON_ERROR);
+            $manager = DB::table('tool_managers')->where('id', $tool->tool_manager_id)->first(['node_id', 'name']);
+            $convergeStamp = $history['converged'] ?? null;
+            if ($manager !== null && is_int($convergeStamp)) {
+                $managers[$manager->node_id][$manager->name] = max($managers[$manager->node_id][$manager->name] ?? 0, $convergeStamp);
+            }
             // A failed install that wrote its source kept no link to it: a still pending request names its desired source, unless a
             // removal of that source name was confirmed after the request, whoever reused the name since. An installed Tool without a
             // link has no source.
@@ -110,14 +173,19 @@ return new class extends Migration
             }
             DB::table('tools')->where('id', $tool->id)->update($changes);
         }
+        foreach ($managers as $nodeId => $byName) {
+            foreach ($byName as $name => $operation) {
+                DB::table('tool_managers')->where('node_id', $nodeId)->where('name', $name)->update(['receipt' => $operation]);
+            }
+        }
 
         foreach ($sources as $nodeId => $byName) {
             foreach ($byName as $name => $last) {
                 $record = DB::table('apt_repositories')->where('node_id', $nodeId)->where('name', $name)->first(['id']);
-                if ($record === null && isset($last['event']) && $last['event'] !== 'removed') {
+                if ($record === null && ((isset($last['event']) && $last['event'] !== 'removed') || ($last['writers'] ?? []) !== [])) {
                     // A source that may still be on disk keeps its own record, whatever package names collide.
                     DB::table('apt_repositories')->insert(['node_id' => $nodeId, 'name' => $name, 'verified' => false, 'created_at' => now(),
-                        'updated_at' => now(), 'definition' => json_encode($last['definition'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+                        'updated_at' => now(), 'definition' => json_encode($last['definition'] ?? array_values(is_array($last['writers'] ?? null) ? $last['writers'] : [])[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
                 }
             }
         }
@@ -136,8 +204,26 @@ return new class extends Migration
             }
             $entries = array_values(array_unique(array_filter($entries)));
             sort($entries, SORT_STRING);
-            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written, 'entries' => json_encode($entries, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                'writers' => '[]', 'settled' => json_encode(['verified' => $written, 'definition' => $definition, 'entries' => $entries, 'operation' => 0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+            // Work still open at the upgrade is an open writer: the source proves nothing until its end, read after the upgrade, settles it.
+            $writers = [];
+            foreach ((array) ($last['writers'] ?? []) as $operation => $wrote) {
+                $wrote = ValidatedData::object($wrote);
+                $writers[$operation] = [];
+                foreach ((array) ($wrote['uris'] ?? []) as $uri) {
+                    foreach ((array) ($wrote['suites'] ?? []) as $suite) {
+                        $writers[$operation][] = is_string($uri) && is_string($suite) ? rtrim($uri, '/').' '.$suite : '';
+                    }
+                }
+            }
+            $possible = array_values(array_unique([...$entries, ...array_filter(array_merge([], ...array_values($writers)))]));
+            sort($possible, SORT_STRING);
+            // As AptSourceTrust::recompute: trust holds while no writer newer than the settled end is open.
+            $settledAt = is_int($last['operation'] ?? null) ? $last['operation'] : 0;
+            $newer = array_filter(array_keys($writers), static fn (int|string $writer): bool => (int) $writer > $settledAt) !== [];
+            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written && ! $newer,
+                'entries' => json_encode($possible, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                'writers' => json_encode((object) $writers, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                'settled' => json_encode(['verified' => $written, 'definition' => $definition, 'entries' => $entries, 'operation' => is_int($last['operation'] ?? null) ? $last['operation'] : 0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
         }
     }
 
@@ -182,7 +268,7 @@ return new class extends Migration
      *
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $result
-     * @param  array<int, array{owned: bool, installed: ?string, last: ?string, version: ?string}>  $tools
+     * @param  array<int, array<string, mixed>>  $tools
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
     private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources): void
@@ -190,7 +276,7 @@ return new class extends Migration
         $phase = collect((array) ($result['phases'] ?? []))->firstWhere('name', 'tools');
         $plans = array_filter((array) data_get($input, '_converge.intent.tools', []), static fn (mixed $plan): bool => is_array($plan) && is_int($plan['id'] ?? null));
         foreach ($plans as $plan) {
-            $this->capture($tools, ValidatedData::integer($plan['id']), null, is_string($plan['installed_version'] ?? null) ? $plan['installed_version'] : null);
+            $this->capture($tools, ValidatedData::integer($plan['id']), null, is_string($plan['installed_version'] ?? null) ? $plan['installed_version'] : null, $id);
         }
         if (! $ran || ! is_array($phase) || in_array($phase['status'] ?? null, ['unchanged', 'skipped'], true)) {
             return;
@@ -198,13 +284,15 @@ return new class extends Migration
         $installed = [];
         foreach ((array) ($result['tools'] ?? []) as $observation) {
             if (is_array($observation) && is_int($observation['id'] ?? null) && in_array($observation['status'] ?? null, ['installed', 'failed'], true)) {
-                $id = $observation['id'];
-                $tools[$id] ??= ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
-                $tools[$id]['last'] = $observation['status'];
+                $toolId = $observation['id'];
+                $tools[$toolId] ??= ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
+                $tools[$toolId]['last'] = $observation['status'];
+                $tools[$toolId]['stamp'] = $id * 2;
                 if ($observation['status'] === 'installed') {
-                    $installed[$id] = true;
-                    $tools[$id]['installed'] ??= 'observed';
-                    $tools[$id]['version'] = is_string($observation['installed_version'] ?? null) ? $observation['installed_version'] : $tools[$id]['version'];
+                    $installed[$toolId] = true;
+                    $tools[$toolId]['converged'] = $id;
+                    $tools[$toolId]['installed'] ??= 'observed';
+                    $tools[$toolId]['version'] = is_string($observation['installed_version'] ?? null) ? $observation['installed_version'] : $tools[$toolId]['version'];
                 }
             }
         }
@@ -222,15 +310,41 @@ return new class extends Migration
      * makes a Tool installed after its latest receipt left it failed, or gives it a version other than the one its history last
      * recorded: every receipt the preceding release projected, an interrupted one included, set that version.
      *
-     * @param  array<int, array{owned: bool, installed: ?string, last: ?string, version: ?string}>  $tools
+     * The adoption orders just before the capturing Operation.
+     *
+     * @param  array<int, array<string, mixed>>  $tools
      */
-    private function capture(array &$tools, int $id, ?string $status, ?string $version): void
+    private function capture(array &$tools, int $id, ?string $status, ?string $version, int $operation): void
     {
         $history = $tools[$id] ?? ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
         if (($status === 'installed' && $history['last'] === 'failed') || ($version !== null && $version !== $history['version'])) {
-            $history = ['owned' => true, 'installed' => 'adopted', 'last' => 'installed', 'version' => $version];
+            $history = [...$history, 'owned' => true, 'installed' => 'adopted', 'last' => 'installed', 'version' => $version, 'stamp' => $operation * 2 - 1];
         }
         $tools[$id] = $history;
+    }
+
+    /**
+     * Work still open at the upgrade that may write a source.
+     *
+     * @param  array<int, array<string, array<string, mixed>>>  $sources
+     * @param  array<mixed>  $repository
+     */
+    private function writer(array &$sources, int $nodeId, string $name, int $operation, array $repository): void
+    {
+        $entry = $sources[$nodeId][$name] ?? [];
+        $writers = is_array($entry['writers'] ?? null) ? $entry['writers'] : [];
+        $writers[$operation] = $repository;
+        $sources[$nodeId][$name] = [...$entry, 'writers' => $writers];
+    }
+
+    /**
+     * A preceding-release removal that failed left its package untouched only when it failed before its decision, or its decision
+     * refused (`tool.removal_plan_unsafe`, recorded at the end check). Any other end may have reached the package.
+     */
+    private function untouchedPackage(mixed $failedStep, ?string $errorCode): bool
+    {
+        return in_array($failedStep, ['Prepare package commands', 'Read manager version', 'Read installed package', 'Read macOS version', 'Plan the removal', 'Choose package action'], true)
+            || ($failedStep === 'Assert package state' && $errorCode === 'tool.removal_plan_unsafe');
     }
 
     /**

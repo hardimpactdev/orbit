@@ -32,8 +32,22 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready', 'package_owned', 'repository_origins',
-        ]))], 'ssh' => $operation->input['ssh']];
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready', 'repository_origins',
+        ])), 'package_owned' => $this->packageOwned($operation)], 'ssh' => $operation->input['ssh']];
+    }
+
+    /**
+     * The uninstall authority the run is given: the one its admission recorded, or, for a request the preceding release queued before the
+     * ownership contract, the one the Tool holds now that the upgrade established it. Missing, there is none.
+     */
+    private function packageOwned(Operation $operation): bool
+    {
+        if (is_bool($operation->input['package_owned'] ?? null)) {
+            return $operation->input['package_owned'];
+        }
+        $tool = is_int($operation->input['tool_id'] ?? null) ? Tool::query()->find($operation->input['tool_id']) : null;
+
+        return $tool?->owned === true;
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -170,21 +184,25 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
 
         // A package step that ran at all may have removed the package, a nonzero exit included (dpkg can remove it and still fail on
         // another package's trigger). A source-only cleanup's decision skips the package without reading it.
-        $owned = ($operation->input['package_owned'] ?? true) !== false;
+        $owned = $this->packageOwned($operation);
+        // After a failed package step the run checks the package again: still present, it survived a refusal before any write (a held
+        // dpkg lock); absent or unread, it may be gone.
+        $ran = ! in_array($status('Remove the package'), [null, 'skipped'], true);
+        $survived = $ran && NativeRunResult::stepStatus($native, 'Decode package state') === 'succeeded' && ($observation['present'] ?? false) === true;
         $released = $removal && ((($decision['ready'] ?? false) === true
             && (($owned && ($decision['remove'] ?? null) === false) || ($decoded && ($observation['absent'] ?? false) === true)))
-            || ! in_array($status('Remove the package'), [null, 'skipped'], true));
+            || ($ran && ! $survived));
 
         return [
             'acquired' => ! $removal && ($decision['mutate'] ?? false) === true && $decoded && ($observation['present'] ?? false) === true,
             'released' => $released,
-            'retained' => $removal && ! $released && is_array($native['steps'] ?? null) && $native['steps'] !== []
-                && in_array($status('Remove the package'), [null, 'skipped'], true),
+            'retained' => $removal && ! $released && is_array($native['steps'] ?? null) && $native['steps'] !== [] && (! $ran || $survived),
             'untouched' => is_array($operation->input['repository'] ?? null) && ($skipped || $stopped),
             // A refused decision may only repeat the version it was admitted with, after an unreadable inventory: only a decision that read
             // the package, or the decoded state, observed it.
             'observed' => array_key_exists('installed_version', $observation) || array_key_exists('installed_coordinate', $observation)
-                || (($decision['ready'] ?? false) === true && (array_key_exists('installed_version', $decision) || array_key_exists('installed_coordinate', $decision))),
+                || ((($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true)
+                    && (array_key_exists('installed_version', $decision) || array_key_exists('installed_coordinate', $decision))),
         ];
     }
 
@@ -270,8 +288,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             if (($result['repository_removed'] ?? false) === true && is_int($input['repository_id'] ?? null)) {
                 AptSourceTrust::removed($input['repository_id'], $operation->id);
             } else {
-                // The surviving members' preferences were rewritten from the record the removal was admitted with.
-                $this->settleSource($operation, 'proved');
+                // Repinning the survivors rewrites preferences from the record it was admitted with; it writes no key or source.
+                $this->settleSource($operation, 'unwritten');
             }
 
             return;
@@ -368,7 +386,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             return null;
         }
 
-        $this->settleSource($operation, 'proved');
+        // Only a write that published the key and source proves them; one admitted with a verified source left them as they were.
+        $this->settleSource($operation, ($operation->input['repository_given'] ?? false) === true ? 'proved' : 'unwritten');
 
         return AptSourceTrust::handle(ValidatedData::integer($operation->node_id), ValidatedData::object($definition))->id;
     }
