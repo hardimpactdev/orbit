@@ -15,6 +15,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -27,6 +28,9 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
+    /** No preceding-release API request outlived its command timeout (`orbit.command_timeout`, 570 s, with its cleanup reserve). */
+    private const int LongestRequestSeconds = 600;
+
     public function up(): void
     {
         Schema::table('tools', static function (Blueprint $table): void {
@@ -597,13 +601,10 @@ return new class extends Migration
      * The Tool's row may hold an adoption newer than an admission at `$admitted` that captured its membership. A captured link proves the
      * membership then, not that no adoption followed; only an ordering the history proves rules one out:
      * - A row made after the admission is a replacement under the pinned name.
-     * - A row last written after the admission may have been last written by an adoption, unless the preceding release's command log,
-     *   still covering that moment, holds no adoption request on the Node open in that second. Every adoption was a `tool:adopt` request
-     *   (AdoptToolAction behind the API's RecordCommandActivity), logged before its admission ran and closed after it; the log loses only
-     *   rows older than its retention. Then a receipt or admission wrote the row, and an adoption between the admission and that write left
-     *   nothing of its own in it. Neither a receipt's values nor an Operation's timestamps show which write changed the row.
      * - A row last written in the admission's own second: the admission's capture of its own Tool's status and version shows whether an
      *   adoption changed it since. An admission that only pinned the Tool captured no version, so that row may hold a newer adoption.
+     * - A row last written later: the preceding release's command log decides (adoptionsSince). A receipt that changed the version, such as a
+     *   convergence's report, never undoes an adoption's source.
      *
      * @param  array<string, mixed>  $captured  the status and version the admission captured, for its own Tool
      */
@@ -615,15 +616,47 @@ return new class extends Migration
         if ($created > $admitted) {
             return true;
         }
-        if ($written > $admitted) {
-            $oldest = DB::table('activity_log')->min('created_at');
-
-            return ! is_string($oldest) || $oldest > $written || DB::table('activity_log')->where('command', 'tool:adopt')
-                ->where('target_node_id', $tool->node_id)->where('status', '!=', 'failed')->where('created_at', '<=', $written)
-                ->where(static fn ($query) => $query->where('updated_at', '>=', $written)->orWhereNull('updated_at'))->exists();
+        if ($written === $admitted) {
+            return ! $own || ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed;
         }
 
-        return $written === $admitted && (! $own || ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed);
+        return $written > $admitted && self::adoptionsSince(ValidatedData::integer($tool->node_id), is_int($tool->apt_repository_id) ? $tool->apt_repository_id : null,
+            $admitted, $written);
+    }
+
+    /**
+     * Whether an adoption on the Node may have run between an admission and a later write, by the preceding release's command log. Every
+     * adoption was a `tool:adopt` request (AdoptToolAction behind the API's RecordCommandActivity), logged in `commands` when it began and
+     * given its Node only when it ended, and no request outlived the command timeout (`orbit.command_timeout`, 570 s).
+     * - The log proves nothing unless it still holds a `commands` row older than the admission by more than a request can last: pruning
+     *   removes rows by when they began, so a request that began earlier may be gone.
+     * - Any adoption request on the Node, or one that never recorded its Node (interrupted or still running), open at any moment from the
+     *   admission to the write may have adopted after it, unless the admission refused it (a `tool.` failure). A version-only receipt that
+     *   wrote the row later changes nothing about that.
+     * - The one exception is a single such request that ended by the admission's second and made the record the Tool links (the record was
+     *   made no earlier than it began): the admission found that record, so that adoption came first.
+     */
+    private static function adoptionsSince(int $nodeId, ?int $recordId, string $admitted, string $written): bool
+    {
+        $log = DB::table('activity_log')->where('log_name', 'commands');
+        $covered = (clone $log)->where('created_at', '<=', Carbon::parse($admitted, 'UTC')->subSeconds(self::LongestRequestSeconds)->format('Y-m-d H:i:s'))->exists();
+        if (! $covered) {
+            return true;
+        }
+        $requests = (clone $log)->where('command', 'tool:adopt')
+            ->where(static fn ($query) => $query->where('target_node_id', $nodeId)->orWhereNull('target_node_id'))
+            ->where(static fn ($query) => $query->where('status', '!=', 'failed')->orWhereNull('error_code')->orWhere('error_code', 'not like', 'tool.%'))
+            ->where('created_at', '<=', $written)
+            ->where(static fn ($query) => $query->where('status', 'running')->orWhere('updated_at', '>=', $admitted)->orWhereNull('updated_at'))
+            ->get(['created_at', 'updated_at', 'status']);
+        if ($requests->isEmpty()) {
+            return false;
+        }
+        $made = $recordId === null ? null : DB::table('apt_repositories')->where('id', $recordId)->value('created_at');
+        $first = $requests->first();
+
+        return ! ($requests->count() === 1 && $first->status !== 'running' && is_string($first->updated_at) && $first->updated_at <= $admitted
+            && is_string($made) && $made >= $first->created_at && $made <= $admitted);
     }
 
     /**

@@ -264,9 +264,9 @@ Admission pins every Tool linked to the record it found. So a Tool whose package
 
 A captured record or pin proves the membership at that admission, not that the row's newest adoption came before it. So each order rests on what the history proves of the row.
 
-A row made after the admission is a replacement under the pinned name, newer than it. A row last written after the admission may have been last written by an adoption. The preceding release's command log can rule that out: every adoption was a `tool:adopt` request, logged on its Node from before its admission ran until after.
+A row made after the admission is a replacement under the pinned name, newer than it. A row last written after the admission may hold a newer adoption: a later receipt that only set its version, such as a convergence's report, undoes nothing of an adoption's source. The preceding release's command log decides. Every adoption was a `tool:adopt` request, logged in `commands` when it began and given its Node only when it ended, and no request outlived the 570-second command timeout.
 
-When the log still covers that second and holds no such request open in it, a receipt or an admission wrote the row, and an earlier adoption left nothing of its own there. Neither a receipt's matching values nor an Operation's timestamps show which write changed a row: the step-time reader writes finished Operations later.
+The log proves nothing unless it still holds a `commands` row older than the admission by more than a request can last: cleanup removes rows by when they began. Any adoption request on the Node, or one that never recorded its Node, open at any moment from the admission to the row's last write may have adopted after the admission, unless the admission refused it. The one exception is a single such request that ended by the admission's second and made the record the Tool links: the admission found that record, so that adoption came first.
 
 In the admission's own second, a write's capture of its own Tool's status and version shows whether an adoption changed the row since. A pin captures membership only, never a version. A sibling row written in that second may therefore hold a newer adoption.
 

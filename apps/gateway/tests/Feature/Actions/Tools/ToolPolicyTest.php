@@ -36,7 +36,9 @@ use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -678,7 +680,8 @@ function policyPrecedingFixture(): array
     return json_decode((string) file_get_contents(base_path('tests/Fixtures/preceding-release-tool-histories.json')), true, flags: JSON_THROW_ON_ERROR);
 }
 
-function policyPrecedingHistories(): array
+/** @param  (Closure(): void)|null  $beforeUpgrade  run on the preceding release's rows before the upgrade, as its own scheduler would */
+function policyPrecedingHistories(?Closure $beforeUpgrade = null): array
 {
     $fixture = policyPrecedingFixture();
     $ours = require database_path('migrations/2027_03_28_000001_record_tool_ownership_and_source_trust.php');
@@ -694,6 +697,9 @@ function policyPrecedingHistories(): array
                 DB::table($table)->insert(array_intersect_key($row, $columns));
             }
         }
+    }
+    if ($beforeUpgrade !== null) {
+        $beforeUpgrade();
     }
     $desired->up();
     $ours->up();
@@ -2767,6 +2773,66 @@ it('recovers an unproven sole source through an explicit update that publishes i
         ->and($operations->execute('install', $h['node_id'], 'apt', 'htop2', null, repository: [...policySignedRepository(), 'name' => 'renamed',
             'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10')->input['repository_given'])->toBeTrue();
 })->with(['an adoption of tree in the second a no-op report was applied' => ['J1'], 'another Tool adopted unchanged in the second a report wrote tree' => ['J2']]);
+
+it('lets neither a version-only report nor an incomplete command log release an adopted source', function (string $history, ?string $pruned): void {
+    policySwamp();
+    $histories = policyPrecedingHistories($pruned === null ? null : static function () use ($history, $pruned): void {
+        // The preceding release's own cleanup (`activitylog:clean commands`, as its scheduler runs it) removed every command row that began
+        // before the moment just after the history's last adoption request began. H1: an Operations notice from before the write, outside
+        // the command log, stays. IV5: the unrelated command logged the moment after the slow adoption request began stays, while that
+        // request, open across the row's write, is gone.
+        $fixture = policyPrecedingFixture()['histories'][$history];
+        $adoption = DB::table('activity_log')->where('command', 'tool:adopt')->where('target_node_id', $fixture['node_id'])->orderByDesc('id')->value('created_at');
+        $cutoff = CarbonImmutable::parse($adoption, 'UTC')->addSecond();
+        if ($pruned === 'notice') {
+            $admitted = (string) Operation::query()->findOrFail($fixture['open']['operation'])->created_at;
+            DB::table('activity_log')->insert(['log_name' => 'operations', 'description' => 'operation.overdue', 'request_id' => 'overdue', 'command' => 'operation:overdue',
+                'status' => 'succeeded', 'created_at' => CarbonImmutable::parse($admitted, 'UTC')->subMinutes(20)->format('Y-m-d H:i:s')]);
+        }
+        test()->travelTo($cutoff->addDays(30));
+        Artisan::call('activitylog:clean', ['log' => 'commands', '--days' => 30, '--force' => true]);
+        test()->travelBack();
+        expect(DB::table('activity_log')->where('command', 'tool:adopt')->where('created_at', '<=', $adoption)->exists())->toBeFalse();
+    });
+    $h = $histories[$history];
+    $record = static fn () => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole();
+    $writer = Operation::query()->findOrFail($h['open']['operation']);
+    $published = static fn (string $version): array => ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => '1.0']],
+        'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'], 'Check apt package' => ['succeeded'],
+        'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => $version]], 'Assert package state' => ['succeeded']];
+    // Seven seconds after the write was admitted, tree was adopted again on its source (IV3, IV4: by a request interrupted after its admission
+    // committed, which never recorded its Node); 15 seconds after the write, an earlier convergence's report set tree's version only. The
+    // report undoes nothing of that adoption, and an interrupted or pruned command log proves nothing: the write's late success proves
+    // nothing over the adoption. IV5: a slow adoption request committed 2.0 two seconds after it began; H1: an adoption restored 2.0.
+    policyReadRun($writer, 'succeeded', $published('1.5'), 2);
+    $operations = app(StartToolOperationAction::class);
+    $tree = static fn (): Tool => Tool::query()->where('node_id', $h['node_id'])->where('package', 'tree')->sole();
+    expect($record()->verified)->toBeFalse()->and($tree()->installed_version)->toBe(in_array($history, ['H1', 'IV5'], true) ? '2.0' : '1.2');
+    if ($history === 'IV2') {
+        // nano's write pinned tree: the survivor's repin against the unproven source is refused, until nano's explicit update publishing the
+        // source as recorded proves it.
+        expect(fn () => $operations->execute('remove', $h['node_id'], 'apt', 'tree', null, $tree()))
+            ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
+        $nano = Tool::query()->findOrFail($h['tool_id']);
+        $again = $operations->execute('update', $h['node_id'], 'apt', 'nano', null, $nano, $record()->definition, version: '1.5');
+        policyReadRun($again, 'succeeded', $published('1.5'), -2);
+        expect($record()->verified)->toBeTrue()
+            ->and($operations->execute('remove', $h['node_id'], 'apt', 'tree', null, $tree())->input['repository_packages'])->toBe(['nano']);
+
+        return;
+    }
+    // The replaced URI is still the source's, until tree's explicit update publishing the write's definition proves it and frees the URI.
+    $reuse = static fn () => $operations->execute('install', $h['node_id'], 'apt', 'htop', null, repository: [...policySignedRepository(), 'name' => 'renamed',
+        'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10');
+    expect($reuse)->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+    $again = $operations->execute('update', $h['node_id'], 'apt', 'tree', null, $tree(), $writer->input['repository'], version: '1.5');
+    policyReadRun($again, 'succeeded', $published('1.5'), -2);
+    expect($record()->verified)->toBeTrue()->and($reuse()->input['repository_given'])->toBeTrue();
+})->with(['an adoption, then a version-only report, on the sole record' => ['IV1', null], 'the same on a pinned sibling' => ['IV2', null],
+    'an interrupted adoption request still open' => ['IV3', null], 'an interrupted adoption request its finalizer ended' => ['IV4', null],
+    'a slow adoption request open across the row\'s write' => ['IV5', null],
+    'H1 with the command log pruned past the adoption, beside an older Operations notice' => ['H1', 'notice'],
+    'IV5 with the command log pruned past the adoption by when it began, beside a command from the moment after' => ['IV5', 'command']]);
 
 it('leaves the source unproven where the history cannot order a pinned sibling\'s adoption, until an explicit write proves it again', function (string $history): void {
     policySwamp();
