@@ -107,6 +107,10 @@ pub fn withdraw_site(system: &impl System, input: &serde_json::Value) -> Result<
     for (pool, content, from) in rendered {
         let path = pool_path(&pool);
         let current = fs::read(system.path(&path)).ok();
+        // A guarded pool that is absent stays absent: the withdrawal never creates a pool.
+        if from.is_some() && current.is_none() {
+            continue;
+        }
         let merged = match &from {
             // Only the scopes the withdrawal changes are replaced; every other scope keeps its live bytes.
             Some(from) => merge_pool(from, &content, &String::from_utf8_lossy(current.as_deref().unwrap_or_default()), &forms)
@@ -197,7 +201,7 @@ fn sections(text: &str) -> (String, std::collections::BTreeMap<String, String>) 
 /// Every other scope, and the text before the first scope, keeps its live bytes.
 fn merge_pool(from: &str, desired: &str, live: &str, forms: &[String]) -> Option<String> {
     let (_, original) = sections(from);
-    let (desired_prefix, wanted) = sections(desired);
+    let (_, wanted) = sections(desired);
     let (live_prefix, observed) = sections(live);
     let matches = |live: &str, text: Option<&String>| text.is_some_and(|text| forms.iter().any(|form| resolve(text, form) == live));
     let mut out = observed.clone();
@@ -218,10 +222,8 @@ fn merge_pool(from: &str, desired: &str, live: &str, forms: &[String]) -> Option
             None => out.remove(name),
         };
     }
-    for (name, text) in &wanted {
-        out.entry(name.clone()).or_insert_with(|| resolve(text, &forms[0]));
-    }
-    let mut text = if live.is_empty() { resolve(&desired_prefix, &forms[0]) } else { live_prefix };
+    // A scope the render leaves unchanged keeps its live state, also its absence.
+    let mut text = live_prefix;
     text.push_str(&out.into_values().collect::<String>());
     Some(text)
 }

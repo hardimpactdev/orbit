@@ -449,3 +449,21 @@ fn a_withdrawal_keeps_a_surviving_scope_whose_group_is_named_or_numeric_byte_for
         assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), kept);
     }
 }
+
+#[test]
+fn a_withdrawal_leaves_an_absent_unchanged_scope_and_an_absent_pool_absent() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[seven]\n[nine]\n");
+    input["php"][0]["content"] = Fake::blob(&mut fake, "[seven]\n");
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[eleven]\n[nine]\n");
+
+    withdraw_site(&fake, &input).expect("withdrawn");
+    assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[eleven]\n");
+
+    fs::remove_file(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("remove");
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    withdraw_site(&fake, &input).expect("withdrawn again");
+    assert!(!fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf").exists(), "an absent pool is never created");
+}
