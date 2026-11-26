@@ -17,6 +17,7 @@
 //! - [`stop`] (`instance.stop`): a copy whose create failed stops, and stays for a retry or a destroy.
 //! - [`t3`] (`instance.t3`): the copy's T3 running, its two sessions issued, checked and sealed to the Gateway, and its
 //!   workspace a T3 project.
+//! - [`work_read`] (`instance.work_read`): the copy's workspace Git state beyond its baseline, read-only, as `agent`.
 //!
 //! The Gateway renders every value; the Node checks each one's shape and builds every command itself. Incus runs only as
 //! the fixed `incus` binary with fixed arguments.
@@ -33,6 +34,7 @@ mod shift;
 mod start;
 mod stop;
 mod t3;
+mod work;
 #[cfg(test)]
 mod tests;
 
@@ -46,6 +48,7 @@ pub use prepare::prepare;
 pub use start::start;
 pub use stop::stop;
 pub use t3::t3;
+pub use work::work_read;
 
 use std::collections::BTreeMap;
 use std::io::Write as _;

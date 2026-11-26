@@ -67,6 +67,9 @@ pub enum Action {
     InstanceNames,
     /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
     InstanceDestroy,
+    /// Read a copy's workspace Git state beyond its baseline (docs/reference/development-containers.md#workspace-work-state).
+    /// Read-only: no journal record and no target lock. Its target is the copy.
+    InstanceWorkRead,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -81,7 +84,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -103,6 +106,7 @@ impl Action {
         Self::InstanceFleetReady,
         Self::InstanceNames,
         Self::InstanceDestroy,
+        Self::InstanceWorkRead,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -124,10 +128,15 @@ impl Action {
             | Self::InstanceStop
             | Self::InstanceSpareVolume
             | Self::InstanceFleetReady
-            | Self::InstanceNames | Self::InstanceDestroy => {
+            | Self::InstanceNames | Self::InstanceDestroy | Self::InstanceWorkRead => {
                 Family::Instance
             }
         }
+    }
+
+    /// Whether the action changes nothing: it runs outside the journal and the target lock, and a repeat is a fresh read.
+    pub fn read_only(self) -> bool {
+        matches!(self, Self::InstanceWorkRead)
     }
 
     /// What the action's target names.
@@ -152,7 +161,7 @@ impl Action {
             | Self::InstanceCheckout
             | Self::InstanceT3
             | Self::InstanceStop
-            | Self::InstanceNames | Self::InstanceDestroy => {
+            | Self::InstanceNames | Self::InstanceDestroy | Self::InstanceWorkRead => {
                 TargetKind::Instance
             }
         }
@@ -182,6 +191,7 @@ impl Action {
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
             Self::InstanceNames => "instance.names",
+            Self::InstanceWorkRead => "instance.work_read",
         }
     }
 }
@@ -217,6 +227,7 @@ impl FromStr for Action {
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             "instance.names" => Ok(Self::InstanceNames),
+            "instance.work_read" => Ok(Self::InstanceWorkRead),
             _ => Err(UnknownActionError),
         }
     }

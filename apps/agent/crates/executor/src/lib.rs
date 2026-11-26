@@ -151,6 +151,7 @@ impl Run for Families {
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
             Action::DnsPublishRecords => dns(order),
             Action::InstanceDestroy => self.destroy(order),
+            Action::InstanceWorkRead => work_read(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames => instance(order),
@@ -351,6 +352,19 @@ fn dns(order: &VerifiedOrder) -> Outcome {
             Outcome::failed(failure.code)
         },
         |changes| Outcome::Applied { changes },
+    )
+}
+
+/// `instance.work_read`: a copy's workspace read, answered as the reader's JSON. A refused input goes to the Gateway as its
+/// code, which the Gateway reads as `unknown` `unreachable`.
+fn work_read(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_instance::work_read(&system, order.target().as_str(), order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::failed(failure.code)
+        },
+        |stdout| Outcome::Output { stdout },
     )
 }
 
