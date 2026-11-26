@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Engine\EngineRun;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
@@ -17,6 +18,9 @@ use App\Support\ValidatedData;
  */
 final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
+    /** The import's own refusals, which name the failure in place of `tasks.sync_failed`. */
+    private const array RefusalCodes = ['tasks.default_branch_missing', 'tasks.base_ref_mismatch'];
+
     /**
      * The run starts now, so the Gateway mints the read token now and writes it, as a Git header, to the vault key that admission
      * named for the copy's fetch on its Node.
@@ -52,6 +56,28 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
         $data['error_code'] = $failed ? 'tasks.sync_failed' : null;
 
         return app(DirectOperation::class)->project($operation, $data, $result);
+    }
+
+    /**
+     * An engine run's end (docs/cli/task/engine/sync.mmd), through the same result as a Swamp run: the import's receipt holds the
+     * base evidence, and a failed step names the Swamp step it stands for. A deterministic refusal of the import keeps its own code.
+     */
+    public function applyEngine(Operation $operation, EngineRun $run): Operation
+    {
+        app(DirectOperation::class)->assertRun($operation, $run->runId());
+        $step = $run->failed();
+        if ($step === null && $run->succeeded()) {
+            $evidence = json_decode((string) $run->output('sync'), true);
+
+            return $this->apply($operation, [...$run->times(), 'status' => 'succeeded',
+                'result' => ['base' => ['evidence' => is_array($evidence) ? $evidence : []]]]);
+        }
+        $code = $step !== null && in_array($step->error_code, self::RefusalCodes, true) ? $step->error_code : 'tasks.sync_failed';
+        $failed = $step === null ? null : TaskSyncEngineFlow::label($step->name);
+        $result = ['error_code' => $code, 'failed_step' => $failed];
+
+        return app(DirectOperation::class)->project($operation, [...$run->times(), 'status' => $step === null ? 'cancelled' : 'failed',
+            'failure' => ['failed_step' => $failed], 'error_code' => $code, 'result' => $result], $result);
     }
 
     /**

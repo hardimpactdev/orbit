@@ -12,6 +12,7 @@ use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Models\Operation;
 use Throwable;
 
@@ -33,6 +34,7 @@ final readonly class EngineKinds
         'instance.complete' => InstanceCompleteEngineFlow::class,
         'instance.fleet' => InstanceFleetEngineFlow::class,
         'instance.finalize' => InstanceFinalizeEngineFlow::class,
+        TaskSyncEngineFlow::Kind => TaskSyncEngineFlow::class,
     ];
 
     /** A kind that runs only on the engine, as part of another kind's flow: it is on whenever that kind is. */

@@ -153,7 +153,7 @@ impl Run for Families {
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
-            | Action::InstanceFleetReady | Action::InstanceNames => instance(order),
+            | Action::InstanceFleetReady | Action::InstanceNames | Action::InstanceSyncBase | Action::InstanceClearBase => instance(order),
         }
     }
 }
@@ -370,6 +370,8 @@ fn instance(order: &VerifiedOrder) -> Outcome {
         Action::InstanceFleetReady => orbit_executor_instance::fleet_ready(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstanceNames => orbit_executor_instance::names(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         Action::InstancePrepare => orbit_executor_instance::prepare(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceSyncBase => orbit_executor_instance::sync_base(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::InstanceClearBase => orbit_executor_instance::clear_base(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
         _ => orbit_executor_instance::start(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {

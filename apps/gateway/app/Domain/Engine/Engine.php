@@ -6,6 +6,7 @@ namespace App\Domain\Engine;
 
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceDestroyEngineFlow;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Swamp\NativeStepFailure;
@@ -29,6 +30,12 @@ final readonly class Engine
 {
     /** How long past its re-send time a sent step waits before the reconciler nudges it: its own deadline comes first. */
     private const int NudgeGraceMs = 30_000;
+
+    /**
+     * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
+     * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
+     */
+    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -142,9 +149,14 @@ final readonly class Engine
         return ($operation->state['swamp_run_id'] ?? null) === EngineRun::runIdOf($operation->id);
     }
 
+    public static function receiptBound(string $kind): bool
+    {
+        return in_array($kind, self::ReceiptBound, true);
+    }
+
     public static function requiresReceipt(Operation $operation): bool
     {
-        return self::owns($operation) && $operation->kind === InstanceDestroyEngineFlow::Kind;
+        return self::owns($operation) && self::receiptBound($operation->kind);
     }
 
     private static function text(mixed $value): string
@@ -180,7 +192,7 @@ final readonly class Engine
 
             return;
         }
-        if ($receiptBound !== null && (! in_array($status, ['done', 'failed'], true)
+        if ($receiptBound !== null && (! in_array($status, ['done', 'output', 'applied', 'failed'], true)
             || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
             || ($line['code'] ?? null) === 'executor.order_expired')) {
             return;
@@ -376,12 +388,12 @@ final readonly class Engine
     private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): void
     {
         try {
-            $input = $definition->input($operation, $step->name, $run);
+            $input = EngineContent::upload($this->bus, $step->node_id, $definition->input($operation, $step->name, $run));
             $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
             $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
             $this->bus->publishOrder($step->node_id, $order, fn (): bool => $this->claimPublication($step, $order->expiresMs));
         } catch (Throwable $exception) {
-            Log::warning('Could not send the signed removal order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            Log::warning('Could not send the fenced order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
         }
     }
 
