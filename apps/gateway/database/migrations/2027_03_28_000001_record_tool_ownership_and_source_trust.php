@@ -81,7 +81,7 @@ return new class extends Migration
         // its own included (StartToolOperationAction: the source's pins).
         $pinned = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
-            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'finished_at', 'state', 'input', 'result']);
+            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'updated_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
             $input = $this->json($operation->input);
             $result = $this->json($operation->result);
@@ -132,7 +132,7 @@ return new class extends Migration
 
                     continue;
                 }
-                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources, (string) $operation->finished_at);
+                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources, (string) $operation->updated_at);
 
                 continue;
             }
@@ -208,7 +208,9 @@ return new class extends Migration
                 $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                 if ($projected && $operation->status !== 'cancelled') {
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
-                    $tools[$tool]['received'] = [...(array) ($tools[$tool]['received'] ?? []), ['at' => (string) $operation->finished_at, 'version' => $version]];
+                    // When the Gateway applied it (the Operation's own last write) and what it wrote: a projected end set both fields.
+                    $tools[$tool]['received'] = [...(array) ($tools[$tool]['received'] ?? []), ['applied' => (string) $operation->updated_at,
+                        'status' => $succeeded && $operation->kind !== 'tool.remove' ? 'installed' : 'failed', 'version' => $version]];
                     // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
                     // included. A failure that read nothing recorded the admitted version again.
                     $failedStep = data_get($state, 'native_failure.failed_step');
@@ -529,7 +531,7 @@ return new class extends Migration
      * @param  array<int, array<string, mixed>>  $tools
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
-    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources, string $finishedAt): void
+    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources, string $applied): void
     {
         $phase = collect((array) ($result['phases'] ?? []))->firstWhere('name', 'tools');
         $plans = array_filter((array) data_get($input, '_converge.intent.tools', []), static fn (mixed $plan): bool => is_array($plan) && is_int($plan['id'] ?? null));
@@ -550,7 +552,8 @@ return new class extends Migration
                     if (is_string($observation['installed_version'] ?? null)) {
                         $tools[$toolId]['version'] = $observation['installed_version'];
                         $tools[$toolId]['stamp_version'] = $id * 2;
-                        $tools[$toolId]['received'] = [...(array) ($tools[$toolId]['received'] ?? []), ['at' => $finishedAt, 'version' => $observation['installed_version']]];
+                        $tools[$toolId]['received'] = [...(array) ($tools[$toolId]['received'] ?? []), ['applied' => $applied, 'status' => 'installed',
+                            'version' => $observation['installed_version']]];
                     }
                 }
             }
@@ -596,11 +599,14 @@ return new class extends Migration
     }
 
     /**
-     * The Tool's row shows an adoption newer than an admission at `$admitted` that captured its membership: a row made later (a
-     * replacement under the pinned name), or a row written later that no receipt explains. A receipt explains the row when it recorded the
-     * row's installed version and ended after the admission, such as a convergence's late observation: a version-only receipt is no
-     * adoption. Within the admission's own second, the admission's capture of its own Tool's status and version shows whether the row
-     * changed since; a capture of membership alone cannot, so a row rewritten after it was made in that second may hold a newer adoption.
+     * The Tool's row may hold an adoption newer than an admission at `$admitted` that captured its membership. A captured link proves the
+     * membership then, not that no adoption followed, so only what the Gateway itself wrote, and when it applied it, rules one out:
+     * - A row made after the admission is a replacement under the pinned name.
+     * - A row last written after the admission holds a newer adoption, unless a receipt the Gateway applied after the admission, in that
+     *   very second, set the row's status and version: then that receipt, such as a convergence's late version-only report, wrote it. A
+     *   receipt that only matches the row's values, or ended natively after the admission, shows nothing.
+     * - A row last written in the admission's own second: the admission's capture of its own Tool's status and version shows whether an
+     *   adoption changed it since. An admission that only pinned the Tool captured no version, so that row may hold a newer adoption.
      *
      * @param  array<string, mixed>|null  $history
      * @param  array<string, mixed>  $captured  the status and version the admission captured, for its own Tool
@@ -613,16 +619,18 @@ return new class extends Migration
         if ($created > $admitted) {
             return true;
         }
-        foreach ((array) ($history['received'] ?? []) as $receipt) {
-            if (is_array($receipt) && ($receipt['version'] ?? null) === $installed && is_string($receipt['at'] ?? null) && $receipt['at'] >= $admitted) {
-                return false;
+        if ($written > $admitted) {
+            foreach ((array) ($history['received'] ?? []) as $receipt) {
+                if (is_array($receipt) && ($receipt['applied'] ?? null) === $written && ($receipt['status'] ?? null) === $tool->status
+                    && ($receipt['version'] ?? null) === $installed) {
+                    return false;
+                }
             }
-        }
-        if ($written !== $admitted) {
-            return $written > $admitted;
+
+            return true;
         }
 
-        return $own ? ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed : $created < $written;
+        return $written === $admitted && (! $own || ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed);
     }
 
     /**

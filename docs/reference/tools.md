@@ -262,12 +262,11 @@ A link other than the one the Tool's last success left names an adoption from th
 
 Admission pins every Tool linked to the record it found. So a Tool whose package another Tool's admission pinned, and whose own history never linked that source, was linked by its adoption before that admission.
 
-A captured record or pin proves the membership at that admission, not that the row's newest adoption came before it. So each order rests on the row's own fields:
-- A row made after the admission is a replacement under the pinned name, newer than it.
-- A row last written after the admission holds a newer adoption.
-- Unless a receipt that ended after the admission recorded the row's installed version: a convergence's late version-only report is a receipt, not an adoption.
-- In the admission's own second, a write's capture of its own Tool's status and version shows whether an adoption changed the row since.
-- A pin captures membership only. A sibling row rewritten in that second after it was made may hold a newer adoption, so it orders after every Operation.
+A captured record or pin proves the membership at that admission, not that the row's newest adoption came before it. So each order rests on what the Gateway recorded of the row.
+
+A row made after the admission is a replacement under the pinned name, newer than it. A row last written after the admission holds a newer adoption. The exception is a receipt the Gateway applied in that very second with the row's status and version: that receipt wrote the row, whenever its run finished. A convergence's late version-only report is one. A receipt that only matches the row's values wrote nothing.
+
+In the admission's own second, a write's capture of its own Tool's status and version shows whether an adoption changed the row since. A pin captures membership only, never a version. A sibling row written in that second may therefore hold a newer adoption. It orders after every Operation, and the source stays unproven until a write proves it again.
 
 Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing. A removal whose run may have reached the package ends the claim, as the Gateway now reads such an end: one that failed after its decision, was cancelled after its run started, or ended after its expiry, a success included.
 
