@@ -1,0 +1,52 @@
+sequenceDiagram
+  %% status: draft
+  %% command: route:destroy
+  %% kind: route.destroy
+  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane V icon=server pill=executor tone=green
+  participant CLI as CLI / MCP<br/>Orbit caller
+  participant GW as Gateway<br/>admission
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Route Node<br/>executor
+  participant V as VPN Node<br/>DNS executor
+  CLI->>GW: route:destroy ROUTE
+  Note over GW: Check access and target
+  %%> Keep the existing admission guards and publication holds. The eligible first plan is an ordinary private Route, without replacement or offline residue.
+  alt covered private Route and every target advertises support
+    GW->>EN: Admit engine Operation
+    GW-->>CLI: Operation accepted
+    %%> The kind must be enabled. Admission selects one owner for the full Operation.
+    opt plan withdraws DNS
+      EN->>V: Withdraw owned DNS answers
+      %%> Update records and catalog under the existing revision and ownership checks. Keep other Routes' records intact.
+      V-->>EN: DNS change verified
+      opt DNS grace applies
+        Note over EN: Wait for DNS expiry<br/>31 seconds
+        %%> Use a durable deadline. A redelivered receipt must not skip the grace. This chart covers the standalone Route command.
+      end
+    end
+    EN->>N: Withdraw site and leaf
+    %%> Use the admitted site, leaf and ownership revision. Validate before reload and refuse a foreign change.
+    opt development pools affected
+      EN->>N: Converge PHP pools
+    end
+    EN->>N: Verify owned state absent
+    %%> Exercise a sibling Route on the same Node. Keep --offline, replacements, ingress and Router/LAN cleanup on the established path for this first scope.
+    N-->>EN: Withdrawal verified
+    alt verified receipt
+      EN->>GW: Remove Route record
+    else signed step failed
+      EN->>GW: Record the failed step
+    else receipt missing
+      Note over EN: Recover the signed step
+      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    end
+  else unsupported Node plan
+    Note over GW: Use existing Route removal
+    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+  end

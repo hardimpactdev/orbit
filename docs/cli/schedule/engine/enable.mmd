@@ -1,0 +1,38 @@
+sequenceDiagram
+  %% status: draft
+  %% command: schedule:enable
+  %% kind: schedule.enable
+  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant CLI as CLI / MCP<br/>Orbit caller
+  participant GW as Gateway<br/>admission
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Target Node<br/>executor
+  CLI->>GW: schedule:enable SCHEDULE
+  Note over GW: Check access and target
+  alt native cron Schedule
+    Note over GW: Use native trigger flow
+    %%> The existing synchronous path sets the Swamp trigger and returns its confirmation. No Node timer order is issued.
+  else retained host timer and every target advertises support
+    GW->>EN: Admit engine Operation
+    GW-->>CLI: Operation accepted
+    %%> The kind must be enabled. Admission selects one owner for the full Operation.
+    EN->>N: Enable and start timer
+    %%> Address only the timer owned by the admitted Schedule. Check both the enabled and active properties, including when the timer was already running.
+    N-->>EN: Observed timer state
+    alt verified receipt
+      EN->>GW: Record Schedule enabled
+    else signed step failed
+      EN->>GW: Record the failed step
+    else receipt missing
+      Note over EN: Recover the signed step
+      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    end
+  else unsupported Node plan
+    Note over GW: Use existing Schedule flow
+    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+  end

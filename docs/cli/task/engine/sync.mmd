@@ -1,0 +1,42 @@
+sequenceDiagram
+  %% status: draft
+  %% command: task:sync
+  %% kind: tasks.sync
+  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant CLI as CLI / MCP<br/>Orbit caller
+  participant GW as Gateway<br/>admission
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Target Node<br/>executor
+  CLI->>GW: task:sync TASK
+  Note over GW: Check access and target
+  %%> Keep the group's lifecycle lock and the running-copy, open-turn and concurrent-operation checks.
+  alt running task copy and every target advertises support
+    GW->>EN: Admit engine Operation
+    GW-->>CLI: Operation accepted
+    %%> The kind must be enabled. Admission selects one owner for the full Operation.
+    EN->>N: Fetch the default branch<br/>credential stays on Node
+    %%> Fetch into the copy's Node mirror. The task copy receives only missing objects and has no repository credential.
+    N-->>EN: Mirror head recorded
+    EN->>N: Update the remote ref<br/>inside the task copy
+    %%> Pin the admitted fetch result across redelivery. Update only refs/remotes/origin/<default> as the workspace user. Preserve HEAD, index, working tree, stash and local branches.
+    N-->>EN: Commits and work state
+    EN->>N: Clear owned bundle scratch
+    %%> Clean after success or failure. A later sync or destroy can remove scratch left by an interruption. Follow the same base-refresh contract used by task:check.
+    N-->>EN: Cleanup receipt
+    alt verified receipt
+      EN->>GW: Record refs and work state
+    else signed step failed
+      EN->>GW: Record the failed step
+    else receipt missing
+      Note over EN: Recover the signed step
+      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    end
+  else unsupported Node plan
+    Note over GW: Use existing sync flow
+    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+  end

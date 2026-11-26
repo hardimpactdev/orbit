@@ -1,0 +1,36 @@
+sequenceDiagram
+  %% status: draft
+  %% command: process:start
+  %% kind: process.start
+  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant CLI as CLI / MCP<br/>Orbit caller
+  participant GW as Gateway<br/>admission
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Target Node<br/>executor
+  CLI->>GW: process:start PROCESS
+  Note over GW: Check access and target
+  alt plain host systemd unit and every target advertises support
+    GW->>EN: Admit engine Operation
+    GW-->>CLI: Operation accepted
+    %%> The kind must be enabled. Admission selects one owner for the full Operation.
+    EN->>N: Apply running state<br/>and admitted boot policy
+    %%> Enable at boot for a persistent Process. An on-demand Process starts now with boot enablement off. Read the resulting active and enabled states within the same action.
+    %%> Keep Docker, Instance-container, production-specific and Vite plans on their existing paths until their end checks have coverage.
+    N-->>EN: Observed unit state
+    alt verified receipt
+      EN->>GW: Record Process running
+    else signed step failed
+      EN->>GW: Record the failed step
+    else receipt missing
+      Note over EN: Recover the signed step
+      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    end
+  else unsupported Node plan
+    Note over GW: Use existing Process flow
+    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+  end
