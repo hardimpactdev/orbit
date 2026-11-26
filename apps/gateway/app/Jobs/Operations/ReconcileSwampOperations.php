@@ -194,7 +194,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     /**
      * Unfinished Operations, those the Gateway timed out while Swamp has not proven their run ended (also when their signed-order fence
-     * ended them interrupted), and timed-out ones with a
+     * ended them interrupted), timed-out ones whose start Swamp has not yet bound or verified never ran, and timed-out ones with a
      * cancel request Swamp has not confirmed. While a version drains, read released native timeouts as well:
      * a parent can still own work on a closed child version after its own target hold expires.
      *
@@ -211,6 +211,13 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                 ->from('deprecated_operation_versions')->whereNull('eligible_at'))))
                 ->whereNotNull('state->native_timeout')->where('status', OperationStatus::Failed)
                 ->where('error_code', 'operation.timed_out')->whereNull('state->native_timeout->no_run_verified_at')
+                ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
+                    ->orWhere('state->native_timeout->native_terminal_status', 'unproven')))
+            // Expired before Swamp bound its start to a run: releasing the target hold proves nothing, so the start-key lookup goes on until
+            // Swamp answers whether that start became a run (SwampCommandStep::recoverUnbound).
+            ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')
+                ->whereNotNull('state->native_timeout')->whereNotNull('state->swamp_start')->whereNull('state->swamp_run_id')
+                ->whereNull('state->native_timeout->no_run_verified_at')
                 ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
                     ->orWhere('state->native_timeout->native_terminal_status', 'unproven')))
             // Expired under a signed-order fence: only its native end is recorded (ExecutorFence::awaitsRunEnd), and the lock stays.

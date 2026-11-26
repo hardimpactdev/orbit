@@ -179,13 +179,17 @@ final readonly class StartToolOperationAction
         return $input;
     }
 
-    /** The Tool's authority is set aside by a removal whose start Swamp has not yet bound to a run or verified never ran. */
+    /**
+     * The Tool's authority is still set aside by a removal whose start Swamp has not yet bound to a run or verified never ran: the
+     * suspension's own receipt is still the newest change of the Tool's ownership. A newer acquisition took it back since.
+     */
     private static function unsettledRemoval(Tool $tool): bool
     {
         $suspended = $tool->receipts['suspended'] ?? null;
         $removal = is_array($suspended) && is_int($suspended['operation'] ?? null) ? Operation::query()->find($suspended['operation']) : null;
 
-        return $removal !== null && ! isset($removal->state['swamp_run_id']) && data_get($removal->state, 'native_timeout.no_run_verified_at') === null;
+        return $removal !== null && ! $tool->owned && ($tool->receipts['owner'] ?? null) === Tool::order($removal->id)
+            && ! isset($removal->state['swamp_run_id']) && data_get($removal->state, 'native_timeout.no_run_verified_at') === null;
     }
 
     /**

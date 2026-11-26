@@ -97,7 +97,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         $result = array_intersect_key($decision, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
         // The newest reading of the package wins, absence included: the decoded end state, else a decision that read the inventory. Only
         // a decision that read nothing repeats the version the run was admitted with.
-        $read = self::reads($observation) ? $observation : (self::reads($decision) && self::readInventory($decision) ? $decision : null);
+        $read = self::reads($observation) ? $observation : self::decisionReading($operation, $decision);
         $result['installed_coordinate'] = $read !== null ? ($read['installed_coordinate'] ?? $read['installed_version'] ?? null)
             : ($decision['installed_coordinate'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null);
         $result['installed_version'] = ($read ?? $decision)['installed_version'] ?? $result['installed_coordinate'];
@@ -199,7 +199,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             'untouched' => is_array($operation->input['repository'] ?? null) && $unwritten,
             // A refused decision may only repeat the version it was admitted with, after an unreadable inventory: only a decision that read
             // the package, or the decoded state, observed it.
-            'observed' => self::reads($observation) || (self::readInventory($decision) && self::reads($decision)),
+            'observed' => self::reads($observation) || self::decisionReading($operation, $decision) !== null,
         ];
     }
 
@@ -210,19 +210,30 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     }
 
     /**
-     * A ready decision read the package; a refused one says whether it did. The preceding release's refused decision, read after the
-     * upgrade, has no `inventory_read`: it read the package whenever the manager answered, and refused before only for a manager scope or
-     * an unreadable probe. Its version is the one it read, or none for an absent package.
+     * What the decision read of the package, absence included, or `null` when it read nothing. A ready decision read it; a refused one says
+     * whether it did (`inventory_read`). The preceding release's refused decision, read after the upgrade, has no `inventory_read`, and
+     * repeats the admitted version whenever the package was absent: PrecedingToolDecision reads it by that release's own decision code.
      *
      * @param  array<string, mixed>  $decision
+     * @return array{installed_version: ?string, installed_coordinate: ?string}|null
      */
-    private static function readInventory(array $decision): bool
+    private static function decisionReading(Operation $operation, array $decision): ?array
     {
-        if (! array_key_exists('inventory_read', $decision) && ($decision['ready'] ?? false) !== true) {
-            return is_string($decision['error_code'] ?? null) && ! in_array($decision['error_code'], ['tool.manager_unavailable', 'tool.version_probe_failed'], true);
+        if (! self::reads($decision)) {
+            return null;
         }
+        $coordinate = ValidatedData::nullableString($decision['installed_coordinate'] ?? $decision['installed_version'] ?? null);
+        if (($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true) {
+            return ['installed_version' => ValidatedData::nullableString($decision['installed_version'] ?? $coordinate), 'installed_coordinate' => $coordinate];
+        }
+        if (array_key_exists('inventory_read', $decision)) {
+            return null;
+        }
+        $reading = PrecedingToolDecision::reading($operation->kind, ValidatedData::string($operation->input['manager'] ?? ''), ValidatedData::string($operation->input['platform'] ?? ''),
+            false, ValidatedData::nullableString($decision['error_code'] ?? null), $coordinate, ValidatedData::nullableString($operation->input['installed_version'] ?? null));
 
-        return ($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true;
+        return $reading === null ? null : ['installed_version' => $reading['version'] === null ? null : ValidatedData::nullableString($decision['installed_version'] ?? $reading['version']),
+            'installed_coordinate' => $reading['version']];
     }
 
     /**

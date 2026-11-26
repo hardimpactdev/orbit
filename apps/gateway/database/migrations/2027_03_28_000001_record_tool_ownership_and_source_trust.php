@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\PrecedingToolDecision;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolOperationException;
@@ -72,6 +73,9 @@ return new class extends Migration
         $adoptions = [];
         // Per Tool, the record each open write that named a source found when admitted, by Operation.
         $found = [];
+        // Per open Operation, the record its admission found and the packages of every Tool linked to that record then, its own included
+        // (StartToolOperationAction: the source's pins).
+        $pinned = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
@@ -147,6 +151,10 @@ return new class extends Migration
                     if ($given && is_int($input['repository_id'] ?? null)) {
                         $found[$tool][$operation->id] = $input['repository_id'];
                     }
+                    if (is_int($input['repository_id'] ?? null)) {
+                        $pinned[$operation->id] = ['record' => $input['repository_id'], 'tool' => $tool,
+                            'packages' => array_values(array_filter((array) ($input['repository_packages'] ?? []), 'is_string'))];
+                    }
                 }
             }
             // A request still pending names the Tool's desired source, as a failed one does. A queued one never started: its admission
@@ -195,7 +203,10 @@ return new class extends Migration
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
                     // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
                     // included. A failure that read nothing recorded the admitted version again.
-                    $reading = $succeeded ? ['version' => $version] : $this->reading($operation->kind, data_get($state, 'native_failure.failed_step'), $operation->error_code, $version);
+                    $failedStep = data_get($state, 'native_failure.failed_step');
+                    $reading = $succeeded ? ['version' => $version] : (in_array($failedStep, ['Apply the package', 'Check apt package', 'Check the package', 'Decode package state', 'Assert package state'], true)
+                        ? PrecedingToolDecision::reading($operation->kind, is_string($input['manager'] ?? null) ? $input['manager'] : '', is_string($input['platform'] ?? null) ? $input['platform'] : '', $failedStep !== 'Assert package state',
+                            $operation->error_code, $version, is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null) : null);
                     if ($reading !== null) {
                         $tools[$tool]['stamp_version'] = $operation->id * 2;
                         $tools[$tool]['absent'] = $reading['version'] === null ? $operation->id : null;
@@ -236,11 +247,11 @@ return new class extends Migration
                 continue;
             }
             $event = $this->sourceEvent($operation->kind, $input, $result, $succeeded, data_get($state, 'native_failure.failed_step'));
-            $this->note($sources, $operation->node_id, $name, $repository, $event, $operation->id);
+            $this->note($sources, $operation->node_id, $name, $repository, $event, $operation->id, is_int($input['repository_id'] ?? null) ? $input['repository_id'] : null);
         }
 
         $latestOperation = ValidatedData::integer(DB::table('operations')->max('id') ?? 0);
-        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'updated_at', 'error_code']) as $tool) {
+        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'package', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'updated_at', 'error_code']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // or capture left failed, or gives it an installed version other than the one its history last recorded. No admission captured
@@ -253,14 +264,24 @@ return new class extends Migration
             $owned = $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted);
             // An adoption no admission captured left the row as it stands: it came before every open Operation of the Tool admitted after the
             // row's last write, and otherwise after every Operation. A Tool with no history at all was adopted the same way.
-            // A write that found the very record this Tool links, a record only this Tool's adoption made (no event of the history under
-            // its name, no other Tool linked to it), was admitted after that adoption, in whatever second both fell.
+            // A write that found the very record this Tool links, a record only this Tool's adoption made (no Operation of the history
+            // made it, no other Tool links it), was admitted after that adoption, in whatever second both fell.
             $adoptedAt = $latestOperation * 2 + 1;
             foreach (is_array($admittedOpen[$tool->id] ?? null) ? $admittedOpen[$tool->id] : [] as $operation => $admitted) {
                 if ((is_string($tool->updated_at) && $tool->updated_at < $admitted)
                     || (is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
                         && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources))) {
                     $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
+                }
+            }
+            // Another Tool's open admission that found this record pinned this Tool's package (StartToolOperationAction pins every Tool
+            // linked to the record): the Tool was linked to it then. When its history never linked the source, only its adoption linked it,
+            // so that adoption came first.
+            if (is_int($tool->apt_repository_id) && ($history === null || ($history['link'] ?? null) !== $linked)) {
+                foreach ($pinned as $operation => $pins) {
+                    if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && in_array($tool->package, $pins['packages'], true)) {
+                        $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
+                    }
                 }
             }
             if ($tool->apt_repository_id !== null && ($adopted || ($history === null && $tool->status === 'installed'))) {
@@ -420,11 +441,14 @@ return new class extends Migration
             try {
                 if ($kind === 'node.converge') {
                     // A full convergence (the preceding release captured Tools only for one) owns the Tools scope and the orphan cleanup
-                    // whatever it plans, as StartNodeConvergeAction records it. A Tool whose first admission is a later queued request, which
-                    // is admitted only after it, is not there yet.
+                    // whatever it plans, as StartNodeConvergeAction records it. Only a placeholder a later queued first install made, which
+                    // its own capture did not plan, is not there yet: a membership it captured, an adopted Tool's included, stays, and the
+                    // writer scope and pins follow that same set.
                     $node = Node::query()->findOrFail($operation->node_id);
-                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $later,
-                        array_keys(array_filter($firstAdmission, static fn (int $first): bool => in_array($first, $later, true))));
+                    $captured = array_column(array_filter((array) data_get($operation->input, '_converge.intent.tools', []), 'is_array'), 'id');
+                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $later, array_keys(array_filter($firstAdmission,
+                        static fn (int $first, int $tool): bool => in_array($first, $later, true) && ($queued[$first] ?? null) === 'tool.install' && ! in_array($tool, $captured, true),
+                        ARRAY_FILTER_USE_BOTH)));
                     $input = $this->withPlans($operation->input, $plans);
                     data_set($input, '_converge.tool_scope', true);
                     data_set($input, '_converge.intent.orphan_sources', AptSourceTrust::orphans($node->id));
@@ -520,7 +544,7 @@ return new class extends Migration
             $repository = is_array($plan['repository'] ?? null) ? $plan['repository'] : null;
             $name = $repository['name'] ?? null;
             if ($repository !== null && is_string($name)) {
-                $this->note($sources, $nodeId, $name, $repository, isset($installed[ValidatedData::integer($plan['id'])]) ? 'written' : 'uncertain', $id);
+                $this->note($sources, $nodeId, $name, $repository, isset($installed[ValidatedData::integer($plan['id'])]) ? 'written' : 'uncertain', $id, null);
             }
         }
     }
@@ -557,16 +581,17 @@ return new class extends Migration
     }
 
     /**
-     * The Tool's linked record can only have been made by its own adoption: the history has no event under its name, and no other Tool
-     * links it.
+     * The Tool's linked record can only have been made by its own adoption: no Operation of the history made it (no event under its name,
+     * or the newest one confirmed the removal of another record under it), and no other Tool links it.
      *
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
     private function madeByAdoption(int $toolId, int $nodeId, int $recordId, array $sources): bool
     {
         $name = DB::table('apt_repositories')->where('id', $recordId)->value('name');
+        $source = is_string($name) ? ($sources[$nodeId][$name] ?? []) : [];
 
-        return is_string($name) && ! isset($sources[$nodeId][$name]['event'])
+        return is_string($name) && (! isset($source['event']) || ($source['event'] === 'removed' && ($source['record'] ?? null) !== $recordId))
             && ! DB::table('tools')->where('apt_repository_id', $recordId)->where('id', '!=', $toolId)->exists();
     }
 
@@ -619,32 +644,6 @@ return new class extends Migration
     }
 
     /**
-     * What a preceding-release failure's decision read of the package, by that release's own decision code (`decide`, `before`):
-     * - a removal's decision returns no version, so its receipt only repeats the admitted one;
-     * - an update reaches its write, or refuses its candidate, only with the package present, and records the version it read;
-     * - a reinstall returns unchanged when the package is present, so it reaches its write, or refuses its candidate, only after reading
-     *   it absent, and the receipt's version is the admitted one copied; any other refusal at the end check read the package present;
-     * - a failure before the decision, a manager scope's or a probe's refusal, or one after the write, recorded no reading.
-     *
-     * @return array{version: ?string}|null
-     */
-    private function reading(string $kind, mixed $failedStep, ?string $errorCode, ?string $version): ?array
-    {
-        if ($kind === 'tool.remove') {
-            return null;
-        }
-        $install = $kind === 'tool.install';
-        if ($failedStep === 'Apply the package') {
-            return ['version' => $install ? null : $version];
-        }
-        if ($failedStep !== 'Assert package state' || in_array($errorCode, ['tool.manager_unavailable', 'tool.version_probe_failed'], true)) {
-            return null;
-        }
-
-        return ['version' => $install && str_starts_with((string) $errorCode, 'tool.candidate_') ? null : $version];
-    }
-
-    /**
      * A preceding-release removal that did not succeed left its package untouched only when it failed before its decision, its decision
      * refused (`tool.removal_plan_unsafe`, recorded at the end check), or its package step was dpkg refusing to start on its lock. Any other end, a cancel or a late one included, may have reached the package.
      */
@@ -668,13 +667,13 @@ return new class extends Migration
     }
 
     /**
-     * A source's latest event and its definition, every definition it may have on disk since its last confirmed write or removal, and
+     * A source's latest event, the record its Operation found, and its definition, every definition it may have on disk since its last confirmed write or removal, and
      * the Operations that confirmed its removal.
      *
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      * @param  array<mixed>  $repository
      */
-    private function note(array &$sources, int $nodeId, string $name, array $repository, ?string $event, int $operation): void
+    private function note(array &$sources, int $nodeId, string $name, array $repository, ?string $event, int $operation, ?int $record): void
     {
         if ($event === null) {
             return;
@@ -685,7 +684,7 @@ return new class extends Migration
             'written' => [$repository], 'removed' => [], default => [...(array) ($entry['possible'] ?? []), $repository],
         };
         $entry['removals'] = $event === 'removed' ? [...(array) ($entry['removals'] ?? []), $operation] : (array) ($entry['removals'] ?? []);
-        $sources[$nodeId][$name] = [...$entry, 'event' => $event, 'operation' => $operation, 'definition' => $repository];
+        $sources[$nodeId][$name] = [...$entry, 'event' => $event, 'operation' => $operation, 'record' => $record, 'definition' => $repository];
     }
 
     /** @return array<string, mixed> */
