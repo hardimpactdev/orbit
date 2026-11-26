@@ -36,8 +36,9 @@ export const Input = z.object({
     /** False for a Tool whose package Orbit never installed, adopted or observed: install refuses a present package and removal
      * cleans only Orbit's apt source. */
     package_owned: z.boolean().default(true),
-    /** Every origin host the source may have on disk, so its preferences restrict all of them through a failed change. */
-    repository_origins: z.array(z.string().regex(/^[a-z0-9.-]{1,253}$/)).max(32).default([]),
+    /** Every origin host the source may have on disk, so its preferences restrict all of them through a failed change: a host name,
+     * or an IPv6 literal without brackets as apt matches it. */
+    repository_origins: z.array(z.string().regex(/^(?:[a-z0-9.-]{1,253}|[0-9a-f:.]{2,45})$/)).max(32).default([]),
     repository_packages: z.array(
         z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/),
     ).max(256).default([]),

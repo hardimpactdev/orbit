@@ -12,17 +12,17 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $name
  * @property array<string, mixed> $definition
  * @property bool $verified
- * @property list<string>|null $origins
+ * @property list<string>|null $entries every `uri suite` this source may have on disk
  */
 final class AptRepository extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['node_id', 'name', 'definition', 'verified', 'origins'];
+    protected $fillable = ['node_id', 'name', 'definition', 'verified', 'entries'];
 
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['definition' => 'array', 'verified' => 'boolean', 'origins' => 'array'];
+        return ['definition' => 'array', 'verified' => 'boolean', 'entries' => 'array'];
     }
 }

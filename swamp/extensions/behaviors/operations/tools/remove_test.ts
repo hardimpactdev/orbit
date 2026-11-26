@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { behavior, removalDecision, RemoveInput } from "./remove.ts";
 import * as native from "./native.ts";
 import { preferences } from "./native.ts";
@@ -201,4 +201,22 @@ Deno.test("an Orbit source always restricts every other package of all its origi
             'Package: nano\nPin: origin "old.example.test"\nPin-Priority: 990\n\n' +
             'Package: *\nPin: origin "old.example.test"\nPin-Priority: 1\n',
     );
+    // Once the run verified its package from the source it published, the preference is that source's alone: an origin an earlier
+    // uncertain write may have left keeps no restriction and no preference.
+    const moved = native.commands({
+        manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository,
+        repository_packages: ["nano", "tree"], repository_origins: ["old.example.test", "vendor.example.test"], remove_repository: false, package_owned: true,
+    });
+    assertEquals(moved.repository_preferences, preferences(repository, ["nano", "tree"]));
+    assertEquals(moved.repository_preferences_held, preferences(repository, ["nano", "tree"], ["old.example.test", "vendor.example.test"]));
+});
+
+Deno.test("an IPv6 source origin is written as apt matches it, without brackets, and the contract accepts it", () => {
+    const repository = { name: "proof", uris: ["https://[2001:DB8::7]/apt"], suites: ["stable"], components: ["main"],
+        signing_key: { url: "https://[2001:db8::7]/key.asc", fingerprint: "A".repeat(40) } };
+    assertEquals(preferences(repository, []), 'Package: *\nPin: origin "2001:db8::7"\nPin-Priority: 1\n');
+    const input = RemoveInput.parse({ node_id: 7, manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository,
+        repository_origins: ["2001:db8::7", "packages.example.test"] });
+    assertEquals(input.repository_origins, ["2001:db8::7", "packages.example.test"]);
+    assertThrows(() => RemoveInput.parse({ ...input, repository_origins: ["[2001:db8::7]"] }));
 });

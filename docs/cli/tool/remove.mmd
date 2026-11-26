@@ -45,6 +45,7 @@ sequenceDiagram
       Note over GW: Mark the Tool failed
       %%> Retry:
       %%> - run the same command again after a fix
+      %%> - a timed-out removal keeps no uninstall authority until its run's receipt, read late, shows the package was never reached
     end
     loop every 2 s until terminal
       CLI->>GW: operation:show #5135

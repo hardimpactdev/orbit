@@ -159,7 +159,11 @@ A Tool owns its package only when Orbit acquired it: its own verified package wr
 
 Only a confirmed absence ends ownership. A removal that verified the package gone, or found it already absent, leaves any remaining cleanup to the source alone. A retry then never removes a replacement package installed since.
 
-The run's own receipt decides, whatever its end. A failed, cancelled or timed-out run that recorded a verified acquisition or a confirmed absence keeps it, and so does the Tool row it applies to. A run that ends without a readable receipt, such as a timeout whose native run outlived its deadline, records neither.
+The run's own receipt decides, whatever its end. A failed or cancelled run that recorded a verified acquisition or a confirmed absence keeps it, and so does the Tool row it applies to.
+
+A run that ends after the Gateway timed its Operation out counts the same way. The Operation stays failed with `operation.timed_out`, but when the reconciler reads the run's terminal, its receipt counts for the Tool as it would have on time.
+
+Until then, uncertainty grants nothing and keeps no right to remove a package. A timed-out removal leaves its Tool waiting for `tool:remove` without uninstall authority, because the package may already be gone and a replacement may follow. Only a receipt showing that the removal never reached its package gives the authority back. A retry, also after the target hold lapses, therefore cleans only the record and source unless such a receipt exists.
 
 An install or convergence never takes over a present package for a Tool Orbit does not own. Both refuse with `tool.package_already_installed`, including after a first install that was cancelled, timed out or returned an unreadable result. Such an interrupted first install stays `installing` until you retry or remove it. You cannot update a Tool Orbit does not own.
 
@@ -175,9 +179,9 @@ A removal that repins surviving members names the source's origins. Orbit refuse
 
 ## Signed apt repositories
 
-An `apt` Tool definition can include a `repository` object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). In database mode pass it as JSON on install, adoption, or update; in file mode declare it in the catalog. Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for owned packages, `1` for other packages from each origin it may have). Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
+An `apt` Tool definition can include a `repository` object (`name`, `uris`, `suites`, `components`, optional `architectures`, `signing_key.url`, and 40/64-hex `signing_key.fingerprint`; reserved names `caddy` and `php` are refused). In database mode pass it as JSON on install, adoption, or update; in file mode declare it in the catalog. Orbit verifies the downloaded key's primary fingerprint before writing `/etc/apt/keyrings/orbit-<name>.gpg`, `/etc/apt/sources.list.d/orbit-<name>.sources`, and `/etc/apt/preferences.d/orbit-<name>.pref` (priority `990` for owned packages, `1` for other packages from its origin). apt matches `Pin: origin` against the URI's host, an IPv6 literal without its brackets, and Orbit writes it that way. Removing the last Tool referencing a repository cleans up its source, preference, and keyring.
 
-One URI and suite belongs to one source per Node: apt stops every read when two source files give one entry different `Signed-By` keyrings. Install, update, adoption, convergence and a mode switch refuse with `tool.repository_conflict` a source whose name differs from a source the Node records or a Tool wants on the same URI and suite. The refusal comes before any Operation or record. Use one name, or a distinct URI.
+One URI and suite belongs to one source per Node: apt stops every read when two source files give one entry different `Signed-By` keyrings. Install, update, adoption, convergence and a mode switch refuse with `tool.repository_conflict` a source whose name differs from a source a Tool wants, or that a recorded source may still have on disk, on the same URI and suite. A record keeps every URI and suite an uncertain write may have published under its name, even after an adoption names an older definition again. The refusal comes before any Operation or record. Use one name, or a distinct URI.
 
 Repository errors: `tool.repository_invalid`, `tool.repository_conflict`, `tool.repository_unverified`, `tool.repository_key_mismatch`, `tool.repository_unavailable`, `tool.repository_failed`, and `tool.repository_adoption_mismatch`.
 
@@ -189,21 +193,21 @@ Every Orbit source keeps every other package of its origins at priority `1`, fro
 
 Candidate selection needs no preference: it reads only Orbit's source list and installs the exact version it chose.
 
-Only after Orbit verifies the package installed does the executor add it to the preference. A failure of that write fails the run but keeps the acquisition. A membership that has not acquired its package is never preferred by a sibling's write either. A failed write retains the requested repository separately from the last verified source.
+Only after Orbit verifies the package from the source does the executor write the confirmed preference, the package with it. A failure of that write fails the run but keeps the acquisition. A membership that has not acquired its package is never preferred by a sibling's write either. A failed write retains the requested repository separately from the last verified source.
 
-The preference covers every origin the source may have on disk. A change of a source from one origin to another can fail after either is published, so the record collects the origins of every definition admitted under its name, and each later preference keeps all of them at priority `1`. Orbit's own successful write resets the list to the origins it published.
+While the source is uncertain, the held preference covers every origin it may have on disk. A change of a source from one origin to another can fail after either is published, so the record collects every URI and suite admitted under its name. Each held preference keeps all their origins at priority `1`. The confirmed preference names only the source's current origins. apt then chooses packages from an origin the source has left, such as an independent repository on that host, without any Orbit preference. Orbit's own successful write resets the record to what it published.
 
 The Node keeps a record of each source Orbit may have on disk. Orbit creates it when it admits the first write that may publish the source, and deletes it only when a removal confirms the source and its preferences are gone.
 
 A write may change the key, source or preference on disk before it fails, is cancelled, times out, or returns an unreadable result. So admitting any direct write or removal that touches the source, or a convergence that includes it, marks the record unverified. These mark it verified again:
 
 - Orbit's own successful write.
-- A run whose receipt shows each source write skipped, as after a refusal of a verified source.
-- A run for the recorded definition that failed before any source write, as at the key fetch or the removal plan.
+- A run whose receipt shows each source write skipped, as after a refusal.
+- A run that failed before any source write, as at the key fetch or the removal plan.
 - A removal that repinned the survivors.
 - A convergence whose whole Tools phase succeeded and installed a Tool from the source.
 
-A failed change to another definition proves nothing this way: the record still holds the old one. While the record is unverified, the next direct write publishes the key and source again.
+The last two keep only the trust the record had when the run was admitted, never more. A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
 
 An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified.
 
@@ -219,17 +223,23 @@ Remove the membership before dropping or renaming a source that is verified or t
 
 The upgrade that adds these records replays the preceding release's Tool Operations in order.
 
-Ownership needs an acquisition. A Tool is owned when one of its direct installs or updates succeeded with outcome `applied`. An `unchanged` success is an observation. So is a node converge that found the Tool installed: the preceding release recorded no per-Tool write. An Operation admitted with `tool_status: installed` before any acquisition or observation implies an adoption, which the preceding release recorded no other way. A Tool with no Operation keeps ownership only when it is installed.
+Ownership needs an acquisition. A Tool is owned when one of its direct installs or updates succeeded with outcome `applied`. An `unchanged` success is an observation. So is a node converge that found the Tool installed: the preceding release recorded no per-Tool write. A Tool with no Operation keeps ownership only when it is installed.
 
-An adoption after a failure keeps ownership. A Tool that is installed although its latest receipt left it failed was adopted since, because only an adoption, which left no Operation, makes it installed. A later converge that changed nothing keeps an adopted Tool owned.
+An adoption keeps ownership. The preceding release recorded none, but every admission captured the Tool's `tool_status` and `installed_version`, and every converge plan its `installed_version`. Only an adoption makes a Tool installed after its latest receipt left it failed. It is also the only thing that gives a Tool an installed version nothing earlier in its history explains. So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned.
 
 Trust needs a write that ran. A source is verified only when its latest event is a successful write that published it (`repository_given: true`) with the recorded definition, or a converge whose Tools phase ran and installed a Tool from it. A write that skipped publication, and a converge whose Tools phase was skipped, neither prove nor doubt the source.
 
-A failure whose recorded failed step comes before every source write neither proves nor doubts the source either: a key fetch, a non-last removal refused at its plan, or an update that skipped publication. An interruption without a failed step may have written anything, so it doubts the source. An adoption is not a write. The record keeps the origins of every definition its history named until a write proves it.
+A run that never reached a source write, by the preceding workflows, neither proves nor doubts the source either:
+- Any removal that kept the source: the preceding removal workflow has no repin step.
+- A last member's removal refused by its decision (`tool.removal_plan_unsafe`), or failed before its decision.
+- A write without `repository_given`.
+- A write whose recorded failed step comes before publication, such as the key fetch.
+
+An interruption without a failed step may have written anything, so it doubts the source. An adoption is not a write. The record keeps every URI and suite its history may have published since its last confirmed write until a write proves it.
 
 Cleanup belongs to the source. Every source whose latest event is not a confirmed removal keeps a record, whatever package names collide. The next full convergence removes it once no Tool names it. No membership is created for it. A run counts as reaching the Node when it has an attempt or a bound native run.
 
-A failed install that wrote its source without linking it takes back the source of its own latest request while that request is still pending. An earlier possible publication never becomes desired state over a later request without a source, an installed Tool, or a confirmed removal of that source after the request.
+A failed install that wrote its source without linking it takes back the source of its own latest request while that request is still pending. An earlier possible publication never becomes desired state over a later request without a source, an installed Tool, or a confirmed removal of that source name after the request, even when another Tool later reuses the name.
 
 ## Why it works this way
 

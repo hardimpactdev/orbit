@@ -27,34 +27,45 @@ final class AptSourceTrust
     }
 
     /**
-     * An admitted write may publish this definition: the record proves nothing until a write succeeds, and every origin the source may
-     * now have on disk joins those its preferences restrict.
+     * An admitted write may publish this definition: the record proves nothing until a write succeeds, and every URI and suite the
+     * source may now have on disk joins those it already may have.
      *
      * @param  array<string, mixed>  $definition
      */
     public static function suspect(int $nodeId, array $definition): AptRepository
     {
         $record = AptRepository::query()->firstOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => false, 'origins' => self::hosts($definition)]);
-        $record->update(['verified' => false, 'origins' => self::origins($record, $definition)]);
+            ['definition' => $definition, 'verified' => false, 'entries' => self::entries($definition)]);
+        $record->update(['verified' => false, 'entries' => self::possible($record, $definition)]);
 
         return $record;
     }
 
     /**
      * The origin hosts the source may have on disk, the definition's included: a failed change from one origin to another may have left
-     * either, so the preferences of both keep every unrelated package at priority 1.
+     * either, so the preferences written while it is uncertain keep every unrelated package of both at priority 1.
      *
      * @param  array<string, mixed>  $definition
      * @return list<string>
      */
     public static function origins(?AptRepository $record, array $definition): array
     {
-        $hosts = [...($record === null ? [] : ($record->origins ?? self::hosts($record->definition))), ...self::hosts($definition)];
-        $hosts = array_values(array_unique($hosts));
+        $hosts = array_values(array_unique(array_map(static fn (string $entry): string => self::host(explode(' ', $entry, 2)[0]), self::possible($record, $definition))));
         sort($hosts, SORT_STRING);
 
         return $hosts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return list<string> the record's possible `uri suite` entries and the definition's
+     */
+    private static function possible(?AptRepository $record, array $definition): array
+    {
+        $entries = array_values(array_unique([...($record === null ? [] : ($record->entries ?? self::entries($record->definition))), ...self::entries($definition)]));
+        sort($entries, SORT_STRING);
+
+        return $entries;
     }
 
     /**
@@ -75,17 +86,24 @@ final class AptSourceTrust
     }
 
     /**
-     * The definitions of the Node's sources under every name: the recorded ones, which may still be on disk, and those enrolled Tools want.
+     * The definitions of the Node's sources under every name: each URI and suite a recorded source may still have on disk, even one an
+     * uncertain write left or an adoption no longer names, and those enrolled Tools want.
      *
      * @return list<array<string, mixed>>
      */
     public static function nodeDefinitions(int $nodeId): array
     {
-        $recorded = AptRepository::query()->where('node_id', $nodeId)->pluck('definition')->all();
+        $recorded = [];
+        foreach (AptRepository::query()->where('node_id', $nodeId)->get() as $record) {
+            foreach (self::possible($record, $record->definition) as $entry) {
+                [$uri, $suite] = explode(' ', $entry, 2);
+                $recorded[] = ['name' => $record->name, 'uris' => [$uri], 'suites' => [$suite]];
+            }
+        }
         $desired = Tool::query()->where('node_id', $nodeId)->whereNotNull('desired_repository')->get()
             ->reject->withdrawn()->pluck('desired_repository')->all();
 
-        return array_values(array_map(ValidatedData::object(...), array_filter([...$recorded, ...$desired], 'is_array')));
+        return [...$recorded, ...array_values(array_map(ValidatedData::object(...), array_filter($desired, 'is_array')))];
     }
 
     /** @param list<array<string, mixed>> $plans the admitted convergence plans, which always publish their sources */
@@ -129,7 +147,7 @@ final class AptSourceTrust
     public static function record(int $nodeId, array $definition): AptRepository
     {
         return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => true, 'origins' => self::hosts($definition)]);
+            ['definition' => $definition, 'verified' => true, 'entries' => self::entries($definition)]);
     }
 
     /** @param array<string, mixed> $definition the definition an adoption matched against the Node agent's fact */
@@ -140,8 +158,9 @@ final class AptSourceTrust
             return $record;
         }
 
+        // The fact may predate a write that published another definition: whatever that left stays a possible entry.
         return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => false]);
+            ['definition' => $definition, 'verified' => false, 'entries' => self::possible($record, $definition)]);
     }
 
     /**
@@ -172,14 +191,10 @@ final class AptSourceTrust
                     ->orWhereColumn('tools.desired_repository->name', 'apt_repositories.name')));
     }
 
-    /**
-     * @param  array<string, mixed>  $definition
-     * @return list<string>
-     */
-    private static function hosts(array $definition): array
+    /** The origin apt matches a source's `Pin: origin` against: the URI's host, an IPv6 literal without its brackets. */
+    private static function host(string $uri): string
     {
-        return array_values(array_unique(array_map(static fn (string $uri): string => strtolower((string) parse_url($uri, PHP_URL_HOST)),
-            ValidatedData::stringList($definition['uris'] ?? []))));
+        return trim(strtolower((string) parse_url($uri, PHP_URL_HOST)), '[]');
     }
 
     /**

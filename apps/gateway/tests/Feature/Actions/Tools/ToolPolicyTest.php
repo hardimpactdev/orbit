@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tools\ManageToolPolicyAction;
 use App\Actions\Tools\ScanToolInventoryAction;
 use App\Actions\Tools\StartToolConvergeAction;
@@ -10,6 +11,8 @@ use App\Domain\ConnServer\ConnServerRollout;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
 use App\Domain\Nodes\NodeConvergeProjection;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\AptSourceTrust;
@@ -19,6 +22,10 @@ use App\Domain\Tools\ToolConvergeProjection;
 use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampConnection;
 use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\NodeFact;
@@ -692,7 +699,7 @@ it('migrates preceding-release receipts by acquisition, sources by writes that r
     };
 
     // Acquisition grants uninstall authority; an observation or a failure never does, and an adoption the receipts imply keeps it.
-    foreach (['B1b' => true, 'B1c' => true, 'B1d' => true, 'B1e' => true, 'B1g' => true, 'B1h' => true, 'B1a' => false, 'B1f' => false, 'converged' => false] as $history => $owned) {
+    foreach (['B1b' => true, 'B1c' => true, 'B1d' => true, 'B1e' => true, 'B1g' => true, 'B1h' => true, 'B1i' => true, 'B1a' => false, 'B1f' => false, 'converged' => false] as $history => $owned) {
         $removal = $remove($tool($history)->refresh());
         expect($tool($history)?->owned ?? false)->toBe($owned, $history)->and($removal->input['package_owned'])->toBe($owned, $history)
             ->and($removal->result['execution'] ?? 'native')->toBe($owned ? 'native' : 'membership_only', $history);
@@ -702,10 +709,14 @@ it('migrates preceding-release receipts by acquisition, sources by writes that r
         expect($source($history, $name)->verified)->toBeFalse($history);
     }
     expect($source('B8e', 'steady')->verified)->toBeTrue()->and($source('B6e', 'two')->verified)->toBeTrue();
-    // A failure whose recorded step precedes every source write neither proves nor doubts the source; an interruption without one does.
-    foreach (['B8f' => true, 'B8g' => true, 'B8h' => true, 'B8i' => false] as $history => $verified) {
+    // A run that never reached a source write, by the preceding workflows and its own receipt, neither proves nor doubts the source:
+    // a skipped publication, a key that never verified, and a decision's refusal of a removal. An interruption with no step may have.
+    foreach (['B8f' => true, 'B8g' => true, 'B8h' => true, 'B8j' => true, 'B8i' => false] as $history => $verified) {
         expect($source($history, $histories[$history]['source'])->verified)->toBe($verified, $history);
     }
+    expect($histories['B8g']['failed_step'])->toBe('Assert package state')->and($histories['B8h']['failed_step'])->toBe('Fetch the signing key');
+    expect($remove($tool('B8g'))->input)->toMatchArray(['remove_repository' => false, 'repository_packages' => ['nano']])
+        ->and($remove($tool('B8j'))->input['remove_repository'])->toBeTrue();
     expect(fn () => $operations->execute('remove', $node('B8d'), 'apt', 'tree', null, $tool('B8d')))
         ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
     // Every source that may still be on disk keeps its own cleanup, whatever package names collide; none becomes a membership.
@@ -720,6 +731,9 @@ it('migrates preceding-release receipts by acquisition, sources by writes that r
         ->and($plans('B7b'))->toBe(['tree' => null])->and($source('B7b', 'alpha'))->toBeNull()
         ->and($plans('B7c'))->toBe(['tree' => null])->and($plans('B7d'))->toBe(['tree' => null])
         ->and($source('B7c', 'withdrawn-b7c'))->toBeNull()->and($tool('B7d')->owned)->toBeTrue();
+    // The withdrawal stands even after another Tool reuses the source name at another URI, so a full convergence still captures.
+    expect($plans('B7e'))->toBe(['tree' => null, 'htop' => $source('B7e', 'reused-b7e')->definition])
+        ->and($source('B7e', 'reused-b7e')->definition['uris'])->toBe(['https://example.test/reused-b7e-elsewhere']);
 });
 
 /** A complete source-only removal: the package step is skipped and the source and its pins are removed. */
@@ -737,7 +751,7 @@ function policyRefusedInstall(Node $node, array $source): Tool
     $written = $install->input['repository_given'] ? 'succeeded' : 'skipped';
     policyComplete($install, 'failed', ['decision' => ['error_code' => 'tool.package_already_installed', 'installed_version' => '1.10'],
         'steps' => ['Pin repository packages' => ['status' => 'succeeded'], 'Publish the signing key' => ['status' => $written],
-            'Write the apt source' => ['status' => $written], 'Prefer the acquired package' => ['status' => 'skipped']]]);
+            'Write the apt source' => ['status' => $written], 'Prefer the verified package' => ['status' => 'skipped']]]);
     $install->update(['lock_key' => null]);
 
     return Tool::query()->findOrFail($install->input['tool_id']);
@@ -1062,7 +1076,7 @@ it('proves a shared source again after a refusal that held its preferences witho
     expect($install->input['repository_given'])->toBe($given)->and($record->refresh()->verified)->toBeFalse();
     policyComplete($install, 'failed', ['decision' => ['ready' => false, 'error_code' => 'tool.package_already_installed', 'installed_version' => '1.10'],
         'steps' => ['Pin repository packages' => ['status' => 'succeeded'], 'Publish the signing key' => ['status' => $given ? 'succeeded' : 'skipped'],
-            'Write the apt source' => ['status' => $given ? 'succeeded' : 'skipped'], 'Prefer the acquired package' => ['status' => 'skipped']]]);
+            'Write the apt source' => ['status' => $given ? 'succeeded' : 'skipped'], 'Prefer the verified package' => ['status' => 'skipped']]]);
     expect($record->refresh()->verified)->toBe(! $given);
 })->with(['verified source, no publication' => [false], 'unverified source republished' => [true]]);
 
@@ -1142,8 +1156,8 @@ it('proves a source again after a failure that stopped before any source write, 
         $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tree);
         expect($verified->refresh()->verified)->toBeFalse();
         policyComplete($removal, 'failed', ['decision' => ['ready' => false, 'error_code' => 'tool.removal_plan_unsafe'],
-            'steps' => ['Plan the removal' => ['status' => 'failed'], 'Remove the apt source' => ['status' => 'skipped'], 'Remove repository pins' => ['status' => 'skipped'],
-                'Reconcile remaining repository pins' => ['status' => 'skipped']]]);
+            'steps' => ['Choose package action' => ['status' => 'succeeded'], 'Remove the package' => ['status' => 'skipped'], 'Remove the apt source' => ['status' => 'skipped'],
+                'Remove repository pins' => ['status' => 'skipped'], 'Reconcile remaining repository pins' => ['status' => 'skipped'], 'Assert package state' => ['status' => 'failed']]]);
         expect($verified->refresh()->verified)->toBeTrue();
 
         return;
@@ -1151,18 +1165,184 @@ it('proves a source again after a failure that stopped before any source write, 
     $moved = [...$original, 'uris' => ['https://moved.example.test/apt']];
     $change = $operations->execute('update', $node->id, 'apt', 'tree', null, $tree, $moved, '1.10');
     expect($change->input['repository_origins'])->toBe(['example.test', 'moved.example.test'])
-        ->and($verified->refresh()->origins)->toBe(['example.test', 'moved.example.test']);
+        ->and($verified->refresh()->entries)->toBe(['https://example.test/apt 1.10', 'https://moved.example.test/apt 1.10']);
     $published = $case === 'new origin published, then refresh failed';
     policyComplete($change, 'failed', ['steps' => ['Fetch the signing key' => ['status' => $published ? 'succeeded' : 'failed'],
         'Publish the signing key' => ['status' => $published ? 'succeeded' : 'skipped'], 'Pin repository packages' => ['status' => $published ? 'succeeded' : 'skipped'],
         'Write the apt source' => ['status' => $published ? 'succeeded' : 'skipped'], 'Refresh apt source' => ['status' => $published ? 'failed' : 'skipped']]]);
     $change->update(['lock_key' => null]);
     // The key fetch failed before any write: the old source is still the one on disk, but the record names it under the old definition only.
-    expect($verified->refresh()->verified)->toBeFalse()->and($verified->origins)->toBe(['example.test', 'moved.example.test']);
+    expect($verified->refresh()->verified)->toBeFalse()->and($verified->entries)->toBe(['https://example.test/apt 1.10', 'https://moved.example.test/apt 1.10']);
 
     // Every later write of this source still restricts both origins until Orbit's own write proves one source again.
     $retry = $operations->execute('update', $node->id, 'apt', 'tree', null, $tree->refresh(), $moved, '1.10');
     expect($retry->input['repository_origins'])->toBe(['example.test', 'moved.example.test']);
     policyComplete($retry, 'succeeded', ['decision' => ['ready' => true], 'observation' => ['installed_version' => '1.10'], 'steps' => ['Assert package state' => ['status' => 'succeeded']]]);
-    expect($verified->refresh()->only(['verified', 'origins']))->toBe(['verified' => true, 'origins' => ['moved.example.test']]);
+    expect($verified->refresh()->only(['verified', 'entries']))->toBe(['verified' => true, 'entries' => ['https://moved.example.test/apt 1.10']]);
 })->with(['removal plan refused', 'key fetch failed', 'new origin published, then refresh failed']);
+
+/** A Swamp socket that answers the run history read with `$run` and every other read with nothing. */
+function policySwampSocket(array $run): WebSocketClient
+{
+    return new class($run) implements WebSocketClient
+    {
+        private array $frames = [];
+
+        private bool $open = false;
+
+        public function __construct(private readonly array $run) {}
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+        {
+            $this->open = true;
+        }
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $replies = array_map(fn (array $frame): array => ['id' => $frame['id'], 'type' => $frame['type'],
+                'payload' => $frame['type'] === 'workflow.history.get' ? ['data' => $this->run] : ['data' => ['results' => []]]], $this->frames);
+            $this->frames = [];
+
+            return $replies;
+        }
+
+        public function close(): void
+        {
+            $this->open = false;
+        }
+
+        public function isConnected(): bool
+        {
+            return $this->open;
+        }
+    };
+}
+
+/**
+ * Reads the bound run of a Tool Operation through the terminal reader, as the reconciler does. `$steps` maps each step that ran to its
+ * status, and the decision and observation steps to their outputs. The run ends `$late` seconds after the Operation's budget.
+ */
+function policyReadRun(Operation $operation, string $status, array $steps, int $late): Operation
+{
+    $operation->update(['state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-'.$operation->id], 'started_at' => now()->subDay(), 'status' => 'running']);
+    $deadline = OperationRunBudgets::deadline($operation->refresh());
+    $run = ['id' => 'run-'.$operation->id, 'workflowName' => app(DirectOperation::class)->workflowFor($operation), 'status' => $status,
+        'startedAt' => $operation->started_at->toIso8601ZuluString(), 'completedAt' => $deadline->addSeconds($late)->toIso8601ZuluString('millisecond'),
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'jobs' => [['name' => 'tools', 'status' => $status, 'steps' => array_map(static fn (string $name, array $step): array => ['name' => $name, 'status' => $step[0],
+            ...(isset($step[1]) ? ['outputs' => $step[1]] : [])], array_keys($steps), $steps)]]];
+    app(SwampConnection::class)->release();
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.read_token' => 'read-token']);
+    app()->instance(WebSocketClient::class, policySwampSocket($run));
+
+    return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run['id'], 'status' => $status],
+        app(DirectOperation::class)->definition($operation)['terminal_result']);
+}
+
+it('keeps what a run that ended after its timeout proved, and lets no unproven removal remove a replacement on retry', function (string $case): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $operations = app(StartToolOperationAction::class);
+    ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
+    if (str_starts_with($case, 'install')) {
+        $install = $operations->execute('install', $node->id, 'apt', 'tree', null, version: '1.0');
+        $status = $case === 'install verified, then the timeout cancelled it' ? 'cancelled' : 'succeeded';
+        $read = policyReadRun($install, $status, ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => null]],
+            'Apply the package' => ['succeeded'], 'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.0']],
+            'Assert package state' => [$status === 'succeeded' ? 'succeeded' : 'cancelled']], late: 2);
+        $tool = Tool::query()->findOrFail($install->input['tool_id']);
+        expect([$read->status->value, $read->error_code])->toBe(['failed', 'operation.timed_out'])
+            ->and($tool->only(['owned', 'installed_version']))->toBe(['owned' => true, 'installed_version' => '1.0'])
+            ->and($tool->status->value)->toBe($status === 'succeeded' ? 'installed' : 'failed');
+
+        return;
+    }
+    $tool = policyTool($node, 'tree', '1.0');
+    $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tool);
+    expect($removal->input['package_owned'])->toBeTrue();
+    $steps = match ($case) {
+        'removal verified absent' => ['Choose package action' => ['succeeded', ['ready' => true, 'remove' => true]], 'Remove the package' => ['succeeded'],
+            'Check apt absence' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'absent' => true]], 'Assert package state' => ['cancelled']],
+        'removal with no step evidence' => [],
+        'removal stopped before its package step' => ['Read installed package' => ['failed'], 'Choose package action' => ['skipped'], 'Remove the package' => ['skipped'],
+            'Assert package state' => ['failed']],
+    };
+    $read = policyReadRun($removal, $steps === [] ? 'failed' : 'cancelled', $steps, late: 2);
+    expect([$read->status->value, $read->error_code, $read->lock_key])->toBe(['failed', 'operation.timed_out', null]);
+    $retained = $case === 'removal stopped before its package step';
+    // The retry removes the package only when a receipt showed the original never left; otherwise it cleans the record and source alone.
+    expect($tool->refresh()->owned)->toBe($retained)->and($tool->withdrawn())->toBeTrue()
+        ->and($operations->execute('remove', $node->id, 'apt', 'tree', null, $tool)->input['package_owned'])->toBe($retained);
+})->with(['install verified, then the timeout cancelled it', 'install verified and succeeded after its deadline', 'removal verified absent',
+    'removal with no step evidence', 'removal stopped before its package step']);
+
+it('releases a removal that timed out with no terminal, so a retry after the hold lapses never removes a replacement', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.0');
+    $removal = app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', 'tree', null, $tool);
+    $removal->update(['state' => [...($removal->state ?? []), 'swamp_run_id' => 'run'], 'started_at' => now()->subDay(), 'status' => 'running']);
+    app(ExpireOperationAction::class)->execute($removal->refresh());
+    expect($tool->refresh()->only(['owned', 'error_code']))->toBe(['owned' => false, 'error_code' => 'operation.timed_out']);
+    $removal->refresh()->update(['finished_at' => now()->subHours(2)]);
+    app(ExpireOperationAction::class)->releaseStaleHolds();
+    expect(app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', 'tree', null, $tool)->input['package_owned'])->toBeFalse();
+});
+
+it('keeps the trust a source had at admission when a run wrote nothing, and never creates it', function (bool $verified): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    if ($verified) {
+        AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+        policyTool($node, 'nano', '1.10')->update(['apt_repository_id' => AptRepository::query()->value('id'), 'desired_repository' => $source]);
+    }
+    $operations = app(StartToolOperationAction::class);
+    $install = $operations->execute('install', $node->id, 'apt', 'tree', null, repository: $source, version: '1.10');
+    expect($install->input['repository_verified'])->toBe($verified)->and($install->input['repository_given'])->toBe(! $verified);
+    // A first install stops at its key fetch; a run beside a verified source is refused before any source write.
+    policyComplete($install, 'failed', $verified
+        ? ['decision' => ['ready' => false, 'error_code' => 'tool.package_already_installed', 'installed_version' => '1.10'], 'steps' => ['Pin repository packages' => ['status' => 'succeeded'],
+            'Publish the signing key' => ['status' => 'skipped'], 'Write the apt source' => ['status' => 'skipped'], 'Prefer the verified package' => ['status' => 'skipped']]]
+        : ['steps' => ['Fetch the signing key' => ['status' => 'failed'], 'Publish the signing key' => ['status' => 'skipped'], 'Write the apt source' => ['status' => 'skipped'],
+            'Prefer the verified package' => ['status' => 'skipped'], 'Assert package state' => ['status' => 'failed']]]);
+    $install->update(['lock_key' => null]);
+    expect(AptRepository::query()->where('name', 'proof')->value('verified'))->toBe($verified);
+    if (! $verified) {
+        $retry = $operations->execute('install', $node->id, 'apt', 'tree', null, Tool::query()->findOrFail($install->input['tool_id']));
+        expect($retry->input['repository_given'])->toBeTrue();
+    }
+})->with(['source verified at admission' => [true], 'first publication' => [false]]);
+
+it('refuses a source name whose URI and suite another source may still have on disk after an adoption against an older fact', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $a = policySignedRepository();
+    $b = [...$a, 'uris' => ['https://moved.example.test/apt']];
+    $tree = policyTool($node, 'tree', '1.10');
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $a]);
+    $tree->update(['apt_repository_id' => $record->id, 'desired_repository' => $a]);
+    $operations = app(StartToolOperationAction::class);
+    $move = $operations->execute('update', $node->id, 'apt', 'tree', null, $tree, $b, '1.10');
+    policyComplete($move, 'failed', ['steps' => ['Publish the signing key' => ['status' => 'succeeded'], 'Write the apt source' => ['status' => 'succeeded'],
+        'Refresh apt source' => ['status' => 'failed']]]);
+    $move->update(['lock_key' => null]);
+    // A Node agent fact that still shows A: the adoption names A again, but B may be the file on disk.
+    AptSourceTrust::adopt($node->id, $a);
+    expect($record->refresh()->definition)->toBe($a)->and($record->entries)->toBe(['https://example.test/apt 1.10', 'https://moved.example.test/apt 1.10']);
+    expect(fn () => $operations->execute('install', $node->id, 'apt', 'htop', null, repository: [...$b, 'name' => 'other'], version: '1.10'))
+        ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_conflict'));
+});
+
+it('restricts an IPv6 source origin as apt matches it, without brackets, in the Gateway input and the preferences', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = [...policySignedRepository(), 'uris' => ['https://[2001:DB8::7]/apt']];
+    $install = app(StartToolOperationAction::class)->execute('install', $node->id, 'apt', 'tree', null, repository: $source, version: '1.10');
+    expect($install->input['repository_origins'])->toBe(['2001:db8::7']);
+});

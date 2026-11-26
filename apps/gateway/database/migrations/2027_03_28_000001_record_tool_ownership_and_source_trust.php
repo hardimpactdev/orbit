@@ -26,14 +26,16 @@ return new class extends Migration
         });
 
         Schema::table('apt_repositories', static function (Blueprint $table): void {
-            $table->json('origins')->nullable();
+            $table->json('entries')->nullable();
         });
 
-        // How each Tool became installed, whether Orbit acquired it, and the status its latest receipt left.
+        // Per Tool: whether Orbit acquired it, how it became installed, the status its latest receipt left, and the installed version
+        // that the history itself explains.
         $tools = [];
         // Each Tool's latest direct install or update request: its Operation and the source it named, or none.
         $latest = [];
-        // Each source's latest event, its Operation, and every definition its history named, by Node and name.
+        // Per source name: its latest write event and that event's definition, the definitions it may have on disk since its last
+        // confirmed write or removal, and the Operations that confirmed its removal.
         $sources = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'attempts', 'state', 'input', 'result']);
@@ -51,16 +53,15 @@ return new class extends Migration
             }
             $tool = is_int($input['tool_id'] ?? null) ? $input['tool_id'] : null;
             if ($tool !== null) {
-                $tools[$tool] ??= ['owned' => false, 'installed' => null, 'last' => null];
-                // Adoption leaves no Operation: a Tool admitted as installed with no earlier acquisition or observation was adopted.
-                if (($input['tool_status'] ?? null) === 'installed' && $tools[$tool]['installed'] === null) {
-                    $tools[$tool] = ['owned' => true, 'installed' => 'adopted', 'last' => 'installed'];
-                }
+                // Admission captured the Tool's status and installed version (StartToolOperationAction).
+                $this->capture($tools, $tool, is_string($input['tool_status'] ?? null) ? $input['tool_status'] : null,
+                    is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null);
                 if ($operation->kind !== 'tool.remove' && in_array($operation->status, ['succeeded', 'failed'], true)) {
                     $acquired = $succeeded && ($result['outcome'] ?? null) === 'applied';
+                    $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                     $tools[$tool] = ['owned' => $tools[$tool]['owned'] || $acquired,
                         'installed' => $acquired ? 'acquired' : ($succeeded ? ($tools[$tool]['installed'] ?? 'observed') : $tools[$tool]['installed']),
-                        'last' => $succeeded ? 'installed' : 'failed'];
+                        'last' => $succeeded ? 'installed' : 'failed', 'version' => $succeeded ? $version : ($version ?? $tools[$tool]['version'])];
                 }
                 if ($operation->kind !== 'tool.remove') {
                     $latest[$tool] = ['operation' => $operation->id, 'repository' => is_array($input['repository'] ?? null) ? $input['repository'] : null];
@@ -75,18 +76,20 @@ return new class extends Migration
             $this->note($sources, $operation->node_id, $name, $repository, $event, $operation->id);
         }
 
-        foreach (DB::table('tools')->get(['id', 'node_id', 'status', 'apt_repository_id', 'desired_repository']) as $tool) {
+        foreach (DB::table('tools')->get(['id', 'node_id', 'status', 'installed_version', 'apt_repository_id', 'desired_repository']) as $tool) {
             $history = $tools[$tool->id] ?? null;
-            // Installed now although its latest receipt left it failed: only an adoption, which the preceding release did not record,
-            // turns a failed Tool installed without an Operation.
-            $adopted = $history !== null && $tool->status === 'installed' && $history['last'] !== 'installed';
+            // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
+            // left failed, or gives it an installed version that nothing in its history explains.
+            $adopted = $history !== null && $tool->status === 'installed'
+                && ($history['last'] === 'failed' || ($history['installed'] === null && $history['version'] === null && $tool->installed_version !== null));
             $changes = ['owned' => $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted)];
-            // A failed install that wrote its source kept no link to it: a still pending request names its desired source, unless the
-            // source's removal was confirmed after it. An installed Tool without a link has no source.
+            // A failed install that wrote its source kept no link to it: a still pending request names its desired source, unless a
+            // removal of that source name was confirmed after the request, whoever reused the name since. An installed Tool without a
+            // link has no source.
             $request = $latest[$tool->id] ?? null;
             $named = $request['repository']['name'] ?? null;
-            $withdrawn = $request !== null && is_string($named) && ($sources[$tool->node_id][$named]['event'] ?? null) === 'removed'
-                && $sources[$tool->node_id][$named]['operation'] > $request['operation'];
+            $withdrawn = $request !== null && is_string($named)
+                && max([0, ...ValidatedData::integerList($sources[$tool->node_id][$named]['removals'] ?? [])]) > $request['operation'];
             if ($request !== null && $request['repository'] !== null && $tool->apt_repository_id === null && $tool->desired_repository === null
                 && $tool->status !== 'installed' && ! $withdrawn) {
                 $changes['desired_repository'] = json_encode($request['repository'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -108,63 +111,63 @@ return new class extends Migration
             $last = $sources[$record->node_id][$record->name] ?? [];
             $definition = $this->json($record->definition);
             $written = ($last['event'] ?? null) === 'written' && $definition == $last['definition'];
-            // Every origin the history may have published under this name stays restricted until a write proves the source again.
-            $hosts = [];
-            foreach ([$definition, ...($written ? [] : (array) ($last['definitions'] ?? []))] as $named) {
+            // Every URI and suite the history may have left under this name stays this source's until a write proves it again.
+            $entries = [];
+            foreach ([$definition, ...($written ? [] : (array) ($last['possible'] ?? []))] as $named) {
                 foreach (is_array($named) ? (array) ($named['uris'] ?? []) : [] as $uri) {
-                    $hosts[] = is_string($uri) ? strtolower((string) parse_url($uri, PHP_URL_HOST)) : '';
+                    foreach (is_array($named) ? (array) ($named['suites'] ?? []) : [] as $suite) {
+                        $entries[] = is_string($uri) && is_string($suite) ? rtrim($uri, '/').' '.$suite : null;
+                    }
                 }
             }
-            $hosts = array_filter($hosts);
-            $hosts = array_values(array_unique($hosts));
-            sort($hosts, SORT_STRING);
-            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written, 'origins' => json_encode($hosts, JSON_THROW_ON_ERROR)]);
+            $entries = array_values(array_unique(array_filter($entries)));
+            sort($entries, SORT_STRING);
+            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written, 'entries' => json_encode($entries, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
         }
     }
 
     /**
-     * What one direct Operation did to a source, by its own receipt: `written` and `removed` only on success, nothing when it skipped
-     * the source or failed at a recorded step before the source, `uncertain` otherwise, including an interruption with no failed step.
+     * What one direct Operation did to a source, by its own receipt and the preceding release's workflows: `written` and `removed` only
+     * on success; nothing when it never reached a source write; `uncertain` otherwise, including an interruption with no failed step.
+     * - The preceding removal workflow has no repin step: a removal that keeps the source never writes it. A last member's removal
+     *   writes only when its decision was ready; a failed step before the decision, or the refusal only a decision makes, never wrote.
+     * - The preceding write workflow publishes the key, preferences and source only with `repository_given`, after the key verified.
      *
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $result
      */
     private function sourceEvent(string $kind, array $input, array $result, bool $succeeded, mixed $failedStep): ?string
     {
-        $given = ($input['repository_given'] ?? false) === true;
-        $prePublication = ['Prepare package commands', 'Fetch the signing key', 'Read the key fingerprint', 'Assert the key fingerprint',
-            'Dearmor the signing key', 'Prepare apt keyrings', 'Set up the Tool Manager'];
-        $preRepin = ['Prepare package commands', 'Read manager version', 'Read installed package', 'Plan the removal', 'Choose package action',
-            'Remove the package', 'Check apt absence', 'Check it is gone', 'Decode package state'];
         if ($kind === 'tool.remove') {
-            if (($input['remove_repository'] ?? false) === true) {
-                return $succeeded ? (($result['repository_removed'] ?? null) === true ? 'removed' : 'uncertain')
-                    : (in_array($failedStep, $preRepin, true) ? null : 'uncertain');
+            if (($input['remove_repository'] ?? false) !== true) {
+                return null;
             }
+            if ($succeeded) {
+                return ($result['repository_removed'] ?? null) === true ? 'removed' : 'uncertain';
+            }
+            $beforeDecision = ['Prepare package commands', 'Read manager version', 'Read installed package', 'Read macOS version', 'Plan the removal'];
 
-            // Repinning survivors is the only source write of a non-last removal.
-            return $succeeded || in_array($failedStep, $preRepin, true) ? null : 'uncertain';
+            return in_array($failedStep, $beforeDecision, true) || ($result['error_code'] ?? null) === 'tool.removal_plan_unsafe' ? null : 'uncertain';
         }
-        if ($succeeded) {
-            // A successful write that skipped the key and source neither proves nor doubts them.
-            return $given ? 'written' : null;
-        }
-        if (in_array($failedStep, $prePublication, true)) {
+        if (($input['repository_given'] ?? false) !== true) {
             return null;
         }
+        if ($succeeded) {
+            return 'written';
+        }
+        $beforePublication = ['Prepare package commands', 'Fetch the signing key', 'Read the key fingerprint', 'Assert the key fingerprint', 'Dearmor the signing key', 'Prepare apt keyrings'];
 
-        // A failed update that skipped publication rewrote the same preferences its members already had.
-        return $given || $kind !== 'tool.update' ? 'uncertain' : null;
+        return in_array($failedStep, $beforePublication, true) ? null : 'uncertain';
     }
 
     /**
      * A converge whose Tools phase ran wrote each planned source and judged each planned Tool; one that skipped the phase wrote nothing.
-     * The preceding release kept no per-Tool write count, so an installed observation is an observation unless the Tool was owned, and
-     * a plan captured as installed before any other evidence names an adopted Tool.
+     * Its capture recorded each Tool's installed version (NodeDesiredConvergeInput). The preceding release kept no per-Tool write
+     * count, so an installed observation is an observation unless the Tool was owned.
      *
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $result
-     * @param  array<int, array{owned: bool, installed: ?string, last: ?string}>  $tools
+     * @param  array<int, array{owned: bool, installed: ?string, last: ?string, version: ?string}>  $tools
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
     private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources): void
@@ -172,10 +175,7 @@ return new class extends Migration
         $phase = collect((array) ($result['phases'] ?? []))->firstWhere('name', 'tools');
         $plans = array_filter((array) data_get($input, '_converge.intent.tools', []), static fn (mixed $plan): bool => is_array($plan) && is_int($plan['id'] ?? null));
         foreach ($plans as $plan) {
-            $tools[$plan['id']] ??= ['owned' => false, 'installed' => null, 'last' => null];
-            if (($plan['tool_status'] ?? null) === 'installed' && $tools[$plan['id']]['installed'] === null) {
-                $tools[$plan['id']] = ['owned' => true, 'installed' => 'adopted', 'last' => 'installed'];
-            }
+            $this->capture($tools, ValidatedData::integer($plan['id']), null, is_string($plan['installed_version'] ?? null) ? $plan['installed_version'] : null);
         }
         if (! $ran || ! is_array($phase) || in_array($phase['status'] ?? null, ['unchanged', 'skipped'], true)) {
             return;
@@ -183,11 +183,13 @@ return new class extends Migration
         $installed = [];
         foreach ((array) ($result['tools'] ?? []) as $observation) {
             if (is_array($observation) && is_int($observation['id'] ?? null) && in_array($observation['status'] ?? null, ['installed', 'failed'], true)) {
-                $tools[$observation['id']] ??= ['owned' => false, 'installed' => null, 'last' => null];
-                $tools[$observation['id']]['last'] = $observation['status'];
+                $id = $observation['id'];
+                $tools[$id] ??= ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
+                $tools[$id]['last'] = $observation['status'];
                 if ($observation['status'] === 'installed') {
-                    $installed[$observation['id']] = true;
-                    $tools[$observation['id']]['installed'] ??= 'observed';
+                    $installed[$id] = true;
+                    $tools[$id]['installed'] ??= 'observed';
+                    $tools[$id]['version'] = is_string($observation['installed_version'] ?? null) ? $observation['installed_version'] : $tools[$id]['version'];
                 }
             }
         }
@@ -201,18 +203,40 @@ return new class extends Migration
     }
 
     /**
-     * Every definition a source's history named, and its latest event with that event's Operation and definition.
+     * A capture of a Tool's status and installed version, at an admission or a converge. Only an adoption, which left no Operation,
+     * makes a Tool installed after its latest receipt left it failed, or gives it a version that nothing before explains.
+     *
+     * @param  array<int, array{owned: bool, installed: ?string, last: ?string, version: ?string}>  $tools
+     */
+    private function capture(array &$tools, int $id, ?string $status, ?string $version): void
+    {
+        $history = $tools[$id] ?? ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
+        if (($status === 'installed' && $history['last'] === 'failed') || ($history['installed'] === null && $history['version'] === null && $version !== null)) {
+            $history = ['owned' => true, 'installed' => 'adopted', 'last' => 'installed', 'version' => $version];
+        }
+        $tools[$id] = $history;
+    }
+
+    /**
+     * A source's latest event and its definition, every definition it may have on disk since its last confirmed write or removal, and
+     * the Operations that confirmed its removal.
      *
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      * @param  array<mixed>  $repository
      */
     private function note(array &$sources, int $nodeId, string $name, array $repository, ?string $event, int $operation): void
     {
-        $entry = $sources[$nodeId][$name] ?? [];
-        $definitions = is_array($entry['definitions'] ?? null) ? $entry['definitions'] : [];
-        $definitions[] = $repository;
-        $sources[$nodeId][$name] = [...$entry, 'definitions' => $definitions,
-            ...($event === null ? [] : ['event' => $event, 'operation' => $operation, 'definition' => $repository])];
+        if ($event === null) {
+            return;
+        }
+        $entry = $sources[$nodeId][$name] ?? ['possible' => [], 'removals' => []];
+        $entry['possible'] = match ($event) {
+            'written' => [$repository], 'removed' => [], default => [...(array) $entry['possible'], $repository],
+        };
+        if ($event === 'removed') {
+            $entry['removals'] = [...(array) $entry['removals'], $operation];
+        }
+        $sources[$nodeId][$name] = [...$entry, 'event' => $event, 'operation' => $operation, 'definition' => $repository];
     }
 
     /** @return array<string, mixed> */
@@ -226,7 +250,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('apt_repositories', static function (Blueprint $table): void {
-            $table->dropColumn(['verified', 'origins']);
+            $table->dropColumn(['verified', 'entries']);
         });
         Schema::table('tools', static function (Blueprint $table): void {
             $table->dropColumn('owned');

@@ -10,6 +10,7 @@ use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
+use App\Domain\Operations\DirectOperationLateResult;
 use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
@@ -187,7 +188,7 @@ final readonly class SwampCommandStep
             $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
         if (ExpireOperationAction::needsTerminalReceipt($operation)) {
-            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
+            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status'], $this->lateResult($operation, $run, $selector));
         }
         try {
             $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
@@ -208,7 +209,7 @@ final readonly class SwampCommandStep
             return $current;
         });
         if (ExpireOperationAction::needsTerminalReceipt($current)) {
-            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+            return app(ExpireOperationAction::class)->settle($current, $runId, $status, $this->lateResult($current, $run, $selector));
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
             return $current;
@@ -223,6 +224,26 @@ final readonly class SwampCommandStep
         $this->fillStepTimes($projected, $runId, $run);
 
         return $projected;
+    }
+
+    /**
+     * The terminal result of a run that ended after the Gateway timed its Operation out, for a projection that keeps what it proved;
+     * an unreadable one is empty, so it proves nothing.
+     *
+     * @param  array<string,mixed>  $run
+     * @param  array{job:string,step:string,fallback?:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector
+     * @return array<string,mixed>
+     */
+    private function lateResult(Operation $operation, array $run, array $selector): array
+    {
+        if ($operation->error_code !== 'operation.timed_out' || ! app(DirectOperation::class)->projection($operation) instanceof DirectOperationLateResult) {
+            return [];
+        }
+        try {
+            return $this->terminalOutput($run, $selector);
+        } catch (ResourceOperationException) {
+            return [];
+        }
     }
 
     /** The same declared terminal reader records completed children while their parent is open.

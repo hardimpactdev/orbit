@@ -19,14 +19,14 @@ const run = (given: boolean, outcomes: Record<string, Outcome>) =>
         "Decode package state": { outputs: { compliant: true, present: true } },
         ...outcomes,
     }, () => ({}));
-const writes = ["Pin repository packages", "Publish the signing key", "Write the apt source", "Prefer the acquired package"];
+const writes = ["Pin repository packages", "Publish the signing key", "Write the apt source", "Prefer the verified package"];
 const statuses = (ran: Record<string, { status: string }>) => Object.fromEntries(writes.map((name) => [name, ran[name]?.status]));
 
 Deno.test("a verified write holds the source to owned packages before publication and prefers the acquired package last", () => {
     const ran = run(true, {});
     assertEquals(statuses(ran), Object.fromEntries(writes.map((name) => [name, "succeeded"])));
     assertEquals(ran["Pin repository packages"].end <= ran["Publish the signing key"].start, true);
-    assertEquals(ran["Decode package state"].end <= ran["Prefer the acquired package"].start, true);
+    assertEquals(ran["Decode package state"].end <= ran["Prefer the verified package"].start, true);
     assertEquals(ran["Assert package state"].status, "succeeded");
 });
 
@@ -39,16 +39,21 @@ Deno.test("a key that fails to fetch or verify writes no preference, key or sour
     }
 });
 
+Deno.test("an unchanged owned package still ends with the confirmed source's own preference", () => {
+    const ran = run(true, { "Choose package action": { outputs: { ready: true, mutate: false } } });
+    assertEquals([ran["Write the apt source"].status, ran["Prefer the verified package"].status, ran["Assert package state"].status], ["succeeded", "succeeded", "succeeded"]);
+});
+
 Deno.test("a refusal or an unverified write never prefers the acting package, and a verified source is not published again", () => {
     const refused = run(false, { "Choose package action": { outputs: { ready: false, mutate: false } } });
     assertEquals(statuses(refused), { "Pin repository packages": "succeeded", "Publish the signing key": "skipped", "Write the apt source": "skipped",
-        "Prefer the acquired package": "skipped" });
+        "Prefer the verified package": "skipped" });
     const unverified = run(true, { "Decode package state": { outputs: { compliant: false, present: false } } });
-    assertEquals(unverified["Prefer the acquired package"].status, "skipped");
+    assertEquals(unverified["Prefer the verified package"].status, "skipped");
     assertEquals(unverified["Assert package state"].status, "failed");
 });
 
 Deno.test("a failed write of the acquired package's preference fails the run after the acquisition", () => {
-    const ran = run(true, { "Prefer the acquired package": { status: "failed" } });
+    const ran = run(true, { "Prefer the verified package": { status: "failed" } });
     assertEquals([ran["Decode package state"].status, ran["Assert package state"].status], ["succeeded", "failed"]);
 });

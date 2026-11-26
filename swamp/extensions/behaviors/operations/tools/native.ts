@@ -22,7 +22,8 @@ export function preferences(
     origins: string[] = [],
 ): string {
     if (repo === null) return "";
-    const hosts = [...new Set([...repo.uris.map((uri) => new URL(uri).hostname), ...origins])];
+    // apt matches `Pin: origin` against the URI's host, an IPv6 literal without its brackets.
+    const hosts = [...new Set([...repo.uris.map((uri) => new URL(uri).hostname.replace(/^\[(.*)\]$/, "$1")), ...origins])];
     return hosts.map((origin) => {
         const preferred = packages.length === 0
             ? ""
@@ -130,8 +131,9 @@ export function commands(input: Input) {
         scope,
         remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
-        // After a verified acquisition: the owned packages and the acquired one.
-        repository_preferences: preferences(repo, input.repository_packages, input.repository_origins),
+        // Once the run verified its package from the source it published: the owned packages and this one, for that source's own
+        // origins only. Origins an earlier uncertain write may have left are no longer this source's, so they keep no restriction.
+        repository_preferences: preferences(repo, input.repository_packages),
         // Before publication and whenever the run stops short of acquiring: only what Orbit already owns, so no interruption can leave
         // an unacquired package preferred. Selection reads only Orbit's source list and installs an exact version, so it needs no pin.
         repository_preferences_held: preferences(

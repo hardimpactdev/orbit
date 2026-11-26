@@ -65,12 +65,14 @@ final readonly class StartToolOperationAction
             }
             // Ownership decides which packages apt prefers; surviving membership decides whether the source may go.
             $removeRepository = $verb === 'remove' && $repository !== null && $repositoryMembers === [];
+            // The trust the run is admitted with: a receipt that wrote nothing may keep it, never create it.
+            $verified = $repository !== null && AptSourceTrust::verified($repositoryRecord, $repository);
 
             $input = [
                 ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
                 'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
                 'repository_packages' => $repositoryPackages, 'repository_origins' => $repository === null ? [] : AptSourceTrust::origins($repositoryRecord, $repository),
-                'repository_given' => $repository !== null && $verb !== 'remove' && ! AptSourceTrust::verified($repositoryRecord, $repository),
+                'repository_verified' => $verified, 'repository_given' => $repository !== null && $verb !== 'remove' && ! $verified,
                 'package_owned' => $owned,
                 'tool_id' => $tool?->id,
                 'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,

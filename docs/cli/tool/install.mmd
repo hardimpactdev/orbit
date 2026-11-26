@@ -35,7 +35,7 @@ sequenceDiagram
   %%> Scope:
   %%> - direct writes share admission and candidate policy with convergence, but use the native SSH workflow, not an Ansible phase
   %%> - only this Tool can change
-  %%> - an apt source's preferences hold only owned Tools until this Tool is verified installed
+  %%> - an apt source's preferences hold only owned Tools until this Tool is verified; then they name the confirmed source's origins alone
   %%> Version:
   %%> - select the exact admitted version, or the manager's candidate for an unpinned database Tool; check the constraint before writing
   SW->>N: Read resulting state<br/>native SSH
