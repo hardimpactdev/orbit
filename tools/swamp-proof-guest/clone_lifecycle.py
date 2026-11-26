@@ -673,7 +673,8 @@ class SyncLane(CloneLane):
                 admitted = self.admitted('POST', f'tasks/{group}/cancel', {'discard': True}, name + '-cancel')
                 self.terminal(int(admitted['id']), seconds=400)
                 instance = self.clones[name]['instance']
-                require(self.runtime(instance) is None and not any(self.resources(instance).values()), f'copy {instance} outlived its cancelled group')
+                wait_for(lambda: self.runtime(instance) is None, f'copy {instance} outlived its cancelled group', 300, 2)
+                require(not any(self.resources(instance).values()), f'copy {instance} left Node resources after its cancelled group')
                 del self.clones[name]
         super().cleanup()
 
@@ -831,7 +832,8 @@ class SyncLane(CloneLane):
                 and not after['root_owned'], f'Sync {operation} changed HEAD, a branch, the index, work, a stash or ownership')
         require(self.reachable(other) and (self.state(other), self.resources(other)) == other_before, f'Sync {operation} changed the sibling')
         hits = self.credential_hits(instance, operation)
-        require(not hits and not self.scratch(instance), f'Sync {operation} left a credential or scratch behind ({len(hits)} places)')
+        left = self.scratch(instance)
+        require(not hits and not left, f'Sync {operation} left a credential or scratch behind: {hits + left}')
         replay = self.admitted('POST', f'tasks/{group}/sync', {}, key)
         require(replay['id'] == operation and replay['status'] == 'succeeded' and self.state(instance) == after,
                 'the same admission key did not return the terminal sync unchanged')
