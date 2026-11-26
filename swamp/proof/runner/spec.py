@@ -52,7 +52,7 @@ STEPS = {
     'clone_compare': (('expect',), {'engine', 'swamp'}, set()),
     'clone_cleanup': (('expect',), set(), set()),
     'route_fixture': (('setup',), {'repository', 'branch'}, set()),
-    'route_create': (('act',), {'name', 'clone'}, set()),
+    'route_create': (('act',), {'name', 'clone'}, {'web_root'}),
     'route_destroy': (('act',), {'name', 'via', 'sibling'}, {'fault'}),
     'route_clone_destroy': (('act',), {'name', 'via', 'sibling', 'route'}, set()),
     'route_compare': (('expect',), {'engine', 'swamp'}, {'kind'}),

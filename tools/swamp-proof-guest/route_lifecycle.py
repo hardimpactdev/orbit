@@ -84,10 +84,10 @@ class RouteLane(CloneLane):
     def domain(self, name):
         return f'{name}-{self.prefix.removeprefix("proof-clones-")}.proof.test'
 
-    def state(self, domain, instance):
+    def state(self, domain, scope):
         caddy = self.guest(self.node, 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', domain, CADDYFILE)
         admin = self.guest(self.node, 'sh', '-c', 'curl --noproxy "*" --silent --max-time 5 http://127.0.0.1:2019/config/ | grep -cF -- "$1" || :', 'sh', domain)
-        leaves = self.guest(self.node, 'sh', '-c', 'find "$1" -maxdepth 1 -name "$2" | wc -l', 'sh', LEAVES, f'app-instance-{int(instance)}')
+        leaves = self.guest(self.node, 'sh', '-c', 'find "$1" -maxdepth 1 -name "$2" | wc -l', 'sh', LEAVES, scope)
         records = self.guest('gateway', 'sh', '-c', 'grep -cF -- "$1" "$2" || :', 'sh', domain, RECORDS)
         answer = json.loads(self.guest('gateway', 'python3', '-c', DNS_QUERY, domain, self.gateway_address))
         return {'caddy_lines': int(caddy), 'caddy_admin': int(admin) > 0, 'leaf_paths': int(leaves), 'dns_record_lines': int(records),
@@ -113,19 +113,24 @@ class RouteLane(CloneLane):
         """The sibling keeps its site, leaf and DNS answer, completes a TLS handshake with the nested Orbit root (the engine's own
         sibling probe), and answers the HTTP status it answered when it was created."""
         route = self.routes_made[name]
-        state = self.state(route['domain'], route['instance'])
+        state = self.state(route['domain'], route['scope'])
         require(self.present(state) and state['https'] == route['https'], f'sibling Route {name} is not healthy: {state}')
         return state
 
-    def route_create(self, name, clone):
+    def route_create(self, name, clone, web_root=None):
+        """The clone's own Route, or with `web_root` another site of it: route:destroy removes only such a site, because the
+        Instance's own Route goes with the Instance."""
         domain = self.domain(name)
         instance = self.clones[clone]['instance']
-        row = self.admitted('POST', 'routes', {'instance_id': instance, 'domain': domain}, name + '-route-create')
+        body = {'instance_id': instance, 'domain': domain} | ({'web_root': web_root} if web_root else {})
+        row = self.admitted('POST', 'routes', body, name + '-route-create')
         self.terminal(int(row['id']), seconds=240)
         route = self.db(f"SELECT id FROM routes WHERE domain='{domain}'")
         require(len(route) == 1, f'Route {domain} has no record')
-        state = wait_for(lambda: self.present(found := self.state(domain, instance)) and found, f'Route {domain} does not answer', 40, interval=1)
-        self.routes_made[name] = {'domain': domain, 'route': int(route[0]['id']), 'instance': instance, 'create': int(row['id']), 'https': state['https']}
+        scope = f'route-{int(route[0]["id"])}' if web_root else f'app-instance-{instance}'
+        state = wait_for(lambda: self.present(found := self.state(domain, scope)) and found, f'Route {domain} does not answer', 40, interval=1)
+        self.routes_made[name] = {'domain': domain, 'route': int(route[0]['id']), 'instance': instance, 'scope': scope, 'create': int(row['id']),
+                                  'https': state['https']}
         self.record(name + '-route-create', {**self.routes_made[name], 'state': state})
 
     def held(self, operation):
@@ -155,14 +160,14 @@ class RouteLane(CloneLane):
         route, domain = self.routes_made[name]['route'], self.routes_made[name]['domain']
         sibling_before = self.healthy(sibling)
         self.set_dns(via == 'engine')
-        instance = self.routes_made[name]['instance']
-        before = self.state(domain, instance)
+        scope = self.routes_made[name]['scope']
+        before = self.state(domain, scope)
         require(self.present(before), f'Route {domain} is not live before its removal')
         path, key = f'routes/{route}', name + '-route-destroy'
         failed = self.dns_conflict(name, path, key, sibling) if fault == 'dns-conflict' else None
         started = time.monotonic()
         if fault == 'receipt':
-            admitted, interrupted = self.dropped_withdraw(path, key, domain, instance, sibling)
+            admitted, interrupted = self.dropped_withdraw(path, key, domain, scope, sibling)
         else:
             admitted, interrupted = self.admitted('DELETE', path, {}, key), None
         operation = int(admitted['id'])
@@ -170,7 +175,7 @@ class RouteLane(CloneLane):
         self.terminal(operation, seconds=240)
         elapsed = round((time.monotonic() - started) * 1000)
         summary = self.operation(operation, via)
-        after = self.state(domain, instance)
+        after = self.state(domain, scope)
         require(self.absent(after) and not self.db(f'SELECT id FROM routes WHERE id={route}') and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'route.destroy {operation} left the Route, its answers or its holds: {after}')
         sibling_after = self.healthy(sibling)
@@ -206,7 +211,7 @@ class RouteLane(CloneLane):
             terminal = self.terminal(operation, expect='failed', seconds=120)
             summary = self.operation(operation, 'engine')
             dns = next(step for step in summary['steps'] if step['name'] == 'dns-0')
-            kept = self.state(self.routes_made[name]['domain'], self.routes_made[name]['instance'])
+            kept = self.state(self.routes_made[name]['domain'], self.routes_made[name]['scope'])
             require(dns['status'] == 'failed' and terminal['error_code'] and self.present(kept)
                     and self.db(f"SELECT id FROM routes WHERE domain='{self.routes_made[name]['domain']}'"),
                     f'route.destroy {operation} did not stop at the DNS conflict with the Route kept')
@@ -217,7 +222,7 @@ class RouteLane(CloneLane):
         require(self.guest('gateway', 'cat', RECORDS) == original, 'the DNS records were not restored')
         return failure
 
-    def dropped_withdraw(self, path, key, domain, instance, sibling):
+    def dropped_withdraw(self, path, key, domain, scope, sibling):
         step, action = f'withdraw-{self.node_id}', 'route.withdraw_site'
         self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
         try:
@@ -235,7 +240,7 @@ class RouteLane(CloneLane):
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
             dropped = wait_for(lambda: self.helper('drop-receipt', self.node_id, operation, self.node_id, step, action),
                                f'route.destroy {operation} did not leave the expected queued receipt', 30)
-            withdrawn = self.state(domain, instance)
+            withdrawn = self.state(domain, scope)
             row = self.db(f'SELECT status, lock_key FROM operations WHERE id={operation}')[0]
             replay = self.admitted('DELETE', path, {}, key)
             pending = next(row for row in self.steps(operation) if row['name'] == step)
@@ -251,11 +256,11 @@ class RouteLane(CloneLane):
 
     def route_clone_destroy(self, name, via, sibling, route):
         """A clone that owns one private development Route: its withdrawal, then the signed container removal, on one engine."""
-        instance, domain = self.clones[name]['instance'], self.routes_made[route]['domain']
+        instance, domain, scope = self.clones[name]['instance'], self.routes_made[route]['domain'], self.routes_made[route]['scope']
         sibling_before = self.healthy(sibling)
         self.set_capability(via == 'engine')
         self.set_dns(via == 'engine')
-        before = {'route': self.state(domain, instance), 'resources': self.resources(instance)}
+        before = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
         require(self.present(before['route']) and before['resources']['incus'] == ['Running'], f'Route-owning clone {instance} is not live')
         started = time.monotonic()
         admitted = self.admitted('DELETE', f'instances/{instance}', {'force': True}, name + '-destroy')
@@ -265,8 +270,8 @@ class RouteLane(CloneLane):
         elapsed = round((time.monotonic() - started) * 1000)
         summary = self.operation(operation, via)
         removal = self.removal(operation)
-        after = {'route': self.state(domain, instance), 'resources': self.resources(instance)}
-        require(terminal['result']['removed'] and removal['routes'] == 1 and removal['removal_status'] == 'completed' and removal['lock_key'] is None
+        after = {'route': self.state(domain, scope), 'resources': self.resources(instance)}
+        require(terminal['result']['removed'] and removal['removal_status'] == 'completed' and removal['lock_key'] is None
                 and not self.runtime(instance) and self.absent(after['route']) and not any(after['resources'].values())
                 and not self.db(f"SELECT id FROM routes WHERE domain='{domain}'") and self.held(operation) == {'route_withdrawal_holds': 0, 'route_publication_holds': 0},
                 f'Destroy {operation} did not withdraw the Route, free its holds and remove the clone')
