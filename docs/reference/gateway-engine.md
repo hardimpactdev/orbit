@@ -37,7 +37,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `late-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
-| `instance.destroy` | `remove` | `instance.destroy` |
+| `instance.destroy` | `dns-<node>`, `withdraw-<node>`, `sibling-<node>`, `release` (a clone with Routes), `remove` | `dns.publish_records`, `route.withdraw_site`, `instance.destroy` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
@@ -101,7 +101,15 @@ The Gateway unseals the sessions without using a vault and records `route_public
 
 ### instance.destroy
 
-The engine accepts `--force` for one container clone in development. The clone cannot be the default and must have a saved Incus identity. The plan cannot require Route withdrawal, database or Valkey cleanup, Process or Schedule teardown, custom teardown, a CI hold release, or waiting for a create or completion. The Node must advertise `instance.destroy`, independently of `instance.create`. Other removals keep their full Swamp workflow.
+The engine accepts `--force` for one container clone in development. The clone cannot be the default and must have a saved Incus identity. The plan cannot require database or Valkey cleanup, Process or Schedule teardown, custom teardown, a CI hold release, or waiting for a create or completion. The Node must advertise `instance.destroy`, independently of `instance.create`. Other removals keep their full Swamp workflow.
+
+A clone that owns private Routes withdraws them first, when the admission rendered each Node's whole state without them (`route_engine`). LAN rules, the Ingress edge, and a PHP version whose shared pool empties stay on Swamp. The withdrawal reuses `route.destroy`'s steps without the DNS grace:
+
+1. `dns-<node>`: The guarded `dns.publish_records` removes the Routes' answers.
+2. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` removes the sites, pools and leaves, then another Route on the Node must still answer.
+3. `release`: The Gateway records `route_withdrawn_at` on the removal and frees the Route Nodes, as the Swamp run's release step does.
+
+A failed withdrawal fails as `route.withdrawal_failed` at `Withdraw the Route` before `remove` runs. A retry of a removal that already withdrew its Routes runs `remove` alone.
 
 The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
 

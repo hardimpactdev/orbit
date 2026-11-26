@@ -159,7 +159,16 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
      */
     private function sibling(Operation $operation, int $node): string
     {
-        $withdrawn = self::domains($operation);
+        return $this->probeSibling($node, self::domains($operation));
+    }
+
+    /**
+     * A TLS handshake with another private Route the Node still serves, by its WireGuard address and the Orbit root alone.
+     *
+     * @param  list<string>  $withdrawn
+     */
+    public function probeSibling(int $node, array $withdrawn): string
+    {
         $sibling = $this->sites->all()->first(static fn (DevelopmentSite $site): bool => $site->nodeId === $node && ! $site->publicListener
             && ! $site->unavailable && ! in_array($site->domain, $withdrawn, true) && preg_match(RouteEngineFlow::Domain, $site->domain) === 1
             && ! str_starts_with($site->domain, '*.'));

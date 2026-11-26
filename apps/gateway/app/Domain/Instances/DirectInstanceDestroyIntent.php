@@ -14,6 +14,7 @@ use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Routes\NativeRouteCertificateInput;
 use App\Domain\Routes\NativeRouteMutationInput;
 use App\Domain\Routes\NativeRouteRemovalIntent;
+use App\Domain\Routes\RouteFileGuards;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Shared\LifecycleStatus;
@@ -69,8 +70,11 @@ final readonly class DirectInstanceDestroyIntent
             array_values(array_unique(array_merge(...array_map(static fn (array $row): array => $row['intent']['node_ids'], $previousRoutes)))),
             static fn (\Closure $render): array => $render());
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);
+        // The engine places whole files, so it needs each Node's whole after-state and the digests of what it replaces.
+        $engine = $previousRoutes !== [] && RouteFileGuards::wanted(InstanceDestroyEngineFlow::Kind)
+            ? ['route_engine' => app(RouteFileGuards::class)->withdrawal((array) $captured['renders'], $beforeSites)] : [];
 
-        return [[...$input,
+        return [[...$input, ...$engine,
             'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),
             'environment' => 'development',
             'native_destroy' => ['ssh_execution' => $ssh, 'native_runtime' => [...$runtime, 'processes' => $nativeProcesses],
