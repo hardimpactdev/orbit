@@ -287,7 +287,9 @@ class CloneLane:
         require(result.returncode == 0, f'{method} {path}: curl failed ({result.returncode})')
         payload, code = result.stdout.rsplit('\n', 1)
         answer = json.loads(payload)
-        return int(code), answer.get('data'), (answer.get('error') or {}).get('code')
+        error = answer.get('error') or {}
+        fields = sorted((error.get('details') or {}).items()) if error.get('code') == 'validation.failed' else None
+        return int(code), answer.get('data'), f'{error["code"]} {fields}' if fields else error.get('code')
 
     def admitted(self, method, path, body, key):
         code, row, error = self.api(method, path, body, key)
