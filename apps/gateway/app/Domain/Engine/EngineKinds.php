@@ -12,6 +12,7 @@ use App\Domain\Instances\InstanceFinalizeEngineFlow;
 use App\Domain\Instances\InstanceFleetEngineFlow;
 use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Routes\RouteEngineFlow;
+use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Throwable;
@@ -30,6 +31,7 @@ final readonly class EngineKinds
         'firewall.remove' => FirewallEngineFlow::class,
         'route.create' => RouteEngineFlow::class,
         'route.destroy' => RouteDestroyEngineFlow::class,
+        'route.update' => RouteUpdateEngineFlow::class,
         'instance.create' => InstanceCreateEngineFlow::class,
         InstanceDestroyEngineFlow::Kind => InstanceDestroyEngineFlow::class,
         'instance.complete' => InstanceCompleteEngineFlow::class,

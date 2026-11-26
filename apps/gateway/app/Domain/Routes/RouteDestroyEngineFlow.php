@@ -246,7 +246,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
      *
      * @return array<string, mixed>
      */
-    private static function guard(Operation $operation, int $node): array
+    public static function guard(Operation $operation, int $node): array
     {
         $guards = is_array($operation->input['route_guards'] ?? null) ? $operation->input['route_guards'] : [];
 
@@ -254,7 +254,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     }
 
     /** @param array<string, mixed> $guard */
-    private static function digest(array $guard, string $file): string
+    public static function digest(array $guard, string $file): string
     {
         $digest = $guard[$file] ?? null;
 

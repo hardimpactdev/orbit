@@ -35,6 +35,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
+| `route.update` | `csr-<i>`, `sign-<i>`, `site-<node>`, `probe-<i>`, `dns-<i>`, `cutover`, `grace`, `late-<node>`, `withdraw-<node>`, `sibling-<node>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `remove` | `instance.destroy` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
@@ -53,7 +54,7 @@ The engine runs the admitted `route_create` plan while preserving Route holds an
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as does `route.update`.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do `route.update` shapes the next section excludes.
 
 ### route.destroy
 
@@ -65,6 +66,19 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
 
 A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes for a surviving Route, and pool changes on a Node the Route does not leave stay on Swamp.
+
+### route.update
+
+The engine runs a private Route's `--domain` change from the admitted `route_update.plan`. Its steps run in this order:
+
+1. `csr-<i>`, `sign-<i>`, `site-<node>`: The new leaves and the prepared Caddyfile, which serves the old and the new name side by side, as `route.create` publishes them. The site also writes the new `APP_URL` lines.
+2. `probe-<i>`: The Gateway probes the new name on each serving Node before any switch.
+3. `dns-<i>`: The guarded `dns.publish_records` moves the answers to the new name.
+4. `cutover`: The Gateway records the replacement authoritative and the old Route retiring.
+5. `grace`, `late-<node>`: After the 31-second grace, a new version of a scope the old site still names installs.
+6. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` writes the lasting Caddyfile over the prepared one and removes the old leaves. Another Route on the Node must still answer.
+
+A failure before the cutover keeps the old Route and marks the replacement failed. A failure or cancel after it keeps the replacement authoritative and the old Route retiring, so a retry recovers forward. `--publication`, public Routes, LAN rules, the Ingress edge, analytics changes and whole `.env` writes stay on Swamp. A Laravel development target rewrites its whole `.env`, so its update stays on Swamp. An update with no Node work still settles at admission with no run.
 
 ### instance.create
 

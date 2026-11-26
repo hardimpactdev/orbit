@@ -143,7 +143,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
      * @param  array<string, mixed>  $leaf
      * @return array{directory: string, domain: string}
      */
-    private static function csrInput(array $leaf): array
+    public static function csrInput(array $leaf): array
     {
         $directory = ValidatedData::string($leaf['directory']);
         $domain = ValidatedData::string($leaf['domain']);
@@ -171,7 +171,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
      *
      * @param  array<array-key, mixed>  $input
      */
-    private static function fits(array $input): void
+    public static function fits(array $input): void
     {
         $digests = static function (array $value) use (&$digests): array {
             foreach ($value as $key => $item) {
@@ -202,7 +202,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
      * @param  callable(int): string  $signed
      * @return array<string, mixed>
      */
-    private function siteInput(array $plan, int $node, callable $signed): array
+    public function siteInput(array $plan, int $node, callable $signed): array
     {
         $mine = static fn (string $list): array => array_values(array_filter(RouteExecutionProof::objects($plan[$list] ?? []),
             static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
@@ -324,7 +324,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
     }
 
     /** The first certificate of a signed reply: the leaf, without the root after it. */
-    private static function leafPem(string $signed): string
+    public static function leafPem(string $signed): string
     {
         $begin = '-----BEGIN CERTIFICATE-----';
         $parts = explode($begin, $signed);
@@ -341,7 +341,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
      *
      * @param  array<string, mixed>  $leaf
      */
-    private function sign(Operation $operation, array $leaf, string $request, EngineRun $run): string
+    public function sign(Operation $operation, array $leaf, string $request, EngineRun $run): string
     {
         $certificates = $this->signer->handle($operation, ValidatedData::integer($operation->node_id), $run->runId(), [[
             'node_id' => ValidatedData::integer($leaf['node_id']), 'scope' => ValidatedData::string($leaf['scope']), 'state' => 'request',

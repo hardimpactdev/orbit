@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% route.update on the Gateway engine: a `--domain` change of a private Route in route/update.mmd (workflow operation-route-update), built from route.create's primitives and route/engine/destroy.mmd's withdrawal and sibling check. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% route.update on the Gateway engine: a `--domain` change of a private Route in route/update.mmd (workflow operation-route-update), built from route.create's primitives and route/engine/destroy.mmd's withdrawal and sibling check. Built for ADR 0267 and ADR 0271 (RouteUpdateEngineFlow); runtime proof pending.
   %% Existing actions: `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (docs/reference/gateway-engine.md#routecreate). New: the site withdrawal of route/engine/destroy.mmd, and the guarded input of `dns.publish_records`, which a Node must advertise as a feature before admission.
-  %% status: draft
+  %% status: built
   %% command: route:update
   %% kind: route.update
   autonumber
@@ -30,7 +30,7 @@ sequenceDiagram
       %%> - `route.update` is in `ORBIT_ENGINE_KINDS`
       %%> - every Node a step touches reports its action in `$KV.NODES`: `tls.ensure_csr`, `route.publish_site` and the site withdrawal on each Route Node, `dns.publish_records` on each VPN Node
       %%> - each VPN Node also lists the guarded DNS input in its reported `features` (as `instance.t3_pairing` is listed); the existing decoder refuses unknown fields, so without the feature the whole update stays on Swamp and never fails after a step acted
-      %%> - eligible plan: `--domain` on a private Route whose URL effects are `APP_URL` lines of a `.env` that `route.publish_site` writes; `--publication`, a public Route's domain change (Ingress edge, ufw 80/443), LAN rules, a whole `env_files` write (a private production domain) and any other URL write throw `EngineUnsupported`
+      %%> - eligible plan: `--domain` on a private Route whose URL effects are `APP_URL` lines of a `.env` that `route.publish_site` writes; `--publication`, a public Route's domain change (Ingress edge, ufw 80/443), LAN rules, a whole `env_files` write (a private production domain, and also a Laravel development target, whose update rewrites its whole `.env`) and any other URL write throw `EngineUnsupported`; also analytics tracking changes
       Note over GW: Bind steps, take the lock<br/>commit, publish the start
       %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
       GW-->>CLI: 202 Accepted<br/>task ID
@@ -51,14 +51,20 @@ sequenceDiagram
         V-->>EN: Files and restart<br/>applied · digests
       end
       Note over EN: Record the cutover<br/>replacement authoritative
-      %%> A Gateway step after the probe and, when present, the DNS move: from here the replacement is authoritative and the old Route `retiring`
+      %%> A Gateway step (`cutover`) after the probe and, when present, the DNS move: RouteMutationState::cutover records the replacement `activating` at `database-cutover` (authoritative) and the old Route `retiring`; the terminal projection repeats it, so a repeat changes nothing
+      %%> A cancel after this step is projected as a failure after the cutover, so the replacement stays authoritative for a forward retry
       opt domain outside the TLD
         Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
         %%> Timed by a NATS schedule from the DNS receipt; a resend never shortens it; the old site serves until it ends
       end
+      opt a leaf waits for the cutover
+        EN->>N: Install the late leaf<br/>publish_site · late-node
+        %%> Added in the build: a new version of a scope the old site still names (NativeRouteTargetPlan `late` installs) is placed after the grace with `route.publish_site` carrying that leaf alone, no Caddyfile and no reload, as Swamp's retire phase installs it
+        N-->>EN: Leaf placed<br/>applied
+      end
       opt a lasting site is replaced
-        EN->>N: Withdraw the old site<br/>route family · withdraw-node
-        %%> The primitive of route/engine/destroy.mmd with the old domain's captured states; it never touches the new site; Caddy reloads on every run
+        EN->>N: Withdraw the old site<br/>withdraw_site · node
+        %%> `route.withdraw_site` of route/engine/destroy.mmd: the lasting Caddyfile over the prepared one this run published (its digest is the guard), the old leaves removed; it never touches the new site; Caddy reloads on every run
         N-->>EN: Old site absent<br/>read back
         EN->>N: Probe a sibling Route<br/>TLS over WireGuard
         %%> The sibling check of route/engine/destroy.mmd on each Node that served the old site, after its withdrawal: another Route on that Node still answers; skipped only for a Node that serves no other Route
