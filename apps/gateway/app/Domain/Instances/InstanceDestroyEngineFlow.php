@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
-use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use LogicException;
 
-final readonly class InstanceDestroyEngineFlow implements EngineDefinition
+final readonly class InstanceDestroyEngineFlow implements ReceiptBoundDefinition
 {
     public const string Kind = 'instance.destroy';
 
@@ -35,6 +36,11 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition
             self::Remove => Arr::only(self::container($operation), ['project', 'name', 'pool', 'acl', 'inner_volume']),
             default => throw new LogicException("Unknown destroy step [{$step}]."),
         };
+    }
+
+    public function lockKey(Operation $operation): string
+    {
+        return OperationStore::lockKey('instance', $operation->target_id);
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string

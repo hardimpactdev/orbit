@@ -12,12 +12,20 @@ use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessControlEngineFlow;
+use App\Domain\Processes\ProcessControlProjection;
+use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessTarget;
+use App\Domain\Processes\VpDevPreset;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -100,14 +108,14 @@ beforeEach(function (): void {
         'name' => 'app-dev', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit',
     ]));
     $this->process = fn (array $command = ['php', 'artisan', 'queue:work'], string $runtime = 'systemd'): Process => Process::query()->create([
-        'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'web', 'runtime' => $runtime,
+        'owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'web'.(Process::query()->count() ?: ''), 'runtime' => $runtime,
         'runtime_config' => $runtime === 'docker' ? ['image' => 'redis:7'] : ['command' => $command],
         'restart_policy' => 'always', 'desired_state' => 'stopped', 'status' => 'active']);
     $this->operation = function (Process $process, string $kind, array $input = []) {
         $name = $process->runtime->value === 'docker' ? "orbit-process-{$process->id}-web" : "orbit-process-{$process->id}-web.service";
 
         return Operation::query()->create(['kind' => $kind, 'target_type' => 'process', 'target_id' => $process->id, 'node_id' => $this->node->id,
-            'status' => OperationStatus::Queued, 'lock_key' => 'process:'.$process->id,
+            'status' => OperationStatus::Queued,
             'input' => [...['process_id' => $process->id, 'node_id' => $this->node->id, 'name' => $name, 'runtime' => $process->runtime->value,
                 'variant' => $process->runtime->value, 'desired' => 'stopped', 'on_demand' => false, 'created' => false, 'preserve_record' => false,
                 'caller_node_id' => null, 'vite' => null], ...($process->runtime->value === 'docker' ? ['image' => 'redis:7'] : []), ...$input]]);
@@ -161,11 +169,21 @@ it('stops a unit disabled at boot and fails the Process with the read-back code'
     app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
     ($this->receipt)($operation, 'converge', ['status' => 'failed', 'code' => 'process.state_mismatch']);
 
+    // The same failure through the Swamp result reader: a failed native check is `operation.native_failed`.
+    $swamp = ($this->operation)($other = ($this->process)(), 'process.stop');
+    $swamp->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'run-1']])->save();
+    app(ProcessControlProjection::class)->apply($swamp, ['run_id' => 'run-1', 'started_at' => '2026-11-26T13:00:00.000Z', 'finished_at' => '2026-11-26T13:00:01.000Z', 'status' => 'failed', 'error_code' => 'operation.native_failed',
+        'result' => ['error_code' => 'operation.native_failed'], 'failure' => ['failed_step' => 'Verify the state', 'detail' => 'assert', 'stderr_recorded' => false]]);
+
     $operation->refresh();
+    $swamp->refresh();
     expect($operation->status)->toBe(OperationStatus::Failed)
-        ->and($operation->error_code)->toBe('process.state_mismatch')
-        ->and($operation->result)->toBe(['error_code' => 'process.state_mismatch'])
+        ->and($operation->error_code)->toBe('operation.native_failed')->toBe($swamp->error_code)
+        ->and($operation->result)->toBe(['error_code' => 'operation.native_failed'])->toBe($swamp->result)
+        ->and($operation->failed_step)->toBe('Verify the state')->toBe($swamp->failed_step)
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->sole()->error_code)->toBe('process.state_mismatch')
         ->and($process->refresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($process->error_code)->toBe($other->refresh()->error_code)
         ->and($process->desired_state->value)->toBe('stopped');
 });
 
@@ -185,19 +203,6 @@ it('converges a Docker container by its name and admitted image', function (): v
     expect($operation->refresh()->result)->toBe(['ready' => true, 'state' => 'exited']);
 });
 
-it('reaches a unit in an Instance container by its saved Incus identity and sends the app account as content', function (): void {
-    $process = ($this->process)();
-    $operation = ($this->operation)($process, 'process.start', ['on_demand' => true, 'container' => ['instance_id' => 12, 'project' => 'orbit-instances', 'name' => 'instance-12',
-        'app_account' => ['path' => '/usr/local/libexec/orbit-app-user', 'content' => "#!/bin/sh\n"]]]);
-
-    expect(($this->input)($operation))->toMatchArray(['boot' => 'enabled', 'container' => ['project' => 'orbit-instances', 'name' => 'instance-12',
-        'account_path' => '/usr/local/libexec/orbit-app-user', 'account' => ['blob' => ['content' => "#!/bin/sh\n"]]]]);
-
-    app(StartSwampRun::class)->start($operation);
-    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
-    expect($this->bus->payload(0)['input']['container']['account'])->toBe(['blob' => ['sha256' => hash('sha256', "#!/bin/sh\n")]]);
-});
-
 it('leaves every shape the primitive does not reproduce on Swamp', function (array $input, ?array $command = null): void {
     $operation = ($this->operation)(($this->process)($command ?? ['php', 'artisan', 'queue:work']), $input['kind'] ?? 'process.start', array_diff_key($input, ['kind' => 1]));
 
@@ -209,9 +214,8 @@ it('leaves every shape the primitive does not reproduce on Swamp', function (arr
     'Vite dev Process' => [['variant' => 'vite', 'vite' => ['path' => '/x', 'instance_id' => 3], 'vite_plan' => ['listener' => ['port' => 5173]]]],
     'production release layout' => [['directory' => '/home/orbit/apps/shop/current']],
     'Gateway release container' => [['container' => ['release' => str_repeat('a', 40), 'project' => 'orbit-releases', 'name' => 'gateway-'.str_repeat('a', 12)]]],
-    'container without the app account' => [['container' => ['instance_id' => 12, 'project' => 'orbit-instances', 'name' => 'instance-12']]],
-    'container named for another Instance' => [['container' => ['instance_id' => 12, 'project' => 'orbit-instances', 'name' => 'instance-13',
-        'app_account' => ['path' => '/p', 'content' => 'x']]]],
+    'unit in an Instance container (its app-account move is a script)' => [['container' => ['instance_id' => 12, 'project' => 'orbit-instances', 'name' => 'instance-12',
+        'app_account' => ['path' => '/usr/local/libexec/orbit-app-user', 'content' => "#!/bin/sh\n"]]]],
 ]);
 
 it('takes the whole Swamp path when the Node does not report the action or the kind is off', function (): void {
@@ -230,10 +234,11 @@ it('enables a host Node timer with one ensure_timer step and records the Schedul
         'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
         'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node']);
     $operation = Operation::query()->create(['kind' => 'schedule.enable', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
-        'status' => OperationStatus::Queued, 'lock_key' => 'node_schedules:'.$this->node->id, 'input' => ['id' => $schedule->id, 'node_id' => $this->node->id]]);
+        'status' => OperationStatus::Queued, 'input' => ['id' => $schedule->id, 'node_id' => $this->node->id]]);
 
     app(StartSwampRun::class)->start($operation);
     app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    expect($operation->refresh()->lock_key)->toBe('node_schedules:'.$this->node->id);
     $payload = $this->bus->payload(0);
     expect($payload['action'])->toBe('schedule.ensure_timer')
         ->and($payload['target'])->toBe("{$this->node->id}:schedule-{$schedule->id}")
@@ -252,6 +257,12 @@ it('enables a host Node timer with one ensure_timer step and records the Schedul
     expect(app(EngineKinds::class)->routes($operation->replicate()))->toBeFalse();
 });
 
+it('gates the process family on the agent version this tree builds', function (): void {
+    preg_match('/^\[package\]\nname = "orbit-agent"\nversion = "([0-9.]+)"/m', (string) file_get_contents(base_path('../agent/Cargo.toml')), $built);
+
+    expect(NodeExecutorInput::FamilySince['process'])->toBe($built[1] ?? null);
+});
+
 it('enables the process family on app-dev only, from the agent that knows it', function (): void {
     $intent = fn (string $version, RoleName $role): ?array => NodeExecutorInput::intent('7', 'orbit', 'executor', [$role],
         ['executor' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/x']], ['key'], $version);
@@ -259,4 +270,82 @@ it('enables the process family on app-dev only, from the agent that knows it', f
     expect($intent('0.31.0', RoleName::AppDev)['enabled'])->toBe("firewall\ninstance\npower\nprocess\nproof\nroute\n")
         ->and($intent('0.30.0', RoleName::AppDev)['enabled'])->toBe("firewall\ninstance\npower\nproof\nroute\n")
         ->and($intent('0.31.0', RoleName::AppProd))->toBeNull();
+});
+
+it('binds the run with its Process lock and fences competing Operations on both engines until a terminal receipt', function (): void {
+    $process = ($this->process)();
+    $start = ($this->operation)($process, 'process.start');
+    app(StartSwampRun::class)->start($start);
+    expect($start->refresh()->lock_key)->toBe('process:'.$process->id);
+
+    // Admission of any other Process verb, on either engine, is refused while the run holds the lock.
+    expect(fn () => app(ProcessOperationAdmission::class)->execute($process, 'stop'))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+
+    // An engine run whose Process already has another open Operation, here a Swamp one, does not bind.
+    $other = ($this->process)();
+    $swamp = ($this->operation)($other, 'process.restart');
+    $swamp->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'run-2']])->save();
+    $engine = ($this->operation)($other, 'process.stop');
+    expect(fn () => app(StartSwampRun::class)->start($engine))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect($engine->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($engine->lock_key)->toBeNull()
+        ->and(OperationEngineStep::query()->where('operation_id', $engine->id)->exists())->toBeFalse();
+});
+
+it('keeps the run fenced and unsettled when the receipt is lost past the step budget', function (): void {
+    $process = ($this->process)();
+    $operation = ($this->operation)($process, 'process.start');
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $this->travel(121)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id, 'step' => 'converge']);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->lock_key)->toBe('process:'.$process->id)
+        ->and(count($this->bus->orders))->toBe(2);
+    ($this->receipt)($operation, 'converge', ['status' => 'applied', 'changes' => 1, 'repeat' => true]);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+})->skip('Receipt-bound settlement for every ReceiptBoundDefinition arrives with the shared ORB-6301 engine patch (Engine::requiresReceipt).');
+
+it('decides eligibility from the Process and its placement, on the intents admission builds', function (): void {
+    $dev = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '10.44.0.3', 'user' => 'orbit']));
+    $dev->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $prod = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'prod', 'status' => 'active', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '10.44.0.4', 'user' => 'orbit']));
+    $prod->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
+    $instance = fn (Node $node, string $name): Instance => Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+        'checkout_path' => "/home/orbit/apps/{$name}", 'branch' => 'main', 'vite_port' => 5173, 'status' => 'active',
+        'provisioning_step' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => false]);
+    $owned = fn (Instance $owner, array $config, string $name = 'worker'): Process => Process::query()->create(['owner_type' => 'instance', 'owner_id' => $owner->id, 'name' => $name,
+        'runtime' => 'systemd', 'runtime_config' => $config, 'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
+    $admitted = function (Process $process, string $verb, ProcessTarget $target): Operation {
+        $input = app(ProcessOperationAdmission::class)->inputForTarget($process, $verb, $target);
+
+        return (new Operation)->forceFill(['id' => 900 + $process->id, 'kind' => "process.{$verb}", 'target_type' => 'process', 'target_id' => $process->id,
+            'node_id' => $target->node->id, 'input' => $input]);
+    };
+    $routes = fn (Operation $operation): bool => app(EngineKinds::class)->routes($operation);
+
+    $shop = $instance($dev, 'shop');
+    $devTarget = new ProcessTarget($dev, 'orbit', '/home/orbit/apps/shop', 'app-instance-'.$shop->id, $shop, '/home/orbit/apps/shop/.env');
+    $worker = $owned($shop, ['command' => ['php', 'artisan', 'queue:work']]);
+    $vp = $owned($shop, ['preset' => VpDevPreset::NAME, 'command' => VpDevPreset::command(null)], 'dev');
+    $live = $instance($prod, 'live');
+    $prodWorker = $owned($live, ['command' => ['php', 'artisan', 'queue:work']]);
+    $prodTarget = new ProcessTarget($prod, 'shop', '/home/shop/current', null, $live, '/home/shop/.env', productionReleaseLayout: true);
+    $guest = new ProcessTarget($dev, 'www-data', '/srv/workspace', null, $shop, '/srv/workspace/.env',
+        container: ['instance_id' => $shop->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$shop->id]);
+
+    expect($routes($admitted($worker, 'stop', $devTarget)))->toBeTrue()
+        ->and($routes($admitted($worker, 'start', $devTarget)))->toBeTrue()
+        ->and($routes($admitted($vp, 'stop', $devTarget)))->toBeFalse()
+        ->and($routes($admitted($prodWorker, 'stop', $prodTarget)))->toBeFalse()
+        ->and($routes($admitted($prodWorker, 'start', $prodTarget)))->toBeFalse()
+        ->and($routes($admitted($vp, 'start', $guest)))->toBeFalse()
+        ->and($routes($admitted($worker, 'start', $guest)))->toBeFalse();
 });

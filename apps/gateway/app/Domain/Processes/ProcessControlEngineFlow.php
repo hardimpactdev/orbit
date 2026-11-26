@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
+use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -17,15 +21,17 @@ use LogicException;
 
 /**
  * `process:start` and `process:stop` on the state machine (ADR 0271; docs/cli/process/engine/start.mmd and stop.mmd). One step:
- * the desired-state primitive `process.ensure_state` on the Process's Node, for a host systemd unit, a host Docker container or
- * a unit inside an Instance container. The Node converges the run state and the boot policy and reads both back; the end records
- * through the Process's own projection, as a Swamp run's end did.
+ * the desired-state primitive `process.ensure_state` on the Process's Node, for a host systemd unit or a host Docker container.
+ * The Node converges the run state and the boot policy and reads both back; the end records through the Process's own
+ * projection, as a Swamp run's end did.
  *
- * A plan whose Swamp checks the primitive does not reproduce stays on Swamp (EngineUnsupported): a Vite dev Process (dev route,
- * listener and awake marker), a production release layout, a Gateway release-container Process, and a host Process that runs
- * Horizon, whose stop waits for its drain.
+ * Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across
+ * engines. These stay on Swamp (EngineUnsupported): a dev-server Process (`vp-dev`, `vite`: dev route, listener, awake marker),
+ * a Process of an Instance outside app-dev (a production release layout), any Process in a container (an Instance container's
+ * app-account move is a script; a Gateway release container drains), and a Gateway release-host or host Horizon Process, whose
+ * stop waits for its drain.
  */
-final readonly class ProcessControlEngineFlow implements EngineDefinition
+final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
 {
     public const string Action = 'process.ensure_state';
 
@@ -41,6 +47,13 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:process-{$operation->target_id}", budgetMs: 120_000, resendMs: 15_000)];
     }
 
+    public function lockKey(Operation $operation): string
+    {
+        EngineTargetFence::alone($operation);
+
+        return OperationStore::lockKey('process', $operation->target_id);
+    }
+
     public function input(Operation $operation, string $step, EngineRun $run): array
     {
         if ($step !== self::Step) {
@@ -53,17 +66,9 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
         if ($input['runtime'] === ProcessRuntime::Docker->value) {
             return [...$order, 'image' => ValidatedData::string($input['image'])];
         }
-        // As Swamp's `Set boot policy`: enabled at boot only while running and not on demand. A unit in an Instance container
-        // follows its state, as instance-container-process.yml does.
-        $guest = ValidatedData::object($input['container'] ?? []);
-        $order['boot'] = $running && ($guest !== [] || $input['on_demand'] !== true) ? 'enabled' : 'disabled';
-        if ($guest !== []) {
-            $account = ValidatedData::object($guest['app_account']);
-            $order['container'] = ['project' => $guest['project'], 'name' => $guest['name'], 'account_path' => ValidatedData::string($account['path']),
-                'account' => ['blob' => ['content' => ValidatedData::string($account['content'])]]];
-        }
 
-        return $order;
+        // As Swamp's `Set boot policy`: enabled at boot only while running and not on demand.
+        return [...$order, 'boot' => $running && $input['on_demand'] !== true ? 'enabled' : 'disabled'];
     }
 
     public function local(Operation $operation, string $step, EngineRun $run): string
@@ -71,19 +76,37 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
         throw new LogicException('The Process flow has no Gateway step.');
     }
 
+    /**
+     * The public result is the one Swamp's native checks give for the same input: a failed step is `operation.native_failed`,
+     * named by the Swamp step it stands for. The primitive's own code stays on the engine step and in the failure's detail.
+     */
     public function finish(Operation $operation, EngineRun $run): void
     {
         $failed = $run->failed();
         $data = match (true) {
-            $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
-                'failure' => ['failed_step' => $failed->name, 'stderr_recorded' => false]],
+            $failed !== null => ['status' => 'failed', 'error_code' => 'operation.native_failed',
+                'failure' => ['failed_step' => self::swampStep($operation, (string) $failed->error_code),
+                    'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled'],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
     }
 
-    /** The Process's Node, once the admitted plan is a shape the primitive covers. */
+    /** The step of operation-process-start or -stop whose failure the primitive's code stands for. */
+    private static function swampStep(Operation $operation, string $code): string
+    {
+        $docker = ($operation->input['runtime'] ?? null) === ProcessRuntime::Docker->value;
+        $verb = $operation->kind === 'process.stop' ? 'Stop' : 'Start';
+
+        return match (true) {
+            $code === 'process.state_mismatch' => 'Verify the state',
+            $docker => "{$verb} the container",
+            default => "{$verb} the Process",
+        };
+    }
+
+    /** The Process's Node, once the Process and its placement are a shape the primitive covers. */
     private static function admitted(Operation $operation): int
     {
         $input = $operation->input;
@@ -93,27 +116,28 @@ final readonly class ProcessControlEngineFlow implements EngineDefinition
             || ! is_string($input['name'] ?? null) || ! is_bool($input['on_demand'] ?? null)) {
             throw new EngineUnsupported('The Process intent is outside the signed control contract.');
         }
-        if (isset($input['vite_plan']) || ($input['vite'] ?? null) !== null || ($input['variant'] ?? null) === 'vite' || isset($input['directory'])) {
-            throw new EngineUnsupported('A Vite dev Process and a production release layout stay on Swamp.');
-        }
-        $guest = $input['container'] ?? null;
         $runtime = $input['runtime'] ?? null;
-        if ($guest !== null) {
-            $guest = ValidatedData::object($guest);
-            $account = $guest['app_account'] ?? null;
-            if (isset($guest['release']) || ! is_int($guest['instance_id'] ?? null) || $runtime !== ProcessRuntime::Systemd->value
-                || ! is_string($guest['project'] ?? null) || ($guest['name'] ?? null) !== 'instance-'.$guest['instance_id']
-                || ! is_array($account) || ! is_string($account['path'] ?? null) || ! is_string($account['content'] ?? null)) {
-                throw new EngineUnsupported('Only a unit in a development Instance container runs on the engine.');
-            }
-        } elseif (! in_array($runtime, [ProcessRuntime::Systemd->value, ProcessRuntime::Docker->value], true)
+        if (! in_array($runtime, [ProcessRuntime::Systemd->value, ProcessRuntime::Docker->value], true)
             || ($runtime === ProcessRuntime::Docker->value && ! is_string($input['image'] ?? null))) {
             throw new EngineUnsupported('The Process runtime is outside the signed control contract.');
         }
+        if (isset($input['container']) || isset($input['vite_plan']) || ($input['vite'] ?? null) !== null || isset($input['directory'])) {
+            throw new EngineUnsupported('A container, Vite or release-layout plan stays on Swamp.');
+        }
         $process = Process::query()->find($operation->target_id);
-        if ($process === null || ($guest === null && ! Instance::isMorphType($process->owner_type) && GatewayHorizon::runs($process))) {
-            // Horizon's stop waits for its drain (SystemdProcessRenderer's long-drain directives); start stays with it.
+        if ($process === null || $process->runtime->value !== $runtime || $process->isDevServerPreset()) {
+            throw new EngineUnsupported('A dev-server Process stays on Swamp.');
+        }
+        if (GatewayReleaseHost::hasProcess($process) || GatewayHorizon::runs($process)) {
+            // Horizon's stop waits for its drain (SystemdProcessRenderer's long-drain directives); its start stays with it.
             throw new EngineUnsupported('A drain-waiting Process stays on Swamp.');
+        }
+        $owned = match (true) {
+            Instance::isMorphType($process->owner_type) => Instance::query()->find($process->owner_id)?->placedOnAppDev() === true,
+            default => $process->owner_type === Node::class,
+        };
+        if (! $owned) {
+            throw new EngineUnsupported('Only a Node Process or an app-dev Instance Process runs on the engine.');
         }
 
         return $node;

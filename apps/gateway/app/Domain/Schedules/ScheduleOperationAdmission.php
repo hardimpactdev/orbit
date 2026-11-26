@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\InstanceMigration\DeferredMigrationScheduleRuns;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,6 +32,8 @@ final readonly class ScheduleOperationAdmission
             $input = $this->inputFor($schedule, $verb, $cascade, $caller, $created);
             // UUID Schedules share their owner's target lock; Operation target IDs are integers.
             $owner = Instance::isMorphType($schedule->target_type) ? 'instance_schedules' : 'node_schedules';
+            // A Schedule owner an engine run holds stays fenced until its terminal receipt (docs/cli/schedule/engine/enable.mmd).
+            EngineTargetFence::free($owner, $schedule->target_id);
             $nodeId = ValidatedData::integer($input['node_id']);
             $operation = $this->operations->execute('schedule.'.$verb, $owner, $schedule->target_id, $nodeId, $input, 'operator', $requestId);
             if (in_array($verb, ['create', 'destroy'], true)) {

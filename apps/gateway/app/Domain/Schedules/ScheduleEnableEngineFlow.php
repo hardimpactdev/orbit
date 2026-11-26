@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
-use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
@@ -22,7 +24,7 @@ use LogicException;
  * production release (`production_control`) or one that requests a run inside an Instance container (`container`) stays on
  * Swamp (EngineUnsupported).
  */
-final readonly class ScheduleEnableEngineFlow implements EngineDefinition
+final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
 {
     public const string Action = 'schedule.ensure_timer';
 
@@ -37,6 +39,14 @@ final readonly class ScheduleEnableEngineFlow implements EngineDefinition
 
         // The target is the Node's part for this Schedule.
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:schedule-{$id}", budgetMs: 60_000, resendMs: 10_000)];
+    }
+
+    /** The Schedule's owner lock, which every Operation of the owner's Schedules shares. */
+    public function lockKey(Operation $operation): string
+    {
+        EngineTargetFence::alone($operation);
+
+        return OperationStore::lockKey($operation->target_type, $operation->target_id);
     }
 
     public function input(Operation $operation, string $step, EngineRun $run): array
@@ -55,12 +65,18 @@ final readonly class ScheduleEnableEngineFlow implements EngineDefinition
         throw new LogicException('The Schedule flow has no Gateway step.');
     }
 
+    /**
+     * The public result is the one Swamp's native timer check gives for the same input: a failed step is
+     * `operation.native_failed`, named by the operation-schedule-control step it stands for. The primitive's own code stays on
+     * the engine step and in the failure's detail.
+     */
     public function finish(Operation $operation, EngineRun $run): void
     {
         $failed = $run->failed();
         $data = match (true) {
-            $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
-                'failure' => ['failed_step' => $failed->name, 'stderr_recorded' => false]],
+            $failed !== null => ['status' => 'failed', 'error_code' => 'operation.native_failed',
+                'failure' => ['failed_step' => $failed->error_code === 'schedule.state_mismatch' ? 'Check the timer' : 'timer',
+                    'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled'],
         };
