@@ -37,17 +37,13 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     }
 
     /**
-     * The uninstall authority the run is given: the one its admission recorded, or, for a request the preceding release queued before the
-     * ownership contract, the one the Tool holds now that the upgrade established it. Missing, there is none.
+     * The uninstall authority the run was given: the one its admission recorded, or, for work the preceding release left open, the one the
+     * upgrade recorded for it (docs/reference/tools.md#upgrade-from-the-preceding-release). Its receipt is read under the same authority,
+     * whatever the Tool holds by then.
      */
     private function packageOwned(Operation $operation): bool
     {
-        if (is_bool($operation->input['package_owned'] ?? null)) {
-            return $operation->input['package_owned'];
-        }
-        $tool = is_int($operation->input['tool_id'] ?? null) ? Tool::query()->find($operation->input['tool_id']) : null;
-
-        return $tool?->owned === true;
+        return ($operation->input['package_owned'] ?? false) === true;
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -97,9 +93,12 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         $decision = ValidatedData::object($native['decision'] ?? []);
         $observation = ValidatedData::object($native['observation'] ?? []);
         $result = array_intersect_key($decision, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
-        $result['installed_coordinate'] = $observation['installed_coordinate'] ?? $observation['installed_version']
-            ?? $decision['installed_coordinate'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null;
-        $result['installed_version'] = $observation['installed_version'] ?? $decision['installed_version'] ?? $result['installed_coordinate'];
+        // The newest reading of the package wins, absence included: the decoded end state, else a decision that read the inventory. Only
+        // a decision that read nothing repeats the version the run was admitted with.
+        $read = self::reads($observation) ? $observation : (self::reads($decision) && self::readInventory($decision) ? $decision : null);
+        $result['installed_coordinate'] = $read !== null ? ($read['installed_coordinate'] ?? $read['installed_version'] ?? null)
+            : ($decision['installed_coordinate'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null);
+        $result['installed_version'] = ($read ?? $decision)['installed_version'] ?? $result['installed_coordinate'];
         if (($operation->input['manager'] ?? null) === ToolManagerName::BrewCask->value && is_string($result['installed_version'])) {
             $result['installed_version'] = explode(',', $result['installed_version'], 2)[0];
         }
@@ -158,8 +157,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
      * - `released`: the package was absent at the start of a removal, its removal was verified, or its removal step ran at all: one that
      *   succeeded, failed or was cut off may have taken the package even when its absence was never confirmed;
      * - `retained`: a removal's receipt shows it never ran its package removal, so the package it was admitted to own is untouched;
-     * - `untouched`: the run wrote nothing to the source that its owned members do not already have. Each source-writing step is
-     *   recorded as skipped, or an earlier step failed and none of them ran.
+     * - `untouched`: the run wrote nothing to the source that its owned members do not already have: its readable history shows no
+     *   source-writing step that ran, each one skipped or never reached.
      * A receipt without steps proves nothing.
      *
      * @param  array<string, mixed>  $native
@@ -172,14 +171,12 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         $observation = ValidatedData::object($native['observation'] ?? []);
         $decoded = NativeRunResult::stepStatus($native, 'Decode package state') === 'succeeded' && ($observation['compliant'] ?? false) === true;
         $removal = $operation->kind === 'tool.remove';
-        [$before, $writes] = $removal
-            ? [['Read manager version', 'Read installed package', 'Plan the removal', 'Choose package action', 'Remove the package', 'Check apt absence'],
-                ['Remove the apt source', 'Remove repository pins', 'Reconcile remaining repository pins']]
-            : [['Prepare package commands', 'Fetch the signing key', 'Read the key fingerprint', 'Assert the key fingerprint', 'Dearmor the signing key',
-                'Prepare apt keyrings', 'Set up the Tool Manager'], ['Publish the signing key', 'Write the apt source', 'Prefer the verified package']];
+        $writes = $removal ? ['Remove the apt source', 'Remove repository pins', 'Reconcile remaining repository pins']
+            : ['Publish the signing key', 'Write the apt source', 'Prefer the verified package'];
         $status = static fn (string $step): ?string => NativeRunResult::stepStatus($native, $step);
-        $skipped = array_filter($writes, static fn (string $step): bool => $status($step) === 'skipped') === $writes;
-        $stopped = array_filter($before, static fn (string $step): bool => $status($step) === 'failed') !== []
+        // A source write the run history does not show never ran: the run stopped before it, or the workflow that ran has no such step,
+        // as the preceding release's had no repin and no preference step.
+        $unwritten = is_array($native['steps'] ?? null) && $native['steps'] !== []
             && array_filter($writes, static fn (string $step): bool => ! in_array($status($step), [null, 'skipped'], true)) === [];
 
         // A package step that ran at all may have removed the package, a nonzero exit included (dpkg can remove it and still fail on
@@ -197,13 +194,27 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             'acquired' => ! $removal && ($decision['mutate'] ?? false) === true && $decoded && ($observation['present'] ?? false) === true,
             'released' => $released,
             'retained' => $removal && ! $released && is_array($native['steps'] ?? null) && $native['steps'] !== [] && (! $ran || $survived),
-            'untouched' => is_array($operation->input['repository'] ?? null) && ($skipped || $stopped),
+            'untouched' => is_array($operation->input['repository'] ?? null) && $unwritten,
             // A refused decision may only repeat the version it was admitted with, after an unreadable inventory: only a decision that read
             // the package, or the decoded state, observed it.
-            'observed' => array_key_exists('installed_version', $observation) || array_key_exists('installed_coordinate', $observation)
-                || ((($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true)
-                    && (array_key_exists('installed_version', $decision) || array_key_exists('installed_coordinate', $decision))),
+            'observed' => self::reads($observation) || (self::readInventory($decision) && self::reads($decision)),
         ];
+    }
+
+    /** @param array<string, mixed> $reading */
+    private static function reads(array $reading): bool
+    {
+        return array_key_exists('installed_version', $reading) || array_key_exists('installed_coordinate', $reading);
+    }
+
+    /**
+     * A ready decision read the package; a refused one says whether it did.
+     *
+     * @param  array<string, mixed>  $decision
+     */
+    private static function readInventory(array $decision): bool
+    {
+        return ($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true;
     }
 
     /**

@@ -227,3 +227,17 @@ Deno.test("an IPv6 source origin is written as apt matches it, without brackets,
     assertEquals(input.repository_origins, ["2001:db8::7", "packages.example.test"]);
     assertThrows(() => RemoveInput.parse({ ...input, repository_origins: ["[2001:db8::7]"] }));
 });
+
+Deno.test("a removal's check after its package step reads whether the package survived, whatever version an install would target", async () => {
+    const { behavior: write } = await import("./write.ts");
+    const input = { ...fixture().input, desired_version: "3.0" };
+    const after = { status: "compliant", packages: [{ name: "hello", installed: true, version: "1.0" }] };
+    const context = { extensionFile: (p: string) => p, writeResource: () => Promise.resolve(null) };
+    const survived = await write.methods.observe.execute({ input, after, removal: true }, context);
+    assertEquals([survived.present, survived.absent, survived.installed_version], [true, false, "1.0"]);
+    // An install's end check still holds the version to its target.
+    await write.methods.observe.execute({ input, after }, context).then(
+        () => { throw new Error("an install end check accepted a version outside its target"); },
+        (error: { code?: string }) => assertEquals(error.code, "tool.installed_version_mismatch"),
+    );
+});

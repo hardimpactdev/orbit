@@ -70,9 +70,9 @@ final class AptSourceTrust
      */
     public static function settle(int $nodeId, string $name, int $operation, string $outcome, ?array $definition = null): void
     {
+        // Every Operation that may write a source has its record from admission, or from the upgrade for work the preceding release left
+        // open. A record that is gone was withdrawn by a newer confirmed removal, and an older end never brings it back.
         $record = AptRepository::query()->where('node_id', $nodeId)->where('name', $name)->first();
-        // A write that published a source nothing recorded yet, a first publication the preceding release queued, records it.
-        $record ??= $outcome === 'proved' && $definition !== null ? self::handle($nodeId, $definition) : null;
         if ($record === null) {
             return;
         }

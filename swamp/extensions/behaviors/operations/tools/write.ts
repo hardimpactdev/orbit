@@ -159,7 +159,7 @@ function choose(input: Input, phase: Phase): Decision {
 }
 export const behavior = {
     type: "@nckrtl/tool-write-command",
-    version: "2026.11.26.4",
+    version: "2026.11.26.5",
     resources: {
         assets: { schema: Public, lifetime: "1d", garbageCollection: 10 },
         decision: { schema: Public, lifetime: "1d", garbageCollection: 10 },
@@ -269,11 +269,16 @@ export const behavior = {
         observe: {
             description:
                 "Decode the package state returned by the official end check",
-            arguments: z.object({ input: PackageInput, after: Public }),
+            arguments: z.object({
+                input: PackageInput,
+                after: Public,
+                removal: z.boolean().default(false),
+            }),
             execute: async (
                 args: {
                     input: z.infer<typeof PackageInput>;
                     after: Record<string, unknown>;
+                    removal?: boolean;
                 },
                 ctx: Context,
             ) => {
@@ -285,7 +290,8 @@ export const behavior = {
                     installed_version !== null &&
                     !safeVersion(installed_version)
                 ) throw new ToolRefusal("tool.version_probe_failed");
-                if (typeof installed_version === "string") {
+                // A removal asks only whether the package survived; the version an install would target is no part of that answer.
+                if (typeof installed_version === "string" && !args.removal) {
                     if (!exactMatches(args.input, installed_version)) {
                         throw new ToolRefusal("tool.installed_version_mismatch");
                     }
