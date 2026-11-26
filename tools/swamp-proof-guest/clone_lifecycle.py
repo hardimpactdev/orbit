@@ -646,12 +646,14 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
 SYNC_STEPS = ('fetch', 'sync', 'clear')
 SYNC_FIELDS = {'default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start', 'work'}
 CREDENTIAL = ('x-access-token', 'ghs_', 'github_pat_')
+# The scan builds its patterns from pieces, so neither its own argv nor its script text holds one and matches itself.
 CREDENTIAL_SCAN = '''
+a="x-access-"'token'; b="ghs"'_'; c="github_"'pat_'
 for path in /proc/[0-9]*/environ /proc/[0-9]*/cmdline; do
-  if grep -a -q -e "$1" -e "$2" -e "$3" "$path" 2>/dev/null; then echo "$path"; fi
+  if grep -a -q -e "$a" -e "$b" -e "$c" "$path" 2>/dev/null; then echo "$path"; fi
 done
-grep -r -I -l -s -e "$1" -e "$2" -e "$3" /srv/workspace/.git /home /root /etc /tmp /var/tmp /run 2>/dev/null || :
-git -C /srv/workspace config --list --show-origin | grep -e "$1" -e "$2" -e "$3" -e extraheader -e credential || :
+grep -r -I -l -s -e "$a" -e "$b" -e "$c" /srv/workspace/.git /home /root /etc /tmp /var/tmp /run 2>/dev/null || :
+git -C /srv/workspace config --list --show-origin | grep -e "$a" -e "$b" -e "$c" -e extraheader -e credential || :
 '''
 
 
@@ -749,7 +751,7 @@ class SyncLane(CloneLane):
 
     def credential_hits(self, instance, operation):
         # Any credential form in the copy's processes, environment, files and Git configuration, and in the Operation record.
-        found = self.container(instance, 'sh', '-c', CREDENTIAL_SCAN, 'sh', *CREDENTIAL, user=None).splitlines()
+        found = self.container(instance, 'sh', '-c', CREDENTIAL_SCAN, user=None).splitlines()
         row = json.dumps(self.db(f'SELECT input,state,result FROM operations WHERE id={operation}'))
         return found + [f'operation {operation}' for token in CREDENTIAL if token in row]
 
