@@ -14,6 +14,11 @@ type Input =
     >
     & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean; repository_origins?: string[] };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
+/** The origin apt matches `Pin: origin` against: the URI's host as written, an IPv6 literal without its brackets and unnormalized. */
+export function origin(uri: string): string {
+    const host = /^[a-z][a-z0-9+.-]*:\/\/(\[[^\]]*\]|[^/:?#]*)/i.exec(uri)?.[1] ?? "";
+    return host.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+}
 /** Apt preferences of one Orbit source: priority 990 for the listed packages, and 1 for every other package from its origins, which
  * include any origin a failed change of the source may have left on disk. */
 export function preferences(
@@ -22,13 +27,12 @@ export function preferences(
     origins: string[] = [],
 ): string {
     if (repo === null) return "";
-    // apt matches `Pin: origin` against the URI's host, an IPv6 literal without its brackets.
-    const hosts = [...new Set([...repo.uris.map((uri) => new URL(uri).hostname.replace(/^\[(.*)\]$/, "$1")), ...origins])];
-    return hosts.map((origin) => {
+    const hosts = [...new Set([...repo.uris.map(origin), ...origins])];
+    return hosts.map((host) => {
         const preferred = packages.length === 0
             ? ""
-            : `Package: ${packages.join(" ")}\nPin: origin "${origin}"\nPin-Priority: 990\n\n`;
-        return `${preferred}Package: *\nPin: origin "${origin}"\nPin-Priority: 1\n`;
+            : `Package: ${packages.join(" ")}\nPin: origin "${host}"\nPin-Priority: 990\n\n`;
+        return `${preferred}Package: *\nPin: origin "${host}"\nPin-Priority: 1\n`;
     }).join("\n");
 }
 const object = (v: unknown) => z.record(z.string(), z.unknown()).parse(v);

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tools\ManageToolPolicyAction;
 use App\Actions\Tools\ScanToolInventoryAction;
@@ -698,8 +699,10 @@ it('migrates preceding-release receipts by acquisition, sources by writes that r
         return $operation;
     };
 
-    // Acquisition grants uninstall authority; an observation or a failure never does, and an adoption the receipts imply keeps it.
-    foreach (['B1b' => true, 'B1c' => true, 'B1d' => true, 'B1e' => true, 'B1g' => true, 'B1h' => true, 'B1i' => true, 'B1a' => false, 'B1f' => false, 'converged' => false] as $history => $owned) {
+    // Acquisition grants uninstall authority; an observation or a failure never does, and an adoption the receipts imply keeps it. An
+    // interrupted receipt explains the version it recorded (B1j); an adoption to another version than the last recorded one is one (B1k/l).
+    expect($histories['B1j']['retry'][0])->toBe('interrupted')->and($histories['B1j']['retry'][1])->toMatchArray(['outcome' => 'unchanged', 'installed_version' => '1.0']);
+    foreach (['B1b' => true, 'B1c' => true, 'B1d' => true, 'B1e' => true, 'B1g' => true, 'B1h' => true, 'B1i' => true, 'B1k' => true, 'B1l' => true, 'B1a' => false, 'B1f' => false, 'B1j' => false, 'converged' => false] as $history => $owned) {
         $removal = $remove($tool($history)->refresh());
         expect($tool($history)?->owned ?? false)->toBe($owned, $history)->and($removal->input['package_owned'])->toBe($owned, $history)
             ->and($removal->result['execution'] ?? 'native')->toBe($owned ? 'native' : 'membership_only', $history);
@@ -1227,14 +1230,16 @@ function policySwampSocket(array $run): WebSocketClient
  * Reads the bound run of a Tool Operation through the terminal reader, as the reconciler does. `$steps` maps each step that ran to its
  * status, and the decision and observation steps to their outputs. The run ends `$late` seconds after the Operation's budget.
  */
-function policyReadRun(Operation $operation, string $status, array $steps, int $late): Operation
+function policyReadRun(Operation $operation, string $status, array $steps, int $late, ?array $jobs = null): Operation
 {
-    $operation->update(['state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-'.$operation->id], 'started_at' => now()->subDay(), 'status' => 'running']);
+    // An Operation the Gateway already expired keeps its state; the run is bound when its terminal is read, as a recovered start is.
+    $operation->update($operation->status->terminal() ? ['state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-'.$operation->id]]
+        : ['state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-'.$operation->id], 'started_at' => now()->subDay(), 'status' => 'running']);
     $deadline = OperationRunBudgets::deadline($operation->refresh());
     $run = ['id' => 'run-'.$operation->id, 'workflowName' => app(DirectOperation::class)->workflowFor($operation), 'status' => $status,
         'startedAt' => $operation->started_at->toIso8601ZuluString(), 'completedAt' => $deadline->addSeconds($late)->toIso8601ZuluString('millisecond'),
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
-        'jobs' => [['name' => 'tools', 'status' => $status, 'steps' => array_map(static fn (string $name, array $step): array => ['name' => $name, 'status' => $step[0],
+        'jobs' => $jobs ?? [['name' => 'tools', 'status' => $status, 'steps' => array_map(static fn (string $name, array $step): array => ['name' => $name, 'status' => $step[0],
             ...(isset($step[1]) ? ['outputs' => $step[1]] : [])], array_keys($steps), $steps)]]];
     app(SwampConnection::class)->release();
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.read_token' => 'read-token']);
@@ -1275,8 +1280,9 @@ it('keeps what a run that ended after its timeout proved, and lets no unproven r
     $read = policyReadRun($removal, $steps === [] ? 'failed' : 'cancelled', $steps, late: 2);
     expect([$read->status->value, $read->error_code, $read->lock_key])->toBe(['failed', 'operation.timed_out', null]);
     $retained = $case === 'removal stopped before its package step';
-    // The retry removes the package only when a receipt showed the original never left; otherwise it cleans the record and source alone.
-    expect($tool->refresh()->owned)->toBe($retained)->and($tool->withdrawn())->toBeTrue()
+    // The retry removes the package only when a receipt showed the original never left, which also returns the Tool to the state it was
+    // admitted from; otherwise it cleans the record and source alone.
+    expect($tool->refresh()->owned)->toBe($retained)->and($tool->withdrawn())->toBe(! $retained)
         ->and($operations->execute('remove', $node->id, 'apt', 'tree', null, $tool)->input['package_owned'])->toBe($retained);
 })->with(['install verified, then the timeout cancelled it', 'install verified and succeeded after its deadline', 'removal verified absent',
     'removal with no step evidence', 'removal stopped before its package step']);
@@ -1342,7 +1348,113 @@ it('refuses a source name whose URI and suite another source may still have on d
 it('restricts an IPv6 source origin as apt matches it, without brackets, in the Gateway input and the preferences', function (): void {
     policySwamp();
     $node = policyNode('dev');
+    ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
     $source = [...policySignedRepository(), 'uris' => ['https://[2001:DB8::7]/apt']];
     $install = app(StartToolOperationAction::class)->execute('install', $node->id, 'apt', 'tree', null, repository: $source, version: '1.10');
     expect($install->input['repository_origins'])->toBe(['2001:db8::7']);
+    $install->update(['status' => 'cancelled', 'lock_key' => null]);
+    // apt matches the literal as written, so an uncompressed one stays uncompressed.
+    $literal = app(StartToolOperationAction::class)->execute('install', $node->id, 'apt', 'htop', null,
+        repository: [...$source, 'name' => 'literal', 'uris' => ['https://[0:0:0:0:0:0:0:1]/apt']], version: '1.10');
+    expect($literal->input['repository_origins'])->toBe(['0:0:0:0:0:0:0:1']);
 });
+
+it('records a convergence acquisition read after its deadline as on time, without changing the timeout verdict', function (string $kind, int $late): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tree = policyTool($node, 'tree', '1.0');
+    $tree->update(['owned' => false, 'status' => 'failed', 'failed_operation' => 'install', 'installed_version' => null]);
+    $plans = app(ToolConvergeIntent::class)->capture($node);
+    $observed = [['id' => $tree->id, 'status' => 'installed', 'installed_version' => '1.0']];
+    if ($kind === 'tool.converge') {
+        $operation = app(StartToolConvergeAction::class)->execute($node, 'test', [$tree->id]);
+        $report = ['succeeded' => true, 'changed' => 1, 'tools' => $observed, 'cleanup_complete' => true];
+        $jobs = [['name' => 'tools', 'status' => 'succeeded', 'steps' => [['name' => 'Report Tool converge', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($report)]]]]];
+    } else {
+        $operation = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node_footprint', 'target_id' => $node->id, 'node_id' => $node->id,
+            'status' => 'running', 'lock_key' => 'converge-late', 'input' => ['_converge' => ['intent' => ['tools' => $plans, 'orphan_sources' => []]]]]);
+        $phases = array_map(static fn (string $name): array => ['name' => $name, 'status' => 'succeeded', 'changed' => $name === 'tools' ? 1 : 0, 'elapsed_seconds' => 1],
+            ['input', 'agent', 'software', 'roles', 'tools', 'network', 'check']);
+        $report = ['outcome' => 'succeeded', 'phases' => $phases, 'changed' => 1, 'elapsed_seconds' => 7, 'tools' => $observed, 'browser_trust' => [], 'cleanup_complete' => true, 'digests' => []];
+        $jobs = [['name' => 'converge', 'status' => 'succeeded', 'steps' => [['name' => 'Report Node converge', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($report)]]]]];
+    }
+    $read = policyReadRun($operation, 'succeeded', [], $late, $jobs);
+    expect($read->status->value)->toBe($late > 0 ? 'failed' : 'succeeded')->and($read->error_code)->toBe($late > 0 ? 'operation.timed_out' : null)
+        ->and($tree->refresh()->only(['owned', 'installed_version']))->toBe(['owned' => true, 'installed_version' => '1.0'])
+        ->and(app(StartToolOperationAction::class)->execute('remove', $node->id, 'apt', 'tree', null, $tree)->input['package_owned'])->toBeTrue();
+})->with(['tool.converge', 'node.converge'])->with(['two seconds before the deadline' => [-2], 'two seconds after it' => [2]]);
+
+it('never lets a late receipt undo a removal admitted after it', function (): void {
+    policySwamp();
+    $node = policyNode('dev');
+    ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => 'apt', 'status' => 'active']);
+    $operations = app(StartToolOperationAction::class);
+    $install = $operations->execute('install', $node->id, 'apt', 'tree', null, version: '1.0');
+    $install->update(['state' => [...($install->state ?? []), 'swamp_run_id' => 'run-'.$install->id], 'started_at' => now()->subDay(), 'status' => 'running']);
+    app(ExpireOperationAction::class)->execute($install->refresh());
+    $install->refresh()->update(['finished_at' => now()->subHours(2)]);
+    app(ExpireOperationAction::class)->releaseStaleHolds();
+    $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, Tool::query()->findOrFail($install->input['tool_id']));
+    expect($removal->result['execution'] ?? null)->toBe('membership_only')->and(Tool::query()->count())->toBe(0);
+    policyReadRun($install->refresh(), 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true]], 'Apply the package' => ['succeeded'],
+        'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.0']],
+        'Assert package state' => ['succeeded']], late: 2);
+    expect(Tool::query()->count())->toBe(0);
+});
+
+it('takes uninstall authority from a removal whose start reply was lost, and gives it back only when the receipt shows the package untouched', function (string $case): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $tool = policyTool($node, 'tree', '1.0');
+    $operations = app(StartToolOperationAction::class);
+    $removal = $operations->execute('remove', $node->id, 'apt', 'tree', null, $tool);
+    $state = $case === 'start reply lost' || $case === 'start reply lost, then removed without a verified absence'
+        ? ['swamp_start' => ['requested_at' => now()->subDay()->toISOString()]] : ['swamp_run_id' => 'run-'.$removal->id];
+    $removal->update(['state' => [...($removal->state ?? []), ...$state], 'started_at' => now()->subDay(), 'status' => 'running']);
+    app(ExpireOperationAction::class)->execute($removal->refresh());
+    expect($tool->refresh()->owned)->toBeFalse();
+    $untouched = $case === 'cancellation beat the deadline before the package step';
+    match ($case) {
+        'start reply lost' => null,
+        'start reply lost, then removed without a verified absence' => policyReadRun($removal->refresh(), 'failed', ['Choose package action' => ['succeeded', ['ready' => true, 'remove' => true]],
+            'Remove the package' => ['succeeded'], 'Check apt absence' => ['failed'], 'Assert package state' => ['failed']], late: 2),
+        'cancellation beat the deadline before the package step' => policyReadRun($removal->refresh(), 'cancelled', ['Read installed package' => ['succeeded'],
+            'Choose package action' => ['cancelled'], 'Remove the package' => ['skipped'], 'Assert package state' => ['cancelled']], late: -2),
+    };
+    if ($untouched) {
+        expect($removal->refresh()->status->value)->toBe('cancelled')->and($tool->refresh()->only(['owned', 'error_code']))->toBe(['owned' => true, 'error_code' => null])
+            ->and($tool->status->value)->toBe('installed');
+    } else {
+        $removal->refresh()->update(['finished_at' => now()->subHours(2)]);
+        app(ExpireOperationAction::class)->releaseStaleHolds();
+    }
+    expect($operations->execute('remove', $node->id, 'apt', 'tree', null, $tool->refresh())->input['package_owned'])->toBe($untouched);
+})->with(['start reply lost', 'start reply lost, then removed without a verified absence', 'cancellation beat the deadline before the package step']);
+
+it('keeps the trust of a verified source through a cancellation that wrote nothing, and creates none', function (string $case): void {
+    policySwamp();
+    $node = policyNode('dev');
+    $source = policySignedRepository();
+    $record = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'proof', 'definition' => $source]);
+    foreach (['tree', 'nano'] as $package) {
+        policyTool($node, $package, '1.10')->update(['apt_repository_id' => $record->id, 'desired_repository' => $source]);
+    }
+    $operations = app(StartToolOperationAction::class);
+    $update = $operations->execute('update', $node->id, 'apt', 'tree', null, Tool::query()->where('package', 'tree')->sole(), version: '1.10');
+    expect($record->refresh()->verified)->toBeFalse();
+    if ($case === 'cancelled before dispatch') {
+        app(CancelOperationAction::class)->execute($update);
+        expect($record->refresh()->verified)->toBeTrue();
+    } else {
+        policyComplete($update, 'cancelled', ['steps' => ['Pin repository packages' => ['status' => 'succeeded'], 'Publish the signing key' => ['status' => 'skipped'],
+            'Write the apt source' => ['status' => 'skipped'], 'Prefer the verified package' => ['status' => 'skipped']]]);
+        $update->update(['lock_key' => null]);
+    }
+    $sibling = $operations->execute('remove', $node->id, 'apt', 'nano', null, Tool::query()->where('package', 'nano')->sole());
+    expect($update->refresh()->status->value)->toBe('cancelled')->and($sibling->input['repository_packages'])->toBe(['tree']);
+    $sibling->update(['status' => 'cancelled', 'lock_key' => null]);
+    // A source first published by a cancelled install stays unproven.
+    $first = $operations->execute('install', $node->id, 'apt', 'htop', null, repository: [...$source, 'name' => 'fresh', 'uris' => ['https://fresh.example.test/apt']], version: '1.10');
+    app(CancelOperationAction::class)->execute($first);
+    expect(AptRepository::query()->where('name', 'fresh')->value('verified'))->toBeFalse();
+})->with(['cancelled before dispatch', 'cancelled with every source write skipped']);

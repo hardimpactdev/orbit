@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationLateResult;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Proof\ProofSeeds;
@@ -17,7 +18,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Bounded results only. Converge never projects assignments or Instances. */
-final readonly class NodeConvergeProjection implements DirectOperationProjection
+final readonly class NodeConvergeProjection implements DirectOperationLateResult, DirectOperationProjection
 {
     public function __construct(private ToolConvergeObservations $toolObservations) {}
 
@@ -26,6 +27,14 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         $snapshot = ValidatedData::object($operation->input['_converge'] ?? []);
 
         return ['intent' => $snapshot['intent'] ?? [], 'execution_secrets' => $snapshot['execution_secrets'] ?? []];
+    }
+
+    /** A report that arrived after the timeout still records each Tool it verified installed (ToolConvergeObservations::late). */
+    public function late(Operation $operation, string $status, array $result): void
+    {
+        $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
+        $admitted = array_column(array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? $intent['tools'] : []), null, 'id');
+        $this->toolObservations->late($operation, $admitted, $result['tools'] ?? []);
     }
 
     public function apply(Operation $operation, array $data): Operation

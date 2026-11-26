@@ -56,7 +56,8 @@ return new class extends Migration
                 // Admission captured the Tool's status and installed version (StartToolOperationAction).
                 $this->capture($tools, $tool, is_string($input['tool_status'] ?? null) ? $input['tool_status'] : null,
                     is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null);
-                if ($operation->kind !== 'tool.remove' && in_array($operation->status, ['succeeded', 'failed'], true)) {
+                // Every projected end but a cancel set the Tool's status and installed version (ToolIntentProjection::projectState).
+                if ($operation->kind !== 'tool.remove' && in_array($operation->status, ['succeeded', 'failed', 'interrupted'], true)) {
                     $acquired = $succeeded && ($result['outcome'] ?? null) === 'applied';
                     $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                     $tools[$tool] = ['owned' => $tools[$tool]['owned'] || $acquired,
@@ -79,9 +80,9 @@ return new class extends Migration
         foreach (DB::table('tools')->get(['id', 'node_id', 'status', 'installed_version', 'apt_repository_id', 'desired_repository']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
-            // left failed, or gives it an installed version that nothing in its history explains.
+            // left failed, or gives it an installed version other than the one its history last recorded.
             $adopted = $history !== null && $tool->status === 'installed'
-                && ($history['last'] === 'failed' || ($history['installed'] === null && $history['version'] === null && $tool->installed_version !== null));
+                && ($history['last'] === 'failed' || ($tool->installed_version !== null && $tool->installed_version !== $history['version']));
             $changes = ['owned' => $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted)];
             // A failed install that wrote its source kept no link to it: a still pending request names its desired source, unless a
             // removal of that source name was confirmed after the request, whoever reused the name since. An installed Tool without a
@@ -204,14 +205,15 @@ return new class extends Migration
 
     /**
      * A capture of a Tool's status and installed version, at an admission or a converge. Only an adoption, which left no Operation,
-     * makes a Tool installed after its latest receipt left it failed, or gives it a version that nothing before explains.
+     * makes a Tool installed after its latest receipt left it failed, or gives it a version other than the one its history last
+     * recorded: every receipt the preceding release projected, an interrupted one included, set that version.
      *
      * @param  array<int, array{owned: bool, installed: ?string, last: ?string, version: ?string}>  $tools
      */
     private function capture(array &$tools, int $id, ?string $status, ?string $version): void
     {
         $history = $tools[$id] ?? ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
-        if (($status === 'installed' && $history['last'] === 'failed') || ($history['installed'] === null && $history['version'] === null && $version !== null)) {
+        if (($status === 'installed' && $history['last'] === 'failed') || ($version !== null && $version !== $history['version'])) {
             $history = ['owned' => true, 'installed' => 'adopted', 'last' => 'installed', 'version' => $version];
         }
         $tools[$id] = $history;

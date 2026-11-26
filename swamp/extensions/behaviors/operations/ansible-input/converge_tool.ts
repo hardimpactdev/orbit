@@ -33,8 +33,11 @@ export function toolState(mode: string, value: unknown): Record<string, unknown>
         // The held preferences, written before the source is published, name the owned members of its plan and the Tools of its source
         // this run already installed; this Tool joins them only in the preferences written after it is verified installed.
         const packages = [...new Set([...input.repository_packages, ...payload.installed])].sort();
+        // A Tool of this source this run already verified installed confirmed the source: its other possible origins are gone, so every
+        // later preference of the run names the confirmed origins alone, as the record that a completed phase verifies does.
         const { repository_preferences, repository_preferences_held } = commands({
             ...input, repository_packages: packages, package_owned: payload.tool.owned === true,
+            repository_origins: payload.installed.length === 0 ? input.repository_origins : [],
         });
         return { repository_preferences, repository_preferences_held };
     }

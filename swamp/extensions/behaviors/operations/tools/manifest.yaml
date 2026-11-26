@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.26.2
+version: 2026.11.26.3
 visibility: private
 license: MIT
 description: Native Tool commands and typed decisions for install, update and removal.

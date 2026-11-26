@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use App\Support\ValidatedData;
@@ -86,6 +87,26 @@ final readonly class ToolConvergeObservations
                 $tool->save();
             }
         }
+    }
+
+    /**
+     * The installed observations of a convergence whose report arrived after its timeout: each verified Tool is recorded as on time,
+     * its source left unproven because the phase did not finish in time. A Tool removed, or with a removal admitted, since is left alone.
+     *
+     * @param  array<int, array<string, mixed>>  $plans
+     * @param  mixed  $observations  the report's Tool observations
+     */
+    public function late(Operation $operation, array $plans, mixed $observations): void
+    {
+        try {
+            $tools = $this->validate($observations, $plans, false);
+        } catch (ResourceOperationException) {
+            return;
+        }
+        $superseded = Operation::query()->where('kind', 'tool.remove')->where('id', '>', $operation->id)->pluck('input')
+            ->map(static fn (mixed $input): mixed => is_array($input) ? ($input['tool_id'] ?? null) : null)->filter()->all();
+        $acquired = array_values(array_filter($tools, static fn (array $tool): bool => $tool['status'] === 'installed' && ! in_array($tool['id'], $superseded, true)));
+        $this->record(ValidatedData::integer($operation->node_id), $plans, $acquired, false);
     }
 
     private function invalid(): never

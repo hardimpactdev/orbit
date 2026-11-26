@@ -5,19 +5,43 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationLateResult;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-final readonly class ToolConvergeProjection implements DirectOperationProjection
+final readonly class ToolConvergeProjection implements DirectOperationLateResult, DirectOperationProjection
 {
     public function __construct(private DirectOperation $direct, private ToolConvergeObservations $observations) {}
 
     public function input(Operation $operation): array
     {
         return ['intent' => $operation->input['intent'] ?? []];
+    }
+
+    /** A report that arrived after the timeout still records each Tool it verified installed (ToolConvergeObservations::late). */
+    public function late(Operation $operation, string $status, array $result): void
+    {
+        $this->observations->late($operation, $this->plans(ValidatedData::object($operation->input['intent'])), $result['tools'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $intent
+     * @return array<int, array<string, mixed>> the admitted plans by Tool
+     */
+    private function plans(array $intent): array
+    {
+        $plans = [];
+        if (is_array($intent['tools'] ?? null)) {
+            foreach ($intent['tools'] as $value) {
+                $plan = ValidatedData::object($value);
+                $plans[ValidatedData::integer($plan['id'])] = $plan;
+            }
+        }
+
+        return $plans;
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -27,13 +51,7 @@ final readonly class ToolConvergeProjection implements DirectOperationProjection
         }
         $result = ValidatedData::object($data['result'] ?? []);
         $intent = ValidatedData::object($operation->input['intent']);
-        $plans = [];
-        if (is_array($intent['tools'] ?? null)) {
-            foreach ($intent['tools'] as $value) {
-                $plan = ValidatedData::object($value);
-                $plans[ValidatedData::integer($plan['id'])] = $plan;
-            }
-        }
+        $plans = $this->plans($intent);
         $completed = ($result['succeeded'] ?? null) === true;
         try {
             $tools = $this->observations->validate($result['tools'] ?? [], $plans, $completed);

@@ -322,6 +322,11 @@ Deno.test("a Tool's source holds its plan's owned members and the run's installe
     assertEquals(moved.repository_preferences_held, pins("") + '\nPackage: *\nPin: origin "old.example.test"\nPin-Priority: 1\n');
     // Once this Tool is verified installed from the source, the preference is the confirmed source's alone.
     assertEquals(moved.repository_preferences, pins("tree"));
+    // A sibling of the source this run already verified installed confirmed it: even a refused Tool's held preference names it alone, so
+    // the last preference written agrees with the record a completed phase verifies.
+    const confirmed = toolState("pins", { ...apt, tool: { ...apt.tool, owned: false, repository, repository_packages: [],
+        repository_origins: ["old.example.test", "packages.example.test"] }, installed: ["nano"] });
+    assertEquals(confirmed.repository_preferences_held, pins("nano"));
 });
 Deno.test("an out-of-constraint candidate is rejected before returning write argv", () => {
     assertThrows(() => toolState("candidate", { ...apt, ...aptFacts, candidate: { rc: 0, stdout: "tree:\n  Candidate: 3.0.0-1\n" } }));

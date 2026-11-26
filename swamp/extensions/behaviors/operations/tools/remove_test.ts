@@ -215,6 +215,9 @@ Deno.test("an IPv6 source origin is written as apt matches it, without brackets,
     const repository = { name: "proof", uris: ["https://[2001:DB8::7]/apt"], suites: ["stable"], components: ["main"],
         signing_key: { url: "https://[2001:db8::7]/key.asc", fingerprint: "A".repeat(40) } };
     assertEquals(preferences(repository, []), 'Package: *\nPin: origin "2001:db8::7"\nPin-Priority: 1\n');
+    // apt reads the literal as written: an uncompressed one is not shortened to ::1.
+    assertEquals(native.origin("https://[0:0:0:0:0:0:0:1]/apt"), "0:0:0:0:0:0:0:1");
+    assertEquals(native.origin("https://Packages.Example.test:8443/apt"), "packages.example.test");
     const input = RemoveInput.parse({ node_id: 7, manager: "apt", package: "tree", platform: "linux", architecture: "x86_64", user: "orbit", repository,
         repository_origins: ["2001:db8::7", "packages.example.test"] });
     assertEquals(input.repository_origins, ["2001:db8::7", "packages.example.test"]);
