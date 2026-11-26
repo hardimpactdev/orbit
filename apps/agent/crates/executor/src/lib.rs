@@ -337,8 +337,7 @@ fn route(order: &VerifiedOrder) -> Outcome {
     };
     result.unwrap_or_else(|failure| {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
-        // A fenced step's failure keeps a redacted, bounded diagnostic with its journaled result, as a signed removal does.
-        if order.action().receipt_fenced() { destroy_failure(failure.code, &failure.detail) } else { Outcome::failed(failure.code) }
+        Outcome::failed(failure.code)
     })
 }
 
