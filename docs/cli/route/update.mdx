@@ -44,7 +44,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 
 ### Proposed executor path
 
-On the Gateway engine, a `--domain` change reuses the primitives of `route:create` and the site withdrawal of `route:destroy`. It probes the new name before it moves DNS, records the cutover, then withdraws the old site and checks a sibling Route ([route.update on the engine](/reference/gateway-engine#routeupdate)). The flow is built; its runtime proof is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, a `--domain` change reuses the primitives of `route:create` and the site withdrawal of `route:destroy`. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="route/engine/update"></div>
 
