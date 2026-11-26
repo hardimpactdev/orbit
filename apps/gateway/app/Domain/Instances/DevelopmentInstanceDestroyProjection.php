@@ -130,8 +130,9 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         $failure = $step?->error_code;
         $detail = $step?->error_detail;
         $removed = $run->succeeded();
-        // A Route withdrawal step fails as the Swamp run's "Withdraw the Route" does.
-        $withdrawal = $step !== null && $step->name !== 'remove';
+        // A Route withdrawal step fails as the Swamp run's "Withdraw the Route" does; the release never fails, and its line is in the result.
+        $withdrawal = $step !== null && preg_match('/\A(dns|withdraw|sibling)-/', $step->name) === 1;
+        $release = self::holdRelease($run->output('release'));
         $label = match (true) {
             $withdrawal => 'Withdraw the Route',
             $failure === 'instance.removal_stop_failed' => 'Stop the container',
@@ -146,8 +147,8 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             ...($failure === null ? [] : ['failure' => ['failed_step' => $label,
                 'detail' => $detail ?? 'The Node refused or could not complete the signed removal.', 'stderr_recorded' => $detail !== null]])];
         $result = match (true) {
-            $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])],
-            $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code, ...($withdrawal ? ['withdrawal_error_code' => $failure] : [])],
+            $removed => ['removed' => true, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at']), ...$release],
+            $failure !== null => ['removed' => false, 'failed_step' => $label, 'error_code' => $code, ...($withdrawal ? ['withdrawal_error_code' => $failure] : []), ...$release],
             default => [],
         };
         if ($removed && ! $operation->status->terminal()) {

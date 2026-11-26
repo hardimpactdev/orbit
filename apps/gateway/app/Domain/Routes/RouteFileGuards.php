@@ -38,6 +38,7 @@ final readonly class RouteFileGuards
             $guards[$id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null,
                 // The shared pools' PHP versions now: a withdrawal must keep each, or its Operation runs on Swamp.
                 'php_versions' => implode(',', array_keys((array) (ValidatedData::object($before['php'])['configurations'] ?? []))),
+                ...self::pools($before),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
                 'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
         }
@@ -76,7 +77,7 @@ final readonly class RouteFileGuards
                 if (! array_key_exists($version, $now)) {
                     $row['pool_removed'] = true;
                 } elseif ($now[$version] !== $text) {
-                    $row['pools'][] = ['version' => (string) $version, 'content' => ValidatedData::string($now[$version])];
+                    $row['pools'][] = ['version' => (string) $version, 'content' => ValidatedData::string($now[$version]), 'from' => ValidatedData::string($text)];
                 }
             }
             $dns = is_array($render['dns'] ?? null) ? $render['dns'] : null;
@@ -90,6 +91,23 @@ final readonly class RouteFileGuards
         }
 
         return $nodes;
+    }
+
+    /**
+     * Each shared pool as rendered now, keyed `php:<version>`: the executor places the Node's group and home into it and
+     * replaces the live pool only when it still holds that.
+     *
+     * @param  array<string, mixed>  $before
+     * @return array<string, string>
+     */
+    private static function pools(array $before): array
+    {
+        $pools = [];
+        foreach ((array) (ValidatedData::object($before['php'])['configurations'] ?? []) as $version => $text) {
+            $pools['php:'.$version] = ValidatedData::string($text);
+        }
+
+        return $pools;
     }
 
     /** Whether the engine may run `$kind`, so its admission records the digests. */

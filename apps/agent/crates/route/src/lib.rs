@@ -10,6 +10,7 @@
 //! from the order. Large or secret content arrives as a blob the executor has already read and checked by its SHA-256.
 
 mod csr;
+mod lock;
 mod site;
 mod withdraw;
 

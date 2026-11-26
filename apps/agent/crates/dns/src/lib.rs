@@ -138,6 +138,9 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
     for (path, blob) in [(RECORDS, &input.records), (CATALOG, &input.catalog)] {
         contents.push((path, system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("dns.content_missing", detail))?));
     }
+    // Under the Node's DNS publication lock, as the Gateway's and Swamp's DNS writers: nothing changes the files between the guard
+    // and the write.
+    let _lock = lock(system)?;
     // Every guard is checked before any write, so a refusal leaves both files as they were.
     for ((path, content), blob) in contents.iter().zip([&input.records, &input.catalog]) {
         if let Some(from) = &blob.from_sha256 {
@@ -169,6 +172,35 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
         .run(60, &["/usr/bin/systemctl", "restart", "dnsmasq.service", "orbit-private-dns.service"])
         .map_err(|detail| Failure::new("dns.restart_failed", detail))?;
     Ok(u32::try_from(replaced.len()).unwrap_or(u32::MAX))
+}
+
+/// The lock file every private DNS writer of this Node takes (`DnsmasqPrivateDnsManager`, `orbit_route_withdraw`).
+const LOCK: &str = "/run/lock/orbit-dnsmasq.lock";
+
+/// Takes the exclusive DNS publication lock, waiting up to 60 s for another writer.
+fn lock(system: &impl System) -> Result<File, Failure> {
+    let path = system.path(LOCK);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(0o400_000)
+        .open(&path)
+        .map_err(|error| Failure::new("dns.publish_lock_invalid", error.to_string()))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(200)),
+            Err(fs::TryLockError::WouldBlock) => return Err(Failure::new("dns.publish_busy", "the DNS publication lock stayed held")),
+            Err(fs::TryLockError::Error(error)) => return Err(Failure::new("dns.publish_lock_failed", error.to_string())),
+        }
+    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

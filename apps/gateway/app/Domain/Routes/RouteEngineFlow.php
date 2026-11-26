@@ -176,7 +176,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $digests = static function (array $value) use (&$digests): array {
             foreach ($value as $key => $item) {
                 if (is_array($item)) {
-                    $value[$key] = is_array($item['blob'] ?? null) ? ['blob' => ['sha256' => str_repeat('0', 64)]] : $digests($item);
+                    $value[$key] = is_array($item['blob'] ?? null) ? [...$item, 'blob' => ['sha256' => str_repeat('0', 64)]] : $digests($item);
                 }
             }
 

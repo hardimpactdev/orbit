@@ -1112,7 +1112,7 @@ function routeOwningDestroy(Instance $clone, array $engine = []): Operation
         'lan' => [], 'ingress' => [], 'retire_lan' => [], 'retire_ingress' => []]);
     $input['route_engine'] = $engine === [] ? [$node => [
         'caddy' => ['from_sha256' => hash('sha256', "feature.outside.test {\n}\nother.test {\n}\n"), 'content' => "other.test {\n}\n"],
-        'pools' => [['version' => '8.4', 'content' => "[other]\n"]],
+        'pools' => [['version' => '8.4', 'content' => "[other]\n", 'from' => "[feature]\n[other]\n"]],
         'dns' => ['records' => ['from_sha256' => hash('sha256', "a\nb\n"), 'content' => "b\n"], 'catalog' => ['from_sha256' => hash('sha256', "{\"a\":1}\n"), 'content' => "{}\n"]],
     ]] : $engine;
     $operation->input = $input;
@@ -1138,7 +1138,7 @@ it('withdraws an owned private Route before the signed removal, and frees its No
     ])->and(app(EngineKinds::class)->routes($operation))->toBeTrue()
         ->and($flow->input($operation, "withdraw-{$node}", new EngineRun($operation->id, [], 0, null)))->toBe([
             'account' => 'orbit', 'domains' => ['feature.outside.test'], 'leaves' => ['app-instance-'.$clone->id],
-            'php' => [['version' => '8.4', 'user' => null, 'content' => ['blob' => ['content' => "[other]\n"]]]],
+            'php' => [['version' => '8.4', 'user' => null, 'content' => ['blob' => ['content' => "[other]\n"]], 'from' => ['blob' => ['content' => "[feature]\n[other]\n"]]]],
             'caddy' => ['from_sha256' => hash('sha256', "feature.outside.test {\n}\nother.test {\n}\n"), 'content' => ['blob' => ['content' => "other.test {\n}\n"]]],
         ])
         ->and($flow->input($operation, "dns-{$node}", new EngineRun($operation->id, [], 0, null))['records'])
@@ -1176,12 +1176,14 @@ it('leaves a Route-owning removal the engine cannot reproduce to Swamp', functio
         'no rendered after-state' => $input['route_engine'] = [],
         'a LAN rule' => data_set($input, 'native_destroy.route_mutations.forward.retire_lan', [['node_id' => 3, 'rules' => [['port' => 80, 'ensure' => 'absent']]]]),
         'the Ingress edge' => data_set($input, 'native_destroy.route_mutations.forward.retire_ingress', [['node_id' => 6, 'rules' => [['port' => 443, 'ensure' => 'absent']]]]),
+        'an order over the signer\'s limit' => data_set($input, 'native_destroy.route_mutations.restore.routes', array_map(static fn (int $i): array => ['route_id' => 42,
+            'domain' => "feature-{$i}-".str_repeat('x', 40).'.outside.test', 'node_ids' => [$clone->node_id]], range(1, 60))),
         default => null,
     };
     $operation->input = $input;
 
     expect(app(EngineKinds::class)->routes($operation))->toBeFalse();
-})->with(['no rendered after-state', 'a LAN rule', 'the Ingress edge', 'a PHP version whose pool empties', 'an older VPN executor']);
+})->with(['no rendered after-state', 'a LAN rule', 'the Ingress edge', 'a PHP version whose pool empties', 'an older VPN executor', 'an order over the signer\'s limit']);
 
 it('records the withdrawal on the removal at the release step, as the Swamp run\'s release does', function (): void {
     $clone = destroyClone(destroyDefault());
@@ -1191,7 +1193,9 @@ it('records the withdrawal on the removal at the release step, as the Swamp run\
 
     app(InstanceDestroyEngineFlow::class)->local($operation, 'release', new EngineRun($operation->id, [], 0, null));
 
-    expect(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->route_withdrawn_at)->not->toBeNull();
+    expect(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->route_withdrawn_at)->not->toBeNull()
+        ->and(json_decode(app(InstanceDestroyEngineFlow::class)->local($operation, 'release', new EngineRun($operation->id, [], 0, null)), true))
+        ->toBe(['route_hold_released' => true, 'http_status' => '200']);
 });
 
 it('projects a failed withdrawal step as the Swamp run\'s Route withdrawal failure', function (): void {
@@ -1227,3 +1231,19 @@ it('renders the whole after-state of a Route-owning clone at admission, without 
         ->and(array_map(static fn ($step): string => $step->name, app(InstanceDestroyEngineFlow::class)->steps($operation)))
         ->toBe(["dns-{$clone->node_id}", "withdraw-{$clone->node_id}", "sibling-{$clone->node_id}", 'release', 'remove']);
 });
+
+it('keeps the release outcome and the container\'s own failure when the removal fails after a withdrawal', function (bool $released): void {
+    $clone = destroyClone(destroyDefault());
+    destroyBus();
+    $operation = routeOwningDestroy($clone);
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => EngineRun::runIdOf($operation->id)]])->save();
+    $release = (new OperationEngineStep)->forceFill(['name' => 'release', 'node_id' => 0, 'status' => 'done',
+        'output' => json_encode(['route_hold_released' => $released, 'http_status' => $released ? '200' : '000'])]);
+    $remove = (new OperationEngineStep)->forceFill(['name' => 'remove', 'node_id' => $clone->node_id, 'status' => 'failed', 'error_code' => 'instance.removal_stop_failed']);
+
+    app(DevelopmentInstanceDestroyProjection::class)->applyEngine($operation, new EngineRun($operation->id, ['release' => $release, 'remove' => $remove], 1_800_000_000_000, 1_800_000_001_000));
+
+    expect($operation->refresh()->result)->toMatchArray(['failed_step' => 'Stop the container', 'error_code' => 'instance.removal_incomplete',
+        'route_hold_released' => $released, 'route_hold_release_status' => $released ? 200 : 0])
+        ->and($operation->result)->not->toHaveKey('withdrawal_error_code');
+})->with(['released' => true, 'refused' => false]);

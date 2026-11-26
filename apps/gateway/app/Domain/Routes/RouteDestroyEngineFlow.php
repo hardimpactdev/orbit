@@ -243,7 +243,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
             throw new EngineUnsupported("Node {$node} has no account in the executor's shape.");
         }
         $caddy = $mine(ValidatedData::object($plan['retire']), 'caddy');
-        $from = self::digest(self::guard($operation, $node), 'caddy');
+        $guard = self::guard($operation, $node);
+        $from = self::digest($guard, 'caddy');
         if ($caddy === []) {
             throw new EngineUnsupported("Node {$node} has no rendered Caddyfile to withdraw from.");
         }
@@ -262,7 +263,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
         $php = RouteEngineFlow::pools($mine($pools, 'php_files'), $mine($pools, 'php_tests'), $mine($pools, 'php_reloads'));
 
         return ['account' => $account, 'domains' => self::domains($operation), 'leaves' => array_values(array_unique($leaves)),
-            'php' => $php, 'caddy' => ['from_sha256' => $from, 'content' => ['blob' => ['content' => ValidatedData::string(end($caddy)['content'])]]]];
+            'php' => array_map(static fn (array $pool): array => $pool['user'] === null && is_string($guard['php:'.$pool['version']] ?? null)
+                ? [...$pool, 'from' => ['blob' => ['content' => $guard['php:'.$pool['version']]]]] : $pool, $php), 'caddy' => ['from_sha256' => $from, 'content' => ['blob' => ['content' => ValidatedData::string(end($caddy)['content'])]]]];
     }
 
     /**

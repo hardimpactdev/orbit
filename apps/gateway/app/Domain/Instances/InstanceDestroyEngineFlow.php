@@ -21,6 +21,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Throwable;
 
 /**
  * `instance:destroy --force` of a development clone on the state machine (docs/cli/instance/container/destroy-engine.mmd). A clone
@@ -51,14 +52,15 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
         $steps = $dns = $done = [];
         foreach ($withdrawal['nodes'] as $node => $row) {
             if (isset($row['dns'])) {
-                self::dnsInput($withdrawal, $node);
+                RouteEngineFlow::fits(self::dnsInput($withdrawal, $node));
                 $steps[] = $dns[] = new StepSpec("dns-{$node}", $node, 'dns.publish_records', (string) $node, budgetMs: 120_000, resendMs: 20_000,
                     features: [RouteDestroyEngineFlow::GuardedDns]);
             }
         }
         $after = array_map(static fn (StepSpec $step): string => $step->name, $dns);
         foreach ($withdrawal['serving'] as $node) {
-            self::withdrawInput($withdrawal, $node);
+            // Every order must sign within the limit before anything starts.
+            RouteEngineFlow::fits(self::withdrawInput($withdrawal, $node));
             $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, $after, budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
             $done[] = "sibling-{$node}";
@@ -92,13 +94,7 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
 
         return match ($kind) {
             'sibling' => $this->routes->probeSibling((int) explode('-', $step, 2)[1], $withdrawal['domains']),
-            self::Release => DB::transaction(static function () use ($operation): string {
-                $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                app(InstanceDestroyRouteWithdrawal::class)->record($locked);
-                app(RoutePublicationHolds::class)->releaseWithdrawn($locked);
-
-                return 'route withdrawn, Route Nodes released';
-            }),
+            self::Release => self::release($operation),
             default => throw new LogicException("Unknown destroy step [{$step}]."),
         };
     }
@@ -254,12 +250,35 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
 
         return ['account' => $account, 'domains' => $withdrawal['domains'], 'leaves' => array_values(array_unique($leaves)),
             'php' => array_map(static fn (array $pool): array => ['version' => ValidatedData::string($pool['version']), 'user' => null,
-                'content' => ['blob' => ['content' => ValidatedData::string($pool['content'])]]], RouteExecutionProof::objects($row['pools'] ?? [])),
+                'content' => ['blob' => ['content' => ValidatedData::string($pool['content'])]],
+                'from' => ['blob' => ['content' => ValidatedData::string($pool['from'] ?? throw new EngineUnsupported('A pool without its rendered-from state runs on Swamp.'))]]],
+                RouteExecutionProof::objects($row['pools'] ?? [])),
             'caddy' => ['from_sha256' => RouteDestroyEngineFlow::digest($caddy, 'from_sha256'), 'content' => ['blob' => ['content' => ValidatedData::string($caddy['content'])]]]];
     }
 
     public function terminalStatuses(string $action): array
     {
         return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
+    }
+
+    /**
+     * Records the withdrawal on the removal and frees the Route Nodes, as the Swamp run's release step does: a refused release never
+     * fails the removal (the Operation's end frees the hold then), and its line says whether it happened, which the result carries.
+     */
+    private static function release(Operation $operation): string
+    {
+        try {
+            DB::transaction(static function () use ($operation): void {
+                $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                app(InstanceDestroyRouteWithdrawal::class)->record($locked);
+                app(RoutePublicationHolds::class)->releaseWithdrawn($locked);
+            });
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return json_encode(['route_hold_released' => false, 'http_status' => '000'], JSON_THROW_ON_ERROR);
+        }
+
+        return json_encode(['route_hold_released' => true, 'http_status' => '200'], JSON_THROW_ON_ERROR);
     }
 }
