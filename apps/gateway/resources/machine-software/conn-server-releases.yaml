@@ -1,5 +1,5 @@
 {
-    "default": "0.5.3",
+    "default": "0.5.5",
     "releases": {
         "0.5.1": {
             "linux_x64": {
@@ -33,6 +33,30 @@
             "macos_arm64": {
                 "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.3/conn-server-0.5.3-macos-arm64.zip",
                 "sha256": "621306c3d65cdee68773fe2f47de1c1c33fae6ecd9223d3e635d9a14fa790bf6",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.4": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.4/conn-server-0.5.4-linux-x64.tar.gz",
+                "sha256": "680fd90f7d19fc1bf73c2de94473350c91d385ce6c1c730a57f473799e408dda"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.4/conn-server-0.5.4-macos-arm64.zip",
+                "sha256": "72a06a484c10b4bcaf469e36f55684e246f315f6ba59a602dae14c458883b3f6",
+                "bundle_id": "com.nckrtl.conn-server",
+                "team_id": "9SVJ4SYB9B"
+            }
+        },
+        "0.5.5": {
+            "linux_x64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-linux-x64.tar.gz",
+                "sha256": "a60cf81991be8c0a3195b7123ddb62bb2e6c7479a03fb7e1ad7a8a841f9e9f4b"
+            },
+            "macos_arm64": {
+                "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-macos-arm64.zip",
+                "sha256": "3c07362bf96157df8f0b5628abbaad45f598e692096d5edd25fe3b4bb9b0d4da",
                 "bundle_id": "com.nckrtl.conn-server",
                 "team_id": "9SVJ4SYB9B"
             },

@@ -1,7 +1,7 @@
 order = 75
 cases = [
   "a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle",
-  "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once",
+  "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store, or the other server's when a switched unit still runs the old one; once they settle it restarts once, and a container with no store restarts at once",
 ]
 file = "swamp/tests/ansible_instance_t3_restart_test.ts"
 self_hosted = true
@@ -45,4 +45,4 @@ inputs = [
 # The planner adds startup.
 [case_costs]
 "a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle" = 127
-"an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once" = 48
+"an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store, or the other server's when a switched unit still runs the old one; once they settle it restarts once, and a container with no store restarts at once" = 48

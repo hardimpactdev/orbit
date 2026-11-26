@@ -425,13 +425,23 @@ T3_OPEN = ("preparing", "queued", "starting", "running", "waiting")
 # Every open run of every thread, read-only from the server's own store. Neither server's `thread list` can serve: it lists one project,
 # and it hides subagent children and side chats even with `includeSubagents` (T3 0.1.7's listProjectThreads), while a parent's
 # status covers only its own runs. Both stores hold every thread's runs: T3 in `statev2.sqlite`, whose recovery index names the same
-# open states, the Conn Server as `runs` entities in `engine.sqlite`. A missing or changed store fails the read, and the container
-# counts as busy. Runs as agent in the container, on stdin of the runtime folder's Node: `node - OPEN PROGRAM`; prints the open runs.
+# open states, the Conn Server as `runs` entities in `engine.sqlite`. The unit's program names the store to read, but a unit switched to
+# the other server keeps running the old one until its restart (instance-3728: unit on conn-server, T3 0.1.7 still running, no
+# `engine.sqlite`), so a missing store falls back to the other server's. With neither store no thread ever ran here: idle. A store
+# that cannot be read fails the read, and the container counts as busy. Runs as agent in the container, on stdin of the runtime
+# folder's Node: `node - OPEN PROGRAM`; prints the open runs.
 T3_OPEN_RUNS = r"""
 const { DatabaseSync } = require("node:sqlite");
+const { existsSync } = require("node:fs");
 const [open, program] = process.argv.slice(-2);
-const conn = program.endsWith("/conn-server");
-const db = new DatabaseSync(process.env.HOME + "/.t3/userdata/" + (conn ? "engine.sqlite" : "statev2.sqlite"), { readOnly: true });
+const store = (conn) => process.env.HOME + "/.t3/userdata/" + (conn ? "engine.sqlite" : "statev2.sqlite");
+const named = program.endsWith("/conn-server");
+const conn = existsSync(store(named)) ? named : existsSync(store(!named)) ? !named : null;
+if (conn === null) {
+    process.stdout.write("[]");
+    process.exit(0);
+}
+const db = new DatabaseSync(store(conn), { readOnly: true });
 const runs = db.prepare(conn
     ? "SELECT thread_id AS threadId, json_extract(body, '$.status') AS status FROM entities WHERE kind = 'runs' AND json_extract(body, '$.status') IN (SELECT value FROM json_each(?))"
     : "SELECT thread_id AS threadId, status FROM orchestration_v2_projection_runs WHERE status IN (SELECT value FROM json_each(?))").all(open);
