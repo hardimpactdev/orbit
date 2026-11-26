@@ -31,8 +31,8 @@ sequenceDiagram
       %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
       %%> - eligible plan: a host timer on the Schedule's Node, no `production_control` and no `container`
       Note over GW: Bind steps, take the lock<br/>commit, publish the start
-      %%> - the step rows and the owner's Operation lock (`node_schedules:<id>` or `instance_schedules:<id>`, which all its Schedules share) commit in one transaction before the start event; an Operation never moves between engines after this
-      %%> - binding refuses `operation.target_busy` while another open Operation acts on the owner; while the lock is held, admission of another Schedule Operation of the owner refuses `operation.target_busy`
+      %%> - the step rows and the Schedule's own Operation lock (`schedule:<uuid>`; the owner's other Schedules stay free) commit in one transaction before the start event; an Operation never moves between engines after this
+      %%> - binding refuses `operation.target_busy` while another open Operation acts on this Schedule; while the lock is held, any admission for this Schedule, a create's reservation included, refuses `operation.target_busy` before it changes the row
       GW-->>CLI: 202 Accepted<br/>task ID
       EN->>N: Enable and start the timer<br/>owned unit only
       %%> Desired state: the Schedule's own timer is enabled and active; an already-running timer only gets its enablement checked
@@ -55,7 +55,7 @@ sequenceDiagram
       else a step fails
         EN--xGW: Failed step<br/>error_code · redacted detail
         %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
-        %%> - the step keeps its own code (`schedule.state_mismatch`, `schedule.timer_missing`, `schedule.apply_failed`, `schedule.input_invalid`); the Operation records what Swamp's failed native check records: `operation.native_failed`, failed step `Check the timer` or `timer`, the step code in the failure's detail
+        %%> - the step keeps a code for its phase (`schedule.input_invalid`, `schedule.timer_missing`, `schedule.apply_failed` for the change, `schedule.read_failed` for the read-back read, `schedule.state_mismatch` for a read of another state); the Operation records what Swamp records: `operation.native_failed`, failed step `timer`, `check_timer` or `Check the timer`; a cancel records no error code, the step code in the failure's detail
         Note over GW: Keep the prior state<br/>desired state unchanged
         %%> - retry: the same command; enabling an enabled timer changes nothing
       end

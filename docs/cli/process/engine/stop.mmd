@@ -20,7 +20,7 @@ sequenceDiagram
     Note over GW: Refuse the engine<br/>EngineUnsupported
     %%> - a stop that waits for a drain, whatever its placement: a host systemd Process that runs Horizon (`GatewayHorizon::runs` with no Instance, whose unit carries the long-drain stop directives of SystemdProcessRenderer) and a Gateway release-container Process (Horizon, the scheduler)
     %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout
-    %%> - decided from the Process and its placement, for both verbs, never from start-only intent fields: a `vp-dev` or `vite` Process, a Process of an Instance not placed on app-dev, any intent with a `container` (an Instance container, whose app-account move is a script, or a Gateway release container), a Gateway release-host Process (`GatewayReleaseHost::hasProcess`) and a host Horizon Process
+    %%> - decided from the Process and its placement, for both verbs, never from start-only intent fields: a `vp-dev` or `vite` Process, a Process of an Instance not placed on app-dev, any intent with a `container` (an Instance container, whose app-account move is a script, or a Gateway release container), and a Node's host systemd unit that runs Horizon (the renderer's own drain condition: `GatewayHorizon::runs` on a Node Process; a Process named like a Gateway one, an Instance's Horizon unit and a Docker Horizon Process carry no long-drain directives and stay eligible)
     %%> - decided at admission, before any order: the engine admits nothing, and the whole Operation takes the Swamp branch below
   end
   alt the engine admits the whole Operation
@@ -49,8 +49,8 @@ sequenceDiagram
       %%> Read-back: `docker container inspect` of the exact saved name answers that name, State.Status `exited` (`created` or any other status fails the step) and the admitted image
     end
     %%> A read that systemd answers without one of LoadState, ActiveState, SubState or UnitFileState never counts as that value: the step fails
-    %%> The step fails with its own code: `process.state_mismatch` after the change, `process.unit_missing`, `process.container_missing`, `process.apply_failed` or `process.input_invalid`; success is projected only from this read-back
-    %%> The Operation records what Swamp's failed native check records: `operation.native_failed`, with the Swamp step the code stands for (`Verify the state`, `Start the Process`, `Stop the container` …) as its failed step; the step's own code stays on the engine step and in the failure's detail
+    %%> The step fails with a code for its phase: the change (`process.input_invalid`, `process.unit_missing`, `process.container_missing`, `process.apply_failed`), a stop's plain `systemctl stop` after it (`process.unit_stop_failed`), the read-back read (`process.read_failed`), or a read that answered another state (`process.state_mismatch`); success is projected only from this read-back
+    %%> The Operation records what Swamp's failed native check records: `operation.native_failed`, with the Swamp step the phase stands for as its failed step: `Start the Process` / `Stop the Process` or `Start the container` / `Stop the container` for the change, `Stop the unit`, `Check the unit` or `Check the container` for the read, `Verify the state` for the assert; a cancel records no error code, as a cancelled Swamp run does; the step's own code stays on the engine step and in the failure's detail
     %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state
     opt the receipt is lost
       EN->>N: Resend the same step<br/>fresh nonce · same step ID

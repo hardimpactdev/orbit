@@ -83,7 +83,8 @@ fn a_running_unit_changes_nothing_and_a_repeat_reports_zero() {
 fn a_host_stop_requires_inactive_and_disabled_exactly() {
     let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok(&show("loaded", "active", "enabled")), Ok(&show("loaded", "inactive", "disabled"))]);
     assert_eq!(ensure_state(&fake, &host("stopped", "disabled")), Ok(2));
-    assert_eq!(fake.changed(), [format!("/usr/bin/systemctl disable -- {UNIT}"), format!("/usr/bin/systemctl stop -- {UNIT}")]);
+    assert_eq!(fake.changed(), [format!("/usr/bin/systemctl disable -- {UNIT}"), format!("/usr/bin/systemctl stop -- {UNIT}"),
+        format!("/usr/bin/systemctl stop -- {UNIT}")]);
 
     let failed = Fake::default().on("/usr/bin/systemctl show", &[Ok(&show("loaded", "active", "disabled")), Ok(&show("loaded", "failed", "disabled"))]);
     assert_eq!(ensure_state(&failed, &host("stopped", "disabled")).map_err(|failure| failure.code), Err("process.state_mismatch"));
@@ -203,7 +204,7 @@ fn a_property_systemd_left_out_never_counts_as_its_value() {
         Ok(&show("loaded", "inactive", "disabled")),
         Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=\n"),
     ]);
-    assert_eq!(ensure_state(&unit, &host("running", "enabled")).map_err(|failure| failure.code), Err("process.state_mismatch"));
+    assert_eq!(ensure_state(&unit, &host("running", "enabled")).map_err(|failure| failure.code), Err("process.read_failed"));
     // A timer read without its next elapse fails; one with an empty next elapse is an answer.
     let absent = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\n")]);
     assert_eq!(ensure_timer(&absent, &timer()).map_err(|failure| failure.code), Err("schedule.apply_failed"));
@@ -211,7 +212,28 @@ fn a_property_systemd_left_out_never_counts_as_its_value() {
         Ok("LoadState=loaded\nSubState=dead\nActiveState=inactive\nUnitFileState=disabled\nNextElapseUSecRealtime=\n"),
         Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\n"),
     ]);
-    assert_eq!(ensure_timer(&after, &timer()).map_err(|failure| failure.code), Err("schedule.state_mismatch"));
+    assert_eq!(ensure_timer(&after, &timer()).map_err(|failure| failure.code), Err("schedule.read_failed"));
     let empty = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=\n")]);
     assert_eq!(ensure_timer(&empty, &timer()).map(|read| read.changes), Ok(0));
+}
+
+#[test]
+fn each_failure_names_its_phase() {
+    // A stop whose converge passed but whose plain stop fails: Swamp's `Stop the unit`.
+    let stop = Fake::default()
+        .on("/usr/bin/systemctl show", &[Ok(&show("loaded", "inactive", "disabled"))])
+        .on("/usr/bin/systemctl stop", &[Err("Job failed")]);
+    assert_eq!(ensure_state(&stop, &host("stopped", "disabled")).map_err(|failure| failure.code), Err("process.unit_stop_failed"));
+    // A failed change: Swamp's apply step.
+    let start = Fake::default()
+        .on("/usr/bin/systemctl show", &[Ok(&show("loaded", "inactive", "enabled"))])
+        .on("/usr/bin/systemctl start", &[Err("Job failed")]);
+    assert_eq!(ensure_state(&start, &host("running", "enabled")).map_err(|failure| failure.code), Err("process.apply_failed"));
+    // A read-back that fails to read: Swamp's check step, not its assert.
+    let read = Fake::default().on("/usr/bin/systemctl show", &[Ok(&show("loaded", "active", "enabled")), Err("Failed to connect to bus")]);
+    assert_eq!(ensure_state(&read, &host("running", "enabled")).map_err(|failure| failure.code), Err("process.read_failed"));
+    let gone = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running redis:7\n"), Err("No such container")]);
+    assert_eq!(ensure_state(&gone, &docker("running")).map_err(|failure| failure.code), Err("process.read_failed"));
+    let missing = Fake::default().on("/usr/bin/docker container inspect", &[Err("No such container")]);
+    assert_eq!(ensure_state(&missing, &docker("running")).map_err(|failure| failure.code), Err("process.container_missing"));
 }

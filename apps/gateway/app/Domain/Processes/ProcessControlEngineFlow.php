@@ -9,7 +9,6 @@ use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
-use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Instance;
@@ -28,8 +27,8 @@ use LogicException;
  * Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across
  * engines. These stay on Swamp (EngineUnsupported): a dev-server Process (`vp-dev`, `vite`: dev route, listener, awake marker),
  * a Process of an Instance outside app-dev (a production release layout), any Process in a container (an Instance container's
- * app-account move is a script; a Gateway release container drains), and a Gateway release-host or host Horizon Process, whose
- * stop waits for its drain.
+ * app-account move is a script; a Gateway release container drains), and a Node's host systemd Horizon Process, whose stop
+ * waits for its drain.
  */
 final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
 {
@@ -88,12 +87,15 @@ final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
                 'failure' => ['failed_step' => self::swampStep($operation, (string) $failed->error_code),
                     'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
-            default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled'],
+            default => ['status' => 'cancelled', 'error_code' => null],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
     }
 
-    /** The step of operation-process-start or -stop whose failure the primitive's code stands for. */
+    /**
+     * The step of operation-process-start or -stop whose failure the primitive's phase stands for: the change, a stop's plain
+     * `Stop the unit`, the check that reads the state back, or the assert on what it read.
+     */
     private static function swampStep(Operation $operation, string $code): string
     {
         $docker = ($operation->input['runtime'] ?? null) === ProcessRuntime::Docker->value;
@@ -101,6 +103,8 @@ final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
 
         return match (true) {
             $code === 'process.state_mismatch' => 'Verify the state',
+            $code === 'process.read_failed' => $docker ? 'Check the container' : 'Check the unit',
+            $code === 'process.unit_stop_failed' => 'Stop the unit',
             $docker => "{$verb} the container",
             default => "{$verb} the Process",
         };
@@ -128,8 +132,9 @@ final readonly class ProcessControlEngineFlow implements ReceiptBoundDefinition
         if ($process === null || $process->runtime->value !== $runtime || $process->isDevServerPreset()) {
             throw new EngineUnsupported('A dev-server Process stays on Swamp.');
         }
-        if (GatewayReleaseHost::hasProcess($process) || GatewayHorizon::runs($process)) {
-            // Horizon's stop waits for its drain (SystemdProcessRenderer's long-drain directives); its start stays with it.
+        if ($runtime === ProcessRuntime::Systemd->value && $process->owner_type === Node::class && GatewayHorizon::runs($process)) {
+            // The renderer's own drain condition: a Node's host Horizon unit carries the long-drain stop directives, so its stop
+            // waits for the drain; its start stays with it. A Gateway release container is a `container` intent, refused above.
             throw new EngineUnsupported('A drain-waiting Process stays on Swamp.');
         }
         $owned = match (true) {

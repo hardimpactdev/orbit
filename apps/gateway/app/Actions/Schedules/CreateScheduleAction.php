@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Schedules;
 
 use App\Data\Schedules\AddScheduleData;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleErrorCode;
@@ -73,6 +74,10 @@ final readonly class CreateScheduleAction
                     'trigger' => ScheduleTrigger::Swamp,
                 ]);
             $created = ! $schedule->exists;
+            if ($schedule->exists) {
+                // A Schedule an engine run holds is refused before its reservation changes it.
+                EngineTargetFence::free(EngineTargetFence::scheduleKey($schedule->id));
+            }
 
             if ($schedule->exists && ! $this->matches($schedule, $data)) {
                 throw new ResourceOperationException(

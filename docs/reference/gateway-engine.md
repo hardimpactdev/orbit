@@ -96,19 +96,19 @@ Eligibility comes from the Process and its placement, for both verbs, so one Pro
 - a dev-server Process (`vp-dev`, `vite`), whose start publishes a dev route, checks its listener and marks it awake;
 - a Process of an Instance not placed on app-dev, such as a production release layout;
 - any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
-- a Gateway release-host Process and a host Horizon Process, whose stop waits for its drain.
+- a Node's host systemd unit that runs Horizon, whose unit carries the renderer's long-drain stop directives, so its stop waits for its drain.
 
 `process.restart` stays on Swamp.
 
 Both flows are `ReceiptBoundDefinition`s, as `instance.destroy` is: the run, its steps and its target lock (`process:<id>`) commit in one transaction before the start event. Binding refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`.
 
-A lost receipt sends the same step again with a fresh nonce, and the Node's journal answers the stored result. The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step it stands for, such as `Verify the state`, as a failed Swamp check does. The step's own code (`process.state_mismatch` …) stays on the engine step and in the failure's detail.
+A lost receipt sends the same step again with a fresh nonce, and the Node's journal answers the stored result. The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step its phase stands for: the change (`Start the Process`, `Stop the container` …), `Stop the unit`, the check (`Check the unit`, `Check the container`) or the assert (`Verify the state`). A cancel records no error code, as a cancelled Swamp run does. The step's own code (`process.state_mismatch` …) stays on the engine step and in the failure's detail.
 
 Receipt-bound settlement, where no budget or cancel settles a sent step without its terminal receipt, still keys on `instance.destroy` in `Engine::requiresReceipt`. Until it keys on `ReceiptBoundDefinition`, a Process or Schedule step past its budget fails with `engine.step_budget_exceeded`.
 
 ### schedule.enable
 
-The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`). The run holds the owner's lock (`node_schedules:<id>` or `instance_schedules:<id>`) like a Process run holds its own. A failure records `operation.native_failed` with failed step `Check the timer` or `timer`. A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine. A timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
+The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`). The run holds the Schedule's own lock (`schedule:<uuid>`), so the owner's other Schedules stay free; while it holds it, any admission for that Schedule, a create's reservation included, refuses `operation.target_busy` before changing the row. A failure records `operation.native_failed` with failed step `timer`, `check_timer` or `Check the timer`, by the phase that failed. A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine. A timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
 
 ### instance.fleet
 

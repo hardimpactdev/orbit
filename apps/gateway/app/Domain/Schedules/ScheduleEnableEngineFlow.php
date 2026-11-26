@@ -9,10 +9,10 @@ use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
-use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Builder;
 use LogicException;
 
 /**
@@ -41,12 +41,13 @@ final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:schedule-{$id}", budgetMs: 60_000, resendMs: 10_000)];
     }
 
-    /** The Schedule's owner lock, which every Operation of the owner's Schedules shares. */
+    /** The Schedule's own lock: its UUID, so the owner's other Schedules stay free. */
     public function lockKey(Operation $operation): string
     {
-        EngineTargetFence::alone($operation);
+        $id = ValidatedData::string($operation->input['id']);
+        EngineTargetFence::alone($operation, static fn (Builder $query) => $query->where('kind', 'like', 'schedule.%')->where('input->id', $id));
 
-        return OperationStore::lockKey($operation->target_type, $operation->target_id);
+        return EngineTargetFence::scheduleKey($id);
     }
 
     public function input(Operation $operation, string $step, EngineRun $run): array
@@ -66,19 +67,22 @@ final readonly class ScheduleEnableEngineFlow implements ReceiptBoundDefinition
     }
 
     /**
-     * The public result is the one Swamp's native timer check gives for the same input: a failed step is
-     * `operation.native_failed`, named by the operation-schedule-control step it stands for. The primitive's own code stays on
-     * the engine step and in the failure's detail.
+     * The public result is the one Swamp's timer steps give for the same input: a failed step is `operation.native_failed`,
+     * named by the operation-schedule-control step its phase stands for (`timer`, `check_timer`, `Check the timer`), and a
+     * cancel has no error code. The primitive's own code stays on the engine step and in the failure's detail.
      */
     public function finish(Operation $operation, EngineRun $run): void
     {
         $failed = $run->failed();
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => 'operation.native_failed',
-                'failure' => ['failed_step' => $failed->error_code === 'schedule.state_mismatch' ? 'Check the timer' : 'timer',
-                    'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
+                'failure' => ['failed_step' => match ($failed->error_code) {
+                    'schedule.state_mismatch' => 'Check the timer',
+                    'schedule.read_failed' => 'check_timer',
+                    default => 'timer',
+                }, 'detail' => self::Action.' '.$failed->error_code, 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
-            default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled'],
+            default => ['status' => 'cancelled', 'error_code' => null],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
     }

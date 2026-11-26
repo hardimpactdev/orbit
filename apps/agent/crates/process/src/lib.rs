@@ -108,8 +108,10 @@ struct ProcessInput {
 ///
 /// # Errors
 ///
-/// `process.input_invalid`, `process.unit_missing`, `process.container_missing`, `process.apply_failed` or
-/// `process.state_mismatch`.
+/// Each code names the phase that failed, so the Gateway can name the Swamp step it stands for: before or during the change
+/// `process.input_invalid`, `process.unit_missing`, `process.container_missing` or `process.apply_failed`; a stop's final
+/// plain stop `process.unit_stop_failed`; the read-back itself `process.read_failed`; a read-back that answered a different
+/// state `process.state_mismatch`.
 pub fn ensure_state(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: ProcessInput =
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("process.input_invalid", error.to_string()))?;
@@ -220,7 +222,13 @@ fn unit(system: &impl System, name: &str, state: State, boot: Boot) -> Result<u3
         systemctl(system, 20, if state == State::Running { "start" } else { "stop" }, name)?;
         changes += 1;
     }
-    let after = show(system, name, "process.state_mismatch")?;
+    if state == State::Stopped {
+        // Swamp's `Stop the unit`: a plain stop after the converge, every time, so a unit that came back stops again.
+        system
+            .run(20, &[SYSTEMCTL, "stop", "--", name])
+            .map_err(|detail| Failure::new("process.unit_stop_failed", format!("systemctl stop: {detail}")))?;
+    }
+    let after = show(system, name, "process.read_failed")?;
     if !Unit::is(after.load.as_ref(), "loaded") || !Unit::is(after.active.as_ref(), active) || !Unit::is(after.file.as_ref(), file) {
         return Err(Failure::new("process.state_mismatch", format!("{name}: {}", after.describe())));
     }
@@ -228,14 +236,15 @@ fn unit(system: &impl System, name: &str, state: State, boot: Boot) -> Result<u3
 }
 
 /// The container's own name, status and image, read by its exact name.
-fn inspect(system: &impl System, name: &str) -> Result<(String, String), Failure> {
+/// A failed read is `code`: `process.container_missing` before the change, `process.read_failed` for the read-back.
+fn inspect(system: &impl System, name: &str, code: &'static str) -> Result<(String, String), Failure> {
     let stdout = system
         .run(20, &[DOCKER, "container", "inspect", "--format", "{{.Name}} {{.State.Status}} {{.Config.Image}}", name])
-        .map_err(|detail| Failure::new("process.container_missing", detail))?;
+        .map_err(|detail| Failure::new(code, detail))?;
     let mut fields = stdout.split_whitespace();
     let owner = fields.next().unwrap_or_default();
     if owner.strip_prefix('/') != Some(name) {
-        return Err(Failure::new("process.container_missing", format!("{name}: inspect answered {owner}")));
+        return Err(Failure::new(code, format!("{name}: inspect answered {owner}")));
     }
     Ok((fields.next().unwrap_or_default().to_owned(), fields.next().unwrap_or_default().to_owned()))
 }
@@ -243,14 +252,14 @@ fn inspect(system: &impl System, name: &str) -> Result<(String, String), Failure
 fn container(system: &impl System, name: &str, image: &str, state: State) -> Result<u32, Failure> {
     let wanted = if state == State::Running { "running" } else { "exited" };
     let mut changes = 0;
-    if inspect(system, name)?.0 != wanted {
+    if inspect(system, name, "process.container_missing")?.0 != wanted {
         let verb = if state == State::Running { "start" } else { "stop" };
         system
             .run(20, &[DOCKER, "container", verb, name])
             .map_err(|detail| Failure::new("process.apply_failed", format!("docker container {verb}: {detail}")))?;
         changes += 1;
     }
-    let (status, running_image) = inspect(system, name)?;
+    let (status, running_image) = inspect(system, name, "process.read_failed")?;
     if status != wanted || running_image != image {
         return Err(Failure::new("process.state_mismatch", format!("{name}: State.Status={status} Config.Image={running_image}")));
     }
@@ -284,7 +293,7 @@ pub struct Timer {
 /// # Errors
 ///
 /// `schedule.input_invalid` for a unit that is not the Schedule's own timer, `schedule.timer_missing`,
-/// `schedule.apply_failed` or `schedule.state_mismatch`.
+/// `schedule.apply_failed`, `schedule.read_failed` when the read-back cannot be read, or `schedule.state_mismatch`.
 pub fn ensure_timer(system: &impl System, input: &serde_json::Value) -> Result<Timer, Failure> {
     let input: TimerInput =
         serde_json::from_value(input.clone()).map_err(|error| Failure::new("schedule.input_invalid", error.to_string()))?;
@@ -305,7 +314,7 @@ pub fn ensure_timer(system: &impl System, input: &serde_json::Value) -> Result<T
         systemctl(system, 20, "start", &input.unit).map_err(retag)?;
         changes += 1;
     }
-    let after = timer_show(system, &input.unit, "schedule.state_mismatch")?;
+    let after = timer_show(system, &input.unit, "schedule.read_failed")?;
     if !Unit::is(after.load.as_ref(), "loaded") || !Unit::is(after.file.as_ref(), "enabled") || !Unit::is(after.active.as_ref(), "active") {
         return Err(Failure::new("schedule.state_mismatch", format!("{}: {}", input.unit, after.describe())));
     }

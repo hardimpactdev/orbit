@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Schedules\CreateScheduleAction;
+use App\Data\Schedules\AddScheduleData;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Executor\SignedExecutorOrder;
@@ -17,6 +20,7 @@ use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -238,7 +242,7 @@ it('enables a host Node timer with one ensure_timer step and records the Schedul
 
     app(StartSwampRun::class)->start($operation);
     app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
-    expect($operation->refresh()->lock_key)->toBe('node_schedules:'.$this->node->id);
+    expect($operation->refresh()->lock_key)->toBe('schedule:'.$schedule->id);
     $payload = $this->bus->payload(0);
     expect($payload['action'])->toBe('schedule.ensure_timer')
         ->and($payload['target'])->toBe("{$this->node->id}:schedule-{$schedule->id}")
@@ -348,4 +352,97 @@ it('decides eligibility from the Process and its placement, on the intents admis
         ->and($routes($admitted($prodWorker, 'start', $prodTarget)))->toBeFalse()
         ->and($routes($admitted($vp, 'start', $guest)))->toBeFalse()
         ->and($routes($admitted($worker, 'start', $guest)))->toBeFalse();
+
+    // Only the renderer's drain condition refuses: a Node's own systemd Horizon unit. A name alone, an Instance's Horizon unit
+    // (no long-drain directives) and a Docker Process running Horizon stay eligible.
+    $nodeTarget = new ProcessTarget($dev, 'orbit', '/home/orbit');
+    $onNode = fn (string $name, array $config, string $runtime = 'systemd'): Process => Process::query()->create(['owner_type' => Node::class,
+        'owner_id' => $dev->id, 'name' => $name, 'runtime' => $runtime, 'runtime_config' => $config, 'restart_policy' => 'always',
+        'desired_state' => 'running', 'status' => 'active']);
+    $horizon = ['command' => ['php', 'artisan', 'horizon']];
+    foreach (['start', 'stop'] as $verb) {
+        expect($routes($admitted($onNode("horizon-{$verb}", ['command' => ['php', 'artisan', 'queue:work']]), $verb, $nodeTarget)))->toBeTrue()
+            ->and($routes($admitted($onNode("schedule-work-{$verb}", ['command' => ['php', 'artisan', 'schedule:work']]), $verb, $nodeTarget)))->toBeTrue()
+            ->and($routes($admitted($owned($shop, $horizon, "horizon-{$verb}"), $verb, $devTarget)))->toBeTrue()
+            ->and($routes($admitted($onNode("docker-horizon-{$verb}", [...$horizon, 'image' => 'php:8.4'], 'docker'), $verb, $nodeTarget)))->toBeTrue()
+            ->and($routes($admitted($onNode("drain-{$verb}", $horizon), $verb, $nodeTarget)))->toBeFalse();
+    }
+});
+
+it('names the Swamp step each failed phase stands for, and records a cancel as Swamp does', function (string $runtime, string $kind, string $code, string $step): void {
+    $operation = ($this->operation)(($this->process)(runtime: $runtime), $kind);
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, 'converge', ['status' => 'failed', 'code' => $code]);
+
+    expect($operation->refresh()->failed_step)->toBe($step)
+        ->and($operation->error_code)->toBe('operation.native_failed');
+})->with([
+    'unit start change' => ['systemd', 'process.start', 'process.apply_failed', 'Start the Process'],
+    'unit stop change' => ['systemd', 'process.stop', 'process.apply_failed', 'Stop the Process'],
+    'unit plain stop' => ['systemd', 'process.stop', 'process.unit_stop_failed', 'Stop the unit'],
+    'unit read' => ['systemd', 'process.start', 'process.read_failed', 'Check the unit'],
+    'unit assert' => ['systemd', 'process.stop', 'process.state_mismatch', 'Verify the state'],
+    'container start' => ['docker', 'process.start', 'process.container_missing', 'Start the container'],
+    'container stop' => ['docker', 'process.stop', 'process.apply_failed', 'Stop the container'],
+    'container read' => ['docker', 'process.stop', 'process.read_failed', 'Check the container'],
+    'container assert' => ['docker', 'process.start', 'process.state_mismatch', 'Verify the state'],
+]);
+
+it('records a cancelled engine run with the result a cancelled Swamp run records', function (): void {
+    $operation = ($this->operation)(($this->process)(), 'process.start');
+    app(StartSwampRun::class)->start($operation);
+    $steps = OperationEngineStep::query()->where('operation_id', $operation->id)->get()->keyBy('name')->all();
+    app(ProcessControlEngineFlow::class)->finish($operation->refresh(), new EngineRun($operation->id, $steps, 1_800_000_000_000, 1_800_000_001_000));
+
+    $swamp = ($this->operation)(($this->process)(), 'process.start');
+    $swamp->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'run-3']])->save();
+    app(ProcessControlProjection::class)->apply($swamp, ['run_id' => 'run-3', 'started_at' => '2026-11-26T13:00:00.000Z', 'finished_at' => '2026-11-26T13:00:01.000Z',
+        'status' => 'cancelled', 'error_code' => null, 'result' => [], 'failure' => null]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($operation->error_code)->toBeNull()->toBe($swamp->refresh()->error_code)
+        ->and($operation->result)->toBe($swamp->result);
+});
+
+it('fences one Schedule by its UUID and leaves the owner\'s other Schedules free', function (): void {
+    $make = fn (string $name, string $trigger = 'node'): Schedule => Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id,
+        'host_node_id' => $this->node->id, 'name' => $name, 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => $trigger]);
+    $enable = fn (Schedule $schedule): Operation => Operation::query()->create(['kind' => 'schedule.enable', 'target_type' => 'node_schedules',
+        'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'input' => ['id' => $schedule->id, 'node_id' => $this->node->id]]);
+    [$nightly, $hourly, $cron] = [$make('nightly'), $make('hourly'), $make('cron', 'swamp')];
+
+    // An open run of another Schedule of the owner, here a cron run, does not stop this timer's enable.
+    Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'run-4'], 'input' => ['id' => $cron->id, 'node_id' => $this->node->id]]);
+    $first = $enable($nightly);
+    app(StartSwampRun::class)->start($first);
+    expect($first->refresh()->lock_key)->toBe('schedule:'.$nightly->id);
+
+    // While it holds the lock, the same Schedule is fenced and a sibling is not.
+    expect(fn () => EngineTargetFence::free('schedule:'.$nightly->id))->toThrow(ResourceOperationException::class);
+    EngineTargetFence::free('schedule:'.$hourly->id);
+    $sibling = $enable($hourly);
+    app(StartSwampRun::class)->start($sibling);
+    expect($sibling->refresh()->lock_key)->toBe('schedule:'.$hourly->id);
+
+    // A second engine enable of the fenced Schedule does not bind.
+    $again = $enable($nightly);
+    expect(fn () => app(StartSwampRun::class)->start($again))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+});
+
+it('refuses a create of a fenced Schedule before its reservation changes the row', function (): void {
+    $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
+        'name' => 'nightly', 'calendar' => '*-*-* 03:00:00', 'command' => 'true', 'timeout_seconds' => 60,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node']);
+    Operation::query()->create(['kind' => 'schedule.enable', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'status' => OperationStatus::Running, 'lock_key' => 'schedule:'.$schedule->id, 'input' => ['id' => $schedule->id, 'node_id' => $this->node->id]]);
+    $before = $schedule->refresh()->getAttributes();
+
+    expect(fn () => app(CreateScheduleAction::class)->admit(new AddScheduleData(ScheduleTargetType::Node, $this->node->id, 'nightly', '*-*-* 03:00:00', 'true', 60)))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.target_busy'));
+    expect($schedule->refresh()->getAttributes())->toBe($before)
+        ->and(Operation::query()->where('kind', 'schedule.create')->exists())->toBeFalse();
 });
