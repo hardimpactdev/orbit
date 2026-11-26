@@ -19,7 +19,8 @@ final class ClassifyConnThreadJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
-    public int $timeout = 30;
+    /** Room for the reads that wait for a pushed thread's first message (ConnThreadLibrarian::MessageReads) and the model call. */
+    public int $timeout = 45;
 
     /** @var list<int> */
     public array $backoff = [15, 60];

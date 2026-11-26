@@ -41,6 +41,7 @@ sequenceDiagram
   %%> - node access to the server's Node
   %%> Also:
   %%> - a task copy's turn records its T3 thread the same way when its projection commits
+  %%> - a host Conn Server records each thread when it gets its first user message; the Gateway then queues the librarian for it, and a failure to queue never changes the response; the host poll is the fallback
   GW-->>C: Row recorded<br/>201 · 200 on a repeat
   %%> Result:
   %%> - in the list at once; state stays null until the next read
