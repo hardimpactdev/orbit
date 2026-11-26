@@ -179,6 +179,15 @@ final readonly class StartToolOperationAction
         return $input;
     }
 
+    /** The Tool's authority is set aside by a removal whose start Swamp has not yet bound to a run or verified never ran. */
+    private static function unsettledRemoval(Tool $tool): bool
+    {
+        $suspended = $tool->receipts['suspended'] ?? null;
+        $removal = is_array($suspended) && is_int($suspended['operation'] ?? null) ? Operation::query()->find($suspended['operation']) : null;
+
+        return $removal !== null && ! isset($removal->state['swamp_run_id']) && data_get($removal->state, 'native_timeout.no_run_verified_at') === null;
+    }
+
     /**
      * Records ownership of an installed package from the Node agent's latest report, after the same admission checks
      * (R1: no task, no run). Refusals carry the agent's liveness.
@@ -237,6 +246,12 @@ final readonly class StartToolOperationAction
                     if (! $retryable || ($verb === 'update' && ! $tool->owned && $manager->name() !== ToolManagerName::ConnServer)) {
                         $this->refuse('tool.state_invalid');
                     }
+                }
+                // A removal whose start may have reached the Node set aside the Tool's authority until Swamp answers whether that start became
+                // a run (ToolIntentProjection::timedOut). Until its lookup by start key answers, a retry neither removes nor gives up the
+                // package: a start never sent gets its authority back, and a run found settles by its own end.
+                if ($verb === 'remove' && $tool !== null && self::unsettledRemoval($tool)) {
+                    $this->refuse('tool.removal_unsettled');
                 }
                 $protected = $this->protection->forNode($node, $manager->name());
                 $hostOwned = in_array($package, $protected, true);

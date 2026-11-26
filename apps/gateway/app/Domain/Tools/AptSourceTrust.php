@@ -218,9 +218,10 @@ final class AptSourceTrust
      * The definitions of the Node's sources under every name: each URI and suite a recorded source may still have on disk, even one an
      * uncertain write left or an adoption no longer names, and those enrolled Tools want.
      *
+     * @param  list<int>  $without  Tools left out (ToolConvergeIntent::capture)
      * @return list<array<string, mixed>>
      */
-    public static function nodeDefinitions(int $nodeId): array
+    public static function nodeDefinitions(int $nodeId, array $without = []): array
     {
         $recorded = [];
         foreach (AptRepository::query()->where('node_id', $nodeId)->get() as $record) {
@@ -229,7 +230,7 @@ final class AptSourceTrust
                 $recorded[] = ['name' => $record->name, 'uris' => [$uri], 'suites' => [$suite]];
             }
         }
-        $desired = Tool::query()->where('node_id', $nodeId)->whereNotNull('desired_repository')->get()
+        $desired = Tool::query()->where('node_id', $nodeId)->whereKeyNot($without)->whereNotNull('desired_repository')->get()
             ->reject->withdrawn()->pluck('desired_repository')->all();
 
         return [...$recorded, ...array_values(array_map(ValidatedData::object(...), array_filter($desired, 'is_array')))];

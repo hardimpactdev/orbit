@@ -44,16 +44,17 @@ final readonly class ToolConvergeIntent
     ) {}
 
     /** @param list<int>|null $ids
-     * @param  list<int>  $beside  queued Operations the upgrade admits again with this one (assertIdle)
+     * @param  list<int>  $beside  queued Operations the upgrade admits again after this one, which it does not wait for (assertIdle)
+     * @param  list<int>  $without  Tools that did not exist yet when the Operation the upgrade admits again was first admitted
      * @return list<array<string, mixed>>
      */
-    public function capture(Node $node, ?int $owner = null, ?array $ids = null, array $beside = []): array
+    public function capture(Node $node, ?int $owner = null, ?array $ids = null, array $beside = [], array $without = []): array
     {
         $active = $this->policy->active();
         $packages = [];
         $protectedPackages = [];
-        $tools = Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get();
-        $sources = AptSourceTrust::nodeDefinitions($node->id);
+        $tools = Tool::query()->where('node_id', $node->id)->whereKeyNot($without)->with(['manager', 'aptRepository'])->orderBy('id')->get();
+        $sources = AptSourceTrust::nodeDefinitions($node->id, $without);
         foreach ($tools as $tool) {
             if (($ids !== null && ! in_array($tool->id, $ids, true)) || $tool->withdrawn()) {
                 continue;

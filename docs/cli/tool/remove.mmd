@@ -46,6 +46,7 @@ sequenceDiagram
       %%> Retry:
       %%> - run the same command again after a fix
       %%> - a timed-out removal, its start reply lost included, keeps no uninstall authority until its receipt or Swamp shows the package was never reached
+      %%> - until Swamp answers whether an unbound timed-out start became a run, the retry refuses with `tool.removal_unsettled`
       %%> - a package step that ran, a nonzero exit included, ends uninstall authority unless the check after it finds the package still present, whatever its version
     end
     loop every 2 s until terminal

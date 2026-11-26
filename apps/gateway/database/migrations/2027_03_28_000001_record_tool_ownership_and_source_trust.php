@@ -70,6 +70,8 @@ return new class extends Migration
         $admittedOpen = [];
         // Per Tool linked to a record, the order of its adoption, when it was adopted.
         $adoptions = [];
+        // Per Tool, the record each open write that named a source found when admitted, by Operation.
+        $found = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
@@ -141,6 +143,10 @@ return new class extends Migration
                 $firstAdmission[$tool] ??= $operation->id;
                 if ($isOpen) {
                     $admittedOpen[$tool][$operation->id] = (string) $operation->created_at;
+                    // The record a write that named a source found under that name when admitted (StartToolOperationAction).
+                    if ($given && is_int($input['repository_id'] ?? null)) {
+                        $found[$tool][$operation->id] = $input['repository_id'];
+                    }
                 }
             }
             // A request still pending names the Tool's desired source, as a failed one does. A queued one never started: its admission
@@ -187,10 +193,12 @@ return new class extends Migration
                 $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                 if ($projected && $operation->status !== 'cancelled') {
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
-                    // Only a success, or a failure whose decision read the inventory, observed the installed version, equal to the admitted
-                    // one or not. A failure before that read recorded the admitted version again.
-                    if ($succeeded || ($version !== null && $this->readPackage($operation->kind, data_get($state, 'native_failure.failed_step'), $operation->error_code))) {
+                    // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
+                    // included. A failure that read nothing recorded the admitted version again.
+                    $reading = $succeeded ? ['version' => $version] : $this->reading($operation->kind, data_get($state, 'native_failure.failed_step'), $operation->error_code, $version);
+                    if ($reading !== null) {
                         $tools[$tool]['stamp_version'] = $operation->id * 2;
+                        $tools[$tool]['absent'] = $reading['version'] === null ? $operation->id : null;
                     }
                 }
                 // A manager's state changed only with a manager version read or a failed setup.
@@ -245,9 +253,13 @@ return new class extends Migration
             $owned = $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted);
             // An adoption no admission captured left the row as it stands: it came before every open Operation of the Tool admitted after the
             // row's last write, and otherwise after every Operation. A Tool with no history at all was adopted the same way.
+            // A write that found the very record this Tool links, a record only this Tool's adoption made (no event of the history under
+            // its name, no other Tool linked to it), was admitted after that adoption, in whatever second both fell.
             $adoptedAt = $latestOperation * 2 + 1;
             foreach (is_array($admittedOpen[$tool->id] ?? null) ? $admittedOpen[$tool->id] : [] as $operation => $admitted) {
-                if (is_string($tool->updated_at) && $tool->updated_at < $admitted) {
+                if ((is_string($tool->updated_at) && $tool->updated_at < $admitted)
+                    || (is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
+                        && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources))) {
                     $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                 }
             }
@@ -277,6 +289,10 @@ return new class extends Migration
                 }
             }
             $changes['receipts'] = $receipts === [] ? null : json_encode($receipts, JSON_THROW_ON_ERROR);
+            // The newest reading of the version was the package's absence, which the preceding release recorded as the admitted version.
+            if (! $adopted && is_int($history['absent'] ?? null) && ($receipts['version'] ?? null) === $history['absent'] * 2) {
+                $changes['installed_version'] = null;
+            }
             $manager = DB::table('tool_managers')->where('id', $tool->tool_manager_id)->first(['node_id', 'name']);
             $convergeStamp = $history['converged'] ?? null;
             if ($manager !== null && is_int($convergeStamp)) {
@@ -395,18 +411,20 @@ return new class extends Migration
         // if admitted now: a direct request (StartToolOperationAction::readmit), or a convergence's Tools (ToolConvergeIntent::capture, as
         // StartNodeConvergeAction admits them), its other phases as admitted. Still-valid intent keeps its Operation and idempotency key;
         // a refusal ends the Operation with the refusal's code and nothing run.
-        // The queued requests overlap only because the preceding release queued them together: they do not refuse one another, while work
-        // that may have run still holds its scope.
-        $beside = array_keys($queued);
+        // In queue order, each as it was admitted then: work queued earlier, and work that may have run, hold their scope against it, and
+        // work queued later is not there yet. So a later request that overlaps an earlier one is refused, as its own admission would have
+        // been, and no two contradictory plans are dispatched.
         foreach ($queued as $id => $kind) {
             $operation = Operation::query()->findOrFail($id);
-            $others = array_values(array_diff($beside, [$id]));
+            $later = array_values(array_filter(array_keys($queued), static fn (int $other): bool => $other > $id));
             try {
                 if ($kind === 'node.converge') {
                     // A full convergence (the preceding release captured Tools only for one) owns the Tools scope and the orphan cleanup
-                    // whatever it plans, as StartNodeConvergeAction records it.
+                    // whatever it plans, as StartNodeConvergeAction records it. A Tool whose first admission is a later queued request, which
+                    // is admitted only after it, is not there yet.
                     $node = Node::query()->findOrFail($operation->node_id);
-                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $others);
+                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $later,
+                        array_keys(array_filter($firstAdmission, static fn (int $first): bool => in_array($first, $later, true))));
                     $input = $this->withPlans($operation->input, $plans);
                     data_set($input, '_converge.tool_scope', true);
                     data_set($input, '_converge.intent.orphan_sources', AptSourceTrust::orphans($node->id));
@@ -414,7 +432,7 @@ return new class extends Migration
                     AptSourceTrust::claim($node->id, AptSourceTrust::planned($plans), $id);
                     ToolConvergeIntent::admitDesired($plans);
                 } else {
-                    app(StartToolOperationAction::class)->readmit($operation, $others);
+                    app(StartToolOperationAction::class)->readmit($operation, $later);
                 }
             } catch (ResourceOperationException|ToolOperationException $refusal) {
                 $operation->refresh()->forceFill(['status' => 'failed', 'lock_key' => null, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
@@ -539,6 +557,20 @@ return new class extends Migration
     }
 
     /**
+     * The Tool's linked record can only have been made by its own adoption: the history has no event under its name, and no other Tool
+     * links it.
+     *
+     * @param  array<int, array<string, array<string, mixed>>>  $sources
+     */
+    private function madeByAdoption(int $toolId, int $nodeId, int $recordId, array $sources): bool
+    {
+        $name = DB::table('apt_repositories')->where('id', $recordId)->value('name');
+
+        return is_string($name) && ! isset($sources[$nodeId][$name]['event'])
+            && ! DB::table('tools')->where('apt_repository_id', $recordId)->where('id', '!=', $toolId)->exists();
+    }
+
+    /**
      * Every other membership on the Node that names this source defines it as `$definition` (ToolDefinitionResolver::assertSharedRepository).
      *
      * @param  array<string, mixed>  $definition
@@ -587,18 +619,29 @@ return new class extends Migration
     }
 
     /**
-     * Whether a preceding-release failure's decision read the package inventory. Its decision step reads it whenever the manager answered
-     * (`decide`, `removalDecision`), so a failure at or after the step the decision gates, or at the end check after any refusal but a
-     * manager scope's or a probe's, read it. The preceding receipt keeps no more: after an absent package it recorded the admitted version
-     * again, so the version it shows may stand for absence.
+     * What a preceding-release failure's decision read of the package, by that release's own decision code (`decide`, `before`):
+     * - a removal's decision returns no version, so its receipt only repeats the admitted one;
+     * - an update reaches its write, or refuses its candidate, only with the package present, and records the version it read;
+     * - a reinstall returns unchanged when the package is present, so it reaches its write, or refuses its candidate, only after reading
+     *   it absent, and the receipt's version is the admitted one copied; any other refusal at the end check read the package present;
+     * - a failure before the decision, a manager scope's or a probe's refusal, or one after the write, recorded no reading.
+     *
+     * @return array{version: ?string}|null
      */
-    private function readPackage(string $kind, mixed $failedStep, ?string $errorCode): bool
+    private function reading(string $kind, mixed $failedStep, ?string $errorCode, ?string $version): ?array
     {
-        $gated = $kind === 'tool.remove' ? ['Remove the package', 'Check apt absence', 'Check it is gone', 'Decode package state']
-            : ['Apply the package', 'Check apt package', 'Check the package', 'Decode package state'];
+        if ($kind === 'tool.remove') {
+            return null;
+        }
+        $install = $kind === 'tool.install';
+        if ($failedStep === 'Apply the package') {
+            return ['version' => $install ? null : $version];
+        }
+        if ($failedStep !== 'Assert package state' || in_array($errorCode, ['tool.manager_unavailable', 'tool.version_probe_failed'], true)) {
+            return null;
+        }
 
-        return in_array($failedStep, $gated, true)
-            || ($failedStep === 'Assert package state' && ! in_array($errorCode, ['tool.manager_unavailable', 'tool.version_probe_failed'], true));
+        return ['version' => $install && str_starts_with((string) $errorCode, 'tool.candidate_') ? null : $version];
     }
 
     /**

@@ -177,7 +177,9 @@ A run is given the uninstall authority its admission recorded, and its receipt i
 
 Desired state belongs to admissions: each direct request and each convergence sets it when admitted, and a mode switch sets it too, so no receipt sets it back. A removed Tool stays removed, and a receipt deletes a source record only while no newer Operation may have published it and no Tool links it.
 
-Until then, uncertainty grants nothing and keeps no right to remove a package. A timed-out removal leaves its Tool waiting for `tool:remove` without uninstall authority, because the package may already be gone and a replacement may follow. That holds even when the start reply that binds the run never arrived: a sent start is no proof that nothing ran. A retry, also after the target hold lapses, therefore cleans only the record and source.
+Until then, uncertainty grants nothing and keeps no right to remove a package. A timed-out removal leaves its Tool waiting for `tool:remove` without uninstall authority, because the package may already be gone and a replacement may follow. That holds even when the start reply that binds the run never arrived: a sent start is no proof that nothing ran. A retry once Swamp has bound that start to a run, also after the target hold lapses, therefore cleans only the record and source.
+
+Until Swamp's lookup by the start key answers whether an unbound start became a run, `tool:remove` refuses with `tool.removal_unsettled`. It neither removes the package nor gives it up. The reconciler asks: no run gives the authority back, and a run found settles by its own end.
 
 A removal whose start was never sent keeps its authority when it times out. It was never begun, or Swamp's deferral answered its latest begin. The deferral schedule shows that when the latest begin came too soon after the first deferral for a begin after the last one.
 
@@ -256,7 +258,7 @@ An adoption keeps ownership. The preceding release recorded none, but every admi
 
 So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned. A version an interrupted or unchanged receipt explains stays an observation. An admission that found the Tool's link captured it too: a removal's source, a write's that named none, and each converge plan's source are the linked record's definition. A write that named a source shows nothing of the link, because the record it found by that name may be a sibling's.
 
-A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission.
+A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission. So is a write that found the very record the Tool links, when only the Tool's own adoption could have made that record, whatever second both fell in.
 
 Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing. A removal whose run may have reached the package ends the claim, as the Gateway now reads such an end: one that failed after its decision, was cancelled after its run started, or ended after its expiry, a success included.
 
@@ -264,7 +266,9 @@ Only a removal that failed before its decision, or whose decision refused it, le
 
 Work still open at the upgrade splits by whether its start may have been sent. A start may have reached the Node when the Operation has an attempt or a bound native run, or its start set it running. A queued Operation never started, even one whose start Swamp deferred (`not_ready`, `draining`), and neither did one whose start the Gateway or Swamp refused. An expiry alone proves neither: an Operation the Gateway expired was sent a start only when the deferral schedule shows a begin after its last deferral. One never sent a start ended without a run and changes nothing.
 
-Queued work that never started keeps its Operation and idempotency key, and the current admission admits it again in place before its first dispatch. A direct request gets the scope, protection, membership, ownership, pins and source claim a request admitted now would get. Queued requests do not refuse one another for overlapping only in the preceding release's queue; work that may have run still holds its scope.
+Queued work that never started keeps its Operation and idempotency key, and the current admission admits it again in place before its first dispatch. A direct request gets the scope, protection, membership, ownership, pins and source claim a request admitted now would get.
+
+Readmission follows queue order, each request as it was admitted then: work queued earlier, and work that may have run, hold their scope, and work queued later is not there yet. A later request that overlaps earlier work is refused, as its own admission would have been, so no two contradictory plans are dispatched. A convergence leaves out Tools that a later queued request first admitted.
 
 A convergence keeps its other phases. A full one, which the preceding release marks by its host release input, stays full even with no Tools planned. The current capture plans its Tools and claims their sources, and the convergence records the Tools scope and its orphan cleanup, as `node:converge` does at admission.
 
@@ -276,11 +280,15 @@ A removal among it ran under the preceding release, which removed whatever it fo
 
 Each field of a Tool, and each Tool Manager's state, keeps the order of the preceding release's newest receipt that changed it. A receipt that changed nothing orders nothing:
 - An `unchanged` success orders no ownership.
-- A failure at the step its decision gates read the inventory, so it orders the version.
-- So does a failure at the end check after any refusal but a manager scope's or a probe's.
-- A failure before that read recorded the admitted version again, and orders nothing.
-- The preceding receipt cannot tell a read of the admitted version from a read of absence: after either it shows the admitted version.
 - A cancel, or a run that read no manager version, orders no manager state.
+
+A failure orders the version its decision read, by the preceding decision code, also when that decision is read after the upgrade:
+- An update reaches its write, or refuses its candidate, only with the package present, and recorded the version it read.
+- A reinstall reaches either only after reading the package absent, and recorded the admitted version: that is an absence.
+- A removal's decision returns no version, so its receipt only repeats the admitted one and orders nothing.
+- A failure before the decision, or a manager scope's or a probe's refusal, read nothing.
+
+Adoptions order by what admissions captured:
 - An adoption orders just before the first admission that captured it, by status, version or link.
 - An adoption no admission captured orders after every Operation.
 

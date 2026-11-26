@@ -210,12 +210,18 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     }
 
     /**
-     * A ready decision read the package; a refused one says whether it did.
+     * A ready decision read the package; a refused one says whether it did. The preceding release's refused decision, read after the
+     * upgrade, has no `inventory_read`: it read the package whenever the manager answered, and refused before only for a manager scope or
+     * an unreadable probe. Its version is the one it read, or none for an absent package.
      *
      * @param  array<string, mixed>  $decision
      */
     private static function readInventory(array $decision): bool
     {
+        if (! array_key_exists('inventory_read', $decision) && ($decision['ready'] ?? false) !== true) {
+            return is_string($decision['error_code'] ?? null) && ! in_array($decision['error_code'], ['tool.manager_unavailable', 'tool.version_probe_failed'], true);
+        }
+
         return ($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true;
     }
 

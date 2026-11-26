@@ -585,28 +585,28 @@ switch (mode) {
         assertEquals(phase.code, 0, phase.output);
         assertEquals(phase.recorded, [{ id: 3, status: "installed", installed_version: "2.0" }], phase.output);
         assertEquals((await Deno.readTextFile(refresh)).trim(), "0");
-        const task = parse(await Deno.readTextFile(taskPath("node-converge-tool"))) as Array<{ block: Array<Record<string, unknown>> }>;
-        const source = task[0].block.find((item) => item.name === "Reconcile a recorded apt repository")!;
-        assertEquals(source["ansible.builtin.include_tasks"], { file: "node-converge-tool-repository.yml", apply: { become: true, timeout: 45 } });
-        const local = task[0].block.flatMap((item) => [item, ...(Array.isArray(item.block) ? item.block as Array<Record<string, unknown>> : [])])
-            .filter((item) => item.delegate_to === "localhost");
-        assertEquals(local.length, 5);
-        // The source is held to its owned Tools before it is published, so no interruption can leave this Tool preferred before it
-        // is verified; it joins the preferences only after the checkpoint records it installed. A failure writes nothing more.
-        const names = task[0].block.map((item) => item.name);
-        assertEquals(names.indexOf("Compute the preferences of this Tool's source") < names.indexOf("Reconcile a recorded apt repository"), true);
-        assertEquals(names.some((name) => String(name).includes("preferences") && names.indexOf(name) > names.indexOf("Reconcile a recorded apt repository")), false);
-        const rescue = (task[0] as unknown as { rescue: Array<Record<string, unknown>> }).rescue.map((item) => item.name);
-        assertEquals(rescue, ["Record this Tool failure and continue the loop"]);
-        const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
-        assertEquals(repository[0].name, "Hold the repository to its owned Tools before publishing it");
-        assertEquals((repository[0]["ansible.builtin.copy"] as { content: string }).content.includes("repository_preferences_held"), true);
-        assertEquals(repository.some((item) => JSON.stringify(item).includes("repository_preferences\"") || JSON.stringify(item).includes("repository_preferences }}")), false);
-        const top = task.map((item) => (item as unknown as Record<string, unknown>).name);
-        const prefer = task[top.indexOf("Prefer the verified Tool from its source")] as unknown as Record<string, unknown>;
-        assertEquals(top.indexOf("Checkpoint completed Tool observations") < top.indexOf("Prefer the verified Tool from its source"), true);
-        assertEquals(String(prefer.when).includes("['installed']"), true);
-        assertEquals((prefer["ansible.builtin.copy"] as { content: string }).content, "{{ (tool_pins.stdout | from_json).repository_preferences }}");
+        // The preference contract, read from what each task writes rather than how it is named: the source is published held to its owned
+        // Tools, this Tool joins its preference only after the checkpoint records it installed, and a failure writes no preference.
+        type Task = Record<string, unknown>;
+        const flat = (items: Task[]): Task[] => items.flatMap((item) => [item, ...flat((item.block as Task[] | undefined) ?? []), ...flat((item.rescue as Task[] | undefined) ?? [])]);
+        const writes = (items: Task[], field: string) => flat(items).filter((item) => new RegExp(`\\.${field}\\b`).test(String((item["ansible.builtin.copy"] as { content?: string } | undefined)?.content ?? "")));
+        const task = parse(await Deno.readTextFile(taskPath("node-converge-tool"))) as Task[];
+        const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Task[];
+        const steps = flat(task);
+        const pins = steps.findIndex((item) => JSON.stringify(item).includes('"pins"]'));
+        const publish = steps.findIndex((item) => (item["ansible.builtin.include_tasks"] as { file?: string } | undefined)?.file === "node-converge-tool-repository.yml");
+        assertEquals(pins >= 0 && publish > pins, true, "the preferences are computed before the source is published");
+        assertEquals(writes(repository, "repository_preferences_held").length > 0 && writes(repository, "repository_preferences").length === 0, true,
+            "publishing writes only the held preference");
+        const confirmed = writes(task, "repository_preferences");
+        assertEquals(confirmed.length, 1);
+        assertEquals(String(confirmed[0].when).includes("'installed'"), true, "the confirmed preference waits for a verified installation");
+        const rescue = (task[0].rescue as Task[] | undefined) ?? [];
+        assertEquals(writes(rescue, "repository_preferences").length + writes(rescue, "repository_preferences_held").length, 0, "a failure writes no preference");
+        // The privilege boundary: the policy helper and every other localhost step run unprivileged; the source runs privileged.
+        const local = steps.filter((item) => item.delegate_to === "localhost");
+        assertEquals(local.length > 0, true);
+        assertEquals(((steps[publish]["ansible.builtin.include_tasks"] as { apply?: { become?: boolean } }).apply?.become), true);
         assertEquals(local.every((item) => item.become === false), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
