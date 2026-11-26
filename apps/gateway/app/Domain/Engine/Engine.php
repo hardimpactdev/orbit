@@ -252,7 +252,7 @@ final readonly class Engine
     {
         $definition = app(EngineKinds::class)->definition($operation->kind);
 
-        return ! $definition instanceof EngineEvidence || $definition->evidence($step->name, is_string($line['stdout'] ?? null) ? $line['stdout'] : '');
+        return ! $definition instanceof EngineEvidence || $definition->evidence($operation, $step->name, is_string($line['stdout'] ?? null) ? $line['stdout'] : '');
     }
 
     /**

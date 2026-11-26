@@ -39,6 +39,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\WorkflowStartIntents;
@@ -385,9 +386,12 @@ function syncEngineBus(array $actions, array $features = ['instance.fetch_seed']
             return [];
         }
 
+        /** After this many reads, the Node's features can no longer be read. */
+        public int $featureReads = PHP_INT_MAX;
+
         public function nodeFeatures(int $node): array
         {
-            return $this->features;
+            return $this->featureReads-- <= 0 ? throw new RuntimeException('$KV.NODES unreadable') : $this->features;
         }
 
         public function nodeClock(int $node): ?bool
@@ -490,7 +494,8 @@ it('keeps the group fenced across a lost import receipt: the resend carries the 
 
     // The journal repeats the first execution's stored result for the second send; a late duplicate changes nothing.
     $stored = ['status' => 'output', 'stdout' => json_encode(['default_branch' => 'main', 'default_commit' => $head, 'branch' => 'task-'.$group->id,
-        'branch_commit' => str_repeat('d', 40), 'behind_by' => 0, 'start' => str_repeat('a', 40), 'bundled' => false, 'changed' => false, 'work' => ['state' => 'clean']])];
+        'branch_commit' => str_repeat('d', 40), 'behind_by' => 0, 'start' => str_repeat('a', 40), 'bundled' => false, 'changed' => false, 'work' => ['state' => 'clean', 'head' => str_repeat('d', 40), 'default_commit' => $head, 'empty' => true,
+            'paths' => ['count' => 0, 'names' => []], 'uncommitted' => 0, 'untracked' => 0, 'stashes' => 0, 'approved_held' => null]])];
     syncReceipt($copy->node_id, $resend, ['status' => 'refused', 'reason' => 'replayed_nonce', 'first' => [
         'action' => $first['action'], 'target' => $first['target'], 'operation' => $first['operation'], ...$stored, 'repeat' => true]]);
     syncReceipt($copy->node_id, $first, $stored);
@@ -643,7 +648,91 @@ it('runs on Swamp a plan the flow does not cover', function (Closure $change): v
     'published not a commit' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'published' => ['HEAD']]]])],
     'GitHub CLI access' => [fn (Operation $o, Instance $copy) => $copy->project->update(['source_access' => ProjectSourceAccess::GhCli])],
     'no seed feature' => [fn () => syncEngineBus(SyncEngineActions, [])],
+    'a project name the executor refuses' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'Team_A', 'name' => $o->input['copy']['runtime']['name']]]]])],
+    'an unrelated seed mirror' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'source_mirror' => '/var/lib/orbit/instance-repositories/999.git']]])],
+    'an unrelated repository' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'workspace' => [...$o->input['workspace'], 'repository' => 'https://github.com/other/repo.git']]])],
 ]);
+
+it('admits a runtime whose members come in another order', function (): void {
+    [$group] = syncCopyWorld();
+    syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    $runtime = $operation->input['copy']['runtime'];
+    $operation->update(['input' => [...$operation->input, 'copy' => [...$operation->input['copy'], 'runtime' => ['name' => $runtime['name'], 'project' => $runtime['project']]]]]);
+
+    expect(app(EngineKinds::class)->routes($operation->refresh()))->toBeTrue();
+});
+
+it('holds the copy from admission: a removal is refused while a sync waits to start, and a sync while a removal was admitted first', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    $sync = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    expect($sync->status)->toBe(OperationStatus::Queued)->and($sync->lock_key)->toBe(OperationStore::lockKey('instance', $copy->id))
+        ->and(fn () => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+
+    $sync->update(['status' => OperationStatus::Cancelled, 'lock_key' => null]);
+    // The removal's own records are not the subject; the refusal reads only the status.
+    DB::unprepared('DROP TRIGGER instances_removal_status_update');
+    $copy->update(['status' => InstanceState::Removing]);
+    expect(fn () => app(StartTaskSyncAction::class)->execute($group->refresh(), 'test', null))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+});
+
+it('settles the import only by evidence of this sync: the pinned head, the admitted branch and start, and the whole work read', function (Closure $wrong): void {
+    [$operation, $group, $copy, $bus] = syncOnEngine();
+    $head = str_repeat('c', 40);
+    syncReceipt($copy->node_id, $bus->orders[0], ['status' => 'output', 'stdout' => json_encode(['commit' => $head])]);
+    $work = ['state' => 'clean', 'head' => str_repeat('d', 40), 'default_commit' => $head, 'empty' => true, 'paths' => ['count' => 0, 'names' => []],
+        'uncommitted' => 0, 'untracked' => 0, 'stashes' => 0, 'approved_held' => null];
+    $evidence = $wrong(['default_branch' => 'main', 'default_commit' => $head, 'branch' => 'task-'.$group->id, 'branch_commit' => str_repeat('d', 40),
+        'behind_by' => 2, 'start' => str_repeat('a', 40), 'bundled' => true, 'changed' => true, 'work' => $work]);
+
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'output', 'stdout' => json_encode($evidence)]);
+
+    expect(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'sync')->value('error_code'))->toBe('engine.receipt_invalid')
+        ->and($operation->refresh()->status)->not->toBe(OperationStatus::Succeeded);
+})->with([
+    'another head' => [fn (array $e) => [...$e, 'default_commit' => str_repeat('e', 40), 'work' => [...$e['work'], 'default_commit' => str_repeat('e', 40)]]],
+    'another branch' => [fn (array $e) => [...$e, 'branch' => 'task-999']],
+    'another start' => [fn (array $e) => [...$e, 'start' => str_repeat('b', 40)]],
+    'only a work state' => [fn (array $e) => [...$e, 'work' => ['state' => 'clean']]],
+]);
+
+it('keeps the admitted credential for every resend of the Operation, past the token\'s hour', function (): void {
+    [$operation, , , $bus] = syncOnEngine();
+    $first = $bus->orders[0]['input']['credential'];
+
+    $this->travel(61)->minutes();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+
+    expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['input']['credential'])->toBe($first);
+});
+
+it('builds resends, the import and cleanup from the pinned intent after the Project changed its access', function (): void {
+    [$operation, , $copy, $bus] = syncOnEngine();
+    $copy->project->update(['source_access' => ProjectSourceAccess::GhCli]);
+
+    $this->travel(70)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['operation'])->toBe($operation->id.':fetch');
+
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'failed', 'code' => 'instance.branch_fetch_failed']);
+    expect(array_column($bus->orders, 'operation'))->toBe([$operation->id.':fetch', $operation->id.':fetch', $operation->id.':clear_after_failure']);
+    syncReceipt($copy->node_id, $bus->orders[2], ['status' => 'output', 'stdout' => '{"cleaned":true}']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->lock_key)->toBeNull();
+});
+
+it('starts the run routing admitted even when the Node\'s features can no longer be read', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    // Routing reads them once; binding and every later step build from the pinned intent alone.
+    $bus->featureReads = 1;
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    expect(Engine::owns($operation->refresh()))->toBeTrue()->and(array_column($bus->orders, 'operation'))->toBe([$operation->id.':fetch']);
+});
 
 it('mints the read credential once per Operation and sends the same one again', function (): void {
     [$operation, , , $bus] = syncOnEngine();

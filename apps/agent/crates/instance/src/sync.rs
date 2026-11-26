@@ -247,16 +247,25 @@ fn failed(what: &'static str) -> impl Fn(String) -> Failure {
     move |detail| Failure::new(FAILED, format!("{what}: {detail}"))
 }
 
+/// Whether a Node path is there: only a confirmed missing path is absent, and any other read error fails.
+fn present(path: &std::path::Path) -> Result<bool, Failure> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Failure::new(FAILED, format!("read {}: {error}", path.display()))),
+    }
+}
+
 fn clear(system: &impl System, copy: &Copy<'_, impl System>, instance: u64, mirror: &str) -> Result<(), Failure> {
     let node = system.path(&format!("{NODE_SCRATCH}{instance}"));
-    if node.exists() {
+    if present(&node)? {
         std::fs::remove_dir_all(&node).map_err(|error| Failure::new(FAILED, format!("scratch: {error}")))?;
     }
     let mirror = system.path(mirror).display().to_string();
     let pinned = format!("{MIRROR_REF}{instance}");
     // A read that fails is no proof the pin is gone: only an answer counts.
     let held = || -> Result<bool, Failure> {
-        if !std::path::Path::new(&mirror).join("HEAD").exists() {
+        if !present(&std::path::Path::new(&mirror).join("HEAD"))? {
             return Ok(false);
         }
         system
@@ -269,7 +278,7 @@ fn clear(system: &impl System, copy: &Copy<'_, impl System>, instance: u64, mirr
     }
     let guest = format!("{GUEST_SCRATCH}{instance}");
     copy.root(&["/bin/rm", "-rf", "--", &guest])?;
-    if node.exists() || held()? || copy.exec(As::Root, &["/usr/bin/test", "!", "-e", &guest]).is_err() {
+    if present(&node)? || held()? || copy.exec(As::Root, &["/usr/bin/test", "!", "-e", &guest]).is_err() {
         return Err(Failure::new(FAILED, "the sync scratch is still there"));
     }
     Ok(())

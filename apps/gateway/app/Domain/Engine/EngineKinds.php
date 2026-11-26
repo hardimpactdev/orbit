@@ -58,13 +58,18 @@ final readonly class EngineKinds
         }
         try {
             $actions = [];
-            foreach ($this->definition($operation->kind)->steps($operation) as $step) {
+            $definition = $this->definition($operation->kind);
+            foreach ($definition->steps($operation) as $step) {
                 if ($step->node > 0) {
                     $actions[$step->node] ??= $this->bus->nodeActions($step->node);
                     if (! in_array($step->action, $actions[$step->node], true)) {
                         return false;
                     }
                 }
+            }
+            // Last, once every primitive is there: the kind's own admission, decided here once for the whole Operation.
+            if ($definition instanceof EngineAdmission) {
+                $definition->admit($operation);
             }
         } catch (EngineUnsupported) {
             return false;

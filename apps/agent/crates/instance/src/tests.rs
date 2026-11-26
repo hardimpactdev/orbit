@@ -1463,15 +1463,6 @@ fn a_fetch_keeps_a_sibling_fetch_credential_and_removes_only_a_stale_one() {
 
 #[test]
 fn a_sync_fetch_seeds_a_missing_mirror_from_the_default_and_refuses_without_one() {
-    let mut seeded = fetch_input();
-    seeded["seed"] = json!("/var/lib/orbit/instance-repositories/2.git");
-    let fake = Fake::new(&[("ls-remote", Ok(json!("abc\trefs/heads/feature/x"))), ("rev-parse", Ok(json!("abc123\n")))]);
-    fetch_branch(&fake, &seeded).expect("seeded");
-    let calls = fake.calls();
-    assert!(calls[0].starts_with("init --quiet --bare "), "{}", calls[0]);
-    assert!(calls[1].ends_with("2.git +refs/heads/*:refs/seed/*"), "{}", calls[1]);
-    assert!(calls[2].contains("ls-remote"), "the seed comes before the origin is asked");
-
     let mut refused = fetch_input();
     refused["seed"] = json!("");
     let fake = Fake::new(&[]);

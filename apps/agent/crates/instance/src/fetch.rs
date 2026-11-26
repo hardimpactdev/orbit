@@ -79,25 +79,34 @@ fn unique() -> String {
     format!("{nanos}-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
 }
 
-/// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one.
+/// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one. The seed
+/// fills a scratch repository beside the mirror that takes the mirror's name only once complete, so a seed that failed or stopped
+/// never passes for a mirror on the next attempt.
 fn seed(system: &impl System, input: &FetchInput, mirror: &Path) -> Result<(), Failure> {
     let Some(source) = &input.seed else { return Ok(()) };
-    if mirror.join("HEAD").exists() {
-        return Ok(());
+    let failed = |detail: String| Failure::new("instance.branch_fetch_failed", format!("seed: {detail}"));
+    match std::fs::symlink_metadata(mirror) {
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(failed(error.to_string())),
     }
     if source.is_empty() {
         return Err(Failure::new("instance.branch_fetch_failed", "the mirror is missing and the default has none"));
     }
     let source = system.path(source).display().to_string();
-    let target = mirror.display().to_string();
-    for argv in [
+    let scratch = mirror.with_extension(format!("git.seeding-{}", unique()));
+    let target = scratch.display().to_string();
+    let filled = [
         vec![GIT, "init", "--quiet", "--bare", &target],
         vec![GIT, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", &target, "fetch", "--quiet", "--no-tags", "--", &source, "+refs/heads/*:refs/seed/*"],
-    ] {
-        system.run(REMOTE_SECONDS, &argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None)
-            .map_err(|detail| Failure::new("instance.branch_fetch_failed", format!("seed: {detail}")))?;
+    ]
+    .iter()
+    .try_for_each(|argv| system.run(REMOTE_SECONDS, &argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None).map(drop).map_err(failed))
+    .and_then(|()| std::fs::rename(&scratch, mirror).map_err(|error| failed(error.to_string())));
+    if filled.is_err() {
+        let _ = std::fs::remove_dir_all(&scratch);
     }
-    Ok(())
+    filled
 }
 
 fn failed(error: impl std::fmt::Display) -> Failure {
@@ -183,4 +192,58 @@ fn fetch(system: &impl System, input: &FetchInput, mirror: &Path, credential: &P
         .run(30, &[GIT.to_owned(), "-C".to_owned(), mirror.display().to_string(), "rev-parse".to_owned(), "--verify".to_owned(), format!("{reference}^{{commit}}")], None)
         .map_err(|detail| Failure::new("instance.branch_fetch_failed", format!("rev-parse: {detail}")))?;
     Ok(Some(commit.trim().to_owned()))
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    /// Git for real, with every Orbit path inside a scratch folder.
+    struct Real(tempfile::TempDir);
+
+    impl System for Real {
+        fn run(&self, _seconds: u32, argv: &[String], _stdin: Option<&[u8]>) -> Result<String, String> {
+            let out = std::process::Command::new(&argv[0]).args(&argv[1..]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().map_err(|error| error.to_string())?;
+            if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).into_owned()) } else { Err(String::from_utf8_lossy(&out.stderr).into_owned()) }
+        }
+        fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
+            Err("no blob".to_owned())
+        }
+        fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+            Err(format!("{path} not here"))
+        }
+        fn path(&self, value: &str) -> PathBuf {
+            self.0.path().join(value.trim_start_matches('/'))
+        }
+    }
+
+    fn input(seed: &str) -> FetchInput {
+        FetchInput { mirror: format!("{MIRRORS}/12.git"), repository: "https://github.com/acme/app.git".to_owned(), branch: "main".to_owned(),
+            protocol: "https".to_owned(), credential: crate::BlobRef { blob: crate::BlobDigest { sha256: "c".to_owned() } }, seed: Some(seed.to_owned()) }
+    }
+
+    #[test]
+    fn a_failed_seed_leaves_no_mirror_for_the_retry_and_a_seed_that_completes_takes_its_name() {
+        let real = Real(tempfile::tempdir().expect("scratch"));
+        let folder = real.path(MIRRORS);
+        std::fs::create_dir_all(&folder).expect("folder");
+        let mirror = real.path(&format!("{MIRRORS}/12.git"));
+
+        for _ in 0..2 {
+            assert_eq!(seed(&real, &input(&format!("{MIRRORS}/2.git")), &mirror).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"));
+            assert!(!mirror.exists(), "no half-seeded mirror passes for a mirror");
+            assert_eq!(std::fs::read_dir(&folder).expect("folder").count(), 0, "no seed scratch stays");
+        }
+
+        let source = real.path(&format!("{MIRRORS}/2.git"));
+        let work = real.0.path().join("work");
+        real.run(5, &[GIT, "init", "--quiet", "-b", "main", work.to_str().expect("path")].map(str::to_owned), None).expect("init");
+        let git = |args: &[&str]| real.run(5, &[GIT, "-c", "user.name=T", "-c", "user.email=t@t", "-C", work.to_str().expect("path")].iter().chain(args).map(|part| (*part).to_owned()).collect::<Vec<_>>(), None);
+        git(&["commit", "--quiet", "--allow-empty", "-m", "seed"]).expect("commit");
+        real.run(5, &[GIT, "clone", "--quiet", "--bare", work.to_str().expect("path"), source.to_str().expect("path")].map(str::to_owned), None).expect("source");
+
+        seed(&real, &input(&format!("{MIRRORS}/2.git")), &mirror).expect("seeded");
+        let refs = real.run(5, &[GIT, "-C", mirror.to_str().expect("path"), "for-each-ref", "refs/seed"].map(str::to_owned), None).expect("refs");
+        assert!(refs.contains("refs/seed/main"), "{refs}");
+    }
 }

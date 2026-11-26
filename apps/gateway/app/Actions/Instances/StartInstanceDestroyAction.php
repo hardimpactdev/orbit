@@ -75,11 +75,7 @@ final readonly class StartInstanceDestroyAction
             return $replay;
         }
 
-        // A copy's signed sync holds the Instance until its Node answers every order: no removal starts beside it.
-        if (Operation::query()->where('kind', TaskSyncEngineFlow::Kind)->whereNotIn('status', OperationStatus::terminalValues())
-            ->where('lock_key', OperationStore::lockKey('instance', $instance->id))->exists()) {
-            throw new ResourceOperationException('operation.target_busy', 'A signed sync of the task copy holds the Instance.', 409);
-        }
+        self::refuseWhileSyncHolds($instance);
         ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
@@ -126,6 +122,8 @@ final readonly class StartInstanceDestroyAction
     /** @param array<string, mixed> $snapshot */
     private function record(Instance $instance, array $snapshot, ?string $caller, ?string $requestId, string $kind, ?int $completion): Operation
     {
+        // Again in the removal's transaction, so a sync admitted at the same time and this check never both pass.
+        self::refuseWhileSyncHolds($instance);
         $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
         if ($completion !== null) {
             // After the record, which took the Instance and marked it removing: the order the create's and the completion's
@@ -145,6 +143,15 @@ final readonly class StartInstanceDestroyAction
         $input['run_budget_seconds'] = $this->budget($input);
 
         return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
+    }
+
+    /** A copy's sync holds the Instance from its admission until it ends: no removal is admitted beside it, on either engine. */
+    private static function refuseWhileSyncHolds(Instance $instance): void
+    {
+        if (Operation::query()->where('kind', TaskSyncEngineFlow::Kind)->whereNotIn('status', OperationStatus::terminalValues())
+            ->where('lock_key', OperationStore::lockKey('instance', $instance->id))->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A sync of the task copy holds the Instance.', 409);
+        }
     }
 
     /** The create that holds the Instance lock, if one runs. */

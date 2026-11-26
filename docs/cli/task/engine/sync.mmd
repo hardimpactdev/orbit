@@ -29,13 +29,13 @@ sequenceDiagram
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - eligible plan: a task copy (`copy` in the intent); a group without one keeps `tasks.no_workspace`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
-    %%> - the step rows and the copy's Instance lock commit in one transaction before the start event; an Operation never moves between engines after this
+    %%> - the copy's Instance lock is the Operation's from its admission; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
     %%> - the group stays fenced by its running Operation and the copy by the Instance lock: no removal or other writer of the copy starts until the sync ends
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Fetch the default branch<br/>instance.fetch_branch · mirror
-    %%> Reuses `instance.fetch_branch` with the default branch: the Gateway mints the one-hour read token (`contents: read`) once per Operation, keeps it encrypted in its cache until the Operation ends, and sends the same blob to this Node only on every resend
+    %%> Reuses `instance.fetch_branch` with the default branch: routing mints the one-hour read token (`contents: read`) once per Operation, keeps it encrypted in the Gateway cache for the journal's replay window or until the Operation ends, and sends the same blob to this Node only on every resend
     %%> The credential is written root-only beside the mirror in a file of this fetch's own for the Git calls and removed after them, whatever they did; a sibling fetch keeps its own file. It never reaches argv, the copy or a receipt
-    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare from the default's mirror (`seed`), as the Swamp base phase makes it; with no default's mirror the fetch refuses
+    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare from the default's mirror (`seed`) in a scratch repository that takes the mirror's name only when complete, as the Swamp base phase makes it; with no default's mirror the fetch refuses
     N->>GH: Fetch the default head<br/>HTTPS · credential on the Node
     GH-->>N: Default head objects
     N-->>EN: Mirror head<br/>output: commit
@@ -52,7 +52,7 @@ sequenceDiagram
     %%> As `agent`: `git update-ref --no-deref refs/remotes/origin/<default> <head> <old>` with the value read before, refused first when the ref is symbolic, with or without a bundle; no other ref, HEAD, the index, the working tree or stashes is written
     %%> A retry finds the ref already at the head and changes nothing; a ref that moved since the read refuses as `tasks.base_ref_mismatch` rather than overwriting it; any other update failure keeps the ordinary code and its diagnostic
     C-->>EN: Refs and work state<br/>commits · behind_by · work
-    %%> Read-back in the same primitive: `refs/remotes/origin/<default>` equals the pinned head, else `tasks.base_ref_mismatch`; HEAD and every local branch equal their values before the step; the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
+    %%> The Gateway takes this receipt only when its evidence names the pinned head, the admitted branch and start, and a whole `work` read on that head. Read-back in the same primitive: `refs/remotes/origin/<default>` equals the pinned head, else `tasks.base_ref_mismatch`; HEAD and every local branch equal their values before the step; the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
     EN->>N: Clear the base scratch<br/>scratch · pin · bundle folder
     %%> Two steps of one action: `clear` after the import, and `clear_after_failure` after a failed or cancelled fetch or import, as the engine runs no ordinary step after a failure. Each removes `/var/tmp/orbit-task-base-<instance>`, the mirror pin and the copy's bundle folder, and answers only when all three are gone; the import also clears right after its bundle. A later sync or the copy's destroy removes what an interruption left
     N-->>EN: Scratch absent

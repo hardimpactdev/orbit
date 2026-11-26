@@ -4,19 +4,22 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Engine\EngineAdmission;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineEvidence;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\SourceControl\GitBranchName;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Models\Instance;
 use App\Models\Operation;
-use App\Models\Task;
+use App\Models\OperationEngineStep;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
@@ -28,7 +31,7 @@ use LogicException;
  * bundle, and only `refs/remotes/origin/<default>` moved (`instance.sync_base`), then the scratch cleared (`instance.clear_base`),
  * after a failure too. The read token is minted once per Operation and reaches only the Node, as a blob.
  */
-final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvidence
+final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefinition, EngineEvidence
 {
     public const string Kind = 'tasks.sync';
 
@@ -45,18 +48,47 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
 
     private const string Commit = '/\A[0-9a-f]{40}([0-9a-f]{24})?\z/D';
 
-    /** The credential's lifetime in the Gateway cache: the token's own hour. */
-    private const int CredentialSeconds = 3600;
+    /** How long the Gateway keeps the admitted credential: the executor journal's replay window, and an hour more. */
+    private const int CredentialSeconds = ExecutorJournalLookup::RetentionMs / 1000 + 3600;
 
     public function __construct(private TaskSyncProjection $projection, private RepositoryReadAccess $reads, private MachineBus $bus) {}
 
-    public function steps(Operation $operation): array
+    /**
+     * Decided once, when routing: the Node's executor takes the seed input, the intent names the group's own running copy on that
+     * Node with its saved runtime, the Project's repository and the default's mirror, and the Project reads with scoped App access
+     * or anonymously. Then the run's one read credential is minted and kept for every resend of the Operation.
+     */
+    public function admit(Operation $operation): void
     {
         $intent = self::intent($operation);
+        $copy = ValidatedData::object($intent['copy']);
+        $runtime = ValidatedData::object($copy['runtime']);
         $node = ValidatedData::integer($operation->node_id);
         if (! in_array(self::SeedFeature, $this->bus->nodeFeatures($node), true)) {
             throw new EngineUnsupported('The Node\'s executor cannot make a missing mirror from the default\'s.');
         }
+        $instance = Instance::query()->with('runtime', 'project')->find(ValidatedData::integer($intent['instance_id']));
+        $saved = $instance?->runtime;
+        $source = $saved?->clone_source_instance_id === null ? null : Instance::query()->find($saved->clone_source_instance_id);
+        $repository = $instance === null ? null : GitHubRepository::fromOrigin($instance->project->repositoryUrl());
+        if ($instance === null || $saved === null || $instance->task_workspace_owner_id !== $operation->target_id || $instance->node_id !== $operation->node_id
+            || $saved->incus_project !== $runtime['project'] || $saved->container_name !== $runtime['name']
+            || $repository === null || ValidatedData::object($intent['workspace'])['repository'] !== 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git'
+            || $copy['source_mirror'] !== ($source instanceof Instance ? "/var/lib/orbit/instance-repositories/{$source->id}.git" : '')
+            || $instance->project->source_access === ProjectSourceAccess::GhCli) {
+            throw new EngineUnsupported('The sync runs on the engine only for the group\'s own copy with scoped repository access.');
+        }
+        if (! Cache::has(self::credentialKey($operation))) {
+            $token = $this->reads->for($instance->project->repositoryUrl(), $instance->project->source_access)->githubToken();
+            Cache::put(self::credentialKey($operation), Crypt::encryptString($token === null ? '' : 'https://x-access-token:'.$token."@github.com\n"), self::CredentialSeconds);
+        }
+    }
+
+    /** From the pinned intent alone: a bound run never asks the Node, the records or the Project again. */
+    public function steps(Operation $operation): array
+    {
+        $intent = self::intent($operation);
+        $node = ValidatedData::integer($operation->node_id);
         $instance = (string) ValidatedData::integer($intent['instance_id']);
 
         // Every step acts on the copy that admission verified and the Operation locks; the fetch target is the copy's mirror.
@@ -104,24 +136,53 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
         $this->projection->applyEngine($operation, $run);
     }
 
-    /** The output each step answers: the mirror head or null, the base evidence, or the cleanup. */
-    public function evidence(string $step, string $output): bool
+    /**
+     * The output each step answers: the mirror head or null, the cleanup, or the base evidence of this sync: the head the fetch
+     * receipt pinned, the admitted branches and start, and the whole work read on that head (TaskWork).
+     */
+    public function evidence(Operation $operation, string $step, string $output): bool
     {
         $value = json_decode($output, true);
         if (! is_array($value)) {
             return false;
         }
-        $commit = static fn (mixed $value): bool => is_string($value) && preg_match(self::Commit, $value) === 1;
-        $work = $value['work'] ?? null;
 
         return match ($step) {
-            self::Fetch => array_keys($value) === ['commit'] && ($value['commit'] === null || $commit($value['commit'])),
-            self::Sync => is_string($value['default_branch'] ?? null) && $commit($value['default_commit'] ?? null) && is_string($value['branch'] ?? null)
-                && $commit($value['branch_commit'] ?? null) && is_int($value['behind_by'] ?? null) && $value['behind_by'] >= 0 && $commit($value['start'] ?? null)
-                && is_array($work) && in_array($work['state'] ?? null, ['clean', 'dirty'], true),
+            self::Fetch => array_keys($value) === ['commit'] && ($value['commit'] === null || self::commit($value['commit'])),
+            self::Sync => self::baseEvidence($operation, $value),
             self::Clear, self::ClearAfterFailure => $value === ['cleaned' => true],
             default => false,
         };
+    }
+
+    /** @param array<array-key, mixed> $value */
+    private static function baseEvidence(Operation $operation, array $value): bool
+    {
+        $intent = self::intent($operation);
+        $workspace = ValidatedData::object($intent['workspace']);
+        $copy = ValidatedData::object($intent['copy']);
+        $output = OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', self::Fetch)->value('output');
+        $fetched = is_string($output) ? json_decode($output, true) : null;
+        $head = is_array($fetched) ? ($fetched['commit'] ?? null) : null;
+        $work = $value['work'] ?? null;
+        $paths = is_array($work) ? ($work['paths'] ?? null) : null;
+        $count = static fn (mixed $value): bool => is_int($value) && $value >= 0;
+        $names = is_array($paths) ? ($paths['names'] ?? null) : null;
+
+        return self::commit($head) && ($value['default_commit'] ?? null) === $head && ($value['default_branch'] ?? null) === $workspace['default_branch']
+            && ($value['branch'] ?? null) === $workspace['branch'] && ($value['start'] ?? null) === $copy['start']
+            && self::commit($value['branch_commit'] ?? null) && $count($value['behind_by'] ?? null) && is_bool($value['bundled'] ?? null) && is_bool($value['changed'] ?? null)
+            && is_array($work) && in_array($work['state'] ?? null, ['clean', 'dirty'], true) && ($work['head'] ?? null) === $value['branch_commit']
+            && ($work['default_commit'] ?? null) === $head && is_bool($work['empty'] ?? null)
+            && is_array($paths) && $count($paths['count'] ?? null) && is_array($names) && array_is_list($names) && count($names) <= 5
+            && count($names) <= $paths['count'] && array_all($names, static fn (mixed $name): bool => is_string($name))
+            && $count($work['uncommitted'] ?? null) && $count($work['untracked'] ?? null) && $count($work['stashes'] ?? null)
+            && array_key_exists('approved_held', $work) && (($copy['approved'] ?? '') === '' ? $work['approved_held'] === null : is_bool($work['approved_held']));
+    }
+
+    private static function commit(mixed $value): bool
+    {
+        return is_string($value) && preg_match(self::Commit, $value) === 1;
     }
 
     /** The Swamp step a failed engine step stands for, so a failure names the step the Swamp run would. */
@@ -142,22 +203,15 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
     }
 
     /**
-     * The Project's read token as one credential-store line, minted once per Operation and sent again unchanged; empty for a public
-     * repository read without one. Only the Gateway keeps it, encrypted, until the Operation ends.
+     * The read credential that admission minted for this Operation, as one credential-store line; empty for a public repository read
+     * without one. Every send of the Operation sends this one; no send mints another. Only the Gateway keeps it, encrypted, for the
+     * journal's replay window or until the Operation ends.
      */
     private function credential(Operation $operation): string
     {
-        $key = self::credentialKey($operation);
-        $kept = Cache::get($key);
-        if (is_string($kept)) {
-            return Crypt::decryptString($kept);
-        }
-        $group = Task::topLevel()->with('project')->findOrFail($operation->target_id);
-        $token = $this->reads->for($group->project->repositoryUrl(), $group->project->source_access)->githubToken();
-        $line = $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
-        Cache::put($key, Crypt::encryptString($line), self::CredentialSeconds);
+        $kept = Cache::get(self::credentialKey($operation));
 
-        return $line;
+        return is_string($kept) ? Crypt::decryptString($kept) : throw new LogicException('The admitted credential of this sync is gone.');
     }
 
     private static function credentialKey(Operation $operation): string
@@ -166,9 +220,8 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
     }
 
     /**
-     * The admitted intent of a task copy whose copy, runtime and inputs this flow covers, bound to the copy that runs for the group
-     * on the Operation's Node. A group without a copy never gets here (`tasks.no_workspace` at admission); any other shape, and a
-     * Project that reads with the Gateway's GitHub CLI login, runs wholly on Swamp.
+     * The admitted intent of a task copy whose copy, runtime and inputs this flow covers, from the intent alone. A group without a
+     * copy never gets here (`tasks.no_workspace` at admission); any other shape runs wholly on Swamp.
      *
      * @return array<string, mixed>
      */
@@ -179,11 +232,12 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
         $workspace = $intent['workspace'] ?? null;
         $id = $intent['instance_id'] ?? null;
         $runtime = is_array($copy) ? ($copy['runtime'] ?? null) : null;
-        $name = static fn (mixed $value): bool => is_string($value) && preg_match('/\A[A-Za-z0-9][A-Za-z0-9_-]{0,62}\z/D', $value) === 1;
+        // The executor's own name rule (instance crate `name`), for the Incus project and container it acts on.
+        $name = static fn (mixed $value): bool => is_string($value) && preg_match('/\A[a-z0-9][a-z0-9-]{0,62}\z/D', $value) === 1;
         $commit = static fn (mixed $value): bool => is_string($value) && preg_match(self::Commit, $value) === 1;
         if ($operation->kind !== self::Kind || $operation->target_type !== OperationKinds::TaskGroupTarget || ! is_array($copy) || ! is_array($workspace)
             || ! is_int($id) || $id < 1 || ($intent['node_id'] ?? null) !== $operation->node_id || ($intent['group_id'] ?? null) !== $operation->target_id
-            || ! is_array($runtime) || array_keys($runtime) !== ['project', 'name'] || ! $name($runtime['project']) || ! $name($runtime['name'])
+            || ! is_array($runtime) || count($runtime) !== 2 || ! $name($runtime['project'] ?? null) || ! $name($runtime['name'] ?? null)
             || ($copy['mirror'] ?? null) !== "/var/lib/orbit/instance-repositories/{$id}.git"
             || ! is_string($copy['source_mirror'] ?? null) || preg_match('#\A(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?\z#D', $copy['source_mirror']) !== 1
             || $copy['source_mirror'] === $copy['mirror'] || ! $commit($copy['start'] ?? null)
@@ -193,13 +247,6 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
             || ! is_string($workspace['default_branch'] ?? null) || ! GitBranchName::isValid($workspace['default_branch']) || ! self::executorBranch($workspace['default_branch'])
             || ($workspace['branch'] ?? null) !== 'task-'.$operation->target_id || ($copy['branch'] ?? null) !== $workspace['branch']) {
             throw new EngineUnsupported('Only a task copy\'s sync runs on the engine.');
-        }
-        $instance = Instance::query()->with('runtime', 'project')->find($id);
-        $saved = $instance?->runtime;
-        if ($instance === null || $saved === null || $instance->task_workspace_owner_id !== $operation->target_id || $instance->node_id !== $operation->node_id
-            || $saved->incus_project !== $runtime['project'] || $saved->container_name !== $runtime['name']
-            || $instance->project->source_access === ProjectSourceAccess::GhCli) {
-            throw new EngineUnsupported('The sync runs on the engine only for the group\'s own copy with scoped repository access.');
         }
 
         return $intent;

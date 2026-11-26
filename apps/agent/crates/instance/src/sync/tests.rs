@@ -527,3 +527,18 @@ fn a_failed_update_of_a_ref_that_did_not_move_keeps_the_ordinary_code() {
     assert_eq!(failure.code, "instance.sync_base_failed");
     assert!(failure.detail.contains("Permission denied"), "{}", failure.detail);
 }
+
+#[test]
+fn clear_fails_when_it_cannot_tell_whether_the_pin_or_the_scratch_is_gone() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let copy = Copy::new(OLD, Holds::Older);
+    let mirror = copy.path("/var/lib/orbit/instance-repositories/12.git");
+    std::fs::create_dir_all(&mirror).and_then(|()| std::fs::write(mirror.join("HEAD"), "ref: refs/heads/main\n")).expect("mirror");
+    let clear = json!({"project": "orbit-instances", "name": "instance-12", "instance_id": 12, "mirror": "/var/lib/orbit/instance-repositories/12.git"});
+    std::fs::set_permissions(&mirror, std::fs::Permissions::from_mode(0o000)).expect("lock the mirror");
+
+    let refused = clear_base(&copy, &clear).map_err(|failure| failure.code);
+
+    std::fs::set_permissions(&mirror, std::fs::Permissions::from_mode(0o755)).expect("unlock");
+    assert_eq!(refused, Err("instance.sync_base_failed"), "a HEAD it cannot read is not a missing pin");
+}
