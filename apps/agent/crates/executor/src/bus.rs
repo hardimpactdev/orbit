@@ -323,12 +323,20 @@ impl Job {
             Ok(_) => return serde_json::json!({"status": "refused", "reason": "executor.not_a_read", "node_clock_ms": now}),
             Err(refused) => return with_unverified_identity(refused, &wire),
         };
-        if let Err(code) = self.fetch_blobs(verified.input()).await {
+        // The content is read within the order's life: the Gateway takes no reply after it, and the read itself stops by then too.
+        let left = verified.expires_ms().saturating_sub(server::now_ms());
+        let fetched = tokio::time::timeout(Duration::from_millis(left), self.fetch_blobs(verified.input())).await;
+        let failed = match fetched {
+            Ok(Ok(())) => None,
+            Ok(Err(code)) => Some(code),
+            Err(_) => Some(orbit_executor_core::executor::ORDER_EXPIRED),
+        };
+        if let Some(code) = failed {
             return serde_json::json!({"status": "failed", "code": code, "operation": verified.operation(), "action": verified.action(),
                 "target": verified.target(), "node_clock_ms": now});
         }
         let executor = Arc::clone(executor);
-        tokio::task::spawn_blocking(move || server::run_line(&executor, &verified, now, log, "nats-read"))
+        tokio::task::spawn_blocking(move || server::run_line(&executor, &verified, server::now_ms(), log, "nats-read"))
             .await
             .unwrap_or_else(|_| serde_json::json!({"status": "failed", "code": "executor.panicked", "node_clock_ms": now}))
     }

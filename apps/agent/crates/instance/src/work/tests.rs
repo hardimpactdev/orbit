@@ -80,7 +80,7 @@ fn input() -> Value {
 }
 
 fn read(copy: &Copy, input: &Value) -> Value {
-    serde_json::from_str(&work_read(copy, "12", input).expect("an answer")).expect("JSON")
+    serde_json::from_str(&work_read(copy, "12", input, u64::MAX).expect("an answer")).expect("JSON")
 }
 
 fn clean_repository<'a>(
@@ -94,8 +94,9 @@ fn clean_repository<'a>(
             "for-each-ref --format=%(objectname) %(refname) refs/heads refs/stash",
             Ok(refs),
         ),
+        (r"config --name-only --get-regexp ^filter\.", Err("")),
         (
-            "status --porcelain=v1 -z --untracked-files=all --no-renames",
+            "status --porcelain=v1 -z --untracked-files=all --no-renames --ignore-submodules=dirty",
             Ok(status),
         ),
         ("symbolic-ref -q --short HEAD", Ok("main\n")),
@@ -255,7 +256,9 @@ fn an_input_that_is_not_the_targets_container_refuses_before_any_command() {
         json!({"project": "orbit-instances", "name": "instance-12", "budget_ms": 2000, "state": {"blob": {"sha256": "0".repeat(64)}}}),
     ] {
         assert_eq!(
-            work_read(&copy, "12", &bad).expect_err("refused").code,
+            work_read(&copy, "12", &bad, u64::MAX)
+                .expect_err("refused")
+                .code,
             "instance.work_read_input_invalid"
         );
     }
@@ -283,9 +286,182 @@ fn the_contract_fixture_input_is_a_valid_read() {
             &copy,
             fields["target"].as_str().expect("target"),
             &fields["input"],
+            u64::MAX,
         )
         .expect("read"),
     )
     .expect("JSON");
     assert_eq!(answer, json!({"state": "unknown", "reason": "stopped"}));
+}
+
+/// Real Git on a scratch repository: the container's `incus exec … runuser … env -i` prefix is dropped and `/srv/workspace`
+/// names the scratch work tree; the state query answers Running. It counts every `rev-list` it runs.
+struct LocalGit {
+    tree: tempfile::TempDir,
+    revlists: RefCell<usize>,
+}
+
+impl LocalGit {
+    fn new() -> Self {
+        let local = Self {
+            tree: tempfile::tempdir().expect("scratch"),
+            revlists: RefCell::new(0),
+        };
+        local.git(&["init", "-q", "-b", "main"]);
+        local
+    }
+
+    fn git(&self, arguments: &[&str]) -> String {
+        let output = std::process::Command::new("/usr/bin/git")
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.test",
+            ])
+            .args(arguments)
+            .current_dir(self.tree.path())
+            .env_clear()
+            .env("HOME", self.tree.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .expect("git runs");
+        assert!(
+            output.status.success(),
+            "git {arguments:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    fn commit(&self, file: &str, content: &str) {
+        std::fs::write(self.tree.path().join(file), content).expect("file");
+        self.git(&["add", "--", file]);
+        self.git(&["commit", "-q", "-m", file]);
+    }
+}
+
+impl System for LocalGit {
+    fn run(&self, _seconds: u32, argv: &[String], _stdin: Option<&[u8]>) -> Result<String, String> {
+        if argv.get(1).map(String::as_str) == Some("query") {
+            return Ok(r#"{"status":"Running"}"#.to_owned());
+        }
+        let start = argv
+            .iter()
+            .position(|part| part == "/usr/bin/git")
+            .expect("a Git call");
+        let tree = self.tree.path().to_str().expect("UTF-8 path");
+        let arguments: Vec<String> = argv[start + 1..]
+            .iter()
+            .map(|part| part.replace(WORKSPACE, tree))
+            .collect();
+        if arguments.iter().any(|part| part == "rev-list") {
+            *self.revlists.borrow_mut() += 1;
+        }
+        let output = std::process::Command::new("/usr/bin/git")
+            .args(&arguments)
+            .env_clear()
+            .env("HOME", self.tree.path())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .map_err(|error| error.to_string())?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+        }
+    }
+
+    fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
+        Err("no blob".to_owned())
+    }
+
+    fn read(&self, _path: &str) -> Result<Vec<u8>, String> {
+        Err("the read reads no file".to_owned())
+    }
+
+    fn path(&self, value: &str) -> std::path::PathBuf {
+        self.tree
+            .path()
+            .join(".markers")
+            .join(value.trim_start_matches('/'))
+    }
+}
+
+fn local_read(local: &LocalGit) -> Value {
+    serde_json::from_str(&work_read(local, "12", &input(), u64::MAX).expect("an answer"))
+        .expect("JSON")
+}
+
+#[test]
+fn a_changed_tracked_file_under_a_configured_filter_reads_dirty_without_running_the_filter() {
+    let local = LocalGit::new();
+    local.commit(".gitattributes", "*.txt filter=probe\n");
+    local.commit("notes.txt", "one\n");
+    // Configured after the commits, so only a read can run it: each command would leave its marker.
+    let marker = local.tree.path().join("filter-ran");
+    let probe = format!("touch {}; cat", marker.display());
+    for key in [
+        "filter.probe.clean",
+        "filter.probe.smudge",
+        "filter.probe.process",
+    ] {
+        local.git(&["config", key, &probe]);
+    }
+    local.git(&["config", "filter.probe.required", "true"]);
+    std::fs::write(local.tree.path().join("notes.txt"), "two\n").expect("change");
+    let answer = local_read(&local);
+    assert_eq!(answer["state"], "dirty", "{answer}");
+    assert_eq!(
+        answer["modified"],
+        json!({"count": 1, "names": ["notes.txt"]})
+    );
+    assert!(!marker.exists(), "the read ran a configured filter");
+    // The same comparison without the overrides starts the filter (which then fails as a process filter): the probe is real.
+    let _ = std::process::Command::new("/usr/bin/git")
+        .args(["status", "--porcelain"])
+        .current_dir(local.tree.path())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output();
+    assert!(marker.exists(), "the probe filter is not configured");
+}
+
+#[test]
+fn a_branch_named_by_a_non_ascii_space_keeps_its_name_commit_and_count() {
+    let local = LocalGit::new();
+    local.git(&["checkout", "-q", "-b", "\u{a0}"]);
+    local.commit("a.txt", "a\n");
+    let head = local.git(&["rev-parse", "HEAD"]).trim().to_owned();
+    let answer = local_read(&local);
+    assert_eq!(answer["head"], "\u{a0}", "{answer}");
+    assert_eq!(answer["head_commit"], head.as_str());
+    assert_eq!(answer["commits"]["head"], 1);
+    assert_eq!(answer["commits"]["count"], 1);
+}
+
+#[test]
+fn branches_at_one_unpushed_tip_count_that_tip_once_per_read() {
+    let local = LocalGit::new();
+    local.commit("a.txt", "a\n");
+    for branch in ["b1", "b2", "b3", "b4"] {
+        local.git(&["branch", branch]);
+    }
+    let answer = local_read(&local);
+    assert_eq!(answer["state"], "dirty", "{answer}");
+    assert_eq!(answer["commits"]["branch_count"], 5);
+    assert_eq!(answer["commits"]["head"], 1);
+    assert!(answer["commits"]["branches"]
+        .as_array()
+        .expect("branches")
+        .iter()
+        .all(|branch| branch["count"] == 1));
+    // One pass for the lost set and one for the shared tip: as the Python reader's `own`.
+    assert_eq!(*local.revlists.borrow(), 2);
+    // A second read counts afresh: nothing is kept across reads.
+    local_read(&local);
+    assert_eq!(*local.revlists.borrow(), 4);
 }

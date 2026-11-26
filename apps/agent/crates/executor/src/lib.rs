@@ -359,7 +359,7 @@ fn dns(order: &VerifiedOrder) -> Outcome {
 /// code, which the Gateway reads as `unknown` `unreachable`.
 fn work_read(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_instance::NodeSystem::new(bus::BLOBS_PATH);
-    orbit_executor_instance::work_read(&system, order.target().as_str(), order.input()).map_or_else(
+    orbit_executor_instance::work_read(&system, order.target().as_str(), order.input(), order.expires_ms()).map_or_else(
         |failure| {
             log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
             Outcome::failed(failure.code)

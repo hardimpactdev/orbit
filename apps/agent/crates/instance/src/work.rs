@@ -6,8 +6,9 @@
 //! the arguments. A copy that does not run is never woken: the Node's asleep marker tells `asleep` from `stopped`. The answer
 //! is the reader's JSON, which the Gateway shapes exactly as it shapes the SSH read.
 
-use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -102,13 +103,23 @@ impl Unknown {
     }
 }
 
+/// Time the reply needs to reach the Gateway after the read ends.
+const REPLY_MS: u64 = 500;
+
 /// Reads the copy `target`'s workspace. Answers the reader's JSON: `clean` or `dirty` with its counts, names and head, or
-/// `unknown` with its reason. It changes nothing, so a repeat is a fresh read.
+/// `unknown` with its reason. It changes nothing, so a repeat is a fresh read. The read ends by `budget_ms` from now and by
+/// the order's expiry less the reply's time (`expires_ms`, Unix milliseconds), whichever comes first: the Gateway accepts no
+/// later reply.
 ///
 /// # Errors
 ///
 /// `instance.work_read_input_invalid` for an input that is not a copy's container, or a state blob the executor does not hold.
-pub fn work_read(system: &impl System, target: &str, input: &Value) -> Result<String, Failure> {
+pub fn work_read(
+    system: &impl System,
+    target: &str,
+    input: &Value,
+    expires_ms: u64,
+) -> Result<String, Failure> {
     let invalid = |detail: String| Failure::new("instance.work_read_input_invalid", detail);
     let input: WorkInput =
         serde_json::from_value(input.clone()).map_err(|error| invalid(error.to_string()))?;
@@ -134,9 +145,19 @@ pub fn work_read(system: &impl System, target: &str, input: &Value) -> Result<St
         }
         None => State::default(),
     };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
+    let left = input
+        .budget_ms
+        .min(expires_ms.saturating_sub(now_ms).saturating_sub(REPLY_MS));
     let reader = Reader {
         system,
-        deadline: Instant::now() + Duration::from_millis(input.budget_ms),
+        deadline: Instant::now() + Duration::from_millis(left),
+        neutral: RefCell::new(None),
+        owned: RefCell::new(BTreeMap::new()),
     };
     let marker = format!("{MARKERS}/app-instance-{target}.asleep");
     let answer = reader
@@ -182,6 +203,20 @@ fn text(raw: &str) -> String {
     }
 }
 
+/// Python's `bytes.strip()`: ASCII whitespace only, so a branch named by a non-ASCII space keeps its name.
+fn strip(raw: &str) -> &str {
+    raw.trim_matches(ascii_space)
+}
+
+/// Python's `bytes.split()`: fields between runs of ASCII whitespace.
+fn fields(raw: &str) -> impl Iterator<Item = &str> {
+    raw.split(ascii_space).filter(|field| !field.is_empty())
+}
+
+fn ascii_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\r' | '\x0b' | '\x0c')
+}
+
 fn listed(values: &[String]) -> Value {
     json!({"count": values.len(), "names": values.iter().take(NAMES).collect::<Vec<_>>()})
 }
@@ -191,6 +226,10 @@ type Target = (String, String);
 struct Reader<'a, S: System> {
     system: &'a S,
     deadline: Instant,
+    /// `-c` pairs that switch off every filter driver the workspace's configuration names, read once per read.
+    neutral: RefCell<Option<Vec<String>>>,
+    /// Each object id's own count within this read, as the reader's `own` keeps it.
+    owned: RefCell<BTreeMap<String, usize>>,
 }
 
 impl<S: System> Reader<'_, S> {
@@ -304,19 +343,64 @@ impl<S: System> Reader<'_, S> {
         Ok((heads, stashes))
     }
 
-    /// Tracked changes and untracked files that are not ignored, file by file.
+    /// `-c` pairs that empty the `clean`, `smudge` and `process` commands of every filter driver the workspace's configuration
+    /// names, so comparing a changed tracked file never runs a configured program. Reading the configuration runs nothing. A
+    /// driver name that cannot be overridden on the command line refuses the read.
+    fn neutral(&self, target: &Target) -> Result<Vec<String>, Unknown> {
+        if let Some(found) = self.neutral.borrow().as_ref() {
+            return Ok(found.clone());
+        }
+        let listed = match self.git(
+            target,
+            &["config", "--name-only", "--get-regexp", r"^filter\."],
+        )? {
+            Ok(listed) => listed,
+            // `git config --get-regexp` exits 1 with nothing on standard error when no key matches.
+            Err(stderr) if stderr.is_empty() => String::new(),
+            Err(_) => return Err(Unknown::NotARepository),
+        };
+        let mut names = BTreeSet::new();
+        for key in listed.split('\n').filter(|key| !key.is_empty()) {
+            let name = key
+                .strip_prefix("filter.")
+                .and_then(|rest| rest.rsplit_once('.'))
+                .map(|(name, _)| name);
+            match name {
+                Some(name)
+                    if !name.is_empty()
+                        && !name.contains('=')
+                        && !name.chars().any(char::is_control) =>
+                {
+                    names.insert(name.to_owned());
+                }
+                _ => return Err(Unknown::Unreachable),
+            }
+        }
+        let mut pairs = Vec::new();
+        for name in names {
+            for setting in ["clean=", "smudge=", "process=", "required=false"] {
+                pairs.extend(["-c".to_owned(), format!("filter.{name}.{setting}")]);
+            }
+        }
+        *self.neutral.borrow_mut() = Some(pairs.clone());
+        Ok(pairs)
+    }
+
+    /// Tracked changes and untracked files that are not ignored, file by file. No configured filter runs, and a submodule's
+    /// own work tree is not entered: a submodule counts when its commit differs, never by running Git inside it.
     fn status(&self, target: &Target) -> Result<(Vec<String>, Vec<String>), Unknown> {
+        let neutral = self.neutral(target)?;
+        let mut arguments: Vec<&str> = neutral.iter().map(String::as_str).collect();
+        arguments.extend([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--no-renames",
+            "--ignore-submodules=dirty",
+        ]);
         let read = self
-            .git(
-                target,
-                &[
-                    "status",
-                    "--porcelain=v1",
-                    "-z",
-                    "--untracked-files=all",
-                    "--no-renames",
-                ],
-            )?
+            .git(target, &arguments)?
             .map_err(|_| Unknown::NotARepository)?;
         let (mut modified, mut untracked) = (Vec::new(), Vec::new());
         for entry in read.split('\0').filter(|entry| !entry.is_empty()) {
@@ -333,7 +417,7 @@ impl<S: System> Reader<'_, S> {
     fn head(&self, target: &Target) -> Result<Option<String>, Unknown> {
         Ok(
             match self.git(target, &["symbolic-ref", "-q", "--short", "HEAD"])? {
-                Ok(out) if !out.trim().is_empty() => Some(text(out.trim_end_matches('\n'))),
+                Ok(out) if !strip(&out).is_empty() => Some(text(out.trim_end_matches('\n'))),
                 _ => None,
             },
         )
@@ -353,7 +437,26 @@ impl<S: System> Reader<'_, S> {
         let read = self
             .git(target, &arguments)?
             .map_err(|_| Unknown::NotARepository)?;
-        Ok(read.split_whitespace().map(str::to_owned).collect())
+        Ok(fields(&read).map(str::to_owned).collect())
+    }
+
+    /// The commits only `value` reaches, less the inherited ones: counted once per object id within this read.
+    fn own(
+        &self,
+        target: &Target,
+        value: &str,
+        negative: &[String],
+        inherited: &BTreeSet<String>,
+    ) -> Result<usize, Unknown> {
+        if let Some(count) = self.owned.borrow().get(value) {
+            return Ok(*count);
+        }
+        let count = self
+            .unreachable(target, &[value.to_owned()], negative)?
+            .difference(inherited)
+            .count();
+        self.owned.borrow_mut().insert(value.to_owned(), count);
+        Ok(count)
     }
 
     /// The commits the default holds and reaches from its branches now: a default whose branch moved on since the copy still
@@ -372,8 +475,7 @@ impl<S: System> Reader<'_, S> {
         let Ok(present) = self.git(default, &arguments)? else {
             return Ok(BTreeSet::new());
         };
-        let found: BTreeSet<String> = present
-            .split_whitespace()
+        let found: BTreeSet<String> = fields(&present)
             .filter(|value| oid(value))
             .map(str::to_owned)
             .collect();
@@ -387,7 +489,7 @@ impl<S: System> Reader<'_, S> {
         let Ok(beyond) = self.git(default, &arguments)? else {
             return Ok(BTreeSet::new());
         };
-        let beyond: BTreeSet<&str> = beyond.split_whitespace().collect();
+        let beyond: BTreeSet<&str> = fields(&beyond).collect();
         Ok(found
             .into_iter()
             .filter(|value| !beyond.contains(value.as_str()))
@@ -433,7 +535,10 @@ impl<S: System> Reader<'_, S> {
         }
     }
 
-    #[expect(clippy::too_many_lines, reason = "the reader's one read, step by step as workspace-git-read.py has it")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the reader's one read, step by step as workspace-git-read.py has it"
+    )]
     fn read(
         &self,
         target: &Target,
@@ -451,7 +556,7 @@ impl<S: System> Reader<'_, S> {
         let inside = self
             .git(target, &["rev-parse", "--is-inside-work-tree"])?
             .unwrap_or_default();
-        if inside.trim() != "true" {
+        if strip(&inside) != "true" {
             return Err(Unknown::NotARepository);
         }
         let (mut baseline, mut kind) = (
@@ -514,12 +619,7 @@ impl<S: System> Reader<'_, S> {
             .cloned()
             .collect();
         branches.sort();
-        let own = |value: &String| -> Result<usize, Unknown> {
-            Ok(self
-                .unreachable(target, std::slice::from_ref(value), &negative)?
-                .difference(&inherited)
-                .count())
-        };
+        let own = |value: &String| self.own(target, value, &negative, &inherited);
         let mut counted = Vec::new();
         for (name, value) in branches.iter().take(NAMES) {
             counted.push(json!({"name": name, "count": own(value)?}));
