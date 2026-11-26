@@ -66,15 +66,17 @@ return new class extends Migration
         $open = [];
         $queued = [];
         $desired = [];
-        $firstAdmission = [];
+        // Per Tool its admission made, the first install that made it: the preceding admission created the `installing` row for an install
+        // that found no Tool, and captured its status as none (StartToolOperationAction).
+        $createdBy = [];
         // Per Tool, when each Operation still open at the upgrade that names it was admitted, by Operation.
         $admittedOpen = [];
         // Per Tool linked to a record, the order of its adoption, when it was adopted.
         $adoptions = [];
         // Per Tool, the record each open write that named a source found when admitted, by Operation.
         $found = [];
-        // Per open Operation, the record its admission found and the packages of every Tool linked to that record then, its own included
-        // (StartToolOperationAction: the source's pins).
+        // Per open Operation, when it was admitted, the record its admission found and the packages of every Tool linked to that record then,
+        // its own included (StartToolOperationAction: the source's pins).
         $pinned = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'state', 'input', 'result']);
@@ -144,7 +146,9 @@ return new class extends Migration
                     is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null, $operation->id, $link);
             }
             if ($tool !== null) {
-                $firstAdmission[$tool] ??= $operation->id;
+                if ($operation->kind === 'tool.install' && array_key_exists('tool_status', $input) && $input['tool_status'] === null) {
+                    $createdBy[$tool] ??= $operation->id;
+                }
                 if ($isOpen) {
                     $admittedOpen[$tool][$operation->id] = (string) $operation->created_at;
                     // The record a write that named a source found under that name when admitted (StartToolOperationAction).
@@ -152,7 +156,7 @@ return new class extends Migration
                         $found[$tool][$operation->id] = $input['repository_id'];
                     }
                     if (is_int($input['repository_id'] ?? null)) {
-                        $pinned[$operation->id] = ['record' => $input['repository_id'], 'tool' => $tool,
+                        $pinned[$operation->id] = ['record' => $input['repository_id'], 'tool' => $tool, 'admitted' => (string) $operation->created_at,
                             'packages' => array_values(array_filter((array) ($input['repository_packages'] ?? []), 'is_string'))];
                     }
                 }
@@ -204,7 +208,9 @@ return new class extends Migration
                     // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
                     // included. A failure that read nothing recorded the admitted version again.
                     $failedStep = data_get($state, 'native_failure.failed_step');
+                    // A receipt that recorded no version field shows nothing of what was read.
                     $reading = $succeeded ? ['version' => $version] : (in_array($failedStep, ['Apply the package', 'Check apt package', 'Check the package', 'Decode package state', 'Assert package state'], true)
+                        && array_key_exists('installed_version', $result)
                         ? PrecedingToolDecision::reading($operation->kind, is_string($input['manager'] ?? null) ? $input['manager'] : '', is_string($input['platform'] ?? null) ? $input['platform'] : '', $failedStep !== 'Assert package state',
                             $operation->error_code, $version, is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null) : null);
                     if ($reading !== null) {
@@ -264,22 +270,27 @@ return new class extends Migration
             $owned = $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted);
             // An adoption no admission captured left the row as it stands: it came before every open Operation of the Tool admitted after the
             // row's last write, and otherwise after every Operation. A Tool with no history at all was adopted the same way.
-            // A write that found the very record this Tool links, a record only this Tool's adoption made (no Operation of the history
-            // made it, no other Tool links it), was admitted after that adoption, in whatever second both fell.
+            // What an admission captured shows the membership at that moment, not that the row's newest adoption came before it: a row
+            // last written in a later second, by a newer adoption or as a replacement row, is newer than that admission. Within the row's
+            // own second, a capture orders the adoption:
+            // - A write that found the very record this Tool links, a record only this Tool's adoption made (no Operation of the history
+            //   made it, no other Tool links it), was admitted after that adoption.
+            // - Another Tool's open admission that found this record pinned this Tool's package (StartToolOperationAction pins every Tool
+            //   linked to the record): the Tool was linked to it then, and when its history never linked the source, only its adoption
+            //   linked it.
             $adoptedAt = $latestOperation * 2 + 1;
+            $written = is_string($tool->updated_at) ? $tool->updated_at : null;
             foreach (is_array($admittedOpen[$tool->id] ?? null) ? $admittedOpen[$tool->id] : [] as $operation => $admitted) {
-                if ((is_string($tool->updated_at) && $tool->updated_at < $admitted)
-                    || (is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
+                if (($written !== null && $written < $admitted)
+                    || ($written !== null && $written <= $admitted && is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
                         && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources))) {
                     $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                 }
             }
-            // Another Tool's open admission that found this record pinned this Tool's package (StartToolOperationAction pins every Tool
-            // linked to the record): the Tool was linked to it then. When its history never linked the source, only its adoption linked it,
-            // so that adoption came first.
-            if (is_int($tool->apt_repository_id) && ($history === null || ($history['link'] ?? null) !== $linked)) {
+            if (is_int($tool->apt_repository_id) && $written !== null && ($history === null || ($history['link'] ?? null) !== $linked)) {
                 foreach ($pinned as $operation => $pins) {
-                    if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && in_array($tool->package, $pins['packages'], true)) {
+                    if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && $written <= $pins['admitted']
+                        && in_array($tool->package, $pins['packages'], true)) {
                         $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                     }
                 }
@@ -441,14 +452,12 @@ return new class extends Migration
             try {
                 if ($kind === 'node.converge') {
                     // A full convergence (the preceding release captured Tools only for one) owns the Tools scope and the orphan cleanup
-                    // whatever it plans, as StartNodeConvergeAction records it. Only a placeholder a later queued first install made, which
-                    // its own capture did not plan, is not there yet: a membership it captured, an adopted Tool's included, stays, and the
-                    // writer scope and pins follow that same set.
+                    // whatever it plans, as StartNodeConvergeAction records it. Only the placeholder a later queued first install itself made
+                    // is not there yet. Every other membership stays, an adopted Tool's included, also when its first direct request is a
+                    // later reinstall, and the writer scope and pins follow that same set.
                     $node = Node::query()->findOrFail($operation->node_id);
-                    $captured = array_column(array_filter((array) data_get($operation->input, '_converge.intent.tools', []), 'is_array'), 'id');
-                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $later, array_keys(array_filter($firstAdmission,
-                        static fn (int $first, int $tool): bool => in_array($first, $later, true) && ($queued[$first] ?? null) === 'tool.install' && ! in_array($tool, $captured, true),
-                        ARRAY_FILTER_USE_BOTH)));
+                    $plans = app(ToolConvergeIntent::class)->capture($node, $id, null, $later,
+                        array_keys(array_filter($createdBy, static fn (int $install): bool => in_array($install, $later, true))));
                     $input = $this->withPlans($operation->input, $plans);
                     data_set($input, '_converge.tool_scope', true);
                     data_set($input, '_converge.intent.orphan_sources', AptSourceTrust::orphans($node->id));
@@ -464,7 +473,7 @@ return new class extends Migration
                 // A refused first install leaves no membership: the installing record its own admission made goes, and its source is
                 // desired by nothing.
                 $toolId = $operation->input['tool_id'] ?? null;
-                if ($kind === 'tool.install' && is_int($toolId) && ($firstAdmission[$toolId] ?? null) === $id) {
+                if ($kind === 'tool.install' && is_int($toolId) && ($createdBy[$toolId] ?? null) === $id) {
                     DB::table('tools')->where('id', $toolId)->where('status', 'installing')->delete();
                 }
             }

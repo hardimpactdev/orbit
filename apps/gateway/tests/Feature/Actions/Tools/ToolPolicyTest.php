@@ -2679,7 +2679,8 @@ it('orders an adoption before a publication that captured its record or membersh
         'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.5']],
         'Assert package state' => ['succeeded']], -2);
     // Y1: only tree's adoption made the record the write found. Y2: the write's pins named nano, so nano's adoption had linked the record.
-    // Y3: the write found the record the adoption made after a removal confirmed the name's older record gone. Its publication is newest.
+    // Y6: the source-less tree's adoption made a new record after a removal confirmed nano's older record under the name gone, and the write
+    // found that new record. Its publication is newest.
     expect($record()->definition['uris'])->toBe(Operation::query()->findOrFail($h['open']['operation'])->input['repository']['uris'])->and($record()->verified)->toBeTrue()
         ->and(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('1.5');
     $operations = app(StartToolOperationAction::class);
@@ -2693,7 +2694,32 @@ it('orders an adoption before a publication that captured its record or membersh
     // The URI the publication replaced is free for another name.
     expect($operations->execute('install', $h['node_id'], 'apt', 'htop', null, repository: [...policySignedRepository(), 'name' => 'renamed',
         'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10')->input['repository_given'])->toBeTrue();
-})->with(['the sole member\'s own new record' => ['Y1'], 'a sibling the write pinned' => ['Y2'], 'a record made after the name\'s older record was removed' => ['Y3']]);
+})->with(['the sole member\'s own new record' => ['Y1'], 'a sibling the write pinned' => ['Y2'], 'a record made after the name\'s older record was removed' => ['Y6']]);
+
+it('keeps an adoption newer than a publication that captured its record or pins, and a replacement row newer still', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $record = static fn () => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole();
+    $adopted = $record()->definition['uris'];
+    // The write captured the record (Y7) or pinned nano (Y4, Y5) when admitted, but 15 seconds later the preceding release accepted an explicit
+    // adoption at 2.0: of the same row (Y4, Y7), or of a replacement nano row after the pinned one was removed (Y5). That adoption is newer
+    // than the write, so the write's late success proves nothing over it.
+    policyReadRun(Operation::query()->findOrFail($h['open']['operation']), 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true,
+        'installed_version' => '1.0']], 'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'],
+        'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.5']],
+        'Assert package state' => ['succeeded']], 2);
+    expect($record()->verified)->toBeFalse()->and($record()->definition['uris'])->toBe($adopted);
+    if ($history === 'Y7') {
+        expect(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('2.0');
+
+        return;
+    }
+    // A survivor's repin against the unproven source is refused.
+    expect(fn () => app(StartToolOperationAction::class)->execute('remove', $h['node_id'], 'apt', 'nano', null,
+        Tool::query()->where('node_id', $h['node_id'])->where('package', 'nano')->sole()))
+        ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
+})->with(['a later adoption of the pinned sibling' => ['Y4'], 'a replacement row under the pinned name' => ['Y5'], 'a later adoption on the sole recreated record' => ['Y7']]);
 
 it('keeps every membership a queued convergence captured, an adopted one included, ahead of later direct work', function (string $history): void {
     policySwamp();
@@ -2704,14 +2730,39 @@ it('keeps every membership a queued convergence captured, an adopted one include
     // The adopted tree has no Operation that made it a member: the convergence queued first plans it (beside nano, sharing its source, in
     // C1d), and pins that same set. The later direct request on tree is refused, as its own admission would have been.
     $plans = $converge->input['_converge']['intent']['tools'];
-    expect([$converge->status->value, array_column($plans, 'package')])->toBe(['queued', $history === 'C1d' ? ['nano', 'tree'] : ['tree']])
+    // C1e: tree was adopted after the convergence was queued, and its first direct request, a reinstall, captured it installed: that request
+    // made no membership, so the convergence plans tree as a capture admitted now would.
+    $shared = in_array($history, ['C1d', 'C1e'], true);
+    expect([$converge->status->value, array_column($plans, 'package')])->toBe(['queued', $shared ? ['nano', 'tree'] : ['tree']])
         ->and([$direct->status->value, $direct->error_code])->toBe(['failed', 'operation.target_busy'])
         ->and(Tool::query()->whereKey($h['tool_id'])->exists())->toBeTrue();
-    if ($history === 'C1d') {
+    if ($shared) {
         expect(array_values(array_unique(array_merge(...array_map(static fn (array $plan): array => $plan['repository_packages'] ?? [], $plans)))))->toBe(['nano', 'tree']);
     }
 })->with(['then its first direct update' => ['C1a'], 'then its first direct reinstall' => ['C1b'], 'then its first direct removal' => ['C1c'],
-    'beside an owned sibling sharing its source, then its first direct update' => ['C1d']]);
+    'beside an owned sibling sharing its source, then its first direct update' => ['C1d'],
+    'before an adoption on its source, then that Tool\'s first direct reinstall' => ['C1e']]);
+
+it('keeps the absence a Linux cask refresh refusal read with no admitted version, settled before or after the upgrade', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $tool = Tool::query()->findOrFail($h['tool_id']);
+    if ($history === 'X6') {
+        // The newer retry, still running at the upgrade, ends with the preceding decision as `decide` returns it after reading an empty
+        // inventory: both version fields explicitly none.
+        policyReadRun(Operation::query()->findOrFail($h['newer']['operation']), 'failed', ['Choose package action' => ['succeeded', ['ready' => false, 'mutate' => false,
+            'error_code' => 'tool.candidate_version_probe_failed', 'manager_version' => 'Homebrew 5.0.0', 'installed_version' => null, 'installed_coordinate' => null,
+            'candidate_json' => 'null', 'version' => '']], 'Assert package state' => ['failed']], -2);
+    }
+    expect($tool->refresh()->installed_version)->toBeNull();
+    // The older retry's late success, read after the upgrade, sets no version over that absence.
+    policyReadRun(Operation::query()->findOrFail($h['open']['operation']), 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true,
+        'installed_version' => null, 'installed_coordinate' => null]], 'Apply the package' => ['succeeded'], 'Check the package' => ['succeeded'],
+        'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.5', 'installed_coordinate' => '1.5,2']],
+        'Assert package state' => ['succeeded']], 2);
+    expect($tool->refresh()->installed_version)->toBeNull();
+})->with(['refused before the upgrade' => ['X5'], 'refused after the upgrade' => ['X6']]);
 
 it('orders the version each preceding decision read, a copied admitted version as the absence it stands for', function (string $history): void {
     policySwamp();

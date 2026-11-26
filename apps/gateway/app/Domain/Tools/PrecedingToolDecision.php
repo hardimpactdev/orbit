@@ -22,7 +22,7 @@ final class PrecedingToolDecision
      * The installed version the decision read, `null` for absence, or no reading at all.
      *
      * @param  bool  $ready  the decision let its write go on: a failure at or after its package step, or a ready decision
-     * @param  ?string  $recorded  the version the decision or its receipt records
+     * @param  ?string  $recorded  the version the decision or its receipt records; the caller reads no decision whose record lacks the field
      * @param  ?string  $admitted  the version the request was admitted with
      * @return array{version: ?string}|null
      */
@@ -41,8 +41,9 @@ final class PrecedingToolDecision
             return null;
         }
         if ($manager === ToolManagerName::BrewCask->value && $platform === 'linux' && $errorCode === 'tool.candidate_version_probe_failed') {
-            // A Linux cask's refresh refuses right after the read, present or absent: only a version other than the admitted one was read.
-            return $recorded !== $admitted ? ['version' => $recorded] : null;
+            // A Linux cask's refresh refuses right after a successful read, present or absent, and repeats the admitted version for an
+            // absent package: none recorded is absence (a present package has a version), and only the admitted version itself is ambiguous.
+            return $recorded !== null && $recorded === $admitted ? null : ['version' => $recorded];
         }
         if (in_array($errorCode, self::CANDIDATE, true)) {
             return ['version' => $install ? null : $recorded];

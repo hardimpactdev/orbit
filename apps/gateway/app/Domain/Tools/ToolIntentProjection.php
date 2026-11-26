@@ -226,7 +226,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         if (($decision['ready'] ?? false) === true || ($decision['inventory_read'] ?? false) === true) {
             return ['installed_version' => ValidatedData::nullableString($decision['installed_version'] ?? $coordinate), 'installed_coordinate' => $coordinate];
         }
-        if (array_key_exists('inventory_read', $decision)) {
+        // A decision that recorded no version field shows nothing of what it read.
+        if (array_key_exists('inventory_read', $decision) || (! array_key_exists('installed_coordinate', $decision) && ! array_key_exists('installed_version', $decision))) {
             return null;
         }
         $reading = PrecedingToolDecision::reading($operation->kind, ValidatedData::string($operation->input['manager'] ?? ''), ValidatedData::string($operation->input['platform'] ?? ''),
