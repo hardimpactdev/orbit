@@ -41,12 +41,12 @@ Physical slots do not belong to a database and never block removal. MySQL, Valke
 
 ## Native order
 
-The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
+The [Gateway engine](/reference/gateway-engine#instancedestroy) can remove a forced, non-default development clone with no other teardown in its plan. It first withdraws the clone's private Routes with `route.withdraw_site` and guarded DNS steps. The Instance and its runtime remain recorded while the Node's removal receipt is missing. The same completion and retry rules apply after a receipt arrives.
 
 Removal follows the [`instance:destroy` chart](/cli/instance/destroy):
 
 1. **Schedules and work checks:** Admission removes Schedule triggers. For non-forced host checkouts, Orbit fetches origin and refuses dirty or unpushed work (ignoring Orbit-rendered `.env` and `.env.testing`). `gh_cli` Projects require `--force` on host checkouts.
-2. **Route withdrawal:** Orbit withdraws the Route (including a sole `pending` or `failed` Route) without a DNS grace wait and releases the Route publication hold as soon as withdrawal succeeds (`route_withdrawn_at`). On the [Gateway engine](/reference/gateway-engine#instancedestroy), a clone's private Routes withdraw with the executor's `route.withdraw_site` and guarded DNS steps before the signed removal.
+2. **Route withdrawal:** Orbit withdraws the Route (including a sole `pending` or `failed` Route) without a DNS grace wait and releases the Route publication hold as soon as withdrawal succeeds (`route_withdrawn_at`).
 3. **Processes and teardown:** Stops and removes Instance Processes, then runs Project teardown steps on host checkouts (skipped for containers).
 4. **Containers and databases:** Force-stops the container, drops owned databases and Valkey users, deletes SQLite files, and deletes the container and inner volume.
 5. **Cleanup and verification:** Removes hibernation, mail, executor, and Conn records, detaches tasks or CI places, verifies deletion, and deletes the Instance rows.
