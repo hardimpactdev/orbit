@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Engine;
 
 use App\Domain\Engine\MachineBus;
+use App\Domain\Engine\NodeReadBus;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Support\ValidatedData;
 use Basis\Nats\Client;
@@ -12,6 +13,7 @@ use Basis\Nats\Configuration;
 use Basis\Nats\Message\Payload;
 use Carbon\Carbon;
 use Closure;
+use LogicException;
 use RuntimeException;
 use Throwable;
 
@@ -20,7 +22,7 @@ use Throwable;
  * receipts, the state machine's own events and content. Every publish waits for JetStream's acknowledgement and checks
  * its sequence: an unacknowledged publish is a lost instruction, and the caller must know.
  */
-final class EngineBus implements MachineBus
+final class EngineBus implements MachineBus, NodeReadBus
 {
     private const int Second = 1_000_000_000;
 
@@ -154,6 +156,26 @@ final class EngineBus implements MachineBus
         $this->publish('KV_CONTENT', "\$KV.CONTENT.n{$node}.{$digest}", $content, []);
 
         return ['sha256' => $digest];
+    }
+
+    public function read(int $node, SignedExecutorOrder $order, float $seconds): ?array
+    {
+        try {
+            $reply = $this->client()->dispatch("orbit.node.{$node}.reads", $order->wire, max(0.001, $seconds));
+        } catch (LogicException $exception) {
+            if ($exception->getMessage() === 'Processing timeout') {
+                return null;
+            }
+            $this->client = null;
+            throw new RuntimeException('engine.read_failed', previous: $exception);
+        } catch (Throwable $exception) {
+            $this->client = null; // Reconnect on the next call.
+            throw new RuntimeException('engine.read_failed', previous: $exception);
+        }
+        $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
+        $line = json_decode($body, true);
+
+        return is_array($line) ? ValidatedData::object($line) : [];
     }
 
     /**

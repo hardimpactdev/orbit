@@ -58,7 +58,23 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
 })->with([
     'proof' => ['executor-order.json', ExecutorOrderSigner::ExpiresAfterMs],
     'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'workspace read' => ['executor-instance-work-read.json', ExecutorOrderSigner::ReadExpiresAfterMs],
 ]);
+
+it('signs a read with no Operation, for its target, expiring with the request that waits for it', function (): void {
+    [$secret, $public] = executor_test_keypair();
+    Carbon::setTestNow(Carbon::createFromTimestampMs(1_800_000_000_000));
+    $signer = new ExecutorOrderSigner($secret);
+
+    $order = $signer->signRead(7, 'instance.work_read', '12', ['project' => 'orbit-instances', 'name' => 'instance-12', 'budget_ms' => 2000]);
+    [$payload, $bytes, $signature] = executor_split($order->wire);
+
+    expect(sodium_crypto_sign_verify_detached($signature, $bytes, $public))->toBeTrue()
+        ->and($payload)->toMatchArray(['action' => 'instance.work_read', 'node' => '7', 'target' => '12', 'operation' => 'read:12',
+            'expires_ms' => 1_800_000_004_000])
+        ->and($signer->signRead(7, 'instance.work_read', '12', [], 60_000)->expiresMs)->toBe(1_800_000_010_000)
+        ->and($signer->signRead(7, 'instance.work_read', '12', [])->nonce)->not->toBe($order->nonce);
+});
 
 it('gives every order a new nonce', function (): void {
     [$secret] = executor_test_keypair();

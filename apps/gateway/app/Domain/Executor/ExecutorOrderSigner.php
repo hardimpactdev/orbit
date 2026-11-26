@@ -18,7 +18,7 @@ use SensitiveParameter;
  */
 final readonly class ExecutorOrderSigner
 {
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names', 'instance.destroy'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.ensure_rule', 'tls.ensure_csr', 'route.publish_site', 'dns.publish_records', 'instance.clone', 'instance.prepare', 'instance.start', 'instance.fetch_branch', 'instance.checkout', 'instance.t3', 'instance.club_key', 'instance.copy_volume', 'instance.stop', 'instance.spare_volume', 'instance.fleet_ready', 'instance.names', 'instance.destroy', 'instance.work_read'];
 
     public const int MaxWireBytes = 4096;
 
@@ -32,6 +32,12 @@ final readonly class ExecutorOrderSigner
      * than 10 s ahead, so the engine signs 8 s and sends a new order when a receipt says `expired` (ADR 0271).
      */
     public const int StepExpiresAfterMs = 8000;
+
+    /**
+     * A signed read (docs/reference/executor.md#signed-reads) answers within the request that asks for it: its order lives no
+     * longer than that request's budget.
+     */
+    public const int ReadExpiresAfterMs = 4000;
 
     /** The executor's identifier form: 1 to 128 bytes of `[A-Za-z0-9._:-]`. */
     private const string Id = '/\A[A-Za-z0-9._:-]{1,128}\z/D';
@@ -119,6 +125,28 @@ final readonly class ExecutorOrderSigner
         $reference = self::idOf($operation).':'.$step;
         $nonce = bin2hex(random_bytes(16));
         $expiresMs = (int) Carbon::now()->getTimestampMs() + self::StepExpiresAfterMs;
+        $payload = self::payload($action, (string) $node, $target, $reference, $nonce, $expiresMs, null, $input);
+        $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
+        if (strlen($wire) > self::MaxWireBytes) {
+            throw new InvalidArgumentException('An executor order may not pass '.self::MaxWireBytes.' bytes.');
+        }
+
+        return new SignedExecutorOrder($wire, $reference, $nonce, $expiresMs);
+    }
+
+    /**
+     * Signs a read order (docs/reference/executor.md#signed-reads): no Operation, so its `operation` is `read:<target>`, and it
+     * expires with the request that waits for its reply. Each send has a fresh nonce.
+     *
+     * @param  array<string, mixed>  $input
+     *
+     * @throws InvalidArgumentException when the action is unknown, a field is not the executor's form, or the order passes 4 KB.
+     */
+    public function signRead(int $node, string $action, string $target, array $input, int $expiresAfterMs = self::ReadExpiresAfterMs): SignedExecutorOrder
+    {
+        $reference = 'read:'.$target;
+        $nonce = bin2hex(random_bytes(16));
+        $expiresMs = (int) Carbon::now()->getTimestampMs() + min($expiresAfterMs, self::MaxExpiryAheadMs);
         $payload = self::payload($action, (string) $node, $target, $reference, $nonce, $expiresMs, null, $input);
         $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
         if (strlen($wire) > self::MaxWireBytes) {

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\Engine\MachineBus;
+use App\Domain\Engine\NodeReadBus;
+use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceContainer;
@@ -26,8 +29,9 @@ use Throwable;
 
 /**
  * The read-only Git state of a container workspace, beyond its recorded baseline
- * (docs/reference/development-containers.md#workspace-work-state). One bounded SSH call to the Instance's Node runs the
- * fixed reader, as the container Process read does (docs/reference/node-agent.md#commands).
+ * (docs/reference/development-containers.md#workspace-work-state). A Node whose executor reports `instance.work_read` answers a
+ * signed read over the machine bus (docs/reference/executor.md#signed-reads); any other Node gets one bounded SSH call that runs
+ * the fixed reader, as the container Process read does (docs/reference/node-agent.md#commands). Both give the same answer.
  */
 final readonly class ContainerWorkspaceRead
 {
@@ -58,7 +62,20 @@ final readonly class ContainerWorkspaceRead
      */
     public const array BaselineRetrySeconds = [1];
 
-    public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
+    /** The executor's read action; a Node that does not report it is read over SSH. */
+    public const string ReadAction = 'instance.work_read';
+
+    /** A signed read's whole budget inside the request, as the SSH read's 4 s command bound. */
+    public const float RequestSeconds = 4.0;
+
+    /** Time a reply needs to come back after the Node's budget ends. */
+    private const float ReplySeconds = 0.5;
+
+    /** A lost reply is read once more: the first send and one fresh send. */
+    private const int Sends = 2;
+
+    public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts,
+        private MachineBus $bus, private NodeReadBus $reads) {}
 
     /**
      * `$published`: commits origin holds that no remote ref in the workspace names, such as the commit a task copy's publish pushed.
@@ -75,12 +92,18 @@ final readonly class ContainerWorkspaceRead
         $runtime = $this->runtime($instance);
         $answer = null;
         if ($runtime !== null) {
-            $arguments = ['read', $runtime->incus_project, $runtime->container_name, RuntimeHibernation::asleepPath(RuntimeHibernation::key($instance->id))];
             $baseline = $runtime->workspace_baseline;
-            if ($baseline === null && $instance->name !== DefaultInstanceName::Name && ($default = $this->defaultRuntime($instance)) !== null) {
-                array_push($arguments, $default->incus_project, $default->container_name);
+            $default = $baseline === null && $instance->name !== DefaultInstanceName::Name ? $this->defaultRuntime($instance) : null;
+            $baseline = $instance->name === DefaultInstanceName::Name ? null : $baseline;
+            if (in_array(self::ReadAction, $this->bus->nodeActions($instance->node_id), true)) {
+                $answer = $this->signed($instance, $runtime, $default, $baseline, $published);
+            } else {
+                $arguments = ['read', $runtime->incus_project, $runtime->container_name, RuntimeHibernation::asleepPath(RuntimeHibernation::key($instance->id))];
+                if ($default !== null) {
+                    array_push($arguments, $default->incus_project, $default->container_name);
+                }
+                $answer = $this->decode($this->execute($instance, $arguments, $baseline, published: $published));
             }
-            $answer = $this->decode($this->execute($instance, $arguments, $instance->name === DefaultInstanceName::Name ? null : $baseline, published: $published));
         }
 
         return self::shape($instance->id, $answer, intdiv(hrtime(true) - $started, 1_000_000));
@@ -122,6 +145,71 @@ final readonly class ContainerWorkspaceRead
 
         return ['heads' => $oids($answer['heads']), 'stashes' => $oids($answer['stashes'] ?? []),
             'untracked' => is_array($untracked) ? array_values(array_filter($untracked, is_string(...))) : null];
+    }
+
+    /**
+     * The signed read: one order to the Node's executor, and its reply within the request's budget. A lost reply is read once
+     * more with a fresh nonce when the budget allows it; a reply still missing at its end is `timeout`. The read changes nothing, so a
+     * second send is harmless. Null, which reads as `unreachable`, for a send or a reply that failed.
+     *
+     * @param  array<string, mixed>|null  $baseline
+     * @param  list<string>  $published
+     * @return array<string, mixed>|null
+     */
+    private function signed(Instance $instance, InstanceRuntime $runtime, ?InstanceRuntime $default, ?array $baseline, array $published): ?array
+    {
+        $node = $instance->node_id;
+        $input = ['project' => $runtime->incus_project, 'name' => $runtime->container_name,
+            ...($default === null ? [] : ['default' => ['project' => $default->incus_project, 'name' => $default->container_name]])];
+        $deadline = hrtime(true) / 1e9 + self::RequestSeconds;
+        try {
+            $signer = ExecutorOrderSigner::fromConfig();
+            if ($baseline !== null || $published !== []) {
+                // A baseline may name up to 2,000 untracked files: the order names it by its hash.
+                $input['state'] = ['blob' => $this->bus->putContent($node, json_encode(['baseline' => $baseline, 'published' => $published],
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))];
+            }
+            for ($send = 0; $send < self::Sends && ($left = $deadline - hrtime(true) / 1e9) > self::ReplySeconds; $send++) {
+                $budget = min(self::BudgetSeconds, $left - self::ReplySeconds);
+                $order = $signer->signRead($node, self::ReadAction, (string) $instance->id, [...$input, 'budget_ms' => max(1, (int) floor($budget * 1000))],
+                    (int) ceil($left * 1000));
+                $line = $this->reads->read($node, $order, min($left, $budget + self::ReplySeconds));
+                if ($line !== null) {
+                    return self::answer($line, $order->operation, (string) $instance->id);
+                }
+            }
+        } catch (Throwable $error) {
+            Log::warning('A signed workspace read failed.', ['instance_id' => $instance->id, 'error' => $error::class.': '.mb_strcut($error->getMessage(), 0, 200)]);
+
+            return null;
+        }
+
+        return ['state' => 'unknown', 'reason' => 'timeout'];
+    }
+
+    /**
+     * The reader's answer from an executor's result line for this read; an order that expired before it ran is `timeout`, and
+     * any other line null.
+     *
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>|null
+     */
+    private static function answer(array $line, string $operation, string $target): ?array
+    {
+        if (($line['operation'] ?? null) !== $operation || ($line['target'] ?? null) !== $target || ($line['action'] ?? null) !== self::ReadAction) {
+            return null;
+        }
+        if (($line['status'] ?? null) === 'failed' && ($line['code'] ?? null) === 'executor.order_expired') {
+            return ['state' => 'unknown', 'reason' => 'timeout'];
+        }
+        if (($line['status'] ?? null) !== 'output' || ! is_string($line['stdout'] ?? null)) {
+            return null;
+        }
+        try {
+            return ValidatedData::object(json_decode($line['stdout'], true, 16, JSON_THROW_ON_ERROR));
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function runtime(Instance $instance): ?InstanceRuntime
