@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeAgentData;
 use App\Domain\ConnServer\ConnServerToolMembership;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\AdmittedToolPackage;
@@ -34,6 +35,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
@@ -63,27 +65,7 @@ final readonly class StartToolOperationAction
             if ($manager->name() === ToolManagerName::ConnServer) {
                 return app(ConnServerToolMembership::class)->record($verb, $nodeId, $tool, $definition, request()->attributes->getString('orbit.request_id'));
             }
-            // Ownership decides which packages apt prefers; surviving membership decides whether the source may go.
-            $removeRepository = $verb === 'remove' && $repository !== null && $repositoryMembers === [];
-            // The trust the run is admitted with: a receipt that wrote nothing may keep it, never create it.
-            $verified = $repository !== null && AptSourceTrust::verified($repositoryRecord, $repository);
-
-            $input = [
-                ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
-                'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-                'repository_packages' => $repositoryPackages, 'repository_origins' => $repository === null ? [] : AptSourceTrust::origins($repositoryRecord, $repository),
-                'repository_given' => $repository !== null && $verb !== 'remove' && ! $verified,
-                'package_owned' => $owned,
-                'tool_id' => $tool?->id,
-                'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
-                'protected_packages' => $protected,
-                'manager_ready' => $record?->status === LifecycleStatus::Active,
-            ];
-            if (! $relinquish) {
-                // Only physical work needs the native SSH target and manager setup.
-                $input['ssh'] = app(SwampSshExecutionInput::class)->forNode($node);
-                $input['setup'] = $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null;
-            }
+            $input = $this->input($verb, $package, $admitted);
             $requestId = request()->attributes->getString('orbit.request_id');
             if ($verb === 'install' && $tool === null) {
                 // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
@@ -120,6 +102,83 @@ final readonly class StartToolOperationAction
     }
 
     /**
+     * Admits again, in place, a request the preceding release admitted and never started, so its first dispatch carries what the
+     * current admission gives it: scope, protection, membership, ownership, pins and source trust (docs/reference/tools.md#upgrade-from-the-preceding-release).
+     * A request the current admission would relinquish ends as that membership-only receipt; one it refuses throws its refusal and keeps
+     * the Operation as it was.
+     */
+    public function readmit(Operation $operation): void
+    {
+        $verb = substr($operation->kind, 5);
+        $input = $operation->input;
+        $selected = is_int($input['tool_id'] ?? null) ? Tool::query()->find($input['tool_id']) : null;
+        $repository = $verb !== 'remove' && ($input['repository_given'] ?? false) === true && is_array($input['repository'] ?? null) ? ValidatedData::object($input['repository']) : null;
+        $this->admit($verb, ValidatedData::integer($operation->node_id), ValidatedData::string($input['manager'] ?? null), ValidatedData::string($input['package'] ?? null),
+            ValidatedData::nullableString($input['version_constraint'] ?? null), $selected, $repository, null, null, function (array $admitted) use ($operation, $verb): void {
+                ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'repository' => $repository,
+                    'definition' => $definition] = $admitted;
+                $current = $this->input($verb, ValidatedData::string($operation->input['package']), $admitted);
+                if ($relinquish) {
+                    $operation->forceFill(['input' => $current, 'status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null,
+                        'result' => ['manager_version' => null, 'installed_version' => null, 'outcome' => 'applied', 'execution' => 'membership_only']])->save();
+                    $tool?->delete();
+
+                    return;
+                }
+                if ($verb === 'install' && $tool === null) {
+                    $record ??= ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $manager->name()->value, 'status' => LifecycleStatus::Provisioning]);
+                    $tool = Tool::query()->create(['node_id' => $node->id, 'tool_manager_id' => $record->id, 'package' => $operation->input['package'],
+                        'version_constraint' => $definition->constraint, 'desired_version' => $definition->version,
+                        'desired_repository' => $definition->repository, 'status' => ToolStatus::Installing]);
+                    $current = [...$current, 'tool_id' => $tool->id, 'manager_id' => $record->id];
+                }
+                if ($repository !== null) {
+                    $current['repository_id'] = AptSourceTrust::handle($node->id, $repository)->id;
+                    AptSourceTrust::claim($node->id, [$repository], $operation->id);
+                }
+                if ($verb !== 'remove') {
+                    $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);
+                }
+                $operation->forceFill(['input' => $current])->save();
+            }, $operation->id);
+    }
+
+    /**
+     * The input the current admission gives a request.
+     *
+     * @param  array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}  $admitted
+     * @return array<string, mixed>
+     */
+    private function input(string $verb, string $package, array $admitted): array
+    {
+        ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
+            'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
+            'owned' => $owned, 'definition' => $definition] = $admitted;
+        // Ownership decides which packages apt prefers; surviving membership decides whether the source may go.
+        $removeRepository = $verb === 'remove' && $repository !== null && $repositoryMembers === [];
+        // The trust the run is admitted with: a receipt that wrote nothing may keep it, never create it.
+        $verified = $repository !== null && AptSourceTrust::verified($repositoryRecord, $repository);
+        $input = [
+            ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
+            'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
+            'repository_packages' => $repositoryPackages, 'repository_origins' => $repository === null ? [] : AptSourceTrust::origins($repositoryRecord, $repository),
+            'repository_given' => $repository !== null && $verb !== 'remove' && ! $verified,
+            'package_owned' => $owned,
+            'tool_id' => $tool?->id,
+            'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
+            'protected_packages' => $protected,
+            'manager_ready' => $record?->status === LifecycleStatus::Active,
+        ];
+        if (! $relinquish) {
+            // Only physical work needs the native SSH target and manager setup.
+            $input['ssh'] = app(SwampSshExecutionInput::class)->forNode($node);
+            $input['setup'] = $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null;
+        }
+
+        return $input;
+    }
+
+    /**
      * Records ownership of an installed package from the Node agent's latest report, after the same admission checks
      * (R1: no task, no run). Refusals carry the agent's liveness.
      *
@@ -139,15 +198,16 @@ final readonly class StartToolOperationAction
      *
      * @param  array<string, mixed>|null  $repository
      * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}): T  $then
+     * @param  int|null  $owner  the Operation admitted again, which its own idleness check skips
      * @return T
      */
-    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then): mixed
+    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then, ?int $owner = null): mixed
     {
         try {
-            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then): mixed {
+            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then, $owner): mixed {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
                 $manager = $this->manager($node, $managerName);
-                app(ToolConvergeIntent::class)->assertIdle($nodeId, [$manager->name()->scope()->value]);
+                app(ToolConvergeIntent::class)->assertIdle($nodeId, [$manager->name()->scope()->value], $owner);
                 if (! $manager->validatePackage($package)) {
                     $this->refuse('tool.package_invalid', 422);
                 }

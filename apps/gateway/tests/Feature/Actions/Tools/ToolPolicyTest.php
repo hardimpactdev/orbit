@@ -13,6 +13,7 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -670,9 +671,15 @@ it('trusts a verified source again after a later successful write despite an old
  *
  * @return array<string, array{node_id: int, tool_id?: int}>
  */
+/** @return array{histories: array<string, mixed>, tables: array<string, list<array<string, mixed>>>} */
+function policyPrecedingFixture(): array
+{
+    return json_decode((string) file_get_contents(base_path('tests/Fixtures/preceding-release-tool-histories.json')), true, flags: JSON_THROW_ON_ERROR);
+}
+
 function policyPrecedingHistories(): array
 {
-    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/preceding-release-tool-histories.json')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture = policyPrecedingFixture();
     $ours = require database_path('migrations/2027_03_28_000001_record_tool_ownership_and_source_trust.php');
     $desired = require database_path('migrations/2027_03_27_000000_add_desired_tool_repository.php');
     $ours->down();
@@ -1904,29 +1911,33 @@ it('gives back trust when a bound convergence is cancelled with its Tools step r
     expect($operation->refresh()->error_code === 'operation.timed_out')->toBe($late > 0)->and($record->refresh()->verified)->toBe($skipped);
 })->with(['tool.converge', 'node.converge'])->with(['on time' => [-2], 'late' => [2]])->with(['skipped' => [true], 'no evidence' => [false]]);
 
-it('cancels before its run every Tool request the preceding release never started, so the next request is a current admission', function (string $history, string $verb, Closure $next): void {
+it('admits again in place every Tool request the preceding release queued and never started, before its first dispatch', function (string $history): void {
     policySwamp();
     $histories = policyPrecedingHistories();
     $h = $histories[$history];
+    $before = collect(policyPrecedingFixture()['tables']['operations'])->firstWhere('id', $h['open']['operation']);
     $queued = Operation::query()->findOrFail($h['open']['operation']);
-    // Queued, also after Swamp deferred its start: it never ran, wrote nothing, holds nothing, and is never dispatched as admitted.
-    expect([$queued->status->value, $queued->error_code, $queued->lock_key, $queued->input['package_owned'] ?? null])->toBe(['cancelled', null, null, null]);
-    $tool = Tool::query()->find($h['tool_id']);
-    try {
-        $next(app(StartToolOperationAction::class)->execute($verb, $h['node_id'], 'apt', $h['package'] ?? 'tree', null, $tool));
-    } catch (ToolOperationException $refusal) {
-        $next($refusal);
-    }
-})->with([
-    'an unowned tree removal (B1q)' => ['B1q', 'remove', fn () => fn ($next) => expect($next->result['execution'] ?? null)->toBe('membership_only')],
-    'an unowned tree update (B1r)' => ['B1r', 'update', fn () => fn ($next) => expect($next->errorCode)->toBe('tool.state_invalid')],
-    'a deferred first install of conn-server' => ['D1a', 'install', fn () => fn ($next) => expect($next->errorCode)->toBe('tool.package_protected')],
-    'a deferred removal of docker-ce' => ['D1b', 'remove', fn () => fn ($next) => expect($next->result['execution'] ?? null)->toBe('membership_only')],
-    'a deferred unowned tree removal' => ['D1c', 'remove', fn () => fn ($next) => expect($next->result['execution'] ?? null)->toBe('membership_only')],
-    'a queued update of conn-server' => ['P1a-update', 'update', fn () => fn ($next) => expect($next->errorCode)->toBe('tool.package_protected')],
-    'a retry queued after an expired removal released its hold' => ['R1', 'remove', fn () => fn ($next) => expect($next->result['execution'] ?? null)->toBe('membership_only')],
-    'an update of an adoption-only source' => ['S7e', 'update', fn () => fn ($next) => expect($next->input['repository_given'])->toBeTrue()],
-]);
+    // The same Operation and idempotency key: a replay of the original request returns this outcome.
+    expect([$queued->kind, $queued->idempotency_key])->toBe([$before['kind'], $before['idempotency_key']]);
+    $tool = Tool::query()->find($h['tool_id'] ?? $queued->input['tool_id']);
+    $writers = static fn (string $name): array => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $name)->sole()->writers;
+    match ($history) {
+        // Still-valid intent stays queued with what the current admission gives it, its source claimed.
+        'S7e' => expect([$queued->status->value, $queued->input['package_owned'], $queued->input['repository_given']])->toBe(['queued', true, true])
+            ->and($writers($h['source']))->toHaveKey((string) $queued->id),
+        'P1c' => expect([$queued->status->value, $queued->input['package_owned'], $queued->lock_key !== null])->toBe(['queued', true, true]),
+        'S6d' => expect([$queued->status->value, $queued->input['repository_given'], $tool?->status->value])->toBe(['queued', true, 'installing'])
+            ->and($writers('fresh-s6d'))->toHaveKey((string) $queued->id),
+        // What the current admission records without a run: a membership-only removal that deletes the record.
+        'B1q', 'D1b', 'D1c', 'R1' => expect([$queued->status->value, $queued->result['execution'] ?? null, $queued->lock_key, $tool])->toBe(['succeeded', 'membership_only', null, null]),
+        // A real refusal ends the Operation with its code, nothing run and nothing held.
+        'B1r' => expect([$queued->status->value, $queued->error_code, $queued->lock_key])->toBe(['failed', 'tool.state_invalid', null]),
+        default => expect([$queued->status->value, $queued->error_code, $queued->lock_key])->toBe(['failed', 'tool.package_protected', null]),
+    };
+})->with(['an update of an adoption-only source' => ['S7e'], 'an owned tree removal' => ['P1c'], 'a queued first publication' => ['S6d'],
+    'an unowned tree removal (B1q)' => ['B1q'], 'a deferred removal of docker-ce' => ['D1b'], 'a deferred unowned tree removal' => ['D1c'],
+    'a retry queued after an expired removal released its hold' => ['R1'], 'an unowned tree update (B1r)' => ['B1r'],
+    'a deferred first install of conn-server' => ['D1a'], 'a queued update of conn-server' => ['P1a-update']]);
 
 it('sets aside the authority of a removal the preceding release expired with its run unsettled', function (): void {
     policySwamp();
@@ -1968,16 +1979,10 @@ it('settles preceding-release source work read after the upgrade by the source w
     $history = $histories[$case];
     $open = Operation::query()->findOrFail($history['open']['operation']);
     $record = static fn () => AptRepository::query()->where('node_id', $history['node_id'])->where('name', $history['source'])->first();
-    if ($case === 'S6d') {
-        // A first publication that never started is cancelled before its run: no writer, no record, and the next install publishes.
-        $htop = Tool::query()->findOrFail($open->input['tool_id']);
-        expect($open->status->value)->toBe('cancelled')->and($record())->toBeNull()
-            ->and(app(StartToolOperationAction::class)->execute('install', $history['node_id'], 'apt', 'htop', null, $htop, $open->input['repository'])->input['repository_given'])->toBeTrue();
-
-        return;
-    }
-    // Open work at the upgrade is an open writer: the source proves nothing until its end.
-    expect($record()?->verified ?? false)->toBeFalse();
+    // Open work at the upgrade that could write the source is its writer, and the source proves nothing until its end: a republishing
+    // update (S6c) or a first publication (S6d, admitted again). The preceding release could not write it from an update without
+    // `repository_given` (S6a) or a removal that kept the source (S6b).
+    expect($record()?->verified ?? false)->toBe(in_array($case, ['S6a', 'S6b'], true));
     match ($case) {
         'S6a' => policyReadRun($open, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => false]], 'Publish the signing key' => ['skipped'],
             'Write the apt source' => ['skipped'], 'Assert package state' => ['succeeded']], -2),
@@ -1985,15 +1990,19 @@ it('settles preceding-release source work read after the upgrade by the source w
             'Check apt absence' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'absent' => true]], 'Assert package state' => ['succeeded']], -2),
         'S6c' => policyReadRun($open, 'failed', ['Fetch the signing key' => ['failed'], 'Publish the signing key' => ['skipped'], 'Write the apt source' => ['skipped'],
             'Assert package state' => ['failed']], -2),
+        'S6d' => policyReadRun($open, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => null]],
+            'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Prefer the verified package' => ['succeeded'], 'Apply the package' => ['succeeded'],
+            'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.0']],
+            'Assert package state' => ['succeeded']], -2),
     };
-    // S6a-c wrote no key or source: the source keeps the proof it had.
+    // S6a-c wrote no key or source: the source keeps the proof it had. S6d, admitted again, published and proved it.
     expect($record()->verified)->toBeTrue();
     if ($case === 'S6c') {
         expect(app(StartToolOperationAction::class)->execute('remove', $history['node_id'], 'apt', 'nano', null, Tool::query()->where('node_id', $history['node_id'])
             ->where('package', 'nano')->sole())->input['repository_packages'])->toBe(['tree']);
     }
 })->with(['an update that skipped publication' => ['S6a'], 'a surviving member removed without a repin step' => ['S6b'],
-    'an update that failed at its key fetch' => ['S6c'], 'a queued first publication' => ['S6d']]);
+    'an update that failed at its key fetch' => ['S6c'], 'a queued first publication, admitted again' => ['S6d']]);
 
 it('never lets a successful write prove a source it did not publish', function (): void {
     policySwamp();
@@ -2098,10 +2107,9 @@ it('reads a removal that timed out under the authority its admission gave it, no
     policySwamp();
     $histories = policyPrecedingHistories();
     $tool = Tool::query()->findOrFail($histories['P1c']['tool_id']);
-    expect(Operation::query()->findOrFail($histories['P1c']['open']['operation'])->status->value)->toBe('cancelled');
-    // The operator's removal is admitted under the claim the upgrade recorded.
-    $removal = app(StartToolOperationAction::class)->execute('remove', $tool->node_id, 'apt', 'tree', null, $tool);
-    expect($removal->input['package_owned'])->toBeTrue();
+    // The removal the preceding release queued is admitted again under the claim the upgrade recorded, and dispatched as such.
+    $removal = Operation::query()->findOrFail($histories['P1c']['open']['operation']);
+    expect($removal->status->value)->toBe('queued')->and(app(ToolIntentProjection::class)->input($removal)['intent']['package_owned'])->toBeTrue();
     // The run found tree absent, so it removed nothing; the timeout set aside the claim, and the run was then cancelled.
     $read = policyReadRun($removal, 'cancelled', ['Choose package action' => ['succeeded', ['ready' => true, 'remove' => false]], 'Remove the package' => ['skipped'],
         'Assert package state' => ['cancelled']], 2);
@@ -2145,9 +2153,9 @@ it('orders each field the preceding release changed by the receipt that changed 
                 ->and($operations->execute('remove', $tool->node_id, 'apt', 'tree', null, $tool)->input['repository']['name'] ?? null)->toBe($h['adopted_source']);
             break;
         default:
-            // The queued removal never ran; its admission captured the adoption, so a current removal's verified receipt, on time, removes the Tool.
-            expect(Operation::query()->findOrFail($h['open']['operation'])->status->value)->toBe('cancelled');
-            $removal = $operations->execute('remove', $tool->node_id, 'apt', 'tree', null, $tool);
+            // The queued removal, admitted again, captured the adoption: its verified receipt, on time, removes the Tool.
+            $removal = Operation::query()->findOrFail($h['open']['operation']);
+            expect($removal->input['package_owned'])->toBeTrue();
             policyReadRun($removal, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'remove' => true]], 'Remove the package' => ['succeeded'],
                 'Check apt absence' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'absent' => true]], 'Assert package state' => ['succeeded']], -2);
             expect([$removal->refresh()->status->value, Tool::query()->whereKey($h['tool_id'])->exists()])->toBe(['succeeded', false]);
@@ -2276,3 +2284,140 @@ it('replays every source history across the upgrade, keeps a confirmed withdrawa
     }
 })->with(['an adopted source withdrawn after an expired update' => ['S7a'], 'an adopted source written uncertainly after an expired update' => ['S7b'],
     'a published source withdrawn after an expired update' => ['S7c'], 'a shared source and a refused start' => ['S7d']]);
+
+it('admits a queued convergence again with the current capture, or ends it with the refusal that capture raises', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $queued = Operation::query()->findOrFail($h['open']['operation']);
+    $before = collect(policyPrecedingFixture()['tables']['operations'])->firstWhere('id', $queued->id);
+    if ($history === 'K1') {
+        // A still-valid update keeps its requested source as desired state, so the next convergence plans it.
+        $tool = Tool::query()->findOrFail($h['tool_id']);
+        expect([$queued->status->value, $queued->input['repository']['name'] ?? null, $tool->desired_repository['name'] ?? null])->toBe(['queued', $h['source'], $h['source']]);
+        $plans = app(ToolConvergeIntent::class)->capture(Node::query()->findOrFail($h['node_id']), $queued->id);
+        expect($plans[0]['repository']['name'] ?? null)->toBe($h['source']);
+
+        return;
+    }
+    // The current admission refuses it: it ends with that refusal and its admitted input untouched, so nothing runs and nothing is cleaned.
+    expect([$queued->status->value, $queued->error_code, $queued->lock_key])->toBe(['failed', $history === 'K2' ? 'tool.repository_conflict' : 'operation.target_busy', null])
+        ->and($queued->input)->toBe(json_decode($before['input'], true));
+    if ($history === 'K2') {
+        expect(Tool::query()->findOrFail($h['tool_id'])->status->value)->toBe('failed');
+    } else {
+        $running = Operation::query()->findOrFail($h['running']['operation']);
+        expect($running->status->value)->toBe('running')
+            ->and(AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole()->writers)->toHaveKey((string) $running->id);
+    }
+})->with(['a still-valid update to a new source' => ['K1'], 'a convergence the current capture refuses as a conflict' => ['K2'],
+    'a convergence while another Tool run holds the Node' => ['K3']]);
+
+it('orders an adoption before the work that captured it, and a version only by an actual inventory reading', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $open = Operation::query()->findOrFail($h['open']['operation']);
+    $wrote = static fn (string $version): array => ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => '1.0']],
+        'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'], 'Check apt package' => ['succeeded'],
+        'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => $version]], 'Assert package state' => ['succeeded']];
+    switch ($history) {
+        case 'A1':
+            // The removal captured the adopted source: its confirmed removal of package and source removes the Tool and the record.
+            policyReadRun($open, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'remove' => true]], 'Remove the package' => ['succeeded'],
+                'Check apt absence' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'absent' => true]], 'Remove the apt source' => ['succeeded'],
+                'Remove repository pins' => ['succeeded'], 'Assert package state' => ['succeeded']], -2);
+            expect(Tool::query()->whereKey($h['tool_id'])->exists())->toBeFalse()
+                ->and(AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->exists())->toBeFalse();
+            break;
+        case 'A2':
+            // The update was admitted after the adoption made the record: its publication of the new URI is the newest, and convergence plans it.
+            policyReadRun($open, 'succeeded', $wrote('1.0'), -2);
+            $record = AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole();
+            expect($record->definition['uris'])->toBe(['https://example.test/adopted-a2-next'])->and($record->verified)->toBeTrue()
+                ->and(app(ToolConvergeIntent::class)->capture(Node::query()->findOrFail($h['node_id']))[0]['repository']['uris'])->toBe(['https://example.test/adopted-a2-next']);
+            break;
+        default:
+            // A3: the newer refusal read 2.0, which the older late 1.5 never sets back. A4: the newer failure read absence and recorded its
+            // admitted 1.0 again, which is no reading, so the older late 1.5 counts.
+            expect($h['newer'][3])->toBe($history === 'A3' ? '2.0' : '1.0');
+            policyReadRun($open, 'succeeded', $wrote('1.5'), 2);
+            expect(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe($history === 'A3' ? '2.0' : '1.5');
+    }
+})->with(['a removal admitted after an adoption' => ['A1'], 'a republishing update admitted after an adoption' => ['A2'],
+    'a refused update that read the package' => ['A3'], 'a failed reinstall that recorded its admitted version' => ['A4']]);
+
+it('keeps the authority of a removal the preceding release expired before it ever started', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $tool = Tool::query()->findOrFail($h['tool_id']);
+    $expired = Operation::query()->findOrFail($h['open']['operation']);
+    expect([$expired->status->value, $expired->error_code, $expired->attempts, $expired->state['swamp_run_id'] ?? null])->toBe(['failed', 'operation.timed_out', 0, null])
+        ->and($tool->owned)->toBeTrue()->and($tool->receipts['suspended'] ?? null)->toBeNull();
+    Operation::query()->whereNotNull('lock_key')->update(['lock_key' => null]);
+    expect(app(StartToolOperationAction::class)->execute('remove', $tool->node_id, 'apt', 'tree', null, $tool)->input['package_owned'])->toBeTrue();
+})->with(['queued, never begun' => ['E1'], 'after Swamp deferred its only start' => ['E2']]);
+
+it('suspends trust only for a possible write, and never brings back an exact source a newer removal confirmed gone', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $open = Operation::query()->findOrFail($h['open']['operation']);
+    $operations = app(StartToolOperationAction::class);
+    $record = static fn () => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->first();
+    $renamed = static function () use ($h, $operations): Operation {
+        Operation::query()->whereNotNull('lock_key')->update(['lock_key' => null]);
+        $released = $h['released_uris'] ?? $h['uris'];
+
+        return $operations->execute('install', $h['node_id'], 'apt', 'htop2', null, repository: [...policySignedRepository(), 'name' => 'renamed', 'uris' => $released, 'suites' => ['stable']],
+            version: '1.10');
+    };
+    switch ($history) {
+        case 'G1':
+            // The preceding update named no source, so it could not publish: the shared source stays proved, also after its run is cancelled
+            // with no step history, and the sibling's removal repins.
+            expect($h['given'])->toBeFalse()->and($record()->verified)->toBeTrue()->and($record()->writers)->toBe([]);
+            policyReadRun($open, 'cancelled', [], 2);
+            Operation::query()->whereNotNull('lock_key')->update(['lock_key' => null]);
+            expect($record()->verified)->toBeTrue()
+                ->and($operations->execute('remove', $h['node_id'], 'apt', 'nano', null, Tool::query()->where('node_id', $h['node_id'])->where('package', 'nano')->sole())
+                    ->input['repository_packages'])->toBe(['tree']);
+            break;
+        case 'G2':
+            // The older update's late success, after a newer removal confirmed the source gone, neither recreates nor links it.
+            expect($record())->toBeNull();
+            policyReadRun($open, 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => false, 'installed_version' => '1.0']],
+                'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.0']],
+                'Assert package state' => ['succeeded']], 2);
+            expect($record())->toBeNull()->and(Tool::query()->findOrFail($h['tool_id'])->apt_repository_id)->toBeNull()
+                ->and($renamed()->input['repository_given'])->toBeTrue();
+            break;
+        default:
+            // A newer writer reusing the withdrawn name may have published only its own URI; once it is proved never to have written, the
+            // released URI is free for another name.
+            expect($record()->definition['uris'])->toBe(['https://example.test/reused-g3-elsewhere'])->and($record()->entries)->not->toContain('https://example.test/reused-g3 stable');
+            policyReadRun($open, 'cancelled', ['Fetch the signing key' => ['cancelled'], 'Publish the signing key' => ['skipped'], 'Write the apt source' => ['skipped'],
+                'Prefer the verified package' => ['skipped'], 'Assert package state' => ['cancelled']], -2);
+            expect($renamed()->input['repository_given'])->toBeTrue();
+    }
+})->with(['an open update that named no source' => ['G1'], 'an older writer whose Tool survives a confirmed removal' => ['G2'],
+    'a newer writer reusing a withdrawn name' => ['G3']]);
+
+it('answers a replay of a queued request the preceding release keyed with the Operation its current admission produced', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $stored = collect(policyPrecedingFixture()['tables']['operations'])->firstWhere('id', $h['open']['operation']);
+    $tool = Tool::query()->findOrFail($h['tool_id']);
+    $replayed = app(OperationIdempotency::class)->under('tool.update', $stored['idempotency_key'], $stored['idempotency_fingerprint'],
+        fn (): Operation => app(StartToolOperationAction::class)->execute('update', $h['node_id'], 'apt', 'tree', null, $tool));
+    expect($replayed->id)->toBe($stored['id']);
+    if ($history === 'I1') {
+        // Still valid: queued for its first dispatch with the authority the current admission gives it.
+        expect([$replayed->status->value, app(ToolIntentProjection::class)->input($replayed)['intent']['package_owned']])->toBe(['queued', true]);
+    } else {
+        // Refused by the current admission: the replay shows that refusal.
+        expect([$replayed->status->value, $replayed->error_code])->toBe(['failed', 'tool.state_invalid']);
+    }
+})->with(['a still-valid keyed update' => ['I1'], 'a keyed update the current admission refuses' => ['I2']]);

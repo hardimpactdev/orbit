@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\NativeRunResult;
+use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -397,6 +398,12 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             return null;
         }
 
+        // The record the admission found or made is gone only when a newer confirmed removal withdrew the source: this older success
+        // neither recreates nor links it.
+        $admitted = $operation->input['repository_id'] ?? null;
+        if (is_int($admitted) && ! AptRepository::query()->whereKey($admitted)->exists()) {
+            return null;
+        }
         // Only a write that published the key and source proves them; one admitted with a verified source left them as they were.
         $this->settleSource($operation, ($operation->input['repository_given'] ?? false) === true ? 'proved' : 'unwritten');
 

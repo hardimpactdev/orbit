@@ -77,7 +77,12 @@ final class AptSourceTrust
             return;
         }
         $writers = $record->writers ?? [];
-        $wrote = $writers[$operation] ?? ($definition === null ? [] : self::entries($definition));
+        // Only a possible write settles a source: every Operation that may write one is its writer from admission (or the upgrade), so an
+        // end of one that never was changes no trust.
+        if (! array_key_exists($operation, $writers)) {
+            return;
+        }
+        $wrote = $writers[$operation];
         unset($writers[$operation]);
         $record->writers = $writers;
         $settled = self::settled($record);
