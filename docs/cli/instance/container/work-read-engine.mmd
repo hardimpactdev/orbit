@@ -1,0 +1,50 @@
+sequenceDiagram
+  %% The workspace unsaved-work read that Conn's Remove opens (GET /api/v1/conn/instances/{instance}/work, ContainerWorkspaceRead) as a signed executor read. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Documented exception: this is a synchronous read and no Operation, so it has no kind of its own. It carries `instance.destroy`, the Operation whose Remove it gates, so instance/destroy.mdx can place it beside instance/container/destroy-engine.mmd.
+  %% Answer contract unchanged (docs/reference/development-containers.md#workspace-work-state): state clean, dirty or unknown; unknown carries a reason from stopped, asleep, timeout, not_a_repository, unreachable.
+  %% status: draft
+  %% command: instance:destroy
+  %% kind: instance.destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane C icon=server pill=copy tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as app-dev Node<br/>executor
+  participant C as Container<br/>via executor
+  CLI->>GW: Remove clicked<br/>GET conn/instances/42/work
+  %%> Conn reads afresh on every Remove click; no answer is cached or reused
+  Note over GW: Resolve the runtime<br/>Node · container · baseline
+  %%> The recorded baseline, or the default's container for an Instance without one; the published commits (a task copy's publish)
+  alt the Node reports the read action
+    %%> No Operation, no lock and no engine decision: the Gateway signs one read order and waits for its reply within the request's 4 s budget
+    GW->>EN: Signed read order<br/>machine bus · request
+    EN->>N: Read the workspace<br/>read-only · 2 s budget
+    %%> Target: Instance 42; the order changes nothing, so the executor needs no journal result to repeat
+    alt asleep marker present
+      N-->>EN: unknown · asleep
+      %%> As today: an asleep copy is not woken to read it; Conn shows it as asleep, not as unsaved work
+    else container stopped
+      N-->>EN: unknown · stopped
+    else container runs
+      N->>C: Git read in /srv/workspace<br/>as agent · no repository code
+      %%> The fixed reader of workspace-git-read.py: status, untracked set, stashes, commits beyond the baseline and the published commits; no hooks, no fsmonitor, no write to the index
+      C-->>N: Status, stashes, commits
+      N-->>EN: clean or dirty<br/>counts · names · head
+    end
+    EN-->>GW: Reply
+    opt the reply is lost
+      GW->>EN: Read again<br/>fresh nonce · same budget
+      %%> A read has no effect, so a second send is harmless; a reply still missing at the budget's end is `unknown` `timeout`
+    end
+  else the Node lacks the action
+    Note over GW: Read over pinned SSH<br/>ContainerWorkspaceRead
+    %%> Today's path, with the same answer shape; nothing else differs
+  end
+  GW-->>CLI: Work state<br/>clean · dirty · unknown
+  %%> `unknown` only for a real read failure (timeout, not_a_repository, unreachable) or the stopped and asleep states above; never for a dirty or clean workspace
+  %%> Next: a dirty or unknown answer asks before removal; the confirmed Remove sends POST conn/instances/42/destroy (instance/container/destroy-engine.mmd)

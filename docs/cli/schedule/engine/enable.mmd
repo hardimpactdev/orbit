@@ -1,38 +1,60 @@
 sequenceDiagram
+  %% schedule.enable of a retained production Node timer on the Gateway engine: the `Check the timer` path of schedule/enable.mmd (workflows operation-schedule-control and production-schedule-control) as one executor primitive. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% A native cron Schedule has no Node timer: it stays the synchronous Swamp trigger set, with no Operation.
   %% status: draft
   %% command: schedule:enable
   %% kind: schedule.enable
-  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane EN icon=workflow pill=engine tone=purple
   %% lane N icon=server pill=executor tone=amber
-  participant CLI as CLI / MCP<br/>Orbit caller
-  participant GW as Gateway<br/>admission
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
   participant EN as Engine<br/>Gateway and NATS
   participant N as Target Node<br/>executor
-  CLI->>GW: schedule:enable SCHEDULE
-  Note over GW: Check access and target
+  CLI->>GW: schedule:enable 7f3c…<br/>Schedule UUID
+  Note over GW: Validate the Schedule<br/>Schedule 7f3c… · Instance 42
+  %%> Same validation as schedule/enable.mmd
   alt native cron Schedule
-    Note over GW: Use native trigger flow
-    %%> The existing synchronous path sets the Swamp trigger and returns its confirmation. No Node timer order is issued.
-  else retained host timer and every target advertises support
-    GW->>EN: Admit engine Operation
-    GW-->>CLI: Operation accepted
-    %%> The kind must be enabled. Admission selects one owner for the full Operation.
-    EN->>N: Enable and start timer
-    %%> Address only the timer owned by the admitted Schedule. Check both the enabled and active properties, including when the timer was already running.
-    N-->>EN: Observed timer state
-    alt verified receipt
-      EN->>GW: Record Schedule enabled
-    else signed step failed
-      EN->>GW: Record the failed step
-    else receipt missing
-      Note over EN: Recover the signed step
-      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    Note over GW: Refuse the engine<br/>set the Swamp trigger
+    %%> No Operation is recorded and no Node order is sent: the Gateway sets the workflow trigger and answers with its confirmation, as schedule/enable.mmd
+  else retained production Node timer
+    alt the engine admits the whole Operation
+      %%> Admission, one decision per Operation (EngineKinds::routes):
+      %%> - `schedule.enable` is in `ORBIT_ENGINE_KINDS`
+      %%> - every Node a step touches reports its action in `$KV.NODES`: the timer action of the Schedule's Node
+      %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+      Note over GW: Bind steps, take the lock<br/>commit, publish the start
+      %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+      GW-->>CLI: 202 Accepted<br/>task ID
+      EN->>N: Enable and start the timer<br/>owned unit only
+      %%> Desired state: the Schedule's own timer is enabled and active; an already-running timer only gets its enablement checked
+      %%> The unit name comes from the admitted Schedule; any other unit refuses with `schedule.input_invalid`
+      N-->>EN: Observed timer<br/>enabled · active · next elapse
+      %%> Verification read-back in the same primitive, as Swamp's `Check the timer`
+      opt the receipt is lost
+        EN->>N: Resend the same step<br/>fresh nonce · same step ID
+        %%> When:
+        %%> - the step passes its resend deadline with no receipt; two sends, one execution
+        %%> - the Operation keeps its lock, so Schedule 7f3c… stays fenced; no other Operation and no Swamp run acts on it meanwhile
+        %%> On the Node:
+        %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+        %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+        N-->>EN: Stored result<br/>repeat: true
+      end
+      alt every step verified
+        EN->>GW: Record Schedule enabled<br/>desired state: enabled
+        %%> - the kind's own projection records the result, the same rows a Swamp run records
+      else a step fails
+        EN--xGW: Failed step<br/>error_code · redacted detail
+        %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+        Note over GW: Keep the prior state<br/>desired state unchanged
+        %%> - retry: the same command; enabling an enabled timer changes nothing
+      end
+    else the engine does not admit it
+      Note over GW: Start the Swamp run<br/>operation-schedule-control
+      %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-schedule-control or production-schedule-control (schedule/enable.mmd)
+      %%> - no step of it runs on the engine; an Operation never splits across engines
     end
-  else unsupported Node plan
-    Note over GW: Use existing Schedule flow
-    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
   end

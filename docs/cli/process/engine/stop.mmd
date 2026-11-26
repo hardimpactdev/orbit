@@ -1,36 +1,77 @@
 sequenceDiagram
+  %% process.stop on the Gateway engine: one `process` family on the Process's Node, one desired-state primitive for every runtime. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Rollout order: host systemd units first; Docker containers and Instance-container units join the same primitive later, each when its read-back is proven. Until a runtime is covered, its Process throws EngineUnsupported and runs on Swamp.
   %% status: draft
   %% command: process:stop
   %% kind: process.stop
-  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane EN icon=workflow pill=engine tone=purple
   %% lane N icon=server pill=executor tone=amber
-  participant CLI as CLI / MCP<br/>Orbit caller
-  participant GW as Gateway<br/>admission
+  %% lane C icon=server pill=container tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
   participant EN as Engine<br/>Gateway and NATS
   participant N as Target Node<br/>executor
-  CLI->>GW: process:stop PROCESS
-  Note over GW: Check access and target
-  alt plain host systemd unit and every target advertises support
-    GW->>EN: Admit engine Operation
-    GW-->>CLI: Operation accepted
-    %%> The kind must be enabled. Admission selects one owner for the full Operation.
-    EN->>N: Apply stopped state<br/>and disable at boot
-    %%> Read back inactive and disabled. An already-stopped unit may still need its boot policy changed.
-    %%> Keep Docker, Instance-container, production-specific and Vite plans on their existing paths until their end checks have coverage.
-    N-->>EN: Observed unit state
-    alt verified receipt
-      EN->>GW: Record Process stopped
-    else signed step failed
-      EN->>GW: Record the failed step
-    else receipt missing
-      Note over EN: Recover the signed step
-      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+  participant C as Instance copy<br/>via executor
+  CLI->>GW: process:stop 417
+  Note over GW: Validate, record the task<br/>Process 417: provisioning
+  %%> Same admission as process/stop.mmd: access to the Process's Node, a Process not being removed; the intent carries unit or container name, runtime, on-demand flag and Instance container
+  alt drain-waiting or Vite plan
+    Note over GW: Refuse the engine<br/>EngineUnsupported
+    %%> - a Gateway release-container Process (Horizon, the scheduler: `container.release`), whose stop waits for the worker to drain, stays on Swamp
+    %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout stay on Swamp
+    %%> - the refusal is decided at admission, before any order; the Operation runs whole on Swamp
+  end
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `process.stop` is in `ORBIT_ENGINE_KINDS`
+    %%> - every Node a step touches reports its action in `$KV.NODES`: the `process` family's desired-state action (one name for start and stop)
+    %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+    %%> - eligible plans, in rollout order: host systemd; then Docker; then a unit in an Instance container
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    GW-->>CLI: 202 Accepted<br/>task ID
+    alt host systemd unit
+      EN->>N: Converge the unit<br/>stopped · boot policy
+      %%> Desired state: the unit is stopped and disabled at boot, as Swamp's `Set boot policy` / `Stop the Process` applies it; an already-stopped unit only gets its boot policy
+      %%> Target: the Process (`process-<id>`), so two orders for one Process run one after the other
+    else Docker container, later
+      EN->>N: Converge the container<br/>docker stop · stopped
+      %%> `docker container stop` only when the state differs; an already-stopped container changes nothing
+    else Instance container unit, later
+      EN->>C: Converge the unit inside<br/>incus exec · systemctl
+      %%> A nonblocking systemd job, then bounded readiness reads (5 s each, 10 tries 1 s apart), as `operation-process-container`; a stopped container fails the step, its next deployment starts it
     end
-  else unsupported Node plan
-    Note over GW: Use existing Process flow
-    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+    N-->>EN: Observed state<br/>inactive · enabled · applied
+    %%> Verification read-back in the same primitive: ActiveState and UnitFileState (or `docker inspect` State.Running); a mismatch fails the step (`process.state_mismatch`), as the native assert does
+    %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state
+    opt the receipt is lost
+      EN->>N: Resend the same step<br/>fresh nonce · same step ID
+      %%> When:
+      %%> - the step passes its resend deadline with no receipt; two sends, one execution
+      %%> - the Operation keeps its lock, so Process 417 stays fenced; no other Operation and no Swamp run acts on it meanwhile
+      %%> On the Node:
+      %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      N-->>EN: Stored result<br/>repeat: true
+    end
+    alt every step verified
+      EN->>GW: Record Process stopped<br/>desired state · status
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Mark the Process failed<br/>desired state unchanged
+      %%> - no rollback and nothing to clean up; the same command converges again after the cause is fixed
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-process-stop
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-process-stop (process/stop.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end

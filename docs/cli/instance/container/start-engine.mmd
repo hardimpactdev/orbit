@@ -1,0 +1,70 @@
+sequenceDiagram
+  %% A stopped nested-fleet clone's start on the Gateway engine: the steps of instance/start.mmd (workflow operation-instance-start) as executor primitives of the `instance` and `power` families, reusing those of instance.create. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% The wake admits `instance.start` (instance/wake.mmd); this chart is placed beside instance/start.mmd on instance/wake.mdx.
+  %% status: draft
+  %% command: instance:wake
+  %% kind: instance.start
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane C icon=server pill=copy tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as app-dev Node<br/>executor
+  participant C as Container<br/>via executor
+  CLI->>GW: instance:wake INSTANCE
+  Note over GW: Start or join the start<br/>one per Instance
+  %%> Same admission as instance/start.mmd: an open start is joined; other work refuses (`operation.target_busy`, `instance.lifecycle_busy`); a nested-fleet default refuses (`instance.sleep_unsupported`)
+  %%> The Club key is read once here; without one the start fails before any step (`instance.nested_club_key_missing`)
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `instance.start` is in `ORBIT_ENGINE_KINDS`
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `discard`, `instance.start`, `instance.club_key` and `instance.fleet_ready` (all exist)
+    %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+    %%> - eligible plan: a stopped clone whose seed holds Orbit's tunnel boot unit (`fleet_tunnel` recorded at create); a frozen copy (its wake resumes it) and a seed without the tunnel unit (Swamp's clone-fleet) throw `EngineUnsupported`
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    GW-->>CLI: 202 Accepted<br/>task ID
+    EN->>N: Discard the freeze plan<br/>power discard · if any
+    %%> A stopped copy's prepared plan goes before the boot, under the Instance's target lock, as the Swamp start does
+    EN->>C: Start the copy<br/>instance.start · guard · names
+    %%> Reuses `instance.start`: NIC guards and egress gates, the allowed config of a nested-fleet copy, ID maps, boot, hostname and `/etc/hosts`; an already running copy changes nothing
+    %%> Needs one input more: the start guard's owned keys `boot.autostart=false` and `limits.memory.swap`, written over an absent or different value, and the presented machine name written before the boot
+    C-->>EN: Running<br/>applied
+    EN->>C: Deliver the Club key<br/>instance.club_key · tmpfs
+    %%> Into the copy's `/run`, never a seed or snapshot; answers changed, changed_serve_pending or unchanged
+    EN->>C: Wait for the fleet<br/>instance.fleet_ready · start
+    %%> Readiness, as the Swamp start's fleet check: inner Incus, stopped nested containers started, the tunnel unit active, Doctor healthy over the tunnel, every agent online
+    %%> `seed_without_tunnel` fails the step; the engine never hands the rest to Swamp
+    C-->>EN: fleet ready<br/>started · fleet_seconds
+    opt the receipt is lost
+      EN->>C: Resend the same step<br/>fresh nonce · same step ID
+      %%> When:
+      %%> - the step passes its resend deadline with no receipt; two sends, one execution
+      %%> - the Operation keeps its lock, so Instance 42 stays fenced; no other Operation and no Swamp run acts on it meanwhile
+      %%> On the Node:
+      %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      C-->>EN: Stored result<br/>repeat: true
+    end
+    alt every step verified
+      EN->>GW: Record running<br/>power_state · club key
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Record the failure<br/>power_state unchanged
+      %%> - the container may run with a fleet that is not ready; retry: the same command, and each step leaves what already runs as it is
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-instance-start
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-instance-start (instance/start.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

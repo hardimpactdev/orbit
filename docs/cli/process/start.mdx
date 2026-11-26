@@ -18,6 +18,6 @@ On a container Instance, a Process whose definition the Project removed answers 
 
 ### Proposed executor path
 
-Start a managed host unit. This design is awaiting implementation and runtime proof.
+On the Gateway engine, the start is one desired-state primitive of the `process` family: host systemd units first, then Docker and Instance-container Processes. Gateway release-container and Vite Processes stay on Swamp. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="process/engine/start"></div>

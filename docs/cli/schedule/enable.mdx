@@ -16,6 +16,6 @@ An existing workflow keeps its fixed intent; enable only sets its trigger. A cop
 
 ### Proposed executor path
 
-Enable a retained timer. This design is awaiting implementation and runtime proof.
+On the Gateway engine, only a retained production Node timer is enabled through the executor. A native cron Schedule keeps its synchronous Swamp trigger. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="schedule/engine/enable"></div>

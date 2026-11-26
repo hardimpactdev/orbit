@@ -1,42 +1,78 @@
 sequenceDiagram
+  %% tasks.sync of a task copy on the Gateway engine: the steps of task/sync.mmd (workflow operation-task-sync-copy, child task-copy-base) as executor primitives on the copy's Node. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Same contract as the Swamp run (docs/reference/tasks.md#bring-main-into-a-copy): fetch the default branch into the copy's Node mirror, import only the missing objects, move only refs/remotes/origin/<default>. Nothing is merged or rebased; the credential never enters the copy.
   %% status: draft
   %% command: task:sync
   %% kind: tasks.sync
-  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane EN icon=workflow pill=engine tone=purple
   %% lane N icon=server pill=executor tone=amber
-  participant CLI as CLI / MCP<br/>Orbit caller
-  participant GW as Gateway<br/>admission
+  %% lane C icon=server pill=copy tone=green
+  %% lane GH icon=server pill=origin tone=gray
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
   participant EN as Engine<br/>Gateway and NATS
-  participant N as Target Node<br/>executor
-  CLI->>GW: task:sync TASK
-  Note over GW: Check access and target
-  %%> Keep the group's lifecycle lock and the running-copy, open-turn and concurrent-operation checks.
-  alt running task copy and every target advertises support
-    GW->>EN: Admit engine Operation
-    GW-->>CLI: Operation accepted
-    %%> The kind must be enabled. Admission selects one owner for the full Operation.
-    EN->>N: Fetch the default branch<br/>credential stays on Node
-    %%> Fetch into the copy's Node mirror. The task copy receives only missing objects and has no repository credential.
-    N-->>EN: Mirror head recorded
-    EN->>N: Update the remote ref<br/>inside the task copy
-    %%> Pin the admitted fetch result across redelivery. Update only refs/remotes/origin/<default> as the workspace user. Preserve HEAD, index, working tree, stash and local branches.
-    N-->>EN: Commits and work state
-    EN->>N: Clear owned bundle scratch
-    %%> Clean after success or failure. A later sync or destroy can remove scratch left by an interruption. Follow the same base-refresh contract used by task:check.
-    N-->>EN: Cleanup receipt
-    alt verified receipt
-      EN->>GW: Record refs and work state
-    else signed step failed
-      EN->>GW: Record the failed step
-    else receipt missing
-      Note over EN: Recover the signed step
-      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+  participant N as Instance Node<br/>executor
+  participant C as Task copy<br/>via executor
+  participant GH as GitHub<br/>origin
+  CLI->>GW: task:sync 42<br/>refresh the refs
+  Note over GW: Admit the sync<br/>group 42 · capture the intent
+  %%> Same admission as task/sync.mmd: an open external group with its own running task copy (`tasks.instance_not_running`), no unended copy turn (`tasks.copy_turn_unended`), and the group lock: no check or publish runs beside it
+  %%> The intent pins the repository, the default branch, `task-42`, the copy's Instance, its Node mirror `/var/lib/orbit/instance-repositories/<instance>.git` and its start commit
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `tasks.sync` is in `ORBIT_ENGINE_KINDS`
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `instance.fetch_branch` (exists), the import and the scratch cleanup on the copy's Node
+    %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+    %%> - eligible plan: a task copy (`copy` in the intent); a group without one keeps `tasks.no_workspace`
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    GW-->>CLI: 202 Accepted<br/>task ID
+    EN->>N: Fetch the default branch<br/>instance.fetch_branch · mirror
+    %%> Reuses `instance.fetch_branch` with the default branch: the Gateway mints the one-hour read token (`contents: read`) per Operation and sends it as a blob to this Node only
+    %%> The credential is written root-only beside the mirror for the Git calls and removed after them, whatever they did; it never reaches argv, the copy or a receipt
+    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare on first use
+    N->>GH: Fetch the default head<br/>HTTPS · credential on the Node
+    GH-->>N: Default head objects
+    N-->>EN: Mirror head<br/>output: commit
+    EN->>C: Import missing objects<br/>bundle · remote ref only
+    %%> Input: the mirror head that the fetch receipt returned, pinned in the step input, so a resend imports the same commit even when origin moved
+    %%> On the Node: bundles `<head>` without `^origin/<default>` and `^task-42` where the mirror holds them; no bundle when the copy already holds the head
+    %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into `refs/remotes/origin/<default>` only
+    %%> Untouched: HEAD, the index, the working tree, stashes and local branches; a retry finds the ref already at the head and changes nothing
+    C-->>EN: Refs and work state<br/>commits · behind_by · work
+    %%> Read-back in the same primitive: the default head, the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
+    EN->>N: Clear the base scratch<br/>Node scratch · copy bundle folder
+    %%> Runs after the import, also after its failure (an on-failure step); removes `/var/tmp/orbit-task-base-<instance>` and the copy's bundle folder. A later sync or the copy's destroy removes what an interruption left
+    N-->>EN: Scratch absent
+    opt the receipt is lost
+      EN->>C: Resend the same step<br/>fresh nonce · same step ID
+      %%> When:
+      %%> - the step passes its resend deadline with no receipt; two sends, one execution
+      %%> - the Operation keeps its lock, so group 42 and its copy stays fenced; no other Operation and no Swamp run acts on it meanwhile
+      %%> On the Node:
+      %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      C-->>EN: Stored result<br/>repeat: true
     end
-  else unsupported Node plan
-    Note over GW: Use existing sync flow
-    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+    alt every step verified
+      EN->>GW: Record refs and work<br/>default_commit · behind_by
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Mark the sync failed<br/>workspace unchanged
+      %%> - retry: the same command; a new Operation mints a new token, and an earlier fetch makes the next bundle smaller
+      %%> - a failed fetch or import leaves the copy's branches and work as they were; only the remote ref may already be newer
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-task-sync-copy
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-task-sync-copy (task/sync.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end

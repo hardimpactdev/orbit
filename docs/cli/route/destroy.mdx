@@ -46,7 +46,7 @@ The Gateway refuses removal with `route.target_conflict` while an active Instanc
 
 ### Proposed executor path
 
-Withdraw a private Route. This design is awaiting implementation and runtime proof.
+On the Gateway engine, the DNS withdrawal reuses `dns.publish_records`, followed by the 31-second grace where it applies, and a new site withdrawal removes the owned Caddy site and leaf. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="route/engine/destroy"></div>
 

@@ -1,52 +1,78 @@
 sequenceDiagram
+  %% route.destroy on the Gateway engine: the steps of route/destroy.mmd (workflow operation-route-removal) as `dns` and `route` family primitives. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Reuses `dns.publish_records` for the DNS withdrawal; the site withdrawal is a new `route` family primitive that route/engine/update.mmd and the planned Route steps of instance/container/destroy-engine.mmd reuse.
   %% status: draft
   %% command: route:destroy
   %% kind: route.destroy
-  %% Proposed ADR 0271 path. Names below describe resource effects; primitive names are settled with the implementation.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane EN icon=workflow pill=engine tone=purple
   %% lane N icon=server pill=executor tone=amber
   %% lane V icon=server pill=executor tone=green
-  participant CLI as CLI / MCP<br/>Orbit caller
-  participant GW as Gateway<br/>admission
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
   participant EN as Engine<br/>Gateway and NATS
   participant N as Route Node<br/>executor
   participant V as VPN Node<br/>DNS executor
   CLI->>GW: route:destroy ROUTE
-  Note over GW: Check access and target
-  %%> Keep the existing admission guards and publication holds. The eligible first plan is an ordinary private Route, without replacement or offline residue.
-  alt covered private Route and every target advertises support
-    GW->>EN: Admit engine Operation
-    GW-->>CLI: Operation accepted
-    %%> The kind must be enabled. Admission selects one owner for the full Operation.
-    opt plan withdraws DNS
-      EN->>V: Withdraw owned DNS answers
-      %%> Update records and catalog under the existing revision and ownership checks. Keep other Routes' records intact.
-      V-->>EN: DNS change verified
-      opt DNS grace applies
-        Note over EN: Wait for DNS expiry<br/>31 seconds
-        %%> Use a durable deadline. A redelivered receipt must not skip the grace. This chart covers the standalone Route command.
-      end
+  Note over GW: Guard, capture placements<br/>Route unchanged
+  %%> Same guards and captured states as route/destroy.mmd
+  Note over GW: Hold the Route Nodes
+  %%> Same hold as Swamp: each Node that serves the site, from admission to the terminal state; a second Route write on one of them waits
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `route.destroy` is in `ORBIT_ENGINE_KINDS`
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `dns.publish_records` (exists) on each VPN Node, the site withdrawal on each Route Node
+    %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+    %%> - eligible plan: an ordinary Route without `--offline`, a never-activated replacement, LAN rules, an Ingress edge or production `.env` writes; any of them throws `EngineUnsupported`
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    GW-->>CLI: 202 Accepted<br/>task ID
+    opt domain outside the TLD
+      EN->>V: Withdraw the DNS answers<br/>dns.publish_records · dns-i
+      %%> Reuses `dns.publish_records` with the records and the catalog rendered without the Route, its Router answers (`overrides`) included; other Routes' records stay byte for byte
+      %%> Needs one input more: the digest of the files the Gateway rendered from, so a file that changed since admission refuses (`owned_revision_conflict`), as the Swamp apply does
+      %%> `dnsmasq --test` before the swap; a failed check puts the previous files back and restarts nothing
+      V-->>EN: Files and restart<br/>applied · catalog digest
+      Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+      %%> A Gateway step (`grace`) after `dns-i`, timed by a NATS schedule from the DNS receipt's time; a redelivered receipt or a resend never shortens it
+      %%> A retry Operation reads the recorded withdrawal time and waits only what is left of the 31 s
     end
-    EN->>N: Withdraw site and leaf
-    %%> Use the admitted site, leaf and ownership revision. Validate before reload and refuse a foreign change.
-    opt development pools affected
-      EN->>N: Converge PHP pools
+    EN->>N: Withdraw site and leaf<br/>route family · withdraw-node
+    %%> One Node-local transaction under the Node lock, as the Swamp withdrawal: read, merge the admitted captured states, compare every other site, scope and record byte for byte, keep the previous generation, test PHP-FPM and Caddy, then commit and reload; a failed reload puts the previous file back
+    %%> Removes the Route's owned Caddy site block, its leaf certificate folders and, for a development target, its PHP-FPM pool share; a repeat finds them absent and changes nothing (`applied: 0`)
+    %%> A live file that matches none of the captured states refuses before any write (`owned_revision_conflict`; a change outside the Route: `route.withdraw_foreign_change`)
+    N-->>EN: Owned state absent<br/>site · leaf · pool read back
+    %%> Verification read-back in the same primitive: no owned site block, leaf folder or pool share remains, and Caddy validates the live file
+    EN->>N: Probe a sibling Route<br/>TLS over WireGuard
+    %%> A Gateway step (`probe-sibling`) as route.create's probe: a TLS handshake with another Route on the same Node, trusting only the Orbit root, proves Caddy still serves the rest; skipped when the Node serves no other Route
+    opt the receipt is lost
+      EN->>N: Resend the same step<br/>fresh nonce · same step ID
+      %%> When:
+      %%> - the step passes its resend deadline with no receipt; two sends, one execution
+      %%> - the Operation keeps its lock, so the Route and its held Nodes stays fenced; no other Operation and no Swamp run acts on it meanwhile
+      %%> On the Node:
+      %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      N-->>EN: Stored result<br/>repeat: true
     end
-    EN->>N: Verify owned state absent
-    %%> Exercise a sibling Route on the same Node. Keep --offline, replacements, ingress and Router/LAN cleanup on the established path for this first scope.
-    N-->>EN: Withdrawal verified
-    alt verified receipt
-      EN->>GW: Remove Route record
-    else signed step failed
-      EN->>GW: Record the failed step
-    else receipt missing
-      Note over EN: Recover the signed step
-      %%> A missing receipt allows redelivery for the same Operation step. Recover its journaled result or verify the owned state before settlement. A deterministic refusal records the failed step; retain the domain's existing failure state.
+    alt every step verified
+      EN->>GW: Delete the Route record<br/>free the held Nodes
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Record the failure<br/>Route kept · failed step
+      %%> - what was withdrawn stays withdrawn; no rollback
+      %%> - retry: the same command; the DNS step repeats with the same bytes (`applied: 0`) and each Node withdrawal converges
     end
-  else unsupported Node plan
-    Note over GW: Use existing Route removal
-    %%> Decide before dispatch. An accepted engine Operation keeps its owner through recovery.
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-route-removal
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-route-removal (route/destroy.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
   end
