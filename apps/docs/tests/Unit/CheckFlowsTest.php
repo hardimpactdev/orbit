@@ -57,6 +57,9 @@ JS);
         ['/instance/container/destroy.mmd', '%% kind: instance.destroy', '%% kind: instance.start']], 0, 'all flows ok'],
     'kind of a family chart placed below' => [[['/instance/wake.mdx', '<div className="flow-at" data-chart="instance/start"></div>', '<div className="flow-at" data-chart="instance/container/destroy"></div>'."\n\n".'<div className="flow-at" data-chart="instance/start"></div>'],
         ['/instance/container/destroy.mmd', '%% kind: instance.destroy', '%% kind: instance.start']], 1, 'instance/wake.mdx: places instance/container/destroy, which is no chart of its own kind'],
+    'kind of another family\'s chart the page places' => [[['/process/start.mdx', '<div className="flow-at" data-chart="process/start"></div>', '<div className="flow-at" data-chart="process/start"></div>'."\n\n".'<div className="flow-at" data-chart="instance/start"></div>'],
+        ['/process/engine/start.mmd', '%% kind: process.start', '%% kind: instance.start'],
+        ['/instance/wake.mdx', '<div className="flow-at" data-chart="instance/start"></div>', '']], 1, 'process/start.mdx: places process/engine/start, which is no chart of its own kind'],
     'no such chart' => [[['/instance/create.mdx', 'instance/container/create"', 'instance/container/missing"']], 1, 'places instance/container/missing, which is no chart'],
     'label too long' => [[['/instance/container/create.mmd', 'Read baseline, record T3', 'Read the baseline, record T3']], 1, 'text too long (28/23)'],
 ]);

@@ -25,16 +25,17 @@ sequenceDiagram
     GW->>EN: Signed read order<br/>machine bus · request
     EN->>N: Read the workspace<br/>read-only · 2 s budget
     %%> Target: Instance 42; the order changes nothing, so the executor needs no journal result to repeat
-    alt asleep marker present
-      N-->>EN: unknown · asleep
-      %%> As today: an asleep copy is not woken to read it; Conn shows it as asleep, not as unsaved work
-    else container stopped
-      N-->>EN: unknown · stopped
-    else container runs
+    alt Incus reports Running
       N->>C: Git read in /srv/workspace<br/>as agent · no repository code
       %%> The fixed reader of workspace-git-read.py: status, untracked set, stashes, commits beyond the baseline and the published commits; no hooks, no fsmonitor, no write to the index
+      %%> A running copy is always read, also when an asleep marker is present: the marker never hides a dirty workspace
       C-->>N: Status, stashes, commits
       N-->>EN: clean or dirty<br/>counts · names · head
+    else not running, asleep marker present
+      N-->>EN: unknown · asleep
+      %%> As today: the marker only tells asleep from stopped for a copy that is not running; it is not woken to read it
+    else not running, no marker
+      N-->>EN: unknown · stopped
     end
     EN-->>GW: Reply
     opt the reply is lost
@@ -47,4 +48,21 @@ sequenceDiagram
   end
   GW-->>CLI: Work state<br/>clean · dirty · unknown
   %%> `unknown` only for a real read failure (timeout, not_a_repository, unreachable) or the stopped and asleep states above; never for a dirty or clean workspace
-  %%> Next: a dirty or unknown answer asks before removal; the confirmed Remove sends POST conn/instances/42/destroy (instance/container/destroy-engine.mmd)
+  %%> The dialog's answer authorizes nothing: work can change before the user confirms
+  CLI->>GW: Remove confirmed<br/>POST conn/instances/42/destroy
+  %%> Body `{"acknowledge_unsaved": bool}` (DestroyConnInstanceAction)
+  alt acknowledge_unsaved false
+    Note over GW: Read the workspace again<br/>the same read, fresh
+    %%> ConnInstanceWorkState::assertRemovalSafe: an independent fresh read, by the same executor or SSH path as above, inside this request; still no Operation
+    alt the fresh read is clean
+      Note over GW: Admit the removal<br/>instance.destroy
+      %%> instance/container/destroy-engine.mmd, or instance/destroy.mmd on Swamp
+      GW-->>CLI: 202 Accepted<br/>task ID
+    else dirty or unknown
+      GW--xCLI: 409 instance.unsaved_work<br/>details: the fresh read
+      %%> Nothing is recorded; Conn asks again, and only an acknowledged POST removes unsaved work
+    end
+  else acknowledge_unsaved true
+    Note over GW: Admit the removal<br/>no second read
+    GW-->>CLI: 202 Accepted<br/>task ID
+  end

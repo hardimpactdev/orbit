@@ -37,13 +37,20 @@ sequenceDiagram
     N->>GH: Fetch the default head<br/>HTTPS · credential on the Node
     GH-->>N: Default head objects
     N-->>EN: Mirror head<br/>output: commit
+    %%> `instance.fetch_branch` answers `commit: null` as success when origin lacks the branch (a create starts from the seed then); for a sync that is a failure: a null commit fails the Operation as `tasks.default_branch_missing`, and no old mirror head is ever imported
     EN->>C: Import missing objects<br/>bundle · remote ref only
-    %%> Input: the mirror head that the fetch receipt returned, pinned in the step input, so a resend imports the same commit even when origin moved
-    %%> On the Node: bundles `<head>` without `^origin/<default>` and `^task-42` where the mirror holds them; no bundle when the copy already holds the head
-    %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into `refs/remotes/origin/<default>` only
-    %%> Untouched: HEAD, the index, the working tree, stashes and local branches; a retry finds the ref already at the head and changes nothing
+    %%> Input: the non-null mirror head that the fetch receipt returned, pinned in the step input, so a resend imports the same commit even when origin moved
+    %%> On the Node: reads which of `origin/<default>`, `task-42` and the pinned head the copy actually holds, and bundles `<head>` excluding only those commits as prerequisites
+    %%> In the copy: root makes the bundle folder fresh and owns it; as `agent`, `git fetch` of the bundle into the object store
+    alt the copy already holds the head
+      Note over C: No bundle to fetch<br/>the ref may still be stale
+      %%> A copy can hold the pinned commit (an earlier interrupted sync, a merge into task-42) while `refs/remotes/origin/<default>` still names an older commit
+    end
+    C->>C: Set only the remote ref<br/>update-ref, old value checked
+    %%> As `agent`: `git update-ref refs/remotes/origin/<default> <head> <old>` with the value read before, with or without a bundle; no other ref, HEAD, the index, the working tree or stashes is written
+    %%> A retry finds the ref already at the head and changes nothing; a ref that moved since the read refuses rather than overwriting it
     C-->>EN: Refs and work state<br/>commits · behind_by · work
-    %%> Read-back in the same primitive: the default head, the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
+    %%> Read-back in the same primitive: `refs/remotes/origin/<default>` equals the pinned head, else `tasks.base_ref_mismatch`; HEAD and every local branch equal their values before the step; the branch commit, `git rev-list --count task-42..origin/<default>`, the copy's start and the `work` read (docs/reference/tasks.md#published-work-of-a-copy)
     EN->>N: Clear the base scratch<br/>Node scratch · copy bundle folder
     %%> Runs after the import, also after its failure (an on-failure step); removes `/var/tmp/orbit-task-base-<instance>` and the copy's bundle folder. A later sync or the copy's destroy removes what an interruption left
     N-->>EN: Scratch absent

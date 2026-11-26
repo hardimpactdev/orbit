@@ -22,24 +22,35 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `instance.start` is in `ORBIT_ENGINE_KINDS`
-    %%> - every Node a step touches reports its action in `$KV.NODES`: `discard`, `instance.start`, `instance.club_key` and `instance.fleet_ready` (all exist)
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `discard`, `instance.start`, `instance.club_key` and `instance.fleet_ready` (all exist), and the new unit wait and marker removal actions
+    %%> - `instance.start`'s decoder refuses unknown fields, so the new inputs below need evidence first: the Node lists a feature for them in its reported `features` (as `instance.t3_pairing`), else the whole start stays on Swamp; it never fails after earlier steps acted
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - eligible plan: a stopped clone whose seed holds Orbit's tunnel boot unit (`fleet_tunnel` recorded at create); a frozen copy (its wake resumes it) and a seed without the tunnel unit (Swamp's clone-fleet) throw `EngineUnsupported`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
     GW-->>CLI: 202 Accepted<br/>task ID
-    EN->>N: Discard the freeze plan<br/>power discard · if any
-    %%> A stopped copy's prepared plan goes before the boot, under the Instance's target lock, as the Swamp start does
+    EN->>N: Read the container state<br/>Incus status · read-only
+    N-->>EN: Stopped or Running
+    opt Incus reports Stopped
+      EN->>N: Discard the freeze plan<br/>power discard
+      %%> A stopped copy's prepared plan and limits record go before the boot, under the Instance's target lock, as the Swamp start does
+      %%> Skipped when the read finds the copy Running: `discard` refuses a running target, so a retry Operation after the boot never sends it
+    end
     EN->>C: Start the copy<br/>instance.start · guard · names
     %%> Reuses `instance.start`: NIC guards and egress gates, the allowed config of a nested-fleet copy, ID maps, boot, hostname and `/etc/hosts`; an already running copy changes nothing
-    %%> Needs one input more: the start guard's owned keys `boot.autostart=false` and `limits.memory.swap`, written over an absent or different value, and the presented machine name written before the boot
+    %%> New inputs, behind the feature above: the start guard's owned keys `boot.autostart=false` and `limits.memory.swap` written over an absent or different value; the presented machine name; and, for a copy still Stopped, the recorded server's drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` before the boot, so t3.service starts the recorded server
     C-->>EN: Running<br/>applied
     EN->>C: Deliver the Club key<br/>instance.club_key · tmpfs
     %%> Into the copy's `/run`, never a seed or snapshot; answers changed, changed_serve_pending or unchanged
+    EN->>C: Wait for the boot units<br/>FrankenPHP · boot Processes
+    %%> As the Swamp start: reads the Process units that start at boot (installed and enabled) and FrankenPHP, then waits for each to be active with an empty `Job=`; a bounded read from the Node, failing `instance.container_start_failed` at the bound
+    C-->>EN: Units active<br/>names · seconds
     EN->>C: Wait for the fleet<br/>instance.fleet_ready · start
     %%> Readiness, as the Swamp start's fleet check: inner Incus, stopped nested containers started, the tunnel unit active, Doctor healthy over the tunnel, every agent online
     %%> `seed_without_tunnel` fails the step; the engine never hands the rest to Swamp
     C-->>EN: fleet ready<br/>started · fleet_seconds
+    EN->>N: Remove the asleep marker<br/>after the units answer
+    %%> Only after the web unit answers, so Caddy sends the next request to a running app; an absent marker counts as removed. A failed start keeps the marker, and the app stays behind the sleep gate
     opt the receipt is lost
       EN->>C: Resend the same step<br/>fresh nonce · same step ID
       %%> When:

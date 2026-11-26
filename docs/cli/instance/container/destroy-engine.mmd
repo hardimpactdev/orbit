@@ -19,7 +19,12 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `instance.destroy` is in `ORBIT_ENGINE_KINDS`, and the Node reports `instance.destroy` in `$KV.NODES`, independently of `instance.create`
-    %%> - InstanceDestroyEngineFlow accepts the plan: a development clone, not the default, with `--force` and a clone source; no wait for a create or completion, no CI hold; one member with no Route and no additional Routes; no teardown steps, Processes, Schedules, databases, Valkey or SQLite files
+    %%> - InstanceDestroyEngineFlow accepts the plan, all of it checked against the saved intent:
+    %%> - the target is an Instance with a positive ID, equal to the intent's `instance_id`; the Operation's Node is positive and equals both the intent's and the saved plan's `node_id`
+    %%> - development, `--force`, not the default name; a positive clone source that is not the Instance itself
+    %%> - no `after_operation_id` (no wait for a create or completion) and no CI hold
+    %%> - exactly one member, and it is this Instance, with no `route_id`, `run_teardown: false`; `additional_route_ids` and the plan's Routes are empty lists
+    %%> - exactly one teardown entry, for this Instance, with no steps; no Processes, Schedules, database connections, database servers or SQLite files
     %%> - the saved identity is the signed contract: container and ACL `instance-42`, project `orbit-instances` or `orbit-instances-nested`, pool `orbit-instances`, mirror `/var/lib/orbit/instance-repositories/42.git`, firewall prefix `orbit:instance-42-`, the asleep marker, inner volume `inner-42` when present
     %%> - else `EngineUnsupported`, and the whole removal runs on Swamp
     Note over GW: Bind remove, take the lock<br/>commit, publish the start
@@ -36,11 +41,12 @@ sequenceDiagram
     %%> Holds the same target lock as sleep and wake; checks that `instance-42` is a container on the admitted pool
     %%> Force-stops it unless Incus reports Stopped (`instance.removal_stop_failed`), deletes it with `--force`; a failed delete restores the snapshots' missing datasets and deletes again
     %%> Removes the inner volume and its owned unused `build-` and `spare-` volumes, then the ACL
-    N-->>EN: Owned resources absent<br/>container · volumes · ACL
     %%> Read-back: the container, the ACL and every owned volume are gone, else `instance.removal_incomplete`
-    %%> Then removes the `orbit:instance-42-` ufw rules and runs the power helper's legacy `discard` (`instance.power_discard_failed`), discarding both engines' freeze state
-    %%> Then removes the mail folder, the mirror, `/var/tmp/orbit-task-base-42` and the hibernation asleep, cold, log and awake files; an absent one counts as removed
-    %%> The executor appends its `done` record before it sends the terminal receipt; a refusal such as `instance.removal_dataset_taken` is kept as a result too
+    %%> Then the `orbit:instance-42-` ufw rules: an owned rule that shares its specification with a foreign rule refuses (`instance.removal_incomplete`); each is deleted by specification and their absence is read back
+    %%> Then the power helper's legacy `discard` (`instance.power_discard_failed`), then the mail folder, the mirror, `/var/tmp/orbit-task-base-42` and the hibernation asleep, cold, log and awake files; an absent one counts as removed
+    %%> Last, the executor discards its own freeze state for Instance 42 (`discard_destroyed`); a failure there is `instance.power_discard_failed`, never success
+    N-->>EN: One terminal receipt<br/>after the whole sequence
+    %%> Sent only after every part above held, or with the first failure's code; the executor appends its `done` record first. A refusal such as `instance.removal_dataset_taken` is kept as a result too
     opt the receipt is lost
       EN->>N: Resend the same step<br/>fresh nonce · same step ID
       %%> The journal repeats the stored result with `repeat: true`; the deletion never runs twice

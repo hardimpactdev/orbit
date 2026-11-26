@@ -40,8 +40,8 @@ function lint(f) {
 
 // A page places a chart explicitly under `## How it works`, in the form bin/docs-flows reads. Each placement names
 // a chart, and a chart beside a page of its name is placed there. A page may also place a chart of its own kind
-// from a sub-folder of its family, such as instance/container/create on instance/create.mdx, or of a kind whose family
-// chart it places above, such as an engine chart of instance.start on instance/wake.mdx.
+// from a sub-folder of its family, such as instance/container/create on instance/create.mdx, or of a kind whose chart of the
+// same family it places above, such as an engine chart of instance.start on instance/wake.mdx.
 const kindOf = (f) => readFileSync(`${dir}/${f}`, 'utf8').match(/^\s*%% kind: (\S+)\s*$/m)?.[1]
 const placed = new Map()
 for (const page of files.filter((n) => n.endsWith('.mdx'))) {
@@ -56,7 +56,7 @@ for (const page of files.filter((n) => n.endsWith('.mdx'))) {
     else if (sub ? !existsSync(`${dir}/${name}.mmd`) : !files.includes(`${name}.mmd`)) fail(`${page}: places ${name}, which is no chart`)
     else if (sub && (!name.startsWith(page.split('/')[0] + '/') || !kinds.has(kindOf(`${name}.mmd`)))) fail(`${page}: places ${name}, which is no chart of its own kind`)
     else if (placed.has(name)) fail(`${page}: places ${name}, which ${placed.get(name)} places already`)
-    else { placed.set(name, page); if (sub) lint(`${name}.mmd`); else kinds.add(kindOf(`${name}.mmd`)) }
+    else { placed.set(name, page); if (sub) lint(`${name}.mmd`); else if (name.startsWith(page.split('/')[0] + '/')) kinds.add(kindOf(`${name}.mmd`)) }
   }
 }
 for (const f of charts.values()) {

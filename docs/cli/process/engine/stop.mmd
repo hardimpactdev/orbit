@@ -18,11 +18,11 @@ sequenceDiagram
   CLI->>GW: process:stop 417
   Note over GW: Validate, record the task<br/>Process 417: provisioning
   %%> Same admission as process/stop.mmd: access to the Process's Node, a Process not being removed; the intent carries unit or container name, runtime, on-demand flag and Instance container
-  alt drain-waiting or Vite plan
+  opt drain-waiting, Vite or release plan
     Note over GW: Refuse the engine<br/>EngineUnsupported
-    %%> - a Gateway release-container Process (Horizon, the scheduler: `container.release`), whose stop waits for the worker to drain, stays on Swamp
-    %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout stay on Swamp
-    %%> - the refusal is decided at admission, before any order; the Operation runs whole on Swamp
+    %%> - a stop that waits for a drain, whatever its placement: a host systemd Process that runs Horizon (`GatewayHorizon::runs` with no Instance, whose unit carries the long-drain stop directives of SystemdProcessRenderer) and a Gateway release-container Process (Horizon, the scheduler)
+    %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout
+    %%> - decided at admission, before any order: the engine admits nothing, and the whole Operation takes the Swamp branch below
   end
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
@@ -35,7 +35,7 @@ sequenceDiagram
     GW-->>CLI: 202 Accepted<br/>task ID
     alt host systemd unit
       EN->>N: Converge the unit<br/>stopped · boot policy
-      %%> Desired state: the unit is stopped and disabled at boot, as Swamp's `Set boot policy` / `Stop the Process` applies it; an already-stopped unit only gets its boot policy
+      %%> Desired state: the unit is stopped and disabled at boot, as Swamp's `Set boot policy` / `Stop the Process` applies it; the admitted boot policy is an input of the step; an already-stopped unit only gets its boot policy
       %%> Target: the Process (`process-<id>`), so two orders for one Process run one after the other
     else Docker container, later
       EN->>N: Converge the container<br/>docker stop · stopped
@@ -44,8 +44,17 @@ sequenceDiagram
       EN->>C: Converge the unit inside<br/>incus exec · systemctl
       %%> A nonblocking systemd job, then bounded readiness reads (5 s each, 10 tries 1 s apart), as `operation-process-container`; a stopped container fails the step, its next deployment starts it
     end
-    N-->>EN: Observed state<br/>inactive · enabled · applied
-    %%> Verification read-back in the same primitive: ActiveState and UnitFileState (or `docker inspect` State.Running); a mismatch fails the step (`process.state_mismatch`), as the native assert does
+    alt host systemd unit
+      N-->>EN: Observed state<br/>loaded · inactive · disabled
+      %%> Read-back: LoadState=loaded, ActiveState=inactive (or failed after the stop), UnitFileState=disabled
+    else Docker container, later
+      N-->>EN: Observed state<br/>State.Status exited
+      %%> Read-back: `docker inspect` State.Status is `exited`; `created` or any other status fails the step
+    else Instance container unit, later
+      C-->>EN: Observed state<br/>loaded · inactive · disabled
+      %%> Read-back inside the copy: the same unit properties as on a host
+    end
+    %%> A mismatch fails the step (`process.state_mismatch`), as the native assert does; success is projected only from this read-back
     %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state
     opt the receipt is lost
       EN->>N: Resend the same step<br/>fresh nonce · same step ID

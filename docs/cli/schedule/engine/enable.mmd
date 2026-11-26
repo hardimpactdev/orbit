@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% schedule.enable of a retained production Node timer on the Gateway engine: the `Check the timer` path of schedule/enable.mmd (workflows operation-schedule-control and production-schedule-control) as one executor primitive. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
-  %% A native cron Schedule has no Node timer: it stays the synchronous Swamp trigger set, with no Operation.
+  %% schedule.enable of a retained host Node timer on the Gateway engine: the timer path of schedule/enable.mmd (workflow operation-schedule-control) as one executor primitive. A `production_control` plan (workflow production-schedule-control: the timer inside the selected live release) stays on Swamp. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% A native cron Schedule has no Node timer: it keeps the synchronous Swamp trigger set and its succeeded Operation, with no executor order.
   %% status: draft
   %% command: schedule:enable
   %% kind: schedule.enable
@@ -17,14 +17,19 @@ sequenceDiagram
   Note over GW: Validate the Schedule<br/>Schedule 7f3c… · Instance 42
   %%> Same validation as schedule/enable.mmd
   alt native cron Schedule
-    Note over GW: Refuse the engine<br/>set the Swamp trigger
-    %%> No Operation is recorded and no Node order is sent: the Gateway sets the workflow trigger and answers with its confirmation, as schedule/enable.mmd
-  else retained production Node timer
+    Note over GW: Set the Swamp trigger<br/>no executor order
+    %%> As schedule/enable.mmd (NativeSchedules::enable): the Gateway sets the workflow trigger; after Swamp confirms it records a succeeded `schedule.enable` Operation with its result and answers with its ID; a refusal keeps the prior state and records none
+    %%> The engine admits nothing here; no run, no Node order
+  else production_control plan
+    Note over GW: Refuse the engine<br/>EngineUnsupported
+    %%> A timer inside a production release container (`production_control`): verifying the selected live release, enabling the timer inside it and updating its release record stay on production-schedule-control; the whole Operation runs there
+  else retained host Node timer
     alt the engine admits the whole Operation
       %%> Admission, one decision per Operation (EngineKinds::routes):
       %%> - `schedule.enable` is in `ORBIT_ENGINE_KINDS`
       %%> - every Node a step touches reports its action in `$KV.NODES`: the timer action of the Schedule's Node
       %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+      %%> - eligible plan: a host timer on the Schedule's Node, no `production_control` and no `container`
       Note over GW: Bind steps, take the lock<br/>commit, publish the start
       %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
       GW-->>CLI: 202 Accepted<br/>task ID
@@ -54,7 +59,7 @@ sequenceDiagram
       end
     else the engine does not admit it
       Note over GW: Start the Swamp run<br/>operation-schedule-control
-      %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-schedule-control or production-schedule-control (schedule/enable.mmd)
+      %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-schedule-control (schedule/enable.mmd)
       %%> - no step of it runs on the engine; an Operation never splits across engines
     end
   end
