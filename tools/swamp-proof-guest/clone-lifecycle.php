@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Domain\Engine\NodeBusAccess;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NodeExecutorInput;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\EngineBus;
+use App\Models\Instance;
+use App\Models\Task;
 use Illuminate\Contracts\Console\Kernel;
 
 chdir(__DIR__.'/../../apps/gateway');
@@ -45,9 +49,21 @@ if ($mode === 'configuration') {
     $node = (int) $argv[2];
     $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
     $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? []];
-} elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && count($argv) === 5
-    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && ctype_digit($argv[4])) {
-    [$node, $operation, $target] = array_slice($argv, 2);
+} elseif ($mode === 'task-copy' && count($argv) === 5 && ctype_digit($argv[2]) && ctype_digit($argv[3]) && preg_match('/\A[0-9a-f]{40}\z/', $argv[4]) === 1) {
+    // Makes a ready disposable clone the running copy of a new external group, as task:start leaves it.
+    $app->make(TaskExtensionState::class)->enable();
+    $copy = Instance::query()->findOrFail((int) $argv[2]);
+    if ($copy->project_id !== (int) $argv[3] || $copy->task_workspace_owner_id !== null) {
+        throw new RuntimeException('Only an unowned clone of the proof project becomes a task copy.');
+    }
+    $group = Task::query()->create(['project_id' => $copy->project_id, 'title' => 'Sync proof', 'brief' => 'Sync proof', 'status' => TaskGroupStatus::Running, 'orchestration' => 'external']);
+    $copy->forceFill(['branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => $argv[4]])->save();
+    $group->update(['taskable_type' => $copy->getMorphClass(), 'taskable_id' => $copy->id]);
+    $result = ['group' => $group->id, 'branch' => 'task-'.$group->id];
+} elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && in_array(count($argv), [5, 7], true)
+    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && preg_match('/\A[0-9][0-9a-z:-]*\z/', $argv[4]) === 1) {
+    [$node, $operation, $target] = array_slice($argv, 2, 3);
+    [$step, $action] = [$argv[5] ?? 'remove', $argv[6] ?? 'instance.destroy'];
     $isOrder = $mode === 'pending-order';
     $subject = $isOrder ? 'orbit.node.'.$node.'.orders' : 'orbit.receipts.'.$node;
     $stream = $isOrder ? 'ORDERS' : 'RECEIPTS';
@@ -64,9 +80,9 @@ if ($mode === 'configuration') {
         } else {
             $line = json_decode($data, true, flags: JSON_THROW_ON_ERROR)['line'];
         }
-        if ($message['subject'] !== $subject || $line['operation'] !== $operation.':remove' || $line['target'] !== $target
-            || $line['action'] !== 'instance.destroy' || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
-            throw new RuntimeException('The queued message does not belong to this proof destroy.');
+        if ($message['subject'] !== $subject || $line['operation'] !== $operation.':'.$step || $line['target'] !== $target
+            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
+            throw new RuntimeException('The queued message does not belong to this proof step.');
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
             throw new RuntimeException('The proof receipt was not dropped.');
