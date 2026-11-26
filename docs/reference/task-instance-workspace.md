@@ -31,7 +31,7 @@ Callers supply the recorded Incus project, container name, expected branch and h
 | `discard` | Preflight identity | Deletes only this snapshot's guest scratch after users stop |
 | `scan` | Head, copy start, and `nested` | Runs `task_copy_scan.py` as root in the container (`python3 -I`, Git as `agent`), returning paths, lines, secret names, and object digest (never values) |
 | `base` | Branch, default branch, mirror, published/approved commits | Fetches default branch into `/var/lib/orbit/instance-repositories/<instance>.git` and imports missing objects into `refs/remotes/origin/<default>` |
-| `base-cleanup` | Copy Instance ID | Deletes `/var/tmp/orbit-task-base-<instance>` on the Node and `/tmp/orbit-task-base-<instance>` in the guest |
+| `base-cleanup` | Copy Instance ID | Deletes `/var/tmp/orbit-task-base-<instance>` and the signed executor's mirror seed staging `/var/lib/orbit/instance-repositories/<instance>.git.seeding` on the Node, and `/tmp/orbit-task-base-<instance>` in the guest |
 
 Snapshots use a temporary Git index (capturing unignored untracked files, staged files, spaces, and symlinks without modifying the real index) with Git hooks, `fsmonitor`, and global/system Git config disabled.
 
