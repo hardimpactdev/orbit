@@ -679,9 +679,9 @@ class SyncLane(CloneLane):
         # task:start and task:sync need the tasks extension; the fixture records what it found and puts it back in cleanup.
         code, found, error = self.api('GET', 'extensions')
         require(code == 200, f'extension list: HTTP {code} {error}')
-        self.extensions = {name: found[name] for name in ('tasks', 'conn')}
-        # Tasks needs Conn: enable in dependency order, restore in reverse.
-        for name in ('conn', 'tasks'):
+        self.extensions = {name: found[name] for name in ('ai-router', 'tasks', 'conn')}
+        # Tasks needs the AI router (TasksServiceProvider::dependencies): enable in that order, restore in reverse. Conn stays as found.
+        for name in ('ai-router', 'tasks'):
             if not found[name]:
                 code, _row, error = self.api('POST', f'extensions/{name}/enable', {})
                 require(code == 200, f'{name} extension: HTTP {code} {error}')
@@ -701,7 +701,7 @@ class SyncLane(CloneLane):
         try:
             super().cleanup()
         finally:
-            for name in ('tasks', 'conn') if self.extensions is not None else ():
+            for name in ('tasks', 'ai-router') if self.extensions is not None else ():
                 if not self.extensions[name] and self.api('GET', 'extensions')[1][name]:
                     code, _row, error = self.api('POST', f'extensions/{name}/disable', {})
                     require(code == 200, f'{name} extension restore: HTTP {code} {error}')
