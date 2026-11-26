@@ -11,6 +11,7 @@ use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ToolConvergeIntent
@@ -36,6 +37,7 @@ final readonly class ToolConvergeIntent
         $packages = [];
         $protectedPackages = [];
         $tools = Tool::query()->where('node_id', $node->id)->with(['manager', 'aptRepository'])->orderBy('id')->get();
+        $sources = AptSourceTrust::nodeDefinitions($node->id);
         foreach ($tools as $tool) {
             if (($ids !== null && ! in_array($tool->id, $ids, true)) || $tool->withdrawn()) {
                 continue;
@@ -54,8 +56,10 @@ final readonly class ToolConvergeIntent
                 $package['repository_packages'] = $this->definitions->repositoryPackages($active, $definition->repository, $tools, $tool->package, false);
                 // Part of the Tools phase digest. An unproven source is bound to this Operation, so every Node converge runs the phase
                 // until a write proves the source, however many times its trust was lost since the last recorded digest.
-                $package['repository_verified'] = AptSourceTrust::verified(
-                    AptRepository::query()->where('node_id', $node->id)->where('name', $definition->repository['name'])->first(), $definition->repository);
+                $record = AptRepository::query()->where('node_id', $node->id)->where('name', $definition->repository['name'])->first();
+                AptSourceTrust::assertDistinct($definition->repository, [...$sources, ...array_map(ValidatedData::object(...), array_values(array_filter(array_column($packages, 'repository'))))]);
+                $package['repository_verified'] = AptSourceTrust::verified($record, $definition->repository);
+                $package['repository_origins'] = AptSourceTrust::origins($record, $definition->repository);
                 if (! $package['repository_verified'] && $owner !== null) {
                     $package['repository_proof_run'] = $owner;
                 }

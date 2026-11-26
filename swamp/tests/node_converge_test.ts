@@ -306,17 +306,20 @@ Deno.test("a present package is never taken over for a Tool Orbit does not own, 
         assertEquals(toolState("inspect", { ...unowned, ...absent }), { installed_version: null, needs_write: true });
     }
 });
-Deno.test("a Tool's source pins its plan's owned members, the run's installed Tools and itself, and its restore drops an unowned self", () => {
+Deno.test("a Tool's source holds its plan's owned members and the run's installed Tools before publication, and adds itself only once verified", () => {
     const repository = { name: "proof", uris: ["https://packages.example.test/apt"], suites: ["stable"], components: ["main"],
         signing_key: { url: "https://packages.example.test/key.asc", fingerprint: "A".repeat(40) } };
     const pins = (packages: string) => (packages === "" ? "" : `Package: ${packages}\nPin: origin "packages.example.test"\nPin-Priority: 990\n\n`) +
         'Package: *\nPin: origin "packages.example.test"\nPin-Priority: 1\n';
     const unowned = toolState("pins", { ...apt, tool: { ...apt.tool, owned: false, repository, repository_packages: ["nano", "tree"] }, installed: ["ed"] });
-    assertEquals(unowned, { repository_preferences: pins("ed nano tree"), repository_preferences_restore: pins("ed nano") });
+    assertEquals(unowned, { repository_preferences: pins("ed nano tree"), repository_preferences_held: pins("ed nano") });
     const owned = toolState("pins", { ...apt, tool: { ...apt.tool, repository, repository_packages: ["tree"] }, installed: [] });
-    assertEquals(owned, { repository_preferences: pins("tree"), repository_preferences_restore: pins("tree") });
+    assertEquals(owned, { repository_preferences: pins("tree"), repository_preferences_held: pins("tree") });
     const alone = toolState("pins", { ...apt, tool: { ...apt.tool, owned: false, repository, repository_packages: ["tree"] }, installed: [] });
-    assertEquals(alone.repository_preferences_restore, pins(""));
+    assertEquals(alone.repository_preferences_held, pins(""));
+    const moved = toolState("pins", { ...apt, tool: { ...apt.tool, owned: false, repository, repository_packages: ["tree"],
+        repository_origins: ["old.example.test", "packages.example.test"] }, installed: [] });
+    assertEquals(moved.repository_preferences_held, pins("") + '\nPackage: *\nPin: origin "old.example.test"\nPin-Priority: 1\n');
 });
 Deno.test("an out-of-constraint candidate is rejected before returning write argv", () => {
     assertThrows(() => toolState("candidate", { ...apt, ...aptFacts, candidate: { rc: 0, stdout: "tree:\n  Candidate: 3.0.0-1\n" } }));

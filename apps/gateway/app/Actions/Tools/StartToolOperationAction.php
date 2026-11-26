@@ -58,16 +58,19 @@ final readonly class StartToolOperationAction
 
         return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, $version, function (array $admitted) use ($verb, $nodeId, $managerName, $package): Operation {
             ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'owned' => $owned, 'definition' => $definition] = $admitted;
+                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
+                'owned' => $owned, 'definition' => $definition] = $admitted;
             if ($manager->name() === ToolManagerName::ConnServer) {
                 return app(ConnServerToolMembership::class)->record($verb, $nodeId, $tool, $definition, request()->attributes->getString('orbit.request_id'));
             }
-            $removeRepository = $verb === 'remove' && $repository !== null && $repositoryPackages === [];
+            // Ownership decides which packages apt prefers; surviving membership decides whether the source may go.
+            $removeRepository = $verb === 'remove' && $repository !== null && $repositoryMembers === [];
 
             $input = [
                 ...array_diff_key(new AdmittedToolPackage($node, $manager->name(), $package, $definition, $tool, $record, $protected)->toArray(), ['id' => true, 'protected' => true]),
                 'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-                'repository_packages' => $repositoryPackages, 'repository_given' => $repository !== null && $verb !== 'remove' && ! AptSourceTrust::verified($repositoryRecord, $repository),
+                'repository_packages' => $repositoryPackages, 'repository_origins' => $repository === null ? [] : AptSourceTrust::origins($repositoryRecord, $repository),
+                'repository_given' => $repository !== null && $verb !== 'remove' && ! AptSourceTrust::verified($repositoryRecord, $repository),
                 'package_owned' => $owned,
                 'tool_id' => $tool?->id,
                 'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
@@ -130,7 +133,7 @@ final readonly class StartToolOperationAction
      * @template T
      *
      * @param  array<string, mixed>|null  $repository
-     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, owned: bool, definition: ToolDefinition}): T  $then
+     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}): T  $then
      * @return T
      */
     private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then): mixed
@@ -192,20 +195,26 @@ final readonly class StartToolOperationAction
                 $repository = $relinquish ? null : ($verb === 'remove' ? ($removing->definition ?? $tool?->desired_repository) : $definition->repository);
                 $repositoryRecord = $verb === 'remove' ? $removing : $tool?->aptRepository;
                 $repositoryPackages = [];
+                $repositoryMembers = [];
+                if ($repository !== null && $verb !== 'remove') {
+                    AptSourceTrust::assertDistinct($repository, AptSourceTrust::nodeDefinitions($nodeId));
+                }
                 if ($repository !== null) {
                     $repositoryName = $repository['name'];
                     $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repositoryName)->first();
                     $members = Tool::query()->with(['aptRepository', 'manager'])->where('node_id', $nodeId)->where('tool_manager_id', $record?->id)->get();
                     $repositoryPackages = $this->definitions->repositoryPackages($active, $repository, $members, $package, $verb === 'remove');
+                    $repositoryMembers = $this->definitions->repositoryMembers($active, $repository, $members, $package);
                     // Repinning survivors names the source's origins. Only a proven record says which origins are on disk; after an
                     // uncertain write, a write of a surviving member republishes the source first.
-                    if ($verb === 'remove' && $repositoryPackages !== [] && ! AptSourceTrust::verified($repositoryRecord, $repository)) {
+                    if ($verb === 'remove' && $repositoryMembers !== [] && ! AptSourceTrust::verified($repositoryRecord, $repository)) {
                         $this->refuse('tool.repository_unverified');
                     }
                 }
 
                 return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'relinquish' => $relinquish, 'protected' => $protected,
-                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'owned' => $owned, 'definition' => $definition]);
+                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_packages' => $repositoryPackages, 'repository_members' => $repositoryMembers,
+                    'owned' => $owned, 'definition' => $definition]);
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.') && $error->errorCode !== 'conn_server.pin_unavailable') {

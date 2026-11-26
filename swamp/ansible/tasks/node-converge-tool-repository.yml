@@ -1,5 +1,14 @@
 ---
 # Keep the existing Tool repository layout, and never publish an unverified key to APT.
+# Every origin the source may have on disk is restricted before anything is published: the owned Tools stay preferred, and no Tool
+# that has not been verified installed ever is.
+- name: Hold the repository to its owned Tools before publishing it
+  ansible.builtin.copy:
+    dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
+    content: "{{ (tool_pins.stdout | from_json).repository_preferences_held }}"
+    owner: root
+    group: root
+    mode: "0644"
 - name: Inspect the recorded repository keyring
   ansible.builtin.command:
     argv: [gpg, --batch, --show-keys, --with-colons, "/etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg"]
@@ -46,13 +55,6 @@
       Components: {{ tool.repository.components | join(' ') }}
       Architectures: {{ tool.repository.architectures | default(['amd64']) | join(' ') }}
       Signed-By: /etc/apt/keyrings/orbit-{{ tool.repository.name }}.gpg
-    owner: root
-    group: root
-    mode: "0644"
-- name: Limit every repository to its owned Tools and this Tool
-  ansible.builtin.copy:
-    dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
-    content: "{{ (tool_pins.stdout | from_json).repository_preferences }}"
     owner: root
     group: root
     mode: "0644"

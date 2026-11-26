@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\AptRepository;
+use App\Models\Tool;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -24,14 +26,66 @@ final class AptSourceTrust
         return $record !== null && $record->verified && ToolDefinition::sameRepository($record->definition, $repository);
     }
 
-    /** @param array<string, mixed> $definition the definition an admitted write may publish */
+    /**
+     * An admitted write may publish this definition: the record proves nothing until a write succeeds, and every origin the source may
+     * now have on disk joins those its preferences restrict.
+     *
+     * @param  array<string, mixed>  $definition
+     */
     public static function suspect(int $nodeId, array $definition): AptRepository
     {
         $record = AptRepository::query()->firstOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => false]);
-        $record->update(['verified' => false]);
+            ['definition' => $definition, 'verified' => false, 'origins' => self::hosts($definition)]);
+        $record->update(['verified' => false, 'origins' => self::origins($record, $definition)]);
 
         return $record;
+    }
+
+    /**
+     * The origin hosts the source may have on disk, the definition's included: a failed change from one origin to another may have left
+     * either, so the preferences of both keep every unrelated package at priority 1.
+     *
+     * @param  array<string, mixed>  $definition
+     * @return list<string>
+     */
+    public static function origins(?AptRepository $record, array $definition): array
+    {
+        $hosts = [...($record === null ? [] : ($record->origins ?? self::hosts($record->definition))), ...self::hosts($definition)];
+        $hosts = array_values(array_unique($hosts));
+        sort($hosts, SORT_STRING);
+
+        return $hosts;
+    }
+
+    /**
+     * One apt source on a Node is one set of URIs and suites with one keyring: two differently named Orbit sources sharing a URI and
+     * suite would give apt conflicting `Signed-By` values and stop every apt read on the Node.
+     *
+     * @param  array<string, mixed>  $definition
+     * @param  iterable<array<string, mixed>>  $others  the definitions the Node has or will have under other names
+     */
+    public static function assertDistinct(array $definition, iterable $others): void
+    {
+        $entries = self::entries($definition);
+        foreach ($others as $other) {
+            if (self::name($other) !== self::name($definition) && array_intersect($entries, self::entries($other)) !== []) {
+                throw new ResourceOperationException('tool.repository_conflict', 'Another apt source on this Node already uses the same URI and suite.', 409);
+            }
+        }
+    }
+
+    /**
+     * The definitions of the Node's sources under every name: the recorded ones, which may still be on disk, and those enrolled Tools want.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function nodeDefinitions(int $nodeId): array
+    {
+        $recorded = AptRepository::query()->where('node_id', $nodeId)->pluck('definition')->all();
+        $desired = Tool::query()->where('node_id', $nodeId)->whereNotNull('desired_repository')->get()
+            ->reject->withdrawn()->pluck('desired_repository')->all();
+
+        return array_values(array_map(ValidatedData::object(...), array_filter([...$recorded, ...$desired], 'is_array')));
     }
 
     /** @param list<array<string, mixed>> $plans the admitted convergence plans, which always publish their sources */
@@ -75,7 +129,7 @@ final class AptSourceTrust
     public static function record(int $nodeId, array $definition): AptRepository
     {
         return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => true]);
+            ['definition' => $definition, 'verified' => true, 'origins' => self::hosts($definition)]);
     }
 
     /** @param array<string, mixed> $definition the definition an adoption matched against the Node agent's fact */
@@ -116,6 +170,32 @@ final class AptSourceTrust
             ->whereNotExists(static fn ($query) => $query->from('tools')->where('tools.node_id', $nodeId)
                 ->where(static fn ($named) => $named->whereColumn('tools.apt_repository_id', 'apt_repositories.id')
                     ->orWhereColumn('tools.desired_repository->name', 'apt_repositories.name')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return list<string>
+     */
+    private static function hosts(array $definition): array
+    {
+        return array_values(array_unique(array_map(static fn (string $uri): string => strtolower((string) parse_url($uri, PHP_URL_HOST)),
+            ValidatedData::stringList($definition['uris'] ?? []))));
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @return list<string>
+     */
+    private static function entries(array $definition): array
+    {
+        $entries = [];
+        foreach (ValidatedData::stringList($definition['uris'] ?? []) as $uri) {
+            foreach (ValidatedData::stringList($definition['suites'] ?? []) as $suite) {
+                $entries[] = rtrim($uri, '/').' '.$suite;
+            }
+        }
+
+        return $entries;
     }
 
     /** @param array<string, mixed> $definition */

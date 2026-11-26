@@ -161,7 +161,7 @@ Deno.test("removals use one manager argv with no shipped code", async () => {
         assertEquals(value.plan.includes("-c"), false);
     }
 });
-Deno.test("an Orbit source always restricts every other package of its origins, and its restore drops an unowned acting package", () => {
+Deno.test("an Orbit source always restricts every other package of all its origins, and its held preferences drop an unowned acting package", () => {
     const repository = {
         name: "proof",
         uris: ["https://vendor.example.test/apt"],
@@ -191,7 +191,14 @@ Deno.test("an Orbit source always restricts every other package of its origins, 
         preferences(repository, ["nano", "tree"]),
     );
     assertEquals(
-        commands.repository_preferences_restore,
+        commands.repository_preferences_held,
         preferences(repository, ["nano"]),
+    );
+    // Through a failed change of origin both hosts may hold the source: every other package of each stays at priority 1.
+    assertEquals(
+        preferences(repository, ["nano"], ["old.example.test", "vendor.example.test"]),
+        'Package: nano\nPin: origin "vendor.example.test"\nPin-Priority: 990\n\n' + wildcard + "\n" +
+            'Package: nano\nPin: origin "old.example.test"\nPin-Priority: 990\n\n' +
+            'Package: *\nPin: origin "old.example.test"\nPin-Priority: 1\n',
     );
 });

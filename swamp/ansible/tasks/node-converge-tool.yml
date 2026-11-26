@@ -20,9 +20,9 @@
       become: false
       changed_when: false
       register: tool_os
-    # The preferences of this Tool's source from before candidate selection: the owned Tools of its plan, the Tools of the source
-    # this run already installed, and this Tool, which a refusal or failure takes out again in the rescue below. Every other package
-    # from the source's origins stays at priority 1 from the moment the source is published.
+    # The preferences of this Tool's source: held to the owned Tools of its plan and the Tools of the source this run already installed
+    # before the source is published, and joined by this Tool only after it is verified installed. Every other package from every
+    # origin the source may have on disk stays at priority 1.
     - name: Compute the preferences of this Tool's source
       when: tool.manager == 'apt' and tool.repository is not none
       vars:
@@ -120,15 +120,6 @@
       ansible.builtin.set_fact:
         tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'installed', 'installed_version': (tool_verified.stdout | from_json).installed_version}] }}"
   rescue:
-    - name: Restore the source preferences without this unacquired Tool
-      when: tool.manager == 'apt' and tool.repository is not none and (tool_pins.stdout | default('')) != ''
-      ansible.builtin.copy:
-        dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
-        content: "{{ (tool_pins.stdout | from_json).repository_preferences_restore }}"
-        owner: root
-        group: root
-        mode: "0644"
-      become: true
     - name: Record this Tool failure and continue the loop
       ansible.builtin.set_fact:
         tool_results: "{{ tool_results + [{'id': tool.id, 'status': 'failed', 'installed_version': none}] }}"
@@ -140,3 +131,16 @@
   delegate_to: localhost
   become: false
   changed_when: false
+# After the checkpoint, so a failure here fails the phase but keeps this Tool's verified acquisition.
+- name: Prefer the verified Tool from its source
+  when: >-
+    tool.manager == 'apt' and tool.repository is not none
+    and (tool_results | selectattr('id', 'equalto', tool.id) | map(attribute='status') | list) == ['installed']
+  ansible.builtin.copy:
+    dest: "/etc/apt/preferences.d/orbit-{{ tool.repository.name }}.pref"
+    content: "{{ (tool_pins.stdout | from_json).repository_preferences }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  timeout: 45

@@ -57,7 +57,41 @@ final readonly class ToolDefinitionResolver
      */
     public function repositoryPackages(ActiveToolPolicy $active, array $repository, iterable $members, string $package, bool $removing): array
     {
-        $packages = $removing ? [] : [$package];
+        // Apt prefers Orbit's source only for packages Orbit owns: a membership still waiting for its first install, such as one
+        // refused because the package was already there, never pins an independently installed package to the vendor.
+        $packages = array_keys(array_filter($this->sharing($active, $repository, $members, $package, $removing)));
+        if (! $removing) {
+            $packages[] = $package;
+        }
+        sort($packages, SORT_STRING);
+
+        return $packages;
+    }
+
+    /**
+     * The other enrolled memberships that name the source, owned or not. A source stays on the Node while any of them remains, even
+     * when none of them owns its package yet.
+     *
+     * @param  array<string, mixed>  $repository
+     * @param  iterable<Tool>  $members
+     * @return list<string>
+     */
+    public function repositoryMembers(ActiveToolPolicy $active, array $repository, iterable $members, string $package): array
+    {
+        $packages = array_keys($this->sharing($active, $repository, $members, $package, true));
+        sort($packages, SORT_STRING);
+
+        return $packages;
+    }
+
+    /**
+     * @param  array<string, mixed>  $repository
+     * @param  iterable<Tool>  $members
+     * @return array<string, bool> each other non-withdrawn apt membership naming the source, and whether Orbit owns its package
+     */
+    private function sharing(ActiveToolPolicy $active, array $repository, iterable $members, string $package, bool $removing): array
+    {
+        $sharing = [];
         $name = $repository['name'];
         foreach ($members as $member) {
             if ($member->manager->name !== ToolManagerName::Apt->value || $member->package === $package || $member->withdrawn()) {
@@ -72,15 +106,10 @@ final readonly class ToolDefinitionResolver
                 self::assertRepositoryIdentity($member, new ToolDefinition(null, null, $desired));
                 self::assertSharedRepository($desired, $repository);
             }
-            // Apt prefers Orbit's source only for packages Orbit owns: a membership still waiting for its first install, such as one
-            // refused because the package was already there, never pins an independently installed package to the vendor.
-            if ($member->owned) {
-                $packages[] = $member->package;
-            }
+            $sharing[$member->package] = $member->owned;
         }
-        sort($packages, SORT_STRING);
 
-        return $packages;
+        return $sharing;
     }
 
     /**

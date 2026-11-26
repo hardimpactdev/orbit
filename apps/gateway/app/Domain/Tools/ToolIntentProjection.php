@@ -31,7 +31,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready', 'package_owned',
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'desired_version', 'tool_id', 'tool_status', 'installed_version', 'setup', 'repository', 'remove_repository', 'repository_packages', 'repository_given', 'manager_ready', 'package_owned', 'repository_origins',
         ]))], 'ssh' => $operation->input['ssh']];
     }
 
@@ -114,7 +114,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             } elseif (NativeRunResult::stepStatus($native, 'Assert the key fingerprint') === 'failed') {
                 $code = 'tool.repository_key_mismatch';
             } else {
-                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Write the apt source', 'Reconcile remaining repository pins'] as $step) {
+                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Write the apt source', 'Prefer the acquired package', 'Reconcile remaining repository pins'] as $step) {
                     if (NativeRunResult::stepStatus($native, $step) === 'failed') {
                         $code = 'tool.repository_failed';
                         break;
@@ -138,13 +138,14 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     }
 
     /**
-     * What the run itself proves, whatever its overall status (docs/reference/tools.md#ownership):
+     * What the run's own receipt proves, whatever its terminal status (docs/reference/tools.md#ownership):
      * - `acquired`: Orbit's own package write was verified present;
      * - `released`: the package was absent at the start of a removal, or its removal was verified;
-     * - `pins_proven`: the run left the source's key and file alone and its preferences as the owned members need them.
+     * - `untouched`: the run wrote nothing to the source that its owned members do not already have. Each source-writing step is
+     *   recorded as skipped, or an earlier step failed and none of them ran; a receipt without steps proves nothing.
      *
      * @param  array<string, mixed>  $native
-     * @return array{acquired: bool, released: bool, pins_proven: bool}
+     * @return array{acquired: bool, released: bool, untouched: bool}
      */
     private function evidence(Operation $operation, array $native): array
     {
@@ -152,14 +153,21 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $observation = ValidatedData::object($native['observation'] ?? []);
         $decoded = NativeRunResult::stepStatus($native, 'Decode package state') === 'succeeded' && ($observation['compliant'] ?? false) === true;
         $removal = $operation->kind === 'tool.remove';
-        $untouched = static fn (string $step): bool => in_array(NativeRunResult::stepStatus($native, $step), [null, 'skipped'], true);
+        [$before, $writes] = $removal
+            ? [['Read manager version', 'Read installed package', 'Plan the removal', 'Choose package action', 'Remove the package', 'Check apt absence'],
+                ['Remove the apt source', 'Remove repository pins', 'Reconcile remaining repository pins']]
+            : [['Prepare package commands', 'Fetch the signing key', 'Read the key fingerprint', 'Assert the key fingerprint', 'Dearmor the signing key',
+                'Prepare apt keyrings', 'Set up the Tool Manager'], ['Publish the signing key', 'Write the apt source', 'Prefer the acquired package']];
+        $status = static fn (string $step): ?string => NativeRunResult::stepStatus($native, $step);
+        $skipped = array_filter($writes, static fn (string $step): bool => $status($step) === 'skipped') === $writes;
+        $stopped = array_filter($before, static fn (string $step): bool => $status($step) === 'failed') !== []
+            && array_filter($writes, static fn (string $step): bool => ! in_array($status($step), [null, 'skipped'], true)) === [];
 
         return [
             'acquired' => ! $removal && ($decision['mutate'] ?? false) === true && $decoded && ($observation['present'] ?? false) === true,
             'released' => $removal && ($decision['ready'] ?? false) === true
                 && (($decision['remove'] ?? null) === false || ($decoded && ($observation['absent'] ?? false) === true)),
-            'pins_proven' => ! $removal && is_array($operation->input['repository'] ?? null) && ($operation->input['repository_given'] ?? false) !== true
-                && ($untouched('Pin repository packages') || NativeRunResult::stepStatus($native, 'Restore repository pins') === 'succeeded'),
+            'untouched' => is_array($operation->input['repository'] ?? null) && ($skipped || $stopped),
         ];
     }
 
@@ -168,7 +176,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
      * fails the manager; any other failure marks the Tool failed. Repository definitions change only on success (R2).
      *
      * @param  array<string, mixed>  $result
-     * @param  array{acquired: bool, released: bool, pins_proven: bool}  $evidence
+     * @param  array{acquired: bool, released: bool, untouched: bool}  $evidence
      */
     private function projectState(Operation $operation, array $result, array $evidence): void
     {
@@ -197,19 +205,22 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         if ($status !== OperationStatus::Succeeded) {
             // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel. One whose
             // run may already have written its apt source, key or pins stays as a failed Tool instead, so its removal can clean them.
+            // The same receipt counts whether the run failed, was cancelled or timed out: an acquisition or a confirmed absence it
+            // recorded is kept, and so is the row it applies to.
+            $evidenced = $evidence['acquired'] || $evidence['released'];
             $published = $tool?->status === ToolStatus::Installing && is_array($input['repository'] ?? null)
                 && ($status !== OperationStatus::Cancelled || isset($operation->state['swamp_run_id']));
-            if ($tool?->status === ToolStatus::Installing && ! $published && (($managerFailed && $tool->desired_repository === null
+            if ($tool?->status === ToolStatus::Installing && ! $published && ! $evidenced && (($managerFailed && $tool->desired_repository === null
                 && $tool->desired_version === null && $tool->version_constraint === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
                 $tool->delete();
 
                 return;
             }
-            if ($status === OperationStatus::Cancelled && ! $published) {
+            if ($status === OperationStatus::Cancelled && ! $published && ! $evidenced) {
                 return;
             }
-            if ($evidence['pins_proven'] && is_array($input['repository'] ?? null)) {
+            if ($evidence['untouched'] && is_array($input['repository'] ?? null)) {
                 AptSourceTrust::prove(ValidatedData::integer($operation->node_id), ValidatedData::object($input['repository']));
             }
             // A verified write stays Orbit's whatever failed after it; a confirmed absence ends Orbit's claim on the package.

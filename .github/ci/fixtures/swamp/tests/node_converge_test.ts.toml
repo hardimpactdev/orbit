@@ -28,7 +28,7 @@ cases = [
   "Node snapshot packages use direct HTTPS configuration, bounded retries and exact pins without removals",
   "matching Tool inventory is a read-only no-op",
   "a present package is never taken over for a Tool Orbit does not own, whatever its last status",
-  "a Tool's source pins its plan's owned members, the run's installed Tools and itself, and its restore drops an unowned self",
+  "a Tool's source holds its plan's owned members and the run's installed Tools before publication, and adds itself only once verified",
   "an out-of-constraint candidate is rejected before returning write argv",
   "a protected package cannot produce a machine plan",
   "a failed Tool postcondition is not installed",

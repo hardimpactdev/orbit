@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ActiveToolPolicy;
+use App\Domain\Tools\AptSourceTrust;
 use App\Domain\Tools\ToolConvergeIntent;
 use App\Domain\Tools\ToolDefinition;
 use App\Domain\Tools\ToolDefinitionResolver;
@@ -54,6 +55,7 @@ final readonly class ManageToolPolicyAction
             $tools = $this->memberships();
             $snapshot = $this->snapshot($before, $tools);
             $sources = [];
+            $recorded = [];
             foreach ($tools as $tool) {
                 if ($tool->withdrawn()) {
                     continue;
@@ -63,6 +65,8 @@ final readonly class ManageToolPolicyAction
                 if ($current->repository !== null) {
                     $shared = $sources[$tool->node_id][ValidatedData::string($current->repository['name'])] ??= $current->repository;
                     ToolDefinitionResolver::assertSharedRepository($shared, $current->repository);
+                    $recorded[$tool->node_id] ??= AptSourceTrust::nodeDefinitions($tool->node_id);
+                    AptSourceTrust::assertDistinct($current->repository, [...$recorded[$tool->node_id], ...array_values($sources[$tool->node_id])]);
                 }
                 if ($mode === 'file') {
                     $target = $this->definition($after, $tool);

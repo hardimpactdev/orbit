@@ -1,0 +1,14 @@
+order = 1500
+cases = [
+  "a verified write holds the source to owned packages before publication and prefers the acquired package last",
+  "a key that fails to fetch or verify writes no preference, key or source",
+  "a refusal or an unverified write never prefers the acting package, and a verified source is not published again",
+  "a failed write of the acquired package's preference fails the run after the acquisition",
+]
+file = "swamp/tests/tool_write_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/workflows/workflow-operation-tool-write-209.yaml",
+]

@@ -12,15 +12,18 @@ type Input =
         | "repository_packages"
         | "remove_repository"
     >
-    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean };
+    & { user: string; kind?: string; desired_version?: string | null; package_owned?: boolean; repository_origins?: string[] };
 type Step = { status: string; outputs?: Record<string, unknown> } | null;
-/** Apt preferences of one Orbit source: priority 990 for the listed packages, and 1 for every other package from its origins. */
+/** Apt preferences of one Orbit source: priority 990 for the listed packages, and 1 for every other package from its origins, which
+ * include any origin a failed change of the source may have left on disk. */
 export function preferences(
     repo: ToolInput["repository"],
     packages: string[],
+    origins: string[] = [],
 ): string {
-    return repo === null ? "" : repo.uris.map((uri) => {
-        const origin = new URL(uri).hostname;
+    if (repo === null) return "";
+    const hosts = [...new Set([...repo.uris.map((uri) => new URL(uri).hostname), ...origins])];
+    return hosts.map((origin) => {
         const preferred = packages.length === 0
             ? ""
             : `Package: ${packages.join(" ")}\nPin: origin "${origin}"\nPin-Priority: 990\n\n`;
@@ -127,13 +130,16 @@ export function commands(input: Input) {
         scope,
         remove_repository: input.remove_repository,
         repository_packages: input.repository_packages,
-        repository_preferences: preferences(repo, input.repository_packages),
-        // After a refusal or failure the acting package is not Orbit's, so the source keeps preferring only the owned ones.
-        repository_preferences_restore: preferences(
+        // After a verified acquisition: the owned packages and the acquired one.
+        repository_preferences: preferences(repo, input.repository_packages, input.repository_origins),
+        // Before publication and whenever the run stops short of acquiring: only what Orbit already owns, so no interruption can leave
+        // an unacquired package preferred. Selection reads only Orbit's source list and installs an exact version, so it needs no pin.
+        repository_preferences_held: preferences(
             repo,
             input.package_owned !== false
                 ? input.repository_packages
                 : input.repository_packages.filter((name) => name !== input.package),
+            input.repository_origins,
         ),
         repository: input.repository ??
             {

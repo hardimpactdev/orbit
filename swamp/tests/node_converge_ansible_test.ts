@@ -591,15 +591,22 @@ switch (mode) {
         const local = task[0].block.flatMap((item) => [item, ...(Array.isArray(item.block) ? item.block as Array<Record<string, unknown>> : [])])
             .filter((item) => item.delegate_to === "localhost");
         assertEquals(local.length, 5);
-        // The source's preferences are written with the source, before candidate selection, and only a rescue rewrites them:
-        // without this Tool when it was not acquired. No preference write follows a verified Tool.
+        // The source is held to its owned Tools before it is published, so no interruption can leave this Tool preferred before it
+        // is verified; it joins the preferences only after the checkpoint records it installed. A failure writes nothing more.
         const names = task[0].block.map((item) => item.name);
         assertEquals(names.indexOf("Compute the preferences of this Tool's source") < names.indexOf("Reconcile a recorded apt repository"), true);
-        assertEquals(names.some((name) => String(name).includes("preferences") && names.indexOf(name) > names.indexOf("Verify the Tool postcondition")), false);
+        assertEquals(names.some((name) => String(name).includes("preferences") && names.indexOf(name) > names.indexOf("Reconcile a recorded apt repository")), false);
         const rescue = (task[0] as unknown as { rescue: Array<Record<string, unknown>> }).rescue.map((item) => item.name);
-        assertEquals(rescue, ["Restore the source preferences without this unacquired Tool", "Record this Tool failure and continue the loop"]);
+        assertEquals(rescue, ["Record this Tool failure and continue the loop"]);
         const repository = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
-        assertEquals(repository.at(-1)!.name, "Limit every repository to its owned Tools and this Tool");
+        assertEquals(repository[0].name, "Hold the repository to its owned Tools before publishing it");
+        assertEquals((repository[0]["ansible.builtin.copy"] as { content: string }).content.includes("repository_preferences_held"), true);
+        assertEquals(repository.some((item) => JSON.stringify(item).includes("repository_preferences\"") || JSON.stringify(item).includes("repository_preferences }}")), false);
+        const top = task.map((item) => (item as unknown as Record<string, unknown>).name);
+        const prefer = task[top.indexOf("Prefer the verified Tool from its source")] as unknown as Record<string, unknown>;
+        assertEquals(top.indexOf("Checkpoint completed Tool observations") < top.indexOf("Prefer the verified Tool from its source"), true);
+        assertEquals(String(prefer.when).includes("['installed']"), true);
+        assertEquals((prefer["ansible.builtin.copy"] as { content: string }).content, "{{ (tool_pins.stdout | from_json).repository_preferences }}");
         assertEquals(local.every((item) => item.become === false), true);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
