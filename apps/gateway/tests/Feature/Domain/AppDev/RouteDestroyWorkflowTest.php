@@ -238,11 +238,11 @@ it('keeps Route withdrawal and convergence inside the confirmed AppProd release 
 it('records the whole-file digests the engine guards with, and builds its steps from a real capture', function (): void {
     config(['orbit.engine.kinds' => ['route.destroy']]);
     [$node] = destroyFleet();
-    $route = destroyFixture($node, 'proxy', 'proxy');
+    $route = destroyFixture($node, 'gone', 'gone');
     $before = app(NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true);
     [$operation] = destroyAdmission($route);
 
-    expect($operation->input['route_guards'][$node->id])->toBe(['caddy' => hash('sha256', $before['caddy']['content']),
+    expect($operation->input['route_guards'][$node->id])->toMatchArray(['caddy' => hash('sha256', $before['caddy']['content']),
         'records' => hash('sha256', $before['dns']['records']), 'catalog' => hash('sha256', $before['dns']['catalog'])]);
     $flow = app(RouteDestroyEngineFlow::class);
     $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
@@ -257,4 +257,13 @@ it('records no engine digests while route.destroy is not an engine kind', functi
     [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
 
     expect($operation->input['route_guards'])->toBe([]);
+});
+
+it('leaves a Process proxy Route\'s removal to Swamp from its captured placement', function (): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
+
+    expect($operation->input['route_private_development'])->toBeFalse()
+        ->and(fn () => app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
 });

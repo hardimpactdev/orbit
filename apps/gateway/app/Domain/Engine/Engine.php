@@ -180,7 +180,9 @@ final readonly class Engine
 
             return;
         }
-        if ($receiptBound !== null && (! in_array($status, ['done', 'failed'], true)
+        $definition = $receiptBound === null ? null : app(EngineKinds::class)->definition($receiptBound->kind);
+        $terminal = $definition instanceof ReceiptBoundDefinition ? $definition->terminalStatuses($step->action) : ['done', 'failed'];
+        if ($receiptBound !== null && (! in_array($status, $terminal, true)
             || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
             || ($line['code'] ?? null) === 'executor.order_expired')) {
             return;
@@ -376,7 +378,7 @@ final readonly class Engine
     private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): void
     {
         try {
-            $input = $definition->input($operation, $step->name, $run);
+            $input = EngineContent::upload($this->bus, $step->node_id, $definition->input($operation, $step->name, $run));
             $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
             $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
             $this->bus->publishOrder($step->node_id, $order, fn (): bool => $this->claimPublication($step, $order->expiresMs));

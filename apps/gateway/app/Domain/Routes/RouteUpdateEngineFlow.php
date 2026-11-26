@@ -8,6 +8,7 @@ use App\Actions\Routes\RouteMutationState;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Models\Operation;
 use App\Models\Route;
@@ -29,7 +30,7 @@ use LogicException;
  * Any other update shape starts on Swamp ([EngineUnsupported]). Step labels map onto the Swamp chart's, so the projection
  * records the same `failed_step`, error code and, after the cutover, the same forward recovery.
  */
-final readonly class RouteUpdateEngineFlow implements EngineDefinition
+final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptBoundDefinition
 {
     /** Each step prefix's Swamp chart label (NativeRouteUpdateProjection::StepCodes). The sibling check closes the old site's withdrawal. */
     private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
@@ -44,7 +45,9 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         $plan = self::plan($operation);
         if ($intent['effectful'] !== true || ($intent['mode'] ?? null) !== 'replace_domain' || $intent['route_id'] === $intent['result_route_id']
             || ($intent['public_activated'] ?? false) !== false || ($intent['analytics_changes'] ?? []) !== []
-            || ValidatedData::object($intent['selected'])['publication'] !== 'private' || (ValidatedData::object($intent['before'])['publication'] ?? null) !== 'private') {
+            || ValidatedData::object($intent['selected'])['publication'] !== 'private' || (ValidatedData::object($intent['before'])['publication'] ?? null) !== 'private'
+            // A retry after the cutover (the old Route retiring) resumes on Swamp, which reads the recorded cutover.
+            || (ValidatedData::object($intent['before'])['status'] ?? null) !== RouteStatus::Active->value) {
             throw new EngineUnsupported('Only a private Route\'s domain change runs on the engine.');
         }
         foreach (['ingress', 'ingress_ports', 'edge_nodes', 'lan_absent'] as $list) {
@@ -55,7 +58,9 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         $publish = ValidatedData::object($plan['publish']);
         $url = ValidatedData::object($plan['app_url']);
         $retire = ValidatedData::object($plan['retire']);
+        // Swamp writes APP_URL only after every site published, under its own step and code; the engine takes no URL write.
         if (($publish['lan'] ?? []) !== [] || ($publish['env_files'] ?? []) !== [] || ($publish['url_lines'] ?? []) !== [] || ($url['env_files'] ?? []) !== []
+            || ($url['url_lines'] ?? []) !== []
             || array_diff(ValidatedData::integerList($url['site_nodes']), ValidatedData::integerList($publish['site_nodes'])) !== []
             || self::sorted([...ValidatedData::integerList($publish['leaf_indexes']), ...ValidatedData::integerList($retire['leaf_indexes'])])
                 !== self::sorted(array_keys(RouteExecutionProof::objects($plan['leaves'])))) {
@@ -100,10 +105,11 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
         }
         foreach (array_keys($late) as $node) {
             // A new version of a scope the old site still names installs only after the cutover.
+            RouteEngineFlow::fits($this->lateInput($operation, $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
             $steps[] = new StepSpec("late-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 300_000, resendMs: 30_000);
         }
         foreach (array_values(array_unique(ValidatedData::integerList($plan['retire_nodes']))) as $node) {
-            $this->withdrawInput($operation, $node);
+            RouteEngineFlow::fits($this->withdrawInput($operation, $node));
             $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, isset($late[$node]) ? [...$after, "late-{$node}"] : $after,
                 budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
@@ -157,13 +163,31 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
             && ($name === 'grace' || str_starts_with($name, 'late-') || str_starts_with($name, 'withdraw-') || str_starts_with($name, 'sibling-'))) : null;
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
-                'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
+                'failure' => ['failed_step' => $this->failedStep($operation, $failed->name), 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             $pending !== null => ['status' => 'failed', 'error_code' => 'operation.cancelled',
                 'failure' => ['failed_step' => self::chartStep($pending), 'stderr_recorded' => false]],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
+    }
+
+    /**
+     * A failed step as the Swamp chart names it. The cutover step has no chart step: when its authority transaction committed
+     * (the old Route retiring, the replacement at the database cutover) the failure is after the cutover and recovers forward;
+     * otherwise it is a failure before it, with no chart step, so the old Route stays authoritative.
+     */
+    private function failedStep(Operation $operation, string $name): string
+    {
+        if ($name !== 'cutover') {
+            return self::chartStep($name);
+        }
+        $intent = self::intent($operation);
+        $source = Route::query()->find(ValidatedData::integer($intent['route_id']));
+        $selected = Route::query()->find(ValidatedData::integer($intent['result_route_id']));
+        $committed = $source?->status === RouteStatus::Retiring && $selected?->replacement_step === RouteReplacementStep::DatabaseCutover;
+
+        return $committed ? self::chartStep('withdraw-0') : 'cutover';
     }
 
     /** A step's name as the Swamp chart's iteration, such as `withdraw-3` → `Withdraw the old site-3`. */
@@ -317,5 +341,10 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition
     private static function plan(Operation $operation): array
     {
         return ValidatedData::object(self::intent($operation)['plan'] ?? []);
+    }
+
+    public function terminalStatuses(string $action): array
+    {
+        return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
     }
 }

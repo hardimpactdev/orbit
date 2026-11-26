@@ -152,3 +152,29 @@ it('names a failed step as the Swamp chart\'s iteration', function (): void {
         ->and(RouteUpdateEngineFlow::chartStep('sibling-3'))->toBe('Withdraw the old site-3')
         ->and(RouteUpdateEngineFlow::chartStep('site-3'))->toBe('Install cert, publish site-3');
 });
+
+it('settles a failed cutover by whether its authority transaction committed', function (bool $committed): void {
+    $operation = updatedRoute($this->route);
+    $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
+    $replacement = Route::query()->findOrFail($operation->input['route_update']['result_route_id']);
+    if ($committed) {
+        app(App\Actions\Routes\RouteMutationState::class)->cutover($this->route->refresh(), $replacement);
+    }
+    $failed = (new OperationEngineStep)->forceFill(['name' => 'cutover', 'status' => 'failed', 'error_code' => 'engine.local_failed', 'node_id' => 0]);
+    app(RouteUpdateEngineFlow::class)->finish($operation->refresh(), new EngineRun($operation->id, ['cutover' => $failed], 1_800_000_000_000, 1_800_000_001_000));
+
+    expect($operation->refresh()->status->value)->toBe('failed')
+        ->and($replacement->refresh()->status)->toBe($committed ? RouteStatus::Active : RouteStatus::Failed)
+        ->and($this->route->refresh()->status)->toBe($committed ? RouteStatus::Retiring : RouteStatus::Active);
+})->with(['after its commit' => true, 'before its commit' => false]);
+
+it('leaves an APP_URL write or a retry after the cutover to Swamp', function (string $case): void {
+    $operation = updatedRoute($this->route);
+    $input = $operation->input;
+    if ($case === 'an APP_URL write') {
+        $input['route_update']['plan']['app_url']['url_lines'] = [['node_id' => $this->node->id, 'path' => '/home/orbit/shop/.env', 'line' => 'APP_URL=https://renamed.outside.test', 'owner' => 'orbit']];
+    } else {
+        $input['route_update']['before']['status'] = 'retiring';
+    }
+    app(RouteUpdateEngineFlow::class)->steps($operation->forceFill(['input' => $input]));
+})->throws(EngineUnsupported::class)->with(['an APP_URL write', 'a retry after the cutover']);

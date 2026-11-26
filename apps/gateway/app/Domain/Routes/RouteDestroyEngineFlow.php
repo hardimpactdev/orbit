@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -28,10 +29,13 @@ use RuntimeException;
  * `--offline`, a replacement, LAN rules, the Ingress edge and any URL write start on Swamp ([EngineUnsupported]). Step
  * labels map onto the Swamp chart's, so a failure records the same `failed_step` and error code.
  */
-final readonly class RouteDestroyEngineFlow implements EngineDefinition
+final readonly class RouteDestroyEngineFlow implements EngineDefinition, ReceiptBoundDefinition
 {
     /** The input a VPN Node must take: per-file digests of what the Gateway rendered from. */
     public const string GuardedDns = 'dns.guarded_records';
+
+    /** The executor's code for a pool that failed its test or reload, which the Swamp chart's pool step reports. */
+    public const string PoolFailed = 'route.pool_failed';
 
     /** The DNS grace: the records' TTL of 30 s and one more second. */
     public const int GraceMs = 31_000;
@@ -47,6 +51,10 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     {
         $plan = self::plan($operation);
         self::domains($operation);
+        // A public Route, or a Process proxy behind the Ingress, has a placement this flow does not withdraw (captured at admission).
+        if (($operation->input['route_private_development'] ?? false) !== true) {
+            throw new EngineUnsupported('Only a private development Route\'s removal runs on the engine.');
+        }
         if (($operation->input['offline'] ?? false) !== false || ($plan['offline'] ?? false) !== false) {
             throw new EngineUnsupported('route.destroy --offline runs on Swamp.');
         }
@@ -70,7 +78,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
         $steps = $dns = [];
         foreach (array_keys(RouteExecutionProof::objects($plan['dns'])) as $index) {
             $vpn = ValidatedData::integer(RouteExecutionProof::objects($plan['dns'])[$index]['node_id']);
-            self::dnsInput($operation, $index);
+            RouteEngineFlow::fits(self::dnsInput($operation, $index));
             $steps[] = $dns[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, budgetMs: 120_000, resendMs: 20_000, features: [self::GuardedDns]);
         }
         $after = [];
@@ -79,7 +87,10 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
             $after = ['grace'];
         }
         foreach ($nodes as $node) {
-            $this->withdrawInput($operation, $node);
+            $input = $this->withdrawInput($operation, $node);
+            // Every order must sign within the limit before anything starts.
+            RouteEngineFlow::fits($input);
+            self::poolsKept($operation, $node, $input);
             $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, $after, budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
         }
@@ -114,11 +125,31 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
         $failed = $run->failed();
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
-                'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
+                'failure' => ['failed_step' => self::failedStep($failed->name, $failed->error_code), 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
+    }
+
+    /** A failed step as the Swamp chart's: a withdrawal whose pools failed is the chart's pool step. */
+    public static function failedStep(string $name, ?string $code): string
+    {
+        return $code === self::PoolFailed && str_starts_with($name, 'withdraw-') ? 'Converge PHP-FPM pools-'.explode('-', $name, 2)[1] : self::chartStep($name);
+    }
+
+    /**
+     * Refuses a withdrawal that would leave a PHP version's pool without any site: the executor places desired pools only.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private static function poolsKept(Operation $operation, int $node, array $input): void
+    {
+        $before = array_filter(explode(',', ValidatedData::string(self::guard($operation, $node)['php_versions'] ?? '')));
+        $after = array_map(static fn (array $pool): string => ValidatedData::string($pool['version']), RouteExecutionProof::objects($input['php']));
+        if (array_diff($before, $after) !== []) {
+            throw new EngineUnsupported('A PHP version whose last pool leaves runs on Swamp.');
+        }
     }
 
     /** A step's name as the Swamp chart's iteration, such as `withdraw-3` → `Withdraw site, remove cert-3`. */
@@ -274,5 +305,10 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     private static function plan(Operation $operation): array
     {
         return ValidatedData::object(ValidatedData::object($operation->input['route_lifecycle'] ?? [])['plan'] ?? []);
+    }
+
+    public function terminalStatuses(string $action): array
+    {
+        return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
     }
 }

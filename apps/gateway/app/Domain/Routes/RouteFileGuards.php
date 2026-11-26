@@ -36,6 +36,8 @@ final readonly class RouteFileGuards
             $caddy = ValidatedData::object($before['caddy'])['content'] ?? null;
             $dns = is_array($before['dns']) ? $before['dns'] : null;
             $guards[$id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null,
+                // The shared pools' PHP versions now: a withdrawal must keep each, or its Operation runs on Swamp.
+                'php_versions' => implode(',', array_keys((array) (ValidatedData::object($before['php'])['configurations'] ?? []))),
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
                 'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
         }

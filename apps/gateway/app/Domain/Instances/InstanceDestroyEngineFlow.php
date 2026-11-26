@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\RoutePublicationHolds;
@@ -28,7 +29,7 @@ use LogicException;
  * `sibling-<node>` checks another Route there still answers, and `release` records the withdrawal on the removal and frees the
  * Route Nodes, as the Swamp run's release step does. Then `remove` deletes the container.
  */
-final readonly class InstanceDestroyEngineFlow implements EngineDefinition
+final readonly class InstanceDestroyEngineFlow implements EngineDefinition, ReceiptBoundDefinition
 {
     public const string Kind = 'instance.destroy';
 
@@ -255,5 +256,10 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition
             'php' => array_map(static fn (array $pool): array => ['version' => ValidatedData::string($pool['version']), 'user' => null,
                 'content' => ['blob' => ['content' => ValidatedData::string($pool['content'])]]], RouteExecutionProof::objects($row['pools'] ?? [])),
             'caddy' => ['from_sha256' => RouteDestroyEngineFlow::digest($caddy, 'from_sha256'), 'content' => ['blob' => ['content' => ValidatedData::string($caddy['content'])]]]];
+    }
+
+    public function terminalStatuses(string $action): array
+    {
+        return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
     }
 }

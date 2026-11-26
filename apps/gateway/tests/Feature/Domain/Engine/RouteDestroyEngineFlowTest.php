@@ -28,9 +28,9 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
     ], ...$plan];
 
     return (new Operation)->forceFill(['id' => 51, 'kind' => 'route.destroy', 'node_id' => 3, 'input' => [...[
-        'route_id' => 9, 'offline' => false, 'route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]]],
+        'route_id' => 9, 'offline' => false, 'route_private_development' => true, 'route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]]],
         'route_lifecycle' => ['plan' => $plan],
-        'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore)],
+        'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore), 'php_versions' => '8.4'],
             '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n")]],
     ], ...$input]]);
 }
@@ -81,6 +81,9 @@ it('leaves a removal the engine cannot reproduce exactly to Swamp', function (ar
         'caddy' => [['node_id' => 3, 'content' => "x\n"]], 'url_lines' => [['node_id' => 3, 'path' => '/home/orbit/apps/shop/.env', 'line' => 'APP_URL=https://x.orbit', 'owner' => 'orbit']]]], []],
     'a never-activated replacement' => [[], ['route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'new.orbit', 'replacement_of' => 4]]]]],
     'no captured file digests' => [[], ['route_guards' => []]],
+    'a public Route or a Process proxy behind the Ingress' => [[], ['route_private_development' => false]],
+    'a PHP version whose last pool leaves' => [['pools' => ['php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => []]], []],
+    'an order over the signer\'s limit' => [['cleanup' => array_map(static fn (int $i): array => ['node_id' => 3, 'leaf' => ['user' => 'orbit', 'scope' => str_repeat('s', 60).$i]], range(1, 80))], []],
     'a pool on a Node the Route does not leave' => [['pools' => ['php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => [5]]], []],
 ]);
 

@@ -42,7 +42,8 @@ final readonly class NativeRouteRemovalAdmission
         $capture = app(NativeRouteLifecycleInput::class)->capture($route, ['offline' => $offline], true, restorable: false);
 
         return $this->operations->execute($kind, 'route', $route->id, $nodeId, [
-            'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline, 'route_guards' => $offline || ! RouteFileGuards::wanted($kind) ? [] : app(RouteFileGuards::class)->capture(self::guarded(ValidatedData::object($capture['intent']['plan']))),
+            'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline, 'route_private_development' => $route->publication === RoutePublication::Private && ! $route->isCustomProxy(),
+            'route_guards' => $offline || ! RouteFileGuards::wanted($kind) ? [] : app(RouteFileGuards::class)->capture(self::guarded(ValidatedData::object($capture['intent']['plan']))),
             'route_lifecycle' => $capture['intent'], 'certificates' => $capture['certificates'], 'execution_secrets' => $capture['execution_secrets'],
             'node_ids' => $nodes, 'participant_node_ids' => array_values(array_unique([...$nodes, ...ValidatedData::integerList($capture['participant_node_ids'])])),
             'access_node_ids' => $nodes, 'caller_node_id' => $caller?->id,
