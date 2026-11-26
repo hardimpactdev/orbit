@@ -112,7 +112,8 @@ The executor implements these action families:
 | `ufw.ensure_rule` | `firewall` | Idempotent UFW rule add/remove with post-change table verification |
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
-| `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
+| `route.withdraw_site` | `route` | Replaces the Caddyfile and PHP-FPM pools with the Gateway's render without the Route only when the live Caddyfile matches the rendered-from digest or already the desired bytes (otherwise `owned_revision_conflict`), removes the Route's leaf folders, reloads Caddy on every run, and reads Caddy's admin API back to confirm the Route's names are gone |
+| `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units. With the `dns.guarded_records` feature, each file may carry `from_sha256`: a file that holds neither those bytes nor the desired ones refuses `owned_revision_conflict` before any write |
 
 ### The instance family
 

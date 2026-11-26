@@ -132,3 +132,50 @@ fn refuses_missing_content_and_unknown_fields() {
     assert_eq!(publish_records(&fake, &extra).unwrap_err().code, "dns.input_invalid");
     assert!(fake.runs.borrow().is_empty());
 }
+
+fn digest(bytes: &[u8]) -> String {
+    super::sha256_hex(bytes)
+}
+
+#[test]
+fn a_guarded_file_is_replaced_only_from_the_rendered_bytes_and_kept_when_already_desired() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.7\naddress=/old.example/10.44.0.8\n").unwrap();
+    fs::write(fake.file(CATALOG), "{}\n").unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/.test/10.44.0.7\naddress=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"old\":1}\n")},
+    });
+    // The catalog already holds the desired bytes, so its own guard is met by them.
+    assert!(publish_records(&fake, &input).is_ok());
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"address=/.test/10.44.0.7\n");
+    // A replay finds both desired and changes nothing, but still checks and restarts.
+    assert_eq!(publish_records(&fake, &input), Ok(0));
+    assert_eq!(fake.runs.borrow().iter().filter(|argv| argv[0] == "/usr/bin/systemctl").count(), 2);
+}
+
+#[test]
+fn a_guarded_file_changed_elsewhere_refuses_before_any_write() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/other.example/10.44.0.9\n").unwrap();
+    fs::write(fake.file(CATALOG), "{\"stale\":1}\n").unwrap();
+    let input = json!({
+        "records": {"blob": {"sha256": "r"}, "from_sha256": digest(b"address=/old.example/10.44.0.8\n")},
+        "catalog": {"blob": {"sha256": "c"}, "from_sha256": digest(b"{\"stale\":1}\n")},
+    });
+    assert_eq!(publish_records(&fake, &input).map_err(|failure| failure.code), Err("owned_revision_conflict"));
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"address=/other.example/10.44.0.9\n");
+    assert_eq!(fs::read(fake.file(CATALOG)).unwrap(), b"{\"stale\":1}\n");
+    assert!(fake.runs.borrow().is_empty());
+}
+
+#[test]
+fn the_gateway_signed_guarded_input_decodes() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../contract/fixtures/executor-dns-guarded-records.json")).expect("shared fixture");
+    let mut fake = Fake::new();
+    fake.blobs = HashMap::from([(digest(b"address=/other.example/10.44.0.8\n"), b"address=/other.example/10.44.0.8\n".to_vec()), (digest(b"{}\n"), b"{}\n".to_vec())]);
+    fs::write(fake.file(RECORDS), "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n").unwrap();
+    fs::write(fake.file(CATALOG), "{\"shop.example\":1}\n").unwrap();
+    assert_eq!(publish_records(&fake, &fixture["fields"]["input"]), Ok(2));
+}

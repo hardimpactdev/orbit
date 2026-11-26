@@ -206,11 +206,13 @@ fn capability_report(settings: &Settings) -> serde_json::Value {
         .map(orbit_executor_core::action::Action::name)
         .collect();
     // An older executor refuses an input it does not know, so the Gateway sends one only to a Node that names it here.
-    let features: Vec<&str> = if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
-        vec!["instance.t3_pairing"]
-    } else {
-        Vec::new()
-    };
+    let mut features: Vec<&str> = Vec::new();
+    if settings.enabled.allows(orbit_executor_core::action::Action::InstanceT3) {
+        features.push("instance.t3_pairing");
+    }
+    if settings.enabled.allows(orbit_executor_core::action::Action::DnsPublishRecords) {
+        features.push("dns.guarded_records");
+    }
     serde_json::json!({
         "actions": actions,
         "node_targets": node_targets,
@@ -493,5 +495,22 @@ mod tests {
         assert!(node_targets.contains(&"instance.club_key"));
         assert!(!node_targets.contains(&"instance.checkout"));
         assert_eq!(report["features"], serde_json::json!(["instance.t3_pairing"]));
+    }
+
+    #[test]
+    fn capability_report_lists_guarded_dns_records_with_the_dns_family() {
+        use orbit_executor_core::action::Enabled;
+        use orbit_executor_core::caller::Policy;
+        use orbit_executor_core::order::PinnedKeys;
+
+        let settings = Settings {
+            policy: Policy::production(None, PathBuf::from("/usr/local/bin/orbit-agent")),
+            keys: PinnedKeys::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=").expect("valid key"),
+            enabled: Enabled::parse("dns\nroute").expect("dns and route families"),
+            node: "7".parse().expect("node"),
+        };
+        let report = capability_report(&settings);
+        assert_eq!(report["features"], serde_json::json!(["dns.guarded_records"]));
+        assert!(report["actions"].as_array().expect("actions").contains(&serde_json::json!("route.withdraw_site")));
     }
 }

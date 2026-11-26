@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% route.destroy on the Gateway engine: the steps of route/destroy.mmd (workflow operation-route-removal) as `dns` and `route` family primitives. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
-  %% Reuses `dns.publish_records` for the DNS withdrawal; the site withdrawal is a new `route` family primitive that route/engine/update.mmd and the planned Route steps of instance/container/destroy-engine.mmd reuse.
-  %% status: draft
+  %% route.destroy on the Gateway engine: the steps of route/destroy.mmd (workflow operation-route-removal) as `dns` and `route` family primitives. Built for ADR 0267 and ADR 0271 (RouteDestroyEngineFlow); runtime proof pending.
+  %% Reuses `dns.publish_records` for the DNS withdrawal; the site withdrawal is `route.withdraw_site`, a `route` family primitive that route/engine/update.mmd and the planned Route steps of instance/container/destroy-engine.mmd reuse.
+  %% status: built
   %% command: route:destroy
   %% kind: route.destroy
   autonumber
@@ -23,10 +23,10 @@ sequenceDiagram
   alt the engine admits the whole Operation
     %%> Admission, one decision per Operation (EngineKinds::routes):
     %%> - `route.destroy` is in `ORBIT_ENGINE_KINDS`
-    %%> - every Node a step touches reports its action in `$KV.NODES`: `dns.publish_records` (exists) on each VPN Node, the site withdrawal on each Route Node
-    %%> - each VPN Node also lists the guarded DNS input in its reported `features` (as `instance.t3_pairing` is listed); the existing decoder refuses unknown fields, so without the feature the whole removal stays on Swamp and never fails after a step acted
+    %%> - every Node a step touches reports its action in `$KV.NODES`: `dns.publish_records` (exists) on each VPN Node, `route.withdraw_site` on each Route Node
+    %%> - each VPN Node also lists the guarded DNS input, `dns.guarded_records`, in its reported `features` (as `instance.t3_pairing` is listed), checked by EngineKinds::routes from the step's `features`; the existing decoder refuses unknown fields, so without the feature the whole removal stays on Swamp and never fails after a step acted
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
-    %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, a never-activated replacement (it restores the old domain's URL and DNS), LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`, so the application never keeps pointing at a withdrawn name
+    %%> - eligible plan: an ordinary private Route with no URL write; `--offline`, a pool change on a Node the Route does not leave, Caddy access or link writes, a never-activated replacement (it restores the old domain's URL and DNS), LAN rules, an Ingress edge, `url_lines` for a surviving Route and any `env_files` write throw `EngineUnsupported`, so the application never keeps pointing at a withdrawn name
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
     %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
     GW-->>CLI: 202 Accepted<br/>task ID
@@ -38,17 +38,17 @@ sequenceDiagram
       %%> `dnsmasq --test`, then the restart, on every run, also a replay, so files written before a crash are loaded; a failed check puts the previous files back and restarts nothing
       V-->>EN: Files and restart<br/>applied · catalog digest
       Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-      %%> A Gateway step (`grace`) after `dns-i`, timed by a NATS schedule from the DNS receipt's time; a redelivered receipt or a resend never shortens it
-      %%> A retry Operation reads the recorded withdrawal time and waits only what is left of the 31 s
+      %%> A Gateway step (`grace`) after every `dns-i`: it waits until 31 s after the last recorded DNS receipt (`done_ms`); a redelivered receipt or a resend never moves that time, and a repeat of the step waits only what is left
+      %%> Differs from the draft: the wait runs in the Gateway step, not a NATS schedule, because the engine has no delayed-step primitive yet; a retry Operation is a new run, whose own DNS step (`applied: 0`) starts a full 31 s again, which is never shorter than the draft's
     end
-    EN->>N: Withdraw site and leaf<br/>route family · withdraw-node
-    %%> One Node-local transaction under the Node lock, as the Swamp withdrawal: read, merge the admitted captured states, compare every other site, scope and record byte for byte, keep the previous generation, test PHP-FPM and Caddy, then commit and reload; a failed reload puts the previous file back. Caddy and PHP-FPM reload on every run, also a replay that finds nothing to change, as `route.publish_site` does, so a crash after the commit still makes the withdrawal live
+    EN->>N: Withdraw site and leaf<br/>withdraw_site · node
+    %%> One Node-local primitive under the Node target lock: the live Caddyfile must equal the digest of the one the Gateway rendered from at admission, or already the desired bytes, so every other site stays byte for byte; then the pools are written and tested, the candidate Caddyfile is validated as `caddy` and moved in place. Differs from the draft: no previous generation is kept, because a candidate that fails validation never replaces the live file. Caddy and PHP-FPM reload on every run, also a replay that finds nothing to change, as `route.publish_site` does, so a crash after the commit still makes the withdrawal live
     %%> Removes the Route's owned Caddy site block, its leaf certificate folders and, for a development target, its PHP-FPM pool share; a repeat finds them absent and changes nothing (`applied: 0`)
-    %%> A live file that matches none of the captured states refuses before any write (`owned_revision_conflict`; a change outside the Route: `route.withdraw_foreign_change`)
+    %%> A live Caddyfile that matches neither digest refuses before any write (`owned_revision_conflict`)
     N-->>EN: Owned state absent<br/>site · leaf · pool read back
-    %%> Verification read-back in the same primitive: no owned site block, leaf folder or pool share remains, and Caddy validates the live file
+    %%> Verification read-back in the same primitive: the desired Caddyfile is live, no leaf folder remains, and Caddy's admin API (`127.0.0.1:2019/config/`) names none of the Route's domains (`route.withdraw_unverified`)
     EN->>N: Probe a sibling Route<br/>TLS over WireGuard
-    %%> A Gateway step (`probe-sibling`) as route.create's probe: a TLS handshake with another Route on the same Node, trusting only the Orbit root, proves Caddy still serves the rest; skipped when the Node serves no other Route
+    %%> A Gateway step (`sibling-node`) as route.create's probe: a TLS handshake with another Route on the same Node, trusting only the Orbit root, proves Caddy still serves the rest; skipped when the Node serves no other Route
     opt the receipt is lost
       EN->>N: Resend the same step<br/>fresh nonce · same step ID
       %%> When:

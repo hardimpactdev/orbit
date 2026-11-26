@@ -106,10 +106,14 @@ struct Input {
     catalog: BlobRef,
 }
 
+/// A file's desired bytes as a blob. `from_sha256` (feature `dns.guarded_records`) names the live bytes the Gateway
+/// rendered from: the file is replaced only when it still holds them, or kept when it already holds the desired bytes.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BlobRef {
     blob: BlobDigest,
+    #[serde(default)]
+    from_sha256: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -126,12 +130,22 @@ struct BlobDigest {
 ///
 /// # Errors
 ///
-/// `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed` or `dns.restart_failed`.
+/// `dns.input_invalid`, `dns.content_missing`, `owned_revision_conflict` (a guarded file holds neither the rendered-from nor
+/// the desired bytes; nothing is written), `dns.write_failed`, `dns.check_failed` or `dns.restart_failed`.
 pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: Input = serde_json::from_value(input.clone()).map_err(|error| Failure::new("dns.input_invalid", error.to_string()))?;
     let mut contents = Vec::new();
     for (path, blob) in [(RECORDS, &input.records), (CATALOG, &input.catalog)] {
         contents.push((path, system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("dns.content_missing", detail))?));
+    }
+    // Every guard is checked before any write, so a refusal leaves both files as they were.
+    for ((path, content), blob) in contents.iter().zip([&input.records, &input.catalog]) {
+        if let Some(from) = &blob.from_sha256 {
+            let live = fs::symlink_metadata(system.path(path)).ok().filter(fs::Metadata::is_file).and_then(|_| fs::read(system.path(path)).ok()).unwrap_or_default();
+            if live != *content && sha256_hex(&live) != *from {
+                return Err(Failure::new("owned_revision_conflict", format!("{path} changed outside this Operation")));
+            }
+        }
     }
     // Each replaced file with what it held before: a plain file's bytes, or None when there was none.
     let mut replaced: Vec<(&str, Option<Vec<u8>>)> = Vec::new();
@@ -155,6 +169,15 @@ pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Resul
         .run(60, &["/usr/bin/systemctl", "restart", "dnsmasq.service", "orbit-private-dns.service"])
         .map_err(|detail| Failure::new("dns.restart_failed", detail))?;
     Ok(u32::try_from(replaced.len()).unwrap_or(u32::MAX))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
 }
 
 /// Puts back what each replaced file held before; a file that did not exist is removed. Best effort: the failure the

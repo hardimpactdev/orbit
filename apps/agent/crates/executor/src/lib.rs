@@ -148,7 +148,7 @@ impl Run for Families {
                     Outcome::failed(failure.code)
                 }
             },
-            Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
+            Action::TlsEnsureCsr | Action::RoutePublishSite | Action::RouteWithdrawSite => route(order),
             Action::DnsPublishRecords => dns(order),
             Action::InstanceDestroy => self.destroy(order),
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
@@ -327,12 +327,13 @@ fn serve() -> Result<(), String> {
     Ok(())
 }
 
-/// The route family (ADR 0271): a leaf's certificate request, or one Node's part of a Route. A failure's code goes to the
+/// The route family (ADR 0271): a leaf's certificate request, one Node's part of a Route, or its withdrawal. A failure's code goes to the
 /// Gateway, its detail only to the log.
 fn route(order: &VerifiedOrder) -> Outcome {
     let system = orbit_executor_route::NodeSystem::new(bus::BLOBS_PATH);
     let result = match order.action() {
         Action::TlsEnsureCsr => orbit_executor_route::ensure_csr(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        Action::RouteWithdrawSite => orbit_executor_route::withdraw_site(&system, order.input()).map(|changes| Outcome::Applied { changes }),
         _ => orbit_executor_route::publish_site(&system, order.input()).map(|changes| Outcome::Applied { changes }),
     };
     result.unwrap_or_else(|failure| {

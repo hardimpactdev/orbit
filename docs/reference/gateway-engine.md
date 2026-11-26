@@ -21,7 +21,7 @@ For Operations started through `StartSwampRun`, `EngineKinds::routes()` chooses 
 
 - The engine defines a flow for the kind (`EngineKinds`).
 - The kind appears in `ORBIT_ENGINE_KINDS` (or `instance.create` appears there for its child kinds `instance.fleet`, `instance.complete`, and `instance.finalize`). Listing a child kind alone does not enable it.
-- Every Node targeted by its steps has reported the required primitive.
+- Every Node targeted by its steps has reported the required primitive, and each optional input the step needs in its `features`.
 - The flow accepts the Operation's intent without throwing `EngineUnsupported`.
 
 When any condition fails, the entire Operation runs on its Swamp workflow. `instance.fleet` and `instance.finalize` are engine-only flows with no Swamp workflow fallback.
@@ -34,6 +34,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
+| `route.destroy` | `dns-<i>`, `grace`, `withdraw-<node>`, `sibling-<node>` | `dns.publish_records` (with `dns.guarded_records`), `route.withdraw_site` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `remove` | `instance.destroy` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
@@ -52,7 +53,18 @@ The engine runs the admitted `route_create` plan while preserving Route holds an
 
 Probes wait only for site publication because they connect by WireGuard address rather than DNS. A failed step records the chart step name, such as `Install cert, publish site-3`, so the Route receives the same `failed_step` and error code as on Swamp.
 
-Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as do other Route kinds such as `route.update`.
+Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`, awake markers, or non-standard access commands or PHP-FPM pools stay on Swamp. Routes targeting Nodes without the executor also stay on Swamp, as does `route.update`.
+
+### route.destroy
+
+The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) with the Route Nodes held from admission to the terminal state. Its steps run in this order:
+
+1. `dns-<i>`: `dns.publish_records` writes each VPN Node's records and catalog without the Route. Each file carries the digest of the bytes the Gateway rendered from at admission, so a file changed by anything else refuses `owned_revision_conflict` and nothing is written. Admission requires `dns.guarded_records` in the VPN Node's `features`.
+2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt. A redelivered receipt does not move that time, and a repeat waits only what is left.
+3. `withdraw-<node>`: `route.withdraw_site` replaces the Node's Caddyfile and PHP-FPM pools with the render without the Route, guarded by the rendered-from Caddyfile digest, removes the Route's leaf folders, reloads Caddy on every run, and reads Caddy's admin API back. A repeat finds the Route absent and reports `applied: 0`.
+4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node over its WireGuard address, trusting only the Orbit root, as `route.create`'s probe does. It passes without a probe when the Node serves no other Route.
+
+A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes for a surviving Route, and pool changes on a Node the Route does not leave stay on Swamp.
 
 ### instance.create
 

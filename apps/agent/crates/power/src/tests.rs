@@ -288,6 +288,7 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::UfwEnsureRule
             | orbit_executor_core::action::Action::TlsEnsureCsr
             | orbit_executor_core::action::Action::RoutePublishSite
+            | orbit_executor_core::action::Action::RouteWithdrawSite
             | orbit_executor_core::action::Action::DnsPublishRecords
             | orbit_executor_core::action::Action::InstanceClone
             | orbit_executor_core::action::Action::InstancePrepare

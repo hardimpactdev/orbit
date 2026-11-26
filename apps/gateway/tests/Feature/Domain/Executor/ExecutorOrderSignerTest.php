@@ -58,6 +58,8 @@ it('builds the same payload bytes as the shared fixture that the executor verifi
 })->with([
     'proof' => ['executor-order.json', ExecutorOrderSigner::ExpiresAfterMs],
     'clone removal' => ['executor-instance-destroy.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'site withdrawal' => ['executor-route-withdraw-site.json', ExecutorOrderSigner::StepExpiresAfterMs],
+    'guarded DNS records' => ['executor-dns-guarded-records.json', ExecutorOrderSigner::StepExpiresAfterMs],
 ]);
 
 it('gives every order a new nonce', function (): void {

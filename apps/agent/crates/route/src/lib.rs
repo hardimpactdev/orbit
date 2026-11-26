@@ -3,12 +3,15 @@
 //! - [`ensure_csr`] (`tls.ensure_csr`): the leaf key in its version folder, made once, and a certificate request for it.
 //! - [`publish_site`] (`route.publish_site`): Caddy access to the served roots, `APP_URL`, environment links, PHP-FPM pools,
 //!   the signed leaf and its account copy, the Orbit root's trust, and the Caddyfile, validated before it goes live.
+//! - [`withdraw_site`] (`route.withdraw_site`): one Node's withdrawal of a Route: pools and Caddyfile without it, its leaf
+//!   folders removed, Caddy reloaded and read back through its admin API.
 //!
 //! The Gateway renders every file; the Node only places it. Each command is built here from typed fields, never taken
 //! from the order. Large or secret content arrives as a blob the executor has already read and checked by its SHA-256.
 
 mod csr;
 mod site;
+mod withdraw;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +21,7 @@ use std::process::Command;
 
 pub use csr::ensure_csr;
 pub use site::publish_site;
+pub use withdraw::withdraw_site;
 
 const TIMEOUT: &str = "/usr/bin/timeout";
 
