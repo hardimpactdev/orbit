@@ -72,7 +72,9 @@ final readonly class DirectInstanceDestroyIntent
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);
         // The engine places whole files, so it needs each Node's whole after-state and the digests of what it replaces.
         $engine = $previousRoutes !== [] && RouteFileGuards::wanted(InstanceDestroyEngineFlow::Kind)
-            ? ['route_engine' => app(RouteFileGuards::class)->withdrawal((array) $captured['renders'], $beforeSites)] : [];
+            ? ['route_engine' => $withdrawal = app(RouteFileGuards::class)->withdrawal((array) $captured['renders'], $beforeSites),
+                // Every Node whose whole files the engine replaces, the DNS Nodes too, is held from admission to the withdrawal's end.
+                'route_engine_hold' => ['publications' => array_map(static fn (int $node): array => ['node_id' => $node, 'serves_routes' => true], array_keys($withdrawal))]] : [];
 
         return [[...$input, ...$engine,
             'participant_node_ids' => array_values(array_unique([$node->id, ...$captured['participant_node_ids']])),

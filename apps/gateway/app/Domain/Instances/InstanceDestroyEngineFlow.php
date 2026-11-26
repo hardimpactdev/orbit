@@ -165,6 +165,10 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
         if (DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->exists()) {
             throw new EngineUnsupported('A removal that shares its Route Nodes runs on Swamp.');
         }
+        // A removal that waited for its Nodes was planned before the write it waited for changed them: Swamp merges from the live files.
+        if (isset($operation->state['hold_nodes'])) {
+            throw new EngineUnsupported('A removal promoted after waiting for its Route Nodes runs on Swamp.');
+        }
         $engine = $input['route_engine'] ?? null;
         $mutations = ValidatedData::object(ValidatedData::object($input['native_destroy'] ?? [])['route_mutations'] ?? []);
         $forward = ValidatedData::object($mutations['forward'] ?? []);
@@ -214,6 +218,12 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
         }
         ksort($nodes);
         sort($serving);
+        // Every Route is served by the clone's own Node, and every Node whose whole files the run replaces, the DNS Nodes too, is held
+        // by this removal alone for its run.
+        $held = RoutePublicationHolds::nodes($operation);
+        if ($serving !== [] && $serving !== [ValidatedData::integer($operation->node_id)] || array_diff(array_keys($nodes), $held) !== []) {
+            throw new EngineUnsupported('A Route served by another Node, or a replaced file on a Node this removal does not hold, runs on Swamp.');
+        }
         if ($domains === [] || array_diff(array_keys($leaves), $serving) !== []) {
             throw new EngineUnsupported('A Route withdrawal outside the rendered Nodes runs on Swamp.');
         }
@@ -273,18 +283,19 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
     private static function release(Operation $operation): string
     {
         try {
-            DB::transaction(static function () use ($operation): void {
+            $released = DB::transaction(static function () use ($operation): bool {
                 $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
                 app(InstanceDestroyRouteWithdrawal::class)->record($locked);
-                app(RoutePublicationHolds::class)->releaseWithdrawn($locked);
+
+                return app(RoutePublicationHolds::class)->releaseEngineWithdrawn($locked);
             });
         } catch (Throwable $exception) {
             report($exception);
-
-            return json_encode(['route_hold_released' => false, 'http_status' => '000'], JSON_THROW_ON_ERROR);
+            $released = false;
         }
 
-        return json_encode(['route_hold_released' => true, 'http_status' => '200'], JSON_THROW_ON_ERROR);
+        // Released only when a hold row was actually freed; the Instance's own Operation lock stays until the removal ends.
+        return json_encode(['route_hold_released' => $released, 'http_status' => $released ? '200' : '000'], JSON_THROW_ON_ERROR);
     }
 
     public function terminalFailure(string $action, string $code): bool

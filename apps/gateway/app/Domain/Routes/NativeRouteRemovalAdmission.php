@@ -45,8 +45,8 @@ final readonly class NativeRouteRemovalAdmission
 
         return $this->operations->execute($kind, 'route', $route->id, $nodeId, [
             'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline, // A private Route without a Process or an Ingress placement: a Node-local proxy to a loopback upstream is one too.
-            'route_private_development' => $route->publication === RoutePublication::Private && $route->cluster?->ingressAssignment === null
-                && ($route->customProxy?->process_id === null),
+            // Its own placement only: an Ingress elsewhere in its cluster serves other Routes; Ingress work of this one is in its plan.
+            'route_private_development' => $route->publication === RoutePublication::Private && ($route->customProxy?->process_id === null),
             'route_guards' => $offline || ! RouteFileGuards::wanted($kind) ? [] : app(RouteFileGuards::class)->capture(self::guarded(ValidatedData::object($capture['intent']['plan'])),
                 app(DevelopmentSiteRepository::class)->all()->reject(static fn (DevelopmentSite $site): bool => $site->domain === $route->domain)->values()),
             'route_lifecycle' => $capture['intent'], 'certificates' => $capture['certificates'], 'execution_secrets' => $capture['execution_secrets'],
