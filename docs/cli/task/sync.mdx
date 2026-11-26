@@ -37,6 +37,12 @@ The sync refuses a copy while a copy turn of the group may still run. While a ch
 
 <div className="flow-at" data-chart="task/sync"></div>
 
+### Proposed executor path
+
+On the Gateway engine, a task copy's sync runs as executor primitives on the copy's Node: the mirror fetch reuses `instance.fetch_branch`, and only `refs/remotes/origin/<default>` moves in the copy. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="task/engine/sync"></div>
+
 ## Errors
 
 | Code | When |

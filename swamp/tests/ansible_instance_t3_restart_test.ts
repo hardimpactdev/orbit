@@ -97,7 +97,7 @@ Deno.test({
 });
 
 Deno.test({
-    name: "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once",
+    name: "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store, or the other server's when a switched unit still runs the old one; once they settle it restarts once, and a container with no store restarts at once",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture();
@@ -108,7 +108,9 @@ Deno.test({
             const ready = await f.run();
             assert(ready.ok, ready.output);
             const server = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
-            const names = { "app-t3": "t3", "app-conn": "conn-server" } as Record<string, string>;
+            // app-switched's unit names the Conn Server while T3 still runs and keeps its store, as on instance-3728; app-fresh has none.
+            const names = { "app-t3": "t3", "app-conn": "conn-server", "app-switched": "conn-server", "app-fresh": "t3" } as Record<string, string>;
+            const kinds = { "app-t3": "t3", "app-conn": "conn-server", "app-switched": "t3", "app-fresh": "t3" } as Record<string, string>;
             const state = f.state();
             state.instances.push(...Object.keys(names).map((name) => ({ project: "orbit-instances", name, status: "Running" })));
             state.files = Object.fromEntries(Object.keys(names).map((name) => [name + server, { content: "# old\n", mode: "0644", uid: "0", gid: "0" }]));
@@ -124,8 +126,8 @@ Deno.test({
                 Deno.writeTextFileSync(`${home}/bin/${names[name]}`, `#!/bin/sh\necho '[{"threadId":"root","status":"completed"}]'\n`);
                 Deno.chmodSync(`${home}/bin/${names[name]}`, 0o755);
                 Deno.writeTextFileSync(`${home}/.t3/userdata/projects.json`, JSON.stringify([{ title: "workspace", workspaceRoot: "/srv/workspace" }]));
-                const db = new DatabaseSync(`${home}/.t3/userdata/${names[name] === "t3" ? "statev2" : "engine"}.sqlite`);
-                if (names[name] === "t3") {
+                const db = new DatabaseSync(`${home}/.t3/userdata/${kinds[name] === "t3" ? "statev2" : "engine"}.sqlite`);
+                if (kinds[name] === "t3") {
                     db.exec(`CREATE TABLE projection_projects (project_id TEXT PRIMARY KEY, workspace_root TEXT NOT NULL, deleted_at TEXT);
                         INSERT INTO projection_projects VALUES ('project-1', '/srv/workspace', NULL);
                         CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);
@@ -141,14 +143,17 @@ Deno.test({
                 }
                 db.close();
                 return () => {
-                    const settle = new DatabaseSync(`${home}/.t3/userdata/${names[name] === "t3" ? "statev2" : "engine"}.sqlite`);
-                    settle.exec(names[name] === "t3" ? "UPDATE orchestration_v2_projection_runs SET status = 'completed'"
+                    const settle = new DatabaseSync(`${home}/.t3/userdata/${kinds[name] === "t3" ? "statev2" : "engine"}.sqlite`);
+                    settle.exec(kinds[name] === "t3" ? "UPDATE orchestration_v2_projection_runs SET status = 'completed'"
                         : "UPDATE entities SET body = '{\"status\":\"completed\"}' WHERE kind = 'runs'");
                     settle.close();
                 };
             };
             const settleChild = store("app-t3", "child");
             const settleSide = store("app-conn", "side");
+            const settleSwitched = store("app-switched", "switched-child");
+            Deno.mkdirSync(`${f.folder}/homes/app-fresh/.t3/userdata`, { recursive: true });
+            Deno.mkdirSync(`${f.folder}/homes/app-fresh/bin`);
             f.write({ ...f.instances, t3_files: Object.entries(names).map(([container, bin]) => ({ project: "orbit-instances", container,
                 program: `/opt/orbit-agent/current/agent/bin/${bin}`, files: [{ path: server, content: "# new\n", mode: "0644" }] })) });
             const exec = (name: string, ...command: string[]) => ["exec", "--project", "orbit-instances", name, "--", "systemctl", ...command];
@@ -161,17 +166,23 @@ Deno.test({
             const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
 
             const busy = await pass();
-            assertEquals(busy.execs, [exec("app-conn", "daemon-reload"), exec("app-t3", "daemon-reload")]);
+            assertEquals(busy.execs, ["app-conn", "app-fresh", "app-switched", "app-t3"].map((name) => exec(name, "daemon-reload")).concat([
+                exec("app-fresh", "try-restart", "t3.service")]));
             assertStringIncludes(busy.run.output, "open turn in child");
             assertStringIncludes(busy.run.output, "open turn in side");
-            assertEquals(pending(), [{ project: "orbit-instances", name: "app-conn" }, { project: "orbit-instances", name: "app-t3" }]);
+            // The switched unit's missing engine.sqlite is no failed read: T3's own store answers, with its open run.
+            assertStringIncludes(busy.run.output, "open turn in switched-child");
+            assert(!busy.run.output.includes("could not be read"), busy.run.output);
+            assertEquals(pending(), ["app-conn", "app-switched", "app-t3"].map((name) => ({ project: "orbit-instances", name })));
 
-            // The child settles: only that T3 restarts. Then the side chat settles: the Conn Server restarts and the list empties.
+            // The child settles: only that T3 restarts. Then the side chat settles: the Conn Server restarts. Then the switched unit's.
             settleChild();
             assertEquals((await pass()).execs, [exec("app-t3", "try-restart", "t3.service")]);
-            assertEquals(pending(), [{ project: "orbit-instances", name: "app-conn" }]);
+            assertEquals(pending(), ["app-conn", "app-switched"].map((name) => ({ project: "orbit-instances", name })));
             settleSide();
             assertEquals((await pass()).execs, [exec("app-conn", "try-restart", "t3.service")]);
+            settleSwitched();
+            assertEquals((await pass()).execs, [exec("app-switched", "try-restart", "t3.service")]);
             assert(!f.has("t3-restart.json"));
         } finally {
             f.cleanup();

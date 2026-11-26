@@ -60,6 +60,16 @@ A migrated Instance's [retained Git directory](/cli/instance/migrate#retained-gi
 
 <div className="flow-at" data-chart="instance/destroy"></div>
 
+### Proposed executor path
+
+On the Gateway engine, an eligible forced clone removal runs as one signed `instance.destroy` step. This path is implemented; the Route withdrawal before it is planned.
+
+<div className="flow-at" data-chart="instance/container/destroy-engine"></div>
+
+The Remove button in Conn first reads the workspace for unsaved work. This read is synchronous and is not an Operation, so its chart has no kind of its own and is placed here, beside the removal it gates. This design awaits implementation and runtime proof.
+
+<div className="flow-at" data-chart="instance/container/work-read-engine"></div>
+
 The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/destroy.mmd) shows the container branch.
 
 ## Errors

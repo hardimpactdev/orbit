@@ -1,0 +1,103 @@
+sequenceDiagram
+  %% route.update on the Gateway engine: a `--domain` change of a private Route in route/update.mmd (workflow operation-route-update), built from route.create's primitives and route/engine/destroy.mmd's withdrawal and sibling check. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Existing actions: `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` (docs/reference/gateway-engine.md#routecreate). New: the site withdrawal of route/engine/destroy.mmd, and the guarded input of `dns.publish_records`, which a Node must advertise as a feature before admission.
+  %% status: draft
+  %% command: route:update
+  %% kind: route.update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane V icon=server pill=executor tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Route Node<br/>executor
+  participant V as VPN Node<br/>DNS executor
+  CLI->>GW: route:update ROUTE<br/>at least one option
+  Note over GW: Validate, lock, record<br/>replacement pending
+  %%> Same validation as route/update.mmd; a domain change records the replacement Route `pending`, and the current Route stays authoritative until the cutover
+  alt nothing to do on a Node
+    Note over GW: Record the result<br/>no executor order
+    %%> As route/update.mmd: the value is already set, or the Route is not yet published and its replacement settles at once; the Gateway records the Operation's result and answers `202` with its Operation data, as RoutesController::update does for every update; an identical request is `route.update_unchanged`; neither starts a run
+    GW-->>CLI: 202 Accepted<br/>Operation data, settled
+    %%> The engine admits nothing here; no run, no Node order
+  else Node work needed
+    Note over GW: Hold the Route Nodes
+    alt the engine admits the whole Operation
+      %%> Admission, one decision per Operation (EngineKinds::routes):
+      %%> - `route.update` is in `ORBIT_ENGINE_KINDS`
+      %%> - every Node a step touches reports its action in `$KV.NODES`: `tls.ensure_csr`, `route.publish_site` and the site withdrawal on each Route Node, `dns.publish_records` on each VPN Node
+      %%> - each VPN Node also lists the guarded DNS input in its reported `features` (as `instance.t3_pairing` is listed); the existing decoder refuses unknown fields, so without the feature the whole update stays on Swamp and never fails after a step acted
+      %%> - eligible plan: `--domain` on a private Route whose URL effects are `APP_URL` lines of a `.env` that `route.publish_site` writes; `--publication`, a public Route's domain change (Ingress edge, ufw 80/443), LAN rules, a whole `env_files` write (a private production domain) and any other URL write throw `EngineUnsupported`
+      Note over GW: Bind steps, take the lock<br/>commit, publish the start
+      %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+      GW-->>CLI: 202 Accepted<br/>task ID
+      EN->>N: Make the key and CSR<br/>tls.ensure_csr · csr-i
+      %%> The key is made once and never leaves the Node; a resend answers a request for the same key
+      N-->>EN: CSR<br/>output
+      Note over EN: Sign the CSR<br/>Gateway step · sign-i
+      %%> `operation:direct:certificate-sign`; the Orbit CA key stays in the Gateway; a pending cancel refuses
+      EN->>N: Publish the new site<br/>route.publish_site · site-node
+      %%> Leaf, Caddy site, PHP-FPM pool and the admitted `APP_URL` lines, as route.create; the Caddyfile is validated before the move, and Caddy reloads on every publication, also on a replay, so a crash after the move still makes it live
+      N-->>EN: Files placed<br/>applied
+      EN->>N: Probe the new site<br/>Gateway step · SNI new domain
+      %%> TLS handshake over the WireGuard address, trusting only the Orbit root, as route.create's probe
+      opt domain outside the TLD
+        EN->>V: Move the DNS answers<br/>dns.publish_records · dns-i
+        %%> Records and catalog with the new name and without the old one; the guarded input carries, per file, the digest the Gateway rendered from and the digest of the desired bytes
+        %%> Per file: live equals desired (this step already wrote it, also one half of a pair) is kept; live equals the rendered-from digest is replaced; anything else refuses `owned_revision_conflict` and writes nothing; then `dnsmasq --test` and the restart run every time
+        V-->>EN: Files and restart<br/>applied · digests
+      end
+      Note over EN: Record the cutover<br/>replacement authoritative
+      %%> A Gateway step after the probe and, when present, the DNS move: from here the replacement is authoritative and the old Route `retiring`
+      opt domain outside the TLD
+        Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
+        %%> Timed by a NATS schedule from the DNS receipt; a resend never shortens it; the old site serves until it ends
+      end
+      opt a lasting site is replaced
+        EN->>N: Withdraw the old site<br/>route family · withdraw-node
+        %%> The primitive of route/engine/destroy.mmd with the old domain's captured states; it never touches the new site; Caddy reloads on every run
+        N-->>EN: Old site absent<br/>read back
+        EN->>N: Probe a sibling Route<br/>TLS over WireGuard
+        %%> The sibling check of route/engine/destroy.mmd on each Node that served the old site, after its withdrawal: another Route on that Node still answers; skipped only for a Node that serves no other Route
+      end
+      opt the receipt is lost
+        EN->>N: Resend the same step<br/>fresh nonce · same step ID
+        %%> When:
+        %%> - the step passes its resend deadline with no receipt; two sends, one execution
+        %%> - the Operation keeps its lock, so the Route, its replacement and the held Nodes stay fenced; no other Operation and no Swamp run acts on them meanwhile
+        %%> On the Node:
+        %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+        %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+        %%> - a replayed site or withdrawal step reloads Caddy again and a replayed DNS step restarts dnsmasq again, so files placed before a crash always become live
+        N-->>EN: Stored result<br/>repeat: true
+      end
+      alt every step verified
+        EN->>GW: Record replacement active<br/>delete the old Route
+        %%> The kind's own projection, the same rows a Swamp run records; the held Nodes are freed
+      else failure before the cutover
+        EN--xGW: Failed step<br/>error_code · redacted detail
+        Note over GW: Old Route authoritative<br/>replacement failed
+        %%> Gateway authority: the old Route stays authoritative and the replacement is `failed`
+        %%> What resolvers serve, per VPN Node; finished steps stay, no rollback:
+        %%> - a Node whose DNS step succeeded answers the new name and no longer the old one
+        %%> - a Node whose DNS step never reached it is untouched and still answers the old name
+        %%> - a Node whose `dns.publish_records` apply failed gets no promised answer: after `dns.restart_failed` its new files are already installed and not restored, so it may answer the new name or not answer at all
+        %%> Only a successful forward retry brings every VPN Node to the new records
+      else failure after the cutover
+        EN--xGW: Failed step<br/>error_code · redacted detail
+        Note over GW: Replacement authoritative<br/>old Route retiring
+        %%> A failure in the grace, the old site's withdrawal or the sibling check
+      end
+      %%> Retry is forward only: the same request resumes; before the cutover it publishes the replacement again (a made key is reused, files repeat with `applied: 0`), after it only the grace remainder, the withdrawal and the sibling check run
+    else the engine does not admit it
+      Note over GW: Start the Swamp run<br/>operation-route-update
+      %%> The kind is not enabled, a Node lacks an action or the DNS feature, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs route/update.mmd; it never splits across engines
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show TASK
+      GW-->>CLI: status + result
+    end
+  end

@@ -9,6 +9,7 @@ sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Route withdrawal is one Ansible read, one composition and one Ansible apply per Node, the Nodes in parallel, in place of about 30 serial dispatches of the Route mutation (34 s of a 46 s destroy). The pool and Caddyfile composition is unchanged; it runs once against what the Node holds, and the captured states keep their revision checks. DNS records leave in the same phase as the Caddy site of another Node, not after it.
   %% Decided by the orchestrator, for Nick's review (2026-11-14): the withdrawal is one Node-local transaction under the Node lock (read, merge, byte compare of every other section, previous generation, test, commit), so removals on one Node share its hold and run side by side; on 14 November five removals started together waited 21, 37 and 51 s for each other's withdrawal. A publisher still holds its Nodes alone.
   %% Container clones follow the forced cleanup branch; defaults remain unavailable.
+  %% On the Gateway engine (ADR 0271): with `instance.destroy` in `ORBIT_ENGINE_KINDS`, a forced clone removal that InstanceDestroyEngineFlow accepts runs as the executor's signed `instance.destroy` step instead of this run (docs/reference/gateway-engine.md#instancedestroy): its steps are container/destroy-engine.mmd.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -100,22 +101,6 @@ sequenceDiagram
   %%> - record the Operation and mark the Instance removing and Route retiring only after Schedule removal succeeds
   %%> On Schedule failure:
   %%> - keep the Instance and Route active; record no destroy Operation, as before
-  alt eligible signed clone removal
-    GW-->>CLI: 202 Accepted<br/>task #5132
-    %%> Result:
-    %%> - the Gateway has saved the removal intent; a receipt decides the outcome
-    GW->>N: Remove the clone<br/>signed instance.destroy
-    %%> When:
-    %%> - a non-default development container clone with --force needs no Route, database, Process, Schedule, custom or CI teardown
-    %%> - the Gateway enables the kind and the executor advertises the action
-    %%> What it does:
-    %%> - holds the Instance lock, force-stops the saved container, removes its owned volume, ACL, rules and files, and discards both engines' freeze artifacts
-    N-->>GW: Terminal receipt<br/>executor journal
-    %%> Recovery:
-    %%> - a lost receipt keeps the Instance fenced; the same step is resent with a fresh nonce and the executor repeats its stored result
-    %%> Result:
-    %%> - success projects the same removal as a Swamp run; a terminal failure leaves the saved intent for retry
-  else existing Swamp removal
   opt private repository
     GW->>SW: Push the token<br/>vault: github-token
     %%> Why:
@@ -308,7 +293,6 @@ sequenceDiagram
     %%> Retry:
     %%> - run `instance:destroy 42` again; it is a new task and converges the same captured set
     %%> - after a held withdrawal the retry skips it and waits for no Route write
-  end
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5132

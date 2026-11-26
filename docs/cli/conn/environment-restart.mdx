@@ -60,6 +60,12 @@ The API is `POST /api/v1/conn/instances/{instance}/t3-restart`. The Conn extensi
 
 <div className="flow-at" data-chart="conn/environment-restart"></div>
 
+### Proposed executor path
+
+On the Gateway engine, the T3 restart is one `instance` family primitive. The busy check stays in the Gateway. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="conn/engine/environment-restart"></div>
+
 ## Errors
 
 | Code | Meaning |

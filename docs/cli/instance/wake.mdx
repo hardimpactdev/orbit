@@ -68,6 +68,12 @@ For a nested-fleet clone:
 
 <div className="flow-at" data-chart="instance/start"></div>
 
+### Proposed executor path
+
+On the Gateway engine, the start of a stopped nested-fleet clone reuses the `instance` and `power` primitives of `instance:create`. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="instance/container/start-engine"></div>
+
 ## Errors
 
 | Code | Meaning |
