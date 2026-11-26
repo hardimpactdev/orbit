@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolPackageProtection;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\AptSourceTrust;
+use App\Domain\Tools\ToolConvergeIntent;
 use App\Models\Node;
 use App\Support\ValidatedData;
 use Illuminate\Database\Migrations\Migration;
@@ -15,14 +16,11 @@ use Illuminate\Support\Facades\Schema;
  * Records uninstall authority, apt source trust and source cleanup from the preceding release's receipts, replayed in Operation order
  * (docs/reference/tools.md#upgrade-from-the-preceding-release). Only an acquisition grants ownership and only a write that ran grants
  * trust; an observation, a skipped write or a membership the user never asked for is no evidence. Each source that may still be on disk
- * keeps its own record, which a full convergence removes once no Tool names it. Work still open is admitted again under the current
- * rules: refused when it names a package the current release protects, otherwise given the authority the upgrade recorded.
+ * keeps its own record, which a full convergence removes once no Tool names it. Work that never started is never dispatched as the
+ * preceding release admitted it: a direct request is cancelled before its run, and a convergence's Tools are captured again.
  */
 return new class extends Migration
 {
-    /** @var array<int, array<string, list<string>>> */
-    private array $protection = [];
-
     public function up(): void
     {
         Schema::table('tools', static function (Blueprint $table): void {
@@ -57,21 +55,24 @@ return new class extends Migration
         // expired with its run unsettled, by Tool.
         $managers = [];
         $suspended = [];
-        // Work still open at the upgrade, which the upgraded Gateway dispatches or settles: by Operation, its kind, input and whether its
-        // start may have been sent. Queued work the current admission would refuse as protected, by Operation.
+        // Work still open at the upgrade whose start may have been sent, which the upgraded Gateway settles, by Operation: its kind and
+        // input. Work that never started, which it never dispatches as the preceding release admitted it: direct requests, cancelled before
+        // their run, and convergences whose Tool plans a current capture replaces, by Operation.
         $open = [];
-        $refused = [];
-        $claims = [];
+        $cancelled = [];
+        $recaptured = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
             ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
             $input = $this->json($operation->input);
             $result = $this->json($operation->result);
             $state = $this->json($operation->state);
-            // A start may have reached the Node once it was sent, also when its reply was lost: an attempt, a bound native run, or a start
-            // that set the Operation running. Only Swamp verifying that no run exists says otherwise.
-            $ran = ($operation->attempts > 0 || isset($state['swamp_run_id']) || $operation->started_at !== null)
-                && data_get($state, 'native_timeout.no_run_verified_at') === null;
+            // A start may have reached the Node once it was sent, also when its reply was lost: an attempt, a bound native run, an Operation
+            // its start set running, or one the Gateway expired before its run's end was known. A queued Operation never started, even one
+            // whose start Swamp deferred, and neither did one whose start the Gateway or Swamp refused (CancelOperationAction, StartSwampRun).
+            // Only Swamp verifying that no run exists says otherwise.
+            $ran = ($operation->attempts > 0 || isset($state['swamp_run_id']) || in_array($operation->status, ['running', 'waiting'], true)
+                || $operation->error_code === 'operation.timed_out') && data_get($state, 'native_timeout.no_run_verified_at') === null;
             $succeeded = $operation->status === 'succeeded';
             // Work still open at the upgrade, queued, running, or expired by the preceding release with its run unsettled, is settled by
             // the upgraded Gateway when its end is read: its sources keep it as an open writer, and it changes no Tool here.
@@ -81,20 +82,21 @@ return new class extends Migration
             $isOpen = ! in_array($operation->status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true) || $expired;
             if ($operation->kind === 'node.converge') {
                 $plans = (array) data_get($input, '_converge.intent.tools', []);
-                if ($isOpen && ! $ran) {
-                    // The upgraded Gateway dispatches a queued convergence as its admission now would: without the Tools it protects.
-                    $plans = array_values(array_filter($plans, fn (mixed $plan): bool => ! is_array($plan) || ! is_string($plan['manager'] ?? null)
-                        || ! in_array($plan['package'] ?? null, $this->protectedPackages($operation->node_id, $plan['manager']), true)));
-                    $input = $this->withPlans($input, $plans);
-                }
                 // Its admission captured each planned Tool's installed version (NodeDesiredConvergeInput).
                 foreach ($plans as $plan) {
                     if (is_array($plan) && is_int($plan['id'] ?? null)) {
                         $this->capture($tools, $plan['id'], null, is_string($plan['installed_version'] ?? null) ? $plan['installed_version'] : null, $operation->id);
                     }
                 }
+                if ($isOpen && ! $ran) {
+                    // Its other phases run as admitted; its Tools are admitted again by the current capture once the records stand.
+                    if ($plans !== []) {
+                        $recaptured[$operation->id] = ['node_id' => $operation->node_id, 'input' => $input];
+                    }
+
+                    continue;
+                }
                 if ($isOpen) {
-                    $open[$operation->id] = ['kind' => $operation->kind, 'input' => $input, 'ran' => $ran];
                     foreach ($plans as $plan) {
                         if (is_array($plan) && is_array($plan['repository'] ?? null) && is_string($plan['repository']['name'] ?? null)) {
                             $this->writer($sources, $operation->node_id, $plan['repository']['name'], $operation->id, $plan['repository']);
@@ -109,30 +111,30 @@ return new class extends Migration
             }
             $repository = is_array($input['repository'] ?? null) ? $input['repository'] : null;
             $tool = is_int($input['tool_id'] ?? null) ? $input['tool_id'] : null;
-            if ($isOpen && ! $ran && is_string($input['manager'] ?? null)
-                && in_array($input['package'] ?? null, $this->protectedPackages($operation->node_id, $input['manager']), true)) {
-                // The upgraded Gateway never dispatches queued work on a package it now protects: it refuses it as its admission would.
-                $refused[$operation->id] = $tool;
-
-                continue;
-            }
             if ($tool !== null) {
                 // Admission captured the Tool's status and installed version (StartToolOperationAction), also for work still open.
                 $this->capture($tools, $tool, is_string($input['tool_status'] ?? null) ? $input['tool_status'] : null,
                     is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null, $operation->id);
             }
+            // A request still pending names the Tool's desired source, as a failed one does.
+            if ($tool !== null && $operation->kind !== 'tool.remove' && $isOpen) {
+                $latest[$tool] = ['operation' => $operation->id, 'repository' => $repository];
+            }
+            if ($isOpen && ! $ran) {
+                // A request that never started is cancelled before its run, as CancelOperationAction cancels one: it wrote nothing, and the
+                // operator's next request is admitted under the current scope, protection, membership, ownership and source trust.
+                $cancelled[] = $operation->id;
+
+                continue;
+            }
             if ($isOpen) {
-                $open[$operation->id] = ['kind' => $operation->kind, 'input' => $input, 'ran' => $ran];
-                // A request still pending names the Tool's desired source, as a failed one does.
-                if ($tool !== null && $operation->kind !== 'tool.remove') {
-                    $latest[$tool] = ['operation' => $operation->id, 'repository' => $repository];
-                }
+                $open[$operation->id] = ['kind' => $operation->kind, 'input' => $input];
                 if ($repository !== null && is_string($repository['name'] ?? null)) {
                     $this->writer($sources, $operation->node_id, $repository['name'], $operation->id, $repository);
                 }
                 // The preceding release did not set aside the authority of a removal it expired; the upgrade does, as the Gateway now
                 // does at expiry, until the run's end is read or Swamp verifies it never ran.
-                if ($expired && $operation->kind === 'tool.remove' && $ran && $tool !== null) {
+                if ($expired && $operation->kind === 'tool.remove' && $tool !== null) {
                     $suspended[$tool] = ['operation' => $operation->id, 'code' => $operation->error_code];
                 }
 
@@ -148,7 +150,9 @@ return new class extends Migration
                 $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                 if ($projected && $operation->status !== 'cancelled') {
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
-                    if ($succeeded || $version !== null) {
+                    // The preceding release fell back to the admitted version when its run never read the package: only a success, or a
+                    // failure at or after the step its ready decision chose, observed one.
+                    if ($succeeded || ($version !== null && $this->readPackage($operation->kind, data_get($state, 'native_failure.failed_step')))) {
                         $tools[$tool]['stamp_version'] = $operation->id * 2;
                     }
                 }
@@ -165,6 +169,10 @@ return new class extends Migration
                     $tools[$tool] = [...$tools[$tool], 'owned' => $tools[$tool]['owned'] || $acquired,
                         'installed' => $acquired ? 'acquired' : ($succeeded ? ($tools[$tool]['installed'] ?? 'observed') : $tools[$tool]['installed']),
                         'last' => $succeeded ? 'installed' : 'failed', 'version' => $succeeded ? $version : ($version ?? $tools[$tool]['version'])];
+                    // A success linked the Tool to the source it wrote with, or to none.
+                    if ($succeeded) {
+                        $tools[$tool]['link'] = is_string($repository['name'] ?? null) ? $repository['name'] : null;
+                    }
                 }
                 // A removal whose run may have reached its package ended the claim, whether it failed, was cancelled, or ended after its
                 // expiry; a successful one deleted the row. Only one that failed before its decision, whose decision refused, or whose
@@ -192,8 +200,11 @@ return new class extends Migration
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // or capture left failed, or gives it an installed version other than the one its history last recorded. No admission captured
             // it, so it is newer than every Operation.
+            // A Tool linked to a source other than the one its last success linked was adopted from that source.
+            $linked = $tool->apt_repository_id === null ? null : DB::table('apt_repositories')->where('id', $tool->apt_repository_id)->value('name');
             $adopted = $history !== null && $tool->status === 'installed'
-                && ($history['last'] === 'failed' || ($tool->installed_version !== null && $tool->installed_version !== $history['version']));
+                && ($history['last'] === 'failed' || ($tool->installed_version !== null && $tool->installed_version !== $history['version'])
+                    || (array_key_exists('link', $history) && $linked !== $history['link']));
             $owned = $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted);
             // Each field keeps the order of the preceding release's newest receipt that changed it (Tool::receive, Tool::adopt). A late
             // receipt of an older Operation therefore never sets back a newer one.
@@ -233,34 +244,16 @@ return new class extends Migration
                 $changes['desired_repository'] = json_encode($request['repository'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
             }
             DB::table('tools')->where('id', $tool->id)->update($changes);
-            // The authority the Tool held before any removal of it set it aside: what the upgrade dispatches its queued work with.
-            $claims[$tool->id] = $owned;
         }
-        // The upgrade admits the preceding release's open work again under the ownership contract (docs/reference/tools.md#upgrade-from-the-preceding-release):
-        // queued work runs with the authority the upgrade recorded, and a convergence's plans name it, so the current helper refuses a present
-        // package Orbit does not own. A removal whose start was already sent ran under the preceding release, which removed whatever it found:
-        // its end is read under that authority.
+        // Work whose start may have been sent ran under the preceding release, which removed whatever its removal found: its end is read
+        // under that authority (docs/reference/tools.md#upgrade-from-the-preceding-release). A write's end grants nothing by authority.
         foreach ($open as $id => $work) {
-            $input = $work['input'];
-            if ($work['kind'] === 'node.converge') {
-                if ($work['ran']) {
-                    continue;
-                }
-                $input = $this->withPlans($input, array_map(static fn (mixed $plan): mixed => is_array($plan) && is_int($plan['id'] ?? null)
-                    ? [...$plan, 'owned' => $claims[$plan['id']] ?? false] : $plan, (array) data_get($input, '_converge.intent.tools', [])));
-            } else {
-                $input['package_owned'] = $work['kind'] === 'tool.remove' && $work['ran'] ? true
-                    : (is_int($input['tool_id'] ?? null) && ($claims[$input['tool_id']] ?? false));
-            }
-            DB::table('operations')->where('id', $id)->update(['input' => json_encode($input, JSON_THROW_ON_ERROR)]);
+            DB::table('operations')->where('id', $id)->update(['input' => json_encode([...$work['input'], 'package_owned' => $work['kind'] === 'tool.remove'],
+                JSON_THROW_ON_ERROR)]);
         }
-        foreach ($refused as $id => $toolId) {
-            DB::table('operations')->where('id', $id)->update(['status' => 'failed', 'error_code' => ToolPackageProtection::ErrorCode, 'lock_key' => null,
-                'finished_at' => now(), 'current_step' => null, 'failed_step' => null]);
-            // The installing record a refused first install left never became a Tool.
-            if ($toolId !== null) {
-                DB::table('tools')->where('id', $toolId)->where('status', 'installing')->delete();
-            }
+        foreach ($cancelled as $id) {
+            DB::table('operations')->where('id', $id)->update(['status' => 'cancelled', 'error_code' => null, 'lock_key' => null, 'finished_at' => now(),
+                'cancel_requested_at' => now(), 'current_step' => null, 'failed_step' => null]);
         }
         foreach ($managers as $nodeId => $byName) {
             foreach ($byName as $name => $operation) {
@@ -270,11 +263,17 @@ return new class extends Migration
 
         foreach ($sources as $nodeId => $byName) {
             foreach ($byName as $name => $last) {
+                // A confirmed removal withdrew the source from every writer admitted before it, as AptSourceTrust::removed does: only a
+                // newer one may have published it again.
+                $withdrawnAt = max([0, ...ValidatedData::integerList($last['removals'] ?? [])]);
+                $last['writers'] = array_filter(is_array($last['writers'] ?? null) ? $last['writers'] : [], static fn (int|string $writer): bool => (int) $writer > $withdrawnAt,
+                    ARRAY_FILTER_USE_KEY);
+                $sources[$nodeId][$name] = $last;
                 $record = DB::table('apt_repositories')->where('node_id', $nodeId)->where('name', $name)->first(['id']);
-                if ($record === null && ((isset($last['event']) && $last['event'] !== 'removed') || ($last['writers'] ?? []) !== [])) {
+                if ($record === null && ((isset($last['event']) && $last['event'] !== 'removed') || $last['writers'] !== [])) {
                     // A source that may still be on disk keeps its own record, whatever package names collide.
                     DB::table('apt_repositories')->insert(['node_id' => $nodeId, 'name' => $name, 'verified' => false, 'created_at' => now(),
-                        'updated_at' => now(), 'definition' => json_encode($last['definition'] ?? array_values(is_array($last['writers'] ?? null) ? $last['writers'] : [])[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+                        'updated_at' => now(), 'definition' => json_encode($last['definition'] ?? array_values($last['writers'])[0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
                 }
             }
         }
@@ -306,13 +305,37 @@ return new class extends Migration
             }
             $possible = array_values(array_unique([...$entries, ...array_filter(array_merge([], ...array_values($writers)))]));
             sort($possible, SORT_STRING);
+            // A definition no event or open writer of the history explains is an adoption's, which left no Operation: as AptSourceTrust::adopt,
+            // it settles unproven, newer than every Operation, so no late end of older work gives trust to another definition.
+            $known = [...(isset($last['definition']) ? [$last['definition']] : []), ...array_values(is_array($last['writers'] ?? null) ? $last['writers'] : []),
+                ...(array) ($last['possible'] ?? [])];
+            $adopted = $last !== [] && ! in_array($definition, $known);
             // As AptSourceTrust::recompute: trust holds while no writer newer than the settled end is open.
-            $settledAt = is_int($last['operation'] ?? null) ? $last['operation'] : 0;
+            $settledAt = $adopted ? $latestOperation : (is_int($last['operation'] ?? null) ? $last['operation'] : 0);
             $newer = array_filter(array_keys($writers), static fn (int|string $writer): bool => (int) $writer > $settledAt) !== [];
+            $written = $written && ! $adopted;
             DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written && ! $newer,
                 'entries' => json_encode($possible, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 'writers' => json_encode((object) $writers, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                'settled' => json_encode(['verified' => $written, 'definition' => $definition, 'entries' => $entries, 'operation' => is_int($last['operation'] ?? null) ? $last['operation'] : 0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+                'settled' => json_encode(['verified' => $written, 'definition' => $definition, 'entries' => $entries, 'operation' => $settledAt], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+        }
+        // A convergence that never started runs its other phases as admitted, but its Tools as the current admission plans them now that
+        // the records stand (StartNodeConvergeAction): current scope, protection, membership, ownership, pins and source trust, each source
+        // claimed. A capture the current admission would refuse leaves it no Tools.
+        foreach ($recaptured as $id => $work) {
+            $node = Node::query()->find(ValidatedData::integer($work['node_id']));
+            try {
+                $plans = $node === null ? [] : app(ToolConvergeIntent::class)->capture($node, $id);
+            } catch (ResourceOperationException) {
+                $plans = [];
+            }
+            $input = $this->withPlans($work['input'], $plans);
+            data_set($input, '_converge.intent.orphan_sources', $node === null ? [] : AptSourceTrust::orphans($node->id));
+            DB::table('operations')->where('id', $id)->update(['input' => json_encode($input, JSON_THROW_ON_ERROR)]);
+            if ($node !== null) {
+                AptSourceTrust::claim($node->id, AptSourceTrust::planned($plans), $id);
+                ToolConvergeIntent::admitDesired($plans);
+            }
         }
     }
 
@@ -435,19 +458,6 @@ return new class extends Migration
     }
 
     /**
-     * The packages the current release protects on this Node for this manager (ToolPackageProtection), which its admission refuses.
-     *
-     * @return list<string>
-     */
-    private function protectedPackages(int $nodeId, string $manager): array
-    {
-        $name = ToolManagerName::tryFrom($manager);
-        $node = Node::query()->find($nodeId);
-
-        return $name === null || $node === null ? [] : $this->protection[$nodeId][$manager] ??= app(ToolPackageProtection::class)->forNode($node, $name);
-    }
-
-    /**
      * Work still open at the upgrade that may write a source.
      *
      * @param  array<int, array<string, array<string, mixed>>>  $sources
@@ -462,16 +472,36 @@ return new class extends Migration
     }
 
     /**
+     * Whether a preceding-release failure read the package: it failed at or after the package step its ready decision chose, which only
+     * a decision that read the inventory makes.
+     */
+    private function readPackage(string $kind, mixed $failedStep): bool
+    {
+        return in_array($failedStep, $kind === 'tool.remove' ? ['Remove the package', 'Check apt absence', 'Check it is gone', 'Decode package state']
+            : ['Apply the package', 'Check apt package', 'Check the package', 'Decode package state'], true);
+    }
+
+    /**
      * A preceding-release removal that did not succeed left its package untouched only when it failed before its decision, its decision
-     * refused (`tool.removal_plan_unsafe`, recorded at the end check), or its package step stopped on the dpkg lock, which apt and dpkg
-     * take before any write. Any other end, a cancel or a late one included, may have reached the package.
+     * refused (`tool.removal_plan_unsafe`, recorded at the end check), or its package step was dpkg refusing to start on its lock. Any other end, a cancel or a late one included, may have reached the package.
      */
     private function untouchedPackage(mixed $failedStep, ?string $errorCode, mixed $detail): bool
     {
         return in_array($failedStep, ['Prepare package commands', 'Read manager version', 'Read installed package', 'Read macOS version', 'Plan the removal', 'Choose package action'], true)
             || ($failedStep === 'Assert package state' && $errorCode === 'tool.removal_plan_unsafe')
-            || ($failedStep === 'Remove the package' && is_string($detail)
-                && preg_match('~dpkg frontend lock (?:was|is) locked|Could not get lock /var/lib/dpkg/lock|dpkg status database is locked~', $detail) === 1);
+            || ($failedStep === 'Remove the package' && is_string($detail) && $this->lockRefusal($detail));
+    }
+
+    /**
+     * dpkg's own refusal to start: its whole diagnostic is one frontend or database lock line and dpkg's note on it. A nested dpkg that
+     * a trigger runs after the removal prints the same line, followed by the error processing the triggering package.
+     */
+    private function lockRefusal(string $detail): bool
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $detail)), static fn (string $line): bool => $line !== ''));
+
+        return preg_match('~\Adpkg: error: dpkg (?:frontend|database) lock was locked by .+\z~', $lines[0] ?? '') === 1
+            && array_slice($lines, 1) === ['Note: removing the lock file is always wrong, can damage the locked area', 'and the entire system. See <https://wiki.debian.org/Teams/Dpkg/FAQ#db-lock>.'];
     }
 
     /**
@@ -486,13 +516,12 @@ return new class extends Migration
         if ($event === null) {
             return;
         }
-        $entry = $sources[$nodeId][$name] ?? ['possible' => [], 'removals' => []];
+        // An open writer may have made the entry first, with neither list.
+        $entry = $sources[$nodeId][$name] ?? [];
         $entry['possible'] = match ($event) {
-            'written' => [$repository], 'removed' => [], default => [...(array) $entry['possible'], $repository],
+            'written' => [$repository], 'removed' => [], default => [...(array) ($entry['possible'] ?? []), $repository],
         };
-        if ($event === 'removed') {
-            $entry['removals'] = [...(array) $entry['removals'], $operation];
-        }
+        $entry['removals'] = $event === 'removed' ? [...(array) ($entry['removals'] ?? []), $operation] : (array) ($entry['removals'] ?? []);
         $sources[$nodeId][$name] = [...$entry, 'event' => $event, 'operation' => $operation, 'definition' => $repository];
     }
 
