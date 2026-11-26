@@ -81,7 +81,11 @@ sequenceDiagram
         EN--xGW: Failed step<br/>error_code · redacted detail
         Note over GW: Old Route authoritative<br/>replacement failed
         %%> Gateway authority: the old Route stays authoritative and the replacement is `failed`
-        %%> What resolvers serve: finished steps stay, no rollback; a VPN Node whose DNS step already loaded the new records answers the new name and no longer the old one, while a Node whose step failed or never ran still answers the old name. The forward retry converges every VPN Node
+        %%> What resolvers serve, per VPN Node; finished steps stay, no rollback:
+        %%> - a Node whose DNS step succeeded answers the new name and no longer the old one
+        %%> - a Node whose DNS step never reached it is untouched and still answers the old name
+        %%> - a Node whose `dns.publish_records` apply failed gets no promised answer: after `dns.restart_failed` its new files are already installed and not restored, so it may answer the new name or not answer at all
+        %%> Only a successful forward retry brings every VPN Node to the new records
       else failure after the cutover
         EN--xGW: Failed step<br/>error_code · redacted detail
         Note over GW: Replacement authoritative<br/>old Route retiring

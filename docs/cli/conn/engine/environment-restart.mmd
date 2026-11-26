@@ -32,7 +32,7 @@ sequenceDiagram
     %%> Right before the restart, reads T3's service members once: a terminal or command answers `busy` `processes` (unreadable: `processes_unreadable`) and restarts nothing
     %%> Appends an `attempt` record with `restart_at` and syncs it, then `systemctl try-restart t3.service`; nothing else restarts, the kernel hostname stays
     %%> The receipt returns the journaled `restart_at`; the Gateway computes `window_ms` from the intent's thread `read_at` to that `restart_at` (ConnEnvironmentRestartProjection::window), so a recovered result reports the original window
-    C-->>EN: Label read back<br/>restarted · window_ms
+    C-->>EN: Label read back<br/>restarted · restart_at
     %%> Readiness: reads the label on T3's port until it is the name, about 84 s at most; else `conn.t3_unready`, or `conn.t3_label_mismatch` for another label
     opt the receipt is lost
       EN->>C: Resend the same step<br/>fresh nonce · same step ID
