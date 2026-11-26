@@ -127,7 +127,7 @@ The `instance` family (enabled on `app-dev`) executes clone lifecycle steps from
 | `instance.checkout` | Checks out the branch inside the copy, merges `.env` from the seed and Gateway render, and excludes `.env` in `info/exclude` |
 | `instance.t3` | Starts T3, waits up to 30 seconds for readiness, registers the project, and returns sessions (plus optional reserved-clone pairing) sealed to `seal_to` |
 | `instance.destroy` | Force-stops the saved clone, removes its owned Incus storage, ACL and firewall rules, and discards both engines' freeze state before returning `done` |
-| `instance.work_read` | Read-only: reads the copy's workspace Git state beyond its baseline as `agent` inside the container and answers the reader's JSON (`output`); a copy that does not run is `asleep` or `stopped` by the Node's asleep marker and is never woken. A [signed read](#signed-reads) |
+| `instance.work_read` | Read-only [signed read](#signed-reads) of the copy's workspace Git state beyond its baseline, as `agent` inside the container; answers the reader's JSON (`output`) |
 
 When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor advertising `instance.t3_pairing` in `features`, it requests `POST /api/auth/pairing-token` using the Gateway session and seals T3's reply beside the sessions. A refused or unreachable pairing link never fails the step.
 
@@ -135,7 +135,7 @@ When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor adverti
 
 A read-only action (today `instance.work_read`) needs no Operation, stream or receipt. When the Node enables such an action, the executor also subscribes to `orbit.node.<id>.reads` on core NATS. The Gateway sends one signed order there as a request (`ExecutorOrderSigner::signRead`: `operation` `read:<target>`, expiry the request's remaining budget, at most 4 s) and waits for the reply. The executor checks the order exactly as it checks every order, fetches the content it names, runs it and answers its result line as the reply. It answers no other action there, so a change always takes the durable order stream.
 
-A read writes no journal record, waits for no target lock and stores no result: a lost reply is read again with a fresh nonce, and the second read is fresh. The nonce map still refuses the same order twice, and an order that expired before it ran answers `executor.order_expired`.
+A copy that does not run is `asleep` or `stopped` by the Node's asleep marker, and is never woken. A read writes no journal record, waits for no target lock and stores no result: a lost reply is read again with a fresh nonce, and the second read is fresh. The nonce map still refuses the same order twice, and an order that expired before it ran answers `executor.order_expired`.
 
 `instance.work_read` takes `{project, name, default?, budget_ms, state?}`. The name must be the target's own container, and `budget_ms` is the Node's budget (1 ms to 10 s, 2 s from the Gateway). `state` names content `{baseline, published}` by its hash, because a baseline may list 2,000 untracked files. Every Git call is the fixed reader of [workspace work state](/reference/development-containers#workspace-work-state), built in Rust as argv: `incus exec` … `runuser -u agent` … `git -c core.fsmonitor=false -c core.hooksPath=/dev/null --no-optional-locks`. It runs no hook, writes no index and changes no ownership.
 
