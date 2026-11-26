@@ -65,9 +65,14 @@ if ($mode === 'configuration') {
         } else {
             $line = json_decode($data, true, flags: JSON_THROW_ON_ERROR)['line'];
         }
+        // Until this step's own message is the latest on the subject, there is nothing to read yet: the caller waits.
         if ($message['subject'] !== $subject || $line['operation'] !== $operation.':'.$step || $line['target'] !== $target
-            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
-            throw new RuntimeException('The queued message does not belong to this proof step.');
+            || $line['action'] !== $action || ($isOrder && $line['node'] !== $node)) {
+            echo "null\n";
+            exit;
+        }
+        if (! $isOrder && ! in_array($line['status'], ['done', 'output'], true)) {
+            throw new RuntimeException('The queued receipt of this proof step is not a success.');
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
             throw new RuntimeException('The proof receipt was not dropped.');

@@ -680,9 +680,11 @@ class SyncLane(CloneLane):
         code, found, error = self.api('GET', 'extensions')
         require(code == 200, f'extension list: HTTP {code} {error}')
         self.extensions = {name: found[name] for name in ('tasks', 'conn')}
-        if not found['tasks']:
-            code, _row, error = self.api('POST', 'extensions/tasks/enable', {})
-            require(code == 200, f'tasks extension: HTTP {code} {error}')
+        # Tasks needs Conn: enable in dependency order, restore in reverse.
+        for name in ('conn', 'tasks'):
+            if not found[name]:
+                code, _row, error = self.api('POST', f'extensions/{name}/enable', {})
+                require(code == 200, f'{name} extension: HTTP {code} {error}')
         self.record('extensions-before', self.extensions)
 
     def cleanup(self):
@@ -699,9 +701,10 @@ class SyncLane(CloneLane):
         try:
             super().cleanup()
         finally:
-            if self.extensions is not None and not self.extensions['tasks']:
-                code, _row, error = self.api('POST', 'extensions/tasks/disable', {})
-                require(code == 200, f'tasks extension restore: HTTP {code} {error}')
+            for name in ('tasks', 'conn') if self.extensions is not None else ():
+                if not self.extensions[name] and self.api('GET', 'extensions')[1][name]:
+                    code, _row, error = self.api('POST', f'extensions/{name}/disable', {})
+                    require(code == 200, f'{name} extension restore: HTTP {code} {error}')
             if self.extensions is not None:
                 after = self.api('GET', 'extensions')[1]
                 require({name: after[name] for name in self.extensions} == self.extensions, 'the extension state was not restored')
