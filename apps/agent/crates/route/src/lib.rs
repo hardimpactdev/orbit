@@ -78,6 +78,12 @@ pub trait System {
     /// A message when the group does not exist.
     fn group(&self, name: &str) -> Result<u32, String>;
 
+    /// The name of the group with `gid`, when it has one.
+    fn group_name(&self, gid: u32) -> Option<String> {
+        let line = self.run(10, &["/usr/bin/getent".to_owned(), "group".to_owned(), gid.to_string()]).ok()?;
+        line.trim().split(':').next().filter(|name| !name.is_empty()).map(str::to_owned)
+    }
+
     /// Changes the owner of a path without following a final link.
     ///
     /// # Errors

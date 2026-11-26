@@ -87,11 +87,14 @@ pub fn withdraw_site(system: &impl System, input: &serde_json::Value) -> Result<
     let pool_failed = |detail: String| Failure::new(POOL_FAILED, detail);
     let desired = input.caddy.content.text(system)?;
     let account = system.account(&input.account).map_err(failed)?;
-    let placed = |text: String| text.replace("__ORBIT_NODE_GROUP__", &account.gid.to_string()).replace("/__ORBIT_NODE_HOME__", &account.home);
-    let pools: Vec<(Pool, String)> =
-        input.php.iter().map(|guarded| Ok((guarded.pool(), placed(guarded.content.text(system)?)))).collect::<Result<_, Failure>>()?;
-    let froms: Vec<Option<String>> =
-        input.php.iter().map(|guarded| guarded.from.as_ref().map(|from| from.text(system).map(placed)).transpose()).collect::<Result<_, Failure>>()?;
+    let home = |text: String| text.replace("/__ORBIT_NODE_HOME__", &account.home);
+    // The account's primary group as FPM reads it: its gid, or its name, which an older publisher wrote in its place.
+    let forms: Vec<String> = [Some(account.gid.to_string()), system.group_name(account.gid)].into_iter().flatten().collect();
+    let rendered: Vec<(Pool, String, Option<String>)> = input
+        .php
+        .iter()
+        .map(|guarded| Ok((guarded.pool(), home(guarded.content.text(system)?), guarded.from.as_ref().map(|from| from.text(system).map(home)).transpose()?)))
+        .collect::<Result<_, Failure>>()?;
     // Under the Node's publication lock, as every Swamp writer of these files: nothing changes them between the guard and the write.
     let _lock = crate::lock::exclusive(system, PUBLISH_LOCK, "caddy.publish_busy")?;
     let live = fs::read(system.path(CADDYFILE)).map_err(|error| failed(error.to_string()))?;
@@ -100,16 +103,18 @@ pub fn withdraw_site(system: &impl System, input: &serde_json::Value) -> Result<
     }
     // The last usable generation of every file this withdrawal replaces, put back when a later check or reload fails.
     let mut previous: Vec<(String, Option<Vec<u8>>)> = vec![(CADDYFILE.to_owned(), Some(live))];
-    for ((pool, content), from) in pools.iter().zip(&froms) {
-        let path = pool_path(pool);
+    let mut pools: Vec<(Pool, String)> = Vec::new();
+    for (pool, content, from) in rendered {
+        let path = pool_path(&pool);
         let current = fs::read(system.path(&path)).ok();
-        if let Some(from) = from {
-            let bytes = current.clone().unwrap_or_default();
-            if bytes != content.as_bytes() && bytes != from.as_bytes() {
-                return Err(Failure::new("owned_revision_conflict", "a shared PHP-FPM pool changed outside this Route"));
-            }
-        }
+        let merged = match &from {
+            // Only the scopes the withdrawal changes are replaced; every other scope keeps its live bytes.
+            Some(from) => merge_pool(from, &content, &String::from_utf8_lossy(current.as_deref().unwrap_or_default()), &forms)
+                .ok_or_else(|| Failure::new("owned_revision_conflict", "a shared PHP-FPM pool changed outside this Route"))?,
+            None => resolve(&content, &forms[0]),
+        };
         previous.push((path, current));
+        pools.push((pool, merged));
     }
 
     let root = system.superuser();
@@ -156,6 +161,69 @@ pub fn withdraw_site(system: &impl System, input: &serde_json::Value) -> Result<
     }
     verify(system, &input, desired.as_bytes(), &account.home)?;
     Ok(changes)
+}
+
+/// The pool text with the account's group in `form`.
+fn resolve(text: &str, form: &str) -> String {
+    text.replace("__ORBIT_NODE_GROUP__", form)
+}
+
+/// A pool file as its text before the first scope and each `[scope]` section by name.
+fn sections(text: &str) -> (String, std::collections::BTreeMap<String, String>) {
+    let mut prefix = String::new();
+    let mut scopes = std::collections::BTreeMap::new();
+    let mut current: Option<(String, String)> = None;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            if let Some((name, body)) = current.take() {
+                scopes.insert(name, body);
+            }
+            current = Some((trimmed[1..trimmed.len() - 1].to_owned(), line.to_owned()));
+        } else if let Some((_, body)) = current.as_mut() {
+            body.push_str(line);
+        } else {
+            prefix.push_str(line);
+        }
+    }
+    if let Some((name, body)) = current {
+        scopes.insert(name, body);
+    }
+    (prefix, scopes)
+}
+
+/// The live pool with the withdrawal applied, as Swamp's merge does: each scope the render changes must still hold its
+/// rendered-from or desired state, its group as the gid or as the group's name, else `None`; it then takes the desired state.
+/// Every other scope, and the text before the first scope, keeps its live bytes.
+fn merge_pool(from: &str, desired: &str, live: &str, forms: &[String]) -> Option<String> {
+    let (_, original) = sections(from);
+    let (desired_prefix, wanted) = sections(desired);
+    let (live_prefix, observed) = sections(live);
+    let matches = |live: &str, text: Option<&String>| text.is_some_and(|text| forms.iter().any(|form| resolve(text, form) == live));
+    let mut out = observed.clone();
+    for name in original.keys().chain(wanted.keys()) {
+        if original.get(name) == wanted.get(name) {
+            continue;
+        }
+        if let Some(current) = observed.get(name) {
+            if !matches(current, original.get(name)) && !matches(current, wanted.get(name)) {
+                return None;
+            }
+            if matches(current, wanted.get(name)) {
+                continue;
+            }
+        }
+        match wanted.get(name) {
+            Some(text) => out.insert(name.clone(), resolve(text, &forms[0])),
+            None => out.remove(name),
+        };
+    }
+    for (name, text) in &wanted {
+        out.entry(name.clone()).or_insert_with(|| resolve(text, &forms[0]));
+    }
+    let mut text = if live.is_empty() { resolve(&desired_prefix, &forms[0]) } else { live_prefix };
+    text.push_str(&out.into_values().collect::<String>());
+    Some(text)
 }
 
 /// Puts back each file's previous generation; a file that did not exist is removed. Best effort: the caller's failure matters.

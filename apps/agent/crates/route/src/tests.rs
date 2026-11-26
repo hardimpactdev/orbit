@@ -80,6 +80,7 @@ impl System for Fake {
             [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
             ["/usr/bin/curl", ..] => Ok(self.admin.clone()),
+            ["/usr/bin/getent", "group", gid] if gid.chars().all(|c| c.is_ascii_digit()) => Ok(format!("staff:x:{gid}:\n")),
             [_, "is-active", ..] if self.inactive => Err("inactive".to_owned()),
             _ => Ok(String::new()),
         }
@@ -340,7 +341,7 @@ fn a_withdrawal_refuses_a_caddyfile_changed_outside_the_route_before_any_write()
 
     assert_eq!(withdraw_site(&fake, &input).expect_err("refused").code, "owned_revision_conflict");
     assert!(fake.path(&format!("{DIRECTORY}/cert.pem")).exists());
-    assert!(fake.commands.borrow().is_empty(), "nothing runs for a refused withdrawal");
+    assert!(fake.commands.borrow().iter().all(|argv| argv[0] == "/usr/bin/getent"), "nothing but lookups runs for a refused withdrawal");
 }
 
 #[test]
@@ -402,16 +403,20 @@ fn a_withdrawal_puts_the_previous_generation_back_when_a_pool_test_or_reload_or_
 }
 
 #[test]
-fn a_withdrawal_refuses_a_shared_pool_changed_outside_the_route_before_any_write() {
+fn a_withdrawal_refuses_a_changed_scope_of_its_own_and_keeps_an_unrelated_one() {
     let mut fake = Fake::new();
     fake.write("/etc/caddy/Caddyfile", WITH);
     let mut input = withdraw_input(&mut fake, WITH);
-    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[orbit]\n[shop]\n[foreign]\n");
     input["php"][0]["from"] = Fake::blob(&mut fake, "[orbit]\n[shop]\n");
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[orbit]\n[shop]\nchanged = 1\n");
 
     assert_eq!(withdraw_site(&fake, &input).expect_err("refused").code, "owned_revision_conflict");
     assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
     assert!(fake.path("/etc/caddy/.orbit-publish.lock").exists(), "the check ran under the Node's publication lock");
+
+    fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", "[foreign]\n[orbit]\n[shop]\n");
+    withdraw_site(&fake, &input).expect("withdrawn");
+    assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[foreign]\n[orbit]\n");
 }
 
 #[test]
@@ -423,4 +428,24 @@ fn a_withdrawal_replaces_a_shared_pool_that_still_holds_its_rendered_from_state(
 
     withdraw_site(&fake, &input).expect("withdrawn");
     assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), "[orbit]\n");
+}
+
+#[test]
+fn a_withdrawal_keeps_a_surviving_scope_whose_group_is_named_or_numeric_byte_for_byte() {
+    let gid = Fake::me().1;
+    let from = "[orbit]\ngroup = __ORBIT_NODE_GROUP__\n[shop]\ngroup = __ORBIT_NODE_GROUP__\n";
+    for (live, kept) in [
+        ("[orbit]\ngroup = staff\n[shop]\ngroup = staff\n".to_owned(), "[orbit]\ngroup = staff\n".to_owned()),
+        (format!("[orbit]\ngroup = {gid}\n[shop]\ngroup = staff\n"), format!("[orbit]\ngroup = {gid}\n")),
+    ] {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        let mut input = withdraw_input(&mut fake, WITH);
+        input["php"][0]["content"] = Fake::blob(&mut fake, "[orbit]\ngroup = __ORBIT_NODE_GROUP__\n");
+        input["php"][0]["from"] = Fake::blob(&mut fake, from);
+        fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", &live);
+
+        withdraw_site(&fake, &input).expect("withdrawn");
+        assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), kept);
+    }
 }
