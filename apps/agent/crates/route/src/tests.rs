@@ -467,3 +467,38 @@ fn a_withdrawal_leaves_an_absent_unchanged_scope_and_an_absent_pool_absent() {
     withdraw_site(&fake, &input).expect("withdrawn again");
     assert!(!fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf").exists(), "an absent pool is never created");
 }
+
+#[test]
+fn a_withdrawal_keeps_a_sibling_scope_byte_for_byte_across_the_render_separator() {
+    // The Gateway joins scopes with a blank line: removing [nine] changes only what follows [seven].
+    let from = "[seven]\ngroup = __ORBIT_NODE_GROUP__\n\n[nine]\ngroup = __ORBIT_NODE_GROUP__\n";
+    let desired = "[seven]\ngroup = __ORBIT_NODE_GROUP__\n";
+    for (live, kept) in [
+        ("[nine]\ngroup = staff\n", ""),
+        ("[seven]\ngroup = staff\n\n[nine]\ngroup = staff\n", "[seven]\ngroup = staff\n\n"),
+    ] {
+        let mut fake = Fake::new();
+        fake.write("/etc/caddy/Caddyfile", WITH);
+        let mut input = withdraw_input(&mut fake, WITH);
+        input["php"][0]["from"] = Fake::blob(&mut fake, from);
+        input["php"][0]["content"] = Fake::blob(&mut fake, desired);
+        fake.write("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", live);
+
+        withdraw_site(&fake, &input).expect("withdrawn");
+        assert_eq!(fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool"), kept, "{live:?}");
+    }
+}
+
+#[test]
+fn a_withdrawal_fails_before_any_change_when_a_guarded_pool_cannot_be_read() {
+    let mut fake = Fake::new();
+    fake.write("/etc/caddy/Caddyfile", WITH);
+    let mut input = withdraw_input(&mut fake, WITH);
+    input["php"][0]["from"] = Fake::blob(&mut fake, "[orbit]\n[shop]\n");
+    let pool = fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf");
+    fs::remove_file(&pool).expect("remove");
+    fs::create_dir_all(&pool).expect("a directory in the pool's place");
+
+    assert_eq!(withdraw_site(&fake, &input).expect_err("unverified").code, "route.withdraw_failed");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), WITH);
+}

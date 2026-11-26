@@ -106,7 +106,12 @@ pub fn withdraw_site(system: &impl System, input: &serde_json::Value) -> Result<
     let mut pools: Vec<(Pool, String)> = Vec::new();
     for (pool, content, from) in rendered {
         let path = pool_path(&pool);
-        let current = fs::read(system.path(&path)).ok();
+        // Only a missing file is an absent pool; any other read error leaves the pool unverified, so nothing changes.
+        let current = match fs::read(system.path(&path)) {
+            Ok(bytes) => Some(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(failed(format!("{path}: {error}"))),
+        };
         // A guarded pool that is absent stays absent: the withdrawal never creates a pool.
         if from.is_some() && current.is_none() {
             continue;
@@ -203,10 +208,13 @@ fn merge_pool(from: &str, desired: &str, live: &str, forms: &[String]) -> Option
     let (_, original) = sections(from);
     let (_, wanted) = sections(desired);
     let (live_prefix, observed) = sections(live);
-    let matches = |live: &str, text: Option<&String>| text.is_some_and(|text| forms.iter().any(|form| resolve(text, form) == live));
+    // A scope is compared without the blank lines that separate it from the next one: the render joins scopes with one, so
+    // removing a scope changes only the separator after its neighbour, never the neighbour itself.
+    let bare = |text: &str| text.trim_end_matches(['\n', ' ', '\t']).to_owned();
+    let matches = |live: &str, text: Option<&String>| text.is_some_and(|text| forms.iter().any(|form| bare(&resolve(text, form)) == bare(live)));
     let mut out = observed.clone();
     for name in original.keys().chain(wanted.keys()) {
-        if original.get(name) == wanted.get(name) {
+        if original.get(name).map(|text| bare(text)) == wanted.get(name).map(|text| bare(text)) {
             continue;
         }
         if let Some(current) = observed.get(name) {
