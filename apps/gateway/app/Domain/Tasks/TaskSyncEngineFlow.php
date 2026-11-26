@@ -13,7 +13,11 @@ use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
@@ -78,9 +82,26 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
             || $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new EngineUnsupported('The sync runs on the engine only for the group\'s own copy with scoped repository access.');
         }
+        self::assertCopyFree($operation);
         if (! Cache::has(self::credentialKey($operation))) {
             $token = $this->reads->for($instance->project->repositoryUrl(), $instance->project->source_access)->githubToken();
-            Cache::put(self::credentialKey($operation), Crypt::encryptString($token === null ? '' : 'https://x-access-token:'.$token."@github.com\n"), self::CredentialSeconds);
+            $line = $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
+            Cache::put(self::credentialKey($operation), Crypt::encryptString($line), self::CredentialSeconds);
+            // The credential's reference stays with the Operation: its digest names the content the Node keeps once it read it,
+            // so a resend can always rebuild the order, also when the Gateway's cache lost the content.
+            app(OperationStore::class)->change($operation, ['state' => [...($operation->refresh()->state ?? []), 'engine_credential' => ['sha256' => hash('sha256', $line)]]]);
+        }
+    }
+
+    /**
+     * A copy whose removal was admitted first is not the engine's: such a sync starts on Swamp as before, and one that finds the
+     * removal while it binds is refused. A removal admitted later finds the bound sync's Instance lock (StartInstanceDestroyAction).
+     */
+    public static function assertCopyFree(Operation $operation): void
+    {
+        $instance = Instance::query()->find(ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0));
+        if ($instance === null || $instance->status === InstanceState::Removing) {
+            throw new EngineUnsupported('The task copy is being removed.');
         }
     }
 
@@ -113,7 +134,7 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
         return match ($step) {
             self::Fetch => ['mirror' => $where['mirror'], 'repository' => ValidatedData::string($workspace['repository']),
                 'branch' => ValidatedData::string($workspace['default_branch']), 'protocol' => 'https',
-                'credential' => ['blob' => ['content' => $this->credential($operation)]], 'seed' => ValidatedData::string($copy['source_mirror'])],
+                'credential' => ['blob' => $this->credential($operation)], 'seed' => ValidatedData::string($copy['source_mirror'])],
             // The head the fetch receipt returned, so a resend imports the same commit even when the origin moved. The publish history
             // rides in a blob, so no history outgrows the 4 KB order.
             self::Sync => [...$where, 'default_branch' => ValidatedData::string($workspace['default_branch']), 'branch' => ValidatedData::string($workspace['branch']),
@@ -204,14 +225,20 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
 
     /**
      * The read credential that admission minted for this Operation, as one credential-store line; empty for a public repository read
-     * without one. Every send of the Operation sends this one; no send mints another. Only the Gateway keeps it, encrypted, for the
-     * journal's replay window or until the Operation ends.
+     * without one. Every send of the Operation sends this one; no send mints another. The Gateway keeps it, encrypted, for the
+     * journal's replay window or until the Operation ends; when its cache lost it, the order names the digest the Operation kept.
      */
-    private function credential(Operation $operation): string
+    /** @return array{content: string}|array{sha256: string} */
+    private function credential(Operation $operation): array
     {
         $kept = Cache::get(self::credentialKey($operation));
+        if (is_string($kept)) {
+            return ['content' => Crypt::decryptString($kept)];
+        }
+        $reference = ValidatedData::object($operation->state['engine_credential'] ?? null)['sha256'] ?? null;
 
-        return is_string($kept) ? Crypt::decryptString($kept) : throw new LogicException('The admitted credential of this sync is gone.');
+        return is_string($reference) && preg_match('/\A[0-9a-f]{64}\z/D', $reference) === 1
+            ? ['sha256' => $reference] : throw new LogicException('The admitted credential of this sync is gone.');
     }
 
     private static function credentialKey(Operation $operation): string
@@ -232,12 +259,13 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
         $workspace = $intent['workspace'] ?? null;
         $id = $intent['instance_id'] ?? null;
         $runtime = is_array($copy) ? ($copy['runtime'] ?? null) : null;
-        // The executor's own name rule (instance crate `name`), for the Incus project and container it acts on.
-        $name = static fn (mixed $value): bool => is_string($value) && preg_match('/\A[a-z0-9][a-z0-9-]{0,62}\z/D', $value) === 1;
+        // The executor resolves an Instance target only as `instance-<id>` in the Instance or nested-fleet Incus project (power
+        // crate `incus`); any other saved runtime runs on Swamp, as an order would find no target.
         $commit = static fn (mixed $value): bool => is_string($value) && preg_match(self::Commit, $value) === 1;
         if ($operation->kind !== self::Kind || $operation->target_type !== OperationKinds::TaskGroupTarget || ! is_array($copy) || ! is_array($workspace)
             || ! is_int($id) || $id < 1 || ($intent['node_id'] ?? null) !== $operation->node_id || ($intent['group_id'] ?? null) !== $operation->target_id
-            || ! is_array($runtime) || count($runtime) !== 2 || ! $name($runtime['project'] ?? null) || ! $name($runtime['name'] ?? null)
+            || ! is_array($runtime) || count($runtime) !== 2 || ! in_array($runtime['project'] ?? null, [InstanceHostIntent::Project, InstancePlacement::NestedProject], true)
+            || ($runtime['name'] ?? null) !== 'instance-'.$id
             || ($copy['mirror'] ?? null) !== "/var/lib/orbit/instance-repositories/{$id}.git"
             || ! is_string($copy['source_mirror'] ?? null) || preg_match('#\A(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?\z#D', $copy['source_mirror']) !== 1
             || $copy['source_mirror'] === $copy['mirror'] || ! $commit($copy['start'] ?? null)

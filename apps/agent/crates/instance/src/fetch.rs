@@ -79,22 +79,40 @@ fn unique() -> String {
     format!("{nanos}-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
 }
 
-/// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one. The seed
-/// fills a scratch repository beside the mirror that takes the mirror's name only once complete, so a seed that failed or stopped
-/// never passes for a mirror on the next attempt.
+/// Where a sync seeds the copy's missing mirror before it takes the mirror's name: one fixed path per copy, so the next attempt,
+/// the copy's sync cleanup and its destroy each find what a stopped seed left.
+pub(crate) fn seeding(mirror: &str) -> String {
+    format!("{mirror}.seeding")
+}
+
+/// Whether a Node path is there: only a confirmed missing path is absent.
+fn present(path: &Path) -> Result<bool, Failure> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(Failure::new("instance.branch_fetch_failed", format!("read {}: {error}", path.display()))),
+    }
+}
+
+/// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one. A mirror is
+/// there only with its `HEAD`, as the Swamp base phase reads it; a folder without one is no mirror. The seed fills the copy's fixed
+/// staging repository, which takes the mirror's name only once complete, so a seed that failed or stopped never passes for a mirror.
 fn seed(system: &impl System, input: &FetchInput, mirror: &Path) -> Result<(), Failure> {
     let Some(source) = &input.seed else { return Ok(()) };
     let failed = |detail: String| Failure::new("instance.branch_fetch_failed", format!("seed: {detail}"));
-    match std::fs::symlink_metadata(mirror) {
-        Ok(_) => return Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(failed(error.to_string())),
+    if present(&mirror.join("HEAD"))? {
+        return Ok(());
     }
     if source.is_empty() {
         return Err(Failure::new("instance.branch_fetch_failed", "the mirror is missing and the default has none"));
     }
     let source = system.path(source).display().to_string();
-    let scratch = mirror.with_extension(format!("git.seeding-{}", unique()));
+    let scratch = PathBuf::from(seeding(&mirror.display().to_string()));
+    for leftover in [&scratch, &mirror.to_path_buf()] {
+        if present(leftover)? {
+            std::fs::remove_dir_all(leftover).map_err(|error| failed(error.to_string()))?;
+        }
+    }
     let target = scratch.display().to_string();
     let filled = [
         vec![GIT, "init", "--quiet", "--bare", &target],
@@ -242,8 +260,17 @@ mod seed_tests {
         git(&["commit", "--quiet", "--allow-empty", "-m", "seed"]).expect("commit");
         real.run(5, &[GIT, "clone", "--quiet", "--bare", work.to_str().expect("path"), source.to_str().expect("path")].map(str::to_owned), None).expect("source");
 
+        // A folder without `HEAD` is no mirror, and a stopped seed left its staging repository: the next attempt seeds anew.
+        std::fs::create_dir_all(&mirror).expect("empty folder");
+        assert_eq!(seed(&real, &input(""), &mirror).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"), "no source: refused");
+        let staging = PathBuf::from(seeding(&mirror.display().to_string()));
+        real.run(5, &[GIT, "init", "--quiet", "--bare", staging.to_str().expect("path")].map(str::to_owned), None).expect("stopped seed");
+
         seed(&real, &input(&format!("{MIRRORS}/2.git")), &mirror).expect("seeded");
         let refs = real.run(5, &[GIT, "-C", mirror.to_str().expect("path"), "for-each-ref", "refs/seed"].map(str::to_owned), None).expect("refs");
         assert!(refs.contains("refs/seed/main"), "{refs}");
+        assert!(!staging.exists(), "the staging repository took the mirror's name");
+        let names: Vec<String> = std::fs::read_dir(&folder).expect("folder").flatten().map(|entry| entry.file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names.iter().filter(|name| name.starts_with("12.git")).count(), 1, "{names:?}");
     }
 }

@@ -542,3 +542,19 @@ fn clear_fails_when_it_cannot_tell_whether_the_pin_or_the_scratch_is_gone() {
     std::fs::set_permissions(&mirror, std::fs::Permissions::from_mode(0o755)).expect("unlock");
     assert_eq!(refused, Err("instance.sync_base_failed"), "a HEAD it cannot read is not a missing pin");
 }
+
+#[test]
+fn clear_removes_what_a_stopped_mirror_seed_of_this_copy_left_and_no_sibling_s() {
+    let copy = Copy::new(OLD, Holds::Older);
+    let staging = copy.path("/var/lib/orbit/instance-repositories/12.git.seeding");
+    let sibling = copy.path("/var/lib/orbit/instance-repositories/13.git.seeding");
+    for folder in [&staging, &sibling] {
+        std::fs::create_dir_all(folder).and_then(|()| std::fs::write(folder.join("HEAD"), "ref: refs/heads/main\n")).expect("staging");
+    }
+    let clear = json!({"project": "orbit-instances", "name": "instance-12", "instance_id": 12, "mirror": "/var/lib/orbit/instance-repositories/12.git"});
+
+    clear_base(&copy, &clear).expect("clear");
+
+    assert!(!staging.exists());
+    assert!(sibling.join("HEAD").exists(), "a sibling copy's seed is not this copy's");
+}

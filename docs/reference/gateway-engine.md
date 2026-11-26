@@ -101,7 +101,7 @@ Routing decides admission once: the Node's features, the copy's saved runtime, t
 
 A missing copy mirror is made from the default's mirror, and refused without one, as on Swamp. The publish history reaches `sync` as a blob. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
 
-Like `instance.destroy`, the kind is receipt-bound. The sync holds the copy's Instance lock from its admission, on either engine, so no removal of the copy is admitted beside it; the running Operation fences the group. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
+Like `instance.destroy`, the kind is receipt-bound. The sync takes the copy's Instance lock when it binds its steps, so no removal of the copy is admitted beside it; the running Operation fences the group. A sync on Swamp takes no Instance lock, as before, and a copy whose removal was admitted first is not admitted to the engine. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
 
 Each step settles only by its own evidence (the mirror head, the base evidence or the cleanup); other output fails it as `engine.receipt_invalid`. An order the signer refuses fails its step as `engine.order_invalid` instead of waiting.
 

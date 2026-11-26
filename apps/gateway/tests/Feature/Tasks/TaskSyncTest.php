@@ -649,6 +649,8 @@ it('runs on Swamp a plan the flow does not cover', function (Closure $change): v
     'GitHub CLI access' => [fn (Operation $o, Instance $copy) => $copy->project->update(['source_access' => ProjectSourceAccess::GhCli])],
     'no seed feature' => [fn () => syncEngineBus(SyncEngineActions, [])],
     'a project name the executor refuses' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'Team_A', 'name' => $o->input['copy']['runtime']['name']]]]])],
+    'a project the executor does not resolve' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'team-a', 'name' => $o->input['copy']['runtime']['name']]]]])],
+    'a container that is not instance-<id>' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'orbit-instances', 'name' => 'guest-2']]]])],
     'an unrelated seed mirror' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'source_mirror' => '/var/lib/orbit/instance-repositories/999.git']]])],
     'an unrelated repository' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'workspace' => [...$o->input['workspace'], 'repository' => 'https://github.com/other/repo.git']]])],
 ]);
@@ -663,19 +665,40 @@ it('admits a runtime whose members come in another order', function (): void {
     expect(app(EngineKinds::class)->routes($operation->refresh()))->toBeTrue();
 });
 
-it('holds the copy from admission: a removal is refused while a sync waits to start, and a sync while a removal was admitted first', function (): void {
+it('admits a Swamp sync exactly as before: it takes no Instance lock, beside another writer of the copy in either order', function (): void {
     [$group, $copy] = syncCopyWorld();
-    $sync = app(StartTaskSyncAction::class)->execute($group, 'test', null);
-    expect($sync->status)->toBe(OperationStatus::Queued)->and($sync->lock_key)->toBe(OperationStore::lockKey('instance', $copy->id))
-        ->and(fn () => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true))
-        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+    $writer = static fn (): Operation => Operation::query()->create(['kind' => 'instance.mail_update', 'target_type' => 'instance', 'target_id' => $copy->id,
+        'node_id' => $copy->node_id, 'status' => OperationStatus::Running, 'lock_key' => OperationStore::lockKey('instance', $copy->id), 'input' => [], 'state' => []]);
+    $first = $writer();
 
-    $sync->update(['status' => OperationStatus::Cancelled, 'lock_key' => null]);
+    $sync = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    expect($sync->lock_key)->toBeNull();
+
+    $first->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    expect($writer()->exists)->toBeTrue('a writer admitted after the sync');
+});
+
+it('leaves a copy whose removal was admitted first to the Swamp sync, as before', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
     // The removal's own records are not the subject; the refusal reads only the status.
     DB::unprepared('DROP TRIGGER instances_removal_status_update');
     $copy->update(['status' => InstanceState::Removing]);
-    expect(fn () => app(StartTaskSyncAction::class)->execute($group->refresh(), 'test', null))
-        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+
+    expect(app(EngineKinds::class)->routes($operation->refresh()))->toBeFalse();
+});
+
+it('rebuilds a resend from the credential reference the Operation kept when the Gateway cache lost the credential', function (): void {
+    [$operation, , , $bus] = syncOnEngine();
+    $first = $bus->orders[0]['input']['credential'];
+    Cache::forget('tasks.sync.credential.'.$operation->id);
+
+    $this->travel(70)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+
+    expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['input']['credential'])->toBe($first)
+        ->and($operation->refresh()->state['engine_credential'])->toBe(['sha256' => $first['blob']['sha256']]);
 });
 
 it('settles the import only by evidence of this sync: the pinned head, the admitted branch and start, and the whole work read', function (Closure $wrong): void {

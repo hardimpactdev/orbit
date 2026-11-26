@@ -37,13 +37,13 @@ final readonly class TaskOperations
      * @param  Closure(Task): void  $validate
      * @param  null|Closure(Task): array<string,mixed>  $intent
      */
-    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId, ?Closure $intent = null, ?Closure $lock = null): Operation
+    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId, ?Closure $intent = null): Operation
     {
         if (($replay = $this->admitTarget($group, $kind)) !== null) {
             return $replay;
         }
 
-        $admit = function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId, $intent, $lock): Operation {
+        $admit = function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId, $intent): Operation {
             if (($replay = $this->admitTarget($group, $kind)) !== null) {
                 return $replay;
             }
@@ -53,9 +53,7 @@ final readonly class TaskOperations
 
             $admitted = $intent === null ? $input : $intent($group);
 
-            // `$lock` names a resource besides the group that the Operation holds from its admission, such as a copy's Instance.
-            return $this->start->execute($kind, OperationKinds::TaskGroupTarget, $group->id, $intent === null ? null : ValidatedData::integer($admitted['node_id']), $admitted, $triggeredBy, $requestId,
-                lockKey: $lock === null ? null : ValidatedData::nullableString($lock($admitted)));
+            return $this->start->execute($kind, OperationKinds::TaskGroupTarget, $group->id, $intent === null ? null : ValidatedData::integer($admitted['node_id']), $admitted, $triggeredBy, $requestId);
         };
 
         return $this->execution->synchronized($group->id, fn (): Operation => $intent === null ? $admit() : DB::transaction($admit));

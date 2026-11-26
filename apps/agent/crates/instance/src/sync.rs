@@ -276,9 +276,14 @@ fn clear(system: &impl System, copy: &Copy<'_, impl System>, instance: u64, mirr
     if held()? {
         system.run(30, &[GIT, "-C", &mirror, "update-ref", "-d", &pinned].map(str::to_owned), None).map_err(failed("unpin"))?;
     }
+    // What a stopped mirror seed of this copy left (instance.fetch_branch `seed`), and no other copy's.
+    let staging = std::path::PathBuf::from(crate::fetch::seeding(&mirror));
+    if present(&staging)? {
+        std::fs::remove_dir_all(&staging).map_err(|error| failed("seed staging")(error.to_string()))?;
+    }
     let guest = format!("{GUEST_SCRATCH}{instance}");
     copy.root(&["/bin/rm", "-rf", "--", &guest])?;
-    if present(&node)? || held()? || copy.exec(As::Root, &["/usr/bin/test", "!", "-e", &guest]).is_err() {
+    if present(&node)? || present(&staging)? || held()? || copy.exec(As::Root, &["/usr/bin/test", "!", "-e", &guest]).is_err() {
         return Err(Failure::new(FAILED, "the sync scratch is still there"));
     }
     Ok(())

@@ -7,6 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineUnsupported;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
@@ -17,6 +18,7 @@ use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
@@ -84,7 +86,17 @@ final readonly class StartSwampRun
                 if (Engine::receiptBound($operation->kind)) {
                     $lock = Engine::fenceKey($operation);
                     try {
-                        app(Engine::class)->start($operation, fn () => $this->bind($operation, $runId, $lock));
+                        app(Engine::class)->start($operation, function () use ($operation, $runId, $lock): void {
+                            // In the bind's transaction: a removal of the copy admitted since routing refuses the sync's start.
+                            if ($operation->kind === TaskSyncEngineFlow::Kind) {
+                                try {
+                                    TaskSyncEngineFlow::assertCopyFree($operation);
+                                } catch (EngineUnsupported $exception) {
+                                    throw new ResourceOperationException('operation.target_busy', $exception->getMessage(), 409, previous: $exception);
+                                }
+                            }
+                            $this->bind($operation, $runId, $lock);
+                        });
                     } catch (UniqueConstraintViolationException $exception) {
                         throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the target lock.', 409, previous: $exception);
                     }
