@@ -113,6 +113,9 @@ struct ProcessInput {
     runtime: Runtime,
     name: String,
     state: State,
+    /// A Docker container's admitted image, which its read-back requires, as Swamp's `docker_container` check does.
+    #[serde(default)]
+    image: Option<String>,
     /// A unit's boot policy; a container has none.
     #[serde(default)]
     boot: Option<Boot>,
@@ -146,7 +149,8 @@ struct BlobDigest {
 /// Converges one host Process to its admitted state and reads it back. A unit: `systemctl enable` or `disable` only when
 /// its file state differs, then `start` or `stop` only when its active state differs; the read-back requires
 /// `LoadState=loaded`, `ActiveState` `active` or `inactive` exactly, and the admitted `UnitFileState`. A container: `docker container
-/// start` or `stop` only when its status differs; the read-back requires State.Status `running` or `exited` exactly. The
+/// start` or `stop` only when its status differs; the read-back requires State.Status `running` or `exited` exactly and the
+/// admitted image. The
 /// container is read by its exact name, and the answer must carry that name, so no other container is ever acted on.
 /// Answers how many changes it made: 0 when the Process already had its state.
 ///
@@ -163,7 +167,10 @@ pub fn ensure_state(system: &impl System, input: &serde_json::Value) -> Result<u
     match (input.runtime, input.boot, &input.container) {
         (Runtime::Systemd, Some(boot), None) => unit(system, &input.name, input.state, boot),
         (Runtime::Systemd, Some(boot), Some(guest)) => guest_unit(system, guest, &input.name, input.state, boot),
-        (Runtime::Docker, None, None) => container(system, &input.name, input.state),
+        (Runtime::Docker, None, None) => match &input.image {
+            Some(image) => container(system, &input.name, image, input.state),
+            None => Err(Failure::new("process.input_invalid", "a container needs its image")),
+        },
         _ => Err(Failure::new("process.input_invalid", "a unit needs its boot policy, a container has none")),
     }
 }
@@ -337,32 +344,32 @@ fn guest_unit(system: &impl System, guest: &Guest, name: &str, state: State, boo
     Ok(changes)
 }
 
-/// The container's own name and status, read by its exact name.
-fn inspect(system: &impl System, name: &str) -> Result<String, Failure> {
+/// The container's own name, status and image, read by its exact name.
+fn inspect(system: &impl System, name: &str) -> Result<(String, String), Failure> {
     let stdout = system
-        .run(20, &[DOCKER, "container", "inspect", "--format", "{{.Name}} {{.State.Status}}", name])
+        .run(20, &[DOCKER, "container", "inspect", "--format", "{{.Name}} {{.State.Status}} {{.Config.Image}}", name])
         .map_err(|detail| Failure::new("process.container_missing", detail))?;
-    let line = stdout.trim();
-    let (owner, status) = line.split_once(' ').unwrap_or((line, ""));
+    let mut fields = stdout.split_whitespace();
+    let owner = fields.next().unwrap_or_default();
     if owner.strip_prefix('/') != Some(name) {
         return Err(Failure::new("process.container_missing", format!("{name}: inspect answered {owner}")));
     }
-    Ok(status.to_owned())
+    Ok((fields.next().unwrap_or_default().to_owned(), fields.next().unwrap_or_default().to_owned()))
 }
 
-fn container(system: &impl System, name: &str, state: State) -> Result<u32, Failure> {
+fn container(system: &impl System, name: &str, image: &str, state: State) -> Result<u32, Failure> {
     let wanted = if state == State::Running { "running" } else { "exited" };
     let mut changes = 0;
-    if inspect(system, name)? != wanted {
+    if inspect(system, name)?.0 != wanted {
         let verb = if state == State::Running { "start" } else { "stop" };
         system
             .run(20, &[DOCKER, "container", verb, name])
             .map_err(|detail| Failure::new("process.apply_failed", format!("docker container {verb}: {detail}")))?;
         changes += 1;
     }
-    let status = inspect(system, name)?;
-    if status != wanted {
-        return Err(Failure::new("process.state_mismatch", format!("{name}: State.Status={status}")));
+    let (status, running_image) = inspect(system, name)?;
+    if status != wanted || running_image != image {
+        return Err(Failure::new("process.state_mismatch", format!("{name}: State.Status={status} Config.Image={running_image}")));
     }
     Ok(changes)
 }

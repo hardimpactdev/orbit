@@ -120,30 +120,32 @@ fn a_name_that_is_not_the_processes_own_is_refused() {
 }
 
 fn docker(state: &str) -> serde_json::Value {
-    json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "state": state})
+    json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "image": "redis:7", "state": state})
 }
 
 #[test]
 fn a_docker_start_acts_only_on_the_inspected_container_and_reads_running() {
-    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web exited\n"), Ok("/orbit-process-417-web running\n")]);
+    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web exited redis:7\n"), Ok("/orbit-process-417-web running redis:7\n")]);
     assert_eq!(ensure_state(&fake, &docker("running")), Ok(1));
     assert_eq!(fake.changed(), ["/usr/bin/docker container start orbit-process-417-web"]);
-    let running = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running\n")]);
+    let running = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running redis:7\n")]);
     assert_eq!(ensure_state(&running, &docker("running")), Ok(0));
+    let other = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running redis:6\n")]);
+    assert_eq!(ensure_state(&other, &docker("running")).map_err(|failure| failure.code), Err("process.state_mismatch"));
 }
 
 #[test]
 fn a_docker_stop_requires_exited_and_refuses_created() {
-    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running\n"), Ok("/orbit-process-417-web created\n")]);
+    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web running redis:7\n"), Ok("/orbit-process-417-web created redis:7\n")]);
     assert_eq!(ensure_state(&fake, &docker("stopped")).map_err(|failure| failure.code), Err("process.state_mismatch"));
     // `created` never ran: a stop does not count it as stopped, so it acts, then the read-back still refuses it.
-    let created = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web created\n")]);
+    let created = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web created redis:7\n")]);
     assert_eq!(ensure_state(&created, &docker("stopped")).map_err(|failure| failure.code), Err("process.state_mismatch"));
 }
 
 #[test]
 fn a_docker_answer_for_another_container_is_refused() {
-    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web-2 running\n")]);
+    let fake = Fake::default().on("/usr/bin/docker container inspect", &[Ok("/orbit-process-417-web-2 running redis:7\n")]);
     assert_eq!(ensure_state(&fake, &docker("stopped")).map_err(|failure| failure.code), Err("process.container_missing"));
     assert!(fake.changed().is_empty(), "a sibling is never acted on");
 }
@@ -254,4 +256,14 @@ fn a_timer_that_does_not_stay_active_fails_the_check() {
         Ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=enabled\n"),
     ]);
     assert_eq!(ensure_timer(&fake, &timer()).map_err(|failure| failure.code), Err("schedule.state_mismatch"));
+}
+
+#[test]
+fn the_gateway_signed_inputs_parse_and_run() {
+    let state: serde_json::Value = serde_json::from_str(include_str!("../../../contract/fixtures/executor-process-ensure-state.json")).expect("fixture");
+    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok(&show("loaded", "inactive", "disabled"))]);
+    assert_eq!(ensure_state(&fake, &state["fields"]["input"]), Ok(0));
+    let timer: serde_json::Value = serde_json::from_str(include_str!("../../../contract/fixtures/executor-schedule-ensure-timer.json")).expect("fixture");
+    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\n")]);
+    assert_eq!(ensure_timer(&fake, &timer["fields"]["input"]).map(|read| read.changes), Ok(0));
 }

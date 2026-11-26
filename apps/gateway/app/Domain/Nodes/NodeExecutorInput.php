@@ -28,11 +28,12 @@ final readonly class NodeExecutorInput
 
     /**
      * The families each role enables. The no-op `proof` and sleep/wake/discard `power` families ship on app-dev; `clone` joins with its slice
-     * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`).
+     * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`). `process`
+     * (Process start and stop, Node-timer enable) is on app-dev only; app-prod joins in a later rollout.
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'instance', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns'],
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'instance', 'power', 'process', 'proof', 'route'], RoleName::Vpn->value => ['dns'],
         // The Gateway's own Node runs the executor too: it joins the bus and reports its clock (ADR 0271 N7).
         RoleName::Gateway->value => ['proof']];
 
@@ -42,7 +43,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0', 'instance' => '0.19.0', 'process' => '0.31.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
