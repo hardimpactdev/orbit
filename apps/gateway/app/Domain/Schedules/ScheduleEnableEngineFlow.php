@@ -10,6 +10,7 @@ use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
 use App\Models\Operation;
 use App\Models\Schedule;
+use App\Support\ValidatedData;
 use LogicException;
 
 /**
@@ -32,7 +33,7 @@ final readonly class ScheduleEnableEngineFlow implements EngineDefinition
     public function steps(Operation $operation): array
     {
         $node = self::admitted($operation);
-        $id = $operation->input['id'];
+        $id = ValidatedData::string($operation->input['id']);
 
         // The target is the Node's part for this Schedule.
         return [new StepSpec(self::Step, $node, self::Action, "{$node}:schedule-{$id}", budgetMs: 60_000, resendMs: 10_000)];
@@ -44,7 +45,7 @@ final readonly class ScheduleEnableEngineFlow implements EngineDefinition
             throw new LogicException("Unknown Schedule step [{$step}].");
         }
         self::admitted($operation);
-        $id = $operation->input['id'];
+        $id = ValidatedData::string($operation->input['id']);
 
         return ['schedule_id' => $id, 'unit' => "orbit-schedule-{$id}.timer"];
     }
