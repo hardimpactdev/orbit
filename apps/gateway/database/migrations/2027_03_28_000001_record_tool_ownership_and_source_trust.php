@@ -73,13 +73,15 @@ return new class extends Migration
         $admittedOpen = [];
         // Per Tool linked to a record, the order of its adoption, when it was adopted.
         $adoptions = [];
-        // Per Tool, the record each open write that named a source found when admitted, by Operation.
+        // Per Tool, the record each open write that named a source found when admitted, and the status and version each open admission
+        // captured, by Operation.
         $found = [];
+        $captured = [];
         // Per open Operation, when it was admitted, the record its admission found and the packages of every Tool linked to that record then,
         // its own included (StartToolOperationAction: the source's pins).
         $pinned = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
-            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'state', 'input', 'result']);
+            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'finished_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
             $input = $this->json($operation->input);
             $result = $this->json($operation->result);
@@ -130,7 +132,7 @@ return new class extends Migration
 
                     continue;
                 }
-                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources);
+                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources, (string) $operation->finished_at);
 
                 continue;
             }
@@ -151,6 +153,7 @@ return new class extends Migration
                 }
                 if ($isOpen) {
                     $admittedOpen[$tool][$operation->id] = (string) $operation->created_at;
+                    $captured[$tool][$operation->id] = ['status' => $input['tool_status'] ?? null, 'version' => $input['installed_version'] ?? null];
                     // The record a write that named a source found under that name when admitted (StartToolOperationAction).
                     if ($given && is_int($input['repository_id'] ?? null)) {
                         $found[$tool][$operation->id] = $input['repository_id'];
@@ -205,6 +208,7 @@ return new class extends Migration
                 $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                 if ($projected && $operation->status !== 'cancelled') {
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
+                    $tools[$tool]['received'] = [...(array) ($tools[$tool]['received'] ?? []), ['at' => (string) $operation->finished_at, 'version' => $version]];
                     // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
                     // included. A failure that read nothing recorded the admitted version again.
                     $failedStep = data_get($state, 'native_failure.failed_step');
@@ -257,7 +261,7 @@ return new class extends Migration
         }
 
         $latestOperation = ValidatedData::integer(DB::table('operations')->max('id') ?? 0);
-        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'package', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'updated_at', 'error_code']) as $tool) {
+        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'package', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'created_at', 'updated_at', 'error_code']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // or capture left failed, or gives it an installed version other than the one its history last recorded. No admission captured
@@ -270,27 +274,28 @@ return new class extends Migration
             $owned = $history === null ? $tool->status === 'installed' : ($history['owned'] || $adopted);
             // An adoption no admission captured left the row as it stands: it came before every open Operation of the Tool admitted after the
             // row's last write, and otherwise after every Operation. A Tool with no history at all was adopted the same way.
-            // What an admission captured shows the membership at that moment, not that the row's newest adoption came before it: a row
-            // last written in a later second, by a newer adoption or as a replacement row, is newer than that admission. Within the row's
-            // own second, a capture orders the adoption:
+            // What an admission captured shows the membership at that moment, not that the row's newest adoption came before it. Within
+            // that, a capture orders the adoption:
             // - A write that found the very record this Tool links, a record only this Tool's adoption made (no Operation of the history
             //   made it, no other Tool links it), was admitted after that adoption.
             // - Another Tool's open admission that found this record pinned this Tool's package (StartToolOperationAction pins every Tool
             //   linked to the record): the Tool was linked to it then, and when its history never linked the source, only its adoption
             //   linked it.
+            // Unless the row shows a newer adoption since (newerAdoption), field by field.
             $adoptedAt = $latestOperation * 2 + 1;
             $written = is_string($tool->updated_at) ? $tool->updated_at : null;
             foreach (is_array($admittedOpen[$tool->id] ?? null) ? $admittedOpen[$tool->id] : [] as $operation => $admitted) {
                 if (($written !== null && $written < $admitted)
-                    || ($written !== null && $written <= $admitted && is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
-                        && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources))) {
+                    || (is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
+                        && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources)
+                        && ! self::newerAdoption($tool, $history, $admitted, ValidatedData::object($captured[$tool->id][$operation] ?? []), true))) {
                     $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                 }
             }
-            if (is_int($tool->apt_repository_id) && $written !== null && ($history === null || ($history['link'] ?? null) !== $linked)) {
+            if (is_int($tool->apt_repository_id) && ($history === null || ($history['link'] ?? null) !== $linked)) {
                 foreach ($pinned as $operation => $pins) {
-                    if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && $written <= $pins['admitted']
-                        && in_array($tool->package, $pins['packages'], true)) {
+                    if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && in_array($tool->package, $pins['packages'], true)
+                        && ! self::newerAdoption($tool, $history, $pins['admitted'], [], false)) {
                         $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                     }
                 }
@@ -524,7 +529,7 @@ return new class extends Migration
      * @param  array<int, array<string, mixed>>  $tools
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
-    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources): void
+    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources, string $finishedAt): void
     {
         $phase = collect((array) ($result['phases'] ?? []))->firstWhere('name', 'tools');
         $plans = array_filter((array) data_get($input, '_converge.intent.tools', []), static fn (mixed $plan): bool => is_array($plan) && is_int($plan['id'] ?? null));
@@ -545,6 +550,7 @@ return new class extends Migration
                     if (is_string($observation['installed_version'] ?? null)) {
                         $tools[$toolId]['version'] = $observation['installed_version'];
                         $tools[$toolId]['stamp_version'] = $id * 2;
+                        $tools[$toolId]['received'] = [...(array) ($tools[$toolId]['received'] ?? []), ['at' => $finishedAt, 'version' => $observation['installed_version']]];
                     }
                 }
             }
@@ -587,6 +593,36 @@ return new class extends Migration
     private static function blank(): array
     {
         return ['owned' => false, 'installed' => null, 'last' => null, 'version' => null];
+    }
+
+    /**
+     * The Tool's row shows an adoption newer than an admission at `$admitted` that captured its membership: a row made later (a
+     * replacement under the pinned name), or a row written later that no receipt explains. A receipt explains the row when it recorded the
+     * row's installed version and ended after the admission, such as a convergence's late observation: a version-only receipt is no
+     * adoption. Within the admission's own second, the admission's capture of its own Tool's status and version shows whether the row
+     * changed since; a capture of membership alone cannot, so a row rewritten after it was made in that second may hold a newer adoption.
+     *
+     * @param  array<string, mixed>|null  $history
+     * @param  array<string, mixed>  $captured  the status and version the admission captured, for its own Tool
+     */
+    private static function newerAdoption(stdClass $tool, ?array $history, string $admitted, array $captured, bool $own): bool
+    {
+        $created = is_string($tool->created_at ?? null) ? $tool->created_at : '';
+        $written = is_string($tool->updated_at ?? null) ? $tool->updated_at : '';
+        $installed = is_string($tool->installed_version ?? null) ? $tool->installed_version : null;
+        if ($created > $admitted) {
+            return true;
+        }
+        foreach ((array) ($history['received'] ?? []) as $receipt) {
+            if (is_array($receipt) && ($receipt['version'] ?? null) === $installed && is_string($receipt['at'] ?? null) && $receipt['at'] >= $admitted) {
+                return false;
+            }
+        }
+        if ($written !== $admitted) {
+            return $written > $admitted;
+        }
+
+        return $own ? ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed : $created < $written;
     }
 
     /**

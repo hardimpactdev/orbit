@@ -1,5 +1,5 @@
 {
- "generator": ".orbit-artifacts/tool-contract/check-3527-history/generate.php run by the preceding release e5252553efee (pruned and merged by export.py)",
+ "generator": ".orbit-artifacts/tool-contract/check-3528-history/generate.php run by the preceding release e5252553efee (pruned and merged by export.py)",
  "histories": {
   "A1": {
    "node_id": 293,
@@ -820,6 +820,34 @@
    "source": "adopted-y1",
    "tool_id": 154
   },
+  "Y10": {
+   "converge": {
+    "operation": 340
+   },
+   "node_id": 346,
+   "open": {
+    "operation": 343
+   },
+   "released_uris": [
+    "https://example.test/observed-y10-adopted"
+   ],
+   "source": "observed-y10",
+   "tool_id": 187
+  },
+  "Y11": {
+   "converge": {
+    "operation": 346
+   },
+   "node_id": 347,
+   "open": {
+    "operation": 347
+   },
+   "released_uris": [
+    "https://example.test/observed-y11"
+   ],
+   "source": "observed-y11",
+   "tool_id": 190
+  },
   "Y2": {
    "node_id": 335,
    "open": {
@@ -868,6 +896,28 @@
    ],
    "source": "reused-y7",
    "tool_id": 181
+  },
+  "Y8": {
+   "node_id": 344,
+   "open": {
+    "operation": 336
+   },
+   "released_uris": [
+    "https://example.test/later-y8-adopted"
+   ],
+   "source": "later-y8",
+   "tool_id": 183
+  },
+  "Y9": {
+   "node_id": 345,
+   "open": {
+    "operation": 338
+   },
+   "released_uris": [
+    "https://example.test/later-y9"
+   ],
+   "source": "later-y9",
+   "tool_id": 185
   },
   "converged": {
    "node_id": 220,
@@ -1270,6 +1320,38 @@
     "name": "reused-y7",
     "node_id": 343,
     "updated_at": "2026-11-27 00:31:06"
+   },
+   {
+    "created_at": "2026-11-27 01:26:42",
+    "definition": "{\"name\":\"later-y8\",\"uris\":[\"https:\\/\\/example.test\\/later-y8-adopted\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}}",
+    "id": 66,
+    "name": "later-y8",
+    "node_id": 344,
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "created_at": "2026-11-27 01:26:44",
+    "definition": "{\"name\":\"later-y9\",\"uris\":[\"https:\\/\\/example.test\\/later-y9\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}}",
+    "id": 67,
+    "name": "later-y9",
+    "node_id": 345,
+    "updated_at": "2026-11-27 01:26:44"
+   },
+   {
+    "created_at": "2026-11-27 01:26:48",
+    "definition": "{\"name\":\"observed-y10\",\"uris\":[\"https:\\/\\/example.test\\/observed-y10-adopted\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}}",
+    "id": 69,
+    "name": "observed-y10",
+    "node_id": 346,
+    "updated_at": "2026-11-27 01:26:48"
+   },
+   {
+    "created_at": "2026-11-27 01:27:05",
+    "definition": "{\"name\":\"observed-y11\",\"uris\":[\"https:\\/\\/example.test\\/observed-y11\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}}",
+    "id": 70,
+    "name": "observed-y11",
+    "node_id": 347,
+    "updated_at": "2026-11-27 01:27:05"
    }
   ],
   "nodes": [
@@ -3852,6 +3934,88 @@
     "updated_at": "2026-11-27 00:31:04",
     "user": "orbit",
     "wireguard_ip": "10.44.0.154"
+   },
+   {
+    "architecture": "x86_64",
+    "ci_nested_hosting": 0,
+    "converge_digests_full": 0,
+    "created_at": "2026-11-27 01:26:40",
+    "id": 344,
+    "name": "same-second-later-adoption-y8",
+    "platform": "linux",
+    "primary_agent": 0,
+    "public_ssh_host": "192.0.2.155",
+    "public_ssh_port": 22,
+    "reboot_hold": 0,
+    "ssh_host_fingerprint": "SHA256:fingerprint",
+    "ssh_host_key": "test-host-key",
+    "ssh_host_key_type": "ssh-ed25519",
+    "status": "active",
+    "updated_at": "2026-11-27 01:26:40",
+    "user": "orbit",
+    "wireguard_ip": "10.44.0.155"
+   },
+   {
+    "architecture": "x86_64",
+    "ci_nested_hosting": 0,
+    "converge_digests_full": 0,
+    "created_at": "2026-11-27 01:26:42",
+    "id": 345,
+    "name": "same-second-later-adoption-y9",
+    "platform": "linux",
+    "primary_agent": 0,
+    "public_ssh_host": "192.0.2.156",
+    "public_ssh_port": 22,
+    "reboot_hold": 0,
+    "ssh_host_fingerprint": "SHA256:fingerprint",
+    "ssh_host_key": "test-host-key",
+    "ssh_host_key_type": "ssh-ed25519",
+    "status": "active",
+    "updated_at": "2026-11-27 01:26:42",
+    "user": "orbit",
+    "wireguard_ip": "10.44.0.156"
+   },
+   {
+    "architecture": "x86_64",
+    "ci_nested_hosting": 0,
+    "converge_digests_full": 0,
+    "created_at": "2026-11-27 01:26:46",
+    "id": 346,
+    "name": "late-version-observation-y10",
+    "platform": "linux",
+    "primary_agent": 0,
+    "public_ssh_host": "192.0.2.157",
+    "public_ssh_port": 22,
+    "reboot_hold": 0,
+    "release_inputs": "{\"host\":\"b027b0f7a528a81243e4ab3f423aa93511db688864aa1f690efd2978b05b03bb\",\"roles\":[]}",
+    "ssh_host_fingerprint": "SHA256:fingerprint",
+    "ssh_host_key": "test-host-key",
+    "ssh_host_key_type": "ssh-ed25519",
+    "status": "active",
+    "updated_at": "2026-11-27 01:27:03",
+    "user": "orbit",
+    "wireguard_ip": "10.44.0.157"
+   },
+   {
+    "architecture": "x86_64",
+    "ci_nested_hosting": 0,
+    "converge_digests_full": 0,
+    "created_at": "2026-11-27 01:27:03",
+    "id": 347,
+    "name": "late-version-observation-y11",
+    "platform": "linux",
+    "primary_agent": 0,
+    "public_ssh_host": "192.0.2.158",
+    "public_ssh_port": 22,
+    "reboot_hold": 0,
+    "release_inputs": "{\"host\":\"9892bcfef00e496d32c379cc7a58c51dcfc4a3333a18cc30de3da549f0d11fea\",\"roles\":[]}",
+    "ssh_host_fingerprint": "SHA256:fingerprint",
+    "ssh_host_key": "test-host-key",
+    "ssh_host_key_type": "ssh-ed25519",
+    "status": "active",
+    "updated_at": "2026-11-27 01:27:20",
+    "user": "orbit",
+    "wireguard_ip": "10.44.0.158"
    }
   ],
   "operations": [
@@ -10621,6 +10785,311 @@
     "target_type": "node_tools",
     "triggered_by": "operator",
     "updated_at": "2026-11-27 00:31:06"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:40",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 333,
+    "input": "{\"node_id\":344,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":null,\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":183,\"manager_id\":136,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":344,\"host\":\"10.44.0.155\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 344,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:40",
+    "state": "{\"swamp_run_id\":\"run-333\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 344,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:40"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:40",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 334,
+    "input": "{\"node_id\":344,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"later-y8\",\"uris\":[\"https:\\/\\/example.test\\/later-y8\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[\"nano\"],\"repository_given\":true,\"tool_id\":184,\"manager_id\":136,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":344,\"host\":\"10.44.0.155\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 344,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:40",
+    "state": "{\"swamp_run_id\":\"run-334\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 344,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:40"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:40",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 335,
+    "input": "{\"node_id\":344,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"later-y8\",\"uris\":[\"https:\\/\\/example.test\\/later-y8\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":65,\"remove_repository\":true,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":184,\"manager_id\":136,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":344,\"host\":\"10.44.0.155\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.remove",
+    "node_id": 344,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":null,\"outcome\":\"applied\",\"repository_removed\":true}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:40",
+    "state": "{\"swamp_run_id\":\"run-335\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 344,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:40"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:42",
+    "id": 336,
+    "input": "{\"node_id\":344,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"later-y8\",\"uris\":[\"https:\\/\\/example.test\\/later-y8-next\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":66,\"remove_repository\":false,\"repository_packages\":[\"tree\"],\"repository_given\":true,\"tool_id\":183,\"manager_id\":136,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":344,\"host\":\"10.44.0.155\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.update",
+    "lock_key": "node_tools:344:apt",
+    "node_id": 344,
+    "operation_version": 1,
+    "request_id": "",
+    "sequence": 1,
+    "started_at": "2026-11-27 01:26:42",
+    "state": "{\"swamp_run_id\":\"run-336\"}",
+    "status": "running",
+    "target_id": 344,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:42",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 337,
+    "input": "{\"node_id\":345,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":null,\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":185,\"manager_id\":137,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":345,\"host\":\"10.44.0.156\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 345,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:42",
+    "state": "{\"swamp_run_id\":\"run-337\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 345,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:46",
+    "id": 338,
+    "input": "{\"node_id\":345,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"later-y9\",\"uris\":[\"https:\\/\\/example.test\\/later-y9-next\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":67,\"remove_repository\":false,\"repository_packages\":[\"nano\",\"tree\"],\"repository_given\":true,\"tool_id\":185,\"manager_id\":137,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":345,\"host\":\"10.44.0.156\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.update",
+    "lock_key": "node_tools:345:apt",
+    "node_id": 345,
+    "operation_version": 1,
+    "request_id": "",
+    "sequence": 1,
+    "started_at": "2026-11-27 01:26:46",
+    "state": "{\"swamp_run_id\":\"run-338\"}",
+    "status": "running",
+    "target_id": 345,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:46",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 339,
+    "input": "{\"node_id\":346,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":null,\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":187,\"manager_id\":138,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":346,\"host\":\"10.44.0.157\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 346,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:46",
+    "state": "{\"swamp_run_id\":\"run-339\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 346,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "attempts": 1,
+    "created_at": "2026-11-27 01:26:46",
+    "finished_at": "2026-11-27 01:27:03",
+    "id": 340,
+    "input": "{\"_converge\":{\"network\":{\"hub_id\":null,\"base\":false},\"intent\":{\"release_roles_only\":false,\"automatic\":false,\"tools\":[{\"id\":187,\"manager_id\":138,\"manager\":\"apt\",\"package\":\"tree\",\"repository\":null,\"version_constraint\":null,\"installed_version\":\"1.0\",\"protected\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"]}]},\"release_inputs\":{\"roles\":[],\"host\":\"b027b0f7a528a81243e4ab3f423aa93511db688864aa1f690efd2978b05b03bb\"}}}",
+    "kind": "node.converge",
+    "node_id": 346,
+    "operation_version": 1,
+    "result": "{\"outcome\":\"succeeded\",\"phases\":[{\"name\":\"input\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"agent\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"software\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"roles\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"tools\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"network\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"check\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1}],\"changed\":0,\"elapsed_seconds\":7,\"tools\":[{\"id\":187,\"status\":\"installed\",\"installed_version\":\"1.2\"}],\"browser_trust\":[],\"cleanup_complete\":true,\"digests\":[]}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:46",
+    "state": "{\"swamp_start\":{\"key\":\"operation:340\",\"workflow\":\"operation-node-converge\"},\"swamp_run_id\":\"converge-run-340\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 346,
+    "target_type": "node",
+    "updated_at": "2026-11-27 01:27:03"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:46",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 341,
+    "input": "{\"node_id\":346,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"observed-y10\",\"uris\":[\"https:\\/\\/example.test\\/observed-y10\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[\"nano\"],\"repository_given\":true,\"tool_id\":188,\"manager_id\":138,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":346,\"host\":\"10.44.0.157\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 346,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:46",
+    "state": "{\"swamp_run_id\":\"run-341\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 346,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:46",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 342,
+    "input": "{\"node_id\":346,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"observed-y10\",\"uris\":[\"https:\\/\\/example.test\\/observed-y10\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":68,\"remove_repository\":true,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":188,\"manager_id\":138,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":346,\"host\":\"10.44.0.157\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.remove",
+    "node_id": 346,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":null,\"outcome\":\"applied\",\"repository_removed\":true}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:26:46",
+    "state": "{\"swamp_run_id\":\"run-342\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 346,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:26:48",
+    "id": 343,
+    "input": "{\"node_id\":346,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"observed-y10\",\"uris\":[\"https:\\/\\/example.test\\/observed-y10-next\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":69,\"remove_repository\":false,\"repository_packages\":[\"tree\"],\"repository_given\":true,\"tool_id\":187,\"manager_id\":138,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":346,\"host\":\"10.44.0.157\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.update",
+    "lock_key": "node_tools:346:apt",
+    "node_id": 346,
+    "operation_version": 1,
+    "request_id": "",
+    "sequence": 1,
+    "started_at": "2026-11-27 01:26:48",
+    "state": "{\"swamp_run_id\":\"run-343\"}",
+    "status": "running",
+    "target_id": 346,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:26:48"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:27:03",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 344,
+    "input": "{\"node_id\":347,\"manager\":\"apt\",\"package\":\"tree\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":null,\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":189,\"manager_id\":139,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":347,\"host\":\"10.44.0.158\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 347,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:27:03",
+    "state": "{\"swamp_run_id\":\"run-344\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 347,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:27:03"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:27:03",
+    "finished_at": "2026-11-20 00:05:00",
+    "id": 345,
+    "input": "{\"node_id\":347,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":null,\"repository_id\":null,\"remove_repository\":false,\"repository_packages\":[],\"repository_given\":false,\"tool_id\":190,\"manager_id\":139,\"tool_status\":null,\"installed_version\":null,\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":347,\"host\":\"10.44.0.158\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.install",
+    "node_id": 347,
+    "operation_version": 1,
+    "request_id": "",
+    "result": "{\"installed_version\":\"1.0\",\"outcome\":\"applied\"}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:27:03",
+    "state": "{\"swamp_run_id\":\"run-345\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 347,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:27:03"
+   },
+   {
+    "attempts": 1,
+    "created_at": "2026-11-27 01:27:03",
+    "finished_at": "2026-11-27 01:27:20",
+    "id": 346,
+    "input": "{\"_converge\":{\"network\":{\"hub_id\":null,\"base\":false},\"intent\":{\"release_roles_only\":false,\"automatic\":false,\"tools\":[{\"id\":189,\"manager_id\":139,\"manager\":\"apt\",\"package\":\"tree\",\"repository\":null,\"version_constraint\":null,\"installed_version\":\"1.0\",\"protected\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"]},{\"id\":190,\"manager_id\":139,\"manager\":\"apt\",\"package\":\"nano\",\"repository\":null,\"version_constraint\":null,\"installed_version\":\"1.0\",\"protected\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"]}]},\"release_inputs\":{\"roles\":[],\"host\":\"9892bcfef00e496d32c379cc7a58c51dcfc4a3333a18cc30de3da549f0d11fea\"}}}",
+    "kind": "node.converge",
+    "node_id": 347,
+    "operation_version": 1,
+    "result": "{\"outcome\":\"succeeded\",\"phases\":[{\"name\":\"input\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"agent\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"software\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"roles\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"tools\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"network\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1},{\"name\":\"check\",\"status\":\"succeeded\",\"changed\":0,\"elapsed_seconds\":1}],\"changed\":0,\"elapsed_seconds\":7,\"tools\":[{\"id\":189,\"status\":\"installed\",\"installed_version\":\"1.2\"},{\"id\":190,\"status\":\"installed\",\"installed_version\":\"1.0\"}],\"browser_trust\":[],\"cleanup_complete\":true,\"digests\":[]}",
+    "sequence": 2,
+    "started_at": "2026-11-27 01:27:03",
+    "state": "{\"swamp_start\":{\"key\":\"operation:346\",\"workflow\":\"operation-node-converge\"},\"swamp_run_id\":\"converge-run-346\",\"native_failure\":null}",
+    "status": "succeeded",
+    "target_id": 347,
+    "target_type": "node",
+    "updated_at": "2026-11-27 01:27:20"
+   },
+   {
+    "attempts": 1,
+    "child_versions": "[]",
+    "created_at": "2026-11-27 01:27:05",
+    "id": 347,
+    "input": "{\"node_id\":347,\"manager\":\"apt\",\"package\":\"nano\",\"user\":\"orbit\",\"platform\":\"linux\",\"architecture\":\"x86_64\",\"version_constraint\":null,\"repository\":{\"name\":\"observed-y11\",\"uris\":[\"https:\\/\\/example.test\\/observed-y11-next\"],\"suites\":[\"stable\"],\"components\":[\"main\"],\"signing_key\":{\"url\":\"https:\\/\\/example.test\\/key.asc\",\"fingerprint\":\"293A57B3909ADEB99DFFBA3060FC19FB4604C848\"}},\"repository_id\":70,\"remove_repository\":false,\"repository_packages\":[\"nano\",\"tree\"],\"repository_given\":true,\"tool_id\":190,\"manager_id\":139,\"tool_status\":\"installed\",\"installed_version\":\"1.0\",\"failed_operation\":null,\"error_code\":null,\"protected_packages\":[\"ca-certificates\",\"curl\",\"gnupg\",\"libnss-resolve\",\"openssh-client\",\"sudo\",\"ufw\",\"wireguard\",\"openssh-server\",\"wireguard-tools\",\"git\",\"git-man\",\"caddy\",\"logrotate\",\"bind9-dnsutils\",\"dnsmasq\",\"openssl\",\"acl\",\"attr\",\"composer\",\"docker.io\",\"php-curl\",\"php-xml\",\"unzip\",\"incus\",\"incus-base\",\"incus-client\",\"jq\",\"python3-venv\"],\"manager_ready\":true,\"ssh\":{\"control_node_id\":209,\"identity_file\":\"\\/etc\\/orbit\\/swamp-role-worker\\/ssh-identity\",\"public_key\":\"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr control\",\"target\":{\"name\":\"target\",\"node_id\":347,\"host\":\"10.44.0.158\",\"user\":\"orbit\",\"port\":22,\"host_keys\":[\"ssh-ed25519 test-host-key\"]}},\"setup\":null}",
+    "kind": "tool.update",
+    "lock_key": "node_tools:347:apt",
+    "node_id": 347,
+    "operation_version": 1,
+    "request_id": "",
+    "sequence": 1,
+    "started_at": "2026-11-27 01:27:05",
+    "state": "{\"swamp_run_id\":\"run-347\"}",
+    "status": "running",
+    "target_id": 347,
+    "target_type": "node_tools",
+    "triggered_by": "operator",
+    "updated_at": "2026-11-27 01:27:05"
    }
   ],
   "tool_managers": [
@@ -11670,6 +12139,38 @@
     "node_id": 343,
     "status": "active",
     "updated_at": "2026-11-27 00:31:04"
+   },
+   {
+    "created_at": "2026-11-27 01:26:40",
+    "id": 136,
+    "name": "apt",
+    "node_id": 344,
+    "status": "active",
+    "updated_at": "2026-11-27 01:26:40"
+   },
+   {
+    "created_at": "2026-11-27 01:26:42",
+    "id": 137,
+    "name": "apt",
+    "node_id": 345,
+    "status": "active",
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "created_at": "2026-11-27 01:26:46",
+    "id": 138,
+    "name": "apt",
+    "node_id": 346,
+    "status": "active",
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "created_at": "2026-11-27 01:27:03",
+    "id": 139,
+    "name": "apt",
+    "node_id": 347,
+    "status": "active",
+    "updated_at": "2026-11-27 01:27:03"
    }
   ],
   "tools": [
@@ -13308,6 +13809,70 @@
     "status": "installed",
     "tool_manager_id": 135,
     "updated_at": "2026-11-27 00:31:21"
+   },
+   {
+    "apt_repository_id": 66,
+    "created_at": "2026-11-27 01:26:40",
+    "id": 183,
+    "installed_version": "2.0",
+    "node_id": 344,
+    "package": "tree",
+    "status": "installed",
+    "tool_manager_id": 136,
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "created_at": "2026-11-27 01:26:42",
+    "id": 185,
+    "installed_version": "1.0",
+    "node_id": 345,
+    "package": "tree",
+    "status": "installed",
+    "tool_manager_id": 137,
+    "updated_at": "2026-11-27 01:26:42"
+   },
+   {
+    "apt_repository_id": 67,
+    "created_at": "2026-11-27 01:26:44",
+    "id": 186,
+    "installed_version": "2.0",
+    "node_id": 345,
+    "package": "nano",
+    "status": "installed",
+    "tool_manager_id": 137,
+    "updated_at": "2026-11-27 01:26:46"
+   },
+   {
+    "apt_repository_id": 69,
+    "created_at": "2026-11-27 01:26:46",
+    "id": 187,
+    "installed_version": "1.2",
+    "node_id": 346,
+    "package": "tree",
+    "status": "installed",
+    "tool_manager_id": 138,
+    "updated_at": "2026-11-27 01:27:03"
+   },
+   {
+    "apt_repository_id": 70,
+    "created_at": "2026-11-27 01:27:03",
+    "id": 189,
+    "installed_version": "1.2",
+    "node_id": 347,
+    "package": "tree",
+    "status": "installed",
+    "tool_manager_id": 139,
+    "updated_at": "2026-11-27 01:27:20"
+   },
+   {
+    "created_at": "2026-11-27 01:27:03",
+    "id": 190,
+    "installed_version": "1.0",
+    "node_id": 347,
+    "package": "nano",
+    "status": "installed",
+    "tool_manager_id": 139,
+    "updated_at": "2026-11-27 01:27:03"
    }
   ]
  }

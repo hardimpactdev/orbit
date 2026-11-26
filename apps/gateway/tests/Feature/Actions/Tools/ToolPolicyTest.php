@@ -2683,18 +2683,23 @@ it('orders an adoption before a publication that captured its record or membersh
     // found that new record. Its publication is newest.
     expect($record()->definition['uris'])->toBe(Operation::query()->findOrFail($h['open']['operation'])->input['repository']['uris'])->and($record()->verified)->toBeTrue()
         ->and(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('1.5');
+    // Y10 and Y11: an earlier convergence's report observed tree at 1.2 15 seconds after the write was admitted. That version-only receipt
+    // is no adoption: it changed tree's row, not its source.
     $operations = app(StartToolOperationAction::class);
-    if ($history === 'Y2') {
+    $writer = Tool::query()->findOrFail($h['tool_id']);
+    if (in_array($history, ['Y2', 'Y11'], true)) {
         // The survivor's repin reads the proved source.
-        expect($operations->execute('remove', $h['node_id'], 'apt', 'nano', null, Tool::query()->where('node_id', $h['node_id'])->where('package', 'nano')->sole())
-            ->input['repository_packages'])->toBe(['tree']);
+        $sibling = Tool::query()->where('node_id', $h['node_id'])->where('package', '!=', $writer->package)->sole();
+        expect($sibling->installed_version)->toBe($history === 'Y11' ? '1.2' : '1.0')
+            ->and($operations->execute('remove', $h['node_id'], 'apt', $sibling->package, null, $sibling)->input['repository_packages'])->toBe([$writer->package]);
 
         return;
     }
     // The URI the publication replaced is free for another name.
     expect($operations->execute('install', $h['node_id'], 'apt', 'htop', null, repository: [...policySignedRepository(), 'name' => 'renamed',
         'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10')->input['repository_given'])->toBeTrue();
-})->with(['the sole member\'s own new record' => ['Y1'], 'a sibling the write pinned' => ['Y2'], 'a record made after the name\'s older record was removed' => ['Y6']]);
+})->with(['the sole member\'s own new record' => ['Y1'], 'a sibling the write pinned' => ['Y2'], 'a record made after the name\'s older record was removed' => ['Y6'],
+    'a recreated record, then a late version-only convergence report' => ['Y10'], 'a pinned sibling, then a late version-only convergence report' => ['Y11']]);
 
 it('keeps an adoption newer than a publication that captured its record or pins, and a replacement row newer still', function (string $history): void {
     policySwamp();
@@ -2702,15 +2707,16 @@ it('keeps an adoption newer than a publication that captured its record or pins,
     $h = $histories[$history];
     $record = static fn () => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole();
     $adopted = $record()->definition['uris'];
-    // The write captured the record (Y7) or pinned nano (Y4, Y5) when admitted, but 15 seconds later the preceding release accepted an explicit
-    // adoption at 2.0: of the same row (Y4, Y7), or of a replacement nano row after the pinned one was removed (Y5). That adoption is newer
-    // than the write, so the write's late success proves nothing over it.
+    // The write captured the record (Y7, Y8) or pinned nano (Y4, Y5, Y9) when admitted, but the preceding release then accepted an explicit
+    // adoption at 2.0: 15 seconds later of the same row (Y4, Y7) or of a replacement nano row after the pinned one was removed (Y5), or in
+    // the write's own second (Y8, Y9). That adoption is newer than the write, or (Y9) may be, so the write's late success proves nothing
+    // over it.
     policyReadRun(Operation::query()->findOrFail($h['open']['operation']), 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true,
         'installed_version' => '1.0']], 'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'],
         'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.5']],
         'Assert package state' => ['succeeded']], 2);
     expect($record()->verified)->toBeFalse()->and($record()->definition['uris'])->toBe($adopted);
-    if ($history === 'Y7') {
+    if (in_array($history, ['Y7', 'Y8'], true)) {
         expect(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('2.0');
 
         return;
@@ -2719,7 +2725,8 @@ it('keeps an adoption newer than a publication that captured its record or pins,
     expect(fn () => app(StartToolOperationAction::class)->execute('remove', $h['node_id'], 'apt', 'nano', null,
         Tool::query()->where('node_id', $h['node_id'])->where('package', 'nano')->sole()))
         ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
-})->with(['a later adoption of the pinned sibling' => ['Y4'], 'a replacement row under the pinned name' => ['Y5'], 'a later adoption on the sole recreated record' => ['Y7']]);
+})->with(['a later adoption of the pinned sibling' => ['Y4'], 'a replacement row under the pinned name' => ['Y5'], 'a later adoption on the sole recreated record' => ['Y7'],
+    'an adoption of the sole recreated record in the write\'s second' => ['Y8'], 'an adoption of the pinned sibling in the write\'s second' => ['Y9']]);
 
 it('keeps every membership a queued convergence captured, an adopted one included, ahead of later direct work', function (string $history): void {
     policySwamp();

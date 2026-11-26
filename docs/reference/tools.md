@@ -258,11 +258,16 @@ An adoption keeps ownership. The preceding release recorded none, but every admi
 
 So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned. A version an interrupted or unchanged receipt explains stays an observation. An admission that found the Tool's link captured it too: a removal's source, a write's that named none, and each converge plan's source are the linked record's definition. A write that named a source shows nothing of the link, because the record it found by that name may be a sibling's.
 
-A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission. So is a write that found the very record the Tool links, when only the Tool's own adoption could have made that record, in the second the Tool's row was last written. No Operation made that record when no event names the source, or the newest one confirmed the removal of an older record under its name, and no other Tool links it.
+A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission. So is a write that found the very record the Tool links, when only the Tool's own adoption could have made that record. No Operation made that record when no event names the source, or the newest one confirmed the removal of an older record under its name, and no other Tool links it.
 
 Admission pins every Tool linked to the record it found. So a Tool whose package another Tool's admission pinned, and whose own history never linked that source, was linked by its adoption before that admission.
 
-A captured record or pin proves the membership at that admission, not that the row's newest adoption came before it. A row last written in a later second, by a newer adoption or as a replacement row under the pinned name, stays newer than the admission.
+A captured record or pin proves the membership at that admission, not that the row's newest adoption came before it. So each order rests on the row's own fields:
+- A row made after the admission is a replacement under the pinned name, newer than it.
+- A row last written after the admission holds a newer adoption.
+- Unless a receipt that ended after the admission recorded the row's installed version: a convergence's late version-only report is a receipt, not an adoption.
+- In the admission's own second, a write's capture of its own Tool's status and version shows whether an adoption changed the row since.
+- A pin captures membership only. A sibling row rewritten in that second after it was made may hold a newer adoption, so it orders after every Operation.
 
 Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing. A removal whose run may have reached the package ends the claim, as the Gateway now reads such an end: one that failed after its decision, was cancelled after its run started, or ended after its expiry, a success included.
 
