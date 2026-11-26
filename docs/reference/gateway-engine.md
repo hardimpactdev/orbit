@@ -107,7 +107,7 @@ If the Gateway cache loses the credential before the first `fetch` order is publ
 
 Like `instance.destroy`, the kind is receipt-bound. The sync takes the copy's Instance lock when it binds its steps, so no removal of the copy is admitted beside it; the running Operation fences the group. A sync on Swamp takes no Instance lock, as before.
 
-While the kind is enabled, a sync whose copy's removal was admitted first is refused with `operation.target_busy` before it starts on either engine, so one copy never has two writers. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
+While the kind is enabled, a sync whose copy's removal was admitted first is refused with `operation.target_busy` before routing, so neither the engine nor the Swamp fallback starts it, so one copy never has two writers. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
 
 Each step settles only by its own evidence (the mirror head, the base evidence or the cleanup); other output fails it as `engine.receipt_invalid`. An order the signer refuses fails its step as `engine.order_invalid` instead of waiting.
 

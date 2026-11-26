@@ -792,6 +792,26 @@ it('starts the unchanged Swamp workflow for a plan the engine does not cover, th
     $bus = syncEngineBus(SyncEngineActions);
     $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
     $change($operation);
+    $socket = syncSwampSocket();
+
+    try {
+        app(StartSwampRun::class)->start($operation->refresh());
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->not->toBe('operation.target_busy');
+    }
+
+    $runs = array_values(array_filter($socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'));
+    expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-task-sync-copy')
+        ->and(Engine::owns($operation->refresh()))->toBeFalse()->and($bus->orders)->toBe([]);
+})->with([
+    'a numeric-string instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => (string) $o->input['instance_id']]])],
+    'no instance id' => [fn (Operation $o) => $o->update(['input' => Arr::except($o->input, ['instance_id'])])],
+    'an unknown instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => 999_999]])],
+]);
+
+/** A Swamp socket that answers the run-time vault copies and records every frame; a `workflow.run` frame ends the start there. */
+function syncSwampSocket(): object
+{
     $socket = new class implements WebSocketClient
     {
         /** @var list<array<string, mixed>> */
@@ -825,17 +845,66 @@ it('starts the unchanged Swamp workflow for a plan the engine does not cover, th
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
 
+    return $socket;
+}
+
+/** Marks the copy as being removed; the removal's own records are not the subject. */
+function syncCopyRemoving(Instance $copy): void
+{
+    DB::unprepared('DROP TRIGGER instances_removal_status_update');
+    $copy->update(['status' => InstanceState::Removing]);
+}
+
+/** @return list<array<string, mixed>> */
+function syncSwampRuns(object $socket): array
+{
+    return array_values(array_filter($socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'));
+}
+
+it('refuses a sync beside a confirmed removal of its copy before routing, also when the Swamp fallback would take it', function (Closure $unsupported): void {
+    [$group, $copy] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    $unsupported($operation);
+    syncCopyRemoving($copy);
+    $socket = syncSwampSocket();
+
+    expect(fn () => app(StartSwampRun::class)->start($operation->refresh()))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+    expect(syncSwampRuns($socket))->toBe([])->and($bus->orders)->toBe([])->and($operation->refresh()->error_code)->toBe('operation.target_busy')
+        ->and(Cache::has('tasks.sync.credential.'.$operation->id))->toBeFalse('no credential was minted');
+})->with([
+    'the Node lacks the cleanup action' => [fn () => syncEngineBus(['instance.fetch_branch', 'instance.sync_base'])],
+    'the Node lacks the seed feature' => [fn () => syncEngineBus(SyncEngineActions, [])],
+    'a runtime the executor does not resolve' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'team-a', 'name' => $o->input['copy']['runtime']['name']]]]])],
+]);
+
+it('refuses a sync while a removal of its copy is admitted and not ended', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    $bus = syncEngineBus(['instance.fetch_branch']);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
+        'status' => OperationStatus::Queued, 'input' => [], 'state' => []]);
+    $socket = syncSwampSocket();
+
+    expect(fn () => app(StartSwampRun::class)->start($operation->refresh()))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+    expect(syncSwampRuns($socket))->toBe([]);
+});
+
+it('starts the Swamp sync beside a removal exactly as before while the kind is off', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    syncEngineBus(SyncEngineActions);
+    config(['orbit.engine.kinds' => []]);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    syncCopyRemoving($copy);
+    $socket = syncSwampSocket();
+
     try {
         app(StartSwampRun::class)->start($operation->refresh());
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)->not->toBe('operation.target_busy');
     }
 
-    $runs = array_values(array_filter($socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'));
-    expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-task-sync-copy')
-        ->and(Engine::owns($operation->refresh()))->toBeFalse()->and($bus->orders)->toBe([]);
-})->with([
-    'a numeric-string instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => (string) $o->input['instance_id']]])],
-    'no instance id' => [fn (Operation $o) => $o->update(['input' => Arr::except($o->input, ['instance_id'])])],
-    'an unknown instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => 999_999]])],
-]);
+    expect(syncSwampRuns($socket))->toHaveCount(1);
+});

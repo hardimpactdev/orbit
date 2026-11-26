@@ -29,7 +29,7 @@ sequenceDiagram
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - eligible plan: a task copy (`copy` in the intent); a group without one keeps `tasks.no_workspace`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
-    %%> - the copy's Instance lock commits with the step rows; a Swamp sync takes none; while the kind is enabled, a copy being removed refuses the sync (`operation.target_busy`) before either engine starts it; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
+    %%> - the copy's Instance lock commits with the step rows; a Swamp sync takes none; while the kind is enabled, a confirmed removal of the group's copy (`removing`, or a removal not ended) refuses the sync (`operation.target_busy`) before routing, so neither the engine nor the Swamp fallback starts it; an intent naming no copy of the group falls back as before; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
     %%> - the group stays fenced by its running Operation and the copy by the Instance lock: no removal or other writer of the copy starts until the sync ends
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Fetch the default branch<br/>instance.fetch_branch · mirror

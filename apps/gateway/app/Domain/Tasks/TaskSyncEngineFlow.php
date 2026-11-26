@@ -13,10 +13,12 @@ use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\StepSpec;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -110,6 +112,29 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
      * once routing admitted it and again in the bind's transaction (StartSwampRun). A removal admitted later finds the bound sync's
      * Instance lock (StartInstanceDestroyAction). Plans the engine does not cover never get here: they take the unchanged Swamp path.
      */
+    /**
+     * While the kind is an engine kind, a confirmed removal of the group's own copy refuses the sync before routing, so neither the
+     * engine nor the Swamp fallback starts it beside the removal: the copy is `removing`, or a removal of it has not ended. An
+     * intent that names no copy of the group, or an unknown one, confirms nothing and routes as before. With the kind off, nothing
+     * changes (Swamp admission as it was).
+     */
+    public static function refuseConfirmedRemoval(Operation $operation): void
+    {
+        $enabled = config('orbit.engine.kinds');
+        $id = ValidatedData::object($operation->input)['instance_id'] ?? null;
+        if ($operation->kind !== self::Kind || ! is_array($enabled) || ! in_array(self::Kind, $enabled, true) || ! is_int($id)) {
+            return;
+        }
+        $copy = Instance::query()->find($id);
+        if ($copy === null || $copy->task_workspace_owner_id !== $operation->target_id) {
+            return;
+        }
+        if ($copy->status === InstanceState::Removing || Operation::query()->whereIn('kind', InstanceDestroyKind::Removals)
+            ->where('target_type', 'instance')->where('target_id', $copy->id)->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'The task copy is being removed.', 409);
+        }
+    }
+
     public static function assertCopyFree(Operation $operation): void
     {
         if ($operation->kind !== self::Kind) {

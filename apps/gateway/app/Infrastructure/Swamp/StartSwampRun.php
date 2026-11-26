@@ -79,6 +79,8 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
+            // Before routing and any credential: a copy's sync never starts beside a confirmed removal of that copy, on either engine.
+            TaskSyncEngineFlow::refuseConfirmedRemoval($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
                 // An engine-eligible copy sync never starts beside its copy's removal: it is refused, not sent to Swamp. A plan the
