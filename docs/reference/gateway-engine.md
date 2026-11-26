@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php,Domain/Tasks/TaskSyncEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -39,6 +39,7 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
+| `tasks.sync` (task copies) | `fetch`, `sync`, `clear`, `clear_after_failure` | `instance.fetch_branch`, `instance.sync_base`, `instance.clear_base` |
 
 ### route.create
 
@@ -84,6 +85,21 @@ The removal can still be cancelled during order preparation, deadline scheduling
 The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
 
 A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`. If no complete line fits in the tail, the error records that the diagnostic was omitted rather than exposing part of a line.
+
+### tasks.sync
+
+The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-copy) (an intent with `copy`) as the chart `docs/cli/task/engine/sync.mmd` draws it. The copy's Node must report `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`; any other intent, or a Node without one of them, runs the whole `operation-task-sync-copy` workflow.
+
+| Step | After | What it does |
+| --- | --- | --- |
+| `fetch` | | `instance.fetch_branch` with the default branch into the copy's mirror, with a read token minted for the send. |
+| `sync` | `fetch` | `instance.sync_base` with the head the fetch receipt returned, pinned in the step input. |
+| `clear` | `sync` | `instance.clear_base` removes the Node scratch and the copy's bundle folder. |
+| `clear_after_failure` | | The same cleanup as a failure step, after a failed `fetch` or `sync`, as the Swamp cleanup job runs after either. |
+
+The token goes as a credential blob to the copy's Node only; no copy step names it. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
+
+Like `instance.destroy`, the kind is receipt-bound. The Gateway takes the group's Operation lock with the step rows. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt. `TaskSyncProjection` records the `sync` receipt's evidence as the same result a Swamp run records; a failed step names `Bring in the base` or `Discard the base scratch` with `tasks.sync_failed`, or the import's own refusal code.
 
 ### instance.fleet
 
