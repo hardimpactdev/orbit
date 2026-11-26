@@ -23,7 +23,7 @@ cases:
       - sync_compare: {engine: signed, swamp: fallback}
       - clone_cleanup: {}
 uncovered:
-  "path:engine": "The copy is a ready disposable clone that the fixture binds to a new external group, as task:start leaves a copy; task:start itself and a copy turn beside the sync are not run. The public repository reads anonymously, so no read token is minted: the credential scan proves no credential form reaches the copy or the Operation record, not the removal of a minted App token from the Node."
+  "path:engine": "The copy comes from task:start of a new external group on the fixture Project; a copy turn beside the sync is not run. The public repository reads anonymously, so no read token is minted: the credential scan proves no credential form reaches the copy or the Operation record, not the removal of a minted App token from the Node (Gateway and executor tests cover the authenticated path)."
   "path:receipt-lost": "The fault drops the fetch receipt. Lost import and clear receipts, and an order that expires before the target lock, are covered only by Gateway and executor tests."
   "path:step-failed": "The failure holds the copy's remote ref lock so the import fails after the fetch moved the mirror; a failed fetch, a cancel, a missing default branch and tasks.base_ref_mismatch are covered only by tests."
   "path:swamp": "Fallback runs with the Node's whole instance action family absent; a Node that reports the actions without the instance.fetch_seed feature, and a Project read through the Gateway's GitHub CLI login, are covered only by Gateway tests."
