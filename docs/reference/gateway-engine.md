@@ -61,8 +61,8 @@ The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan o
 
 1. `dns-<i>`: `dns.publish_records` writes each VPN Node's records and catalog without the Route. Each file carries the digest of the bytes the Gateway rendered from at admission. Admission requires `dns.guarded_records` in the VPN Node's `features`.
 2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt. A redelivered receipt does not move that time. A repeat waits only what is left.
-3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. The rendered-from Caddyfile digest guards the write. A repeat reports `applied: 0`.
-4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. The step passes without a probe when the Node serves no other Route.
+3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. It writes only over the Caddyfile the Gateway rendered from. A repeat reports `applied: 0`.
+4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
 
 A failed step records the Swamp chart's step name, such as `Withdraw site, remove cert-3`, so the Route keeps the same `failed_step` and error code and the existing removal projection deletes the Route only after every step succeeds. `--offline`, a replacement Route, LAN rules, the Ingress edge, Caddy access, link or `APP_URL` writes for a surviving Route, and pool changes on a Node the Route does not leave stay on Swamp.
 
