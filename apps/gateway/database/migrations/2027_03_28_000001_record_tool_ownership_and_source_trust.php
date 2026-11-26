@@ -385,8 +385,8 @@ return new class extends Migration
                     app(StartToolOperationAction::class)->readmit($operation);
                 }
             } catch (ResourceOperationException|ToolOperationException $refusal) {
-                $operation->refresh()->forceFill(['status' => 'failed', 'error_code' => $refusal->errorCode, 'lock_key' => null, 'finished_at' => now(),
-                    'current_step' => null, 'failed_step' => null, 'result' => ['error_code' => $refusal->errorCode]])->save();
+                $operation->refresh()->forceFill(['status' => 'failed', 'lock_key' => null, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
+                    'result' => ['error_code' => $refusal->errorCode], 'error_code' => $refusal->errorCode])->save();
             }
         }
     }
