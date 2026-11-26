@@ -42,6 +42,12 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 
 <div className="flow-at" data-chart="route/update"></div>
 
+### Proposed executor path
+
+On the Gateway engine, a `--domain` change reuses the primitives of `route:create` and the site withdrawal of `route:destroy`. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="route/engine/update"></div>
+
 ## Errors
 
 | Error code | Meaning |

@@ -1,0 +1,68 @@
+sequenceDiagram
+  %% The workspace unsaved-work read that Conn's Remove opens (GET /api/v1/conn/instances/{instance}/work, ContainerWorkspaceRead) as a signed executor read. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Documented exception: this is a synchronous read and no Operation, so it has no kind of its own. It carries `instance.destroy`, the Operation whose Remove it gates, so instance/destroy.mdx can place it beside instance/container/destroy-engine.mmd.
+  %% Answer contract unchanged (docs/reference/development-containers.md#workspace-work-state): state clean, dirty or unknown; unknown carries a reason from stopped, asleep, timeout, not_a_repository, unreachable.
+  %% status: draft
+  %% command: instance:destroy
+  %% kind: instance.destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane C icon=server pill=copy tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as app-dev Node<br/>executor
+  participant C as Container<br/>via executor
+  CLI->>GW: Remove clicked<br/>GET conn/instances/42/work
+  %%> Conn reads afresh on every Remove click; no answer is cached or reused
+  Note over GW: Resolve the runtime<br/>Node · container · baseline
+  %%> The recorded baseline, or the default's container for an Instance without one; the published commits (a task copy's publish)
+  alt the Node reports the read action
+    %%> No Operation, no lock and no engine decision: the Gateway signs one read order and waits for its reply within the request's 4 s budget
+    GW->>EN: Signed read order<br/>machine bus · request
+    EN->>N: Read the workspace<br/>read-only · 2 s budget
+    %%> Target: Instance 42; the order changes nothing, so the executor needs no journal result to repeat
+    alt Incus reports Running
+      N->>C: Git read in /srv/workspace<br/>as agent · no repository code
+      %%> The fixed reader of workspace-git-read.py: status, untracked set, stashes, commits beyond the baseline and the published commits; no hooks, no fsmonitor, no write to the index
+      %%> A running copy is always read, also when an asleep marker is present: the marker never hides a dirty workspace
+      C-->>N: Status, stashes, commits
+      N-->>EN: clean or dirty<br/>counts · names · head
+    else not running, asleep marker present
+      N-->>EN: unknown · asleep
+      %%> As today: the marker only tells asleep from stopped for a copy that is not running; it is not woken to read it
+    else not running, no marker
+      N-->>EN: unknown · stopped
+    end
+    EN-->>GW: Reply
+    opt the reply is lost
+      GW->>EN: Read again<br/>fresh nonce · same budget
+      %%> A read has no effect, so a second send is harmless; a reply still missing at the budget's end is `unknown` `timeout`
+    end
+  else the Node lacks the action
+    Note over GW: Read over pinned SSH<br/>ContainerWorkspaceRead
+    %%> Today's path, with the same answer shape; nothing else differs
+  end
+  GW-->>CLI: Work state<br/>clean · dirty · unknown
+  %%> `unknown` only for a real read failure (timeout, not_a_repository, unreachable) or the stopped and asleep states above; never for a dirty or clean workspace
+  %%> The dialog's answer authorizes nothing: work can change before the user confirms
+  CLI->>GW: Remove confirmed<br/>POST conn/instances/42/destroy
+  %%> Body `{"acknowledge_unsaved": bool}` (DestroyConnInstanceAction)
+  alt acknowledge_unsaved false
+    Note over GW: Read the workspace again<br/>the same read, fresh
+    %%> ConnInstanceWorkState::assertRemovalSafe: an independent fresh read, by the same executor or SSH path as above, inside this request; still no Operation
+    alt the fresh read is clean
+      Note over GW: Admit the removal<br/>instance.destroy
+      %%> instance/container/destroy-engine.mmd, or instance/destroy.mmd on Swamp
+      GW-->>CLI: 202 Accepted<br/>task ID
+    else dirty or unknown
+      GW--xCLI: 409 instance.unsaved_work<br/>details: the fresh read
+      %%> Nothing is recorded; Conn asks again, and only an acknowledged POST removes unsaved work
+    end
+  else acknowledge_unsaved true
+    Note over GW: Admit the removal<br/>no second read
+    GW-->>CLI: 202 Accepted<br/>task ID
+  end

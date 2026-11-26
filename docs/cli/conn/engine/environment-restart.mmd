@@ -1,0 +1,65 @@
+sequenceDiagram
+  %% conn.environment_restart on the Gateway engine: the `Restart T3` step of conn/environment-restart.mmd (workflow operation-conn-environment-restart) as one `instance` family primitive. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% Desired state: T3 answers with the machine name. A lost receipt never restarts T3 twice: the journal repeats a finished result, and an `attempt` journaled before the restart call stops an interrupted replay from calling it again; it reports the original `restart_at`.
+  %% status: draft
+  %% command: conn:environment-restart
+  %% kind: conn.environment_restart
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  %% lane C icon=server pill=copy tone=green
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as app-dev Node<br/>executor
+  participant C as Container<br/>via executor
+  CLI->>GW: conn:environment-restart<br/>INSTANCE · or a Node's
+  Note over GW: Read every T3 label<br/>at once · 5 s · no session
+  %%> Same answers without an Operation as conn/environment-restart.mmd: skipped (frozen, stopped, no_t3, t3_unreadable) or current
+  loop each candidate, by Instance ID
+    Note over GW: Read its threads<br/>shell · admin session
+    %%> The busy rule stays in the Gateway: a working run or pending runtime request answers `busy` `t3_working`; another Conn Operation `conn_operation`; at most four restarts a call, 120 s in all
+    Note over GW: Admit the restart<br/>one Operation per Instance
+    %%> The Operation holds the Instance's lock; its intent has no session
+  end
+  GW-->>CLI: 200 · one answer each<br/>restarting has operation_id
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes): `conn.environment_restart` is in `ORBIT_ENGINE_KINDS`, the Node reports the T3 restart action, and the flow accepts the plan, else `EngineUnsupported`
+    EN->>C: Restart T3 when idle<br/>name · processes · restart
+    %%> Answers `skipped` `stopped` or `frozen` when the container no longer runs, `name_not_written` when /etc/machine-info lacks the name, nothing for a right label: the Gateway admitted the restart because the label was not the name, and the step restarts as the Swamp step does. Its only no-action answers are those ConnEnvironmentRestartProjection accepts: `skipped` (`frozen`, `stopped`, `name_not_written`) and `busy` (`processes`, `processes_unreadable`)
+    %%> Right before the restart, reads T3's service members once: a terminal or command answers `busy` `processes` (unreadable: `processes_unreadable`) and restarts nothing
+    %%> Appends an `attempt` record with `restart_at` and syncs it, then `systemctl try-restart t3.service`; nothing else restarts, the kernel hostname stays
+    %%> The receipt returns the journaled `restart_at`; the Gateway computes `window_ms` from the intent's thread `read_at` to that `restart_at` (ConnEnvironmentRestartProjection::window), so a recovered result reports the original window
+    C-->>EN: Label read back<br/>restarted · restart_at
+    %%> Readiness: reads the label on T3's port until it is the name, about 84 s at most; else `conn.t3_unready`, or `conn.t3_label_mismatch` for another label
+    opt the receipt is lost
+      EN->>C: Resend the same step<br/>fresh nonce · same step ID
+      %%> When:
+      %%> - the step passes its resend deadline with no receipt; two sends, one execution
+      %%> - the Operation keeps its lock, so Instance 42 stays fenced; no other Operation and no Swamp run acts on it meanwhile
+      %%> On the Node:
+      %%> - the journal holds `done` for this Operation step, action and target: the executor answers the stored result with `repeat: true` and does not act again
+      %%> - an `attempt` without `done` (the executor died after the restart call), on a resend or the startup replay of the `open` order: no second restart; it reads the label until the bound and answers `restarted` with the original journaled `restart_at`, or `conn.t3_unready`
+      %%> - an order still `open` replays under the target lock first; an order that expired before the lock did nothing (`executor.order_expired`), and the step is sent again
+      C-->>EN: Stored result<br/>repeat: true
+    end
+    alt every step verified
+      EN->>GW: Record the outcome<br/>restarted · busy · skipped
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Record the failure<br/>conn.t3_unready
+      %%> - the Operation does not retry; a later call takes the Instance again
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-conn-environment-restart
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-conn-environment-restart (conn/environment-restart.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

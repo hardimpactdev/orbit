@@ -1,0 +1,67 @@
+sequenceDiagram
+  %% process.restart on the Gateway engine: the `process` family, with a restart that runs at most once per Operation even when a receipt is lost and the executor's journal no longer holds the result. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% A restart is not a desired state. The step carries evidence of the run it replaces (systemd's InvocationID with the boot ID, or Docker's StartedAt) and journals that it is about to restart before it calls the runtime. A changed value proves a restart happened; an unchanged value after an interrupted call proves nothing, so the step never restarts on that replay and reports the outcome unresolved.
+  %% status: draft
+  %% command: process:restart
+  %% kind: process.restart
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as Target Node<br/>executor
+  CLI->>GW: process:restart 417
+  Note over GW: Validate, record the task<br/>Process 417: provisioning
+  %%> Same admission as process/restart.mmd
+  opt drain-waiting, Vite or release plan
+    Note over GW: Refuse the engine<br/>EngineUnsupported
+    %%> - a restart stops first, so the drain-waiting Processes of process/engine/stop.mmd refuse here too, whatever their placement: a host Horizon unit (`GatewayHorizon::runs`, long-drain stop directives) and Gateway release-container Processes
+    %%> - Vite plans and, until the `process` family covers them, Instance-container Processes
+    %%> - decided at admission, before any order; the whole Operation takes the Swamp branch below
+  end
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `process.restart` is in `ORBIT_ENGINE_KINDS`
+    %%> - every Node a step touches reports its action in `$KV.NODES`: the `process` family's read and restart actions
+    %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
+    Note over GW: Bind steps, take the lock<br/>commit, publish the start
+    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    GW-->>CLI: 202 Accepted<br/>task ID
+    EN->>N: Read the running instance<br/>unit · boot ID · InvocationID
+    %%> Step `read`: read-only; systemd `InvocationID`, `ActiveState` and `/proc/sys/kernel/random/boot_id` (Docker: `State.StartedAt` and the container ID)
+    %%> Its receipt output is pinned into the restart step's input when that step is first built; a resend reuses the pinned value
+    N-->>EN: Evidence<br/>output: boot ID · invocation
+    EN->>N: Restart if unchanged<br/>compare, journal, restart
+    %%> Step `restart`, under the Process's target lock: reads the evidence again; only when it equals the pinned evidence, and the journal holds no earlier attempt of this step, does it apply the boot policy, append an `attempt` record with the evidence and the time, sync it, and then run `systemctl restart` (Docker: `docker container restart`)
+    %%> Evidence changed before any attempt (the unit restarted by itself since the read, or the Node rebooted): no restart; the receipt says `restarted: already` with the new evidence
+    N-->>EN: New evidence<br/>active · new InvocationID
+    %%> Verification read-back: active, the boot policy as admitted, and an InvocationID (or StartedAt) different from the pinned one; otherwise `process.restart_unverified`
+    opt the receipt is lost
+      EN->>N: Resend the same step<br/>fresh nonce · same step ID
+      %%> `done` in the journal: the stored result with `repeat: true`; nothing runs again
+      %%> An `attempt` without `done` (the executor died after it called the runtime), on a resend or on the executor's startup replay of the `open` order: it never restarts again; it waits a bounded time for the in-flight restart, then reports `restarted` if the evidence changed, else fails `process.restart_unresolved`
+      %%> No record of the step: the first send never ran (an expired order left `executor.order_expired`), so the compare and restart run as above
+      %%> Resends stop at the journal's replay window, as for signed removal; past it the step fails `process.restart_unresolved` and nothing restarts. Process 417 stays fenced by the Operation lock until then
+      N-->>EN: Stored or recovered<br/>never a second restart
+    end
+    alt every step verified
+      EN->>GW: Record Process active<br/>status · restarted
+      %%> - the kind's own projection records the result, the same rows a Swamp run records
+    else a step fails
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+      Note over GW: Mark the Process failed<br/>desired state unchanged
+      %%> - a failed `read` changed nothing; a failed `restart` left the unit as systemd reports it, and the retry is a new Operation with a fresh read
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-process-control
+    %%> - the kind is not enabled, a Node lacks the action, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs operation-process-control (process/restart.mmd)
+    %%> - no step of it runs on the engine; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end
