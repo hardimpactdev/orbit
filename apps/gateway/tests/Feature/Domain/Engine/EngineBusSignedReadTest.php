@@ -70,13 +70,35 @@ it('gives up on a silent peer at the deadline, not at the client timeout', funct
         ->and(hrtime(true) / 1e9 - $started)->toBeLessThan(0.5);
 });
 
-it('reports a connection that closed after the order went out, so the caller can read again', function (): void {
+it('counts a connection that closed after the order went out as a lost reply, not a failure to send', function (): void {
     silentPeer('close');
     $started = hrtime(true) / 1e9;
-    expect(fn () => (new EngineBus)->read(7, silentOrder(), $started + 2.0))->toThrow(RuntimeException::class, 'engine.read_failed')
+    expect((new EngineBus)->read(7, silentOrder(), $started + 2.0))->toBeNull()
         ->and(hrtime(true) / 1e9 - $started)->toBeLessThan(1.5);
 });
 
+it('ends a late greeting and a missing PONG by the one deadline, as a request that was never sent', function (): void {
+    silentPeer('stall');
+    $started = hrtime(true) / 1e9;
+    expect(fn () => (new EngineBus)->read(7, silentOrder(), $started + 1.0))->toThrow(RuntimeException::class, 'engine.read_failed');
+    expect(hrtime(true) / 1e9 - $started)->toBeGreaterThan(0.9)->toBeLessThan(1.1);
+});
+
+it('reports a request nobody subscribes to as not sent', function (): void {
+    silentPeer('nobody');
+    $started = hrtime(true) / 1e9;
+    expect(fn () => (new EngineBus)->read(7, silentOrder(), $started + 2.0))->toThrow(RuntimeException::class, 'engine.read_failed');
+    expect(hrtime(true) / 1e9 - $started)->toBeLessThan(1.0);
+});
+
+it('returns no acknowledgement for content that went out unanswered', function (): void {
+    silentPeer();
+    $started = hrtime(true) / 1e9;
+    expect((new EngineBus)->content(7, '{"baseline":null}', $started + 0.5))->toBeNull()
+        ->and(hrtime(true) / 1e9 - $started)->toBeLessThan(0.7);
+});
+
 it('sends nothing once the deadline has passed', function (): void {
-    expect((new EngineBus)->read(7, silentOrder(), hrtime(true) / 1e9 - 0.1))->toBeNull();
+    silentPeer();
+    expect(fn () => (new EngineBus)->read(7, silentOrder(), hrtime(true) / 1e9 - 0.1))->toThrow(RuntimeException::class, 'engine.read_failed');
 });

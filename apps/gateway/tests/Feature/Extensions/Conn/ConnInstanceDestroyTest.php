@@ -391,11 +391,13 @@ function connSignedReads(array $actions, array $replies = []): object
             return $this->reported;
         }
 
-        public function content(int $node, string $content, float $deadline): array
+        public bool $acknowledged = true;
+
+        public function content(int $node, string $content, float $deadline): ?array
         {
             $this->content[] = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
 
-            return ['sha256' => hash('sha256', $content)];
+            return $this->acknowledged ? ['sha256' => hash('sha256', $content)] : null;
         }
 
         public function read(int $node, SignedExecutorOrder $order, float $deadline): ?array
@@ -485,7 +487,7 @@ it('reads again with a fresh nonce when a reply is lost, and gives timeout when 
     expect($reads->sent)->toHaveCount(2);
 });
 
-it('reads once more when the connection closes after the order went out, and is unreachable when no send reaches the bus', function (): void {
+it('tries once more after a send that never left, and is unreachable only when no send reached the bus', function (): void {
     $instance = connRemovalClone();
     $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), connWorkAnswer(modified: 1)]);
     connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'dirty');
@@ -507,6 +509,20 @@ it('keeps the capability lookup and every send inside the four-second request bu
         ->and($reads->sent[0]['seconds'])->toBeLessThanOrEqual(2.5)
         ->and($reads->sent[1]['seconds'])->toBeLessThanOrEqual(4.0)
         ->and($reads->sent[0]['payload']['expires_ms'] - now()->getTimestampMs())->toBeLessThanOrEqual(4000);
+});
+
+it('gives timeout, not unreachable, when the replies or the content acknowledgement went missing after they went out', function (): void {
+    $instance = connRemovalClone();
+    // Both orders reached the bus and their replies were lost, also by a connection that closed after each.
+    $reads = connSignedReads(['instance.work_read'], [null, null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toHaveCount(2);
+
+    $instance->runtime()->update(['workspace_baseline' => ['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => []]]);
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
+    $reads->acknowledged = false;
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toBe([]);
 });
 
 it('sends a recorded baseline and published commits as content the order names by hash', function (): void {

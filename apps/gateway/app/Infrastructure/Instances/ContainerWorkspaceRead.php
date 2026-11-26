@@ -173,8 +173,13 @@ final readonly class ContainerWorkspaceRead
             $signer = ExecutorOrderSigner::fromConfig();
             if ($baseline !== null || $published !== []) {
                 // A baseline may name up to 2,000 untracked files: the order names it by its hash.
-                $input['state'] = ['blob' => $this->reads->content($node, json_encode(['baseline' => $baseline, 'published' => $published],
-                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $deadline)];
+                $blob = $this->reads->content($node, json_encode(['baseline' => $baseline, 'published' => $published],
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $deadline);
+                if ($blob === null) {
+                    // The content went out and its acknowledgement is missing at the deadline: a lost answer, not a failure to send.
+                    return ['state' => 'unknown', 'reason' => 'timeout'];
+                }
+                $input['state'] = ['blob' => $blob];
             }
         } catch (Throwable $error) {
             Log::warning('A signed workspace read could not start.', ['instance_id' => $instance->id, 'error' => $error::class.': '.mb_strcut($error->getMessage(), 0, 200)]);
