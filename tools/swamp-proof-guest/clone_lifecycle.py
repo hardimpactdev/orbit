@@ -106,6 +106,10 @@ def wait_for(read, message, seconds, interval=0.25):
 
 
 class CloneLane:
+    KINDS = ('instance.create', 'instance.destroy')
+    FAMILIES = 'power\nproof\n'
+    ROOT = '.'
+
     def __init__(self, run, fleet_contract):
         self.run = run
         self.gateway_address = fleet_contract.NESTED_GATEWAY
@@ -185,7 +189,7 @@ class CloneLane:
                                 'node': self.node_id, 'installed_executor_sha256': executor_hashes[0], 'running_executor_sha256': executor_hashes[1],
                                 'nats': self.nats_identity, 'routes': self.routes, 'advertisement': live})
         code, project, error = self.api('POST', 'projects', {'slug': self.prefix, 'type': 'laravel-package',
-                                                             'repository_url': repository, 'default_branch': branch, 'root': '.'})
+                                                             'repository_url': repository, 'default_branch': branch, 'root': self.ROOT})
         require(code == 201, f'disposable project admission: HTTP {code} {error}')
         self.project = int(project['id'])
         self.default = self.create('default', 'swamp', seed=True)['instance']
@@ -218,12 +222,12 @@ class CloneLane:
             printf '\n' >> .env
             runuser -u orbit -- php artisan orbit:engine-keys >> .env
             php -r '$pair = sodium_crypto_sign_keypair(); printf("ORBIT_EXECUTOR_PUBLIC_KEYS=%s\\nORBIT_EXECUTOR_SIGNING_KEY=%s\\n", base64_encode(sodium_crypto_sign_publickey($pair)), base64_encode(sodium_crypto_sign_secretkey($pair)));' >> .env
-            printf 'ORBIT_ENGINE_KINDS=instance.create,instance.destroy\n' >> .env
-        ''', 'sh', self.gateway_app)
+            printf 'ORBIT_ENGINE_KINDS=%s\n' "$2" >> .env
+        ''', 'sh', self.gateway_app, ','.join(self.KINDS))
         self.gateway_php('config:clear')
         settings = self.helper('configuration')
         self.routes = settings['routes']
-        require(set(self.routes) == {'instance.create', 'instance.destroy'}, 'incorrect proof engine routes')
+        require(set(self.routes) == set(self.KINDS), 'incorrect proof engine routes')
         for node, user in (('gateway', 'nats'), (self.node, 'orbit-executor-relay')):
             self.guest(node, 'useradd', '--system', '--home-dir=/nonexistent', '--shell=/usr/sbin/nologin', user)
         with tempfile.TemporaryDirectory(prefix='orbit-proof-nats-') as directory:
@@ -263,7 +267,7 @@ class CloneLane:
 
     def set_capability(self, enabled):
         if self.capability is not enabled:
-            self.put(self.node, '/etc/orbit/executor/enabled', ('instance\n' if enabled else '') + 'power\nproof\n')
+            self.put(self.node, '/etc/orbit/executor/enabled', ('instance\n' if enabled else '') + self.FAMILIES)
             self.systemctl(self.node, 'restart', EXECUTOR_UNIT)
             self.capability = enabled
 

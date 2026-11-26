@@ -53,6 +53,14 @@ packages/php-sdk/src/Responses/Firewall/**                 firewall:allow firewa
 # instance:migrate, until the last checkout Instance has moved. Its cases are the refusals of the CLI and of the admission; its
 # Swamp code stays uncovered until a proof Node has the Instance pool.
 swamp/proof/instance/migrate.cases.yaml                             instance:migrate
+
+# route:destroy on the signed executor, and the Route withdrawal of a clone's destroy. The Swamp withdrawal keeps its own lines below.
+swamp/proof/route/destroy.cases.yaml                                route:destroy
+swamp/proof/instance/destroy.cases.yaml                             instance:destroy
+apps/gateway/app/Domain/Routes/RouteDestroyEngineFlow.php           route:destroy instance:destroy
+apps/gateway/app/Domain/Instances/InstanceDestroyEngineFlow.php     instance:destroy
+apps/agent/crates/route/**                                          route:destroy instance:destroy
+apps/agent/crates/dns/**                                            route:destroy instance:destroy
 apps/cli/app/Commands/Instances/MigrateInstanceCommand.php         instance:migrate
 apps/gateway/app/Actions/Instances/StartInstanceMigrateAction.php  instance:migrate
 apps/gateway/app/Http/Controllers/Api/InstanceMigrationsController.php  instance:migrate

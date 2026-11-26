@@ -38,6 +38,7 @@ if ($mode === 'configuration') {
         'executor_unit' => NodeExecutorInput::unit(true),
         'executor_keys' => implode("\n", config('orbit.executor.public_keys'))."\n",
         'executor_guard' => NodeBusAccess::guard(),
+        'executor_guard_gateway' => NodeBusAccess::guard('orbit'),
         'executor_bus' => json_encode(['url' => NodeBusAccess::url()], JSON_THROW_ON_ERROR),
         'routes' => config('orbit.engine.kinds'),
     ];
@@ -45,9 +46,11 @@ if ($mode === 'configuration') {
     $node = (int) $argv[2];
     $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
     $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? []];
-} elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && count($argv) === 5
-    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && ctype_digit($argv[4])) {
-    [$node, $operation, $target] = array_slice($argv, 2);
+} elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && in_array(count($argv), [5, 7], true)
+    && ctype_digit($argv[2]) && ctype_digit($argv[3]) && ctype_digit($argv[4])
+    && preg_match('/\A[a-z0-9-]+\z/', $argv[5] ?? 'remove') === 1 && preg_match('/\A[a-z_]+\.[a-z_]+\z/', $argv[6] ?? 'instance.destroy') === 1) {
+    [$node, $operation, $target] = array_slice($argv, 2, 3);
+    [$step, $action] = [$argv[5] ?? 'remove', $argv[6] ?? 'instance.destroy'];
     $isOrder = $mode === 'pending-order';
     $subject = $isOrder ? 'orbit.node.'.$node.'.orders' : 'orbit.receipts.'.$node;
     $stream = $isOrder ? 'ORDERS' : 'RECEIPTS';
@@ -64,8 +67,8 @@ if ($mode === 'configuration') {
         } else {
             $line = json_decode($data, true, flags: JSON_THROW_ON_ERROR)['line'];
         }
-        if ($message['subject'] !== $subject || $line['operation'] !== $operation.':remove' || $line['target'] !== $target
-            || $line['action'] !== 'instance.destroy' || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
+        if ($message['subject'] !== $subject || $line['operation'] !== $operation.':'.$step || $line['target'] !== $target
+            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
             throw new RuntimeException('The queued message does not belong to this proof destroy.');
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
