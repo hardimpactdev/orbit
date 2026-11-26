@@ -679,7 +679,8 @@ class SyncLane(CloneLane):
         self.create(sibling, 'engine')
         self.set_capability(True)
         code, group, error = self.api('POST', 'tasks', {'project_id': self.project, 'title': 'Sync proof ' + name, 'brief': 'Task-copy sync proof.',
-                                                        'status': 'todo', 'orchestration': 'external'})
+                                                        'status': 'todo', 'orchestration': 'external',
+                                                        'subtasks': [{'title': 'Sync', 'brief': 'Task-copy sync proof.'}]})
         require(code == 201, f'task group admission: HTTP {code} {error}')
         group = int(group['id'])
         self.groups[name] = group
