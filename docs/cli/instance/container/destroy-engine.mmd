@@ -1,0 +1,74 @@
+sequenceDiagram
+  %% A container clone's removal on the Gateway engine (ADR 0271, docs/reference/gateway-engine.md#instancedestroy, docs/reference/instance-removal.md): what #4211 shipped, InstanceDestroyEngineFlow with one step `remove` running the executor's `instance.destroy` (apps/agent/crates/instance/src/destroy.rs). Every other removal is instance/destroy.mmd on Swamp.
+  %% Planned, not built: a clone that owns a Route withdraws it on the engine first, with the primitives of route/engine/destroy.mmd. Until then a Route in the plan throws EngineUnsupported.
+  %% status: draft
+  %% command: instance:destroy
+  %% kind: instance.destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane EN icon=workflow pill=engine tone=purple
+  %% lane N icon=server pill=executor tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant EN as Engine<br/>Gateway and NATS
+  participant N as app-dev Node<br/>executor
+  CLI->>GW: instance:destroy 42<br/>--yes --force
+  Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
+  %%> Same admission as instance/destroy.mmd: consent, captures, Schedule trigger removal, then the removal intent in one transaction that marks Instance 42 removing
+  alt the engine admits the whole Operation
+    %%> Admission, one decision per Operation (EngineKinds::routes):
+    %%> - `instance.destroy` is in `ORBIT_ENGINE_KINDS`, and the Node reports `instance.destroy` in `$KV.NODES`, independently of `instance.create`
+    %%> - InstanceDestroyEngineFlow accepts the plan, all of it checked against the saved intent:
+    %%> - the target is an Instance with a positive ID, equal to the intent's `instance_id` and, checked on its own, to `container_destroy.instance_id`, the field that becomes the signed step's target; a plan that names 43 there refuses; the Operation's Node is positive and equals both the intent's and the saved plan's `node_id`
+    %%> - development, `--force`, not the default name; a positive clone source that is not the Instance itself
+    %%> - no `after_operation_id` (no wait for a create or completion) and no CI hold
+    %%> - exactly one member, and it is this Instance, with no `route_id`, `run_teardown: false`; `additional_route_ids` and the plan's Routes are empty lists
+    %%> - exactly one teardown entry, for this Instance, with no steps; no Processes, Schedules, database connections, database servers or SQLite files
+    %%> - the saved identity is the signed contract: container and ACL `instance-42`, project `orbit-instances` or `orbit-instances-nested`, pool `orbit-instances`, mirror `/var/lib/orbit/instance-repositories/42.git`, firewall prefix `orbit:instance-42-`, the asleep marker, inner volume `inner-42` when present
+    %%> - else `EngineUnsupported`, and the whole removal runs on Swamp
+    Note over GW: Bind remove, take the lock<br/>commit, publish the start
+    %%> The Gateway binds step `remove` (budget 600 s, resend 15 s) and the Instance's Operation lock in one transaction before it publishes the start
+    %%> Cancel still works during order preparation, deadline scheduling and the Node consumer's setup; just before the first publish the Gateway checks cancel and records the first order's signed expiry under the same lock
+    GW-->>CLI: 202 Accepted<br/>task #5132
+    opt planned: clone owns a Route
+      EN->>N: Withdraw the Route first<br/>route/engine/destroy steps
+      %%> Planned: the DNS withdrawal and the site and leaf withdrawal of route/engine/destroy.mmd run before `remove`, with no DNS grace (a destroyed name has no new target, as instance/destroy.mmd decides)
+      %%> Planned: `remove` waits for them; a failed withdrawal fails the Operation before the container is touched
+    end
+    EN->>N: Remove the clone<br/>instance.destroy · step remove
+    %%> Input: `project`, `name`, `pool`, `acl`, `inner_volume`; the executor checks it again (`instance.destroy_input_invalid`)
+    %%> Holds the same target lock as sleep and wake; checks that `instance-42` is a container on the admitted pool
+    %%> Force-stops it unless Incus reports Stopped (`instance.removal_stop_failed`), deletes it with `--force`; a failed delete restores the snapshots' missing datasets and deletes again
+    %%> Removes the inner volume and its owned unused `build-` and `spare-` volumes, then the ACL
+    %%> Read-back: the container, the ACL and every owned volume are gone, else `instance.removal_incomplete`
+    %%> Then the `orbit:instance-42-` ufw rules: an owned rule that shares its specification with a foreign rule refuses (`instance.removal_incomplete`); each is deleted by specification and their absence is read back
+    %%> Then the power helper's legacy `discard` (`instance.power_discard_failed`), then the mail folder, the mirror, `/var/tmp/orbit-task-base-42` and the hibernation asleep, cold, log and awake files; an absent one counts as removed
+    %%> Last, the executor discards its own freeze state for Instance 42 (`discard_destroyed`); a failure there is `instance.power_discard_failed`, never success
+    N-->>EN: One terminal receipt<br/>after the whole sequence
+    %%> Sent only after every part above held, or with the first failure's code; the executor appends its `done` record first. A refusal such as `instance.removal_dataset_taken` is kept as a result too
+    opt the receipt is lost
+      EN->>N: Resend the same step<br/>fresh nonce · same step ID
+      %%> The journal repeats the stored result with `repeat: true`; the deletion never runs twice
+      %%> A lost acknowledgement, cancel, expiry or order refusal never releases the Instance lock: none proves the Node did not act. An `expired` refusal keeps the fence and the scheduled retry
+      %%> Resends stop once one could expire after the first order's expiry minus 10 s plus 24 h of journal retention; then Instance 42 stays fenced until a matching terminal receipt or authoritative recovery; an absent record after compaction settles nothing
+      N-->>EN: Stored result<br/>repeat: true
+    end
+    %%> A receipt counts only when its Node, Operation step ID, action and target match
+    alt the removal held
+      EN->>GW: Project the removal<br/>applyEngine
+      %%> DevelopmentInstanceDestroyProjection::applyEngine records the same removal as a Swamp run: Instance 42 and its records are deleted, task #5132 succeeds
+    else a terminal failure
+      EN--xGW: Failed step<br/>error_code · redacted detail
+      Note over GW: Keep Instance, mark failed<br/>removal intent kept
+      %%> `error.detail` is a bounded, redacted tail of whole lines, or says the diagnostic was omitted
+      %%> Retry: the same command; the existing retry rules apply
+    end
+  else the engine does not admit it
+    Note over GW: Start the Swamp run<br/>operation-instance-destroy
+    %%> The kind is not enabled, the Node lacks `instance.destroy`, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole removal runs instance/destroy.mmd; an Operation never splits across engines
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: status + result
+  end

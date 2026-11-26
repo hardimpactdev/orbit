@@ -28,7 +28,7 @@ JS);
     'name suffix' => ['_v2', 1, 'Conn clone stage contract:'],
 ]);
 
-it('lets a page place a sub-folder chart of its own kind only, under the text limits', function (array $patches, int $exitCode, string $message): void {
+it('lets a page place a sub-folder chart of its own kind or of a family chart it places, under the text limits', function (array $patches, int $exitCode, string $message): void {
     $process = new Process(['node', '-', dirname(__DIR__, 4), json_encode($patches, JSON_THROW_ON_ERROR)]);
     $process->setInput(<<<'JS'
 const fs = require('node:fs')
@@ -53,6 +53,13 @@ JS);
         ['/route/create.mmd', '%% kind: route.create', '%% kind: instance.create'],
     ], 1, 'route/create.mdx: places instance/container/create, which is no chart of its own kind'],
     'page without a chart' => [[['/instance/show.mdx', '', "## How it works\n\n<div className=\"flow-at\" data-chart=\"instance/container/create\"></div>\n\n"]], 1, 'instance/show.mdx: places instance/container/create, which is no chart of its own kind'],
+    'kind of a family chart the page places' => [[['/instance/wake.mdx', 'data-chart="instance/start"></div>', 'data-chart="instance/start"></div>'."\n\n".'<div className="flow-at" data-chart="instance/container/destroy"></div>'],
+        ['/instance/container/destroy.mmd', '%% kind: instance.destroy', '%% kind: instance.start']], 0, 'all flows ok'],
+    'kind of a family chart placed below' => [[['/instance/wake.mdx', '<div className="flow-at" data-chart="instance/start"></div>', '<div className="flow-at" data-chart="instance/container/destroy"></div>'."\n\n".'<div className="flow-at" data-chart="instance/start"></div>'],
+        ['/instance/container/destroy.mmd', '%% kind: instance.destroy', '%% kind: instance.start']], 1, 'instance/wake.mdx: places instance/container/destroy, which is no chart of its own kind'],
+    'kind of another family\'s chart the page places' => [[['/process/start.mdx', '<div className="flow-at" data-chart="process/start"></div>', '<div className="flow-at" data-chart="process/start"></div>'."\n\n".'<div className="flow-at" data-chart="instance/start"></div>'],
+        ['/process/engine/start.mmd', '%% kind: process.start', '%% kind: instance.start'],
+        ['/instance/wake.mdx', '<div className="flow-at" data-chart="instance/start"></div>', '']], 1, 'process/start.mdx: places process/engine/start, which is no chart of its own kind'],
     'no such chart' => [[['/instance/create.mdx', 'instance/container/create"', 'instance/container/missing"']], 1, 'places instance/container/missing, which is no chart'],
     'label too long' => [[['/instance/container/create.mmd', 'Read baseline, record T3', 'Read the baseline, record T3']], 1, 'text too long (28/23)'],
 ]);
