@@ -35,7 +35,8 @@ sequenceDiagram
     opt clone owns a Route
       EN->>N: Withdraw the Route first<br/>route/engine/destroy steps
       %%> `dns-node` (guarded `dns.publish_records`), then `withdraw-node` (`route.withdraw_site`) and `sibling-node` (a TLS probe of another Route on that Node), with no DNS grace (a destroyed name has no new target, as instance/destroy.mmd decides)
-      %%> Every step is receipt-bound like `remove`: a lost receipt resends the same step, the Node's journal answers its stored result, and the Instance stays fenced until a terminal receipt
+      %%> Every step is receipt-bound like `remove`: a lost receipt resends the same step, the Node's journal answers its stored result, and the Instance stays fenced until a terminal receipt; a `blob.*` content failure comes before the journal, so it never ends a step
+      %%> A removal with this engine plan takes its Route Nodes alone (an exclusive hold, not a shared withdrawal slot): a second removal on the Node waits, and one rendered before a site changed there is refused stale; a removal that already shares its Nodes runs on Swamp
       %%> A retry of a removal whose earlier run withdrew the Route (`route_withdrawn`) has none of these steps, as the Swamp run skips its withdraw
       Note over EN: Record the withdrawal<br/>free the Route Nodes
       %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then the Route withdrawal holds go; a refused release never fails the removal, and its line (`route_hold_released`, `route_hold_release_status`) is in the result, also after a later container failure

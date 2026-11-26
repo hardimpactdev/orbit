@@ -41,7 +41,7 @@ sequenceDiagram
       Note over EN: Sign the CSR<br/>Gateway step · sign-i
       %%> `operation:direct:certificate-sign`; the Orbit CA key stays in the Gateway; a pending cancel refuses
       EN->>N: Publish the new site<br/>route.publish_site · site-node
-      %%> Leaf, Caddy site, PHP-FPM pool and the admitted `APP_URL` lines, as route.create; the Caddyfile is validated before the move, and Caddy reloads on every publication, also on a replay, so a crash after the move still makes it live
+      %%> Leaf, Caddy site and PHP-FPM pool, as route.create; no `APP_URL` line (an update that writes one runs on Swamp); the Caddyfile is validated before the move, and Caddy reloads on every publication, also on a replay, so a crash after the move still makes it live
       N-->>EN: Files placed<br/>applied
       EN->>N: Probe the new site<br/>Gateway step · SNI new domain
       %%> TLS handshake over the WireGuard address, trusting only the Orbit root, as route.create's probe
@@ -55,10 +55,10 @@ sequenceDiagram
       %%> A Gateway step (`cutover`) after the probe and, when present, the DNS move: RouteMutationState::cutover records the replacement `activating` at `database-cutover` (authoritative) and the old Route `retiring`; the terminal projection repeats it, so a repeat changes nothing
       %%> A cancel after this step is projected as a failure after the cutover, so the replacement stays authoritative for a forward retry
       %%> A failed `cutover` step settles by whether its authority transaction committed: committed is a failure after the cutover (forward); not committed is a failure before it, with no chart step, so the old Route stays authoritative
-      %%> The retry of a failure after the cutover (the old Route `retiring`) is refused at admission and resumes on Swamp, which reads the recorded cutover
+      %%> The retry of a failure after the cutover (the old Route `retiring`, its replacement active) finds the cutover recorded: it runs only the failed run's old-site withdrawal and sibling check, from that run's plan, and its projection does not switch authority again
       opt domain outside the TLD
         Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-        %%> Timed by a NATS schedule from the DNS receipt; a resend never shortens it; the old site serves until it ends
+        %%> A Gateway step that waits until 31 s after the last DNS receipt (`done_ms`); a resend never shortens it; the old site serves until it ends. Differs from the draft: no NATS timer, the engine has no delayed-step primitive yet
       end
       opt a leaf waits for the cutover
         EN->>N: Install the late leaf<br/>publish_site · late-node
@@ -100,7 +100,7 @@ sequenceDiagram
         Note over GW: Replacement authoritative<br/>old Route retiring
         %%> A failure in the grace, the old site's withdrawal or the sibling check
       end
-      %%> Retry is forward only: the same request resumes; before the cutover it publishes the replacement again (a made key is reused, files repeat with `applied: 0`), after it only the grace remainder, the withdrawal and the sibling check run
+      %%> Retry is forward only: the same request resumes; before the cutover it publishes the replacement again (a made key is reused, files repeat with `applied: 0`), after it only the withdrawal and the sibling check run, from the failed run's plan, with no second grace or cutover
     else the engine does not admit it
       Note over GW: Start the Swamp run<br/>operation-route-update
       %%> The kind is not enabled, a Node lacks an action or the DNS feature, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs route/update.mmd; it never splits across engines

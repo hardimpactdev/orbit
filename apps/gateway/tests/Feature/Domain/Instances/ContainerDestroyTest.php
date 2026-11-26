@@ -12,6 +12,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\MachineBus;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Executor\SignedExecutorOrder;
@@ -1344,5 +1345,5 @@ it('leaves a removal that shares its Route Nodes to Swamp', function (): void {
     $operation = routeOwningDestroy($clone);
     DB::table('route_withdrawal_holds')->insert(['operation_id' => $operation->id, 'node_id' => $clone->node_id]);
 
-    expect(fn () => app(InstanceDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
+    expect(fn () => app(InstanceDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
 });

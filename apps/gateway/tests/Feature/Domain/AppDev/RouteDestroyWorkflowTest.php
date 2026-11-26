@@ -273,8 +273,8 @@ it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from
 
     expect($operation->input['route_private_development'])->toBe(! $process);
     if ($process) {
-        expect(fn () => app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
+        expect(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
     } else {
-        expect(array_map(static fn ($step): string => $step->name, app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+        expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
     }
 })->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);
