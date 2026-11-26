@@ -92,7 +92,7 @@ The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-
 
 | Step | After | What it does |
 | --- | --- | --- |
-| `fetch` | | `instance.fetch_branch` with the default branch into the copy's mirror, with a read token minted for the send. |
+| `fetch` | | `instance.fetch_branch` with the default branch into the copy's mirror, with the read token minted at routing. |
 | `sync` | `fetch` | `instance.sync_base` with the head the fetch receipt returned, pinned in the step input. |
 | `clear` | `sync` | `instance.clear_base` removes the Node scratch and the copy's bundle folder. |
 | `clear_after_failure` | | The same cleanup as a failure step, after a failed `fetch` or `sync`, as the Swamp cleanup job runs after either. |

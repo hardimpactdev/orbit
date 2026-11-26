@@ -786,3 +786,56 @@ it('mints the read credential once per Operation and sends the same one again', 
     expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['input']['credential'])->toBe($first)
         ->and(Cache::has('tasks.sync.credential.'.$operation->id))->toBeTrue();
 });
+
+it('starts the unchanged Swamp workflow for a plan the engine does not cover, through the start itself', function (Closure $change): void {
+    [$group] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    $change($operation);
+    $socket = new class implements WebSocketClient
+    {
+        /** @var list<array<string, mixed>> */
+        public array $sent = [];
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->sent[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->sent);
+            if ($frame['type'] === 'workflow.run') {
+                throw new RuntimeException('the fixture ends here');
+            }
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'] ?? '', 'secretKey' => $frame['payload']['key'] ?? '', 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+
+    try {
+        app(StartSwampRun::class)->start($operation->refresh());
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->not->toBe('operation.target_busy');
+    }
+
+    $runs = array_values(array_filter($socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'));
+    expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-task-sync-copy')
+        ->and(Engine::owns($operation->refresh()))->toBeFalse()->and($bus->orders)->toBe([]);
+})->with([
+    'a numeric-string instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => (string) $o->input['instance_id']]])],
+    'no instance id' => [fn (Operation $o) => $o->update(['input' => Arr::except($o->input, ['instance_id'])])],
+    'an unknown instance id' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'instance_id' => 999_999]])],
+]);

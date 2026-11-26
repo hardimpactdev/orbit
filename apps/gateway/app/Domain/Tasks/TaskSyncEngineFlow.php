@@ -34,7 +34,8 @@ use LogicException;
  * `task:sync` of a task copy on the engine (docs/cli/task/engine/sync.mmd): the default branch into the copy's Node mirror
  * (`instance.fetch_branch`, which makes a missing mirror from the default's), then what the copy lacks of the pinned head as one
  * bundle, and only `refs/remotes/origin/<default>` moved (`instance.sync_base`), then the scratch cleared (`instance.clear_base`),
- * after a failure too. The read token is minted once per Operation and reaches only the Node, as a blob.
+ * after a failure too. The read token is minted at routing and reaches only the Node, as a blob; it is minted again only when the
+ * Gateway lost it before any order carried it.
  */
 final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefinition, EngineEvidence
 {
@@ -105,18 +106,16 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
     }
 
     /**
-     * Never two writers on one copy: while the kind runs on the engine, a sync whose copy's removal was admitted first is refused
-     * before it starts on either engine (StartSwampRun), and again in the bind's transaction. A removal admitted later finds the
-     * bound sync's Instance lock (StartInstanceDestroyAction).
+     * Never two writers on one copy: an engine-eligible sync whose copy's removal was admitted first is refused, never sent to Swamp,
+     * once routing admitted it and again in the bind's transaction (StartSwampRun). A removal admitted later finds the bound sync's
+     * Instance lock (StartInstanceDestroyAction). Plans the engine does not cover never get here: they take the unchanged Swamp path.
      */
     public static function assertCopyFree(Operation $operation): void
     {
-        $input = ValidatedData::object($operation->input);
-        $enabled = config('orbit.engine.kinds');
-        if ($operation->kind !== self::Kind || ! isset($input['copy']) || ! is_array($enabled) || ! in_array(self::Kind, $enabled, true)) {
+        if ($operation->kind !== self::Kind) {
             return;
         }
-        $instance = Instance::query()->find(ValidatedData::integer($input['instance_id'] ?? 0));
+        $instance = Instance::query()->find(ValidatedData::integer(self::intent($operation)['instance_id']));
         if ($instance === null || $instance->status === InstanceState::Removing) {
             throw new ResourceOperationException('operation.target_busy', 'The task copy is being removed.', 409);
         }
@@ -241,9 +240,10 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
     }
 
     /**
-     * The read credential that admission minted for this Operation, as one credential-store line; empty for a public repository read
-     * without one. Every send of the Operation sends this one; no send mints another. The Gateway keeps it, encrypted, for the
-     * journal's replay window or until the Operation ends; when its cache lost it, the order names the digest the Operation kept.
+     * The read credential of this Operation, as one credential-store line; empty for a public repository read without one. Once a
+     * `fetch` order was published, every send names that one credential: from the Gateway cache, or by the digest the Operation
+     * kept, and none mints again. Before the first publication no Node holds it, so a credential the cache lost is minted once
+     * more with the admitted access mode and uploaded with that first order.
      */
     /** @return array{content: string}|array{sha256: string} */
     private function credential(Operation $operation): array

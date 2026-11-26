@@ -79,10 +79,11 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
-            // A copy's sync never starts beside its removal, on either engine, while the kind runs on the engine.
-            TaskSyncEngineFlow::assertCopyFree($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
+                // An engine-eligible copy sync never starts beside its copy's removal: it is refused, not sent to Swamp. A plan the
+                // engine does not cover took the unchanged Swamp path above.
+                TaskSyncEngineFlow::assertCopyFree($operation);
                 $runId = EngineRun::runIdOf($operation->id);
                 if (Engine::receiptBound($operation->kind)) {
                     $lock = Engine::fenceKey($operation);
