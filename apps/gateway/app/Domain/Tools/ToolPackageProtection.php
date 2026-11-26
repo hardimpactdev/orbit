@@ -12,6 +12,9 @@ use App\Models\Node;
 
 final readonly class ToolPackageProtection
 {
+    /** The refusal of a write to a protected package, at admission and for queued work the upgrade admits again. */
+    public const string ErrorCode = 'tool.package_protected';
+
     public function __construct(private NodeBootstrapPackageCatalog $bootstrapPackages) {}
 
     /** @return list<string> */

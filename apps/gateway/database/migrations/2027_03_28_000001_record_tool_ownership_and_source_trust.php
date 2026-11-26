@@ -255,7 +255,7 @@ return new class extends Migration
             DB::table('operations')->where('id', $id)->update(['input' => json_encode($input, JSON_THROW_ON_ERROR)]);
         }
         foreach ($refused as $id => $toolId) {
-            DB::table('operations')->where('id', $id)->update(['status' => 'failed', 'error_code' => 'tool.package_protected', 'lock_key' => null,
+            DB::table('operations')->where('id', $id)->update(['status' => 'failed', 'error_code' => ToolPackageProtection::ErrorCode, 'lock_key' => null,
                 'finished_at' => now(), 'current_step' => null, 'failed_step' => null]);
             // The installing record a refused first install left never became a Tool.
             if ($toolId !== null) {

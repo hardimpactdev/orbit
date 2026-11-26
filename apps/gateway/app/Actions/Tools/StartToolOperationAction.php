@@ -185,7 +185,7 @@ final readonly class StartToolOperationAction
                 $sourceName = $tool?->aptRepository->name ?? $tool?->desired_repository['name'] ?? null;
                 $relinquish = $verb === 'remove' && ($roleOwned || $hostOwned || (! $owned && $sourceName === null));
                 if ($hostOwned && ! $relinquish) {
-                    $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : 'tool.package_protected');
+                    $this->refuse($verb === 'adopt' ? 'tool.adoption_unsupported' : ToolPackageProtection::ErrorCode);
                 }
                 $sourceOnly = $verb === 'remove' && ! $owned;
                 if (! $relinquish && ! $sourceOnly && $verb !== 'install' && $record !== null && $record->status !== LifecycleStatus::Active) {
