@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property ToolOperation|null $failed_operation
  * @property string|null $error_code
  * @property bool $owned
- * @property array{state?: int, owner?: int, version?: int}|null $receipts
+ * @property array{state?: int, owner?: int, version?: int, suspended?: array<string, mixed>}|null $receipts
  * @property-read Node $node
  * @property-read ToolManagerRecord $manager
  */
@@ -100,10 +100,39 @@ final class Tool extends Model
         }
     }
 
+    /**
+     * Sets aside the Tool's uninstall authority while an Operation's outcome is unknown, keeping what it was so that proof the Operation
+     * never reached the package can give it back (resume). The claim kept is the row's own, whatever its admission recorded.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    public function suspend(int $operation, array $state): void
+    {
+        $kept = ['operation' => $operation, 'owned' => $this->owned, 'status' => $this->status->value, 'failed_operation' => $this->failed_operation?->value,
+            'error_code' => $this->error_code];
+        $this->receive($operation, $state, owned: false);
+        $this->update(['receipts' => [...($this->receipts ?? []), 'suspended' => $kept]]);
+    }
+
+    /** Gives back what this Operation's suspension set aside, unless a newer receipt changed the row since. */
+    public function resume(int $operation): void
+    {
+        $suspended = $this->receipts['suspended'] ?? null;
+        if (! is_array($suspended) || ($suspended['operation'] ?? null) !== $operation) {
+            return;
+        }
+        $receipts = $this->receipts ?? [];
+        unset($receipts['suspended']);
+        $this->update(['receipts' => $receipts]);
+        $this->receive($operation, ['status' => ToolStatus::from(is_string($suspended['status'] ?? null) ? $suspended['status'] : ToolStatus::Installed->value),
+            'failed_operation' => is_string($suspended['failed_operation'] ?? null) ? ToolOperation::from($suspended['failed_operation']) : null,
+            'error_code' => $suspended['error_code'] ?? null], owned: ($suspended['owned'] ?? false) === true);
+    }
+
     /** No newer Operation's receipt changed this row: an Operation may still act on it as a whole, deleting it for example. */
     public function currentFor(int $operation): bool
     {
-        return max([0, ...array_values($this->receipts ?? [])]) <= $operation;
+        return max([0, ...array_filter(array_values($this->receipts ?? []), 'is_int')]) <= $operation;
     }
 
     /** @return BelongsTo<AptRepository, $this> */

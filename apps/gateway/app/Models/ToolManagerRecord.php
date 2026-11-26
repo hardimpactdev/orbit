@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $installed_version
  * @property string|null $failed_step
  * @property string|null $error_code
+ * @property int|null $receipt the newest Operation whose receipt changed the manager's state
  * @property-read Node $node
  * @property-read Collection<int, Tool> $tools
  */
@@ -36,7 +37,21 @@ final class ToolManagerRecord extends Model
         'installed_version',
         'failed_step',
         'error_code',
+        'receipt',
     ];
+
+    /**
+     * Applies a manager state one Operation's receipt shows, unless a newer Operation's receipt already changed it: a late setup failure
+     * never marks failed a manager a newer receipt proved active.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    public function receive(int $operation, array $state): void
+    {
+        if ($operation >= ($this->receipt ?? 0)) {
+            $this->update([...$state, 'receipt' => $operation]);
+        }
+    }
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo

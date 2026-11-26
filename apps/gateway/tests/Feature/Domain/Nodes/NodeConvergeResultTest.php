@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeConvergeResult;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\AptSourceTrust;
 use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
@@ -475,13 +476,13 @@ it('retains the deferred T3 receipt without crediting its role, then credits an 
 it('restores source trust its admission suspended only when the Tools phase did not run', function (bool $capturedVerified, ?string $failure, array $unchanged, array $observations, bool $verified): void {
     $source = ['name' => 'proof', 'uris' => ['https://example.test/apt'], 'suites' => ['1'], 'components' => ['main'],
         'signing_key' => ['url' => 'https://example.test/key.asc', 'fingerprint' => str_repeat('A', 40)]];
-    $record = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'proof', 'definition' => $source, 'verified' => false]);
+    // The source was verified (or not) when the convergence's admission claimed it.
+    $record = AptRepository::query()->create(['node_id' => $this->node->id, 'name' => 'proof', 'definition' => $source, 'verified' => $capturedVerified]);
     $tool = $this->tools[0];
     $intent = ['tools' => [['id' => $tool->id, 'manager_id' => $tool->tool_manager_id, 'package' => $tool->package, 'version_constraint' => null,
         'repository' => $source, 'repository_verified' => $capturedVerified]]];
-    // The admission recorded the source's trust before it suspected it.
-    $this->operation->update(['input' => ['_converge' => ['intent' => $intent], 'repository_admitted' => ['proof' => ['verified' => $capturedVerified,
-        'entries' => ['https://example.test/apt 1']]]]]);
+    $this->operation->update(['input' => ['_converge' => ['intent' => $intent]]]);
+    AptSourceTrust::claim($this->node->id, [$source], $this->operation->id);
     $tools = array_map(static fn (string $status): array => ['id' => $tool->id, 'status' => $status, 'installed_version' => null], $observations);
 
     app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed',

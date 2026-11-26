@@ -49,14 +49,15 @@ final readonly class ToolConvergeObservations
     }
 
     /**
-     * Records a convergence's Tool observations. Each field changes only if no newer receipt changed it (Tool::receive), and the desired
-     * state the plan captured applies only while no newer request for the Tool was admitted, since every admission sets it.
+     * Records a convergence's Tool observations. Each field changes only if no newer receipt changed it (Tool::receive); the desired state
+     * is the admission's (ToolConvergeIntent::admitDesired). An installed observation acquires the package only for a plan admitted under
+     * the ownership contract, whose helper refuses a present package for a Tool Orbit does not own (the plan names `owned`); for any other
+     * plan, a preceding-release one read after the upgrade, it is an observation.
      *
      * @param  array<int, array<string, mixed>>  $plans
      * @param  list<array<string, mixed>>  $observations
-     * @param  bool  $completed  whether the Tools phase finished: only then did every source write, refusal restore included, succeed
      */
-    public function record(Operation $operation, array $plans, array $observations, bool $completed): void
+    public function record(Operation $operation, array $plans, array $observations): void
     {
         $nodeId = ValidatedData::integer($operation->node_id);
         foreach ($observations as $observation) {
@@ -66,13 +67,6 @@ final readonly class ToolConvergeObservations
             if ($tool === null || $tool->package !== $plan['package'] || $tool->tool_manager_id !== $plan['manager_id']) {
                 continue;
             }
-            $newer = Operation::query()->where('id', '>', $operation->id)->where('node_id', $nodeId)->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove'])
-                ->where('input->tool_id', $id)->exists();
-            if (! $newer) {
-                $tool->update(['desired_version' => ValidatedData::nullableString($plan['desired_version'] ?? null),
-                    'version_constraint' => ValidatedData::nullableString($plan['version_constraint']),
-                    'desired_repository' => is_array($plan['repository'] ?? null) ? ValidatedData::object($plan['repository']) : null]);
-            }
             $installed = $observation['status'] === 'installed';
             $repair = $tool->installed_version !== null || ($plan['tool_status'] ?? null) === ToolStatus::Installed->value
                 || $tool->failed_operation === ToolOperation::Update;
@@ -80,45 +74,75 @@ final readonly class ToolConvergeObservations
                 'failed_operation' => $installed ? null : ($repair ? ToolOperation::Update : ToolOperation::Install),
                 'error_code' => $installed ? null : (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed'))];
             if ($installed && is_array($repository = $plan['repository'] ?? null)) {
-                $state['apt_repository_id'] = $completed ? AptSourceTrust::record($nodeId, ValidatedData::object($repository), $operation->id)->id
-                    : AptSourceTrust::suspect($nodeId, ValidatedData::object($repository))->id;
+                $state['apt_repository_id'] = AptSourceTrust::handle($nodeId, ValidatedData::object($repository))->id;
             }
-            // The helper refuses a present package for a Tool Orbit does not own, so an installed observation is Orbit's package.
-            $tool->receive($operation->id, $state, owned: $installed ? true : null,
+            $tool->receive($operation->id, $state, owned: $installed && array_key_exists('owned', $plan) ? true : null,
                 version: ValidatedData::nullableString($observation['installed_version']), observed: is_string($observation['installed_version']));
             if ($installed) {
-                ToolManagerRecord::query()->whereKey($tool->tool_manager_id)->where('status', '!=', LifecycleStatus::Active->value)
-                    ->update(['status' => LifecycleStatus::Active->value, 'failed_step' => null, 'error_code' => null]);
+                ToolManagerRecord::query()->find($tool->tool_manager_id)?->receive($operation->id, ['status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
             }
         }
     }
 
     /**
-     * A convergence report that arrived after its timeout counts as it would have on time, the Operation staying timed out: each Tool it
-     * verified installed is recorded; a Tools phase that finished proves its sources, one that never ran gives them back the trust they
-     * were admitted with, and a partial one proves nothing.
+     * How a convergence's Tools phase ended, the same on time or late (the Operation then stays timed out): a phase that finished
+     * records every observation, proves each planned source and forgets the orphans it removed; a phase that never ran wrote nothing; a
+     * partial one records the Tools it verified installed and leaves each source uncertain.
      *
      * @param  array<int, array<string, mixed>>  $plans
-     * @param  mixed  $observations  the report's Tool observations
+     * @param  list<array<string, mixed>>  $observations  validated observations
      * @param  string  $phase  `completed`, `skipped` or `partial`
      * @param  list<string>  $orphans  the sources no Tool named at admission, which a finished phase removed
      */
-    public function late(Operation $operation, array $plans, mixed $observations, string $phase, array $orphans): void
+    public function settle(Operation $operation, array $plans, array $observations, string $phase, array $orphans): void
     {
-        if ($phase === 'skipped') {
-            AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
-
-            return;
+        $nodeId = ValidatedData::integer($operation->node_id);
+        $this->record($operation, $plans, $phase === 'completed' ? $observations
+            : array_values(array_filter($observations, static fn (array $tool): bool => $tool['status'] === 'installed')));
+        // A finished phase proves a source through a Tool of it verified installed; one whose Tools all failed may have left it half written.
+        $installed = array_column(array_filter($observations, static fn (array $tool): bool => $tool['status'] === 'installed'), 'id');
+        foreach ([true, false] as $verified) {
+            $named = array_values(array_filter($plans, static fn (array $plan): bool => in_array($plan['id'], $installed, true) === $verified));
+            AptSourceTrust::settlePlans($nodeId, $named, $operation->id, match (true) {
+                $phase === 'skipped' => 'unwritten', $phase === 'completed' && $verified => 'proved', default => 'uncertain',
+            });
         }
-        try {
-            $tools = $this->validate($observations, $plans, $phase === 'completed');
-        } catch (ResourceOperationException) {
-            return;
-        }
-        $this->record($operation, $plans, $phase === 'completed' ? $tools : array_values(array_filter($tools, static fn (array $tool): bool => $tool['status'] === 'installed')),
-            $phase === 'completed');
         if ($phase === 'completed') {
-            AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), $orphans);
+            AptSourceTrust::forgetOrphans($nodeId, $orphans);
+        }
+    }
+
+    /**
+     * The phase of a convergence whose report could not be read: the run's own history shows whether its Tools step ran. A step it
+     * recorded as skipped wrote nothing; missing evidence is no proof.
+     *
+     * @param  array<string, mixed>  $run
+     */
+    public static function phaseFromRun(array $run): string
+    {
+        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                if (is_array($step) && ($step['name'] ?? null) === 'Converge tools') {
+                    return ($step['status'] ?? null) === 'skipped' ? 'skipped' : 'partial';
+                }
+            }
+        }
+
+        return 'partial';
+    }
+
+    /**
+     * A late report: its observations as validated for its phase, or none when it cannot be read.
+     *
+     * @param  array<int, array<string, mixed>>  $plans
+     * @return list<array<string, mixed>>
+     */
+    public function lateObservations(mixed $observations, array $plans, string $phase): array
+    {
+        try {
+            return $this->validate($observations ?? [], $plans, $phase === 'completed');
+        } catch (ResourceOperationException) {
+            return [];
         }
     }
 

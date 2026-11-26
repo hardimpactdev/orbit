@@ -192,7 +192,7 @@ final readonly class SwampCommandStep
             $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
         if (ExpireOperationAction::needsTerminalReceipt($operation)) {
-            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status'], $this->lateResult($operation, $run, $selector));
+            return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status'], $this->lateResult($operation, $run, $selector), $run);
         }
         try {
             $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
@@ -213,7 +213,7 @@ final readonly class SwampCommandStep
             return $current;
         });
         if (ExpireOperationAction::needsTerminalReceipt($current)) {
-            return app(ExpireOperationAction::class)->settle($current, $runId, $status, $this->lateResult($current, $run, $selector));
+            return app(ExpireOperationAction::class)->settle($current, $runId, $status, $this->lateResult($current, $run, $selector), $run);
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
             return $current;

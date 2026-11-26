@@ -155,19 +155,23 @@ On macOS and on Linux Nodes where the agent reports Homebrew, `brew-cask` accept
 
 ### Ownership
 
-A Tool owns its package only when Orbit acquired it: its own verified package write, an explicit adoption, or a convergence that installed the package for that Tool. Finding the package already present is an observation, not an acquisition. A verified write stays an acquisition even when a later step of the same run fails. Failures, refused or interrupted retries, and another Tool's repair of the shared manager never grant ownership.
+A Tool owns its package only when Orbit acquired it: its own verified package write, an explicit adoption, or a convergence that installed the package for that Tool. Finding the package already present is an observation, not an acquisition, also when a run succeeds without writing it.
 
-A removal that may have taken the package ends ownership. That covers a removal that verified the package gone, one that found it already absent, and one whose package step succeeded or was cut off before absence was confirmed. Any remaining cleanup is then the source's alone, and a retry never removes a replacement package installed since. Only a package step that never ran, or failed, keeps the claim.
+A convergence's installed observation acquires the package only when its plan was admitted under this contract, whose helper refuses a present package Orbit does not own. A preceding-release request or convergence read after the upgrade therefore observes, never acquires. A verified write stays an acquisition even when a later step of the same run fails. Failures, refused or interrupted retries, and another Tool's repair of the shared manager never grant ownership.
+
+A removal that may have taken the package ends ownership. That covers a removal that verified the package gone, one that found it already absent, and one whose package step ran at all before absence was confirmed: it succeeded, was cut off, or failed. `dpkg --remove` can remove the package and still exit nonzero when another package's trigger fails. Any remaining cleanup is then the source's alone, and a retry never removes a replacement package installed since. Only a package step that never ran keeps the claim. A source-only cleanup never reads or touches the package, so it changes no ownership.
 
 The run's own receipt decides, whatever its end. A failed or cancelled run that recorded a verified acquisition or a confirmed absence keeps it, and so does the Tool row it applies to.
 
 A run that ends after the Gateway timed its Operation out counts the same way. The Operation stays failed with `operation.timed_out`, but when the reconciler reads the run's terminal, its receipt counts for the Tool as it would have on time. A convergence report read late records each Tool it verified installed. A Tools phase that finished proves its sources, one that never ran gives them back the trust they were admitted with, and a partial one proves nothing.
 
-Receipts can arrive out of order, so each one changes only what no newer receipt changed. The Tool's state, its ownership and its installed version each keep the newest Operation whose receipt changed them. A newer request that changed nothing, because it was refused before its package step or cancelled before its run, never hides an older receipt. A plan's desired state applies only while no newer request for the Tool was admitted, and a removed Tool stays removed.
+Receipts can arrive out of order, so each one changes only what no newer receipt changed. The Tool's state, its ownership and its installed version each keep the newest Operation whose receipt changed them, and so does a Tool Manager's state. A version counts only when the receipt observed it: a refused decision that repeats its admitted version observed nothing. A newer request that changed nothing, because it was refused before its package step or cancelled before its run, never hides an older receipt.
+
+Desired state belongs to admissions: each direct request and each convergence sets it when admitted, and a mode switch sets it too, so no receipt sets it back. A removed Tool stays removed, and a receipt deletes a source record only while no newer Operation may have published it and no Tool links it.
 
 Until then, uncertainty grants nothing and keeps no right to remove a package. A timed-out removal leaves its Tool waiting for `tool:remove` without uninstall authority, because the package may already be gone and a replacement may follow. That holds even when the start reply that binds the run never arrived: a sent start is no proof that nothing ran. A retry, also after the target hold lapses, therefore cleans only the record and source.
 
-Only proof that the removal never reached its package gives the authority back, with the state the Tool was admitted from. That proof is a receipt showing the package step never ran, including one the reconciler reopens because its cancellation beat the deadline, or Swamp verifying that the lost start never became a run. A start whose reply was merely lost proves nothing.
+Only proof that the removal never reached its package gives the authority back, with the state the Tool had before the timeout set it aside, a preceding-release admission's included. That proof is a receipt showing the package step never ran, including one the reconciler reopens because its cancellation beat the deadline, or Swamp verifying that the lost start never became a run. A start whose reply was merely lost proves nothing.
 
 An install or convergence never takes over a present package for a Tool Orbit does not own. Both refuse with `tool.package_already_installed`, including after a first install that was cancelled, timed out or returned an unreadable result. Such an interrupted first install stays `installing` until you retry or remove it. You cannot update a Tool Orbit does not own.
 
@@ -205,21 +209,21 @@ Within one convergence, once a Tool of the source is verified installed, every l
 
 The Node keeps a record of each source Orbit may have on disk. Orbit creates it when it admits the first write that may publish the source, and deletes it only when a removal confirms the source and its preferences are gone.
 
-A write may change the key, source or preference on disk before it fails, is cancelled, times out, or returns an unreadable result. So admitting any direct write or removal that touches the source, or a convergence that includes it, marks the record unverified. These mark it verified again:
+A write may change the key, source or preference on disk before it fails, is cancelled, times out, or returns an unreadable result. So each admitted direct write or removal that touches the source, and each convergence that includes it, is an open writer of the record until its end settles it, and the record is not verified meanwhile. Each end settles as one of three:
 
-- Orbit's own successful write.
-- A run whose receipt shows each source write skipped, as after a refusal.
-- A run that failed before any source write, as at the key fetch or the removal plan.
-- A removal that repinned the survivors.
-- A convergence whose whole Tools phase succeeded and installed a Tool from the source.
+- Proved: Orbit's own successful write or a removal that repinned the survivors.
+- Proved too: a finished Tools phase that verified a Tool of the source installed.
+- Uncertain: a run that may have written, such as a partial phase.
+- Uncertain too: a failure after a source write, or an end without a readable receipt.
+- Unwritten: a run whose receipt shows each source write skipped, or that failed before any source write.
+- Unwritten too: a run cancelled before it started, or one Swamp verifies never started.
+- Unwritten too: a convergence whose run recorded its Tools step skipped.
 
-The last two give back the trust and entries the record had when the run was admitted, never more. So does a run that never started, cancelled before its run or verified absent from Swamp, for a convergence too. The record keeps the definition it was admitted with, so a definition the run only proposed gains nothing.
+The newest settled end decides. An older end, late or not, changes nothing a newer one settled, and an end that wrote nothing changes no trust: it only stops being a writer. The source is verified when the newest settled end proved the definition the record holds and no newer writer is open. Missing evidence is never a skip. A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
 
-Only the newest admission that may write a source changes its trust. An older receipt, late or a no-write cancellation, leaves alone a source that a newer admission may already have written. A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
+An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified. It settles the record unproven for the definition it names, newer than any Operation admitted before it, so no older end gives that definition trust.
 
-An older failure does not outlive a later verified write. An adoption reads a Node agent fact that may predate a write, so it never marks a source verified.
-
-Each convergence plan carries whether its source was verified at admission. A plan with an unproven source also carries the ID of the converge that captured it. So every `node:converge` runs the Tools phase until a write proves the source, however often its trust was lost since the last recorded digest. When the Tools phase does not run, the trust its admission suspended is given back.
+Each convergence plan carries whether its source was verified at admission. A plan with an unproven source also carries the ID of the converge that captured it. So every `node:converge` runs the Tools phase until a write proves the source, however often its trust was lost since the last recorded digest. A Tools phase that does not run wrote nothing.
 
 A removal cleans or repins a source as the record now defines it, so surviving members keep their current origin.
 

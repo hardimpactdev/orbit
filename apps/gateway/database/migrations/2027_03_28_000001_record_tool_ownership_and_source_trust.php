@@ -26,11 +26,16 @@ return new class extends Migration
         Schema::table('apt_repositories', static function (Blueprint $table): void {
             $table->boolean('verified')->default(true);
         });
+        Schema::table('tool_managers', static function (Blueprint $table): void {
+            // The newest Operation whose receipt changed the manager's state (ToolManagerRecord::receive).
+            $table->unsignedBigInteger('receipt')->nullable();
+        });
 
         Schema::table('apt_repositories', static function (Blueprint $table): void {
             $table->json('entries')->nullable();
-            // The newest admitted Operation that may write the source: only its receipt can change the trust (AptSourceTrust::current).
-            $table->unsignedBigInteger('suspected_by')->nullable();
+            // Each open Operation that may write the source, and its newest settled end (AptSourceTrust::settle).
+            $table->json('writers')->nullable();
+            $table->json('settled')->nullable();
         });
 
         // Per Tool: whether Orbit acquired it, how it became installed, the status its latest receipt left, and the installed version
@@ -131,7 +136,8 @@ return new class extends Migration
             }
             $entries = array_values(array_unique(array_filter($entries)));
             sort($entries, SORT_STRING);
-            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written, 'entries' => json_encode($entries, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
+            DB::table('apt_repositories')->where('id', $record->id)->update(['verified' => $written, 'entries' => json_encode($entries, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                'writers' => '[]', 'settled' => json_encode(['verified' => $written, 'definition' => $definition, 'entries' => $entries, 'operation' => 0], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
         }
     }
 
@@ -260,10 +266,13 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('apt_repositories', static function (Blueprint $table): void {
-            $table->dropColumn(['verified', 'entries', 'suspected_by']);
+            $table->dropColumn(['verified', 'entries', 'writers', 'settled']);
         });
         Schema::table('tools', static function (Blueprint $table): void {
             $table->dropColumn(['owned', 'receipts']);
+        });
+        Schema::table('tool_managers', static function (Blueprint $table): void {
+            $table->dropColumn('receipt');
         });
     }
 };

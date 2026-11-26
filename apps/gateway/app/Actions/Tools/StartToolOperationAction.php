@@ -104,14 +104,12 @@ final readonly class StartToolOperationAction
             }
 
             if ($repository !== null) {
-                // The record is the cleanup handle and trust state of a source this run may publish, remove or repin; what it held before
-                // comes back if the run writes nothing.
-                $input['repository_admitted'] = AptSourceTrust::snapshot($nodeId, [$repository]);
-                $input['repository_id'] = AptSourceTrust::suspect($nodeId, $repository)->id;
+                // The record is the cleanup handle and trust state of a source this run may publish, remove or repin.
+                $input['repository_id'] = AptSourceTrust::handle($nodeId, $repository)->id;
             }
             $operation = $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->scope()->operationLockKey($nodeId));
             if ($repository !== null && $operation->wasRecentlyCreated) {
-                AptSourceTrust::suspectAll($nodeId, [$repository], $operation->id);
+                AptSourceTrust::claim($nodeId, [$repository], $operation->id);
             }
             if ($verb !== 'remove' && $operation->wasRecentlyCreated) {
                 $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);

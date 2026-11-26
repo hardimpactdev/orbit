@@ -16,6 +16,21 @@ use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ToolConvergeIntent
 {
+    /**
+     * A convergence's admission sets each planned Tool's desired state, as a direct request's admission does, so the newest admitted
+     * request defines it and no older receipt, read late or not, sets it back.
+     *
+     * @param  list<array<string, mixed>>  $plans
+     */
+    public static function admitDesired(array $plans): void
+    {
+        foreach ($plans as $plan) {
+            Tool::query()->whereKey(ValidatedData::integer($plan['id']))->update(['desired_version' => ValidatedData::nullableString($plan['desired_version'] ?? null),
+                'version_constraint' => ValidatedData::nullableString($plan['version_constraint'] ?? null),
+                'desired_repository' => is_array($plan['repository'] ?? null) ? json_encode($plan['repository'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null]);
+        }
+    }
+
     public static function phaseSeconds(int $count): int
     {
         return min(180000, 500 + 2100 * $count);

@@ -29,21 +29,38 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
         return ['intent' => $snapshot['intent'] ?? [], 'execution_secrets' => $snapshot['execution_secrets'] ?? []];
     }
 
-    /** A report that arrived after the timeout still records each Tool it verified installed (ToolConvergeObservations::late). */
-    public function late(Operation $operation, string $status, array $result): void
+    /**
+     * A report read after the timeout counts as on time (ToolConvergeObservations::settle); without a readable report, the run's own
+     * history says whether its Tools step ran.
+     */
+    public function late(Operation $operation, string $status, array $result, array $run): void
     {
         $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
         $admitted = array_column(array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? $intent['tools'] : []), null, 'id');
-        $phase = match (data_get($result, 'phases.4.status')) {
-            'succeeded' => 'completed', 'unchanged', 'skipped' => 'skipped', default => 'partial',
-        };
-        $this->toolObservations->late($operation, $admitted, $result['tools'] ?? [], $phase, ValidatedData::stringList($intent['orphan_sources'] ?? []));
+        $phase = self::phase($result, $run);
+        $this->toolObservations->settle($operation, $admitted, $this->toolObservations->lateObservations($result['tools'] ?? [], $admitted, $phase), $phase,
+            ValidatedData::stringList($intent['orphan_sources'] ?? []));
     }
 
-    /** A convergence that never ran wrote nothing: each source gets back the trust it was admitted with. */
+    /**
+     * The Tools phase as the report shows it, or as the run's history does when there is no usable report.
+     *
+     * @param  array<string, mixed>  $result
+     * @param  array<string, mixed>  $run
+     */
+    private static function phase(array $result, array $run): string
+    {
+        return match (data_get($result, 'phases.4.status')) {
+            'succeeded' => 'completed', 'unchanged', 'skipped' => 'skipped', null => ToolConvergeObservations::phaseFromRun($run), default => 'partial',
+        };
+    }
+
+    /** A convergence that never ran wrote nothing to its sources. */
     public function neverRan(Operation $operation): void
     {
-        AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
+        $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
+        AptSourceTrust::settlePlans(ValidatedData::integer($operation->node_id), array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? array_values($intent['tools']) : []),
+            $operation->id, 'unwritten');
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -61,7 +78,15 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
         } catch (ResourceOperationException $error) {
             self::recordCiRunner($operation, $intent, false);
 
-            return app(DirectOperation::class)->project($operation, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], ['error_code' => $error->errorCode]);
+            // Without a usable report, the run's own history says whether its Tools step ran.
+            return DB::transaction(function () use ($operation, $data, $error, $admitted): Operation {
+                $locked = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
+                if (! $locked->status->terminal()) {
+                    $this->toolObservations->settle($locked, $admitted, [], self::phase([], ValidatedData::object($data['native_run'] ?? [])), []);
+                }
+
+                return app(DirectOperation::class)->project($locked, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], ['error_code' => $error->errorCode]);
+            });
         }
         $data = [...$data, 'status' => $result['outcome'], 'error_code' => $result['error_code'] ?? null];
 
@@ -70,15 +95,8 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->toolObservations->record($locked, $admitted, $tools, data_get($result, 'phases.4.status') === 'succeeded');
-            if (data_get($result, 'phases.4.status') === 'succeeded') {
-                // The Tools phase removed the files of the sources no Tool named at admission.
-                AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
-            }
-            if (in_array(data_get($result, 'phases.4.status'), ['unchanged', 'skipped'], true)) {
-                // The Tools phase did not run, so it wrote no source: the trust its admission suspended holds again.
-                AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
-            }
+            $this->toolObservations->settle($locked, $admitted, $tools, self::phase($result, ValidatedData::object($data['native_run'] ?? [])),
+                ValidatedData::stringList($intent['orphan_sources'] ?? []));
 
             $phases = $result['phases'];
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);

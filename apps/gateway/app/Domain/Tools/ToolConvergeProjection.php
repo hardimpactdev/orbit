@@ -21,11 +21,16 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         return ['intent' => $operation->input['intent'] ?? []];
     }
 
-    /** A report that arrived after the timeout still records each Tool it verified installed (ToolConvergeObservations::late). */
-    public function late(Operation $operation, string $status, array $result): void
+    /**
+     * A report read after the timeout counts as on time (ToolConvergeObservations::settle); without a readable report, the run's own
+     * history says whether its Tools step ran.
+     */
+    public function late(Operation $operation, string $status, array $result, array $run): void
     {
         $intent = ValidatedData::object($operation->input['intent']);
-        $this->observations->late($operation, $this->plans($intent), $result['tools'] ?? [], ($result['succeeded'] ?? null) === true ? 'completed' : 'partial',
+        $plans = $this->plans($intent);
+        $phase = ($result['succeeded'] ?? null) === true ? 'completed' : ToolConvergeObservations::phaseFromRun($run);
+        $this->observations->settle($operation, $plans, $this->observations->lateObservations($result['tools'] ?? [], $plans, $phase), $phase,
             ValidatedData::stringList($intent['orphan_sources'] ?? []));
     }
 
@@ -46,40 +51,47 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         return $plans;
     }
 
-    /** A convergence that never ran wrote nothing: each source gets back the trust it was admitted with. */
+    /** A convergence that never ran wrote nothing to its sources. */
     public function neverRan(Operation $operation): void
     {
-        AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
+        AptSourceTrust::settlePlans(ValidatedData::integer($operation->node_id), array_values($this->plans(ValidatedData::object($operation->input['intent']))), $operation->id, 'unwritten');
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        if (in_array($data['status'] ?? null, ['cancelled', 'interrupted'], true)) {
-            return $this->direct->project($operation, $data, []);
-        }
-        $result = ValidatedData::object($data['result'] ?? []);
         $intent = ValidatedData::object($operation->input['intent']);
         $plans = $this->plans($intent);
+        $run = ValidatedData::object($data['native_run'] ?? []);
+        // A cancelled or interrupted run, or a report that cannot be used, leaves the sources as its own history shows.
+        $unreported = fn (array $projected): Operation => DB::transaction(function () use ($operation, $projected, $plans, $run): Operation {
+            $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! $locked->status->terminal()) {
+                $this->observations->settle($locked, $plans, [], ToolConvergeObservations::phaseFromRun($run), []);
+            }
+
+            return $this->direct->project($locked, ...$projected);
+        });
+        if (in_array($data['status'] ?? null, ['cancelled', 'interrupted'], true)) {
+            return $unreported([$data, []]);
+        }
+        $result = ValidatedData::object($data['result'] ?? []);
         $completed = ($result['succeeded'] ?? null) === true;
         try {
             $tools = $this->observations->validate($result['tools'] ?? [], $plans, $completed);
         } catch (ResourceOperationException $error) {
-            return $this->direct->project($operation, [...$data, 'status' => 'failed', 'error_code' => $error->errorCode], []);
+            return $unreported([[...$data, 'status' => 'failed', 'error_code' => $error->errorCode], []]);
         }
         $changed = max(0, ValidatedData::integer($result['changed'] ?? 0));
         $cleanup = ($result['cleanup_complete'] ?? null) === true;
         $code = ! $completed || ! $cleanup ? 'operation.native_failed' : (in_array('failed', array_column($tools, 'status'), true) ? 'tool.converge_failed' : null);
         $success = $code === null && ($data['status'] ?? null) === 'succeeded';
 
-        return DB::transaction(function () use ($operation, $data, $plans, $tools, $code, $changed, $cleanup, $success, $completed, $intent): Operation {
+        return DB::transaction(function () use ($operation, $data, $plans, $tools, $code, $changed, $cleanup, $success, $completed, $intent, $run): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->observations->record($locked, $plans, $tools, $completed);
-            if ($completed) {
-                AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
-            }
+            $this->observations->settle($locked, $plans, $tools, $completed ? 'completed' : ToolConvergeObservations::phaseFromRun($run), ValidatedData::stringList($intent['orphan_sources'] ?? []));
 
             return $this->direct->project($locked, [...$data, 'status' => $success ? 'succeeded' : 'failed', 'error_code' => $success ? null : ($code ?? 'operation.native_failed')],
                 ['changed' => $changed, 'tools' => $tools, 'cleanup_complete' => $cleanup,

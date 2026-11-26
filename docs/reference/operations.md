@@ -86,7 +86,7 @@ Unbound admissions with zero attempts have a separate 600-second admission budge
 
 When a bound Operation reaches its deadline, the reconciler marks it `failed` with `operation.timed_out`, sets `overdue_since` (queuing one `operation:overdue-alert` webhook on `tasks`), and forwards `workflow.cancel` to Swamp. Target holds stay locked until Swamp confirms the bound run is terminal or 60 minutes elapse (`native_terminal_status: unproven`). If a bound run actually completed before its deadline and its terminal history arrives later, the reconciler reopens and projects the true outcome.
 
-A run that ended after its deadline stays timed out, but a projection that declares `DirectOperationLateResult` receives the run's terminal result once, as the reconciler records that end, so its records keep what the run proved. It also learns when an Operation never ran: a cancel before its run, or a lost start Swamp has no run for. Tool Operations and Tool and Node convergence use it ([Ownership](/reference/tools#ownership)).
+A run that ended after its deadline stays timed out, but a projection that declares `DirectOperationLateResult` receives the run's terminal result and its verified history once, as the reconciler records that end, so its records keep what the run proved. It also learns when an Operation never ran: a cancel before its run, or a lost start Swamp has no run for. Tool Operations and Tool and Node convergence use it ([Ownership](/reference/tools#ownership)).
 
 A [signed clone removal](/reference/gateway-engine#instancedestroy) does not release its Instance lock on a deadline. After dispatch only an executor result can settle it; the Gateway keeps asking for the result of the same step.
 

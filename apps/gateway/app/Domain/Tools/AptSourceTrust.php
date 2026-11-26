@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AptRepository;
+use App\Models\Operation;
 use App\Models\Tool;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
@@ -15,8 +16,9 @@ use Illuminate\Database\Eloquent\Builder;
  * (docs/reference/tools.md#source-trust).
  *
  * A record exists from the admission of the first write that may publish the source until a removal confirms both the source and its
- * preferences are gone, so a partial cleanup stays retryable. Admitting a write that may change the key, source or its removal clears
- * the proof; only Orbit's own successful write restores it. Adoption reads a Node agent fact that may predate a write, so it never does.
+ * preferences are gone, so a partial cleanup stays retryable. Each admitted Operation that may write it is an open writer until its end
+ * settles it (proved, uncertain or unwritten); the newest settled end decides the trust, for the definition it proved. Adoption reads a
+ * Node agent fact that may predate a write, so it never proves.
  */
 final class AptSourceTrust
 {
@@ -27,18 +29,138 @@ final class AptSourceTrust
     }
 
     /**
-     * An admitted write may publish this definition: the record proves nothing until a write succeeds, and every URI and suite the
-     * source may now have on disk joins those it already may have.
+     * The Node's record of a source, created for the first admission that may publish it (unproven, nothing settled yet): the cleanup
+     * handle an Operation carries.
      *
      * @param  array<string, mixed>  $definition
      */
-    public static function suspect(int $nodeId, array $definition): AptRepository
+    public static function handle(int $nodeId, array $definition): AptRepository
     {
-        $record = AptRepository::query()->firstOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => false, 'entries' => self::entries($definition)]);
-        $record->update(['verified' => false, 'entries' => self::possible($record, $definition)]);
+        return AptRepository::query()->firstOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
+            ['definition' => $definition, 'verified' => false, 'entries' => self::entries($definition), 'writers' => [],
+                'settled' => ['verified' => false, 'definition' => $definition, 'entries' => [], 'operation' => 0]]);
+    }
 
-        return $record;
+    /**
+     * An admitted Operation may write these sources: each becomes an open writer, so the source proves nothing until a newer end
+     * settles it, and every URI and suite it may publish is a possible entry.
+     *
+     * @param  list<array<string, mixed>>  $definitions
+     */
+    public static function claim(int $nodeId, array $definitions, int $operation): void
+    {
+        foreach ($definitions as $definition) {
+            $record = self::handle($nodeId, $definition);
+            $record->settled = self::settled($record);
+            $writers = $record->writers ?? [];
+            $writers[$operation] = self::entries($definition);
+            $record->writers = $writers;
+            self::recompute($record);
+        }
+    }
+
+    /**
+     * How an Operation's work on a source ended:
+     * - `proved`: Orbit's own write published `$definition` (a successful write, a repin, a finished convergence phase);
+     * - `uncertain`: it may have written (a failure after a source write, a partial phase, an unreadable or uncertain end);
+     * - `unwritten`: it wrote nothing (it never ran, or its receipt skipped every source write).
+     * Only the newest end settles the source: an older end, late or not, changes nothing a newer one settled (docs/reference/tools.md#source-trust).
+     *
+     * @param  array<string, mixed>|null  $definition
+     */
+    public static function settle(int $nodeId, string $name, int $operation, string $outcome, ?array $definition = null): void
+    {
+        $record = AptRepository::query()->where('node_id', $nodeId)->where('name', $name)->first();
+        if ($record === null) {
+            return;
+        }
+        $writers = $record->writers ?? [];
+        $wrote = $writers[$operation] ?? ($definition === null ? [] : self::entries($definition));
+        unset($writers[$operation]);
+        $record->writers = $writers;
+        $settled = self::settled($record);
+        $record->settled = $settled;
+        if ($outcome !== 'unwritten' && $operation > $settled['operation']) {
+            $record->settled = $outcome === 'proved' && $definition !== null
+                ? ['verified' => true, 'definition' => $definition, 'entries' => self::entries($definition), 'operation' => $operation]
+                : [...$settled, 'verified' => false, 'entries' => self::sorted([...$settled['entries'], ...ValidatedData::stringList($wrote)]), 'operation' => $operation];
+            if ($outcome === 'proved' && $definition !== null) {
+                $record->definition = $definition;
+            }
+        }
+        self::recompute($record);
+    }
+
+    /**
+     * Settles each source a convergence's plans named.
+     *
+     * @param  list<array<string, mixed>>  $plans
+     */
+    public static function settlePlans(int $nodeId, array $plans, int $operation, string $outcome): void
+    {
+        foreach (self::planned($plans) as $definition) {
+            self::settle($nodeId, self::name($definition), $operation, $outcome, $definition);
+        }
+    }
+
+    /**
+     * A last member's removal confirmed the source and its preferences gone: the record goes, unless a newer Operation may have
+     * published the source since or a Tool links it again.
+     */
+    public static function removed(int $recordId, int $operation): void
+    {
+        $record = AptRepository::query()->find($recordId);
+        if ($record === null) {
+            return;
+        }
+        $newer = array_filter(array_keys($record->writers ?? []), static fn (int|string $writer): bool => (int) $writer > $operation) !== [];
+        if (! $newer && $operation >= self::settled($record)['operation'] && ! Tool::query()->where('apt_repository_id', $record->id)->exists()) {
+            $record->delete();
+
+            return;
+        }
+        self::settle($record->node_id, $record->name, $operation, 'uncertain');
+    }
+
+    /**
+     * Trust holds only when the newest settled end proved the definition the record holds and no newer writer is open. An older open
+     * writer, a run lost past its hold, cannot outrank a newer proof. Every entry a settled end or an open writer may have published stays
+     * possible.
+     */
+    private static function recompute(AptRepository $record): void
+    {
+        $settled = self::settled($record);
+        $writers = $record->writers ?? [];
+        $newer = array_filter(array_keys($writers), static fn (int|string $writer): bool => (int) $writer > $settled['operation']) !== [];
+        $record->verified = $settled['verified'] && ! $newer && ToolDefinition::sameRepository($settled['definition'], $record->definition);
+        $record->entries = self::sorted([...$settled['entries'], ...self::entries($record->definition), ...array_merge(...array_values(array_map(ValidatedData::stringList(...), $writers)) ?: [[]])]);
+        $record->save();
+    }
+
+    /**
+     * The newest settled end; a record nothing settled yet (one the upgrade or an earlier write recorded) is settled as it stands.
+     *
+     * @return array{verified: bool, definition: array<string, mixed>, entries: list<string>, operation: int}
+     */
+    private static function settled(AptRepository $record): array
+    {
+        $settled = $record->settled ?? ['verified' => $record->verified, 'definition' => $record->definition,
+            'entries' => $record->entries ?? self::entries($record->definition), 'operation' => 0];
+
+        return ['verified' => ($settled['verified'] ?? false) === true, 'definition' => is_array($settled['definition'] ?? null) ? $settled['definition'] : $record->definition,
+            'entries' => ValidatedData::stringList($settled['entries'] ?? []), 'operation' => is_int($settled['operation'] ?? null) ? $settled['operation'] : 0];
+    }
+
+    /**
+     * @param  list<string>  $entries
+     * @return list<string>
+     */
+    private static function sorted(array $entries): array
+    {
+        $entries = array_values(array_unique($entries));
+        sort($entries, SORT_STRING);
+
+        return $entries;
     }
 
     /**
@@ -107,31 +229,6 @@ final class AptSourceTrust
     }
 
     /**
-     * The trust and possible entries of each named source as the Node records them before an admission suspects them, for the
-     * Operation's input: a run that wrote nothing gives them back (restoreAdmitted).
-     *
-     * @param  list<array<string, mixed>>  $definitions
-     * @return array<string, array{verified: bool, entries: list<string>}>
-     */
-    public static function snapshot(int $nodeId, array $definitions): array
-    {
-        $snapshot = [];
-        foreach (AptRepository::query()->where('node_id', $nodeId)->whereIn('name', array_map(self::name(...), $definitions))->get() as $record) {
-            $snapshot[$record->name] = ['verified' => $record->verified, 'entries' => self::possible($record, $record->definition)];
-        }
-
-        return $snapshot;
-    }
-
-    /** @param list<array<string, mixed>> $definitions the definitions an admitted Operation may publish, remove or repin */
-    public static function suspectAll(int $nodeId, array $definitions, int $operation): void
-    {
-        foreach ($definitions as $definition) {
-            self::suspect($nodeId, $definition)->update(['suspected_by' => $operation]);
-        }
-    }
-
-    /**
      * The definitions a convergence's plans may publish.
      *
      * @param  list<array<string, mixed>>  $plans
@@ -143,54 +240,25 @@ final class AptSourceTrust
     }
 
     /**
-     * Only the newest admitted Operation that may write a source changes its trust: an older receipt, late or not, describes a Node a
-     * newer write may already have changed.
-     */
-    public static function current(AptRepository $record, int $operation): bool
-    {
-        return $record->suspected_by === null || $operation >= $record->suspected_by;
-    }
-
-    /**
-     * An Operation that wrote nothing to its sources (it never started, was cancelled before its run, or its receipt skipped every source
-     * write) gives each the trust and entries it was admitted with. A source it first created stays unproven, and a definition it
-     * merely proposed gains nothing: the record still holds the definition it was admitted with.
+     * An adoption matched this definition against the Node agent's fact, which may predate a write: the record names it, unproven, and
+     * every entry earlier work may have left stays possible. It is a newer end than any Operation admitted before it.
      *
-     * @param  array<string, mixed>  $snapshot  the Operation's `repository_admitted`
+     * @param  array<string, mixed>  $definition
      */
-    public static function restoreAdmitted(int $nodeId, array $snapshot, int $operation): void
-    {
-        foreach ($snapshot as $name => $admitted) {
-            $record = AptRepository::query()->where('node_id', $nodeId)->where('name', $name)->first();
-            if ($record !== null && is_array($admitted) && self::current($record, $operation)) {
-                $record->update(['verified' => ($admitted['verified'] ?? false) === true, 'entries' => ValidatedData::stringList($admitted['entries'] ?? [])]);
-            }
-        }
-    }
-
-    /** @param array<string, mixed> $definition the definition Orbit's own successful write published; a newer admission keeps it unproven */
-    public static function record(int $nodeId, array $definition, int $operation): AptRepository
-    {
-        $record = AptRepository::query()->where('node_id', $nodeId)->where('name', self::name($definition))->first();
-        if ($record !== null && ! self::current($record, $operation)) {
-            return $record;
-        }
-
-        return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => true, 'entries' => self::entries($definition)]);
-    }
-
-    /** @param array<string, mixed> $definition the definition an adoption matched against the Node agent's fact */
     public static function adopt(int $nodeId, array $definition): AptRepository
     {
         $record = AptRepository::query()->where('node_id', $nodeId)->where('name', self::name($definition))->first();
         if ($record !== null && self::verified($record, $definition)) {
             return $record;
         }
+        $record ??= self::handle($nodeId, $definition);
+        $settled = self::settled($record);
+        $record->definition = $definition;
+        $record->settled = ['verified' => false, 'definition' => $definition, 'entries' => self::sorted([...$settled['entries'], ...self::possible($record, $definition)]),
+            'operation' => max($settled['operation'], ValidatedData::integer(Operation::query()->max('id') ?? 0))];
+        self::recompute($record);
 
-        // The fact may predate a write that published another definition: whatever that left stays a possible entry.
-        return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
-            ['definition' => $definition, 'verified' => false, 'entries' => self::possible($record, $definition)]);
+        return $record;
     }
 
     /**

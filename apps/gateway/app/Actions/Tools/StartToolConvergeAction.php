@@ -46,11 +46,11 @@ final readonly class StartToolConvergeAction
             $seconds = ToolConvergeIntent::phaseSeconds(count($tools));
             $intent = ['node_id' => $node->id, 'user' => $node->user, 'tools' => $tools, 'orphan_sources' => $orphans, 'tools_seconds' => $seconds, 'ssh' => $this->ssh->forNode($node)];
 
-            $sources = AptSourceTrust::planned($tools);
-            $operation = $this->start->execute('tool.converge', 'node_tools', $node->id, $node->id, ['intent' => $intent, 'run_budget_seconds' => $seconds + 200,
-                'repository_admitted' => AptSourceTrust::snapshot($node->id, $sources)], 'operator', $requestId, lockKey: "node_tools:{$node->id}:converge:{$scopes}");
+            $operation = $this->start->execute('tool.converge', 'node_tools', $node->id, $node->id, ['intent' => $intent, 'run_budget_seconds' => $seconds + 200],
+                'operator', $requestId, lockKey: "node_tools:{$node->id}:converge:{$scopes}");
             if ($operation->wasRecentlyCreated) {
-                AptSourceTrust::suspectAll($node->id, $sources, $operation->id);
+                AptSourceTrust::claim($node->id, AptSourceTrust::planned($tools), $operation->id);
+                ToolConvergeIntent::admitDesired($tools);
             }
 
             return $operation;

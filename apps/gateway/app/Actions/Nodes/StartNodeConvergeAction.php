@@ -91,9 +91,8 @@ final readonly class StartNodeConvergeAction
                     $snapshot['intent'] = $intent;
                 }
                 $tools = RouteExecutionProof::objects($snapshot['intent']['tools']);
-                $sources = AptSourceTrust::planned($tools);
-                $admittedSources = AptSourceTrust::snapshot($node->id, $sources);
-                AptSourceTrust::suspectAll($node->id, $sources, $operation->id);
+                AptSourceTrust::claim($node->id, AptSourceTrust::planned($tools), $operation->id);
+                ToolConvergeIntent::admitDesired($tools);
                 $toolSeconds = ToolConvergeIntent::phaseSeconds(count($tools));
                 $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic, ...($tools === [] ? [] : ['tools_seconds' => $toolSeconds])];
                 $snapshot['release_inputs'] = [
@@ -105,7 +104,7 @@ final readonly class StartNodeConvergeAction
                     $snapshot['held_digests'] = $held;
                 }
                 // Dispatch is deferred until this reservation transaction commits.
-                $operation->input = [...$operation->input, 'run_budget_seconds' => $toolSeconds + 6700, 'repository_admitted' => $admittedSources, '_converge' => [
+                $operation->input = [...$operation->input, 'run_budget_seconds' => $toolSeconds + 6700, '_converge' => [
                     ...$snapshot, 'tool_scope' => $toolScope, 'network' => ['hub_id' => $hub?->id, 'base' => $base],
                 ]];
                 $operation->save();

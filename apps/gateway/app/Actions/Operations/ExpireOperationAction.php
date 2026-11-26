@@ -166,14 +166,15 @@ final readonly class ExpireOperationAction
      * A timed-out Operation's projection receives the run's terminal result (`[]` when unreadable) once, as the end is recorded.
      *
      * @param  array<string, mixed>  $result
+     * @param  array<string, mixed>  $run
      */
-    public function settle(Operation $operation, string $runId, string $status, array $result = []): Operation
+    public function settle(Operation $operation, string $runId, string $status, array $result = [], array $run = []): Operation
     {
         if (! in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
             throw new \LogicException('A target hold requires terminal native proof.');
         }
 
-        $current = DB::transaction(function () use ($operation, $runId, $status, $result): Operation {
+        $current = DB::transaction(function () use ($operation, $runId, $status, $result, $run): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (! self::needsTerminalReceipt($current)) {
                 return $current;
@@ -181,7 +182,7 @@ final readonly class ExpireOperationAction
             app(DirectOperation::class)->assertRun($current, $runId);
             $projection = app(DirectOperation::class)->projection($current);
             if ($current->error_code === 'operation.timed_out' && $projection instanceof DirectOperationLateResult) {
-                $projection->late($current, $status, $result);
+                $projection->late($current, $status, $result, $run);
             }
             $timeout = $current->state['native_timeout'] ?? [];
             app(OperationStore::class)->change($current, [...(ExecutorFence::awaitsRunEnd($current) ? [] : ['lock_key' => null]),
