@@ -158,24 +158,88 @@ final class EngineBus implements MachineBus, NodeReadBus
         return ['sha256' => $digest];
     }
 
-    public function read(int $node, SignedExecutorOrder $order, float $seconds): ?array
+    public function read(int $node, SignedExecutorOrder $order, float $deadline): ?array
     {
-        try {
-            $reply = $this->client()->dispatch("orbit.node.{$node}.reads", $order->wire, max(0.001, $seconds));
-        } catch (LogicException $exception) {
-            if ($exception->getMessage() === 'Processing timeout') {
-                return null;
-            }
-            $this->client = null;
-            throw new RuntimeException('engine.read_failed', previous: $exception);
-        } catch (Throwable $exception) {
-            $this->client = null; // Reconnect on the next call.
-            throw new RuntimeException('engine.read_failed', previous: $exception);
+        $reply = $this->bounded($deadline, static fn (Client $client, float $left): mixed => $client->dispatch("orbit.node.{$node}.reads", $order->wire, $left),
+            'engine.read_failed');
+        if ($reply === null) {
+            return null;
         }
         $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
         $line = json_decode($body, true);
 
         return is_array($line) ? ValidatedData::object($line) : [];
+    }
+
+    public function actions(int $node, float $deadline): array
+    {
+        try {
+            $reply = $this->bounded($deadline, static fn (Client $client, float $left): mixed => $client->dispatch(
+                "\$JS.API.DIRECT.GET.KV_NODES.\$KV.NODES.n{$node}", '', $left), 'engine.read_failed');
+        } catch (Throwable) {
+            return [];
+        }
+        $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
+        $report = json_decode($body, true);
+
+        return is_array($report) && is_array($report['actions'] ?? null) ? array_values(array_filter($report['actions'], is_string(...))) : [];
+    }
+
+    public function content(int $node, string $content, float $deadline): array
+    {
+        $digest = hash('sha256', $content);
+        $ack = $this->bounded($deadline, static fn (Client $client): mixed => $client->getApi()->getStream('KV_CONTENT')
+            ->publish("\$KV.CONTENT.n{$node}.{$digest}", new Payload($content, [])), 'engine.publish_failed');
+        $stored = json_decode(is_object($ack) && isset($ack->body) ? (string) $ack->body : '', true);
+        if (! is_array($stored) || ! is_int($stored['seq'] ?? null)) {
+            throw new RuntimeException('engine.publish_unacknowledged');
+        }
+
+        return ['sha256' => $digest];
+    }
+
+    /**
+     * Runs one blocking exchange on a connection of its own whose every wait ends by `$deadline` (`hrtime` seconds): the
+     * connect, then the exchange with what is left. Null when the deadline passes first, also for an answer that came later;
+     * `$failure` for any other error.
+     *
+     * @param  Closure(Client, float): mixed  $exchange
+     */
+    private function bounded(float $deadline, Closure $exchange, string $failure): mixed
+    {
+        $left = static fn (): float => $deadline - hrtime(true) / 1e9;
+        if ($left() < 0.001) {
+            return null;
+        }
+        $host = GatewayBus::address();
+        if ($host === null) {
+            throw new RuntimeException('engine.bus_unconfigured');
+        }
+        $client = new Client(new Configuration(host: $host, port: GatewayBus::port(), nkey: GatewayBus::gatewaySeed(), reconnect: false, timeout: $left()));
+        try {
+            $client->ping();
+            if ($left() < 0.001) {
+                return null;
+            }
+            // The client's own waits read this timeout: each one ends by the deadline.
+            $client->configuration->timeout = $left();
+            $answer = $exchange($client, $left());
+
+            return $left() < 0 ? null : $answer;
+        } catch (LogicException $exception) {
+            if ($left() < 0.001 || in_array($exception->getMessage(), ['Processing timeout', 'Socket read timeout'], true)) {
+                return null;
+            }
+            throw new RuntimeException($failure, previous: $exception);
+        } catch (Throwable $exception) {
+            throw new RuntimeException($failure, previous: $exception);
+        } finally {
+            try {
+                $client->disconnect();
+            } catch (Throwable) {
+                // The connection is closed or never opened.
+            }
+        }
     }
 
     /**

@@ -21,6 +21,7 @@ sequenceDiagram
   Note over GW: Resolve the runtime<br/>Node · container · baseline
   %%> The recorded baseline, or the default's container for an Instance without one; the published commits (a task copy's publish)
   alt the Node reports the read action
+    %%> The 4 s budget counts from the read's start: the capability lookup (at most 1 s), the content publication and every send end by it, each on a connection of its own, and no reply is taken after it
     %%> No Operation, no lock and no engine decision: the Gateway signs one read order and waits for its reply within the request's 4 s budget
     GW->>EN: Signed read order<br/>machine bus · request
     EN->>N: Read the workspace<br/>read-only · 2 s budget
@@ -29,6 +30,7 @@ sequenceDiagram
     alt Incus reports Running
       N->>C: Git read in /srv/workspace<br/>as agent · no repository code
       %%> The fixed reader of workspace-git-read.py: status, untracked set, stashes, commits beyond the baseline and the published commits; no hooks, no fsmonitor, no write to the index
+      %%> Tighter than the SSH reader: every filter driver the configuration names gets empty clean, smudge and process commands, and status does not enter a submodule's work tree (--ignore-submodules=dirty), so no configured program runs; the Node's read also ends by the order's expiry less 0.5 s
       %%> A running copy is always read, also when an asleep marker is present: the marker never hides a dirty workspace
       C-->>N: Status, stashes, commits
       N-->>EN: clean or dirty<br/>counts · names · head
@@ -41,7 +43,7 @@ sequenceDiagram
     EN-->>GW: Reply
     opt the reply is lost
       GW->>EN: Read again<br/>fresh nonce · rest of the budget
-      %%> A read has no effect, so a second send is harmless. The first send waits 2.5 s (the Node's 2 s and 0.5 s for the reply); the one re-read gets what is left of the 4 s with a Node budget 0.5 s shorter. A reply still missing then is `unknown` `timeout`; an order that expired before it ran is `timeout` too
+      %%> A read has no effect, so a second send is harmless. The first send waits 2.5 s (the Node's 2 s and 0.5 s for the reply); the one re-read gets what is left of the 4 s with a Node budget 0.5 s shorter. A connection that closed after the order went out is a lost reply too. A reply still missing then is `unknown` `timeout`; an order the Node found expired, on arrival or before it ran, is `timeout` too; two sends that both failed to reach the bus are `unreachable`
     end
   else the Node lacks the action
     Note over GW: Read over pinned SSH<br/>ContainerWorkspaceRead

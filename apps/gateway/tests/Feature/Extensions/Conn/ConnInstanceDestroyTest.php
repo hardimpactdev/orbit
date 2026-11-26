@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\NodeReadBus;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Extensions\ExtensionStore;
@@ -372,7 +371,7 @@ function connSignedReads(array $actions, array $replies = []): object
 {
     $pair = sodium_crypto_sign_keypair();
     config(['orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($pair))]);
-    $reads = new class($replies) implements NodeReadBus
+    $reads = new class($replies, $actions) implements NodeReadBus
     {
         /** @var list<array{node: int, payload: array<string, mixed>, seconds: float}> */
         public array $sent = [];
@@ -380,12 +379,29 @@ function connSignedReads(array $actions, array $replies = []): object
         /** @var list<mixed> */
         public array $content = [];
 
-        public function __construct(public array $replies) {}
+        /** @var list<float> seconds each capability lookup was given */
+        public array $lookups = [];
 
-        public function read(int $node, SignedExecutorOrder $order, float $seconds): ?array
+        public function __construct(public array $replies, public array $reported) {}
+
+        public function actions(int $node, float $deadline): array
+        {
+            $this->lookups[] = $deadline - hrtime(true) / 1e9;
+
+            return $this->reported;
+        }
+
+        public function content(int $node, string $content, float $deadline): array
+        {
+            $this->content[] = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+
+            return ['sha256' => hash('sha256', $content)];
+        }
+
+        public function read(int $node, SignedExecutorOrder $order, float $deadline): ?array
         {
             $payload = json_decode((string) base64_decode(explode('.', $order->wire)[0], true), true, flags: JSON_THROW_ON_ERROR);
-            $this->sent[] = ['node' => $node, 'payload' => $payload, 'seconds' => $seconds];
+            $this->sent[] = ['node' => $node, 'payload' => $payload, 'seconds' => $deadline - hrtime(true) / 1e9];
             $reply = array_shift($this->replies);
             if ($reply instanceof Throwable) {
                 throw $reply;
@@ -397,15 +413,6 @@ function connSignedReads(array $actions, array $replies = []): object
             return $reply === null ? null : [...['operation' => $order->operation, 'action' => 'instance.work_read', 'target' => $payload['target']], ...$reply];
         }
     };
-    $bus = Mockery::mock(MachineBus::class);
-    $bus->shouldReceive('nodeActions')->andReturn($actions);
-    $bus->shouldReceive('nodeTargetActions', 'nodeFeatures')->andReturn([]);
-    $bus->shouldReceive('putContent')->andReturnUsing(function (int $node, string $content) use ($reads): array {
-        $reads->content[] = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
-
-        return ['sha256' => hash('sha256', $content)];
-    });
-    app()->instance(MachineBus::class, $bus);
     app()->instance(NodeReadBus::class, $reads);
 
     return $reads;
@@ -461,7 +468,8 @@ it('answers unknown from a signed read only for a real read failure', function (
     'expired before it ran' => [['status' => 'failed', 'code' => 'executor.order_expired'], 'timeout'],
     'refused input' => [['status' => 'failed', 'code' => 'instance.work_read_input_invalid'], 'unreachable'],
     'refused order' => [['status' => 'refused', 'reason' => 'unknown_target'], 'unreachable'],
-    'send failed' => [new RuntimeException('engine.read_failed'), 'unreachable'],
+    'expired on arrival' => [['status' => 'refused', 'reason' => 'expired'], 'timeout'],
+
 ]);
 
 it('reads again with a fresh nonce when a reply is lost, and gives timeout when none comes in the budget', function (): void {
@@ -475,6 +483,30 @@ it('reads again with a fresh nonce when a reply is lost, and gives timeout when 
     $reads = connSignedReads(['instance.work_read'], [null, null, connWorkAnswer()]);
     connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
     expect($reads->sent)->toHaveCount(2);
+});
+
+it('reads once more when the connection closes after the order went out, and is unreachable when no send reaches the bus', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), connWorkAnswer(modified: 1)]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'dirty');
+    expect($reads->sent)->toHaveCount(2)->and($reads->sent[0]['payload']['nonce'])->not->toBe($reads->sent[1]['payload']['nonce']);
+
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), new RuntimeException('engine.read_failed')]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'unreachable');
+    expect($reads->sent)->toHaveCount(2);
+
+    $reads = connSignedReads(['instance.work_read'], [new RuntimeException('engine.read_failed'), null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+});
+
+it('keeps the capability lookup and every send inside the four-second request budget', function (): void {
+    $instance = connRemovalClone();
+    $reads = connSignedReads(['instance.work_read'], [null, null]);
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.reason', 'timeout');
+    expect($reads->lookups[0])->toBeLessThanOrEqual(1.0)
+        ->and($reads->sent[0]['seconds'])->toBeLessThanOrEqual(2.5)
+        ->and($reads->sent[1]['seconds'])->toBeLessThanOrEqual(4.0)
+        ->and($reads->sent[0]['payload']['expires_ms'] - now()->getTimestampMs())->toBeLessThanOrEqual(4000);
 });
 
 it('sends a recorded baseline and published commits as content the order names by hash', function (): void {

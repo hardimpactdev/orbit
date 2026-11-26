@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Domain\Engine\MachineBus;
 use App\Domain\Engine\NodeReadBus;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -74,8 +73,11 @@ final readonly class ContainerWorkspaceRead
     /** A lost reply is read once more: the first send and one fresh send. */
     private const int Sends = 2;
 
+    /** The most of the budget the Node's capability report may take. */
+    private const float LookupSeconds = 1.0;
+
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts,
-        private MachineBus $bus, private NodeReadBus $reads) {}
+        private NodeReadBus $reads) {}
 
     /**
      * `$published`: commits origin holds that no remote ref in the workspace names, such as the commit a task copy's publish pushed.
@@ -95,8 +97,10 @@ final readonly class ContainerWorkspaceRead
             $baseline = $runtime->workspace_baseline;
             $default = $baseline === null && $instance->name !== DefaultInstanceName::Name ? $this->defaultRuntime($instance) : null;
             $baseline = $instance->name === DefaultInstanceName::Name ? null : $baseline;
-            if (in_array(self::ReadAction, $this->bus->nodeActions($instance->node_id), true)) {
-                $answer = $this->signed($instance, $runtime, $default, $baseline, $published);
+            // The signed read's whole request budget counts from here: the capability lookup is part of it.
+            $deadline = $started / 1e9 + self::RequestSeconds;
+            if (in_array(self::ReadAction, $this->reads->actions($instance->node_id, min($deadline, hrtime(true) / 1e9 + self::LookupSeconds)), true)) {
+                $answer = $this->signed($instance, $runtime, $default, $baseline, $published, $deadline);
             } else {
                 $arguments = ['read', $runtime->incus_project, $runtime->container_name, RuntimeHibernation::asleepPath(RuntimeHibernation::key($instance->id))];
                 if ($default !== null) {
@@ -148,48 +152,62 @@ final readonly class ContainerWorkspaceRead
     }
 
     /**
-     * The signed read: one order to the Node's executor, and its reply within the request's budget. A lost reply is read once
-     * more with a fresh nonce when the budget allows it; a reply still missing at its end is `timeout`. The read changes nothing, so a
-     * second send is harmless. Null, which reads as `unreachable`, for a send or a reply that failed.
+     * The signed read: one order to the Node's executor, and its reply by `$deadline` (`hrtime` seconds, the request's budget).
+     * A reply that is lost, also by a connection that closed after the order went out, is read once more with a fresh nonce
+     * when the budget allows it; a reply still missing at its end is `timeout`, and no reply is taken after it. The read changes
+     * nothing, so a second send is harmless. Null, which reads as `unreachable`, when no send reached the bus or a line is not
+     * this read's answer.
      *
      * @param  array<string, mixed>|null  $baseline
      * @param  list<string>  $published
      * @return array<string, mixed>|null
      */
-    private function signed(Instance $instance, InstanceRuntime $runtime, ?InstanceRuntime $default, ?array $baseline, array $published): ?array
+    private function signed(Instance $instance, InstanceRuntime $runtime, ?InstanceRuntime $default, ?array $baseline, array $published, float $deadline): ?array
     {
         $node = $instance->node_id;
         $input = ['project' => $runtime->incus_project, 'name' => $runtime->container_name,
             ...($default === null ? [] : ['default' => ['project' => $default->incus_project, 'name' => $default->container_name]])];
-        $deadline = hrtime(true) / 1e9 + self::RequestSeconds;
+        $now = static fn (): float => hrtime(true) / 1e9;
+        $failed = 0;
         try {
             $signer = ExecutorOrderSigner::fromConfig();
             if ($baseline !== null || $published !== []) {
                 // A baseline may name up to 2,000 untracked files: the order names it by its hash.
-                $input['state'] = ['blob' => $this->bus->putContent($node, json_encode(['baseline' => $baseline, 'published' => $published],
-                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))];
-            }
-            for ($send = 0; $send < self::Sends && ($left = $deadline - hrtime(true) / 1e9) > self::ReplySeconds; $send++) {
-                $budget = min(self::BudgetSeconds, $left - self::ReplySeconds);
-                $order = $signer->signRead($node, self::ReadAction, (string) $instance->id, [...$input, 'budget_ms' => max(1, (int) floor($budget * 1000))],
-                    (int) ceil($left * 1000));
-                $line = $this->reads->read($node, $order, min($left, $budget + self::ReplySeconds));
-                if ($line !== null) {
-                    return self::answer($line, $order->operation, (string) $instance->id);
-                }
+                $input['state'] = ['blob' => $this->reads->content($node, json_encode(['baseline' => $baseline, 'published' => $published],
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), $deadline)];
             }
         } catch (Throwable $error) {
-            Log::warning('A signed workspace read failed.', ['instance_id' => $instance->id, 'error' => $error::class.': '.mb_strcut($error->getMessage(), 0, 200)]);
+            Log::warning('A signed workspace read could not start.', ['instance_id' => $instance->id, 'error' => $error::class.': '.mb_strcut($error->getMessage(), 0, 200)]);
 
             return null;
         }
+        $sends = 0;
+        while ($sends < self::Sends && ($left = $deadline - $now()) > self::ReplySeconds) {
+            $sends++;
+            $budget = min(self::BudgetSeconds, $left - self::ReplySeconds);
+            try {
+                $order = $signer->signRead($node, self::ReadAction, (string) $instance->id, [...$input, 'budget_ms' => max(1, (int) floor($budget * 1000))],
+                    (int) ceil($left * 1000));
+                $line = $this->reads->read($node, $order, min($deadline, $now() + $budget + self::ReplySeconds));
+            } catch (Throwable $error) {
+                // The connection may have closed after the order went out: a lost reply, which the next send reads again.
+                Log::warning('A signed workspace read lost its connection.', ['instance_id' => $instance->id, 'send' => $sends,
+                    'error' => $error::class.': '.mb_strcut($error->getMessage(), 0, 200)]);
+                $failed++;
 
-        return ['state' => 'unknown', 'reason' => 'timeout'];
+                continue;
+            }
+            if ($line !== null) {
+                return self::answer($line, $order->operation, (string) $instance->id);
+            }
+        }
+
+        return $sends > 0 && $failed === $sends ? null : ['state' => 'unknown', 'reason' => 'timeout'];
     }
 
     /**
-     * The reader's answer from an executor's result line for this read; an order that expired before it ran is `timeout`, and
-     * any other line null.
+     * The reader's answer from an executor's result line for this read. An order that expired, whether the Node found it expired
+     * on arrival (`refused` `expired`) or before it ran (`executor.order_expired`), is `timeout`; any other line is null.
      *
      * @param  array<string, mixed>  $line
      * @return array<string, mixed>|null
@@ -199,10 +217,11 @@ final readonly class ContainerWorkspaceRead
         if (($line['operation'] ?? null) !== $operation || ($line['target'] ?? null) !== $target || ($line['action'] ?? null) !== self::ReadAction) {
             return null;
         }
-        if (($line['status'] ?? null) === 'failed' && ($line['code'] ?? null) === 'executor.order_expired') {
+        $status = $line['status'] ?? null;
+        if (($status === 'failed' && ($line['code'] ?? null) === 'executor.order_expired') || ($status === 'refused' && ($line['reason'] ?? null) === 'expired')) {
             return ['state' => 'unknown', 'reason' => 'timeout'];
         }
-        if (($line['status'] ?? null) !== 'output' || ! is_string($line['stdout'] ?? null)) {
+        if ($status !== 'output' || ! is_string($line['stdout'] ?? null)) {
             return null;
         }
         try {
