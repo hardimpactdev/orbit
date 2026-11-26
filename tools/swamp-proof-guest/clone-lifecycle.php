@@ -5,14 +5,9 @@ declare(strict_types=1);
 use App\Domain\Engine\NodeBusAccess;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\NodeExecutorInput;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\EngineBus;
-use App\Models\Instance;
-use App\Models\Task;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Support\Facades\DB;
 
 chdir(__DIR__.'/../../apps/gateway');
 require 'vendor/autoload.php';
@@ -50,24 +45,6 @@ if ($mode === 'configuration') {
     $node = (int) $argv[2];
     $report = $request('$JS.API.DIRECT.GET.KV_NODES.$KV.NODES.n'.$node);
     $result = ['version' => $report['version'] ?? null, 'actions' => $report['actions'] ?? []];
-} elseif ($mode === 'task-copy' && count($argv) === 5 && ctype_digit($argv[2]) && ctype_digit($argv[3]) && preg_match('/\A[0-9a-f]{40}\z/', $argv[4]) === 1) {
-    // Makes a ready disposable clone the running copy of a new external group, as task:start leaves it.
-    $app->make(TaskExtensionState::class)->enable();
-    $copy = Instance::query()->findOrFail((int) $argv[2]);
-    if ($copy->project_id !== (int) $argv[3] || $copy->task_workspace_owner_id !== null) {
-        throw new RuntimeException('Only an unowned clone of the proof project becomes a task copy.');
-    }
-    $group = DB::transaction(static function () use ($copy, $argv): Task {
-        $group = Task::query()->create(['project_id' => $copy->project_id, 'title' => 'Sync proof', 'brief' => 'Sync proof', 'status' => TaskGroupStatus::Running, 'orchestration' => 'external']);
-        $copy->forceFill(['branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => $argv[4]])->save();
-        $group->update(['taskable_type' => $copy->getMorphClass(), 'taskable_id' => $copy->id]);
-
-        return $group;
-    });
-    $result = ['group' => $group->id, 'branch' => 'task-'.$group->id];
-} elseif ($mode === 'task-copy-remove' && count($argv) === 4 && ctype_digit($argv[2]) && ctype_digit($argv[3])) {
-    // Removes a group the fixture made, after its copy is gone, so the proof project can go.
-    $result = ['removed' => Task::query()->whereKey((int) $argv[2])->where('project_id', (int) $argv[3])->where('title', 'Sync proof')->delete()];
 } elseif (in_array($mode, ['pending-order', 'drop-receipt'], true) && in_array(count($argv), [5, 7], true)
     && ctype_digit($argv[2]) && ctype_digit($argv[3]) && preg_match('/\A[0-9][0-9a-z:-]*\z/', $argv[4]) === 1) {
     [$node, $operation, $target] = array_slice($argv, 2, 3);

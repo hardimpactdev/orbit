@@ -613,15 +613,12 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                 self.systemctl('gateway', 'restart', *APP_SERVICES)
                 admitted = self.admitted('DELETE', f'instances/{self.default}', {'force': True}, 'seed-cleanup')
                 self.terminal(int(admitted['id']))
-            self.remove_project()
+            code, _data, error = self.api('DELETE', f'projects/{self.project}')
+            require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'project_deleted': self.project, 'seed_deleted': self.default,
                                 'clones_absent': [clone['instance'] for clone in self.clones.values()], 'temporary_services_removed': True})
-
-    def remove_project(self):
-        code, _data, error = self.api('DELETE', f'projects/{self.project}')
-        require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
 
     def uninstall(self):
         self.guest(self.node, 'sh', '-c', '''
@@ -666,18 +663,39 @@ class SyncLane(CloneLane):
         self.syncs = {}
         super().setup(repository, branch)
 
-    def remove_project(self):
-        for group in self.groups.values():
-            self.helper('task-copy-remove', group, self.project)
-        super().remove_project()
+    def cleanup(self):
+        # Groups first: a discarding cancel ends each group and removes its copy, so the Project can go.
+        if self.installed and not self.closed:
+            self.set_capability(True)
+            for name, group in self.groups.items():
+                admitted = self.admitted('POST', f'tasks/{group}/cancel', {'discard': True}, name + '-cancel')
+                self.terminal(int(admitted['id']), seconds=400)
+                instance = self.clones[name]['instance']
+                require(self.runtime(instance) is None and not any(self.resources(instance).values()), f'copy {instance} outlived its cancelled group')
+                del self.clones[name]
+        super().cleanup()
 
     def copy(self, name, sibling):
         self.create(sibling, 'engine')
-        instance = self.create(name, 'engine')['instance']
-        start = self.work(instance, 'rev-parse', 'HEAD')
-        bound = self.helper('task-copy', instance, self.project, start)
-        self.groups[name] = bound['group']
-        self.work(instance, 'switch', '--quiet', '-c', bound['branch'])
+        self.set_capability(True)
+        code, group, error = self.api('POST', 'tasks', {'project_id': self.project, 'title': 'Sync proof ' + name, 'brief': 'Task-copy sync proof.',
+                                                        'status': 'todo', 'orchestration': 'external'})
+        require(code == 201, f'task group admission: HTTP {code} {error}')
+        group = int(group['id'])
+        self.groups[name] = group
+        started = time.monotonic()
+        operation = int(self.admitted('POST', f'tasks/{group}/start', {}, name + '-start')['id'])
+        self.terminal(operation, seconds=600)
+        found = self.db(f"""SELECT i.id, i.branch, i.starting_commit, i.task_workspace_owner_id, r.clone_source_instance_id FROM tasks t
+            JOIN instances i ON i.id=t.taskable_id JOIN instance_runtimes r ON r.instance_id=i.id WHERE t.id={group}""")
+        require(found and found[0]['task_workspace_owner_id'] == group and found[0]['branch'] == f'task-{group}'
+                and found[0]['clone_source_instance_id'] == self.default, f'task:start {operation} did not leave the group its own copy')
+        instance = int(found[0]['id'])
+        self.clones[name] = {'instance': instance, 'create': operation}
+        wait_for(lambda: self.api('GET', f'instances/{instance}')[1]['status'] == 'active', f'copy {instance} is not active', 120, 2)
+        start_ms = round((time.monotonic() - started) * 1000)
+        local = f'task-{group}'
+        require(self.work(instance, 'symbolic-ref', 'HEAD') == 'refs/heads/' + local, f'copy {instance} is not on {local}')
         self.work(instance, 'branch', 'proof-local', 'HEAD~1')
         tracked = self.work(instance, 'ls-files').splitlines()[0]
         self.workfile(instance, 'proof-stashed.txt', 'stashed\n')
@@ -688,9 +706,13 @@ class SyncLane(CloneLane):
         self.workfile(instance, 'proof-untracked.txt', 'untracked\n')
         self.stale(instance)
         state = self.state(instance)
-        require(state['stash'] and state['untracked'] and state['head'] == 'refs/heads/' + bound['branch'], 'the copy work fixture is incomplete')
-        self.record(name + '-copy', {'instance': instance, 'group': bound['group'], 'start': start, 'state': state,
+        require(state['stash'] and state['untracked'] and state['staged'] != state['unstaged'], 'the copy work fixture is incomplete')
+        self.record(name + '-copy', {'instance': instance, 'group': group, 'start_operation': self.operation_row(operation),
+                                     'request_through_start_ms': start_ms, 'copy': found[0], 'state': state,
                                      'sibling': self.clones[sibling]['instance']})
+
+    def operation_row(self, operation):
+        return self.db(f"SELECT id,kind,status,error_code,json_extract(state,'$.swamp_run_id') AS run FROM operations WHERE id={operation}")[0]
 
     def container(self, instance, *argv, user='agent', stdin=None):
         prefix = ['runuser', '-u', user, '--'] if user else []
