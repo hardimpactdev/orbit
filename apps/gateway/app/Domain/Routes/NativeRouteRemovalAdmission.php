@@ -55,7 +55,7 @@ final readonly class NativeRouteRemovalAdmission
      * steps require on the Node (RouteDestroyEngineFlow). The plan's own publication states keep only the changed blocks.
      *
      * @param  array<string, mixed>  $plan
-     * @return array<string, array<string, string>>
+     * @return array<int, array<string, string>>
      */
     private function guards(array $plan): array
     {
@@ -70,7 +70,7 @@ final readonly class NativeRouteRemovalAdmission
             $before = app(NativeRoutePublicationInput::class)->snapshot($node, $sites, true);
             $caddy = ValidatedData::object($before['caddy'])['content'] ?? null;
             $dns = is_array($before['dns']) ? $before['dns'] : null;
-            $guards[(string) $id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null,
+            $guards[$id] = array_filter(['caddy' => is_string($caddy) ? hash('sha256', $caddy) : null,
                 'records' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['records'])),
                 'catalog' => $dns === null ? null : hash('sha256', ValidatedData::string($dns['catalog']))], is_string(...));
         }

@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Engine\EngineRun;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteWorkloadPreparation;
+use App\Domain\Routes\RouteDestroyEngineFlow;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -236,15 +239,15 @@ it('records the whole-file digests the engine guards with, and builds its steps 
     config(['orbit.engine.kinds' => ['route.destroy']]);
     [$node] = destroyFleet();
     $route = destroyFixture($node, 'proxy', 'proxy');
-    $before = app(App\Domain\Routes\NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true);
+    $before = app(NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true);
     [$operation] = destroyAdmission($route);
 
     expect($operation->input['route_guards'][$node->id])->toBe(['caddy' => hash('sha256', $before['caddy']['content']),
         'records' => hash('sha256', $before['dns']['records']), 'catalog' => hash('sha256', $before['dns']['catalog'])]);
-    $flow = app(App\Domain\Routes\RouteDestroyEngineFlow::class);
+    $flow = app(RouteDestroyEngineFlow::class);
     $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
     expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
-        ->and($flow->input($operation, "withdraw-{$node->id}", new App\Domain\Engine\EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
+        ->and($flow->input($operation, "withdraw-{$node->id}", new EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
         ->toBe(hash('sha256', $before['caddy']['content']));
 });
 

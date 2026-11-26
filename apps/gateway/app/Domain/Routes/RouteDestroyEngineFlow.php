@@ -250,7 +250,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     {
         $guards = is_array($operation->input['route_guards'] ?? null) ? $operation->input['route_guards'] : [];
 
-        return is_array($guards[$node] ?? null) ? $guards[$node] : throw new EngineUnsupported("Node {$node} has no captured file digests.");
+        return is_array($guards[$node] ?? null) ? ValidatedData::object($guards[$node]) : throw new EngineUnsupported("Node {$node} has no captured file digests.");
     }
 
     /** @param array<string, mixed> $guard */

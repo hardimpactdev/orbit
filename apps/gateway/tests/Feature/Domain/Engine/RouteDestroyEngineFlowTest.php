@@ -26,6 +26,7 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
             'php_tests' => [['node_id' => 3, 'argv' => ['/usr/sbin/php-fpm8.4', '-t']]], 'php_reloads' => [['node_id' => 3, 'unit' => 'php8.4-fpm.service']], 'site_nodes' => [3]],
         'lan_remove' => [], 'ingress_close' => [], 'firewall_nodes' => [], 'check_nodes' => [3],
     ], ...$plan];
+
     return (new Operation)->forceFill(['id' => 51, 'kind' => 'route.destroy', 'node_id' => 3, 'input' => [...[
         'route_id' => 9, 'offline' => false, 'route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]]],
         'route_lifecycle' => ['plan' => $plan],
