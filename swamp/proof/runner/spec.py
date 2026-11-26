@@ -50,6 +50,7 @@ STEPS = {
     'clone_create': (('act',), {'name', 'via'}, set()),
     'clone_destroy': (('act',), {'name', 'via', 'sibling'}, {'fault'}),
     'clone_compare': (('expect',), {'engine', 'swamp'}, set()),
+    'clone_work': (('act',), {'name', 'quiet'}, set()),
     'clone_cleanup': (('expect',), set(), set()),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'waits', 'cases', 'spread', 'parallel'}

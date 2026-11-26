@@ -28,6 +28,8 @@ APP_SERVICES = ('php8.5-fpm', 'orbit-gateway-horizon', 'orbit-gateway-schedule')
 RUSTUP = 'https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init'
 RUSTUP_SHA256 = 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55'
 PROOF_RUST = '1.100.0'
+WORK_CA = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'
+WORK_SAMPLES = 12
 
 
 class ProofFailure(Exception):
@@ -594,6 +596,132 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
             row['name']: round((datetime.fromisoformat(row['finished_at']) - datetime.fromisoformat(row['started_at'])).total_seconds() * 1000)
             for row in legacy['native_steps'] if row['name'] in named and row['started_at'] and row['finished_at']}
         self.record('comparison', comparison)
+
+    def conn(self, method, path, body=None, key=None):
+        """A Conn call from the owning Node (app-dev), as Conn's Remove makes it; the answer, its HTTP code and its wall time."""
+        argv = ['curl', '--noproxy', '*', '--silent', '--show-error', '--max-time', '20', '--cacert', WORK_CA, '--request', method,
+                '--write-out', '\n%{http_code} %{time_total}', f'https://{self.gateway_address}/api/v1/conn/{path}']
+        if body is not None:
+            argv += ['--header', 'Content-Type: application/json', '--data', json.dumps(body)]
+        if key is not None:
+            argv += ['--header', 'Idempotency-Key: ' + self.prefix + '-' + key]
+        payload, status = self.guest(self.node, *argv, timeout=25).rsplit('\n', 1)
+        code, seconds = status.split()
+        answer = json.loads(payload)
+        return int(code), answer.get('data'), answer.get('error') or {}, round(float(seconds) * 1000)
+
+    def workspace(self, instance, script):
+        """Changes the clone's workspace as its user would: Git as `agent` inside the container."""
+        self.incus('exec', f'instance-{instance}', '--project', POOL, '--', 'runuser', '-u', 'agent', '--', 'sh', '-eu', '-c',
+                   'cd /srv/workspace; ' + script)
+
+    def ssh_logins(self, since):
+        lines = self.guest(self.node, 'journalctl', '-u', 'ssh', '-o', 'cat', '--no-pager', f'--since=@{since}')
+        return sum(1 for line in lines.splitlines() if line.startswith(f'Accepted publickey for orbit from {self.gateway_address} '))
+
+    def work_read(self, instance, via):
+        """One GET .../work on the path `via` names; the answer, its wall time and the SSH logins it caused on the Node."""
+        self.set_capability(via == 'engine')
+        since = int(time.time()) - 1
+        time.sleep(1)
+        code, answer, error, wall = self.conn('GET', f'instances/{instance}/work')
+        require(code == 200 and answer['instance_id'] == instance, f'work read of {instance} via {via}: HTTP {code} {error.get("code")}')
+        time.sleep(1)
+        return answer, wall, self.ssh_logins(since)
+
+    def work(self, name, quiet):
+        """The workspace work read (docs/cli/instance/container/work-read-engine.mmd) on running, dirty, stopped and asleep clones
+        through Conn's own calls: each state read by the signed executor read and by today's SSH reader, which must agree."""
+        instance, clean = self.clones[name]['instance'], self.clones[quiet]['instance']
+        states, reads = [], {'engine': [], 'ssh': []}
+
+        def both(label, expect, reason=None):
+            row = {'state': label}
+            for via in ('engine', 'ssh'):
+                answer, wall, logins = self.work_read(instance, via)
+                row[via] = {'answer': answer, 'wall_ms': wall, 'ssh_logins': logins}
+            engine, ssh = ({key: value for key, value in row[via]['answer'].items() if key not in ('read_at', 'duration_ms')} for via in ('engine', 'ssh'))
+            require(engine == ssh, f'{label}: the executor and SSH readers disagree')
+            require(engine['state'] == expect and engine['reason'] == reason, f'{label}: read {engine["state"]}/{engine["reason"]}, expected {expect}/{reason}')
+            require(row['engine']['ssh_logins'] == 0 and row['ssh']['ssh_logins'] >= 1, f'{label}: the read did not take the path it names')
+            states.append(row)
+            return engine
+
+        both('clean', 'clean')
+        for via in ('engine', 'ssh'):
+            self.set_capability(via == 'engine')
+            for _ in range(WORK_SAMPLES):
+                code, answer, _error, wall = self.conn('GET', f'instances/{instance}/work')
+                require(code == 200 and answer['state'] == 'clean', f'latency sample via {via} was not clean')
+                reads[via].append({'wall_ms': wall, 'duration_ms': answer['duration_ms']})
+        edits = {
+            'tracked edit': ('f=$(git ls-files | head -n 1); printf "proof\\n" >> "$f"', 'git checkout -- "$(git ls-files | head -n 1)"'),
+            'untracked file': ('printf "proof\\n" > orbit-proof-untracked.txt', 'rm orbit-proof-untracked.txt'),
+            'stash': ('f=$(git ls-files | head -n 1); printf "proof\\n" >> "$f"; git stash push --quiet', 'git stash drop --quiet'),
+            'new branch': (f'git branch orbit-proof; git -c user.name=proof -c user.email=proof@invalid commit-tree -m proof "$(git rev-parse HEAD^{{tree}})" -p HEAD'
+                           ' | xargs git update-ref refs/heads/orbit-proof', 'git branch -D --quiet orbit-proof'),
+        }
+        for label, (change, undo) in edits.items():
+            self.workspace(instance, change)
+            both(label, 'dirty')
+            self.workspace(instance, undo)
+            both(label + ' undone', 'clean')
+        self.workspace(instance, edits['untracked file'][0])
+        dirty = both('dirty, running', 'dirty')
+        self.set_capability(True)
+        held = self.db(f"SELECT count(*) AS total FROM operations WHERE kind='instance.destroy' AND target_id={instance}")
+        refusal = self.conn('POST', f'instances/{instance}/destroy', {'acknowledge_unsaved': False}, name + '-unacknowledged')
+        require(refusal[0] == 409 and refusal[2].get('code') == 'instance.unsaved_work' and refusal[2]['details']['state'] == 'dirty'
+                and held == self.db(f"SELECT count(*) AS total FROM operations WHERE kind='instance.destroy' AND target_id={instance}")
+                and self.runtime(instance)['status'] == 'active', 'the unacknowledged destroy of a dirty clone did not refuse without effect')
+
+        # A read that the executor cannot answer is `unknown` `timeout`, never a guess: the reader is the executor, not SSH.
+        self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
+        try:
+            since = int(time.time()) - 1
+            time.sleep(1)
+            code, stalled, error, wall = self.conn('GET', f'instances/{instance}/work')
+            time.sleep(1)
+            stalled_logins = self.ssh_logins(since)
+        finally:
+            self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
+        require(code == 200 and (stalled['state'], stalled['reason']) == ('unknown', 'timeout') and stalled_logins == 0 and wall < 6000,
+                'a stalled executor did not give unknown/timeout within the read budget')
+
+        self.incus('stop', f'instance-{instance}', '--project', POOL)
+        both('stopped', 'unknown', 'stopped')
+        self.incus('start', f'instance-{instance}', '--project', POOL)
+        wait_for(lambda: self.reachable(instance), f'Instance {instance} did not come back after its start', 90, 1)
+        both('started again', 'dirty')
+        self.set_capability(True)
+        slept = self.admitted('POST', f'instances/{instance}/sleep', {}, name + '-sleep')
+        sleep_row = self.terminal(int(slept['id']))
+        asleep = both('asleep', 'unknown', 'asleep')
+        container = [row['status'] for row in json.loads(self.incus('list', '--project', POOL, '--format=json')) if row['name'] == f'instance-{instance}']
+        require(container == ['Stopped'], 'reading an asleep clone woke it')
+
+        self.set_capability(True)
+        quiet_read = self.conn('GET', f'instances/{clean}/work')
+        require(quiet_read[1]['state'] == 'clean', 'the quiet clone is not clean')
+        removals = {}
+        for label, target, body in (('clean, unacknowledged', clean, {'acknowledge_unsaved': False}),
+                                    ('asleep dirty, acknowledged', instance, {'acknowledge_unsaved': True})):
+            code, row, error, _wall = self.conn('POST', f'instances/{target}/destroy', body, f'{target}-destroy')
+            require(code == 202, f'{label} destroy: HTTP {code} {error.get("code")}')
+            removals[label] = self.terminal(int(row['id']))
+            require(self.runtime(target) is None, f'{label} destroy left the Instance')
+
+        def p50(values):
+            ordered = sorted(values)
+            return ordered[len(ordered) // 2] if len(ordered) % 2 else (ordered[len(ordered) // 2 - 1] + ordered[len(ordered) // 2]) / 2
+
+        latency = {via: {'samples': len(rows), 'p50_wall_ms': p50([row['wall_ms'] for row in rows]),
+                         'p50_read_ms': p50([row['duration_ms'] for row in rows]), 'reads': rows} for via, rows in reads.items()}
+        self.record('work-read', {'instance': instance, 'quiet': clean, 'states': states, 'latency': latency,
+                                  'unacknowledged_dirty_refusal': {'code': refusal[0], 'error': refusal[2]},
+                                  'dirty_details': dirty, 'stalled_executor': {'answer': stalled, 'wall_ms': wall, 'ssh_logins': stalled_logins},
+                                  'sleep': {'operation': sleep_row['id'], 'status': sleep_row['status'], 'answer': asleep, 'container': container},
+                                  'removals': {label: {'operation': row['id'], 'status': row['status']} for label, row in removals.items()}})
 
     def cleanup(self):
         if not self.installed or self.closed:
