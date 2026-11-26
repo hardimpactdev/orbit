@@ -15,3 +15,9 @@ When the Gateway runs `schedule.enable` on its engine and the Schedule's Node re
 ## How it works
 
 <div className="flow-at" data-chart="schedule/enable"></div>
+
+### Proposed executor path
+
+On the Gateway engine, only a retained host Node timer is enabled through the executor. A native cron Schedule keeps its Swamp trigger, and a timer inside a production release stays on Swamp. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="schedule/engine/enable"></div>

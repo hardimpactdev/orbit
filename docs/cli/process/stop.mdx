@@ -15,3 +15,9 @@ When the Gateway runs `process.stop` on its engine and the Process's Node report
 ## How it works
 
 <div className="flow-at" data-chart="process/stop"></div>
+
+### Proposed executor path
+
+On the Gateway engine, the stop is the same desired-state primitive as the start. A stop that waits for a drain, such as a Horizon Process, stays on Swamp wherever it runs. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+
+<div className="flow-at" data-chart="process/engine/stop"></div>
