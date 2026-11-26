@@ -287,7 +287,7 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
                 $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
                 app(InstanceDestroyRouteWithdrawal::class)->record($locked);
 
-                return app(RoutePublicationHolds::class)->releaseEngineWithdrawn($locked);
+                return app(RoutePublicationHolds::class)->releaseWithdrawn($locked);
             });
         } catch (Throwable $exception) {
             report($exception);

@@ -498,24 +498,6 @@ final class RoutePublicationHolds
      * Gives back the Nodes a clone's create took at admission once its `clone-route` step has succeeded, in the caller's transaction
      * that activates the Route, then asks for the waiting writes to start (ClonePublication).
      */
-    /**
-     * Frees every Route Node hold of a removal whose engine run withdrew its Routes, publication and shared alike, and wakes the
-     * waiting writes. Whether a hold was freed, for the run's `route_hold_released`.
-     */
-    public function releaseEngineWithdrawn(Operation $operation): bool
-    {
-        if (! self::releasesAfterWithdraw($operation->kind)) {
-            return false;
-        }
-        $freed = DB::table('route_publication_holds')->where('operation_id', $operation->id)->delete()
-            + DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete();
-        if ($freed > 0) {
-            PromoteRouteWrites::dispatch()->afterCommit();
-        }
-
-        return $freed > 0;
-    }
-
     public function releasePublished(Operation $operation): void
     {
         // A waiting write that renders at its admission is refused at its start, because the new site changed what its Nodes serve.
@@ -534,12 +516,19 @@ final class RoutePublicationHolds
     }
 
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
-    public function releaseWithdrawn(Operation $operation): void
+    public function releaseWithdrawn(Operation $operation): bool
     {
-        if (self::releasesAfterWithdraw($operation->kind)
-            && DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete() > 0) {
+        if (! self::releasesAfterWithdraw($operation->kind)) {
+            return false;
+        }
+        // Every hold the removal took: shared slots, and the Nodes an engine plan held alone, also when Swamp runs that removal.
+        $freed = DB::table('route_publication_holds')->where('operation_id', $operation->id)->delete()
+            + DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete();
+        if ($freed > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
+
+        return $freed > 0;
     }
 
     /** @param list<int> $nodes */
