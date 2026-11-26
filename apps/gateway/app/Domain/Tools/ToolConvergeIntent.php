@@ -44,9 +44,10 @@ final readonly class ToolConvergeIntent
     ) {}
 
     /** @param list<int>|null $ids
+     * @param  list<int>  $beside  queued Operations the upgrade admits again with this one (assertIdle)
      * @return list<array<string, mixed>>
      */
-    public function capture(Node $node, ?int $owner = null, ?array $ids = null): array
+    public function capture(Node $node, ?int $owner = null, ?array $ids = null, array $beside = []): array
     {
         $active = $this->policy->active();
         $packages = [];
@@ -88,7 +89,7 @@ final readonly class ToolConvergeIntent
         if ($ids !== null && count($packages) !== count($ids)) {
             throw new ResourceOperationException('tool.scope_invalid', 'Every Tool ID must name a convergable membership on this Node.', 422);
         }
-        $this->assertIdle($node->id, self::scopes($packages), $owner);
+        $this->assertIdle($node->id, self::scopes($packages), $owner, $beside);
 
         return $packages;
     }
@@ -120,14 +121,17 @@ final readonly class ToolConvergeIntent
                         ->orWhereJsonLength('input->_converge->intent->tools', '>', 0))));
     }
 
-    /** @param list<string> $scopes */
-    public function assertIdle(int $nodeId, array $scopes, ?int $owner = null): void
+    /**
+     * @param  list<string>  $scopes
+     * @param  list<int>  $beside  queued Operations admitted again with `$owner` at the upgrade, which no first dispatch has ordered yet
+     */
+    public function assertIdle(int $nodeId, array $scopes, ?int $owner = null, array $beside = []): void
     {
         if ($scopes === []) {
             return;
         }
         $writers = self::writers()->where(static fn ($query) => $query->where('node_id', $nodeId)->orWhere('kind', ConnServerRollout::Kind))
-            ->when($owner !== null, static fn ($query) => $query->whereKeyNot($owner))->get();
+            ->whereKeyNot(array_values(array_filter([$owner, ...$beside], 'is_int')))->get();
         foreach ($writers as $writer) {
             $held = $this->writerScopes($writer, $nodeId);
             if ($held !== [] && (in_array('*', $held, true) || array_intersect($held, $scopes) !== [])) {

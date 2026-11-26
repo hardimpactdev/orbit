@@ -107,7 +107,8 @@ final readonly class StartToolOperationAction
      * A request the current admission would relinquish ends as that membership-only receipt; one it refuses throws its refusal and keeps
      * the Operation as it was.
      */
-    public function readmit(Operation $operation): void
+    /** @param list<int> $beside the other queued requests the upgrade admits again, which no first dispatch has ordered yet */
+    public function readmit(Operation $operation, array $beside = []): void
     {
         $verb = substr($operation->kind, 5);
         $input = $operation->input;
@@ -140,7 +141,7 @@ final readonly class StartToolOperationAction
                     $tool?->update(['desired_version' => $definition->version, 'version_constraint' => $definition->constraint, 'desired_repository' => $definition->repository]);
                 }
                 $operation->forceFill(['input' => $current])->save();
-            }, $operation->id);
+            }, $operation->id, $beside);
     }
 
     /**
@@ -199,15 +200,16 @@ final readonly class StartToolOperationAction
      * @param  array<string, mixed>|null  $repository
      * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, relinquish: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_packages: list<string>, repository_members: list<string>, owned: bool, definition: ToolDefinition}): T  $then
      * @param  int|null  $owner  the Operation admitted again, which its own idleness check skips
+     * @param  list<int>  $beside  the other queued requests admitted again with it
      * @return T
      */
-    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then, ?int $owner = null): mixed
+    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, ?string $version, Closure $then, ?int $owner = null, array $beside = []): mixed
     {
         try {
-            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then, $owner): mixed {
+            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $version, $then, $owner, $beside): mixed {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
                 $manager = $this->manager($node, $managerName);
-                app(ToolConvergeIntent::class)->assertIdle($nodeId, [$manager->name()->scope()->value], $owner);
+                app(ToolConvergeIntent::class)->assertIdle($nodeId, [$manager->name()->scope()->value], $owner, $beside);
                 if (! $manager->validatePackage($package)) {
                     $this->refuse('tool.package_invalid', 422);
                 }

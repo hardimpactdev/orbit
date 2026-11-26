@@ -179,6 +179,8 @@ Desired state belongs to admissions: each direct request and each convergence se
 
 Until then, uncertainty grants nothing and keeps no right to remove a package. A timed-out removal leaves its Tool waiting for `tool:remove` without uninstall authority, because the package may already be gone and a replacement may follow. That holds even when the start reply that binds the run never arrived: a sent start is no proof that nothing ran. A retry, also after the target hold lapses, therefore cleans only the record and source.
 
+A removal whose start was never sent keeps its authority when it times out. It was never begun, or Swamp's deferral answered its latest begin. The deferral schedule shows that when the latest begin came too soon after the first deferral for a begin after the last one.
+
 Only proof that the removal never reached its package gives the authority back, with the state the Tool had before the timeout set it aside, a preceding-release admission's included. That proof is a receipt showing the package step never ran, including one the reconciler reopens because its cancellation beat the deadline, or Swamp verifying that the lost start never became a run. A start whose reply was merely lost proves nothing.
 
 An install or convergence never takes over a present package for a Tool Orbit does not own. Both refuse with `tool.package_already_installed`, including after a first install that was cancelled, timed out or returned an unreadable result. Such an interrupted first install stays `installing` until you retry or remove it. You cannot update a Tool Orbit does not own.
@@ -230,7 +232,7 @@ A write may change the key, source or preference on disk before it fails, is can
 
 The newest settled end decides. An older end, late or not, changes nothing a newer one settled, and an end that wrote nothing changes no trust: it only stops being a writer. The source is verified when the newest settled end proved the definition the record holds and no newer writer is open.
 
-Missing evidence is never a skip. Every write has its record from its admission, or from the upgrade for work the preceding release left open. A record that is gone was withdrawn by a newer confirmed removal: no older end brings it back, and an older write's success neither recreates nor links it. Only an Operation that may write a source settles it, so the end of one that never could changes no trust. 
+Missing evidence is never a skip. Every write has its record from its admission, or from the upgrade for work the preceding release left open. A record that is gone was withdrawn by a newer confirmed removal: no older end brings it back, and an older write's success neither recreates nor links it. Only an Operation that may write a source settles it, so the end of one that never could changes no trust. A late end settles its source even when its Tool is gone since. 
 
 A first publication that stops at its key fetch leaves a record that is not verified, so the retry fetches the key and publishes the source. While the record is unverified, the next direct write publishes the key and source again.
 
@@ -252,17 +254,21 @@ Ownership needs an acquisition. A Tool is owned when one of its direct installs 
 
 An adoption keeps ownership. The preceding release recorded none, but every admission captured the Tool's `tool_status` and `installed_version`, and every converge plan its `installed_version`. Only an adoption makes a Tool installed after its latest receipt left it failed. It is also the only thing that changes a Tool's installed version away from the one its history last recorded. Every projected receipt sets that version, an interrupted one included, and so does every converge observation.
 
-So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned. A version an interrupted or unchanged receipt explains stays an observation. An admission that found the Tool's link captured it too: a removal's source, or a write's that named none, is the linked record's definition. A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission.
+So a capture or the final row that shows either names an adopted Tool, and a later converge that changed nothing keeps it owned. A version an interrupted or unchanged receipt explains stays an observation. An admission that found the Tool's link captured it too: a removal's source, a write's that named none, and each converge plan's source are the linked record's definition. A write that named a source shows nothing of the link, because the record it found by that name may be a sibling's.
+
+A link other than the one the Tool's last success left names an adoption from that source, ordered before that admission.
 
 Only the terminal of a bound native run was projected: an Operation the Gateway failed itself, by expiry or a refused or lost start, never touched the row and explains nothing. A removal whose run may have reached the package ends the claim, as the Gateway now reads such an end: one that failed after its decision, was cancelled after its run started, or ended after its expiry, a success included.
 
 Only a removal that failed before its decision, or whose decision refused it, left the package untouched. So did one whose `dpkg` step was `dpkg` refusing to start: its whole diagnostic is the frontend or database lock line and `dpkg`'s note on it. A trigger's nested `dpkg` prints the same line after the removal, followed by the error processing the triggering package, so that end may have taken the package.
 
-Work still open at the upgrade splits by whether its start may have been sent. A start may have reached the Node when the Operation has an attempt or a bound native run, or its start set it running. A queued Operation never started, even one whose start Swamp deferred (`not_ready`, `draining`), and neither did one whose start the Gateway or Swamp refused. An expiry alone proves neither: an Operation the Gateway expired had begun only when a start set its `started_at` after any deferral. One that never began ended without a run and changes nothing.
+Work still open at the upgrade splits by whether its start may have been sent. A start may have reached the Node when the Operation has an attempt or a bound native run, or its start set it running. A queued Operation never started, even one whose start Swamp deferred (`not_ready`, `draining`), and neither did one whose start the Gateway or Swamp refused. An expiry alone proves neither: an Operation the Gateway expired was sent a start only when the deferral schedule shows a begin after its last deferral. One never sent a start ended without a run and changes nothing.
 
-Queued work that never started keeps its Operation and idempotency key, and the current admission admits it again in place before its first dispatch. A direct request gets the scope, protection, membership, ownership, pins and source claim a request admitted now would get. A convergence keeps its other phases, and the current capture plans its Tools and claims their sources, as `node:converge` does at admission.
+Queued work that never started keeps its Operation and idempotency key, and the current admission admits it again in place before its first dispatch. A direct request gets the scope, protection, membership, ownership, pins and source claim a request admitted now would get. Queued requests do not refuse one another for overlapping only in the preceding release's queue; work that may have run still holds its scope.
 
-A request the current admission would only record ends as that membership-only removal. One it refuses ends failed with the refusal's code, such as `tool.package_protected` or `tool.repository_conflict`, and runs nothing, cleanup included. A replay of the request's idempotency key returns that outcome.
+A convergence keeps its other phases. A full one, which the preceding release marks by its host release input, stays full even with no Tools planned. The current capture plans its Tools and claims their sources, and the convergence records the Tools scope and its orphan cleanup, as `node:converge` does at admission.
+
+A request the current admission would only record ends as that membership-only removal. One it refuses ends failed with the refusal's code, such as `tool.package_protected` or `tool.repository_conflict`, and runs nothing, cleanup included. A refused first install also drops the `installing` record its own admission made. A replay of the request's idempotency key returns that outcome.
 
 Work whose start may have been sent is settled by the upgraded Gateway when its end is read. It is an open writer of a source only when its run could write it: a write with `repository_given`, a last member's removal, or a convergence.
 
@@ -270,8 +276,10 @@ A removal among it ran under the preceding release, which removed whatever it fo
 
 Each field of a Tool, and each Tool Manager's state, keeps the order of the preceding release's newest receipt that changed it. A receipt that changed nothing orders nothing:
 - An `unchanged` success orders no ownership.
-- A failure that recorded a version other than its admission's orders it.
-- The preceding release copied the admitted version into a failure that read nothing or read absence, so that copy orders nothing.
+- A failure at the step its decision gates read the inventory, so it orders the version.
+- So does a failure at the end check after any refusal but a manager scope's or a probe's.
+- A failure before that read recorded the admitted version again, and orders nothing.
+- The preceding receipt cannot tell a read of the admitted version from a read of absence: after either it shows the admitted version.
 - A cancel, or a run that read no manager version, orders no manager state.
 - An adoption orders just before the first admission that captured it, by status, version or link.
 - An adoption no admission captured orders after every Operation.
@@ -286,7 +294,9 @@ A run that never reached a source write, by the preceding workflows, neither pro
 - A write without `repository_given`.
 - A write whose recorded failed step comes before publication, such as the key fetch.
 
-An interruption without a failed step may have written anything, so it doubts the source. An adoption is not a write. A definition that no event or open writer of the history explains is an adoption's: it settles unproven, so no late end of older work gives trust to another definition under its name. It orders before an open write whose admission found its record when nothing else could have made that record, and otherwise after every Operation. The record keeps every URI and suite its history may have published since its last confirmed write until a write proves it.
+An interruption without a failed step may have written anything, so it doubts the source. An adoption is not a write. A definition that no event or open writer of the history explains is an adoption's: it settles unproven, so no late end of older work gives trust to another definition under its name.
+
+It orders as the newest adoption of a Tool linked to that record: by what that Tool's admissions captured, else before the Tool's open Operations admitted after the row was last written, else after every Operation. The record keeps every URI and suite its history may have published since its last confirmed write until a write proves it.
 
 Cleanup belongs to the source. Every source whose latest event is not a confirmed removal keeps a record, whatever package names collide. The next full convergence removes it once no Tool names it. No membership is created for it. A confirmed removal withdraws the source from every writer admitted before it, so only a newer open writer keeps its record, under that writer's definition, never the removed one.
 

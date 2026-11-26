@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\NativeRunResult;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -225,7 +226,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
      * @param  array<string, mixed>  $result
      * @param  array{acquired: bool, released: bool, retained: bool, untouched: bool, observed: bool}  $evidence
      */
-    private function projectState(Operation $operation, array $result, array $evidence): void
+    private function projectState(Operation $operation, array $result, array $evidence, bool $late = false): void
     {
         $status = $operation->status;
         $verb = substr($operation->kind, 5);
@@ -307,7 +308,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             return;
         }
         $repositoryId = $this->repository($operation);
-        if ($tool === null && $record !== null) {
+        // A first install's record is made here; a late receipt never brings back a Tool removed since.
+        if ($tool === null && $record !== null && ! $late) {
             $tool = $this->createTool($operation, $record);
         }
         // Only Orbit's own verified write acquires the package: a success that found it present and left it unchanged observes it, so a
@@ -356,23 +358,19 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         $tool?->resume($operation->id);
     }
 
-    /** No start was sent: no bound run, no attempt and no start awaiting its reply (CancelOperationAction cancels only these). */
+    /** No start was sent (StartSwampRun::startMayHaveBeenSent): never begun, or its latest begin answered by a deferral. */
     private static function neverStarted(Operation $operation): bool
     {
-        return ! isset($operation->state['swamp_run_id']) && ! isset($operation->state['swamp_start']) && $operation->attempts === 0;
+        return ! StartSwampRun::startMayHaveBeenSent($operation);
     }
 
     /**
      * The receipt of a run that ended after its timeout counts for the Tool as it would have on time; the Operation stays timed out.
      * An unreadable receipt counts as a failure that proves nothing. Each field it shows changes only if no newer receipt changed it
-     * (Tool::receive), and a Tool already removed stays removed.
+     * (Tool::receive). A Tool already removed stays removed, but the receipt still settles the run's source.
      */
     public function late(Operation $operation, string $status, array $result, array $run): void
     {
-        $toolId = $operation->input['tool_id'] ?? null;
-        if (! is_int($toolId) || ! Tool::query()->whereKey($toolId)->exists()) {
-            return;
-        }
         try {
             $native = $this->nativeResult($operation, ['status' => $status], $result);
         } catch (ResourceOperationException) {
@@ -387,7 +385,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             $ended === OperationStatus::Failed && $readable => $native['error_code'] ?? $operation->error_code,
             default => $operation->error_code,
         }]);
-        $this->projectState($view, $native, $evidence);
+        $this->projectState($view, $native, $evidence, late: true);
     }
 
     /** The admitted repository definition, stored once the run succeeded. */
