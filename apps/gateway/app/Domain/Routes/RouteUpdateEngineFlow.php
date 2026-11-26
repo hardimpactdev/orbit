@@ -45,10 +45,12 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
         $plan = self::plan($operation);
         if ($intent['effectful'] !== true || ($intent['mode'] ?? null) !== 'replace_domain' || $intent['route_id'] === $intent['result_route_id']
             || ($intent['public_activated'] ?? false) !== false || ($intent['analytics_changes'] ?? []) !== []
-            || ValidatedData::object($intent['selected'])['publication'] !== 'private' || (ValidatedData::object($intent['before'])['publication'] ?? null) !== 'private'
-            // A retry after the cutover (the old Route retiring) resumes on Swamp, which reads the recorded cutover.
-            || (ValidatedData::object($intent['before'])['status'] ?? null) !== RouteStatus::Active->value) {
+            || ValidatedData::object($intent['selected'])['publication'] !== 'private' || (ValidatedData::object($intent['before'])['publication'] ?? null) !== 'private') {
             throw new EngineUnsupported('Only a private Route\'s domain change runs on the engine.');
+        }
+        // The identical request after a failure past the cutover: the authority switch stands, so only the old site's withdrawal runs.
+        if ((ValidatedData::object($intent['before'])['status'] ?? null) !== RouteStatus::Active->value) {
+            return $this->resumeSteps($operation);
         }
         foreach (['ingress', 'ingress_ports', 'edge_nodes', 'lan_absent'] as $list) {
             if (($plan[$list] ?? []) !== []) {
@@ -129,7 +131,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
             'late' => $this->lateInput($operation, (int) $index, static fn (int $leaf): string => $run->output("sign-{$leaf}")
                 ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
             'dns' => $this->dnsInput($operation, (int) $index),
-            'withdraw' => $this->withdrawInput($operation, (int) $index),
+            'withdraw' => $this->withdrawInput(self::resumed($operation) ?? $operation, (int) $index),
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
     }
@@ -351,5 +353,46 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
     public function terminalFailure(string $action, string $code): bool
     {
         return ! str_starts_with($code, 'blob.');
+    }
+
+    /**
+     * The steps of a retry after the cutover: each Node of the failed run's withdrawal, from that run's own plan, whose prepared
+     * Caddyfile is what the Node still serves.
+     *
+     * @return list<StepSpec>
+     */
+    private function resumeSteps(Operation $operation): array
+    {
+        $earlier = self::resumed($operation) ?? throw new EngineUnsupported('A retry without a recorded cutover runs on Swamp.');
+        $steps = [];
+        foreach (array_values(array_unique(ValidatedData::integerList(self::plan($earlier)['retire_nodes']))) as $node) {
+            RouteEngineFlow::fits($this->withdrawInput($earlier, $node));
+            $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, budgetMs: 600_000, resendMs: 30_000);
+            $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
+        }
+
+        return $steps;
+    }
+
+    /**
+     * The failed update whose cutover this retry resumes: the old Route retiring and still naming its replacement, the replacement
+     * active and authoritative. Null when the request is not such a retry.
+     */
+    private static function resumed(Operation $operation): ?Operation
+    {
+        $intent = self::intent($operation);
+        if ((ValidatedData::object($intent['before'])['status'] ?? null) === RouteStatus::Active->value) {
+            return null;
+        }
+        $source = Route::query()->find(ValidatedData::integer($intent['route_id']));
+        $selected = Route::query()->find(ValidatedData::integer($intent['result_route_id']));
+        if ($source?->status !== RouteStatus::Retiring || $selected === null || $source->replaced_by_route_id !== $selected->id
+            || $selected->status !== RouteStatus::Active || $selected->replaces_route_id !== null) {
+            return null;
+        }
+
+        return Operation::query()->where('kind', 'route.update')->where('target_type', 'route')->where('target_id', $source->id)
+            ->where('status', 'failed')->where('id', '<', $operation->id)->orderByDesc('id')->get()
+            ->first(static fn (Operation $earlier): bool => (ValidatedData::object($earlier->input['route_update'] ?? [])['result_route_id'] ?? null) === $selected->id);
     }
 }

@@ -81,7 +81,8 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
         $renamed = $source->id !== $selected->id;
         $cutover = $operation->status === OperationStatus::Failed && in_array($failedStep, self::AfterCutover, true);
         if ($operation->status === OperationStatus::Succeeded || $cutover) {
-            if ($renamed) {
+            // A retry after a failure past the cutover finds the switch recorded: it settles without switching authority again.
+            if ($renamed && $selected->replaces_route_id === $source->id) {
                 app(RouteMutationState::class)->cutover($source, $selected);
             }
             $selected->update([...ValidatedData::object($intent['selected']),

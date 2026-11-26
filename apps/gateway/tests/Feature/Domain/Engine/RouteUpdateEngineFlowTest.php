@@ -197,3 +197,32 @@ it('holds its serving Nodes from admission, so a second update on the same Node 
         ->and(DB::table('route_publication_holds')->where('operation_id', $first->id)->pluck('node_id')->all())->toContain($this->node->id)
         ->and($second->refresh()->status->value)->toBe('waiting');
 });
+
+it('resumes the identical request after a failure past the cutover with the old site\'s withdrawal alone, and settles once', function (): void {
+    $operation = updatedRoute($this->route);
+    $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
+    $flow = app(RouteUpdateEngineFlow::class);
+    $node = $this->node->id;
+    $run = new EngineRun($operation->id, ['sign-0' => (new OperationEngineStep)->forceFill(['output' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n"]),
+        'sign-1' => (new OperationEngineStep)->forceFill(['output' => "-----BEGIN CERTIFICATE-----\nLATE\n-----END CERTIFICATE-----\n"])], 0, null);
+    $prepared = $flow->input($operation, "site-{$node}", $run)['caddy']['blob']['content'];
+    $lasting = $flow->input($operation, "withdraw-{$node}", $run)['caddy']['content'];
+    $flow->local($operation, 'cutover', new EngineRun($operation->id, [], 0, null));
+    $failed = (new OperationEngineStep)->forceFill(['name' => "withdraw-{$node}", 'status' => 'failed', 'error_code' => 'route.withdraw_failed', 'node_id' => $node]);
+    $flow->finish($operation->refresh(), new EngineRun($operation->id, ["withdraw-{$node}" => $failed], 1_800_000_000_000, 1_800_000_001_000));
+    $replacement = Route::query()->findOrFail($operation->input['route_update']['result_route_id']);
+
+    $retry = updatedRoute($this->route->refresh());
+
+    expect(array_map(static fn ($step): string => $step->name, $flow->steps($retry)))->toBe(["withdraw-{$node}", "sibling-{$node}"])
+        ->and($flow->input($retry, "withdraw-{$node}", new EngineRun($retry->id, [], 0, null))['caddy'])
+        ->toBe(['from_sha256' => hash('sha256', $prepared), 'content' => $lasting]);
+
+    $retry->update(['status' => 'running', 'state' => [...$retry->state, 'swamp_run_id' => EngineRun::runIdOf($retry->id)]]);
+    $done = static fn (string $name): OperationEngineStep => (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'done', 'node_id' => 0]);
+    $flow->finish($retry->refresh(), new EngineRun($retry->id, ["withdraw-{$node}" => $done("withdraw-{$node}"), "sibling-{$node}" => $done("sibling-{$node}")], 1_800_000_000_000, 1_800_000_001_000));
+
+    expect($retry->refresh()->status->value)->toBe('succeeded')
+        ->and(Route::query()->find($this->route->id))->toBeNull()
+        ->and($replacement->refresh()->status)->toBe(RouteStatus::Active);
+});
