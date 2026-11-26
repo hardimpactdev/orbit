@@ -149,3 +149,57 @@ it('names a failed step as the Swamp chart\'s iteration, so the Route records th
         ->and(RouteDestroyEngineFlow::chartStep('withdraw-3'))->toBe('Withdraw site, remove cert-3')
         ->and(RouteDestroyEngineFlow::chartStep('sibling-3'))->toBe('Check nothing is left-3');
 });
+
+it('signs the guarded DNS and withdrawal orders in the wire shape the executor decodes', function (): void {
+    $bus = new class implements MachineBus
+    {
+        public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void {}
+
+        public function publishStart(int $operation): void {}
+
+        public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void {}
+
+        public function nudge(int $operation, string $id): void {}
+
+        public function putContent(int $node, string $content): array
+        {
+            return ['sha256' => hash('sha256', $content)];
+        }
+
+        public function nodeActions(int $node): array
+        {
+            return [];
+        }
+
+        public function nodeFeatures(int $node): array
+        {
+            return [];
+        }
+
+        public function nodeTargetActions(int $node): array
+        {
+            return [];
+        }
+
+        public function nodeClock(int $node): ?bool
+        {
+            return true;
+        }
+    };
+    $flow = app(RouteDestroyEngineFlow::class);
+    $run = new EngineRun(51, [], 0, null);
+    $shape = static function (mixed $value) use (&$shape): mixed {
+        return is_array($value) ? array_map($shape, array_is_list($value) ? array_slice($value, 0, 1) : $value) : gettype($value);
+    };
+    $fixture = static fn (string $file): array => json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/'.$file)), true)['fields']['input'];
+
+    $dns = App\Domain\Engine\EngineContent::upload($bus, 1, $flow->input(routeDestroyOperation(), 'dns-0', $run));
+    $withdraw = App\Domain\Engine\EngineContent::upload($bus, 3, $flow->input(routeDestroyOperation(), 'withdraw-3', $run));
+
+    expect($dns['records'])->toBe(['blob' => ['sha256' => hash('sha256', "address=/other.example/10.44.0.8\n")],
+        'from_sha256' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n")])
+        ->and($shape($dns))->toBe($shape($fixture('executor-dns-guarded-records.json')))
+        ->and(array_keys($withdraw))->toBe(array_keys($fixture('executor-route-withdraw-site.json')))
+        ->and($withdraw['caddy']['content'])->toBe(['blob' => ['sha256' => hash('sha256', "other.orbit {\n}\n")]])
+        ->and($withdraw['php'][0]['content'])->toBe(['blob' => ['sha256' => hash('sha256', "[orbit]\n")]]);
+});

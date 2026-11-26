@@ -227,6 +227,11 @@ final readonly class AdmitRouteOperationAction
                 // The engine moves the DNS answers only over the files rendered now (RouteUpdateEngineFlow).
                 $operationInput['route_guards'] = app(RouteFileGuards::class)->capture(array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']),
                     RouteExecutionProof::objects(ValidatedData::object($intent['plan'])['dns'])));
+                // The engine writes whole files rendered now on each serving Node, so it holds them from admission, as a Route create does:
+                // a second write waits, and one rendered before a site changed there is refused as stale (RoutePublicationHolds).
+                $plan = ValidatedData::object($intent['plan']);
+                $operationInput['route_hold'] = ['publications' => array_map(static fn (int $node): array => ['node_id' => $node, 'serves_routes' => true],
+                    array_values(array_unique([...ValidatedData::integerList(ValidatedData::object($plan['publish'])['site_nodes']), ...ValidatedData::integerList($plan['retire_nodes'])])))];
             }
 
             return $this->operations->execute($kind, 'route', $route->id, $nodeId, $operationInput, 'operator', $requestId)->refresh();

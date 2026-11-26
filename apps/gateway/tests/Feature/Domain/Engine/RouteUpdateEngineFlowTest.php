@@ -178,3 +178,19 @@ it('leaves an APP_URL write or a retry after the cutover to Swamp', function (st
     }
     app(RouteUpdateEngineFlow::class)->steps($operation->forceFill(['input' => $input]));
 })->throws(EngineUnsupported::class)->with(['an APP_URL write', 'a retry after the cutover']);
+
+it('holds its serving Nodes from admission, so a second update on the same Node waits', function (): void {
+    $instance = Instance::query()->create(['project_id' => $this->route->project_id, 'node_id' => $this->node->id, 'name' => 'blog',
+        'checkout_path' => '/apps/blog', 'selected_php_version' => '8.5', 'status' => 'active', 'provisioning_step' => 'active', 'source_is_laravel' => false]);
+    $sibling = Route::query()->create(['kind' => 'app', 'node_id' => $this->node->id, 'project_id' => $this->route->project_id,
+        'domain' => 'blog.outside.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $sibling->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $sibling->update(['status' => 'active', 'sites_published' => true]);
+
+    $first = updatedRoute($this->route);
+    $second = updatedRoute($sibling, 'journal.outside.test');
+
+    expect(App\Domain\Operations\RoutePublicationHolds::nodes($first))->toContain($this->node->id)
+        ->and(Illuminate\Support\Facades\DB::table('route_publication_holds')->where('operation_id', $first->id)->pluck('node_id')->all())->toContain($this->node->id)
+        ->and($second->refresh()->status->value)->toBe('waiting');
+});
