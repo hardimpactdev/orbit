@@ -21,4 +21,11 @@ interface ReceiptBoundDefinition
      * @return list<string>
      */
     public function terminalStatuses(string $action): array;
+
+    /**
+     * Whether a `failed` receipt of `$action` ends its step: only a failure of the action itself. The executor answers `blob.*`
+     * (content fetch, cache, validation, digest) before it enters the journal, so another send of the same step may still act;
+     * such a failure leaves the step fenced until its deadline sends it again.
+     */
+    public function terminalFailure(string $action, string $code): bool;
 }

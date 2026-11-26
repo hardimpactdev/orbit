@@ -187,6 +187,9 @@ final readonly class Engine
             || ($line['code'] ?? null) === 'executor.order_expired')) {
             return;
         }
+        if ($status === 'failed' && $definition instanceof ReceiptBoundDefinition && ! $definition->terminalFailure($step->action, self::text($line['code'] ?? null))) {
+            return;
+        }
         match (true) {
             in_array($status, ['done', 'applied', 'output'], true) => $step->update(['status' => 'done', 'done_ms' => self::nowMs(),
                 'output' => match ($status) {

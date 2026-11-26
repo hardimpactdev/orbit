@@ -1291,6 +1291,12 @@ it('withdraws a Route-owning clone through the engine, keeps it fenced across a 
         ->and($operation->refresh()->lock_key)->toBe(OperationStore::lockKey('instance', $clone->id))
         ->and(array_column($sent, 'action'))->not->toContain('instance.destroy');
 
+    // A content failure comes before the executor enters its journal: the other send may still act, so the step stays fenced.
+    $engine->onReceipt($receipt($withdrawals[0], ['status' => 'failed', 'code' => 'blob.fetch_failed']));
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->lock_key)->toBe(OperationStore::lockKey('instance', $clone->id))
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', "withdraw-{$node}")->value('status'))->toBe('sent');
+
     // The Node's journal answers the second send with the stored result of the one execution.
     $engine->onReceipt($receipt($withdrawals[1], ['status' => 'refused', 'reason' => 'replayed_nonce',
         'first' => ['action' => 'route.withdraw_site', 'target' => (string) $node, 'operation' => $operation->id.":withdraw-{$node}", 'status' => 'applied', 'changes' => 3, 'repeat' => true]]));

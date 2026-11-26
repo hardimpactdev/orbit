@@ -313,4 +313,9 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition, Receipt
     {
         return ReceiptBoundDefinition::Terminal[$action] ?? ['done', 'failed'];
     }
+
+    public function terminalFailure(string $action, string $code): bool
+    {
+        return ! str_starts_with($code, 'blob.');
+    }
 }

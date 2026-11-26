@@ -281,4 +281,9 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
 
         return json_encode(['route_hold_released' => true, 'http_status' => '200'], JSON_THROW_ON_ERROR);
     }
+
+    public function terminalFailure(string $action, string $code): bool
+    {
+        return ! str_starts_with($code, 'blob.');
+    }
 }
