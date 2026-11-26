@@ -91,7 +91,7 @@ return new class extends Migration
                 // The preceding release did not set aside the authority of a removal it expired; the upgrade does, as the Gateway now
                 // does at expiry, until the run's end is read or Swamp verifies it never ran.
                 if ($expired && $operation->kind === 'tool.remove' && $ran && is_int($input['tool_id'] ?? null)) {
-                    $suspended[$input['tool_id']] = $operation->id;
+                    $suspended[$input['tool_id']] = ['operation' => $operation->id, 'code' => $operation->error_code];
                 }
 
                 continue;
@@ -138,7 +138,7 @@ return new class extends Migration
         }
 
         $latestOperation = ValidatedData::integer(DB::table('operations')->max('id') ?? 0);
-        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'error_code', 'apt_repository_id', 'desired_repository']) as $tool) {
+        foreach (DB::table('tools')->get(['id', 'node_id', 'tool_manager_id', 'status', 'installed_version', 'failed_operation', 'apt_repository_id', 'desired_repository', 'error_code']) as $tool) {
             $history = $tools[$tool->id] ?? null;
             // Only an adoption, which the preceding release recorded without an Operation, makes a Tool installed that its latest receipt
             // left failed, or gives it an installed version other than the one its history last recorded.
@@ -150,9 +150,10 @@ return new class extends Migration
             $stamp = $adopted ? $latestOperation * 2 + 1 : ($history['stamp'] ?? null);
             $receipts = $stamp === null ? [] : ['state' => $stamp, 'owner' => $stamp, 'version' => $stamp];
             if (isset($suspended[$tool->id])) {
-                $receipts['suspended'] = ['operation' => $suspended[$tool->id], 'owned' => $changes['owned'], 'status' => $tool->status,
+                $receipts['suspended'] = ['operation' => $suspended[$tool->id]['operation'], 'owned' => $changes['owned'], 'status' => $tool->status,
                     'failed_operation' => $tool->failed_operation, 'error_code' => $tool->error_code];
-                $changes = [...$changes, 'owned' => false, 'status' => 'failed', 'failed_operation' => 'remove', 'error_code' => 'operation.timed_out'];
+                // The Tool waits for `tool:remove` with the expired removal's own code, as ToolIntentProjection::timedOut leaves it.
+                $changes = [...$changes, 'owned' => false, 'status' => 'failed', 'failed_operation' => 'remove', 'error_code' => $suspended[$tool->id]['code']];
             }
             $changes['receipts'] = $receipts === [] ? null : json_encode($receipts, JSON_THROW_ON_ERROR);
             $manager = DB::table('tool_managers')->where('id', $tool->tool_manager_id)->first(['node_id', 'name']);
