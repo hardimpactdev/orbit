@@ -154,6 +154,7 @@ impl Run for Families {
             Action::InstanceClone | Action::InstancePrepare | Action::InstanceStart | Action::InstanceFetchBranch | Action::InstanceCheckout | Action::InstanceT3
             | Action::InstanceClubKey | Action::InstanceCopyVolume | Action::InstanceStop | Action::InstanceSpareVolume
             | Action::InstanceFleetReady | Action::InstanceNames => instance(order),
+            Action::ProcessEnsureState | Action::ScheduleEnsureTimer => process(order),
         }
     }
 }
@@ -352,6 +353,21 @@ fn dns(order: &VerifiedOrder) -> Outcome {
         },
         |changes| Outcome::Applied { changes },
     )
+}
+
+/// The process family (ADR 0271): a Process's run state and a Schedule's Node timer. A failure's code goes to the Gateway,
+/// its detail only to the log.
+fn process(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_process::NodeSystem::new(bus::BLOBS_PATH);
+    let result = match order.action() {
+        Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(&system, order.input())
+            .map(|timer| Outcome::Output { stdout: serde_json::json!(timer).to_string() }),
+        _ => orbit_executor_process::ensure_state(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+    };
+    result.unwrap_or_else(|failure| {
+        log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+        Outcome::failed(failure.code)
+    })
 }
 
 /// The instance family (ADR 0271): an Instance container made from its default's seed, and its files before its first

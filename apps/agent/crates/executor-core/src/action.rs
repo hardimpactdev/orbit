@@ -67,6 +67,12 @@ pub enum Action {
     InstanceNames,
     /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
     InstanceDestroy,
+    /// Converge one Process, a host unit, a Docker container or a unit in an Instance container, to running or stopped and
+    /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
+    ProcessEnsureState,
+    /// Enable and start a Schedule's own Node timer and read it back (ADR 0271). Its target is the Node's part for that
+    /// Schedule (`<node>:schedule-<uuid>`).
+    ScheduleEnsureTimer,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -81,7 +87,7 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 23] = [
         Self::ProofNoop,
         Self::Sleep,
         Self::Wake,
@@ -103,6 +109,8 @@ impl Action {
         Self::InstanceFleetReady,
         Self::InstanceNames,
         Self::InstanceDestroy,
+        Self::ProcessEnsureState,
+        Self::ScheduleEnsureTimer,
     ];
 
     /// The family whose crate holds this action, and which a role enables.
@@ -127,6 +135,7 @@ impl Action {
             | Self::InstanceNames | Self::InstanceDestroy => {
                 Family::Instance
             }
+            Self::ProcessEnsureState | Self::ScheduleEnsureTimer => Family::Process,
         }
     }
 
@@ -143,7 +152,9 @@ impl Action {
             | Self::InstanceClubKey
             | Self::InstanceCopyVolume
             | Self::InstanceSpareVolume
-            | Self::InstanceFleetReady => TargetKind::Node,
+            | Self::InstanceFleetReady
+            | Self::ProcessEnsureState
+            | Self::ScheduleEnsureTimer => TargetKind::Node,
             Self::Sleep
             | Self::Wake
             | Self::Discard
@@ -182,6 +193,8 @@ impl Action {
             Self::InstanceSpareVolume => "instance.spare_volume",
             Self::InstanceFleetReady => "instance.fleet_ready",
             Self::InstanceNames => "instance.names",
+            Self::ProcessEnsureState => "process.ensure_state",
+            Self::ScheduleEnsureTimer => "schedule.ensure_timer",
         }
     }
 }
@@ -217,6 +230,8 @@ impl FromStr for Action {
             "instance.spare_volume" => Ok(Self::InstanceSpareVolume),
             "instance.fleet_ready" => Ok(Self::InstanceFleetReady),
             "instance.names" => Ok(Self::InstanceNames),
+            "process.ensure_state" => Ok(Self::ProcessEnsureState),
+            "schedule.ensure_timer" => Ok(Self::ScheduleEnsureTimer),
             _ => Err(UnknownActionError),
         }
     }
@@ -258,6 +273,8 @@ pub enum Family {
     Dns,
     /// Instance containers made from a seed (ADR 0271).
     Instance,
+    /// A Process's run state and a Schedule's Node timer (ADR 0271).
+    Process,
 }
 
 /// The family name is unknown to this executor.
@@ -277,6 +294,7 @@ impl Family {
             "route" => Some(Self::Route),
             "dns" => Some(Self::Dns),
             "instance" => Some(Self::Instance),
+            "process" => Some(Self::Process),
             _ => None,
         }
     }
@@ -327,6 +345,11 @@ mod tests {
         assert!(Enabled::parse("dns\n").expect("valid file").allows(Action::DnsPublishRecords));
         assert_eq!("instance.clone".parse(), Ok(Action::InstanceClone));
         assert!(Enabled::parse("instance\n").expect("valid file").allows(Action::InstanceClone));
+        assert_eq!("process.ensure_state".parse(), Ok(Action::ProcessEnsureState));
+        assert_eq!("schedule.ensure_timer".parse(), Ok(Action::ScheduleEnsureTimer));
+        assert_eq!(Action::ScheduleEnsureTimer.family(), Family::Process);
+        assert!(Enabled::parse("process\n").expect("valid file").allows(Action::ProcessEnsureState));
+        assert!(!Enabled::parse("instance\n").expect("valid file").allows(Action::ProcessEnsureState));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

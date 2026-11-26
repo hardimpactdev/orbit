@@ -301,7 +301,9 @@ impl orbit_executor_core::executor::Run for Runner {
             | orbit_executor_core::action::Action::InstanceSpareVolume
             | orbit_executor_core::action::Action::InstanceFleetReady
             | orbit_executor_core::action::Action::InstanceDestroy
-            | orbit_executor_core::action::Action::InstanceNames => {
+            | orbit_executor_core::action::Action::InstanceNames
+            | orbit_executor_core::action::Action::ProcessEnsureState
+            | orbit_executor_core::action::Action::ScheduleEnsureTimer => {
                 panic!("power actions only")
             }
         }
