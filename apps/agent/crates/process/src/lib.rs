@@ -6,8 +6,8 @@
 //! - [`ensure_timer`] (`schedule.ensure_timer`): enables and starts a Schedule's own Node timer, then reads back its
 //!   enablement, its state and its next elapse.
 //!
-//! A unit inside an Instance container is reached through `incus exec` in the container's saved Incus project and name,
-//! as instance-container-process.yml does on Swamp.
+//! A unit inside an Instance container is not covered: Swamp moves the container's app account with a script first, which no
+//! fixed argv reproduces, so the Gateway keeps that shape on Swamp.
 //!
 //! Every name comes from the admitted intent and is checked against the Process or Schedule it belongs to; every command is
 //! fixed here. Nothing reaches the Node as a script.
@@ -15,14 +15,11 @@
 #[cfg(test)]
 mod tests;
 
-use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
 
 const TIMEOUT: &str = "/usr/bin/timeout";
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
 const DOCKER: &str = "/usr/bin/docker";
-const INCUS: &str = "/usr/bin/incus";
 
 /// Why the primitive failed: a stable code, and a detail for the executor's log only.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,33 +45,13 @@ pub trait System {
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[&str]) -> Result<String, String>;
 
-    /// Where the executor keeps a blob it read for this order, by its SHA-256.
-    fn blob_path(&self, sha256: &str) -> PathBuf;
-
-    /// Waits between two readiness reads.
-    fn pause(&self, duration: Duration) {
-        std::thread::sleep(duration);
-    }
 }
 
-/// The Node's own system: `timeout`-bounded commands and the executor's blob cache.
-#[derive(Debug, Clone)]
-pub struct NodeSystem {
-    blobs: PathBuf,
-}
-
-impl NodeSystem {
-    /// A system that finds blobs in `blobs`, the executor's content cache.
-    pub fn new(blobs: impl Into<PathBuf>) -> Self {
-        Self { blobs: blobs.into() }
-    }
-}
+/// The Node's own system: `timeout`-bounded commands.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NodeSystem;
 
 impl System for NodeSystem {
-    fn blob_path(&self, sha256: &str) -> PathBuf {
-        self.blobs.join(sha256)
-    }
-
     fn run(&self, seconds: u32, argv: &[&str]) -> Result<String, String> {
         let output = Command::new(TIMEOUT).arg(seconds.to_string()).args(argv).output().map_err(|error| error.to_string())?;
         if output.status.success() {
@@ -119,31 +96,6 @@ struct ProcessInput {
     /// A unit's boot policy; a container has none.
     #[serde(default)]
     boot: Option<Boot>,
-    /// The Instance container that holds the unit, by its saved Incus identity.
-    #[serde(default)]
-    container: Option<Guest>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Guest {
-    project: String,
-    name: String,
-    /// The app-account move (`InstanceImage::appAccount`): its path in the container and its content.
-    account_path: String,
-    account: BlobRef,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BlobRef {
-    blob: BlobDigest,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BlobDigest {
-    sha256: String,
 }
 
 /// Converges one host Process to its admitted state and reads it back. A unit: `systemctl enable` or `disable` only when
@@ -164,10 +116,9 @@ pub fn ensure_state(system: &impl System, input: &serde_json::Value) -> Result<u
     if !owned_name(&input.name, input.process_id, input.runtime) {
         return Err(Failure::new("process.input_invalid", format!("{} is not Process {}'s", input.name, input.process_id)));
     }
-    match (input.runtime, input.boot, &input.container) {
-        (Runtime::Systemd, Some(boot), None) => unit(system, &input.name, input.state, boot),
-        (Runtime::Systemd, Some(boot), Some(guest)) => guest_unit(system, guest, &input.name, input.state, boot),
-        (Runtime::Docker, None, None) => match &input.image {
+    match (input.runtime, input.boot) {
+        (Runtime::Systemd, Some(boot)) => unit(system, &input.name, input.state, boot),
+        (Runtime::Docker, None) => match &input.image {
             Some(image) => container(system, &input.name, image, input.state),
             None => Err(Failure::new("process.input_invalid", "a container needs its image")),
         },
@@ -185,40 +136,64 @@ fn owned_name(name: &str, process_id: u64, runtime: Runtime) -> bool {
         .is_some_and(|slug| !slug.is_empty() && slug.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
 }
 
-/// A unit's properties from `systemctl show`.
+/// A unit's properties from `systemctl show`. A property systemd did not answer is absent, which no read-back accepts; an
+/// answered but empty value is `Some("")`.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Unit {
-    load: String,
-    active: String,
-    sub: String,
-    file: String,
-    next_elapse: String,
-    job: String,
+    load: Option<String>,
+    active: Option<String>,
+    sub: Option<String>,
+    file: Option<String>,
+    next_elapse: Option<String>,
 }
 
-fn show(system: &impl System, name: &str) -> Result<Unit, Failure> {
+impl Unit {
+    fn is(field: Option<&String>, value: &str) -> bool {
+        field.is_some_and(|field| field == value)
+    }
+
+    fn describe(&self) -> String {
+        let show = |field: &Option<String>| field.clone().unwrap_or_else(|| "<absent>".to_owned());
+        format!(
+            "LoadState={} ActiveState={} SubState={} UnitFileState={} NextElapseUSecRealtime={}",
+            show(&self.load),
+            show(&self.active),
+            show(&self.sub),
+            show(&self.file),
+            show(&self.next_elapse)
+        )
+    }
+}
+
+/// Reads a unit's properties. A read that fails, or that lacks one of the properties the caller relies on, is `code`.
+fn show(system: &impl System, name: &str, code: &'static str) -> Result<Unit, Failure> {
     let stdout = system
         .run(
             20,
             &[SYSTEMCTL, "show", "--property=LoadState", "--property=ActiveState", "--property=SubState", "--property=UnitFileState",
                 "--property=NextElapseUSecRealtime", "--", name],
         )
-        .map_err(|detail| Failure::new("process.apply_failed", detail))?;
-    Ok(parse_unit(&stdout))
+        .map_err(|detail| Failure::new(code, detail))?;
+    let unit = parse_unit(&stdout);
+    let complete = unit.load.is_some() && unit.active.is_some() && unit.sub.is_some() && unit.file.is_some();
+    if complete {
+        Ok(unit)
+    } else {
+        Err(Failure::new(code, format!("{name}: systemd left a property out: {}", unit.describe())))
+    }
 }
 
 fn parse_unit(stdout: &str) -> Unit {
     let mut unit = Unit::default();
     for line in stdout.lines() {
         let Some((key, value)) = line.split_once('=') else { continue };
-        let value = value.trim().to_owned();
+        let value = Some(value.trim().to_owned());
         match key {
             "LoadState" => unit.load = value,
             "ActiveState" => unit.active = value,
             "SubState" => unit.sub = value,
             "UnitFileState" => unit.file = value,
             "NextElapseUSecRealtime" => unit.next_elapse = value,
-            "Job" => unit.job = value,
             _ => {}
         }
     }
@@ -230,116 +205,24 @@ fn systemctl(system: &impl System, seconds: u32, verb: &str, name: &str) -> Resu
 }
 
 fn unit(system: &impl System, name: &str, state: State, boot: Boot) -> Result<u32, Failure> {
-    let before = show(system, name)?;
-    if before.load != "loaded" {
-        return Err(Failure::new("process.unit_missing", format!("{name}: LoadState={}", before.load)));
+    let before = show(system, name, "process.apply_failed")?;
+    if !Unit::is(before.load.as_ref(), "loaded") {
+        return Err(Failure::new("process.unit_missing", format!("{name}: {}", before.describe())));
     }
     let mut changes = 0;
     let file = if boot == Boot::Enabled { "enabled" } else { "disabled" };
-    if before.file != file {
+    if !Unit::is(before.file.as_ref(), file) {
         systemctl(system, 20, if boot == Boot::Enabled { "enable" } else { "disable" }, name)?;
         changes += 1;
     }
     let active = if state == State::Running { "active" } else { "inactive" };
-    if before.active != active {
+    if !Unit::is(before.active.as_ref(), active) {
         systemctl(system, 20, if state == State::Running { "start" } else { "stop" }, name)?;
         changes += 1;
     }
-    let after = show(system, name)?;
-    if after.load != "loaded" || after.active != active || after.file != file {
-        return Err(Failure::new(
-            "process.state_mismatch",
-            format!("{name}: LoadState={} ActiveState={} SubState={} UnitFileState={}", after.load, after.active, after.sub, after.file),
-        ));
-    }
-    Ok(changes)
-}
-
-/// `<prefix>-<digits>`-style Incus names: lowercase letters, digits and hyphens, not starting with a hyphen.
-fn incus_name(value: &str) -> bool {
-    (1..=63).contains(&value.len()) && !value.starts_with('-') && value.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-/// A unit inside an Instance container, as instance-container-process.yml changes it: the container must run; the app
-/// account moves to `www-data` first (its file written only when it differs, then run); `enable --now --no-block` for a
-/// start, `disable --now` for a stop, each only when the unit differs. A start then waits for its job to leave the queue
-/// and the unit to be active, 5 s per read, 10 reads 1 s apart; a stop waits for `inactive`. The read-back requires
-/// `LoadState=loaded`, `ActiveState` exactly, and the admitted `UnitFileState`.
-fn guest_unit(system: &impl System, guest: &Guest, name: &str, state: State, boot: Boot) -> Result<u32, Failure> {
-    if !incus_name(&guest.project) || !incus_name(&guest.name) || !guest.account_path.starts_with('/') || guest.account_path.contains("..") {
-        return Err(Failure::new("process.input_invalid", "the container identity is outside the Incus name form"));
-    }
-    let (project, container) = (guest.project.as_str(), guest.name.as_str());
-    let query = format!("/1.0/instances/{container}?project={project}");
-    let running = system
-        .run(20, &[INCUS, "query", "--", &query])
-        .ok()
-        .and_then(|stdout| serde_json::from_str::<serde_json::Value>(&stdout).ok())
-        .is_some_and(|answer| answer["status"] == "Running" && answer["name"] == container);
-    if !running {
-        return Err(Failure::new("process.target_inactive", format!("{project}/{container} is not running")));
-    }
-    let root = |rest: &[&str]| -> Vec<String> {
-        ["exec", "--project", project, container, "--"].iter().chain(rest).map(|part| (*part).to_owned()).collect()
-    };
-    let exec = |seconds: u32, rest: &[&str]| -> Result<String, String> {
-        let argv = root(rest);
-        let mut full = vec![INCUS];
-        full.extend(argv.iter().map(String::as_str));
-        system.run(seconds, &full)
-    };
-    let mut changes = 0;
-    // The app account: written only when it differs, then run; a moved container only reads.
-    let sha = guest.account.blob.sha256.as_str();
-    let placed = exec(20, &["sha256sum", "--", &guest.account_path]).ok().and_then(|stdout| stdout.split_whitespace().next().map(str::to_owned));
-    if placed.as_deref() != Some(sha) {
-        let source = system.blob_path(sha);
-        let destination = format!("{container}{}", guest.account_path);
-        system
-            .run(30, &[INCUS, "file", "push", "--project", project, "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0755", "--",
-                &source.to_string_lossy(), &destination])
-            .map_err(|detail| Failure::new("process.apply_failed", format!("app account: {detail}")))?;
-    }
-    let moved = exec(60, &[&guest.account_path]).map_err(|detail| Failure::new("process.apply_failed", format!("app account: {detail}")))?;
-    if moved.contains("moved to www-data") {
-        changes += 1;
-    }
-    let read = |properties: &[&str]| -> Result<Unit, Failure> {
-        let mut rest = vec!["timeout", "5", "systemctl", "show"];
-        rest.extend_from_slice(properties);
-        rest.extend_from_slice(&["--", name]);
-        exec(10, &rest).map(|stdout| parse_unit(&stdout)).map_err(|detail| Failure::new("process.apply_failed", detail))
-    };
-    let all = ["--property=LoadState", "--property=ActiveState", "--property=UnitFileState", "--property=Job"];
-    let file = if boot == Boot::Enabled { "enabled" } else { "disabled" };
-    let active = if state == State::Running { "active" } else { "inactive" };
-    let before = read(&all)?;
-    if before.active != active || before.file != file || !before.job.is_empty() {
-        let verb: &[&str] = match boot {
-            Boot::Enabled => &["timeout", "5", "systemctl", "enable", "--now", "--no-block"],
-            Boot::Disabled => &["timeout", "20", "systemctl", "disable", "--now"],
-        };
-        let mut rest = verb.to_vec();
-        rest.extend_from_slice(&["--", name]);
-        exec(25, &rest).map_err(|detail| Failure::new("process.apply_failed", format!("systemctl: {detail}")))?;
-        changes += 1;
-    }
-    let failed = if state == State::Running { "process.start_failed" } else { "process.stop_failed" };
-    let mut after = Unit::default();
-    for attempt in 0..=10 {
-        if attempt > 0 {
-            system.pause(Duration::from_secs(1));
-        }
-        after = read(&all)?;
-        if after.active == active && after.job.is_empty() {
-            break;
-        }
-    }
-    if after.load != "loaded" || after.active != active || !after.job.is_empty() || after.file != file {
-        return Err(Failure::new(
-            failed,
-            format!("{name}: LoadState={} ActiveState={} UnitFileState={} Job={}", after.load, after.active, after.file, after.job),
-        ));
+    let after = show(system, name, "process.state_mismatch")?;
+    if !Unit::is(after.load.as_ref(), "loaded") || !Unit::is(after.active.as_ref(), active) || !Unit::is(after.file.as_ref(), file) {
+        return Err(Failure::new("process.state_mismatch", format!("{name}: {}", after.describe())));
     }
     Ok(changes)
 }
@@ -391,7 +274,7 @@ pub struct Timer {
     pub unit_file_state: String,
     /// The timer's `ActiveState` after the change: always `active`.
     pub active_state: String,
-    /// The next elapse systemd reports, empty when the calendar has none left.
+    /// The next elapse systemd reports; the read-back requires systemd to answer it, empty when the calendar has none left.
     pub next_elapse: String,
 }
 
@@ -409,27 +292,38 @@ pub fn ensure_timer(system: &impl System, input: &serde_json::Value) -> Result<T
         return Err(Failure::new("schedule.input_invalid", format!("{} is not Schedule {}'s timer", input.unit, input.schedule_id)));
     }
     let retag = |failure: Failure| Failure::new("schedule.apply_failed", failure.detail);
-    let before = show(system, &input.unit).map_err(retag)?;
-    if before.load != "loaded" {
-        return Err(Failure::new("schedule.timer_missing", format!("{}: LoadState={}", input.unit, before.load)));
+    let before = timer_show(system, &input.unit, "schedule.apply_failed")?;
+    if !Unit::is(before.load.as_ref(), "loaded") {
+        return Err(Failure::new("schedule.timer_missing", format!("{}: {}", input.unit, before.describe())));
     }
     let mut changes = 0;
-    if before.file != "enabled" {
+    if !Unit::is(before.file.as_ref(), "enabled") {
         systemctl(system, 20, "enable", &input.unit).map_err(retag)?;
         changes += 1;
     }
-    if before.active != "active" {
+    if !Unit::is(before.active.as_ref(), "active") {
         systemctl(system, 20, "start", &input.unit).map_err(retag)?;
         changes += 1;
     }
-    let after = show(system, &input.unit).map_err(retag)?;
-    if after.load != "loaded" || after.file != "enabled" || after.active != "active" {
-        return Err(Failure::new(
-            "schedule.state_mismatch",
-            format!("{}: LoadState={} ActiveState={} UnitFileState={}", input.unit, after.load, after.active, after.file),
-        ));
+    let after = timer_show(system, &input.unit, "schedule.state_mismatch")?;
+    if !Unit::is(after.load.as_ref(), "loaded") || !Unit::is(after.file.as_ref(), "enabled") || !Unit::is(after.active.as_ref(), "active") {
+        return Err(Failure::new("schedule.state_mismatch", format!("{}: {}", input.unit, after.describe())));
     }
-    Ok(Timer { changes, unit_file_state: after.file, active_state: after.active, next_elapse: after.next_elapse })
+    Ok(Timer {
+        changes,
+        unit_file_state: after.file.unwrap_or_default(),
+        active_state: after.active.unwrap_or_default(),
+        next_elapse: after.next_elapse.unwrap_or_default(),
+    })
+}
+
+/// A timer's properties, which must also answer its next elapse.
+fn timer_show(system: &impl System, name: &str, code: &'static str) -> Result<Unit, Failure> {
+    let unit = show(system, name, code)?;
+    if unit.next_elapse.is_none() {
+        return Err(Failure::new(code, format!("{name}: systemd left a property out: {}", unit.describe())));
+    }
+    Ok(unit)
 }
 
 /// A lowercase hyphenated UUID, as the Gateway's Schedule ids are.

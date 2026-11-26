@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::path::PathBuf;
-use std::time::Duration;
 
 use serde_json::json;
 
@@ -30,7 +28,7 @@ impl Fake {
     }
 
     fn changed(&self) -> Vec<String> {
-        self.calls().into_iter().filter(|call| !call.contains(" show ") && !call.contains(" inspect ") && !call.contains(" query ") && !call.contains("sha256sum")).collect()
+        self.calls().into_iter().filter(|call| !call.contains(" show ") && !call.contains(" inspect ")).collect()
     }
 }
 
@@ -48,12 +46,6 @@ impl System for Fake {
             queue.front().cloned().expect("an answer")
         }
     }
-
-    fn blob_path(&self, sha256: &str) -> PathBuf {
-        PathBuf::from("/blobs").join(sha256)
-    }
-
-    fn pause(&self, _duration: Duration) {}
 }
 
 const UNIT: &str = "orbit-process-417-web.service";
@@ -113,6 +105,8 @@ fn a_name_that_is_not_the_processes_own_is_refused() {
         json!({"process_id": 417, "runtime": "docker", "name": "orbit-process-417-web", "state": "running", "boot": "enabled"}),
         json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "state": "running"}),
         json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "state": "running", "boot": "enabled", "argv": ["sh"]}),
+        json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "state": "running", "boot": "enabled",
+            "container": {"project": "orbit-instances", "name": "instance-12"}}),
     ] {
         assert_eq!(ensure_state(&fake, &input).map_err(|failure| failure.code), Err("process.input_invalid"), "{input}");
     }
@@ -150,72 +144,6 @@ fn a_docker_answer_for_another_container_is_refused() {
     assert!(fake.changed().is_empty(), "a sibling is never acted on");
 }
 
-const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-fn guest(state: &str, boot: &str) -> serde_json::Value {
-    json!({"process_id": 417, "runtime": "systemd", "name": UNIT, "state": state, "boot": boot,
-        "container": {"project": "orbit-instances", "name": "instance-12", "account_path": "/usr/local/libexec/orbit-app-user", "account": {"blob": {"sha256": SHA}}}})
-}
-
-fn guest_show(active: &str, file: &str, job: &str) -> String {
-    format!("LoadState=loaded\nActiveState={active}\nUnitFileState={file}\nJob={job}\n")
-}
-
-const RUNNING: &str = r#"{"name": "instance-12", "status": "Running"}"#;
-
-#[test]
-fn a_guest_start_queues_a_job_and_waits_until_no_job_is_queued() {
-    let fake = Fake::default()
-        .on("/usr/bin/incus query", &[Ok(RUNNING)])
-        .on("/usr/bin/incus exec --project orbit-instances instance-12 -- sha256sum", &[Ok(&format!("{SHA}  /usr/local/libexec/orbit-app-user\n"))])
-        .on("/usr/bin/incus exec --project orbit-instances instance-12 -- timeout 5 systemctl show", &[
-            Ok(&guest_show("inactive", "disabled", "")),
-            Ok(&guest_show("activating", "enabled", "88")),
-            Ok(&guest_show("active", "enabled", "88")),
-            Ok(&guest_show("active", "enabled", "")),
-        ]);
-    assert_eq!(ensure_state(&fake, &guest("running", "enabled")), Ok(1));
-    assert_eq!(fake.changed(), [
-        "/usr/bin/incus exec --project orbit-instances instance-12 -- /usr/local/libexec/orbit-app-user".to_owned(),
-        format!("/usr/bin/incus exec --project orbit-instances instance-12 -- timeout 5 systemctl enable --now --no-block -- {UNIT}"),
-    ]);
-}
-
-#[test]
-fn a_guest_job_still_queued_after_ten_reads_fails_the_start() {
-    let fake = Fake::default()
-        .on("/usr/bin/incus query", &[Ok(RUNNING)])
-        .on("/usr/bin/incus exec --project orbit-instances instance-12 -- timeout 5 systemctl show", &[
-            Ok(&guest_show("inactive", "disabled", "")),
-            Ok(&guest_show("active", "enabled", "91")),
-        ]);
-    assert_eq!(ensure_state(&fake, &guest("running", "enabled")).map_err(|failure| failure.code), Err("process.start_failed"));
-}
-
-#[test]
-fn a_guest_stop_disables_and_requires_inactive_and_places_a_differing_account_file() {
-    let fake = Fake::default()
-        .on("/usr/bin/incus query", &[Ok(RUNNING)])
-        .on("/usr/bin/incus exec --project orbit-instances instance-12 -- sha256sum", &[Err("No such file")])
-        .on("/usr/bin/incus exec --project orbit-instances instance-12 -- timeout 5 systemctl show", &[
-            Ok(&guest_show("active", "enabled", "")),
-            Ok(&guest_show("inactive", "disabled", "")),
-        ]);
-    assert_eq!(ensure_state(&fake, &guest("stopped", "disabled")), Ok(1));
-    assert_eq!(fake.changed(), [
-        format!("/usr/bin/incus file push --project orbit-instances --create-dirs --uid 0 --gid 0 --mode 0755 -- /blobs/{SHA} instance-12/usr/local/libexec/orbit-app-user"),
-        "/usr/bin/incus exec --project orbit-instances instance-12 -- /usr/local/libexec/orbit-app-user".to_owned(),
-        format!("/usr/bin/incus exec --project orbit-instances instance-12 -- timeout 20 systemctl disable --now -- {UNIT}"),
-    ]);
-}
-
-#[test]
-fn a_stopped_container_fails_the_step_before_any_change() {
-    let fake = Fake::default().on("/usr/bin/incus query", &[Ok(r#"{"name": "instance-12", "status": "Stopped"}"#)]);
-    assert_eq!(ensure_state(&fake, &guest("running", "enabled")).map_err(|failure| failure.code), Err("process.target_inactive"));
-    assert_eq!(fake.calls().len(), 1, "only the container is read");
-}
-
 const SCHEDULE: &str = "7f3c0a5e-1b2c-4d3e-8f90-0123456789ab";
 
 fn timer() -> serde_json::Value {
@@ -225,8 +153,8 @@ fn timer() -> serde_json::Value {
 #[test]
 fn a_timer_is_enabled_and_started_and_reads_back_its_next_elapse() {
     let fake = Fake::default().on("/usr/bin/systemctl show", &[
-        Ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=disabled\nNextElapseUSecRealtime=\n"),
-        Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=Thu 2026-11-26 14:00:00 UTC\n"),
+        Ok("LoadState=loaded\nSubState=waiting\nActiveState=inactive\nUnitFileState=disabled\nNextElapseUSecRealtime=\n"),
+        Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=Thu 2026-11-26 14:00:00 UTC\n"),
     ]);
     let read = ensure_timer(&fake, &timer()).expect("enabled");
     assert_eq!((read.changes, read.unit_file_state.as_str(), read.active_state.as_str(), read.next_elapse.as_str()), (2, "enabled", "active", "Thu 2026-11-26 14:00:00 UTC"));
@@ -236,7 +164,7 @@ fn a_timer_is_enabled_and_started_and_reads_back_its_next_elapse() {
 
 #[test]
 fn an_enabled_timer_is_only_checked() {
-    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=x\n")]);
+    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=x\n")]);
     assert_eq!(ensure_timer(&fake, &timer()).map(|read| read.changes), Ok(0));
     assert!(fake.changed().is_empty(), "nothing changes");
 }
@@ -253,7 +181,7 @@ fn a_timer_that_is_not_the_schedules_own_is_refused() {
 #[test]
 fn a_timer_that_does_not_stay_active_fails_the_check() {
     let fake = Fake::default().on("/usr/bin/systemctl show", &[
-        Ok("LoadState=loaded\nActiveState=inactive\nUnitFileState=enabled\n"),
+        Ok("LoadState=loaded\nSubState=waiting\nActiveState=inactive\nUnitFileState=enabled\nNextElapseUSecRealtime=\n"),
     ]);
     assert_eq!(ensure_timer(&fake, &timer()).map_err(|failure| failure.code), Err("schedule.state_mismatch"));
 }
@@ -264,6 +192,26 @@ fn the_gateway_signed_inputs_parse_and_run() {
     let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok(&show("loaded", "inactive", "disabled"))]);
     assert_eq!(ensure_state(&fake, &state["fields"]["input"]), Ok(0));
     let timer: serde_json::Value = serde_json::from_str(include_str!("../../../contract/fixtures/executor-schedule-ensure-timer.json")).expect("fixture");
-    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\n")]);
+    let fake = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=\n")]);
     assert_eq!(ensure_timer(&fake, &timer["fields"]["input"]).map(|read| read.changes), Ok(0));
+}
+
+#[test]
+fn a_property_systemd_left_out_never_counts_as_its_value() {
+    // A unit read without SubState: the read-back has no evidence, so it fails rather than succeeding on what is there.
+    let unit = Fake::default().on("/usr/bin/systemctl show", &[
+        Ok(&show("loaded", "inactive", "disabled")),
+        Ok("LoadState=loaded\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=\n"),
+    ]);
+    assert_eq!(ensure_state(&unit, &host("running", "enabled")).map_err(|failure| failure.code), Err("process.state_mismatch"));
+    // A timer read without its next elapse fails; one with an empty next elapse is an answer.
+    let absent = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\n")]);
+    assert_eq!(ensure_timer(&absent, &timer()).map_err(|failure| failure.code), Err("schedule.apply_failed"));
+    let after = Fake::default().on("/usr/bin/systemctl show", &[
+        Ok("LoadState=loaded\nSubState=dead\nActiveState=inactive\nUnitFileState=disabled\nNextElapseUSecRealtime=\n"),
+        Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\n"),
+    ]);
+    assert_eq!(ensure_timer(&after, &timer()).map_err(|failure| failure.code), Err("schedule.state_mismatch"));
+    let empty = Fake::default().on("/usr/bin/systemctl show", &[Ok("LoadState=loaded\nSubState=waiting\nActiveState=active\nUnitFileState=enabled\nNextElapseUSecRealtime=\n")]);
+    assert_eq!(ensure_timer(&empty, &timer()).map(|read| read.changes), Ok(0));
 }

@@ -358,7 +358,7 @@ fn dns(order: &VerifiedOrder) -> Outcome {
 /// The process family (ADR 0271): a Process's run state and a Schedule's Node timer. A failure's code goes to the Gateway,
 /// its detail only to the log.
 fn process(order: &VerifiedOrder) -> Outcome {
-    let system = orbit_executor_process::NodeSystem::new(bus::BLOBS_PATH);
+    let system = orbit_executor_process::NodeSystem;
     let result = match order.action() {
         Action::ScheduleEnsureTimer => orbit_executor_process::ensure_timer(&system, order.input())
             .map(|timer| Outcome::Output { stdout: serde_json::json!(timer).to_string() }),

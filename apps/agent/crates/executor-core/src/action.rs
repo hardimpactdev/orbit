@@ -67,7 +67,7 @@ pub enum Action {
     InstanceNames,
     /// Force stops and removes a development clone and its admitted Node resources (ADR 0271).
     InstanceDestroy,
-    /// Converge one Process, a host unit, a Docker container or a unit in an Instance container, to running or stopped and
+    /// Converge one host Process, a systemd unit or a Docker container, to running or stopped and
     /// its boot policy, and read it back (ADR 0271). Its target is the Node's part for that Process (`<node>:process-<id>`).
     ProcessEnsureState,
     /// Enable and start a Schedule's own Node timer and read it back (ADR 0271). Its target is the Node's part for that
