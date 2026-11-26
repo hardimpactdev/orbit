@@ -243,7 +243,11 @@ final readonly class Engine
         };
     }
 
-    /** Whether a fenced step's output is the evidence its kind defines; a kind without a rule takes any text. */
+    /**
+     * Whether a fenced step's output is the evidence its kind defines; a kind without a rule takes any text.
+     *
+     * @param  array<string, mixed>  $line
+     */
     private static function evidence(Operation $operation, OperationEngineStep $step, array $line): bool
     {
         $definition = app(EngineKinds::class)->definition($operation->kind);

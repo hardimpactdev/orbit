@@ -198,7 +198,7 @@ final readonly class TaskSyncEngineFlow implements EngineDefinition, EngineEvide
         $saved = $instance?->runtime;
         if ($instance === null || $saved === null || $instance->task_workspace_owner_id !== $operation->target_id || $instance->node_id !== $operation->node_id
             || $saved->incus_project !== $runtime['project'] || $saved->container_name !== $runtime['name']
-            || $instance->project?->source_access === ProjectSourceAccess::GhCli) {
+            || $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new EngineUnsupported('The sync runs on the engine only for the group\'s own copy with scoped repository access.');
         }
 

@@ -88,7 +88,7 @@ A terminal receipt, including the original result in a nonce replay, must match 
 
 ### tasks.sync
 
-The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-copy) (an intent with `copy`) as the chart `docs/cli/task/engine/sync.mmd` draws it. The copy's Node must report `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`; any other intent, or a Node without one of them, runs the whole `operation-task-sync-copy` workflow.
+The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-copy) (an intent with `copy`) as the chart `docs/cli/task/engine/sync.mmd` draws it. The copy's Node must report `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`, and the feature `instance.fetch_seed`. The intent must name the group's own running copy on that Node, with its runtime, branch, mirrors and published commits in the flow's shape. Any other intent, a Project that reads with the Gateway's GitHub CLI login, or a Node without one of them runs the whole `operation-task-sync-copy` workflow.
 
 | Step | After | What it does |
 | --- | --- | --- |
@@ -97,9 +97,15 @@ The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-
 | `clear` | `sync` | `instance.clear_base` removes the Node scratch and the copy's bundle folder. |
 | `clear_after_failure` | | The same cleanup as a failure step, after a failed `fetch` or `sync`, as the Swamp cleanup job runs after either. |
 
-The token goes as a credential blob to the copy's Node only; no copy step names it. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
+The token is minted once per Operation and kept encrypted in the Gateway cache until the Operation ends, so a resend sends the same blob to the copy's Node only; no copy step names it.
 
-Like `instance.destroy`, the kind is receipt-bound. The Gateway takes the group's Operation lock with the step rows. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt. `TaskSyncProjection` records the `sync` receipt's evidence as the same result a Swamp run records; a failed step names `Bring in the base` or `Discard the base scratch` with `tasks.sync_failed`, or the import's own refusal code.
+A missing copy mirror is made from the default's mirror, and refused without one, as on Swamp. The publish history reaches `sync` as a blob. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
+
+Like `instance.destroy`, the kind is receipt-bound. The Gateway takes the copy's Instance lock with the step rows, so no removal of the copy starts beside the sync; the running Operation fences the group. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
+
+Each step settles only by its own evidence (the mirror head, the base evidence or the cleanup); other output fails it as `engine.receipt_invalid`. An order the signer refuses fails its step as `engine.order_invalid` instead of waiting.
+
+A cancel sends no new step. It waits for each published order's receipt, then runs `clear_after_failure` and ends cancelled with no field and no error, as a cancelled Swamp run does. `TaskSyncProjection` records the `sync` receipt's evidence as the same result a Swamp run records; a failed step names `Bring in the base` or `Discard the base scratch` with `tasks.sync_failed`, or the import's own refusal code.
 
 ### instance.fleet
 

@@ -121,7 +121,7 @@ The `instance` family (enabled on `app-dev`) executes clone lifecycle steps from
 | Primitive | Work |
 | --- | --- |
 | `instance.clone` | Creates the network ACL, copies the default seed snapshot, attaches NIC filters and T3 proxy, and adds UFW route rules |
-| `instance.fetch_branch` | Fetches the requested branch into `/var/lib/orbit/instance-repositories` using an HTTPS credential blob |
+| `instance.fetch_branch` | Fetches the requested branch into `/var/lib/orbit/instance-repositories` using an HTTPS credential blob in a file of its own; with `seed` (feature `instance.fetch_seed`) it makes a missing mirror from the default's |
 | `instance.prepare` | Removes inherited seed units on the stopped copy, assigns a fresh machine ID, and writes files (`files_blob`), JSON merges, symlinks, Orbit root CA / NSS trust, and agent folders |
 | `instance.start` | Verifies NIC guards, unshifts ID maps, boots the copy, configures hostname and `/etc/hosts`, and runs `/usr/local/libexec/orbit-app-user` |
 | `instance.checkout` | Checks out the branch inside the copy, merges `.env` from the seed and Gateway render, and excludes `.env` in `info/exclude` |
@@ -146,7 +146,7 @@ The executor appends JSON records to `/var/lib/orbit/executor/journal`: `seen` o
 
 At startup, the executor creates the `journal.accepts` marker, marks any `seen`-without-`open` order as `executor.order_expired`, and replays any `open`-without-`done` order under its target lock before accepting new work on that target.
 
-For `instance.destroy`, an order that expires before taking the target lock never settles the step. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
+For the fenced actions (`instance.destroy`, `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`), an order that expires before taking the target lock never settles the step, and a result goes back only after its `done` record is durable. A terminal receipt is sent only after the executor appends its `done` record. It retains a terminal refusal, such as `instance.removal_dataset_taken`, just like a successful removal. After a lost receipt, a fresh order for the same step returns that stored result without repeating the deletion, as long as the order expires within the [journal's replay window](/reference/gateway-engine#instancedestroy).
 
 ### Repeated receipts of a copy sync
 

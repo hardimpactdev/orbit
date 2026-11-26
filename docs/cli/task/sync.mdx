@@ -25,7 +25,7 @@ In a task VM, the fetch writes `refs/remotes/origin/<default branch>` and `refs/
 
 ## A task copy
 
-In a [task copy](/reference/tasks#task-copy), the sync writes only `refs/remotes/origin/<default branch>`. It fetches the default branch into the copy's mirror on its Node with the sync's read token, which is never written to a file and never enters the copy. Then it imports only the commits the copy lacks. It never merges or rebases `task-42`, and HEAD, the working tree, the index and the local branches stay as they are.
+In a [task copy](/reference/tasks#task-copy), the sync writes only `refs/remotes/origin/<default branch>`. It fetches the default branch into the copy's mirror on its Node with the sync's read token, which never enters the copy. On Swamp the token reaches Git only on standard input; on the engine it is written root-only beside the mirror for the fetch and removed after it. Then it imports only the commits the copy lacks. It never merges or rebases `task-42`, and HEAD, the working tree, the index and the local branches stay as they are.
 
 The Gateway starts its own workflow for a copy, `operation-task-sync-copy`; a task VM's sync runs `operation-task-sync`. When `tasks.sync` is an engine kind and the copy's Node reports the executor's `instance.fetch_branch`, `instance.sync_base` and `instance.clear_base`, the whole sync runs on the [Gateway engine](/reference/gateway-engine#taskssync) instead, with the same steps and the same result. The result names `default_commit`, the head it imported, `branch_commit`, `behind_by`, the commits of the default branch that `task-42` lacks, and `start`, the copy's start commit. To take the new main, merge or rebase in the copy yourself, then check again. [Bring main into a copy](/reference/tasks#bring-main-into-a-copy) has the details.
 
@@ -37,9 +37,9 @@ The sync refuses a copy while a copy turn of the group may still run. While a ch
 
 <div className="flow-at" data-chart="task/sync"></div>
 
-### Proposed executor path
+### The executor path
 
-On the Gateway engine, a task copy's sync runs as executor primitives on the copy's Node: the mirror fetch reuses `instance.fetch_branch`, and only `refs/remotes/origin/<default>` moves in the copy. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, a task copy's sync runs as executor primitives on the copy's Node. `fetch` reuses `instance.fetch_branch` and makes a missing mirror from the default's. `sync` (`instance.sync_base`) imports one bundle and moves only `refs/remotes/origin/<default>`, and `clear` or `clear_after_failure` (`instance.clear_base`) removes the scratch and the mirror pin. The sync holds the copy's Instance lock until each step's terminal receipt. Runtime proof on a nested fleet is still outstanding. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="task/engine/sync"></div>
 
