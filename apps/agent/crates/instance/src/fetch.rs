@@ -24,7 +24,14 @@ struct FetchInput {
     protocol: String,
     /// The `store` credential line for the repository's host: a secret, so a blob.
     credential: crate::BlobRef,
+    /// A task copy's sync (feature `instance.fetch_seed`): a missing mirror is made from this mirror of the default, as the
+    /// Swamp base phase makes it, and refused when this is empty. Without it a missing mirror starts empty.
+    #[serde(default)]
+    seed: Option<String>,
 }
+
+/// A credential file older than this is left from a stopped fetch: no fetch lives this long.
+const STALE_SECONDS: u64 = 600;
 
 /// Asks the origin for the branch; when it has it, fetches it into the mirror, made bare on first use. A branch the origin
 /// lacks starts at the seed's commit, so nothing is fetched. Answers `{"commit": <the fetched commit, or null>}`.
@@ -42,15 +49,18 @@ pub fn fetch_branch(system: &impl System, input: &Value) -> Result<String, Failu
     let mirror = system.path(&input.mirror);
     let folder = mirror.parent().map_or_else(|| PathBuf::from(MIRRORS), Path::to_path_buf);
     std::fs::create_dir_all(&folder).and_then(|()| std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700))).map_err(failed)?;
-    // A credential a stopped run left behind goes first: only one fetch per Node runs at a time.
+    // Fetches of sibling Instances run side by side: each has its own file, and only a file a stopped fetch left goes.
     if let Ok(entries) = std::fs::read_dir(&folder) {
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().starts_with(".credential-") {
+            let stale = entry.metadata().and_then(|meta| meta.modified()).ok().and_then(|at| at.elapsed().ok())
+                .is_some_and(|age| age.as_secs() > STALE_SECONDS);
+            if stale && entry.file_name().to_string_lossy().starts_with(".credential-") {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
     }
-    let credential = folder.join(format!(".credential-{}", std::process::id()));
+    seed(system, &input, &mirror)?;
+    let credential = folder.join(format!(".credential-{}-{}", std::process::id(), unique()));
     let written = std::fs::File::options()
         .write(true)
         .create_new(true)
@@ -60,6 +70,34 @@ pub fn fetch_branch(system: &impl System, input: &Value) -> Result<String, Failu
     let result = written.map_err(failed).and_then(|()| fetch(system, &input, &mirror, &credential));
     let _ = std::fs::remove_file(&credential);
     result.map(|commit| serde_json::json!({"commit": commit}).to_string())
+}
+
+/// A name no other fetch of this executor uses: the clock and a counter.
+fn unique() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |at| at.as_nanos());
+    format!("{nanos}-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+
+/// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one.
+fn seed(system: &impl System, input: &FetchInput, mirror: &Path) -> Result<(), Failure> {
+    let Some(source) = &input.seed else { return Ok(()) };
+    if mirror.join("HEAD").exists() {
+        return Ok(());
+    }
+    if source.is_empty() {
+        return Err(Failure::new("instance.branch_fetch_failed", "the mirror is missing and the default has none"));
+    }
+    let source = system.path(source).display().to_string();
+    let target = mirror.display().to_string();
+    for argv in [
+        vec![GIT, "init", "--quiet", "--bare", &target],
+        vec![GIT, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", &target, "fetch", "--quiet", "--no-tags", "--", &source, "+refs/heads/*:refs/seed/*"],
+    ] {
+        system.run(REMOTE_SECONDS, &argv.iter().map(|part| (*part).to_owned()).collect::<Vec<_>>(), None)
+            .map_err(|detail| Failure::new("instance.branch_fetch_failed", format!("seed: {detail}")))?;
+    }
+    Ok(())
 }
 
 fn failed(error: impl std::fmt::Display) -> Failure {
@@ -75,6 +113,9 @@ fn check(input: &FetchInput) -> Result<(), String> {
     }
     if !branch_name(&input.branch) {
         return Err("branch is not a branch name".to_owned());
+    }
+    if input.seed.as_deref().is_some_and(|seed| !seed.is_empty() && (!mirror_path(seed) || seed == input.mirror)) {
+        return Err("seed is not another Orbit mirror".to_owned());
     }
     Ok(())
 }

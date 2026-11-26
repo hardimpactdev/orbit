@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tasks\StartTaskSyncAction;
 use App\Domain\Engine\Engine;
@@ -15,6 +17,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -35,6 +38,7 @@ use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 use Tests\Support\WorkflowStartIntents;
@@ -337,11 +341,11 @@ it('keeps the Swamp start fixture equal to the inputs a copy sync starts with', 
  * The engine's machine bus for a sync: the Node reports `$actions`, content goes to its keys, and every order is kept decoded,
  * unless its publication claim refuses.
  */
-function syncEngineBus(array $actions): MachineBus
+function syncEngineBus(array $actions, array $features = ['instance.fetch_seed']): MachineBus
 {
     $pair = sodium_crypto_sign_keypair();
     config(['orbit.engine.kinds' => ['tasks.sync'], 'orbit.executor.signing_key' => base64_encode(sodium_crypto_sign_secretkey($pair))]);
-    $bus = new class($actions) implements MachineBus
+    $bus = new class($actions, $features) implements MachineBus
     {
         /** @var list<array<string, mixed>> */
         public array $orders = [];
@@ -349,7 +353,7 @@ function syncEngineBus(array $actions): MachineBus
         /** @var array<string, string> */
         public array $content = [];
 
-        public function __construct(private readonly array $actions) {}
+        public function __construct(private readonly array $actions, private readonly array $features) {}
 
         public function publishOrder(int $node, SignedExecutorOrder $order, ?Closure $claim = null): void
         {
@@ -383,7 +387,7 @@ function syncEngineBus(array $actions): MachineBus
 
         public function nodeFeatures(int $node): array
         {
-            return [];
+            return $this->features;
         }
 
         public function nodeClock(int $node): ?bool
@@ -422,7 +426,7 @@ it('runs a task copy sync wholly on the engine: fetch on the Node, import into t
     $head = str_repeat('c', 40);
 
     expect(Engine::owns($operation))->toBeTrue()
-        ->and($operation->lock_key)->toBe(OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
+        ->and($operation->lock_key)->toBe(OperationStore::lockKey('instance', $copy->id))
         ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->orderBy('id')->pluck('action', 'name')->all())
         ->toBe(['fetch' => 'instance.fetch_branch', 'sync' => 'instance.sync_base', 'clear' => 'instance.clear_base', 'clear_after_failure' => 'instance.clear_base'])
         ->and($bus->orders)->toHaveCount(1);
@@ -431,7 +435,8 @@ it('runs a task copy sync wholly on the engine: fetch on the Node, import into t
     // The token reaches the Node's fetch only, as content behind a digest; no copy input names it.
     expect($fetch)->toMatchArray(['action' => 'instance.fetch_branch', 'target' => $copy->node_id.':fetch-'.$copy->id, 'operation' => $operation->id.':fetch'])
         ->and($fetch['input'])->toBe(['mirror' => '/var/lib/orbit/instance-repositories/'.$copy->id.'.git', 'repository' => 'https://github.com/example/trial.git',
-            'branch' => 'main', 'protocol' => 'https', 'credential' => ['blob' => ['sha256' => $credential]]])
+            'branch' => 'main', 'protocol' => 'https', 'credential' => ['blob' => ['sha256' => $credential]],
+            'seed' => '/var/lib/orbit/instance-repositories/'.$copy->runtime->clone_source_instance_id.'.git'])
         ->and($bus->content)->toHaveKey($credential);
 
     syncReceipt($copy->node_id, $fetch, ['status' => 'output', 'stdout' => json_encode(['commit' => $head])]);
@@ -440,8 +445,9 @@ it('runs a task copy sync wholly on the engine: fetch on the Node, import into t
     expect($sync)->toMatchArray(['action' => 'instance.sync_base', 'target' => (string) $copy->id, 'operation' => $operation->id.':sync'])
         ->and($sync['input'])->toBe(['project' => 'orbit-instances', 'name' => 'instance-'.$copy->id, 'instance_id' => $copy->id,
             'mirror' => '/var/lib/orbit/instance-repositories/'.$copy->id.'.git', 'default_branch' => 'main', 'branch' => 'task-'.$group->id,
-            'head' => $head, 'start' => str_repeat('a', 40), 'published' => [], 'approved' => ''])
-        ->and(json_encode($sync['input']))->not->toContain('credential')->not->toContain('blob');
+            'head' => $head, 'start' => str_repeat('a', 40), 'published' => ['blob' => ['sha256' => hash('sha256', '[]')]], 'approved' => ''])
+        ->and($bus->content[hash('sha256', '[]')])->toBe('[]')
+        ->and(json_encode($sync['input']))->not->toContain('credential');
 
     $work = ['state' => 'clean', 'head' => str_repeat('d', 40), 'default_commit' => $head, 'empty' => true, 'paths' => ['count' => 0, 'names' => []],
         'uncommitted' => 0, 'untracked' => 0, 'stashes' => 0, 'approved_held' => null];
@@ -475,7 +481,7 @@ it('keeps the group fenced across a lost import receipt: the resend carries the 
     app(ExpireOperationAction::class)->execute($operation->refresh());
     app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)
-        ->and($operation->lock_key)->toBe(OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
+        ->and($operation->lock_key)->toBe(OperationStore::lockKey('instance', $copy->id))
         ->and(fn () => app(StartTaskSyncAction::class)->execute($group, 'test', null))
         ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'))
         ->and($bus->orders)->toHaveCount(3);
@@ -484,7 +490,7 @@ it('keeps the group fenced across a lost import receipt: the resend carries the 
 
     // The journal repeats the first execution's stored result for the second send; a late duplicate changes nothing.
     $stored = ['status' => 'output', 'stdout' => json_encode(['default_branch' => 'main', 'default_commit' => $head, 'branch' => 'task-'.$group->id,
-        'branch_commit' => str_repeat('d', 40), 'behind_by' => 0, 'start' => str_repeat('a', 40), 'bundled' => false, 'changed' => false])];
+        'branch_commit' => str_repeat('d', 40), 'behind_by' => 0, 'start' => str_repeat('a', 40), 'bundled' => false, 'changed' => false, 'work' => ['state' => 'clean']])];
     syncReceipt($copy->node_id, $resend, ['status' => 'refused', 'reason' => 'replayed_nonce', 'first' => [
         'action' => $first['action'], 'target' => $first['target'], 'operation' => $first['operation'], ...$stored, 'repeat' => true]]);
     syncReceipt($copy->node_id, $first, $stored);
@@ -534,3 +540,118 @@ it('starts the whole Swamp sync when the kind is off, the Node lacks an action o
         ->and(fn () => app(TaskSyncEngineFlow::class)->steps(syncOperation()))->toThrow(EngineUnsupported::class)
         ->and($bus->orders)->toBe([]);
 })->with(['kind off', 'no clear action', 'no copy']);
+
+it('fences the copy itself: a removal of the copy is refused until the sync has its terminal receipts', function (): void {
+    [$operation, , $copy, $bus] = syncOnEngine();
+
+    expect(fn () => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+
+    syncReceipt($copy->node_id, $bus->orders[0], ['status' => 'failed', 'code' => 'instance.branch_fetch_failed']);
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'output', 'stdout' => '{"cleaned":true}']);
+    expect($operation->refresh()->lock_key)->toBeNull()
+        ->and(Operation::query()->where('kind', TaskSyncEngineFlow::Kind)->where('lock_key', OperationStore::lockKey('instance', $copy->id))->exists())->toBeFalse();
+});
+
+it('ends a cancel after the fetch was published once its receipt came: no new step, the scratch cleared, the Swamp cancel result', function (): void {
+    [$operation, , $copy, $bus] = syncOnEngine();
+    app(CancelOperationAction::class)->execute($operation->refresh());
+
+    syncReceipt($copy->node_id, $bus->orders[0], ['status' => 'output', 'stdout' => json_encode(['commit' => str_repeat('c', 40)])]);
+    expect(array_column($bus->orders, 'operation'))->toBe([$operation->id.':fetch', $operation->id.':clear_after_failure'])
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
+
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'output', 'stdout' => '{"cleaned":true}']);
+    $operation->refresh();
+    expect($operation->status)->toBe(OperationStatus::Cancelled)->and($operation->error_code)->toBeNull()
+        ->and($operation->result ?? [])->toBe([])->and($operation->lock_key)->toBeNull();
+});
+
+it('ends a cancel before any order was published at once, with no field and no error', function (): void {
+    [$group] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    app(StartSwampRun::class)->start($operation);
+    app(CancelOperationAction::class)->execute($operation->refresh());
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    $operation->refresh();
+    expect($bus->orders)->toBe([])->and($operation->status)->toBe(OperationStatus::Cancelled)->and($operation->error_code)->toBeNull()
+        ->and($operation->result ?? [])->toBe([])->and($operation->lock_key)->toBeNull();
+});
+
+it('accepts only each step\'s own evidence: a bare done, a malformed head and an unread blob do not settle a step as success', function (): void {
+    [$operation, , $copy, $bus] = syncOnEngine();
+    $fetch = $bus->orders[0];
+    // Content the executor could not read never ran this order: the step waits for its terminal result.
+    syncReceipt($copy->node_id, $fetch, ['status' => 'failed', 'code' => 'blob.missing']);
+    expect(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'fetch')->value('status'))->toBe('sent');
+
+    syncReceipt($copy->node_id, $fetch, ['status' => 'output', 'stdout' => '{"commit":"not-a-commit"}']);
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'output', 'stdout' => '{"cleaned":true}']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('tasks.sync_failed')
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', 'fetch')->value('error_code'))->toBe('engine.receipt_invalid');
+});
+
+it('fails an import that answers a bare done instead of its base evidence', function (): void {
+    [$second, , $copy, $bus] = syncOnEngine();
+    syncReceipt($copy->node_id, $bus->orders[0], ['status' => 'output', 'stdout' => json_encode(['commit' => str_repeat('c', 40)])]);
+    syncReceipt($copy->node_id, $bus->orders[1], ['status' => 'done']);
+    expect(OperationEngineStep::query()->where('operation_id', $second->id)->where('name', 'sync')->value('error_code'))->toBe('engine.receipt_invalid')
+        ->and($second->refresh()->result)->not->toHaveKey('default_commit');
+});
+
+it('keeps a long publish history out of the 4 KB order, and fails a step whose order cannot be signed instead of waiting', function (): void {
+    [$group, $copy] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    $published = array_map(static fn (int $i): string => hash('sha1', (string) $i), range(1, 70));
+    $operation->update(['input' => [...$operation->input, 'copy' => [...$operation->input['copy'], 'published' => $published]]]);
+    app(StartSwampRun::class)->start($operation->refresh());
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    syncReceipt($copy->node_id, $bus->orders[0], ['status' => 'output', 'stdout' => json_encode(['commit' => str_repeat('c', 40)])]);
+    $sha = $bus->orders[1]['input']['published']['blob']['sha256'];
+    expect(json_decode($bus->content[$sha], true))->toBe($published);
+});
+
+it('fails a step whose order cannot be signed instead of waiting for a receipt that cannot come', function (): void {
+    [$group] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $unsigned = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    app(StartSwampRun::class)->start($unsigned);
+    // A target outside the signer's form: every send of this order is refused alike.
+    OperationEngineStep::query()->where('operation_id', $unsigned->id)->where('name', 'fetch')->update(['target' => str_repeat('x', 129)]);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $unsigned->id]);
+    expect(array_column($bus->orders, 'operation'))->toBe([$unsigned->id.':clear_after_failure']);
+    syncReceipt($group->taskable->node_id, $bus->orders[0], ['status' => 'output', 'stdout' => '{"cleaned":true}']);
+    expect($unsigned->refresh()->status)->toBe(OperationStatus::Failed)->and($unsigned->lock_key)->toBeNull()
+        ->and(OperationEngineStep::query()->where('operation_id', $unsigned->id)->where('name', 'fetch')->value('error_code'))->toBe('engine.order_invalid');
+});
+
+it('runs on Swamp a plan the flow does not cover', function (Closure $change): void {
+    [$group, $copy] = syncCopyWorld();
+    syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    $change($operation, $copy);
+
+    expect(app(EngineKinds::class)->routes($operation->refresh()))->toBeFalse();
+})->with([
+    'copy branch differs' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'branch' => 'task-999']]])],
+    'empty runtime' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => []]]])],
+    'another container' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'runtime' => ['project' => 'orbit-instances', 'name' => 'instance-1']]]])],
+    'lock file branch' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'workspace' => [...$o->input['workspace'], 'default_branch' => 'release.LOCK']]])],
+    'published not a commit' => [fn (Operation $o) => $o->update(['input' => [...$o->input, 'copy' => [...$o->input['copy'], 'published' => ['HEAD']]]])],
+    'GitHub CLI access' => [fn (Operation $o, Instance $copy) => $copy->project->update(['source_access' => ProjectSourceAccess::GhCli])],
+    'no seed feature' => [fn () => syncEngineBus(SyncEngineActions, [])],
+]);
+
+it('mints the read credential once per Operation and sends the same one again', function (): void {
+    [$operation, , , $bus] = syncOnEngine();
+    $first = $bus->orders[0]['input']['credential'];
+
+    $this->travel(70)->seconds();
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+
+    expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['input']['credential'])->toBe($first)
+        ->and(Cache::has('tasks.sync.credential.'.$operation->id))->toBeTrue();
+});

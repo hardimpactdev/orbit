@@ -56,6 +56,8 @@ impl System for Copy {
         }
         let answer = if has("--show-toplevel") {
             "/srv/workspace\n".to_owned()
+        } else if has("symbolic-ref --quiet refs/remotes") {
+            return Err("not a symbolic ref".to_owned());
         } else if has("symbolic-ref") {
             "task-42\n".to_owned()
         } else if has("rev-parse HEAD") {
@@ -66,7 +68,7 @@ impl System for Copy {
             self.origin.borrow().clone()
         } else if has(&format!("cat-file -e {HEAD}")) {
             return if *self.holds.borrow() { Ok(String::new()) } else { Err("missing".to_owned()) };
-        } else if has("update-ref refs/remotes/origin/main") {
+        } else if has("update-ref --no-deref refs/remotes/origin/main") {
             let old = argv.last().expect("old");
             if *old != *self.origin.borrow() {
                 return Err("cannot lock ref: is at another value".to_owned());
@@ -92,8 +94,8 @@ impl System for Copy {
         Ok(answer)
     }
 
-    fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
-        Err("no blob".to_owned())
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        if sha256 == "published" { Ok(b"[]".to_vec()) } else { Err("no blob".to_owned()) }
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, String> {
@@ -107,7 +109,7 @@ impl System for Copy {
 
 fn input() -> Value {
     json!({"project": "orbit-instances", "name": "instance-12", "instance_id": 12, "mirror": "/var/lib/orbit/instance-repositories/12.git",
-        "default_branch": "main", "branch": "task-42", "head": HEAD, "start": START, "published": [], "approved": ""})
+        "default_branch": "main", "branch": "task-42", "head": HEAD, "start": START, "published": {"blob": {"sha256": "published"}}, "approved": ""})
 }
 
 fn result(copy: &Copy) -> Value {
@@ -140,7 +142,7 @@ fn a_copy_that_lacks_the_head_imports_one_bundle_and_moves_only_the_remote_ref()
         "/usr/bin/incus --project orbit-instances exec --disable-stdin --cwd /srv/workspace instance-12 -- /usr/sbin/runuser -u agent -- /usr/bin/env -i \
 HOME=/home/agent PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 /usr/bin/git --literal-pathspecs \
 -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.untrackedCache=false -c core.quotePath=false -c safe.directory=/srv/workspace \
-update-ref refs/remotes/origin/main {HEAD} {OLD}")]);
+update-ref --no-deref refs/remotes/origin/main {HEAD} {OLD}")]);
     for verb in [" merge", " checkout", " reset", " stash", " rebase", " commit", " add "] {
         assert!(!calls.iter().any(|call| call.contains("/usr/sbin/runuser") && call.contains(&format!("/usr/bin/git{verb}")) ), "{verb}");
     }
@@ -181,7 +183,7 @@ fn a_copy_without_the_remote_ref_creates_it_only_when_it_is_still_absent() {
 
     result(&copy);
 
-    assert!(copy.writes()[0].ends_with(&format!("update-ref refs/remotes/origin/main {HEAD} ")), "{}", copy.writes()[0]);
+    assert!(copy.writes()[0].ends_with(&format!("update-ref --no-deref refs/remotes/origin/main {HEAD} ")), "{}", copy.writes()[0]);
 }
 
 #[test]
@@ -189,7 +191,7 @@ fn a_ref_that_moved_after_the_read_refuses_rather_than_overwriting() {
     struct Moving(Copy);
     impl System for Moving {
         fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
-            if argv.join(" ").contains("update-ref refs/remotes/origin/main") {
+            if argv.join(" ").contains("update-ref --no-deref refs/remotes/origin/main") {
                 *self.0.origin.borrow_mut() = START.to_owned();
             }
             self.0.run(seconds, argv, stdin)
@@ -282,6 +284,8 @@ fn the_gateway_inputs_of_the_contract_fixtures_pass_the_primitives() {
     let mut input = sync["fields"]["input"].clone();
     input["head"] = json!(HEAD);
     input["start"] = json!(START);
+    assert!(input["published"]["blob"]["sha256"].is_string(), "the publish history rides in a blob");
+    input["published"] = json!({"blob": {"sha256": "published"}});
 
     assert!(sync_base(&Copy::new(OLD, Holds::Head), &input).is_ok());
     assert!(clear_base(&Copy::new(OLD, Holds::Head), &clear["fields"]["input"]).is_ok());
@@ -336,8 +340,8 @@ impl System for Real {
         if out.status.success() { Ok(text) } else { Err(String::from_utf8_lossy(&out.stderr).into_owned()) }
     }
 
-    fn blob(&self, _sha256: &str) -> Result<Vec<u8>, String> {
-        Err("no blob".to_owned())
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        if sha256 == "published" { Ok(b"[]".to_vec()) } else { Err("no blob".to_owned()) }
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, String> {
@@ -407,4 +411,119 @@ fn a_real_sync_moves_only_the_remote_ref_and_keeps_head_branches_index_untracked
     assert_eq!(first["work"]["state"], "dirty");
     assert!(!real.guest.exists() && !real.path("/var/tmp/orbit-task-base-12").exists(), "the scratch is gone");
     assert_eq!(Real::sh(&mirror, &["for-each-ref", "refs/orbit"]), "", "the mirror's pin is gone");
+}
+
+/// A real copy on `task-42` cloned from an origin that then moved, and a mirror of the moved origin: the copy, the start and the head.
+fn real_copy(paths: &[&[u8]]) -> (Real, String, String) {
+    use std::os::unix::ffi::OsStrExt as _;
+    let real = Real::new();
+    let origin = real.root.path().join("origin");
+    std::fs::create_dir_all(&origin).expect("origin");
+    Real::sh(&origin, &["init", "--quiet"]);
+    std::fs::write(origin.join("app.php"), "one\n").expect("file");
+    Real::sh(&origin, &["add", "app.php"]);
+    Real::sh(&origin, &["commit", "--quiet", "-m", "start"]);
+    let start = Real::sh(&origin, &["rev-parse", "HEAD"]);
+    Real::sh(&real.workspace, &["clone", "--quiet", &origin.display().to_string(), "."]);
+    Real::sh(&real.workspace, &["checkout", "--quiet", "-b", "task-42"]);
+    for path in paths {
+        std::fs::write(real.workspace.join(std::ffi::OsStr::from_bytes(path)), "mine\n").expect("path");
+    }
+    if !paths.is_empty() {
+        Real::sh(&real.workspace, &["add", "--all"]);
+        Real::sh(&real.workspace, &["commit", "--quiet", "-m", "mine"]);
+    }
+    std::fs::write(origin.join("other.php"), "two\n").expect("file");
+    Real::sh(&origin, &["add", "other.php"]);
+    Real::sh(&origin, &["commit", "--quiet", "-m", "main moves"]);
+    let head = Real::sh(&origin, &["rev-parse", "HEAD"]);
+    let mirror = real.path("/var/lib/orbit/instance-repositories/12.git");
+    std::fs::create_dir_all(&mirror).expect("mirror");
+    Real::sh(&mirror, &["init", "--quiet", "--bare"]);
+    Real::sh(&mirror, &["fetch", "--quiet", &origin.display().to_string(), "+refs/heads/main:refs/heads/main"]);
+    (real, start, head)
+}
+
+fn real_input(start: &str, head: &str) -> Value {
+    let mut input = input();
+    input["head"] = json!(head);
+    input["start"] = json!(start);
+    input
+}
+
+#[test]
+fn a_symbolic_remote_ref_refuses_and_its_local_branch_survives_the_sync_and_its_retry() {
+    let (real, start, head) = real_copy(&[]);
+    Real::sh(&real.workspace, &["symbolic-ref", "refs/remotes/origin/main", "refs/heads/main"]);
+    let main = Real::sh(&real.workspace, &["rev-parse", "refs/heads/main"]);
+
+    for _ in 0..2 {
+        assert_eq!(sync_base(&real, &real_input(&start, &head)).map_err(|failure| failure.code), Err("instance.sync_base_failed"));
+        assert_eq!(Real::sh(&real.workspace, &["rev-parse", "refs/heads/main"]), main, "the local branch is untouched");
+        assert_eq!(Real::sh(&real.workspace, &["symbolic-ref", "refs/remotes/origin/main"]), "refs/heads/main");
+    }
+}
+
+#[test]
+fn distinct_paths_that_decode_alike_count_apart_as_in_swamp() {
+    let (real, start, head) = real_copy(&[b"a\xff", b"a\xfe", "é.txt".as_bytes()]);
+
+    let answer: Value = serde_json::from_str(&sync_base(&real, &real_input(&start, &head)).expect("sync")).expect("json");
+
+    assert_eq!(answer["work"]["paths"]["count"], 3);
+    assert_eq!(answer["work"]["paths"]["names"], json!(["a\u{fffd}", "a\u{fffd}", "é.txt"]));
+}
+
+#[test]
+fn clear_fails_while_it_cannot_read_the_mirror_pin() {
+    struct Unreadable(Copy);
+    impl System for Unreadable {
+        fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+            if argv.join(" ").contains("for-each-ref --format=%(refname) refs/orbit/task-base-12") {
+                return Err("fatal: cannot lock".to_owned());
+            }
+            self.0.run(seconds, argv, stdin)
+        }
+        fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+            self.0.blob(sha256)
+        }
+        fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+            self.0.read(path)
+        }
+        fn path(&self, value: &str) -> std::path::PathBuf {
+            self.0.path(value)
+        }
+    }
+    let copy = Unreadable(Copy::new(OLD, Holds::Older));
+    let mirror = copy.path("/var/lib/orbit/instance-repositories/12.git");
+    std::fs::create_dir_all(&mirror).and_then(|()| std::fs::write(mirror.join("HEAD"), "ref: refs/heads/main\n")).expect("mirror");
+    let clear = json!({"project": "orbit-instances", "name": "instance-12", "instance_id": 12, "mirror": "/var/lib/orbit/instance-repositories/12.git"});
+
+    assert_eq!(clear_base(&copy, &clear).map_err(|failure| failure.code), Err("instance.sync_base_failed"));
+}
+
+#[test]
+fn a_failed_update_of_a_ref_that_did_not_move_keeps_the_ordinary_code() {
+    struct Locked(Copy);
+    impl System for Locked {
+        fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+            if argv.join(" ").contains("update-ref --no-deref") {
+                return Err("fatal: Unable to create 'packed-refs.lock': Permission denied".to_owned());
+            }
+            self.0.run(seconds, argv, stdin)
+        }
+        fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+            self.0.blob(sha256)
+        }
+        fn read(&self, path: &str) -> Result<Vec<u8>, String> {
+            self.0.read(path)
+        }
+        fn path(&self, value: &str) -> std::path::PathBuf {
+            self.0.path(value)
+        }
+    }
+
+    let failure = sync_base(&Locked(Copy::new(OLD, Holds::Head)), &input()).expect_err("refused");
+    assert_eq!(failure.code, "instance.sync_base_failed");
+    assert!(failure.detail.contains("Permission denied"), "{}", failure.detail);
 }

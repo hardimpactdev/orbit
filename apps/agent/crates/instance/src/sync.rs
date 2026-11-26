@@ -38,8 +38,8 @@ struct SyncInput {
     /// The mirror head the fetch receipt returned; null when the origin lacks the default branch.
     head: Option<String>,
     start: String,
-    #[serde(default)]
-    published: Vec<String>,
+    /// The commits the group's publishes pushed, as a JSON list in a blob: a long publish history never outgrows the order.
+    published: crate::BlobRef,
     /// The group's latest approved commit, or empty.
     #[serde(default)]
     approved: String,
@@ -131,11 +131,19 @@ struct Kept {
 /// (the ref does not hold the head after the update) or `instance.sync_base_failed`.
 pub fn sync_base(system: &impl System, input: &Value) -> Result<String, Failure> {
     let input: SyncInput = serde_json::from_value(input.clone()).map_err(|error| Failure::new("instance.sync_input_invalid", error.to_string()))?;
-    check(&input).map_err(|detail| Failure::new("instance.sync_input_invalid", detail))?;
+    let published: Vec<String> = system
+        .blob(&input.published.blob.sha256)
+        .map_err(|detail| Failure::new("instance.sync_input_invalid", detail))
+        .and_then(|bytes| serde_json::from_slice(&bytes).map_err(|error| Failure::new("instance.sync_input_invalid", error.to_string())))?;
+    check(&input, &published).map_err(|detail| Failure::new("instance.sync_input_invalid", detail))?;
     let head = input.head.clone().ok_or_else(|| Failure::new("tasks.default_branch_missing", "the origin has no default branch"))?;
     let copy = Copy { system, project: &input.project, name: &input.name };
     let reference = format!("refs/remotes/origin/{}", input.default_branch);
     let before = kept(&copy, &input.branch)?;
+    // A symbolic remote ref names another ref, such as a local branch: moving it would move that branch.
+    if copy.try_git(&["symbolic-ref", "--quiet", &reference]).is_ok() {
+        return Err(Failure::new(FAILED, format!("{reference} is a symbolic ref")));
+    }
     let origin = copy.text(&["for-each-ref", "--format=%(objectname)", &reference])?;
     let bundled = origin != head && !copy.holds(&head);
     if bundled {
@@ -146,9 +154,12 @@ pub fn sync_base(system: &impl System, input: &Value) -> Result<String, Failure>
     }
     if origin != head {
         copy.git(&["cat-file", "-e", &format!("{head}^{{commit}}")])?;
-        // The compare-and-swap: an empty old value requires the ref to be absent.
-        copy.try_git(&["update-ref", &reference, &head, &origin])
-            .map_err(|detail| Failure::new("tasks.base_ref_mismatch", format!("update-ref: {detail}")))?;
+        // The compare-and-swap on the literal ref: an empty old value requires the ref to be absent.
+        if let Err(detail) = copy.try_git(&["update-ref", "--no-deref", &reference, &head, &origin]) {
+            let now = copy.text(&["for-each-ref", "--format=%(objectname)", &reference])?;
+            let code = if now == origin { FAILED } else { "tasks.base_ref_mismatch" };
+            return Err(Failure::new(code, format!("update-ref: {detail}")));
+        }
     }
     if copy.text(&["rev-parse", "--verify", &format!("{reference}^{{commit}}")])? != head {
         return Err(Failure::new("tasks.base_ref_mismatch", "the remote ref does not hold the head"));
@@ -159,7 +170,7 @@ pub fn sync_base(system: &impl System, input: &Value) -> Result<String, Failure>
     copy.git(&["cat-file", "-e", &format!("{}^{{commit}}", input.start)])?;
     let behind = copy.text(&["rev-list", "--count", &format!("{}..{reference}", before.head)])?;
     let behind: u64 = behind.parse().map_err(|_| Failure::new(FAILED, "rev-list answered no count"))?;
-    let work = work(&copy, &input, &before.head)?;
+    let work = work(&copy, &input, &published, &before.head)?;
     Ok(json!({
         "default_branch": input.default_branch, "default_commit": head, "branch": input.branch, "branch_commit": before.head,
         "behind_by": behind, "start": input.start, "bundled": bundled, "changed": origin != head, "work": work,
@@ -241,30 +252,43 @@ fn clear(system: &impl System, copy: &Copy<'_, impl System>, instance: u64, mirr
     if node.exists() {
         std::fs::remove_dir_all(&node).map_err(|error| Failure::new(FAILED, format!("scratch: {error}")))?;
     }
-    let mirror = system.path(mirror);
-    if mirror.join("HEAD").exists() {
-        let pinned = format!("{MIRROR_REF}{instance}");
-        let held = system.run(30, &[GIT, "-C", &mirror.display().to_string(), "for-each-ref", "--format=%(refname)", &pinned].map(str::to_owned), None);
-        if held.is_ok_and(|refs| !refs.trim().is_empty()) {
-            system
-                .run(30, &[GIT, "-C", &mirror.display().to_string(), "update-ref", "-d", &pinned].map(str::to_owned), None)
-                .map_err(|detail| Failure::new(FAILED, format!("unpin: {detail}")))?;
+    let mirror = system.path(mirror).display().to_string();
+    let pinned = format!("{MIRROR_REF}{instance}");
+    // A read that fails is no proof the pin is gone: only an answer counts.
+    let held = || -> Result<bool, Failure> {
+        if !std::path::Path::new(&mirror).join("HEAD").exists() {
+            return Ok(false);
         }
+        system
+            .run(30, &[GIT, "-C", &mirror, "for-each-ref", "--format=%(refname)", &pinned].map(str::to_owned), None)
+            .map(|refs| !refs.trim().is_empty())
+            .map_err(|detail| Failure::new(FAILED, format!("read the pin: {detail}")))
+    };
+    if held()? {
+        system.run(30, &[GIT, "-C", &mirror, "update-ref", "-d", &pinned].map(str::to_owned), None).map_err(failed("unpin"))?;
     }
-    copy.root(&["/bin/rm", "-rf", "--", &format!("{GUEST_SCRATCH}{instance}")])
+    let guest = format!("{GUEST_SCRATCH}{instance}");
+    copy.root(&["/bin/rm", "-rf", "--", &guest])?;
+    if node.exists() || held()? || copy.exec(As::Root, &["/usr/bin/test", "!", "-e", &guest]).is_err() {
+        return Err(Failure::new(FAILED, "the sync scratch is still there"));
+    }
+    Ok(())
 }
 
 /// The one content rule (docs/reference/tasks.md#published-work-of-a-copy) on the default head now in the ref: every path HEAD
 /// changed since its merge base with it must hold the same content on it, or in a commit a publish pushed. Uncommitted,
 /// untracked and stashed work is never published. The same read as the Swamp phase `base-work`.
-fn work(copy: &Copy<'_, impl System>, input: &SyncInput, head: &str) -> Result<Value, Failure> {
+fn work(copy: &Copy<'_, impl System>, input: &SyncInput, published: &[String], head: &str) -> Result<Value, Failure> {
     let default = copy.text(&["rev-parse", "--verify", &format!("refs/remotes/origin/{}^{{commit}}", input.default_branch)])?;
+    // Git quotes a path that is not plain ASCII, one line each: every distinct path keeps its own name through the text
+    // boundary, and only the names shown are decoded.
     let paths = |source: &str| -> Result<BTreeSet<String>, Failure> {
-        Ok(copy.git(&["diff-tree", "-r", "--no-renames", "--name-only", "-z", source, head])?.split('\0').filter(|name| !name.is_empty()).map(str::to_owned).collect())
+        Ok(copy.git(&["-c", "core.quotePath=true", "diff-tree", "-r", "--no-renames", "--name-only", source, head])?.lines().filter(|name| !name.is_empty())
+            .map(str::to_owned).collect())
     };
     let changed = paths(&copy.text(&["merge-base", head, &default])?)?;
     let mut differ: BTreeSet<String> = changed.intersection(&paths(&default)?).cloned().collect();
-    for commit in &input.published {
+    for commit in published {
         if !differ.is_empty() && copy.holds(commit) {
             differ = differ.intersection(&paths(commit)?).cloned().collect();
         }
@@ -288,12 +312,48 @@ fn work(copy: &Copy<'_, impl System>, input: &SyncInput, head: &str) -> Result<V
         copy.text(&["reflog", "show", "--format=%H", "refs/stash"])?.split_whitespace().count()
     };
     let approved_held = (!input.approved.is_empty()).then(|| copy.try_git(&["merge-base", "--is-ancestor", &input.approved, head]).is_ok());
-    let names: Vec<&String> = differ.iter().take(NAMES).collect();
+    let mut names: Vec<String> = differ.iter().map(|name| unquote(name)).collect();
+    names.sort();
+    names.truncate(NAMES);
     let dirty = !differ.is_empty() || modified > 0 || untracked > 0 || stashes > 0;
     Ok(json!({
         "state": if dirty { "dirty" } else { "clean" }, "head": head, "default_commit": default, "empty": changed.is_empty(),
         "paths": {"count": differ.len(), "names": names}, "uncommitted": modified, "untracked": untracked, "stashes": stashes, "approved_held": approved_held,
     }))
+}
+
+/// A path as Git printed it with `core.quotePath`: a C-quoted name decoded to its bytes, shown with invalid UTF-8 replaced.
+fn unquote(name: &str) -> String {
+    let Some(inner) = name.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else { return name.to_owned() };
+    let (mut bytes, mut chars) = (Vec::new(), inner.bytes().peekable());
+    while let Some(byte) = chars.next() {
+        if byte != b'\\' {
+            bytes.push(byte);
+            continue;
+        }
+        match chars.next() {
+            Some(digit @ b'0'..=b'7') => {
+                let mut value = u32::from(digit - b'0');
+                for _ in 0..2 {
+                    if let Some(next @ b'0'..=b'7') = chars.peek().copied() {
+                        value = value * 8 + u32::from(next - b'0');
+                        chars.next();
+                    }
+                }
+                bytes.push(u8::try_from(value).unwrap_or(b'?'));
+            }
+            Some(b'n') => bytes.push(b'\n'),
+            Some(b't') => bytes.push(b'\t'),
+            Some(b'r') => bytes.push(b'\r'),
+            Some(b'a') => bytes.push(0x07),
+            Some(b'b') => bytes.push(0x08),
+            Some(b'f') => bytes.push(0x0c),
+            Some(b'v') => bytes.push(0x0b),
+            Some(other) => bytes.push(other),
+            None => {}
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn commit(value: &str) -> bool {
@@ -309,12 +369,12 @@ fn names(project: &str, name: &str, mirror: &str) -> Result<(), String> {
     crate::fetch::mirror_path(mirror).then_some(()).ok_or_else(|| "mirror is not an Orbit mirror".to_owned())
 }
 
-fn check(input: &SyncInput) -> Result<(), String> {
+fn check(input: &SyncInput, published: &[String]) -> Result<(), String> {
     names(&input.project, &input.name, &input.mirror)?;
     crate::fetch::branch_name(&input.default_branch).then_some(()).ok_or("default_branch is not a branch name")?;
     let task = input.branch.strip_prefix("task-").is_some_and(|id| !id.is_empty() && !id.starts_with('0') && id.bytes().all(|byte| byte.is_ascii_digit()));
     task.then_some(()).ok_or("branch is not a task branch")?;
-    if input.head.as_deref().is_some_and(|head| !commit(head)) || !commit(&input.start) || input.published.iter().any(|value| !commit(value))
+    if input.head.as_deref().is_some_and(|head| !commit(head)) || !commit(&input.start) || published.iter().any(|value| !commit(value))
         || (!input.approved.is_empty() && !commit(&input.approved))
     {
         return Err("a commit is not a commit id".to_owned());

@@ -17,6 +17,7 @@ use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
@@ -36,6 +37,10 @@ final readonly class Engine
      * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
      */
     private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind];
+
+    /** The one successful receipt status each fenced action answers; any other success status is not its result. */
+    private const array FencedSuccess = ['instance.destroy' => 'done', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
+        'instance.clear_base' => 'output'];
 
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
@@ -154,6 +159,17 @@ final readonly class Engine
         return in_array($kind, self::ReceiptBound, true);
     }
 
+    /**
+     * The Operation lock a receipt-bound kind holds until its end: the resource its orders change. A task copy's sync locks its
+     * copy, so no removal or other writer of that Instance starts beside it; the group stays fenced by its running Operation.
+     */
+    public static function fenceKey(Operation $operation): string
+    {
+        return $operation->kind === TaskSyncEngineFlow::Kind
+            ? OperationStore::lockKey('instance', ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0))
+            : OperationStore::lockKey($operation->target_type, $operation->target_id);
+    }
+
     public static function requiresReceipt(Operation $operation): bool
     {
         return self::owns($operation) && self::receiptBound($operation->kind);
@@ -192,10 +208,19 @@ final readonly class Engine
 
             return;
         }
-        if ($receiptBound !== null && (! in_array($status, ['done', 'output', 'applied', 'failed'], true)
-            || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
-            || ($line['code'] ?? null) === 'executor.order_expired')) {
-            return;
+        if ($receiptBound !== null) {
+            $success = self::FencedSuccess[$step->action] ?? 'done';
+            // An expired order and content the executor could not read never ran: only a terminal result settles the step.
+            if (! in_array($status, [$success, 'failed', ...($success === 'done' ? [] : ['done', 'applied', 'output'])], true)
+                || ($line['action'] ?? null) !== $step->action || ($line['target'] ?? null) !== $step->target
+                || ($line['code'] ?? null) === 'executor.order_expired' || str_starts_with(self::text($line['code'] ?? null), 'blob.')) {
+                return;
+            }
+            if ($status !== 'failed' && ($status !== $success || ($success === 'output' && ! self::evidence($receiptBound, $step, $line)))) {
+                $step->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.receipt_invalid']);
+
+                return;
+            }
         }
         match (true) {
             in_array($status, ['done', 'applied', 'output'], true) => $step->update(['status' => 'done', 'done_ms' => self::nowMs(),
@@ -216,6 +241,14 @@ final readonly class Engine
                     ? ['error_detail' => app(NativeStepFailure::class)->written($step->name, $line['detail'], $receiptBound)['detail']] : [])]),
             default => null,
         };
+    }
+
+    /** Whether a fenced step's output is the evidence its kind defines; a kind without a rule takes any text. */
+    private static function evidence(Operation $operation, OperationEngineStep $step, array $line): bool
+    {
+        $definition = app(EngineKinds::class)->definition($operation->kind);
+
+        return ! $definition instanceof EngineEvidence || $definition->evidence($step->name, is_string($line['stdout'] ?? null) ? $line['stdout'] : '');
     }
 
     /**
@@ -242,8 +275,12 @@ final readonly class Engine
             $steps = self::steps($operationId, lock: true);
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
-            $mayCancel = ! $receiptBound || ! array_any($steps, static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null);
-            $cancel = $operation->cancel_requested_at !== null && $mayCancel;
+            $cancel = $operation->cancel_requested_at !== null;
+            // A receipt-bound cancel sends no new step: it waits for each published order's terminal receipt, then runs the failure
+            // steps for the work that was done, and ends. A step whose first order was never published did nothing.
+            $published = static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null;
+            $outstanding = array_any($steps, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step));
+            $acted = array_any($steps, $published);
             foreach ($steps as $step) {
                 if (! $receiptBound && $step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
                     $step->update(['status' => 'failed', 'done_ms' => $now, 'error_code' => 'engine.step_budget_exceeded']);
@@ -251,8 +288,13 @@ final readonly class Engine
             }
             $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
             $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
+            $rescue = $failed || ($receiptBound && $cancel && $acted && ! array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step)));
             foreach ($steps as $step) {
-                if ($step->on_failure !== $failed || ($receiptBound && $cancel)) {
+                if ($receiptBound && $cancel && ! $step->on_failure) {
+                    if ($step->status !== 'sent' || ! $published($step)) {
+                        continue; // Only a published order is resent until its terminal receipt.
+                    }
+                } elseif ($step->on_failure !== $rescue) {
                     continue; // A failed run sends no more of its own steps; a run without a failure none of its failure steps.
                 }
                 if ($step->on_failure && $step->status === 'pending' && ! array_all($step->after, $done)) {
@@ -281,6 +323,7 @@ final readonly class Engine
             $end = match (true) {
                 $failed => $rescued ? 'failed' : null,
                 array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
+                $receiptBound && $cancel => ! $outstanding && (! $acted || $rescued) ? 'cancelled' : null,
                 $cancel => 'cancelled',
                 default => null,
             };
@@ -327,14 +370,15 @@ final readonly class Engine
         }
         $run = $this->run($operation->id);
         if (self::requiresReceipt($operation)) {
+            $failed = false;
             foreach ($attempts as $name => $attempt) {
                 $step = $run->steps[$name];
                 if ($step->status === 'sent' && $step->sends === $attempt) {
-                    $this->sendFencedOrder($operation, $definition, $step, $run);
+                    $failed = $this->sendFencedOrder($operation, $definition, $step, $run) || $failed;
                 }
             }
 
-            return false;
+            return $failed;
         }
         $signer = ExecutorOrderSigner::fromConfig();
         $invalid = [];
@@ -385,16 +429,52 @@ final readonly class Engine
         return $failed;
     }
 
-    private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): void
+    /** @return bool Whether the step failed for good: its order cannot be built or signed, and none was ever published. */
+    private function sendFencedOrder(Operation $operation, EngineDefinition $definition, OperationEngineStep $step, EngineRun $run): bool
     {
         try {
-            $input = EngineContent::upload($this->bus, $step->node_id, $definition->input($operation, $step->name, $run));
+            $input = $definition->input($operation, $step->name, $run);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->failUnpublished($step);
+        }
+        try {
+            $input = EngineContent::upload($this->bus, $step->node_id, $input);
+        } catch (Throwable $exception) {
+            Log::warning('Could not send the fenced order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+
+            return false;
+        }
+        try {
+            // A signer the Gateway cannot load yet is its configuration, which a later send may find; an order the signer
+            // refuses, such as one over 4 KB, is refused again on every send.
             $order = ExecutorOrderSigner::fromConfig()->signStep($operation, $step->node_id, $step->name, $step->action, $step->target, $input);
+        } catch (InvalidArgumentException $exception) {
+            report($exception);
+
+            return $this->failUnpublished($step);
+        } catch (Throwable $exception) {
+            Log::warning('Could not send the fenced order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+
+            return false;
+        }
+        try {
             $this->bus->scheduleDeadline($operation->id, $step->name, $step->sends, (int) $step->resend_at_ms);
             $this->bus->publishOrder($step->node_id, $order, fn (): bool => $this->claimPublication($step, $order->expiresMs));
         } catch (Throwable $exception) {
             Log::warning('Could not send the fenced order.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
         }
+
+        return false;
+    }
+
+    /** A step that no order of ever reached a Node fails as an invalid order; one that was published waits for its receipt. */
+    private function failUnpublished(OperationEngineStep $attempt): bool
+    {
+        return DB::transaction(static fn (): bool => OperationEngineStep::query()->whereKey($attempt->id)->where('status', 'sent')
+            ->where('sends', $attempt->sends)->whereNull('first_order_expires_ms')
+            ->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.order_invalid']) > 0);
     }
 
     /** Commits the earliest possible publication under the same lock as cancellation and receipts. */
@@ -405,9 +485,9 @@ final readonly class Engine
             $step = OperationEngineStep::query()->lockForUpdate()->findOrFail($attempt->id);
             if (! self::requiresReceipt($operation) || $operation->status->terminal()
                 || (ValidatedData::object($operation->state['engine'] ?? [])['finished_ms'] ?? null) !== null
-                || $operation->lock_key !== OperationStore::lockKey($operation->target_type, $operation->target_id)
+                || $operation->lock_key !== self::fenceKey($operation)
                 || $step->status !== 'sent' || $step->sends !== $attempt->sends || $step->resend_at_ms === null || self::nowMs() >= $expiryMs
-                || ($step->first_order_expires_ms === null && $operation->cancel_requested_at !== null)
+                || ($step->first_order_expires_ms === null && $operation->cancel_requested_at !== null && ! $step->on_failure)
                 || ! self::withinReplayWindow($step, $expiryMs)) {
                 return false;
             }

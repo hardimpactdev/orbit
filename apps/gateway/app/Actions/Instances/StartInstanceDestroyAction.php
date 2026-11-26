@@ -31,6 +31,7 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSyncEngineFlow;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -74,6 +75,11 @@ final readonly class StartInstanceDestroyAction
             return $replay;
         }
 
+        // A copy's signed sync holds the Instance until its Node answers every order: no removal starts beside it.
+        if (Operation::query()->where('kind', TaskSyncEngineFlow::Kind)->whereNotIn('status', OperationStatus::terminalValues())
+            ->where('lock_key', OperationStore::lockKey('instance', $instance->id))->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A signed sync of the task copy holds the Instance.', 409);
+        }
         ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);

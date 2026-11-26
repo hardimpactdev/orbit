@@ -72,12 +72,18 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
             return $this->apply($operation, [...$run->times(), 'status' => 'succeeded',
                 'result' => ['base' => ['evidence' => is_array($evidence) ? $evidence : []]]]);
         }
-        $code = $step !== null && in_array($step->error_code, self::RefusalCodes, true) ? $step->error_code : 'tasks.sync_failed';
-        $failed = $step === null ? null : TaskSyncEngineFlow::label($step->name);
+        if ($step === null) {
+            // A cancel before any step failed: the Swamp result of a cancelled run, with no field and no error.
+            return $this->apply($operation, [...$run->times(), 'status' => 'cancelled']);
+        }
+        $code = in_array($step->error_code, self::RefusalCodes, true) ? $step->error_code : 'tasks.sync_failed';
+        $failed = TaskSyncEngineFlow::label($step->name);
         $result = ['error_code' => $code, 'failed_step' => $failed];
+        $detail = $step->error_detail;
 
-        return app(DirectOperation::class)->project($operation, [...$run->times(), 'status' => $step === null ? 'cancelled' : 'failed',
-            'failure' => ['failed_step' => $failed], 'error_code' => $code, 'result' => $result], $result);
+        return app(DirectOperation::class)->project($operation, [...$run->times(), 'status' => 'failed', 'error_code' => $code, 'result' => $result,
+            'failure' => ['failed_step' => $failed, 'detail' => $detail ?? 'The Node refused or could not complete the signed '.$step->name.' step ('.$step->error_code.').',
+                'stderr_recorded' => $detail !== null]], $result);
     }
 
     /**

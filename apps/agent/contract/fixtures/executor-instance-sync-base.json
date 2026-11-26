@@ -17,11 +17,13 @@
             "branch": "task-42",
             "head": "cccccccccccccccccccccccccccccccccccccccc",
             "start": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "published": [
-                "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-            ],
+            "published": {
+                "blob": {
+                    "sha256": "fc31265f1c6526ee44098daa62246c63bde10252110fd8c1df1eca7576f2edd7"
+                }
+            },
             "approved": ""
         }
     },
-    "wire": "eyJhY3Rpb24iOiJpbnN0YW5jZS5zeW5jX2Jhc2UiLCJub2RlIjoiNyIsInRhcmdldCI6IjEyIiwib3BlcmF0aW9uIjoiNDI6c3luYyIsIm5vbmNlIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDIiLCJleHBpcmVzX21zIjoxODAwMDAwMDA4MDAwLCJpbnB1dCI6eyJwcm9qZWN0Ijoib3JiaXQtaW5zdGFuY2VzIiwibmFtZSI6Imluc3RhbmNlLTEyIiwiaW5zdGFuY2VfaWQiOjEyLCJtaXJyb3IiOiIvdmFyL2xpYi9vcmJpdC9pbnN0YW5jZS1yZXBvc2l0b3JpZXMvMTIuZ2l0IiwiZGVmYXVsdF9icmFuY2giOiJtYWluIiwiYnJhbmNoIjoidGFzay00MiIsImhlYWQiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwic3RhcnQiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwicHVibGlzaGVkIjpbImVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWUiXSwiYXBwcm92ZWQiOiIifX0=.OQF4dz7GfJ7zvKKJKIW6rF6+JpNFO2U0uQLi2jSYgFIxrnZ6jv/PTqK/NeAaeCJubwWLXZaig5VOIYOBc75cCg=="
+    "wire": "eyJhY3Rpb24iOiJpbnN0YW5jZS5zeW5jX2Jhc2UiLCJub2RlIjoiNyIsInRhcmdldCI6IjEyIiwib3BlcmF0aW9uIjoiNDI6c3luYyIsIm5vbmNlIjoiMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDIiLCJleHBpcmVzX21zIjoxODAwMDAwMDA4MDAwLCJpbnB1dCI6eyJwcm9qZWN0Ijoib3JiaXQtaW5zdGFuY2VzIiwibmFtZSI6Imluc3RhbmNlLTEyIiwiaW5zdGFuY2VfaWQiOjEyLCJtaXJyb3IiOiIvdmFyL2xpYi9vcmJpdC9pbnN0YW5jZS1yZXBvc2l0b3JpZXMvMTIuZ2l0IiwiZGVmYXVsdF9icmFuY2giOiJtYWluIiwiYnJhbmNoIjoidGFzay00MiIsImhlYWQiOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjIiwic3RhcnQiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwicHVibGlzaGVkIjp7ImJsb2IiOnsic2hhMjU2IjoiZmMzMTI2NWYxYzY1MjZlZTQ0MDk4ZGFhNjIyNDZjNjNiZGUxMDI1MjExMGZkOGMxZGYxZWNhNzU3NmYyZWRkNyJ9fSwiYXBwcm92ZWQiOiIifX0=.M+ZvC1L5I6ShvIr8MJ6XDwbX9KBbAcPAZvV4To8RGAX/aXgMbFWLXLBkhd2AHAlJ1iWMudbP05endrpsBHRlBg=="
 }

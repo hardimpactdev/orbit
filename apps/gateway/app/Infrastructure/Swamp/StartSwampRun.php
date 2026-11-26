@@ -82,7 +82,7 @@ final readonly class StartSwampRun
             if (app(EngineKinds::class)->routes($operation)) {
                 $runId = EngineRun::runIdOf($operation->id);
                 if (Engine::receiptBound($operation->kind)) {
-                    $lock = OperationStore::lockKey($operation->target_type, $operation->target_id);
+                    $lock = Engine::fenceKey($operation);
                     try {
                         app(Engine::class)->start($operation, fn () => $this->bind($operation, $runId, $lock));
                     } catch (UniqueConstraintViolationException $exception) {

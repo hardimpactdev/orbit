@@ -167,6 +167,12 @@ impl Action {
         }
     }
 
+    /// Whether a lost receipt keeps the Gateway's target fenced (ADR 0271): only a terminal result settles the step, so an
+    /// expiry before the target lock is not journaled as one, and a result goes back only once its `done` record is durable.
+    pub fn receipt_fenced(self) -> bool {
+        matches!(self, Self::InstanceDestroy | Self::InstanceFetchBranch | Self::InstanceSyncBase | Self::InstanceClearBase)
+    }
+
     /// The action's name on the wire.
     pub fn name(self) -> &'static str {
         match self {

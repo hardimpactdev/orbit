@@ -1445,3 +1445,43 @@ fn a_pairing_label_or_scope_that_could_carry_another_value_is_refused() {
         assert_eq!(fake.calls(), Vec::<String>::new());
     }
 }
+
+#[test]
+fn a_fetch_keeps_a_sibling_fetch_credential_and_removes_only_a_stale_one() {
+    let fake = Fake::new(&[("ls-remote", Ok(json!("abc\trefs/heads/feature/x"))), ("rev-parse", Ok(json!("abc123\n")))]);
+    let folder = fake.path("/var/lib/orbit/instance-repositories");
+    std::fs::create_dir_all(&folder).expect("folder");
+    std::fs::write(folder.join(".credential-1-sibling"), "sibling").expect("sibling");
+    let stale = std::fs::File::create(folder.join(".credential-1-stale")).expect("stale");
+    stale.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600)).expect("age");
+
+    fetch_branch(&fake, &fetch_input()).expect("fetch");
+
+    assert!(folder.join(".credential-1-sibling").exists(), "a running sibling fetch keeps its credential");
+    assert!(!folder.join(".credential-1-stale").exists());
+}
+
+#[test]
+fn a_sync_fetch_seeds_a_missing_mirror_from_the_default_and_refuses_without_one() {
+    let mut seeded = fetch_input();
+    seeded["seed"] = json!("/var/lib/orbit/instance-repositories/2.git");
+    let fake = Fake::new(&[("ls-remote", Ok(json!("abc\trefs/heads/feature/x"))), ("rev-parse", Ok(json!("abc123\n")))]);
+    fetch_branch(&fake, &seeded).expect("seeded");
+    let calls = fake.calls();
+    assert!(calls[0].starts_with("init --quiet --bare "), "{}", calls[0]);
+    assert!(calls[1].ends_with("2.git +refs/heads/*:refs/seed/*"), "{}", calls[1]);
+    assert!(calls[2].contains("ls-remote"), "the seed comes before the origin is asked");
+
+    let mut refused = fetch_input();
+    refused["seed"] = json!("");
+    let fake = Fake::new(&[]);
+    assert_eq!(fetch_branch(&fake, &refused).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"));
+    assert_eq!(fake.calls(), Vec::<String>::new(), "both mirrors missing: nothing runs");
+
+    // The copy's own mirror exists and the default is gone: the sync goes on from it.
+    let fake = Fake::new(&[("ls-remote", Ok(json!("abc\trefs/heads/feature/x"))), ("rev-parse", Ok(json!("abc123\n")))]);
+    let mirror = fake.path("/var/lib/orbit/instance-repositories/12.git");
+    std::fs::create_dir_all(&mirror).and_then(|()| std::fs::write(mirror.join("HEAD"), "ref: refs/heads/main\n")).expect("mirror");
+    fetch_branch(&fake, &refused).expect("own mirror");
+    assert!(!fake.calls().iter().any(|call| call.contains("init")), "{:?}", fake.calls());
+}
