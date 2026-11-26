@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% The workspace unsaved-work read that Conn's Remove opens (GET /api/v1/conn/instances/{instance}/work, ContainerWorkspaceRead) as a signed executor read. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% The workspace unsaved-work read that Conn's Remove opens (GET /api/v1/conn/instances/{instance}/work, ContainerWorkspaceRead) as a signed executor read (ADR 0267, ADR 0271): the executor action `instance.work_read`, sent as a core NATS request to `orbit.node.<node>.reads` (docs/reference/executor.md#signed-reads). Built; runtime proof pending.
   %% Documented exception: this is a synchronous read and no Operation, so it has no kind of its own. It carries `instance.destroy`, the Operation whose Remove it gates, so instance/destroy.mdx can place it beside instance/container/destroy-engine.mmd.
   %% Answer contract unchanged (docs/reference/development-containers.md#workspace-work-state): state clean, dirty or unknown; unknown carries a reason from stopped, asleep, timeout, not_a_repository, unreachable.
-  %% status: draft
+  %% status: built
   %% command: instance:destroy
   %% kind: instance.destroy
   autonumber
@@ -24,7 +24,8 @@ sequenceDiagram
     %%> No Operation, no lock and no engine decision: the Gateway signs one read order and waits for its reply within the request's 4 s budget
     GW->>EN: Signed read order<br/>machine bus · request
     EN->>N: Read the workspace<br/>read-only · 2 s budget
-    %%> Target: Instance 42; the order changes nothing, so the executor needs no journal result to repeat
+    %%> Target: Instance 42; the order changes nothing, so the executor writes no journal record, takes no target lock and stores no result; its nonce map still refuses the same order twice
+    %%> A recorded baseline and the published commits travel as content the order names by its hash (KV_CONTENT): a baseline may name 2,000 untracked files, beyond the order's 4 KB
     alt Incus reports Running
       N->>C: Git read in /srv/workspace<br/>as agent · no repository code
       %%> The fixed reader of workspace-git-read.py: status, untracked set, stashes, commits beyond the baseline and the published commits; no hooks, no fsmonitor, no write to the index
@@ -39,8 +40,8 @@ sequenceDiagram
     end
     EN-->>GW: Reply
     opt the reply is lost
-      GW->>EN: Read again<br/>fresh nonce · same budget
-      %%> A read has no effect, so a second send is harmless; a reply still missing at the budget's end is `unknown` `timeout`
+      GW->>EN: Read again<br/>fresh nonce · rest of the budget
+      %%> A read has no effect, so a second send is harmless. The first send waits 2.5 s (the Node's 2 s and 0.5 s for the reply); the one re-read gets what is left of the 4 s with a Node budget 0.5 s shorter. A reply still missing then is `unknown` `timeout`; an order that expired before it ran is `timeout` too
     end
   else the Node lacks the action
     Note over GW: Read over pinned SSH<br/>ContainerWorkspaceRead
