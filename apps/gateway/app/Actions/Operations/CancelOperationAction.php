@@ -9,6 +9,8 @@ use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Nodes\NodeRoleRelocateProjection;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationLateResult;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -16,7 +18,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolIntentProjection;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -52,7 +53,9 @@ final readonly class CancelOperationAction
                 // A completion cancelled before its run keeps the clone for a retry, as a cancelled run does.
                 $recovery = $operation->kind === 'instance.complete' ? InstanceCompleteProjection::cancelledBeforeRun($operation) : $recovery;
                 NodeRoleRelocateProjection::cancelledBeforeRun($operation);
-                ToolIntentProjection::cancelledBeforeRun($operation);
+                if (DirectOperation::owns($operation) && ($projection = app(DirectOperation::class)->projection($operation)) instanceof DirectOperationLateResult) {
+                    $projection->neverRan($operation);
+                }
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
                     'current_step' => null, 'failed_step' => null, 'lock_key' => null,

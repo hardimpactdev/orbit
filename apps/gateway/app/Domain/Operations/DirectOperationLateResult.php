@@ -6,7 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Models\Operation;
 
-/** Optional on a direct projection whose records must keep what a run proved after the Gateway timed its Operation out. */
+/** Optional on a direct projection whose records must keep what a run proved after its timeout, or that it never ran. */
 interface DirectOperationLateResult
 {
     /**
@@ -17,4 +17,10 @@ interface DirectOperationLateResult
      * @param  array<string, mixed>  $result
      */
     public function late(Operation $operation, string $status, array $result): void;
+
+    /**
+     * Runs once, in the transaction that records that the Operation never ran: it was cancelled before its run started, or the lookup
+     * for its lost start found no run in Swamp. Nothing reached the Node.
+     */
+    public function neverRan(Operation $operation): void;
 }

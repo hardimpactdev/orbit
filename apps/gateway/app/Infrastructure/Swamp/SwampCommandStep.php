@@ -77,6 +77,10 @@ final readonly class SwampCommandStep
                         ...(is_array($timeout) ? $timeout : []), 'no_run_verified_at' => now()->toISOString(),
                     ]],
                 ]);
+                // A verified non-start, unlike an unreadable one, proves the Operation wrote nothing.
+                if (($projection = app(DirectOperation::class)->projection($current)) instanceof DirectOperationLateResult) {
+                    $projection->neverRan($current);
+                }
             });
             ExecutorFence::resolve($operation);
 

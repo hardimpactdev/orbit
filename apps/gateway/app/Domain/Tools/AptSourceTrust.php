@@ -106,46 +106,76 @@ final class AptSourceTrust
         return [...$recorded, ...array_values(array_map(ValidatedData::object(...), array_filter($desired, 'is_array')))];
     }
 
-    /** @param list<array<string, mixed>> $plans the admitted convergence plans, which always publish their sources */
-    public static function suspectPlans(int $nodeId, array $plans): void
+    /**
+     * The trust and possible entries of each named source as the Node records them before an admission suspects them, for the
+     * Operation's input: a run that wrote nothing gives them back (restoreAdmitted).
+     *
+     * @param  list<array<string, mixed>>  $definitions
+     * @return array<string, array{verified: bool, entries: list<string>}>
+     */
+    public static function snapshot(int $nodeId, array $definitions): array
     {
-        foreach ($plans as $plan) {
-            if (is_array($plan['repository'] ?? null)) {
-                self::suspect($nodeId, ValidatedData::object($plan['repository']));
-            }
+        $snapshot = [];
+        foreach (AptRepository::query()->where('node_id', $nodeId)->whereIn('name', array_map(self::name(...), $definitions))->get() as $record) {
+            $snapshot[$record->name] = ['verified' => $record->verified, 'entries' => self::possible($record, $record->definition)];
+        }
+
+        return $snapshot;
+    }
+
+    /** @param list<array<string, mixed>> $definitions the definitions an admitted Operation may publish, remove or repin */
+    public static function suspectAll(int $nodeId, array $definitions, int $operation): void
+    {
+        foreach ($definitions as $definition) {
+            self::suspect($nodeId, $definition)->update(['suspected_by' => $operation]);
         }
     }
 
     /**
-     * A convergence whose Tools phase did not run wrote nothing: each source its plans captured as verified is verified again.
+     * The definitions a convergence's plans may publish.
      *
      * @param  list<array<string, mixed>>  $plans
+     * @return list<array<string, mixed>>
      */
-    public static function restorePlans(int $nodeId, array $plans): void
+    public static function planned(array $plans): array
     {
-        foreach ($plans as $plan) {
-            $repository = $plan['repository'] ?? null;
-            if (is_array($repository) && ($plan['repository_verified'] ?? false) === true) {
-                $record = AptRepository::query()->where('node_id', $nodeId)->where('name', self::name(ValidatedData::object($repository)))->first();
-                if ($record !== null && ToolDefinition::sameRepository($record->definition, ValidatedData::object($repository))) {
-                    $record->update(['verified' => true]);
-                }
+        return array_values(array_map(ValidatedData::object(...), array_filter(array_column($plans, 'repository'), 'is_array')));
+    }
+
+    /**
+     * Only the newest admitted Operation that may write a source changes its trust: an older receipt, late or not, describes a Node a
+     * newer write may already have changed.
+     */
+    public static function current(AptRepository $record, int $operation): bool
+    {
+        return $record->suspected_by === null || $operation >= $record->suspected_by;
+    }
+
+    /**
+     * An Operation that wrote nothing to its sources (it never started, was cancelled before its run, or its receipt skipped every source
+     * write) gives each the trust and entries it was admitted with. A source it first created stays unproven, and a definition it
+     * merely proposed gains nothing: the record still holds the definition it was admitted with.
+     *
+     * @param  array<string, mixed>  $snapshot  the Operation's `repository_admitted`
+     */
+    public static function restoreAdmitted(int $nodeId, array $snapshot, int $operation): void
+    {
+        foreach ($snapshot as $name => $admitted) {
+            $record = AptRepository::query()->where('node_id', $nodeId)->where('name', $name)->first();
+            if ($record !== null && is_array($admitted) && self::current($record, $operation)) {
+                $record->update(['verified' => ($admitted['verified'] ?? false) === true, 'entries' => ValidatedData::stringList($admitted['entries'] ?? [])]);
             }
         }
     }
 
-    /** @param array<string, mixed> $definition a definition a run left on disk unchanged, with preferences as its owned members need */
-    public static function prove(int $nodeId, array $definition): void
+    /** @param array<string, mixed> $definition the definition Orbit's own successful write published; a newer admission keeps it unproven */
+    public static function record(int $nodeId, array $definition, int $operation): AptRepository
     {
         $record = AptRepository::query()->where('node_id', $nodeId)->where('name', self::name($definition))->first();
-        if ($record !== null && ToolDefinition::sameRepository($record->definition, $definition)) {
-            $record->update(['verified' => true]);
+        if ($record !== null && ! self::current($record, $operation)) {
+            return $record;
         }
-    }
 
-    /** @param array<string, mixed> $definition the definition Orbit's own successful write published */
-    public static function record(int $nodeId, array $definition): AptRepository
-    {
         return AptRepository::query()->updateOrCreate(['node_id' => $nodeId, 'name' => self::name($definition)],
             ['definition' => $definition, 'verified' => true, 'entries' => self::entries($definition)]);
     }

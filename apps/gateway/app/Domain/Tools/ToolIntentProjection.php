@@ -142,14 +142,16 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     /**
      * What the run's own receipt proves, whatever its terminal status (docs/reference/tools.md#ownership):
      * - `acquired`: Orbit's own package write was verified present;
-     * - `released`: the package was absent at the start of a removal, or its removal was verified;
+     * - `released`: the package was absent at the start of a removal, its removal was verified, or its removal step ran without
+     *   failing: a removal that succeeded, or was cut off, may have taken the package even when its absence was never confirmed;
      * - `retained`: a removal's receipt shows it never ran its package removal, so the package it was admitted to own is untouched;
      * - `untouched`: the run wrote nothing to the source that its owned members do not already have. Each source-writing step is
      *   recorded as skipped, or an earlier step failed and none of them ran.
      * A receipt without steps proves nothing.
      *
      * @param  array<string, mixed>  $native
-     * @return array{acquired: bool, released: bool, retained: bool, untouched: bool}
+     *                                        - `observed`: the receipt reports the installed version, as the decision read it or the package state decoded it.
+     * @return array{acquired: bool, released: bool, retained: bool, untouched: bool, observed: bool}
      */
     private function evidence(Operation $operation, array $native): array
     {
@@ -167,8 +169,9 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
         $stopped = array_filter($before, static fn (string $step): bool => $status($step) === 'failed') !== []
             && array_filter($writes, static fn (string $step): bool => ! in_array($status($step), [null, 'skipped'], true)) === [];
 
-        $released = $removal && ($decision['ready'] ?? false) === true
-            && (($decision['remove'] ?? null) === false || ($decoded && ($observation['absent'] ?? false) === true));
+        $released = $removal && ((($decision['ready'] ?? false) === true
+            && (($decision['remove'] ?? null) === false || ($decoded && ($observation['absent'] ?? false) === true)))
+            || ! in_array($status('Remove the package'), [null, 'skipped', 'failed'], true));
 
         return [
             'acquired' => ! $removal && ($decision['mutate'] ?? false) === true && $decoded && ($observation['present'] ?? false) === true,
@@ -176,6 +179,8 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             'retained' => $removal && ! $released && is_array($native['steps'] ?? null) && $native['steps'] !== []
                 && in_array($status('Remove the package'), [null, 'skipped'], true),
             'untouched' => is_array($operation->input['repository'] ?? null) && ($skipped || $stopped),
+            'observed' => array_key_exists('installed_version', $observation) || array_key_exists('installed_coordinate', $observation)
+                || array_key_exists('installed_version', $decision) || array_key_exists('installed_coordinate', $decision),
         ];
     }
 
@@ -184,7 +189,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
      * fails the manager; any other failure marks the Tool failed. Repository definitions change only on success (R2).
      *
      * @param  array<string, mixed>  $result
-     * @param  array{acquired: bool, released: bool, retained: bool, untouched: bool}  $evidence
+     * @param  array{acquired: bool, released: bool, retained: bool, untouched: bool, observed: bool}  $evidence
      */
     private function projectState(Operation $operation, array $result, array $evidence): void
     {
@@ -214,22 +219,21 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             // An installing record that never became a Tool goes: a failed setup, a package Orbit did not install, a cancel. One whose
             // run may already have written its apt source, key or pins stays as a failed Tool instead, so its removal can clean them.
             // The same receipt counts whether the run failed, was cancelled or timed out: an acquisition or a confirmed absence it
-            // recorded is kept, and so is the row it applies to. A run that wrote nothing to its source keeps the trust it was admitted
-            // with, a cancelled one too.
+            // recorded is kept, and so is the row it applies to. A run that wrote nothing to its source gives back the trust it was
+            // admitted with, a cancelled one too. Each field changes only if no newer receipt changed it (Tool::receive).
             if ($evidence['untouched']) {
-                $this->preserveTrust($operation);
+                $this->restoreAdmitted($operation);
             }
+            $id = $operation->id;
             // A removal that never reached its package keeps the claim it was admitted with; one a timeout set aside gets back the state
             // it was admitted from (docs/reference/tools.md#ownership).
             if ($evidence['retained'] && ($input['package_owned'] ?? false) === true && $tool !== null && ! $tool->owned) {
-                $tool->update(['owned' => true, ...($tool->error_code === 'operation.timed_out' ? ['status' => ToolStatus::from(ValidatedData::string($input['tool_status'])),
-                    'failed_operation' => is_string($input['failed_operation'] ?? null) ? ToolOperation::from($input['failed_operation']) : null,
-                    'error_code' => $input['error_code'] ?? null] : [])]);
+                $tool->receive($id, $tool->error_code === 'operation.timed_out' ? $this->admittedState($input) : [], owned: true);
             }
             $evidenced = $evidence['acquired'] || $evidence['released'];
             $published = $tool?->status === ToolStatus::Installing && is_array($input['repository'] ?? null)
                 && ($status !== OperationStatus::Cancelled || isset($operation->state['swamp_run_id']));
-            if ($tool?->status === ToolStatus::Installing && ! $published && ! $evidenced && (($managerFailed && $tool->desired_repository === null
+            if ($tool?->status === ToolStatus::Installing && $tool->currentFor($id) && ! $published && ! $evidenced && (($managerFailed && $tool->desired_repository === null
                 && $tool->desired_version === null && $tool->version_constraint === null) || $status === OperationStatus::Cancelled
                 || $operation->error_code === 'tool.package_already_installed')) {
                 $tool->delete();
@@ -239,11 +243,11 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             if ($status === OperationStatus::Cancelled && ! $published && ! $evidenced) {
                 return;
             }
-            // A verified write stays Orbit's whatever failed after it; a confirmed absence ends Orbit's claim on the package.
-            $owned = $evidence['acquired'] || ($tool !== null && ! $evidence['released'] && $tool->owned);
-            $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $operation->error_code === 'tool.package_already_installed'
-                ? $tool->installed_version : ($evidence['released'] ? null : ($result['installed_coordinate'] ?? $tool->installed_version)),
-                'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code, 'owned' => $owned]);
+            // A verified write stays Orbit's whatever failed after it; a removal that may have taken the package ends Orbit's claim.
+            $tool?->receive($id, ['status' => ToolStatus::Failed, 'failed_operation' => ToolOperation::from($verb), 'error_code' => $operation->error_code],
+                owned: $evidence['acquired'] ? true : ($evidence['released'] ? false : null),
+                version: $evidence['released'] ? null : ValidatedData::nullableString($result['installed_coordinate'] ?? null),
+                observed: $evidence['released'] || ($evidence['observed'] && $operation->error_code !== 'tool.package_already_installed'));
 
             return;
         }
@@ -251,15 +255,17 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             // The last member's cleanup of its apt source is best-effort, so an unconfirmed one keeps the Tool as its retry handle; the
             // package itself is gone or was never Orbit's.
             if (($input['remove_repository'] ?? false) === true && ($result['repository_removed'] ?? false) !== true) {
-                $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => null, 'failed_operation' => ToolOperation::Remove,
-                    'error_code' => 'tool.repository_failed', 'owned' => false]);
+                $tool?->receive($operation->id, ['status' => ToolStatus::Failed, 'failed_operation' => ToolOperation::Remove, 'error_code' => 'tool.repository_failed'],
+                    owned: false, version: null, observed: true);
 
                 return;
             }
-            $tool?->delete();
+            if ($tool?->currentFor($operation->id) === true) {
+                $tool->delete();
+            }
             if (($input['remove_repository'] ?? false) !== true) {
                 // The surviving members' preferences were rewritten from the verified record the removal was admitted with.
-                $this->preserveTrust($operation);
+                $this->restoreAdmitted($operation);
             }
             if (($result['repository_removed'] ?? false) === true && is_int($input['repository_id'] ?? null)) {
                 AptRepository::query()->whereKey($input['repository_id'])->delete();
@@ -272,19 +278,26 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             $tool = $this->createTool($operation, $record);
         }
         // A successful install refused any package that was present without Orbit, so the package is now Orbit's (docs/reference/tools.md#remove-a-tool).
-        $tool?->update(['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'owned' => true, 'installed_version' => $result['installed_coordinate'] ?? null, 'failed_operation' => null, 'error_code' => null]);
+        $tool?->receive($operation->id, ['apt_repository_id' => $repositoryId, 'status' => ToolStatus::Installed, 'failed_operation' => null, 'error_code' => null],
+            owned: true, version: ValidatedData::nullableString($result['installed_coordinate'] ?? null), observed: true);
+    }
+
+    /** A run that wrote nothing to its source gives back the trust each source had at its admission (AptSourceTrust::restoreAdmitted). */
+    private function restoreAdmitted(Operation $operation): void
+    {
+        AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
     }
 
     /**
-     * A run that wrote nothing new to its source leaves the trust it was admitted with: a record verified at admission is verified
-     * again, and one that was not, or did not exist, stays unproven (docs/reference/tools.md#source-trust).
+     * The Tool's state as this Operation's admission captured it.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
      */
-    private function preserveTrust(Operation $operation): void
+    private function admittedState(array $input): array
     {
-        $input = $operation->input;
-        if (is_array($input['repository'] ?? null) && ($input['repository_verified'] ?? false) === true) {
-            AptSourceTrust::prove(ValidatedData::integer($operation->node_id), ValidatedData::object($input['repository']));
-        }
+        return ['status' => ToolStatus::from(ValidatedData::string($input['tool_status'])),
+            'failed_operation' => is_string($input['failed_operation'] ?? null) ? ToolOperation::from($input['failed_operation']) : null, 'error_code' => $input['error_code'] ?? null];
     }
 
     /**
@@ -296,15 +309,20 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
     {
         $tool = is_int($operation->input['tool_id'] ?? null) ? Tool::query()->find($operation->input['tool_id']) : null;
         if ($operation->kind === 'tool.remove' && $tool !== null && ! self::neverStarted($operation)) {
-            $tool->update(['status' => ToolStatus::Failed, 'failed_operation' => ToolOperation::Remove, 'error_code' => 'operation.timed_out', 'owned' => false]);
+            $tool->receive($operation->id, ['status' => ToolStatus::Failed, 'failed_operation' => ToolOperation::Remove, 'error_code' => 'operation.timed_out'], owned: false);
         }
     }
 
-    /** An Operation cancelled before its run started wrote nothing: its source keeps the trust it was admitted with. */
-    public static function cancelledBeforeRun(Operation $operation): void
+    /**
+     * The Operation never ran: it was cancelled before its run, or Swamp has no run for its lost start. It wrote nothing, so each
+     * source gets back the trust it was admitted with, and a removal a timeout set aside gets back the Tool it was admitted for.
+     */
+    public function neverRan(Operation $operation): void
     {
-        if (in_array($operation->kind, ['tool.install', 'tool.update', 'tool.remove'], true)) {
-            app(self::class)->preserveTrust($operation);
+        $this->restoreAdmitted($operation);
+        $tool = is_int($operation->input['tool_id'] ?? null) ? Tool::query()->find($operation->input['tool_id']) : null;
+        if ($operation->kind === 'tool.remove' && $tool !== null && $tool->error_code === 'operation.timed_out' && ($operation->input['package_owned'] ?? false) === true) {
+            $tool->receive($operation->id, $this->admittedState($operation->input), owned: true);
         }
     }
 
@@ -316,15 +334,13 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
 
     /**
      * The receipt of a run that ended after its timeout counts for the Tool as it would have on time; the Operation stays timed out.
-     * An unreadable receipt counts as a failure that proves nothing. It never undoes a later decision: once the Tool is gone, or a
-     * removal admitted after this Operation, the receipt changes no Tool.
+     * An unreadable receipt counts as a failure that proves nothing. Each field it shows changes only if no newer receipt changed it
+     * (Tool::receive), and a Tool already removed stays removed.
      */
     public function late(Operation $operation, string $status, array $result): void
     {
         $toolId = $operation->input['tool_id'] ?? null;
-        $superseded = ! is_int($toolId) || ! Tool::query()->whereKey($toolId)->exists() || Operation::query()->where('kind', 'tool.remove')
-            ->where('id', '>', $operation->id)->where('input->tool_id', $toolId)->exists();
-        if ($superseded) {
+        if (! is_int($toolId) || ! Tool::query()->whereKey($toolId)->exists()) {
             return;
         }
         try {
@@ -352,7 +368,7 @@ final readonly class ToolIntentProjection implements DirectOperationLateResult, 
             return null;
         }
 
-        return AptSourceTrust::record(ValidatedData::integer($operation->node_id), ValidatedData::object($definition))->id;
+        return AptSourceTrust::record(ValidatedData::integer($operation->node_id), ValidatedData::object($definition), $operation->id)->id;
     }
 
     private function createTool(Operation $operation, ToolManagerRecord $record): Tool

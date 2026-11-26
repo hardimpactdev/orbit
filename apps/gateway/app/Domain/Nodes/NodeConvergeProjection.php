@@ -34,7 +34,16 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
     {
         $intent = ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['intent'] ?? []);
         $admitted = array_column(array_map(ValidatedData::object(...), is_array($intent['tools'] ?? null) ? $intent['tools'] : []), null, 'id');
-        $this->toolObservations->late($operation, $admitted, $result['tools'] ?? []);
+        $phase = match (data_get($result, 'phases.4.status')) {
+            'succeeded' => 'completed', 'unchanged', 'skipped' => 'skipped', default => 'partial',
+        };
+        $this->toolObservations->late($operation, $admitted, $result['tools'] ?? [], $phase, ValidatedData::stringList($intent['orphan_sources'] ?? []));
+    }
+
+    /** A convergence that never ran wrote nothing: each source gets back the trust it was admitted with. */
+    public function neverRan(Operation $operation): void
+    {
+        AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -61,14 +70,14 @@ final readonly class NodeConvergeProjection implements DirectOperationLateResult
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->toolObservations->record(ValidatedData::integer($operation->node_id), $admitted, $tools, data_get($result, 'phases.4.status') === 'succeeded');
+            $this->toolObservations->record($locked, $admitted, $tools, data_get($result, 'phases.4.status') === 'succeeded');
             if (data_get($result, 'phases.4.status') === 'succeeded') {
                 // The Tools phase removed the files of the sources no Tool named at admission.
                 AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
             }
             if (in_array(data_get($result, 'phases.4.status'), ['unchanged', 'skipped'], true)) {
                 // The Tools phase did not run, so it wrote no source: the trust its admission suspended holds again.
-                AptSourceTrust::restorePlans(ValidatedData::integer($operation->node_id), array_values($admitted));
+                AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
             }
 
             $phases = $result['phases'];

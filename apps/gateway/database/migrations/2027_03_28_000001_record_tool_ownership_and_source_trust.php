@@ -20,6 +20,8 @@ return new class extends Migration
     {
         Schema::table('tools', static function (Blueprint $table): void {
             $table->boolean('owned')->default(false);
+            // The newest Operation whose receipt changed the row's state, its ownership and its installed version (Tool::receive).
+            $table->json('receipts')->nullable();
         });
         Schema::table('apt_repositories', static function (Blueprint $table): void {
             $table->boolean('verified')->default(true);
@@ -27,6 +29,8 @@ return new class extends Migration
 
         Schema::table('apt_repositories', static function (Blueprint $table): void {
             $table->json('entries')->nullable();
+            // The newest admitted Operation that may write the source: only its receipt can change the trust (AptSourceTrust::current).
+            $table->unsignedBigInteger('suspected_by')->nullable();
         });
 
         // Per Tool: whether Orbit acquired it, how it became installed, the status its latest receipt left, and the installed version
@@ -38,7 +42,7 @@ return new class extends Migration
         // confirmed write or removal, and the Operations that confirmed its removal.
         $sources = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
-            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'attempts', 'state', 'input', 'result']);
+            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
             $input = $this->json($operation->input);
             $result = $this->json($operation->result);
@@ -56,8 +60,12 @@ return new class extends Migration
                 // Admission captured the Tool's status and installed version (StartToolOperationAction).
                 $this->capture($tools, $tool, is_string($input['tool_status'] ?? null) ? $input['tool_status'] : null,
                     is_string($input['installed_version'] ?? null) ? $input['installed_version'] : null);
-                // Every projected end but a cancel set the Tool's status and installed version (ToolIntentProjection::projectState).
-                if ($operation->kind !== 'tool.remove' && in_array($operation->status, ['succeeded', 'failed', 'interrupted'], true)) {
+                // Every projected end but a cancel set the Tool's status and installed version (ToolIntentProjection::projectState). Only
+                // the terminal of a bound native run is projected: an expiry, a refused or lost start, or another Gateway-side failure
+                // leaves the row as it was.
+                $projected = $succeeded || (isset($state['swamp_run_id']) && ($operation->error_code === null
+                    || str_starts_with((string) $operation->error_code, 'tool.') || $operation->error_code === 'operation.native_failed'));
+                if ($operation->kind !== 'tool.remove' && $projected && in_array($operation->status, ['succeeded', 'failed', 'interrupted'], true)) {
                     $acquired = $succeeded && ($result['outcome'] ?? null) === 'applied';
                     $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                     $tools[$tool] = ['owned' => $tools[$tool]['owned'] || $acquired,
@@ -252,10 +260,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('apt_repositories', static function (Blueprint $table): void {
-            $table->dropColumn(['verified', 'entries']);
+            $table->dropColumn(['verified', 'entries', 'suspected_by']);
         });
         Schema::table('tools', static function (Blueprint $table): void {
-            $table->dropColumn('owned');
+            $table->dropColumn(['owned', 'receipts']);
         });
     }
 };

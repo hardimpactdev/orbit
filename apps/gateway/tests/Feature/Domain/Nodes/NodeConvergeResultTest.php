@@ -479,7 +479,9 @@ it('restores source trust its admission suspended only when the Tools phase did 
     $tool = $this->tools[0];
     $intent = ['tools' => [['id' => $tool->id, 'manager_id' => $tool->tool_manager_id, 'package' => $tool->package, 'version_constraint' => null,
         'repository' => $source, 'repository_verified' => $capturedVerified]]];
-    $this->operation->update(['input' => ['_converge' => ['intent' => $intent]]]);
+    // The admission recorded the source's trust before it suspected it.
+    $this->operation->update(['input' => ['_converge' => ['intent' => $intent], 'repository_admitted' => ['proof' => ['verified' => $capturedVerified,
+        'entries' => ['https://example.test/apt 1']]]]]);
     $tools = array_map(static fn (string $status): array => ['id' => $tool->id, 'status' => $status, 'installed_version' => null], $observations);
 
     app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'status' => $failure === null ? 'succeeded' : 'failed',

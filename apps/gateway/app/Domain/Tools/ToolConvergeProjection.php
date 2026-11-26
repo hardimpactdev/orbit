@@ -24,7 +24,9 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
     /** A report that arrived after the timeout still records each Tool it verified installed (ToolConvergeObservations::late). */
     public function late(Operation $operation, string $status, array $result): void
     {
-        $this->observations->late($operation, $this->plans(ValidatedData::object($operation->input['intent'])), $result['tools'] ?? []);
+        $intent = ValidatedData::object($operation->input['intent']);
+        $this->observations->late($operation, $this->plans($intent), $result['tools'] ?? [], ($result['succeeded'] ?? null) === true ? 'completed' : 'partial',
+            ValidatedData::stringList($intent['orphan_sources'] ?? []));
     }
 
     /**
@@ -42,6 +44,12 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
         }
 
         return $plans;
+    }
+
+    /** A convergence that never ran wrote nothing: each source gets back the trust it was admitted with. */
+    public function neverRan(Operation $operation): void
+    {
+        AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -68,7 +76,7 @@ final readonly class ToolConvergeProjection implements DirectOperationLateResult
             if ($locked->status->terminal()) {
                 return $locked;
             }
-            $this->observations->record(ValidatedData::integer($operation->node_id), $plans, $tools, $completed);
+            $this->observations->record($locked, $plans, $tools, $completed);
             if ($completed) {
                 AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), ValidatedData::stringList($intent['orphan_sources'] ?? []));
             }

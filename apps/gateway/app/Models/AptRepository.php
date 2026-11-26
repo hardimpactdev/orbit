@@ -13,12 +13,13 @@ use Illuminate\Database\Eloquent\Model;
  * @property array<string, mixed> $definition
  * @property bool $verified
  * @property list<string>|null $entries every `uri suite` this source may have on disk
+ * @property int|null $suspected_by the newest admitted Operation that may write it
  */
 final class AptRepository extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['node_id', 'name', 'definition', 'verified', 'entries'];
+    protected $fillable = ['node_id', 'name', 'definition', 'verified', 'entries', 'suspected_by'];
 
     /** @return array<string, string> */
     protected function casts(): array

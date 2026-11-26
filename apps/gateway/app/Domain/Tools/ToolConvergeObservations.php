@@ -48,12 +48,17 @@ final readonly class ToolConvergeObservations
         return $observations;
     }
 
-    /** @param array<int, array<string, mixed>> $plans
+    /**
+     * Records a convergence's Tool observations. Each field changes only if no newer receipt changed it (Tool::receive), and the desired
+     * state the plan captured applies only while no newer request for the Tool was admitted, since every admission sets it.
+     *
+     * @param  array<int, array<string, mixed>>  $plans
      * @param  list<array<string, mixed>>  $observations
      * @param  bool  $completed  whether the Tools phase finished: only then did every source write, refusal restore included, succeed
      */
-    public function record(int $nodeId, array $plans, array $observations, bool $completed): void
+    public function record(Operation $operation, array $plans, array $observations, bool $completed): void
     {
+        $nodeId = ValidatedData::integer($operation->node_id);
         foreach ($observations as $observation) {
             $id = ValidatedData::integer($observation['id']);
             $plan = $plans[$id];
@@ -61,52 +66,60 @@ final readonly class ToolConvergeObservations
             if ($tool === null || $tool->package !== $plan['package'] || $tool->tool_manager_id !== $plan['manager_id']) {
                 continue;
             }
-            $tool->desired_version = ValidatedData::nullableString($plan['desired_version'] ?? null);
-            $tool->version_constraint = ValidatedData::nullableString($plan['version_constraint']);
-            $tool->desired_repository = is_array($plan['repository'] ?? null) ? ValidatedData::object($plan['repository']) : null;
-            $tool->status = $observation['status'] === 'installed' ? ToolStatus::Installed : ToolStatus::Failed;
+            $newer = Operation::query()->where('id', '>', $operation->id)->where('node_id', $nodeId)->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove'])
+                ->where('input->tool_id', $id)->exists();
+            if (! $newer) {
+                $tool->update(['desired_version' => ValidatedData::nullableString($plan['desired_version'] ?? null),
+                    'version_constraint' => ValidatedData::nullableString($plan['version_constraint']),
+                    'desired_repository' => is_array($plan['repository'] ?? null) ? ValidatedData::object($plan['repository']) : null]);
+            }
+            $installed = $observation['status'] === 'installed';
             $repair = $tool->installed_version !== null || ($plan['tool_status'] ?? null) === ToolStatus::Installed->value
                 || $tool->failed_operation === ToolOperation::Update;
-            $tool->failed_operation = $tool->status === ToolStatus::Failed ? ($repair ? ToolOperation::Update : ToolOperation::Install) : null;
-            $tool->error_code = $tool->status === ToolStatus::Failed
-                ? (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed')) : null;
-            if (is_string($observation['installed_version'])) {
-                $tool->installed_version = $observation['installed_version'];
+            $state = ['status' => $installed ? ToolStatus::Installed : ToolStatus::Failed,
+                'failed_operation' => $installed ? null : ($repair ? ToolOperation::Update : ToolOperation::Install),
+                'error_code' => $installed ? null : (($plan['manager_unavailable'] ?? false) ? 'tool.manager_unsupported' : ($repair ? 'tool.update_failed' : 'tool.install_failed'))];
+            if ($installed && is_array($repository = $plan['repository'] ?? null)) {
+                $state['apt_repository_id'] = $completed ? AptSourceTrust::record($nodeId, ValidatedData::object($repository), $operation->id)->id
+                    : AptSourceTrust::suspect($nodeId, ValidatedData::object($repository))->id;
             }
-            if ($tool->status === ToolStatus::Installed) {
-                // The helper refuses a present package for a Tool Orbit does not own, so an installed observation is Orbit's package.
-                $tool->owned = true;
+            // The helper refuses a present package for a Tool Orbit does not own, so an installed observation is Orbit's package.
+            $tool->receive($operation->id, $state, owned: $installed ? true : null,
+                version: ValidatedData::nullableString($observation['installed_version']), observed: is_string($observation['installed_version']));
+            if ($installed) {
                 ToolManagerRecord::query()->whereKey($tool->tool_manager_id)->where('status', '!=', LifecycleStatus::Active->value)
                     ->update(['status' => LifecycleStatus::Active->value, 'failed_step' => null, 'error_code' => null]);
-                if (is_array($repository = $plan['repository'] ?? null)) {
-                    $tool->apt_repository_id = $completed ? AptSourceTrust::record($nodeId, ValidatedData::object($repository))->id
-                        : AptSourceTrust::suspect($nodeId, ValidatedData::object($repository))->id;
-                }
-            }
-            if ($tool->isDirty()) {
-                $tool->save();
             }
         }
     }
 
     /**
-     * The installed observations of a convergence whose report arrived after its timeout: each verified Tool is recorded as on time,
-     * its source left unproven because the phase did not finish in time. A Tool removed, or with a removal admitted, since is left alone.
+     * A convergence report that arrived after its timeout counts as it would have on time, the Operation staying timed out: each Tool it
+     * verified installed is recorded; a Tools phase that finished proves its sources, one that never ran gives them back the trust they
+     * were admitted with, and a partial one proves nothing.
      *
      * @param  array<int, array<string, mixed>>  $plans
      * @param  mixed  $observations  the report's Tool observations
+     * @param  string  $phase  `completed`, `skipped` or `partial`
+     * @param  list<string>  $orphans  the sources no Tool named at admission, which a finished phase removed
      */
-    public function late(Operation $operation, array $plans, mixed $observations): void
+    public function late(Operation $operation, array $plans, mixed $observations, string $phase, array $orphans): void
     {
+        if ($phase === 'skipped') {
+            AptSourceTrust::restoreAdmitted(ValidatedData::integer($operation->node_id), ValidatedData::object($operation->input['repository_admitted'] ?? []), $operation->id);
+
+            return;
+        }
         try {
-            $tools = $this->validate($observations, $plans, false);
+            $tools = $this->validate($observations, $plans, $phase === 'completed');
         } catch (ResourceOperationException) {
             return;
         }
-        $superseded = Operation::query()->where('kind', 'tool.remove')->where('id', '>', $operation->id)->pluck('input')
-            ->map(static fn (mixed $input): mixed => is_array($input) ? ($input['tool_id'] ?? null) : null)->filter()->all();
-        $acquired = array_values(array_filter($tools, static fn (array $tool): bool => $tool['status'] === 'installed' && ! in_array($tool['id'], $superseded, true)));
-        $this->record(ValidatedData::integer($operation->node_id), $plans, $acquired, false);
+        $this->record($operation, $plans, $phase === 'completed' ? $tools : array_values(array_filter($tools, static fn (array $tool): bool => $tool['status'] === 'installed')),
+            $phase === 'completed');
+        if ($phase === 'completed') {
+            AptSourceTrust::forgetOrphans(ValidatedData::integer($operation->node_id), $orphans);
+        }
     }
 
     private function invalid(): never
