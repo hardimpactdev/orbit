@@ -126,10 +126,15 @@ final class RoutePublicationHolds
         return InstanceDestroyKind::removes($kind);
     }
 
-    /** A removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their Nodes. */
+    /**
+     * A Swamp removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their
+     * Nodes. A removal with an engine plan does not.
+     */
     private static function sharesNodes(Operation $operation): bool
     {
-        return InstanceDestroyKind::removes($operation->kind) || ClonePublication::sharesNodes($operation);
+        // A removal the engine may run writes whole files rendered at its admission, so it takes its Nodes alone (RouteFileGuards).
+        return (InstanceDestroyKind::removes($operation->kind) && ($operation->input['route_engine'] ?? []) === [])
+            || ClonePublication::sharesNodes($operation);
     }
 
     /** Whether the terminal state of the kind has holds to free. */

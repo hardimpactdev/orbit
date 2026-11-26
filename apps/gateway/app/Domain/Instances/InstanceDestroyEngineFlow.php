@@ -160,6 +160,11 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition, Rece
         if (($input['route_withdrawn'] ?? false) === true || (! isset($members[0]['route_id']) && ($input['additional_route_ids'] ?? []) === [])) {
             return null;
         }
+        // Whole files rendered at admission are only safe while no other Route write shares the Nodes: a removal holding a shared
+        // slot (taken before its engine plan existed) runs on Swamp, which merges its own sections.
+        if (DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->exists()) {
+            throw new EngineUnsupported('A removal that shares its Route Nodes runs on Swamp.');
+        }
         $engine = $input['route_engine'] ?? null;
         $mutations = ValidatedData::object(ValidatedData::object($input['native_destroy'] ?? [])['route_mutations'] ?? []);
         $forward = ValidatedData::object($mutations['forward'] ?? []);

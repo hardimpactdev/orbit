@@ -1309,3 +1309,40 @@ it('withdraws a Route-owning clone through the engine, keeps it fenced across a 
         ->and($operation->result)->toMatchArray(['removed' => true, 'route_hold_released' => true])
         ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', "withdraw-{$node}")->value('sends'))->toBe(2);
 });
+
+/** A clone of `$default` named `$name` that owns the private Route `$domain` on its Node. */
+function routeOwningClone(Instance $default, string $name, string $domain): Instance
+{
+    $clone = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => $name,
+        'status' => InstanceState::Active, 'branch' => $name, 'starting_commit' => str_repeat('c', 40), 'source_layout' => 'checkout', 'checkout_path' => '/tmp/'.$name, 'first_setup_pending' => false]);
+    $clone->update(['checkout_path' => InstanceContainer::workspaceOnNode($clone)]);
+    app(InstanceContainer::class)->reserve($clone, $default->node, $default);
+    $route = Route::query()->create(['kind' => 'app', 'node_id' => $clone->node_id, 'project_id' => $clone->project_id, 'domain' => $domain,
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $clone->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
+
+    return $clone->refresh();
+}
+
+it('takes the Route Nodes alone for an engine withdrawal, so a second removal on the Node waits instead of sharing them', function (): void {
+    $default = destroyDefault();
+    $default->node->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    destroyBus()->shouldReceive('nodeActions', 'nodeFeatures')->andReturn([]);
+    $first = signedDestroy(routeOwningClone($default, 'first', 'first.outside.test'));
+    $second = signedDestroy(routeOwningClone($default, 'second', 'second.outside.test'));
+
+    expect($first->input['route_engine'])->not->toBe([])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $first->id)->pluck('node_id')->all())->toContain($default->node_id)
+        ->and(DB::table('route_withdrawal_holds')->where('operation_id', $first->id)->exists())->toBeFalse()
+        ->and($second->refresh()->status)->toBe(OperationStatus::Waiting);
+});
+
+it('leaves a removal that shares its Route Nodes to Swamp', function (): void {
+    $clone = destroyClone(destroyDefault());
+    destroyBus();
+    $operation = routeOwningDestroy($clone);
+    DB::table('route_withdrawal_holds')->insert(['operation_id' => $operation->id, 'node_id' => $clone->node_id]);
+
+    expect(fn () => app(InstanceDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
+});
