@@ -164,7 +164,10 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition
             return null;
         }
         $engine = $input['route_engine'] ?? null;
-        $forward = ValidatedData::object(ValidatedData::object(ValidatedData::object($input['native_destroy'] ?? [])['route_mutations'] ?? [])['forward'] ?? []);
+        $mutations = ValidatedData::object(ValidatedData::object($input['native_destroy'] ?? [])['route_mutations'] ?? []);
+        $forward = ValidatedData::object($mutations['forward'] ?? []);
+        // The withdrawn Routes are the capture's previous state, as the Swamp run's withdraw guard reads them.
+        $routes = RouteExecutionProof::objects(ValidatedData::object($mutations['restore'] ?? [])['routes'] ?? []);
         if (! is_array($engine) || $engine === []) {
             throw new EngineUnsupported('A Route withdrawal without its rendered after-state runs on Swamp.');
         }
@@ -181,11 +184,11 @@ final readonly class InstanceDestroyEngineFlow implements EngineDefinition
             }
         }
         $domains = [];
-        $ids = array_map(static fn (array $route): int => ValidatedData::integer($route['route_id']), RouteExecutionProof::objects($forward['routes'] ?? []));
+        $ids = array_map(static fn (array $route): int => ValidatedData::integer($route['route_id']), $routes);
         if (Route::query()->whereKey($ids)->where('publication', '!=', RoutePublication::Private)->exists()) {
             throw new EngineUnsupported('A public Route\'s withdrawal runs on Swamp.');
         }
-        foreach (RouteExecutionProof::objects($forward['routes'] ?? []) as $route) {
+        foreach ($routes as $route) {
             $domain = ValidatedData::string($route['domain']);
             $domains[] = preg_match(RouteEngineFlow::Domain, $domain) === 1 ? $domain : throw new EngineUnsupported('A domain outside the executor\'s shape runs on Swamp.');
         }

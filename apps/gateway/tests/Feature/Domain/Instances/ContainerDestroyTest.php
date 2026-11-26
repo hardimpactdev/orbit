@@ -1106,7 +1106,8 @@ function routeOwningDestroy(Instance $clone, array $engine = []): Operation
     $input = $operation->input;
     $node = $clone->node_id;
     data_set($input, 'members.0.route_id', 42);
-    data_set($input, 'native_destroy.route_mutations.forward', ['routes' => [['route_id' => 42, 'domain' => 'feature.outside.test', 'node_ids' => [$node]]],
+    data_set($input, 'native_destroy.route_mutations.restore.routes', [['route_id' => 42, 'domain' => 'feature.outside.test', 'node_ids' => [$node]]]);
+    data_set($input, 'native_destroy.route_mutations.forward', ['routes' => [],
         'publications' => [['node_id' => $node, 'user' => 'orbit']], 'cleanup' => [['node_id' => $node, 'user' => 'orbit', 'scope' => 'app-instance-'.$clone->id]],
         'lan' => [], 'ingress' => [], 'retire_lan' => [], 'retire_ingress' => []]);
     $input['route_engine'] = $engine === [] ? [$node => [
@@ -1207,4 +1208,22 @@ it('projects a failed withdrawal step as the Swamp run\'s Route withdrawal failu
         ->and($operation->result)->toMatchArray(['failed_step' => 'Withdraw the Route', 'withdrawal_error_code' => 'owned_revision_conflict'])
         ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->failed_step)->toBe(InstanceRemovalStep::RouteTargetClear)
         ->and(Instance::query()->find($clone->id))->not->toBeNull();
+});
+
+it('renders the whole after-state of a Route-owning clone at admission, without its Route, for the engine', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $clone->node->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    $route = Route::query()->create(['kind' => 'app', 'node_id' => $clone->node_id, 'project_id' => $clone->project_id, 'domain' => 'feature.outside.test',
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $clone->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
+    destroyBus()->shouldReceive('nodeActions', 'nodeFeatures')->andReturn([]);
+    $operation = signedDestroy($clone);
+    $row = $operation->input['route_engine'][$clone->node_id] ?? null;
+
+    expect($row)->toBeArray()
+        ->and($row['caddy']['content'])->not->toContain('feature.outside.test')
+        ->and($row['dns']['records']['content'])->not->toContain('feature.outside.test')
+        ->and(array_map(static fn ($step): string => $step->name, app(InstanceDestroyEngineFlow::class)->steps($operation)))
+        ->toBe(["dns-{$clone->node_id}", "withdraw-{$clone->node_id}", "sibling-{$clone->node_id}", 'release', 'remove']);
 });
