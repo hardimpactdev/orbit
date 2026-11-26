@@ -597,16 +597,114 @@ fn branches_at_one_unpushed_tip_count_that_tip_once_per_read() {
 #[test]
 fn the_node_stops_a_command_at_the_deadline_to_the_millisecond() {
     let system = crate::NodeSystem::new("/nonexistent");
-    let started = Instant::now();
-    let stopped = system.run_for(
-        Duration::from_millis(200),
-        &["/bin/sleep".to_owned(), "3".to_owned()],
-        None,
+    // A command that ignores TERM and would clean up for seconds still ends at the bound.
+    for argv in [
+        vec!["/bin/sleep", "3"],
+        vec!["/bin/sh", "-c", "trap 'sleep 2' TERM; sleep 3"],
+        vec!["/bin/sh", "-c", "trap 'sleep 2' TERM; sleep 3 & wait"],
+    ] {
+        let argv: Vec<String> = argv.into_iter().map(str::to_owned).collect();
+        let started = Instant::now();
+        let stopped = system.run_for(Duration::from_millis(200), &argv, None);
+        assert!(stopped.is_err());
+        assert!(
+            started.elapsed() < Duration::from_millis(400),
+            "{argv:?}: {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[test]
+fn the_node_answers_a_command_that_ends_within_its_bound() {
+    let system = crate::NodeSystem::new("/nonexistent");
+    let echo = ["/bin/echo".to_owned(), "read".to_owned()];
+    assert_eq!(
+        system.run_for(Duration::from_secs(2), &echo, None),
+        Ok("read\n".to_owned())
     );
-    assert!(stopped.is_err());
-    assert!(
-        started.elapsed() < Duration::from_millis(900),
-        "{:?}",
-        started.elapsed()
+}
+
+/// The bytes and modification time of every file under `.git` that a write would change: the index, `HEAD`, refs, reflogs
+/// and any lock.
+fn git_state(local: &LocalGit) -> Vec<(String, Vec<u8>, std::time::SystemTime)> {
+    fn walk(path: &std::path::Path, out: &mut Vec<(String, Vec<u8>, std::time::SystemTime)>) {
+        for entry in std::fs::read_dir(path).expect("folder").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else {
+                let modified = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .expect("mtime");
+                out.push((
+                    path.display().to_string(),
+                    std::fs::read(&path).expect("bytes"),
+                    modified,
+                ));
+            }
+        }
+    }
+    let git = local.tree.path().join(".git");
+    let mut state = Vec::new();
+    for name in ["index", "HEAD", "packed-refs", "ORIG_HEAD"] {
+        let path = git.join(name);
+        if path.exists() {
+            let modified = std::fs::metadata(&path)
+                .and_then(|meta| meta.modified())
+                .expect("mtime");
+            state.push((
+                path.display().to_string(),
+                std::fs::read(&path).expect("bytes"),
+                modified,
+            ));
+        }
+    }
+    for folder in ["refs", "logs"] {
+        if git.join(folder).exists() {
+            walk(&git.join(folder), &mut state);
+        }
+    }
+    state.sort();
+    state
+}
+
+#[test]
+fn a_read_writes_no_index_lock_or_ref_even_when_git_would_refresh_the_index() {
+    let local = LocalGit::new();
+    local.commit("a.txt", "a\n");
+    std::fs::write(local.tree.path().join("a.txt"), "b\n").expect("change");
+    local.git(&["stash", "-q"]);
+    // The same content with a new time: a plain status refreshes the index for it.
+    std::fs::write(local.tree.path().join("a.txt"), "a\n").expect("same content");
+    let later = std::time::SystemTime::now() + Duration::from_secs(5);
+    std::fs::File::options()
+        .write(true)
+        .open(local.tree.path().join("a.txt"))
+        .expect("open")
+        .set_modified(later)
+        .expect("mtime");
+    std::thread::sleep(Duration::from_millis(20));
+    let before = git_state(&local);
+    let answer = local_read(&local);
+    assert_eq!(answer["stashes"]["count"], 1, "{answer}");
+    assert_eq!(
+        git_state(&local),
+        before,
+        "the read changed the index, a ref or a reflog"
+    );
+    let locks: Vec<_> = before
+        .iter()
+        .map(|(path, _, _)| path.clone())
+        .filter(|path| std::path::Path::new(path).extension().is_some_and(|extension| extension == "lock"))
+        .collect();
+    assert!(locks.is_empty() && !local.tree.path().join(".git/index.lock").exists());
+    // A plain status without the read's settings does rewrite the index here: the probe is real.
+    local.git(&["status", "--porcelain"]);
+    assert_ne!(
+        git_state(&local),
+        before,
+        "a plain status left the index alone, so the probe proves nothing"
     );
 }

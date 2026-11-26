@@ -14,9 +14,10 @@ use SensitiveParameter;
  * (docs/reference/executor.md#signed-reads). The PHP client gives each of these waits its full timeout, so a slow peer could hold
  * a read past its budget.
  *
- * The answer tells a request that never left from one whose reply is missing. [NotSent] is thrown before the request was
- * written, including when nobody subscribes to its subject (`503` no responders); null is returned once it was written and no
- * reply came by the deadline, also when the connection closed first.
+ * The answer tells a request that never left from one whose reply is missing. [NotSent] is thrown when the request was not
+ * written whole, when the server refused it (`-ERR`) or when nobody subscribes to its subject (`503` no responders); null is
+ * returned once it was written whole and no reply came by the deadline, also when the connection closed first. A reply that
+ * arrives after the deadline is dropped. The connection is closed when the answer is decided.
  */
 final class DeadlineRequest
 {
@@ -96,11 +97,15 @@ final class DeadlineRequest
         if (! $this->write("SUB {$inbox} 1\r\n")) {
             throw new NotSent('engine.request_unsent');
         }
-        // From here the request may have reached the server: a missing reply is a lost reply, not a failure to send.
+        // A request the server did not take whole was not sent: a partial publication is never delivered.
         if (! $this->write("PUB {$subject} {$inbox} ".strlen($payload)."\r\n{$payload}\r\n")) {
-            return null;
+            throw new NotSent('engine.request_incomplete');
         }
+        // From here the whole request is with the server: a missing reply is a lost reply, unless the server refuses it.
         while (($line = $this->line()) !== null) {
+            if (str_starts_with($line, '-ERR')) {
+                throw new NotSent('engine.request_refused');
+            }
             // `MSG <subject> <sid> [reply] <bytes>` or `HMSG <subject> <sid> [reply] <header bytes> <bytes>`, on our one subscription.
             $fields = explode(' ', $line);
             $headed = $fields[0] === 'HMSG';
@@ -110,7 +115,8 @@ final class DeadlineRequest
                 continue;
             }
             $body = $this->bytes((int) end($sizes));
-            if ($body === null) {
+            // The answer is decided once, at the deadline: a reply read after it is dropped, as if it never came.
+            if ($body === null || $this->left() <= 0) {
                 return null;
             }
             if (! $headed) {

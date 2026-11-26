@@ -143,6 +143,17 @@ impl NodeSystem {
     }
 }
 
+/// Reads a child's pipe to its end on a thread of its own.
+fn drain(pipe: Option<impl std::io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = std::io::Read::read_to_end(&mut pipe, &mut bytes);
+        }
+        bytes
+    })
+}
+
 impl NodeSystem {
     /// Runs a command under `timeout <duration>`, with `stdin` as its standard input.
     fn bounded(duration: &str, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
@@ -175,9 +186,47 @@ impl System for NodeSystem {
     }
 
     fn run_for(&self, limit: std::time::Duration, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
-        // `timeout` takes a fractional duration: the bound ends to the millisecond, and never at zero, which would mean none.
-        let millis = limit.as_millis().max(1);
-        Self::bounded(&format!("{}.{:03}", millis / 1000, millis % 1000), argv, stdin)
+        use std::os::unix::process::CommandExt as _;
+        // The command and everything it starts run in a process group of their own, which is killed at the bound: the command
+        // ends there, with no clean-up after it and no descendant that keeps its output open, as the SSH reader's bound kills.
+        let deadline = std::time::Instant::now() + limit;
+        let (program, arguments) = argv.split_first().ok_or_else(|| "no command".to_owned())?;
+        let mut child = Command::new(program)
+            .args(arguments)
+            .process_group(0)
+            .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let written = match (stdin, child.stdin.take()) {
+            (Some(bytes), Some(mut pipe)) => pipe.write_all(bytes).map_err(|error| error.to_string()),
+            _ => Ok(()),
+        };
+        let stdout = drain(child.stdout.take());
+        let stderr = drain(child.stderr.take());
+        let status = loop {
+            match child.try_wait().map_err(|error| error.to_string())? {
+                Some(status) => break Some(status),
+                None if std::time::Instant::now() >= deadline => break None,
+                None => std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now()).min(std::time::Duration::from_millis(5))),
+            }
+        };
+        if status.is_none() {
+            if let Ok(group) = libc::pid_t::try_from(child.id()) {
+                // SAFETY: `kill` takes plain integers; the group is the unreaped child's own, so its id names no other process.
+                unsafe { libc::kill(-group, libc::SIGKILL) };
+            }
+            let _ = child.wait();
+        }
+        let stdout = stdout.join().unwrap_or_default();
+        let stderr = stderr.join().unwrap_or_default();
+        written?;
+        match status {
+            Some(status) if status.success() => Ok(String::from_utf8_lossy(&stdout).into_owned()),
+            Some(_) => Err(String::from_utf8_lossy(&stderr).trim().to_owned()),
+            None => Err(format!("stopped at its {} ms bound", limit.as_millis())),
+        }
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

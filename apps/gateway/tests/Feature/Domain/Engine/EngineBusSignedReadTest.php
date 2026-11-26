@@ -98,6 +98,24 @@ it('returns no acknowledgement for content that went out unanswered', function (
         ->and(hrtime(true) / 1e9 - $started)->toBeLessThan(0.7);
 });
 
+it('reports a request the peer did not take whole, or refused, as not sent', function (string $mode, string $payload): void {
+    silentPeer($mode);
+    $order = new SignedExecutorOrder($payload, 'read:12', str_repeat('0', 32), 0);
+    $started = hrtime(true) / 1e9;
+    expect(fn () => (new EngineBus)->read(7, $order, $started + 2.0))->toThrow(RuntimeException::class, 'engine.read_failed');
+    expect(hrtime(true) / 1e9 - $started)->toBeLessThan(1.5);
+    expect(fn () => (new EngineBus)->content(7, $payload, hrtime(true) / 1e9 + 2.0))->toThrow(RuntimeException::class, 'engine.publish_failed');
+})->with([
+    'closed part way through the publication' => ['partial', str_repeat('x', 8_000_000)],
+    'refused by the server' => ['refuse', 'e30=.c2ln'],
+]);
+
+it('takes a reply that is whole by the deadline and drops one that completes after it', function (): void {
+    silentPeer('trickle');
+    expect((new EngineBus)->read(7, silentOrder(), hrtime(true) / 1e9 + 0.8))->toBe(['a' => 1])
+        ->and((new EngineBus)->read(7, silentOrder(), hrtime(true) / 1e9 + 0.2))->toBeNull();
+});
+
 it('sends nothing once the deadline has passed', function (): void {
     silentPeer();
     expect(fn () => (new EngineBus)->read(7, silentOrder(), hrtime(true) / 1e9 - 0.1))->toThrow(RuntimeException::class, 'engine.read_failed');

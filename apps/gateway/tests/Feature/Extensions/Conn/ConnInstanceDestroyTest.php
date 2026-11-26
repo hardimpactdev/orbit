@@ -393,9 +393,14 @@ function connSignedReads(array $actions, array $replies = []): object
 
         public bool $acknowledged = true;
 
+        public bool $refused = false;
+
         public function content(int $node, string $content, float $deadline): ?array
         {
             $this->content[] = json_decode($content, true, flags: JSON_THROW_ON_ERROR);
+            if ($this->refused) {
+                throw new RuntimeException('engine.publish_failed');
+            }
 
             return $this->acknowledged ? ['sha256' => hash('sha256', $content)] : null;
         }
@@ -522,6 +527,12 @@ it('gives timeout, not unreachable, when the replies or the content acknowledgem
     $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
     $reads->acknowledged = false;
     connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'timeout');
+    expect($reads->sent)->toBe([]);
+
+    // Content the bus did not take whole, or refused, was never sent: no reply can be missing.
+    $reads = connSignedReads(['instance.work_read'], [connWorkAnswer()]);
+    $reads->refused = true;
+    connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'unknown')->assertJsonPath('data.reason', 'unreachable');
     expect($reads->sent)->toBe([]);
 });
 
