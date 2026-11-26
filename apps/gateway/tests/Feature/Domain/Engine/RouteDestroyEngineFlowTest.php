@@ -26,17 +26,11 @@ function routeDestroyOperation(array $plan = [], array $input = []): Operation
             'php_tests' => [['node_id' => 3, 'argv' => ['/usr/sbin/php-fpm8.4', '-t']]], 'php_reloads' => [['node_id' => 3, 'unit' => 'php8.4-fpm.service']], 'site_nodes' => [3]],
         'lan_remove' => [], 'ingress_close' => [], 'firewall_nodes' => [], 'check_nodes' => [3],
     ], ...$plan];
-    $state = static fn (?int $caddy, ?int $dns): array => ['caddy' => $caddy, 'php' => null, 'dns' => $dns];
-    $mutations = ['schema_version' => 2,
-        'artifacts' => ['caddy' => [['content' => DestroyBefore]], 'php' => [], 'dns' => [['records' => "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n", 'catalog' => "{\"shop\":1}\n"]]],
-        'forward' => ['publications' => [
-            ['node_id' => 1, 'before' => $state(null, 0), 'prepared' => $state(null, null), 'withdrawn' => $state(null, null), 'after' => $state(null, null)],
-            ['node_id' => 3, 'before' => $state(0, null), 'prepared' => $state(null, null), 'withdrawn' => $state(null, null), 'after' => $state(null, null)],
-        ]]];
-
     return (new Operation)->forceFill(['id' => 51, 'kind' => 'route.destroy', 'node_id' => 3, 'input' => [...[
         'route_id' => 9, 'offline' => false, 'route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'shop.orbit', 'replacement_of' => null]]],
-        'route_lifecycle' => ['plan' => $plan, 'route_mutations' => $mutations],
+        'route_lifecycle' => ['plan' => $plan],
+        'route_guards' => ['3' => ['caddy' => hash('sha256', DestroyBefore)],
+            '1' => ['records' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n"), 'catalog' => hash('sha256', "{\"shop\":1}\n")]],
     ], ...$input]]);
 }
 
@@ -85,6 +79,7 @@ it('leaves a removal the engine cannot reproduce exactly to Swamp', function (ar
     'an APP_URL write for a surviving Route' => [['retire' => ['acl' => [], 'links' => [], 'lan' => [], 'env_files' => [], 'site_nodes' => [3],
         'caddy' => [['node_id' => 3, 'content' => "x\n"]], 'url_lines' => [['node_id' => 3, 'path' => '/home/orbit/apps/shop/.env', 'line' => 'APP_URL=https://x.orbit', 'owner' => 'orbit']]]], []],
     'a never-activated replacement' => [[], ['route_removal' => ['routes' => [['route_id' => 9, 'domain' => 'new.orbit', 'replacement_of' => 4]]]]],
+    'no captured file digests' => [[], ['route_guards' => []]],
     'a pool on a Node the Route does not leave' => [['pools' => ['php_files' => [], 'php_tests' => [], 'php_reloads' => [], 'site_nodes' => [5]]], []],
 ]);
 

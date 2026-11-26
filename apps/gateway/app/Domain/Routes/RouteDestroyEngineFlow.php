@@ -18,7 +18,7 @@ use RuntimeException;
 
 /**
  * `route:destroy` on the state machine (ADR 0271; docs/cli/route/engine/destroy.mmd). It reads the withdrawal plan the
- * Gateway admitted (`route_lifecycle.plan`, NativeRouteRemovalSteps) and the publication states it was rendered from:
+ * Gateway admitted (`route_lifecycle.plan`, NativeRouteRemovalSteps) and the digests of the files it was rendered from:
  *
  * - `dns-<i>`: `dns.publish_records` on each VPN Node, guarded by the digests of the records and catalog it rendered from;
  * - `grace`: the Gateway waits 31 s from the last DNS receipt, so resolvers that honour the TTL stop asking first;
@@ -61,7 +61,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
                 throw new EngineUnsupported("route.destroy with {$list} runs on Swamp.");
             }
         }
-        $nodes = ValidatedData::integerList($plan['retire_nodes']);
+        // A Node can appear twice: once for its sites, once for its leaves.
+        $nodes = array_values(array_unique(ValidatedData::integerList($plan['retire_nodes'])));
         $pools = ValidatedData::object($plan['pools']);
         if (array_diff(ValidatedData::integerList($pools['site_nodes']), $nodes) !== [] || $nodes === []) {
             throw new EngineUnsupported('A pool change on a Node the Route does not leave runs on Swamp.');
@@ -179,10 +180,10 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     private static function dnsInput(Operation $operation, int $index): array
     {
         $row = RouteExecutionProof::objects(self::plan($operation)['dns'])[$index] ?? throw new LogicException("No DNS row {$index}.");
-        $before = ValidatedData::object(self::before($operation, ValidatedData::integer($row['node_id']))['dns'] ?? null);
+        $guard = self::guard($operation, ValidatedData::integer($row['node_id']));
 
-        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])], 'from_sha256' => hash('sha256', ValidatedData::string($before['records']))],
-            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])], 'from_sha256' => hash('sha256', ValidatedData::string($before['catalog']))]];
+        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])], 'from_sha256' => self::digest($guard, 'records')],
+            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])], 'from_sha256' => self::digest($guard, 'catalog')]];
     }
 
     /**
@@ -202,8 +203,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
             throw new EngineUnsupported("Node {$node} has no account in the executor's shape.");
         }
         $caddy = $mine(ValidatedData::object($plan['retire']), 'caddy');
-        $before = ValidatedData::object(self::before($operation, $node)['caddy'] ?? null);
-        if ($caddy === [] || ! is_string($before['content'] ?? null)) {
+        $from = self::digest(self::guard($operation, $node), 'caddy');
+        if ($caddy === []) {
             throw new EngineUnsupported("Node {$node} has no rendered Caddyfile to withdraw from.");
         }
         $leaves = [];
@@ -221,7 +222,7 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
         $php = RouteEngineFlow::pools($mine($pools, 'php_files'), $mine($pools, 'php_tests'), $mine($pools, 'php_reloads'));
 
         return ['account' => $account, 'domains' => self::domains($operation), 'leaves' => array_values(array_unique($leaves)),
-            'php' => $php, 'caddy' => ['from_sha256' => hash('sha256', ValidatedData::string($before['content'])), 'content' => ['blob' => ['content' => ValidatedData::string(end($caddy)['content'])]]]];
+            'php' => $php, 'caddy' => ['from_sha256' => $from, 'content' => ['blob' => ['content' => ValidatedData::string(end($caddy)['content'])]]]];
     }
 
     /**
@@ -241,20 +242,23 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     }
 
     /**
-     * The Node's publication state the Gateway rendered from at admission (NativeRouteMutationInput `before`).
+     * The digests of the whole files the Gateway rendered from at admission (NativeRouteRemovalAdmission `route_guards`).
      *
      * @return array<string, mixed>
      */
-    private static function before(Operation $operation, int $node): array
+    private static function guard(Operation $operation, int $node): array
     {
-        $mutations = ValidatedData::object(ValidatedData::object($operation->input['route_lifecycle'] ?? [])['route_mutations'] ?? []);
-        $artifacts = ValidatedData::object($mutations['artifacts'] ?? []);
-        foreach (RouteExecutionProof::objects(ValidatedData::object($mutations['forward'] ?? [])['publications'] ?? []) as $publication) {
-            if (ValidatedData::integer($publication['node_id']) === $node) {
-                return ValidatedData::object(NativeRoutePublicationArtifacts::resolve($artifacts, $publication)['before']);
-            }
-        }
-        throw new EngineUnsupported("Node {$node} has no captured publication state.");
+        $guards = is_array($operation->input['route_guards'] ?? null) ? $operation->input['route_guards'] : [];
+
+        return is_array($guards[$node] ?? null) ? $guards[$node] : throw new EngineUnsupported("Node {$node} has no captured file digests.");
+    }
+
+    /** @param array<string, mixed> $guard */
+    private static function digest(array $guard, string $file): string
+    {
+        $digest = $guard[$file] ?? null;
+
+        return is_string($digest) && preg_match('/\A[0-9a-f]{64}\z/D', $digest) === 1 ? $digest : throw new EngineUnsupported("No captured {$file} digest.");
     }
 
     /** @return array<string, mixed> */

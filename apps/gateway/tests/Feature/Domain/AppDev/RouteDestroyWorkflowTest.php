@@ -231,3 +231,27 @@ it('keeps Route withdrawal and convergence inside the confirmed AppProd release 
         expect($input[$phase])->toBe(['source_access' => null, 'served_roots' => null, 'runtime' => null, 'acl' => [], 'links' => []]);
     }
 });
+
+it('records the whole-file digests the engine guards with, and builds its steps from a real capture', function (): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'proxy', 'proxy');
+    $before = app(App\Domain\Routes\NativeRoutePublicationInput::class)->snapshot($node, app(DevelopmentSiteRepository::class)->all(), true);
+    [$operation] = destroyAdmission($route);
+
+    expect($operation->input['route_guards'][$node->id])->toBe(['caddy' => hash('sha256', $before['caddy']['content']),
+        'records' => hash('sha256', $before['dns']['records']), 'catalog' => hash('sha256', $before['dns']['catalog'])]);
+    $flow = app(App\Domain\Routes\RouteDestroyEngineFlow::class);
+    $steps = array_map(static fn ($step): string => $step->name, $flow->steps($operation));
+    expect($steps)->toBe(['dns-0', 'grace', "withdraw-{$node->id}", "sibling-{$node->id}"])
+        ->and($flow->input($operation, "withdraw-{$node->id}", new App\Domain\Engine\EngineRun($operation->id, [], 0, null))['caddy']['from_sha256'])
+        ->toBe(hash('sha256', $before['caddy']['content']));
+});
+
+it('records no engine digests while route.destroy is not an engine kind', function (): void {
+    config(['orbit.engine.kinds' => []]);
+    [$node] = destroyFleet();
+    [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
+
+    expect($operation->input['route_guards'])->toBe([]);
+});
