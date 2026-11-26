@@ -12,6 +12,8 @@ A competing operation on the same Instance makes the command wait up to 30 secon
 
 On a container Instance, a Process whose definition the Project removed answers `process.removing` (409). The next deployment of the default removes it.
 
+When the Gateway runs `process.start` on its engine and the Process's Node reports `process.ensure_state`, a host systemd unit, a host Docker container or a unit in a development Instance container changes through one signed executor order with the same result and error codes. A Vite dev Process, a production release layout, a Gateway release-container Process and a host Horizon Process always run the workflow below ([process.start and process.stop](/reference/gateway-engine#processstart-and-processstop)).
+
 ## How it works
 
 <div className="flow-at" data-chart="process/start"></div>

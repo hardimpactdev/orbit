@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream, including routing, steps, deadlines, and authentication."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php,Domain/Processes/ProcessControlEngineFlow.php,Domain/Schedules/ScheduleEnableEngineFlow.php,Domain/Instances/{InstanceCreateEngineFlow,InstanceDestroyEngineFlow,InstanceFleetEngineFlow,InstanceFleetOperation}.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/{2027_03_10_000000_create_operation_engine_steps_table,2027_03_21_000000_add_fleet_readiness_to_instance_runtimes}.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -36,6 +36,8 @@ An admitted `instance.finalize` bypasses `EngineKinds::routes()` and calls `Engi
 | `route.create` | `csr-<i>`, `sign-<i>`, `site-<node>`, `dns-<i>`, `probe-<i>` | `tls.ensure_csr`, `route.publish_site`, `dns.publish_records` |
 | `instance.create` | `clone`, `fetch`, `copy_volume`, `prepare`, `start`, `club_key`, `checkout`, `spare`, `t3`, `stop` | `instance.clone`, `instance.fetch_branch`, `instance.copy_volume`, `instance.prepare`, `instance.start`, `instance.club_key`, `instance.checkout`, `instance.spare_volume`, `instance.t3`, `instance.stop` |
 | `instance.destroy` | `remove` | `instance.destroy` |
+| `process.start`, `process.stop` | `converge` on the Process's Node | `process.ensure_state` |
+| `schedule.enable` | `timer` on the Schedule's Node | `schedule.ensure_timer` |
 | `instance.fleet` (engine-only; follows `instance.create`) | `fleet_ready` | `instance.fleet_ready` |
 | `instance.complete` (follows `instance.create`) | zero steps (when nothing remains on the Node) | none |
 | `instance.finalize` (engine-only; follows `instance.create`) | `fetch` (on branch switch), `names` | `instance.fetch_branch`, `instance.names` |
@@ -84,6 +86,18 @@ The removal can still be cancelled during order preparation, deadline scheduling
 The Gateway resends the same step with a fresh nonce only within the Node journal's guaranteed replay window. A repeat must expire by the first order's expiry minus the Node's 10-second acceptance window plus 24 hours of journal retention. After that, the Operation stops issuing orders and stays fenced pending a matching terminal receipt or authoritative recovery. An absent record after compaction does not settle the removal.
 
 A terminal receipt, including the original result in a nonce replay, must match the Node, Operation step ID, action and target. A terminal failure keeps the removal intent for the existing retry rules and exposes a bounded, redacted diagnostic in `error.detail`. If no complete line fits in the tail, the error records that the diagnostic was omitted rather than exposing part of a line.
+
+### process.start and process.stop
+
+The engine runs a start or stop of a host systemd unit, a host Docker container, or a unit inside a development Instance container, addressed by its saved Incus project and container name. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand; a unit in an Instance container follows its state. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
+
+These plans throw `EngineUnsupported` and run their whole Swamp workflow: a Vite dev Process (dev route, listener and awake marker), a production release layout, a Gateway release-container Process, and a host Process that runs Horizon, whose stop waits for its drain. Its start stays with it, so one Process never splits its lifecycle across engines. `process.restart` stays on Swamp.
+
+The Operation keeps the Process lock it took at admission until a terminal receipt; a lost receipt sends the same step again with a fresh nonce, and the Node's journal answers the stored result. The end goes through `ProcessControlProjection`, so the Process, its desired state and the result (`ready`, `state`) are the rows a Swamp run records; a failure keeps the desired state and marks the Process failed with the step's code.
+
+### schedule.enable
+
+The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`). A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine; a timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
 
 ### instance.fleet
 

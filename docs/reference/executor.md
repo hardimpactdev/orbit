@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor verifies callers and signed orders, maintains its journal, connects to the machine bus, handles signed container sleep and wake, and rolls out across Nodes."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy}.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/instance/**,crates/process/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/{executor-order,executor-instance-destroy,executor-process-ensure-state,executor-schedule-ensure-timer}.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -113,6 +113,8 @@ The executor implements these action families:
 | `tls.ensure_csr` | `route` | Creates RSA 2048 key once and returns CSR (`output`) for a domain |
 | `route.publish_site` | `route` | Applies Caddy ACLs, `APP_URL`, links, PHP-FPM pools, leaf certs, root trust, and validated Caddyfile |
 | `dns.publish_records` | `dns` | Atomically writes dnsmasq records and private DNS catalog, validates with `dnsmasq --test`, and restarts DNS units |
+| `process.ensure_state` | `process` | Converges one Process to running or stopped and its boot policy, then reads it back (see [the process family](#the-process-family)) |
+| `schedule.ensure_timer` | `process` | Enables and starts a Schedule's own Node timer, then reads back `UnitFileState`, `ActiveState` and the next elapse |
 
 ### The instance family
 
@@ -129,6 +131,19 @@ The `instance` family (enabled on `app-dev`) executes clone lifecycle steps from
 | `instance.destroy` | Force-stops the saved clone, removes its owned Incus storage, ACL and firewall rules, and discards both engines' freeze state before returning `done` |
 
 When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor advertising `instance.t3_pairing` in `features`, it requests `POST /api/auth/pairing-token` using the Gateway session and seals T3's reply beside the sessions. A refused or unreachable pairing link never fails the step.
+
+### The process family
+
+The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0 (`NodeExecutorInput::FamilySince`); app-prod does not enable it yet. Both actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
+
+| Shape | Change | Read-back |
+| --- | --- | --- |
+| Host systemd unit | `systemctl enable` or `disable`, then `start` or `stop` | `LoadState=loaded`, `ActiveState` `active` or `inactive` exactly, and the admitted `UnitFileState` (`disabled` for a stop and for an on-demand start) |
+| Host Docker container | `docker container start` or `stop`, by the exact saved name | `State.Status` `running` or `exited` exactly (`created` fails) and the admitted image; an inspect answer for another name fails |
+| Unit in an Instance container | Through `incus exec` in the saved Incus project and container: the app-account move (its file placed only when it differs), then `enable --now --no-block` or `disable --now` | The container must be `Running` (`process.target_inactive`). A start waits for `ActiveState=active` with an empty `Job=` (10 reads 1 s apart); then `LoadState=loaded` and the admitted `UnitFileState` (`process.start_failed`, `process.stop_failed`) |
+| Schedule Node timer | `systemctl enable`, then `start`, of `orbit-schedule-<uuid>.timer` only | `LoadState=loaded`, `UnitFileState=enabled`, `ActiveState=active`; the receipt's `output` carries them with `NextElapseUSecRealtime` |
+
+A host or Docker mismatch fails with `process.state_mismatch`, a timer mismatch with `schedule.state_mismatch`.
 
 ## The observer pass-through
 

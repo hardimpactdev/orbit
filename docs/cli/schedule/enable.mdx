@@ -10,6 +10,8 @@ orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 
 An existing workflow keeps its fixed intent; enable only sets its trigger. A copied Project definition with no workflow gets its command copy and workflow first.
 
+When the Gateway runs `schedule.enable` on its engine and the Schedule's Node reports `schedule.ensure_timer`, a retained host Node timer is enabled and started through one signed executor order with the same result. A native cron Schedule, a production release timer and an Instance-container timer keep the flow below ([schedule.enable](/reference/gateway-engine#scheduleenable)).
+
 ## How it works
 
 <div className="flow-at" data-chart="schedule/enable"></div>
