@@ -685,8 +685,9 @@ function policyPrecedingHistories(): array
     $desired = require database_path('migrations/2027_03_27_000000_add_desired_tool_repository.php');
     $ours->down();
     $desired->down();
-    // The preceding release's rows the migration reads, exported from its own callers (.orbit-artifacts/tool-contract/check-3498-history).
-    foreach (['nodes', 'tool_managers', 'apt_repositories', 'tools', 'operations'] as $table) {
+    // The preceding release's rows the migration reads, its command log included, exported from its own callers
+    // (.orbit-artifacts/tool-contract/check-3530-history).
+    foreach (['nodes', 'tool_managers', 'apt_repositories', 'tools', 'operations', 'activity_log'] as $table) {
         $columns = array_flip(Schema::getColumnListing($table));
         foreach ($fixture['tables'][$table] as $row) {
             if ($table !== 'nodes' || $row['id'] !== SwampNodeFixture::Id) {
@@ -2683,12 +2684,12 @@ it('orders an adoption before a publication by what the Gateway recorded of the 
     // publication is newest.
     expect($record()->definition['uris'])->toBe(Operation::query()->findOrFail($h['open']['operation'])->input['repository']['uris'])->and($record()->verified)->toBeTrue()
         ->and(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('1.5');
-    // Y10, Y11, Z3 and Z4: the Gateway applied an earlier convergence's report of tree at 1.2 15 seconds after the write was admitted, in
-    // the second tree's row was last written, with the row's status and version: that receipt wrote the row, not an adoption, whenever its
-    // run finished (Z3, Z4: before the write).
+    // T1-T4: tree's row was last written after the write was admitted, by an earlier convergence's report of tree at 1.2 the Gateway
+    // applied 15 seconds later, whenever its run finished (T3, T4: before the write), and the step-time reader wrote that Operation again.
+    // The preceding release's command log covers that span and holds no adoption request on the Node: no adoption wrote the row.
     $operations = app(StartToolOperationAction::class);
     $writer = Tool::query()->findOrFail($h['tool_id']);
-    if (in_array($history, ['Y11', 'Z4'], true)) {
+    if (in_array($history, ['T2', 'T4'], true)) {
         // The survivor's repin reads the proved source.
         $sibling = Tool::query()->where('node_id', $h['node_id'])->where('package', '!=', $writer->package)->sole();
         expect($sibling->installed_version)->toBe('1.2')
@@ -2700,8 +2701,8 @@ it('orders an adoption before a publication by what the Gateway recorded of the 
     expect($operations->execute('install', $h['node_id'], 'apt', 'htop', null, repository: [...policySignedRepository(), 'name' => 'renamed',
         'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10')->input['repository_given'])->toBeTrue();
 })->with(['the sole member\'s own new record' => ['Y1'], 'a record made after the name\'s older record was removed' => ['Y6'],
-    'a recreated record, then a late version-only convergence report' => ['Y10'], 'a pinned sibling, then a late version-only convergence report' => ['Y11'],
-    'a recreated record, then a convergence report finished before the write but applied after it' => ['Z3'], 'the same on a pinned sibling' => ['Z4']]);
+    'a recreated record, then a late report finished after the write' => ['T1'], 'a pinned sibling, then a late report finished after the write' => ['T2'],
+    'a recreated record, then a late report finished before the write' => ['T3'], 'a pinned sibling, then a late report finished before the write' => ['T4']]);
 
 it('keeps an adoption newer than a publication that captured its record or pins, and a replacement row newer still', function (string $history): void {
     policySwamp();
@@ -2715,13 +2716,16 @@ it('keeps an adoption newer than a publication that captured its record or pins,
     // proves nothing over it.
     // Z1 and Z2: an earlier convergence's report of tree at that same 2.0 was applied after the adoption and changed no field of the row: a
     // matching receipt is no proof that it wrote the row. Z5: a failed receipt at 2.0 applied in the write's second before it, then the
-    // adoption restoring `installed`.
+    // adoption restoring `installed`. H1 and H2: the same 15 seconds after the write, with the step-time reader then writing the earlier
+    // successful 2.0 update's Operation: an Operation's timestamp shows nothing of the row. J1 and J2: an adoption request on the Node
+    // (of tree, or of htop unchanged) in the second the convergence's report of tree at 2.0 was applied: the history cannot tell which
+    // wrote tree's row.
     policyReadRun(Operation::query()->findOrFail($h['open']['operation']), 'succeeded', ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true,
         'installed_version' => '1.0']], 'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'],
         'Check apt package' => ['succeeded'], 'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => '1.5']],
         'Assert package state' => ['succeeded']], 2);
     expect($record()->verified)->toBeFalse()->and($record()->definition['uris'])->toBe($adopted);
-    if (in_array($history, ['Y7', 'Y8', 'Z1', 'Z5'], true)) {
+    if (in_array($history, ['Y7', 'Y8', 'Z1', 'Z5', 'H1', 'J1', 'J2'], true)) {
         // The adopted 2.0 stays, and the URI the write would have replaced is still the source's.
         expect(Tool::query()->findOrFail($h['tool_id'])->installed_version)->toBe('2.0')
             ->and(fn () => app(StartToolOperationAction::class)->execute('install', $h['node_id'], 'apt', 'htop', null, repository: [...policySignedRepository(),
@@ -2732,13 +2736,37 @@ it('keeps an adoption newer than a publication that captured its record or pins,
     }
     // A survivor's repin against the unproven source is refused.
     $sibling = $history === 'Z2' ? 'tree' : 'nano';
+    // H2: nano is the pinned sibling, tree the writer.
     expect(fn () => app(StartToolOperationAction::class)->execute('remove', $h['node_id'], 'apt', $sibling, null,
         Tool::query()->where('node_id', $h['node_id'])->where('package', $sibling)->sole()))
         ->toThrow(fn (ToolOperationException $error) => expect($error->errorCode)->toBe('tool.repository_unverified'));
 })->with(['a later adoption of the pinned sibling' => ['Y4'], 'a replacement row under the pinned name' => ['Y5'], 'a later adoption on the sole recreated record' => ['Y7'],
     'an adoption of the sole recreated record in the write\'s second' => ['Y8'], 'an adoption of the pinned sibling in the write\'s second' => ['Y9'],
-    'a later adoption, then a matching receipt that wrote nothing, on the sole record' => ['Z1'], 'the same on a pinned sibling' => ['Z2'],
-    'a failed receipt in the write\'s second, then an adoption restoring it' => ['Z5']]);
+    'a later adoption, then a matching receipt that wrote nothing, on the sole record' => ['Z1'], 'a later adoption, then a matching receipt that wrote nothing, on a pinned sibling' => ['Z2'],
+    'a failed receipt in the write\'s second, then an adoption restoring it' => ['Z5'],
+    'a later adoption, then a step-time write to an earlier matching receipt, on the sole record' => ['H1'], 'a later adoption, then a step-time write to an earlier matching receipt, on a pinned sibling' => ['H2'],
+    'an adoption of tree in the second a no-op report was applied' => ['J1'], 'another Tool adopted unchanged in the second a report wrote tree' => ['J2']]);
+
+it('recovers an unproven sole source through an explicit update that publishes it', function (string $history): void {
+    policySwamp();
+    $histories = policyPrecedingHistories();
+    $h = $histories[$history];
+    $record = static fn () => AptRepository::query()->where('node_id', $h['node_id'])->where('name', $h['source'])->sole();
+    $writer = Operation::query()->findOrFail($h['open']['operation']);
+    $published = static fn (string $version): array => ['Choose package action' => ['succeeded', ['ready' => true, 'mutate' => true, 'installed_version' => '1.0']],
+        'Publish the signing key' => ['succeeded'], 'Write the apt source' => ['succeeded'], 'Apply the package' => ['succeeded'], 'Check apt package' => ['succeeded'],
+        'Decode package state' => ['succeeded', ['compliant' => true, 'present' => true, 'installed_version' => $version]], 'Assert package state' => ['succeeded']];
+    // J1 and J2 cannot be told apart: the write's late success leaves the source unproven and the replaced URI the source's.
+    policyReadRun($writer, 'succeeded', $published('1.5'), 2);
+    expect($record()->verified)->toBeFalse();
+    // The existing path: tree's explicit update publishing the write's definition again proves it, and frees the replaced URI.
+    $operations = app(StartToolOperationAction::class);
+    $again = $operations->execute('update', $h['node_id'], 'apt', 'tree', null, Tool::query()->findOrFail($h['tool_id']), $writer->input['repository'], version: '1.5');
+    policyReadRun($again, 'succeeded', $published('1.5'), -2);
+    expect($record()->verified)->toBeTrue()->and($record()->definition['uris'])->toBe($writer->input['repository']['uris'])
+        ->and($operations->execute('install', $h['node_id'], 'apt', 'htop2', null, repository: [...policySignedRepository(), 'name' => 'renamed',
+            'uris' => $h['released_uris'], 'suites' => ['stable']], version: '1.10')->input['repository_given'])->toBeTrue();
+})->with(['an adoption of tree in the second a no-op report was applied' => ['J1'], 'another Tool adopted unchanged in the second a report wrote tree' => ['J2']]);
 
 it('leaves the source unproven where the history cannot order a pinned sibling\'s adoption, until an explicit write proves it again', function (string $history): void {
     policySwamp();

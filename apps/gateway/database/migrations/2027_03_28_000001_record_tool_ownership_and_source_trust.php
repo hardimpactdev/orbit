@@ -81,7 +81,7 @@ return new class extends Migration
         // its own included (StartToolOperationAction: the source's pins).
         $pinned = [];
         $operations = DB::table('operations')->whereIn('kind', ['tool.install', 'tool.update', 'tool.remove', 'node.converge'])
-            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'updated_at', 'state', 'input', 'result']);
+            ->orderBy('id')->get(['id', 'kind', 'node_id', 'status', 'error_code', 'attempts', 'started_at', 'created_at', 'state', 'input', 'result']);
         foreach ($operations as $operation) {
             $input = $this->json($operation->input);
             $result = $this->json($operation->result);
@@ -132,7 +132,7 @@ return new class extends Migration
 
                     continue;
                 }
-                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources, (string) $operation->updated_at);
+                $this->converge($operation->id, $operation->node_id, $input, $result, $ran, $tools, $sources);
 
                 continue;
             }
@@ -208,9 +208,6 @@ return new class extends Migration
                 $version = is_string($result['installed_version'] ?? null) ? $result['installed_version'] : null;
                 if ($projected && $operation->status !== 'cancelled') {
                     $tools[$tool]['stamp_state'] = $operation->id * 2;
-                    // When the Gateway applied it (the Operation's own last write) and what it wrote: a projected end set both fields.
-                    $tools[$tool]['received'] = [...(array) ($tools[$tool]['received'] ?? []), ['applied' => (string) $operation->updated_at,
-                        'status' => $succeeded && $operation->kind !== 'tool.remove' ? 'installed' : 'failed', 'version' => $version]];
                     // Only a success, or a failure whose decision read the package, observed the installed version: the one it read, absence
                     // included. A failure that read nothing recorded the admitted version again.
                     $failedStep = data_get($state, 'native_failure.failed_step');
@@ -290,14 +287,14 @@ return new class extends Migration
                 if (($written !== null && $written < $admitted)
                     || (is_int($tool->apt_repository_id) && ($found[$tool->id][$operation] ?? null) === $tool->apt_repository_id
                         && $this->madeByAdoption($tool->id, $tool->node_id, $tool->apt_repository_id, $sources)
-                        && ! self::newerAdoption($tool, $history, $admitted, ValidatedData::object($captured[$tool->id][$operation] ?? []), true))) {
+                        && ! self::newerAdoption($tool, $admitted, ValidatedData::object($captured[$tool->id][$operation] ?? []), true))) {
                     $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                 }
             }
             if (is_int($tool->apt_repository_id) && ($history === null || ($history['link'] ?? null) !== $linked)) {
                 foreach ($pinned as $operation => $pins) {
                     if ($pins['record'] === $tool->apt_repository_id && $pins['tool'] !== $tool->id && in_array($tool->package, $pins['packages'], true)
-                        && ! self::newerAdoption($tool, $history, $pins['admitted'], [], false)) {
+                        && ! self::newerAdoption($tool, $pins['admitted'], [], false)) {
                         $adoptedAt = min($adoptedAt, (int) $operation * 2 - 1);
                     }
                 }
@@ -531,7 +528,7 @@ return new class extends Migration
      * @param  array<int, array<string, mixed>>  $tools
      * @param  array<int, array<string, array<string, mixed>>>  $sources
      */
-    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources, string $applied): void
+    private function converge(int $id, int $nodeId, array $input, array $result, bool $ran, array &$tools, array &$sources): void
     {
         $phase = collect((array) ($result['phases'] ?? []))->firstWhere('name', 'tools');
         $plans = array_filter((array) data_get($input, '_converge.intent.tools', []), static fn (mixed $plan): bool => is_array($plan) && is_int($plan['id'] ?? null));
@@ -552,8 +549,6 @@ return new class extends Migration
                     if (is_string($observation['installed_version'] ?? null)) {
                         $tools[$toolId]['version'] = $observation['installed_version'];
                         $tools[$toolId]['stamp_version'] = $id * 2;
-                        $tools[$toolId]['received'] = [...(array) ($tools[$toolId]['received'] ?? []), ['applied' => $applied, 'status' => 'installed',
-                            'version' => $observation['installed_version']]];
                     }
                 }
             }
@@ -600,18 +595,19 @@ return new class extends Migration
 
     /**
      * The Tool's row may hold an adoption newer than an admission at `$admitted` that captured its membership. A captured link proves the
-     * membership then, not that no adoption followed, so only what the Gateway itself wrote, and when it applied it, rules one out:
+     * membership then, not that no adoption followed; only an ordering the history proves rules one out:
      * - A row made after the admission is a replacement under the pinned name.
-     * - A row last written after the admission holds a newer adoption, unless a receipt the Gateway applied after the admission, in that
-     *   very second, set the row's status and version: then that receipt, such as a convergence's late version-only report, wrote it. A
-     *   receipt that only matches the row's values, or ended natively after the admission, shows nothing.
+     * - A row last written after the admission may have been last written by an adoption, unless the preceding release's command log,
+     *   still covering that moment, holds no adoption request on the Node open in that second. Every adoption was a `tool:adopt` request
+     *   (AdoptToolAction behind the API's RecordCommandActivity), logged before its admission ran and closed after it; the log loses only
+     *   rows older than its retention. Then a receipt or admission wrote the row, and an adoption between the admission and that write left
+     *   nothing of its own in it. Neither a receipt's values nor an Operation's timestamps show which write changed the row.
      * - A row last written in the admission's own second: the admission's capture of its own Tool's status and version shows whether an
      *   adoption changed it since. An admission that only pinned the Tool captured no version, so that row may hold a newer adoption.
      *
-     * @param  array<string, mixed>|null  $history
      * @param  array<string, mixed>  $captured  the status and version the admission captured, for its own Tool
      */
-    private static function newerAdoption(stdClass $tool, ?array $history, string $admitted, array $captured, bool $own): bool
+    private static function newerAdoption(stdClass $tool, string $admitted, array $captured, bool $own): bool
     {
         $created = is_string($tool->created_at ?? null) ? $tool->created_at : '';
         $written = is_string($tool->updated_at ?? null) ? $tool->updated_at : '';
@@ -620,14 +616,11 @@ return new class extends Migration
             return true;
         }
         if ($written > $admitted) {
-            foreach ((array) ($history['received'] ?? []) as $receipt) {
-                if (is_array($receipt) && ($receipt['applied'] ?? null) === $written && ($receipt['status'] ?? null) === $tool->status
-                    && ($receipt['version'] ?? null) === $installed) {
-                    return false;
-                }
-            }
+            $oldest = DB::table('activity_log')->min('created_at');
 
-            return true;
+            return ! is_string($oldest) || $oldest > $written || DB::table('activity_log')->where('command', 'tool:adopt')
+                ->where('target_node_id', $tool->node_id)->where('status', '!=', 'failed')->where('created_at', '<=', $written)
+                ->where(static fn ($query) => $query->where('updated_at', '>=', $written)->orWhereNull('updated_at'))->exists();
         }
 
         return $written === $admitted && (! $own || ($captured['status'] ?? null) !== 'installed' || ($captured['version'] ?? null) !== $installed);
