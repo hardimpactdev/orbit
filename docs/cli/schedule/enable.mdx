@@ -10,14 +10,12 @@ orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 
 An existing workflow keeps its fixed intent; enable only sets its trigger. A copied Project definition with no workflow gets its command copy and workflow first.
 
-When the Gateway runs `schedule.enable` on its engine and the Schedule's Node reports `schedule.ensure_timer`, a retained host Node timer is enabled and started through one signed executor order with the same result. A native cron Schedule, a production release timer and an Instance-container timer keep the flow below ([schedule.enable](/reference/gateway-engine#scheduleenable)).
-
 ## How it works
 
 <div className="flow-at" data-chart="schedule/enable"></div>
 
-### Proposed executor path
+### Executor path
 
-On the Gateway engine, only a retained host Node timer is enabled through the executor. A native cron Schedule keeps its Swamp trigger, and a timer inside a production release stays on Swamp. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, a retained host Node timer is enabled and started through one signed `schedule.ensure_timer` order, which reads back its enablement, state and next elapse. A native cron Schedule keeps its Swamp trigger; a timer inside a production release and a timer that runs inside an Instance container stay on Swamp. A failure records `operation.native_failed` as the Swamp flow does. The run holds the Schedule owner's lock until its terminal receipt. Runtime proof on a nested fleet is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="schedule/engine/enable"></div>

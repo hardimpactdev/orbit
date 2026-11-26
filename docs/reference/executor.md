@@ -134,16 +134,15 @@ When `instance.t3` receives `pairing` (`{label, scopes}`) on an executor adverti
 
 ### The process family
 
-The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0 (`NodeExecutorInput::FamilySince`); app-prod does not enable it yet. Both actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
+The `process` family (`crates/process`) runs [`process.start`, `process.stop`](/reference/gateway-engine#processstart-and-processstop) and the Node-timer branch of [`schedule.enable`](/reference/gateway-engine#scheduleenable). App-dev enables it from agent 0.31.0, the version this tree builds (`NodeExecutorInput::FamilySince`); app-prod does not enable it yet. Both actions target a part of the Node (`<node>:process-<id>`, `<node>:schedule-<uuid>`), so two orders for one Process or Schedule run one at a time. Every name is checked against the Process or Schedule it belongs to, and every command is a fixed argv. Each change runs only when the read state differs, so a repeat reports `applied` with 0 changes.
 
 | Shape | Change | Read-back |
 | --- | --- | --- |
 | Host systemd unit | `systemctl enable` or `disable`, then `start` or `stop` | `LoadState=loaded`, `ActiveState` `active` or `inactive` exactly, and the admitted `UnitFileState` (`disabled` for a stop and for an on-demand start) |
 | Host Docker container | `docker container start` or `stop`, by the exact saved name | `State.Status` `running` or `exited` exactly (`created` fails) and the admitted image; an inspect answer for another name fails |
-| Unit in an Instance container | Through `incus exec` in the saved Incus project and container: the app-account move (its file placed only when it differs), then `enable --now --no-block` or `disable --now` | The container must be `Running` (`process.target_inactive`). A start waits for `ActiveState=active` with an empty `Job=` (10 reads 1 s apart); then `LoadState=loaded` and the admitted `UnitFileState` (`process.start_failed`, `process.stop_failed`) |
 | Schedule Node timer | `systemctl enable`, then `start`, of `orbit-schedule-<uuid>.timer` only | `LoadState=loaded`, `UnitFileState=enabled`, `ActiveState=active`; the receipt's `output` carries them with `NextElapseUSecRealtime` |
 
-A host or Docker mismatch fails with `process.state_mismatch`, a timer mismatch with `schedule.state_mismatch`.
+A unit in an Instance container is not covered: Swamp first moves the container's app account with a script, which no fixed argv reproduces, so the Gateway keeps that shape on Swamp. A property `systemctl show` leaves out never counts as its value. A host or Docker mismatch fails with `process.state_mismatch`, a timer mismatch with `schedule.state_mismatch`; the Gateway keeps these step codes beside the public `operation.native_failed` a Swamp run records.
 
 ## The observer pass-through
 

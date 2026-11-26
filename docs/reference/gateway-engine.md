@@ -89,15 +89,26 @@ A terminal receipt, including the original result in a nonce replay, must match 
 
 ### process.start and process.stop
 
-The engine runs a start or stop of a host systemd unit, a host Docker container, or a unit inside a development Instance container, addressed by its saved Incus project and container name. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand; a unit in an Instance container follows its state. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
+The engine runs a start or stop of a host systemd unit or a host Docker container, of a Node Process or an app-dev Instance Process. One step, `converge`, sends `process.ensure_state` with the desired state and the boot policy Swamp's `Set boot policy` applies: enabled at boot only for a running Process that is not on demand. The executor's [process family](/reference/executor#the-process-family) converges and reads the state back.
 
-These plans throw `EngineUnsupported` and run their whole Swamp workflow: a Vite dev Process (dev route, listener and awake marker), a production release layout, a Gateway release-container Process, and a host Process that runs Horizon, whose stop waits for its drain. Its start stays with it, so one Process never splits its lifecycle across engines. `process.restart` stays on Swamp.
+Eligibility comes from the Process and its placement, for both verbs, so one Process never splits its lifecycle across engines. These throw `EngineUnsupported` and run their whole Swamp workflow:
 
-The Operation keeps the Process lock it took at admission until a terminal receipt; a lost receipt sends the same step again with a fresh nonce, and the Node's journal answers the stored result. The end goes through `ProcessControlProjection`, so the Process, its desired state and the result (`ready`, `state`) are the rows a Swamp run records; a failure keeps the desired state and marks the Process failed with the step's code.
+- a dev-server Process (`vp-dev`, `vite`), whose start publishes a dev route, checks its listener and marks it awake;
+- a Process of an Instance not placed on app-dev, such as a production release layout;
+- any intent with a `container`: a unit in an Instance container, whose app-account move is a script, and a Gateway release container;
+- a Gateway release-host Process and a host Horizon Process, whose stop waits for its drain.
+
+`process.restart` stays on Swamp.
+
+Both flows are `ReceiptBoundDefinition`s, as `instance.destroy` is: the run, its steps and its target lock (`process:<id>`) commit in one transaction before the start event. Binding refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process (`EngineTargetFence`). While the lock is held, Process admission refuses `operation.target_busy`.
+
+A lost receipt sends the same step again with a fresh nonce, and the Node's journal answers the stored result. The end goes through `ProcessControlProjection`, so the success rows and result (`ready`, `state`) are the ones a Swamp run records. A failure records `operation.native_failed` with the Swamp step it stands for, such as `Verify the state`, as a failed Swamp check does. The step's own code (`process.state_mismatch` …) stays on the engine step and in the failure's detail.
+
+Receipt-bound settlement, where no budget or cancel settles a sent step without its terminal receipt, still keys on `instance.destroy` in `Engine::requiresReceipt`. Until it keys on `ReceiptBoundDefinition`, a Process or Schedule step past its budget fails with `engine.step_budget_exceeded`.
 
 ### schedule.enable
 
-The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`). A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine; a timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
+The engine enables a retained host Node timer (`trigger: node`). One step, `timer`, sends `schedule.ensure_timer` for the Schedule's own `orbit-schedule-<uuid>.timer`; the end goes through `ScheduleControlProjection` (`ready: true`). The run holds the owner's lock (`node_schedules:<id>` or `instance_schedules:<id>`) like a Process run holds its own. A failure records `operation.native_failed` with failed step `Check the timer` or `timer`. A native cron Schedule keeps its synchronous Swamp trigger and never reaches the engine. A timer in a production release (`production_control`) or one that requests runs inside an Instance container (`container`) throws `EngineUnsupported` and runs `operation-schedule-control` or `production-schedule-control`.
 
 ### instance.fleet
 

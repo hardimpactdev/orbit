@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% process.start on the Gateway engine: one `process` family on the Process's Node, one desired-state primitive for every runtime. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
-  %% Rollout order: host systemd units first; Docker containers and Instance-container units join the same primitive later, each when its read-back is proven. Until a runtime is covered, its Process throws EngineUnsupported and runs on Swamp.
-  %% status: draft
+  %% process.start on the Gateway engine: one `process` family on the Process's Node, one desired-state primitive, `process.ensure_state`, for a host systemd unit and a host Docker container (ADR 0267, ADR 0271; ProcessControlEngineFlow). Runtime proof on a nested fleet is pending.
+  %% Covered: host systemd units and host Docker containers. A unit in an Instance container stays on Swamp: Swamp first moves the container's app account with a script, which no fixed argv reproduces, so the engine refuses it at admission (EngineUnsupported).
+  %% status: built
   %% command: process:start
   %% kind: process.start
   autonumber
@@ -9,19 +9,18 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane EN icon=workflow pill=engine tone=purple
   %% lane N icon=server pill=executor tone=amber
-  %% lane C icon=server pill=container tone=green
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant EN as Engine<br/>Gateway and NATS
   participant N as Target Node<br/>executor
-  participant C as Instance copy<br/>via executor
   CLI->>GW: process:start 417
   Note over GW: Validate, record the task<br/>Process 417: provisioning
   %%> Same admission as process/start.mmd: access to the Process's Node, a Process not being removed; the intent carries unit or container name, runtime, on-demand flag and Instance container
-  opt drain-waiting, Vite or release plan
+  opt drain-waiting, dev-server, release or container plan
     Note over GW: Refuse the engine<br/>EngineUnsupported
     %%> - the same drain-waiting Processes as process/engine/stop.mmd, so one Process never splits its lifecycle across engines: a host systemd Process that runs Horizon (`GatewayHorizon::runs` with no Instance, whose unit carries the long-drain stop directives of SystemdProcessRenderer) and a Gateway release-container Process (Horizon, the scheduler)
     %%> - a Vite dev Process (`vite_plan`: dev route, listener, awake marker) and a production release layout
+    %%> - decided from the Process and its placement, for both verbs, never from start-only intent fields: a `vp-dev` or `vite` Process, a Process of an Instance not placed on app-dev, any intent with a `container` (an Instance container, whose app-account move is a script, or a Gateway release container), a Gateway release-host Process (`GatewayReleaseHost::hasProcess`) and a host Horizon Process
     %%> - decided at admission, before any order: the engine admits nothing, and the whole Operation takes the Swamp branch below
   end
   alt the engine admits the whole Operation
@@ -29,32 +28,29 @@ sequenceDiagram
     %%> - `process.start` is in `ORBIT_ENGINE_KINDS`
     %%> - every Node a step touches reports its action in `$KV.NODES`: the `process` family's desired-state action (one name for start and stop)
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
-    %%> - eligible plans, in rollout order: host systemd; then Docker; then a unit in an Instance container
+    %%> - eligible plans: a host systemd unit or a host Docker container of a Node Process or an app-dev Instance Process
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
-    %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+    %%> - the step rows and the Operation lock `process:<id>` commit in one transaction before the start event; an Operation never moves between engines after this
+    %%> - binding refuses `operation.target_busy` while another open Operation, on either engine, acts on the Process; while the lock is held, admission of any other Process verb refuses `operation.target_busy`
     GW-->>CLI: 202 Accepted<br/>task ID
     alt host systemd unit
       EN->>N: Converge the unit<br/>running · boot policy
       %%> Desired state: the unit is running and enabled at boot unless on-demand, as Swamp's `Set boot policy` / `Stop the Process` applies it; the admitted boot policy is an input of the step; an already-running unit only gets its boot policy
       %%> Target: the Process (`process-<id>`), so two orders for one Process run one after the other
-    else Docker container, later
+    else Docker container
       EN->>N: Converge the container<br/>docker start · running
       %%> `docker container start` only when the state differs; an already-running container changes nothing
-    else Instance container unit, later
-      EN->>C: Converge the unit inside<br/>incus exec · systemctl
-      %%> A nonblocking systemd job, then bounded readiness reads (5 s each, 10 tries 1 s apart), as `operation-process-container`; a stopped container fails the step, its next deployment starts it
     end
     alt host systemd unit
       N-->>EN: Observed state<br/>loaded · active · boot policy
       %%> Read-back: LoadState=loaded, ActiveState=active, and UnitFileState=enabled for a persistent Process, disabled for an on-demand one (the admitted `on_demand`)
-    else Docker container, later
+    else Docker container
       N-->>EN: Observed state<br/>State.Status running
-      %%> Read-back: `docker inspect` State.Status is `running`
-    else Instance container unit, later
-      C-->>EN: Observed state<br/>loaded · active · boot policy
-      %%> Read-back inside the copy, as instance-container-process.yml `Wait for the unit job and admitted state`: ActiveState=active with an empty `Job=` (no queued job), retried 10 times 1 s apart, then LoadState=loaded and the admitted UnitFileState; a still-queued job fails the step
+      %%> Read-back: `docker container inspect` of the exact saved name answers that name, State.Status `running` and the admitted image
     end
-    %%> A mismatch fails the step (`process.state_mismatch`), as the native assert does; success is projected only from this read-back
+    %%> A read that systemd answers without one of LoadState, ActiveState, SubState or UnitFileState never counts as that value: the step fails
+    %%> The step fails with its own code: `process.state_mismatch` after the change, `process.unit_missing`, `process.container_missing`, `process.apply_failed` or `process.input_invalid`; success is projected only from this read-back
+    %%> The Operation records what Swamp's failed native check records: `operation.native_failed`, with the Swamp step the code stands for (`Verify the state`, `Start the Process`, `Stop the container` …) as its failed step; the step's own code stays on the engine step and in the failure's detail
     %%> `applied` is 0 when nothing changed, so a repeat after a crash reports the same end state
     opt the receipt is lost
       EN->>N: Resend the same step<br/>fresh nonce · same step ID
