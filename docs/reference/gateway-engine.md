@@ -99,9 +99,15 @@ The engine runs `task:sync` of a [task copy](/reference/tasks#bring-main-into-a-
 
 Routing decides admission once: the Node's features, the copy's saved runtime, the repository, the default's mirror and the credential mode. Then it mints the token and keeps it encrypted in the Gateway cache for the journal's replay window or until the Operation ends. The bound steps and every order, resend and cleanup come from the pinned intent alone, so a resend sends the same blob to the copy's Node only; no copy step names it.
 
-A missing copy mirror is made from the default's mirror, and refused without one, as on Swamp. The publish history reaches `sync` as a blob. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
+A missing copy mirror is made from the default's mirror, and refused without one, as on Swamp.
 
-Like `instance.destroy`, the kind is receipt-bound. The sync takes the copy's Instance lock when it binds its steps, so no removal of the copy is admitted beside it; the running Operation fences the group. A sync on Swamp takes no Instance lock, as before, and a copy whose removal was admitted first is not admitted to the engine. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
+The seed checks the default's mirror before it changes anything, replaces only an empty folder in the mirror's place, and leaves a folder that holds anything else untouched.
+
+If the Gateway cache loses the credential before the first `fetch` order is published, the run mints it again with the admitted access mode and uploads it with that order; after publication, a resend names the kept digest. The publish history reaches `sync` as a blob. Because the head is pinned, a resend imports the same commit even when origin moved. A null head fails as `tasks.default_branch_missing`. When the remote ref moved since its read, the import fails as `tasks.base_ref_mismatch` and leaves the ref as it is.
+
+Like `instance.destroy`, the kind is receipt-bound. The sync takes the copy's Instance lock when it binds its steps, so no removal of the copy is admitted beside it; the running Operation fences the group. A sync on Swamp takes no Instance lock, as before.
+
+While the kind is enabled, a sync whose copy's removal was admitted first is refused with `operation.target_busy` before it starts on either engine, so one copy never has two writers. No budget fails a sent step, and no expiry ends the Operation. A lost receipt is resent under the same step ID within the journal's replay window, so the group stays fenced until each step's terminal receipt.
 
 Each step settles only by its own evidence (the mirror head, the base evidence or the cleanup); other output fails it as `engine.receipt_invalid`. An order the signer refuses fails its step as `engine.order_invalid` instead of waiting.
 

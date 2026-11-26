@@ -678,15 +678,34 @@ it('admits a Swamp sync exactly as before: it takes no Instance lock, beside ano
     expect($writer()->exists)->toBeTrue('a writer admitted after the sync');
 });
 
-it('leaves a copy whose removal was admitted first to the Swamp sync, as before', function (): void {
+it('refuses a sync whose copy\'s removal was admitted first, before it starts on either engine', function (): void {
     [$group, $copy] = syncCopyWorld();
-    syncEngineBus(SyncEngineActions);
+    $bus = syncEngineBus(SyncEngineActions);
     $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
     // The removal's own records are not the subject; the refusal reads only the status.
     DB::unprepared('DROP TRIGGER instances_removal_status_update');
     $copy->update(['status' => InstanceState::Removing]);
 
-    expect(app(EngineKinds::class)->routes($operation->refresh()))->toBeFalse();
+    expect(fn () => app(StartSwampRun::class)->start($operation->refresh()))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->errorCode)->toBe('operation.target_busy'));
+    $operation->refresh();
+    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('operation.target_busy')
+        ->and(Engine::owns($operation))->toBeFalse()->and($bus->orders)->toBe([])
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull('no Swamp run was started either');
+});
+
+it('mints the credential again and uploads it with the first order when the Gateway cache lost it before any publication', function (): void {
+    [$group] = syncCopyWorld();
+    $bus = syncEngineBus(SyncEngineActions);
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+    app(StartSwampRun::class)->start($operation);
+    Cache::forget('tasks.sync.credential.'.$operation->id);
+
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    $sha = $bus->orders[0]['input']['credential']['blob']['sha256'];
+    expect($bus->content)->toHaveKey($sha)
+        ->and($operation->refresh()->state['engine_credential']['sha256'])->toBe($sha);
 });
 
 it('rebuilds a resend from the credential reference the Operation kept when the Gateway cache lost the credential', function (): void {
@@ -698,7 +717,7 @@ it('rebuilds a resend from the credential reference the Operation kept when the 
     app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
 
     expect($bus->orders)->toHaveCount(2)->and($bus->orders[1]['input']['credential'])->toBe($first)
-        ->and($operation->refresh()->state['engine_credential'])->toBe(['sha256' => $first['blob']['sha256']]);
+        ->and($operation->refresh()->state['engine_credential']['sha256'])->toBe($first['blob']['sha256']);
 });
 
 it('settles the import only by evidence of this sync: the pinned head, the admitted branch and start, and the whole work read', function (Closure $wrong): void {

@@ -29,13 +29,13 @@ sequenceDiagram
     %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
     %%> - eligible plan: a task copy (`copy` in the intent); a group without one keeps `tasks.no_workspace`
     Note over GW: Bind steps, take the lock<br/>commit, publish the start
-    %%> - the copy's Instance lock commits with the step rows, refused while the copy is being removed; a Swamp sync takes none; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
+    %%> - the copy's Instance lock commits with the step rows; a Swamp sync takes none; while the kind is enabled, a copy being removed refuses the sync (`operation.target_busy`) before either engine starts it; the step rows commit before the start event, from the pinned intent alone; an Operation never moves between engines after this
     %%> - the group stays fenced by its running Operation and the copy by the Instance lock: no removal or other writer of the copy starts until the sync ends
     GW-->>CLI: 202 Accepted<br/>task ID
     EN->>N: Fetch the default branch<br/>instance.fetch_branch · mirror
     %%> Reuses `instance.fetch_branch` with the default branch: routing mints the one-hour read token (`contents: read`) once per Operation, keeps it encrypted in the Gateway cache for the journal's replay window or until the Operation ends, and sends the same blob to this Node only on every resend
     %%> The credential is written root-only beside the mirror in a file of this fetch's own for the Git calls and removed after them, whatever they did; a sibling fetch keeps its own file. It never reaches argv, the copy or a receipt
-    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare from the default's mirror (`seed`) in the copy's staging repository `<mirror>.seeding`, which takes the mirror's name only when complete and which the copy's cleanup and destroy remove; a folder without `HEAD` is no mirror, as the Swamp base phase makes it; with no default's mirror the fetch refuses
+    %%> Desired state: the mirror holds `refs/heads/<default>` at origin's head; a repeat fetches nothing new. A missing mirror is made bare from the default's mirror (`seed`) in the copy's staging repository `<mirror>.seeding`, which takes the mirror's name only when complete and which the copy's cleanup and destroy remove; a folder without `HEAD` is no mirror, the default's mirror is checked before anything changes, only an empty folder is replaced and any other is left as it is and refused, as the Swamp base phase makes it; with no default's mirror the fetch refuses
     N->>GH: Fetch the default head<br/>HTTPS · credential on the Node
     GH-->>N: Default head objects
     N-->>EN: Mirror head<br/>output: commit

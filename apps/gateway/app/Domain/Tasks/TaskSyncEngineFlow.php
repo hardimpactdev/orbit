@@ -19,6 +19,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Models\Instance;
@@ -82,26 +83,42 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
             || $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new EngineUnsupported('The sync runs on the engine only for the group\'s own copy with scoped repository access.');
         }
-        self::assertCopyFree($operation);
         if (! Cache::has(self::credentialKey($operation))) {
-            $token = $this->reads->for($instance->project->repositoryUrl(), $instance->project->source_access)->githubToken();
-            $line = $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
-            Cache::put(self::credentialKey($operation), Crypt::encryptString($line), self::CredentialSeconds);
-            // The credential's reference stays with the Operation: its digest names the content the Node keeps once it read it,
-            // so a resend can always rebuild the order, also when the Gateway's cache lost the content.
-            app(OperationStore::class)->change($operation, ['state' => [...($operation->refresh()->state ?? []), 'engine_credential' => ['sha256' => hash('sha256', $line)]]]);
+            $this->mint($operation, $instance->project->source_access);
         }
     }
 
     /**
-     * A copy whose removal was admitted first is not the engine's: such a sync starts on Swamp as before, and one that finds the
-     * removal while it binds is refused. A removal admitted later finds the bound sync's Instance lock (StartInstanceDestroyAction).
+     * Mints the run's read credential with the access mode admission took, keeps it encrypted in the Gateway cache, and keeps its
+     * digest and that mode with the Operation: the digest names the content the Node keeps once it read it, so a resend of a
+     * published order can always rebuild it, also when the Gateway's cache lost the content.
+     */
+    private function mint(Operation $operation, ProjectSourceAccess $access): string
+    {
+        $token = $this->reads->for(ValidatedData::string(ValidatedData::object(ValidatedData::object($operation->input)['workspace'])['repository']), $access)->githubToken();
+        $line = $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
+        Cache::put(self::credentialKey($operation), Crypt::encryptString($line), self::CredentialSeconds);
+        app(OperationStore::class)->change($operation, ['state' => [...($operation->refresh()->state ?? []),
+            'engine_credential' => ['sha256' => hash('sha256', $line), 'source_access' => $access->value]]]);
+
+        return $line;
+    }
+
+    /**
+     * Never two writers on one copy: while the kind runs on the engine, a sync whose copy's removal was admitted first is refused
+     * before it starts on either engine (StartSwampRun), and again in the bind's transaction. A removal admitted later finds the
+     * bound sync's Instance lock (StartInstanceDestroyAction).
      */
     public static function assertCopyFree(Operation $operation): void
     {
-        $instance = Instance::query()->find(ValidatedData::integer(ValidatedData::object($operation->input)['instance_id'] ?? 0));
+        $input = ValidatedData::object($operation->input);
+        $enabled = config('orbit.engine.kinds');
+        if ($operation->kind !== self::Kind || ! isset($input['copy']) || ! is_array($enabled) || ! in_array(self::Kind, $enabled, true)) {
+            return;
+        }
+        $instance = Instance::query()->find(ValidatedData::integer($input['instance_id'] ?? 0));
         if ($instance === null || $instance->status === InstanceState::Removing) {
-            throw new EngineUnsupported('The task copy is being removed.');
+            throw new ResourceOperationException('operation.target_busy', 'The task copy is being removed.', 409);
         }
     }
 
@@ -235,7 +252,17 @@ final readonly class TaskSyncEngineFlow implements EngineAdmission, EngineDefini
         if (is_string($kept)) {
             return ['content' => Crypt::decryptString($kept)];
         }
-        $reference = ValidatedData::object($operation->state['engine_credential'] ?? null)['sha256'] ?? null;
+        $admitted = ValidatedData::object($operation->state['engine_credential'] ?? null);
+        $published = OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', self::Fetch)->whereNotNull('first_order_expires_ms')->exists();
+        if (! $published) {
+            // No order carried it yet, so no Node holds it: the run mints its credential again, with the mode admission took, and
+            // uploads it with this first publication.
+            $access = ProjectSourceAccess::tryFrom(ValidatedData::string($admitted['source_access'] ?? ''))
+                ?? throw new LogicException('The admitted credential mode of this sync is gone.');
+
+            return ['content' => $this->mint($operation, $access)];
+        }
+        $reference = $admitted['sha256'] ?? null;
 
         return is_string($reference) && preg_match('/\A[0-9a-f]{64}\z/D', $reference) === 1
             ? ['sha256' => $reference] : throw new LogicException('The admitted credential of this sync is gone.');

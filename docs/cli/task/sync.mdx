@@ -37,7 +37,7 @@ The Gateway starts its own workflow for a copy, `operation-task-sync-copy`; a ta
 
 The source is the Project's repository. When that repository receives main only at a release, the copy sees the last released main.
 
-The sync refuses a copy while a copy turn of the group may still run. While a check or a publish runs, the group lock refuses the sync with `operation.target_busy`. On the engine the sync also holds the copy's Instance from the moment it binds its steps, so a removal of the copy is refused with `operation.target_busy` until the sync ends; a copy whose removal came first syncs on Swamp, as before.
+The sync refuses a copy while a copy turn of the group may still run. While a check or a publish runs, the group lock refuses the sync with `operation.target_busy`. On the engine the sync also holds the copy's Instance from the moment it binds its steps, so a removal of the copy is refused with `operation.target_busy` until the sync ends; while `tasks.sync` is an engine kind, a sync whose copy's removal came first is refused with `operation.target_busy` before it starts on either engine.
 
 ## How it works
 

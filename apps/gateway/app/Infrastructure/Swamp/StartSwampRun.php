@@ -7,7 +7,6 @@ namespace App\Infrastructure\Swamp;
 use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
-use App\Domain\Engine\EngineUnsupported;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
@@ -80,6 +79,8 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
+            // A copy's sync never starts beside its removal, on either engine, while the kind runs on the engine.
+            TaskSyncEngineFlow::assertCopyFree($operation);
             // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
             if (app(EngineKinds::class)->routes($operation)) {
                 $runId = EngineRun::runIdOf($operation->id);
@@ -88,13 +89,7 @@ final readonly class StartSwampRun
                     try {
                         app(Engine::class)->start($operation, function () use ($operation, $runId, $lock): void {
                             // In the bind's transaction: a removal of the copy admitted since routing refuses the sync's start.
-                            if ($operation->kind === TaskSyncEngineFlow::Kind) {
-                                try {
-                                    TaskSyncEngineFlow::assertCopyFree($operation);
-                                } catch (EngineUnsupported $exception) {
-                                    throw new ResourceOperationException('operation.target_busy', $exception->getMessage(), 409, previous: $exception);
-                                }
-                            }
+                            TaskSyncEngineFlow::assertCopyFree($operation);
                             $this->bind($operation, $runId, $lock);
                         });
                     } catch (UniqueConstraintViolationException $exception) {

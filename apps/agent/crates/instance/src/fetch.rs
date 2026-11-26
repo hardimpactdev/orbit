@@ -95,8 +95,10 @@ fn present(path: &Path) -> Result<bool, Failure> {
 }
 
 /// A sync's missing mirror: made bare from the default's mirror, which holds the seed's commit, or refused without one. A mirror is
-/// there only with its `HEAD`, as the Swamp base phase reads it; a folder without one is no mirror. The seed fills the copy's fixed
-/// staging repository, which takes the mirror's name only once complete, so a seed that failed or stopped never passes for a mirror.
+/// there only with its `HEAD`, as the Swamp base phase reads it. Nothing is changed before the default's mirror is confirmed, and a
+/// folder in the mirror's place is replaced only when empty: one that holds anything else may hold refs or objects, so the seed
+/// refuses and leaves it as it is. The seed fills the copy's fixed staging repository, which takes the mirror's name only once
+/// complete, so a seed that failed or stopped never passes for a mirror.
 fn seed(system: &impl System, input: &FetchInput, mirror: &Path) -> Result<(), Failure> {
     let Some(source) = &input.seed else { return Ok(()) };
     let failed = |detail: String| Failure::new("instance.branch_fetch_failed", format!("seed: {detail}"));
@@ -106,12 +108,21 @@ fn seed(system: &impl System, input: &FetchInput, mirror: &Path) -> Result<(), F
     if source.is_empty() {
         return Err(Failure::new("instance.branch_fetch_failed", "the mirror is missing and the default has none"));
     }
-    let source = system.path(source).display().to_string();
-    let scratch = PathBuf::from(seeding(&mirror.display().to_string()));
-    for leftover in [&scratch, &mirror.to_path_buf()] {
-        if present(leftover)? {
-            std::fs::remove_dir_all(leftover).map_err(|error| failed(error.to_string()))?;
+    let source = system.path(source);
+    if !present(&source.join("HEAD"))? {
+        return Err(Failure::new("instance.branch_fetch_failed", "the mirror is missing and so is the default's"));
+    }
+    let source = source.display().to_string();
+    if present(mirror)? {
+        let empty = std::fs::read_dir(mirror).map_err(|error| failed(error.to_string()))?.next().is_none();
+        if !empty {
+            return Err(failed(format!("{} holds files but no mirror; it is left for inspection", mirror.display())));
         }
+        std::fs::remove_dir(mirror).map_err(|error| failed(error.to_string()))?;
+    }
+    let scratch = PathBuf::from(seeding(&mirror.display().to_string()));
+    if present(&scratch)? {
+        std::fs::remove_dir_all(&scratch).map_err(|error| failed(error.to_string()))?;
     }
     let target = scratch.display().to_string();
     let filled = [
@@ -253,6 +264,12 @@ mod seed_tests {
             assert_eq!(std::fs::read_dir(&folder).expect("folder").count(), 0, "no seed scratch stays");
         }
 
+        // The default's mirror is missing: refused before anything changes, so a partial mirror keeps what it holds.
+        std::fs::create_dir_all(mirror.join("refs/heads")).and_then(|()| std::fs::write(mirror.join("refs/heads/kept"), "keep\n")).expect("partial mirror");
+        assert_eq!(seed(&real, &input(&format!("{MIRRORS}/2.git")), &mirror).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"));
+        assert_eq!(std::fs::read_to_string(mirror.join("refs/heads/kept")).expect("kept"), "keep\n");
+        std::fs::remove_dir_all(&mirror).expect("reset");
+
         let source = real.path(&format!("{MIRRORS}/2.git"));
         let work = real.0.path().join("work");
         real.run(5, &[GIT, "init", "--quiet", "-b", "main", work.to_str().expect("path")].map(str::to_owned), None).expect("init");
@@ -260,7 +277,13 @@ mod seed_tests {
         git(&["commit", "--quiet", "--allow-empty", "-m", "seed"]).expect("commit");
         real.run(5, &[GIT, "clone", "--quiet", "--bare", work.to_str().expect("path"), source.to_str().expect("path")].map(str::to_owned), None).expect("source");
 
-        // A folder without `HEAD` is no mirror, and a stopped seed left its staging repository: the next attempt seeds anew.
+        // A folder holding anything but no `HEAD` may hold refs or objects: refused and left exactly as it was.
+        std::fs::create_dir_all(mirror.join("refs/heads")).and_then(|()| std::fs::write(mirror.join("refs/heads/kept"), "keep\n")).expect("partial mirror");
+        assert_eq!(seed(&real, &input(&format!("{MIRRORS}/2.git")), &mirror).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"));
+        assert_eq!(std::fs::read_to_string(mirror.join("refs/heads/kept")).expect("kept"), "keep\n");
+        std::fs::remove_dir_all(&mirror).expect("reset");
+
+        // An empty folder is no mirror, and a stopped seed left its staging repository: the next attempt seeds anew.
         std::fs::create_dir_all(&mirror).expect("empty folder");
         assert_eq!(seed(&real, &input(""), &mirror).map_err(|failure| failure.code), Err("instance.branch_fetch_failed"), "no source: refused");
         let staging = PathBuf::from(seeding(&mirror.display().to_string()));
