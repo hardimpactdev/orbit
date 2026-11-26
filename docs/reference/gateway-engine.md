@@ -78,7 +78,7 @@ The engine runs a private Route's `--domain` change from the admitted `route_upd
 5. `grace`, `late-<node>`: After the 31-second grace, a new version of a scope the old site still names installs.
 6. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` writes the lasting Caddyfile over the prepared one and removes the old leaves. Another Route on the Node must still answer.
 
-A failure before the cutover keeps the old Route and marks the replacement failed. A failure or cancel after it keeps the replacement authoritative and the old Route retiring. A failed `cutover` step counts as after the cutover only when its transaction committed. The retry of a failure after the cutover runs only the old site's withdrawal and sibling check, without a second cutover.
+A failure before the cutover keeps the old Route and marks the replacement failed. A failure or cancel after it keeps the replacement authoritative and the old Route retiring. A failed `cutover` step counts as after the cutover only when its transaction committed. The retry of a failure after the cutover runs every post-cutover step again from the cutover run's plan, without a second DNS move or cutover. A retry on Swamp cannot withdraw the old site, so it fails and keeps the old Route retiring.
 
 The update holds its serving Nodes from admission, as a Route create does. `--publication`, public Routes, LAN rules, the Ingress edge, analytics changes, `APP_URL` writes and whole `.env` writes stay on Swamp. An update with no Node work still settles at admission with no run.
 
@@ -111,7 +111,7 @@ A clone that owns private Routes withdraws them first, when the admission render
 2. `withdraw-<node>`, `sibling-<node>`: `route.withdraw_site` removes the sites, pools and leaves, then another Route on the Node must still answer.
 3. `release`: The Gateway records `route_withdrawn_at` on the removal and frees the Route Nodes, as the Swamp run's release step does.
 
-Such a removal holds its Route Nodes alone, so a second removal on the Node waits. A failed withdrawal fails as `route.withdrawal_failed` at `Withdraw the Route` before `remove` runs. A retry of a removal that already withdrew its Routes runs `remove` alone.
+Every Route must be served by the clone's own Node. The removal holds every Node whose files it replaces alone, DNS Nodes included, until `release` frees them. A removal promoted after waiting runs on Swamp. A failed withdrawal fails as `route.withdrawal_failed` at `Withdraw the Route` before `remove` runs. A retry of a removal that already withdrew its Routes runs `remove` alone.
 
 The Gateway binds the `remove` step and takes the Instance's Operation lock in the same transaction, before publishing the start. The executor takes the same target lock it uses for sleep and wake, force-stops and removes the saved clone, and discards both engines' freeze artifacts. The existing removal projection deletes the records only after the Node confirms the removal.
 

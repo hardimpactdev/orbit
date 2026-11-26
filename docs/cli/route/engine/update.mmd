@@ -55,7 +55,7 @@ sequenceDiagram
       %%> A Gateway step (`cutover`) after the probe and, when present, the DNS move: RouteMutationState::cutover records the replacement `activating` at `database-cutover` (authoritative) and the old Route `retiring`; the terminal projection repeats it, so a repeat changes nothing
       %%> A cancel after this step is projected as a failure after the cutover, so the replacement stays authoritative for a forward retry
       %%> A failed `cutover` step settles by whether its authority transaction committed: committed is a failure after the cutover (forward); not committed is a failure before it, with no chart step, so the old Route stays authoritative
-      %%> The retry of a failure after the cutover (the old Route `retiring`, its replacement active) finds the cutover recorded: it runs only the failed run's old-site withdrawal and sibling check, from that run's plan, and its projection does not switch authority again
+      %%> The retry of a failure after the cutover (the old Route `retiring`, its replacement active) finds the cutover recorded: it runs every step past the cutover again, idempotently, from the plan of the run that recorded the cutover (the grace from its DNS receipt time, its late leaves with its signatures, the final Caddyfile placed, reloaded and read back by the withdrawal, the sibling check), and its projection does not switch authority again; a retry that ran on Swamp, whose plan has no final Caddyfile, is projected as failed at `Withdraw the old site` and keeps the old Route retiring
       opt domain outside the TLD
         Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
         %%> A Gateway step that waits until 31 s after the last DNS receipt (`done_ms`); a resend never shortens it; the old site serves until it ends. Differs from the draft: no NATS timer, the engine has no delayed-step primitive yet
@@ -100,7 +100,7 @@ sequenceDiagram
         Note over GW: Replacement authoritative<br/>old Route retiring
         %%> A failure in the grace, the old site's withdrawal or the sibling check
       end
-      %%> Retry is forward only: the same request resumes; before the cutover it publishes the replacement again (a made key is reused, files repeat with `applied: 0`), after it only the withdrawal and the sibling check run, from the failed run's plan, with no second grace or cutover
+      %%> Retry is forward only: the same request resumes; before the cutover it publishes the replacement again (a made key is reused, files repeat with `applied: 0`), after it every post-cutover step runs again from the cutover run's plan (grace remainder, late leaves, the final Caddyfile, the sibling check), with no second DNS move or cutover
     else the engine does not admit it
       Note over GW: Start the Swamp run<br/>operation-route-update
       %%> The kind is not enabled, a Node lacks an action or the DNS feature, `$KV.NODES` is unreadable, or the flow throws `EngineUnsupported`: the whole Operation runs route/update.mmd; it never splits across engines

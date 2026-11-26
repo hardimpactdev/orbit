@@ -36,10 +36,10 @@ sequenceDiagram
       EN->>N: Withdraw the Route first<br/>route/engine/destroy steps
       %%> `dns-node` (guarded `dns.publish_records`), then `withdraw-node` (`route.withdraw_site`) and `sibling-node` (a TLS probe of another Route on that Node), with no DNS grace (a destroyed name has no new target, as instance/destroy.mmd decides)
       %%> Every step is receipt-bound like `remove`: a lost receipt resends the same step, the Node's journal answers its stored result, and the Instance stays fenced until a terminal receipt; a `blob.*` content failure comes before the journal, so it never ends a step
-      %%> A removal with this engine plan takes its Route Nodes alone (an exclusive hold, not a shared withdrawal slot): a second removal on the Node waits, and one rendered before a site changed there is refused stale; a removal that already shares its Nodes runs on Swamp
+      %%> Admitted only when every Route is served by the clone's own Node; the removal takes every Node whose whole files it replaces, its DNS Nodes too, alone from admission (an exclusive hold, not a shared withdrawal slot), so a second removal there waits; a removal that waited and was promoted, or that shares its Nodes, runs on Swamp, which merges from the live files
       %%> A retry of a removal whose earlier run withdrew the Route (`route_withdrawn`) has none of these steps, as the Swamp run skips its withdraw
       Note over EN: Record the withdrawal<br/>free the Route Nodes
-      %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then the Route withdrawal holds go; a refused release never fails the removal, and its line (`route_hold_released`, `route_hold_release_status`) is in the result, also after a later container failure
+      %%> Gateway step `release`, as the Swamp run's release step: `route_withdrawn_at` on the removal, then every Route Node hold of the removal is freed and the waiting writes are woken; `route_hold_released` is true only when a hold row was freed; the Instance's own lock stays until the removal's receipt; a refused release never fails the removal, and its line (`route_hold_released`, `route_hold_release_status`) is in the result, also after a later container failure
       %%> `remove` waits for it; a failed withdrawal fails the Operation as `route.withdrawal_failed` at "Withdraw the Route" (removal step `route_target_clear`) before the container is touched
     end
     EN->>N: Remove the clone<br/>instance.destroy · step remove
