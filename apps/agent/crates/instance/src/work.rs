@@ -156,7 +156,6 @@ pub fn work_read(
     let reader = Reader {
         system,
         deadline: Instant::now() + Duration::from_millis(left),
-        neutral: RefCell::new(None),
         owned: RefCell::new(BTreeMap::new()),
     };
     let marker = format!("{MARKERS}/app-instance-{target}.asleep");
@@ -226,28 +225,32 @@ type Target = (String, String);
 struct Reader<'a, S: System> {
     system: &'a S,
     deadline: Instant,
-    /// `-c` pairs that switch off every filter driver the workspace's configuration names, read once per read.
-    neutral: RefCell<Option<Vec<String>>>,
     /// Each object id's own count within this read, as the reader's `own` keeps it.
     owned: RefCell<BTreeMap<String, usize>>,
 }
 
 impl<S: System> Reader<'_, S> {
-    /// Seconds left for one command, at least one; a budget that ran out is `timeout`.
-    fn seconds(&self) -> Result<u32, Unknown> {
+    /// What is left of the budget; a budget that ran out is `timeout`.
+    fn left(&self) -> Result<Duration, Unknown> {
         let left = self.deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Err(Unknown::Timeout);
         }
-        Ok(u32::try_from(left.as_millis().div_ceil(1000))
+        Ok(left)
+    }
+
+    /// Whole seconds left for the reader's own bound inside the container, at least one, as the SSH reader gives it.
+    fn seconds(&self) -> Result<u32, Unknown> {
+        Ok(u32::try_from(self.left()?.as_millis().div_ceil(1000))
             .unwrap_or(u32::MAX)
             .max(1))
     }
 
-    /// Runs one command within the budget. A command that ends after the budget is `timeout`, as the reader's bound kills it.
+    /// Runs one command within the budget: the Node stops it at the deadline to the millisecond, and a command that ends
+    /// after it is `timeout`.
     fn run(&self, argv: &[String]) -> Result<Result<String, String>, Unknown> {
-        let seconds = self.seconds()?;
-        let result = self.system.run(seconds, argv, None);
+        let left = self.left()?;
+        let result = self.system.run_for(left, argv, None);
         if Instant::now() >= self.deadline {
             return Err(Unknown::Timeout);
         }
@@ -343,64 +346,20 @@ impl<S: System> Reader<'_, S> {
         Ok((heads, stashes))
     }
 
-    /// `-c` pairs that empty the `clean`, `smudge` and `process` commands of every filter driver the workspace's configuration
-    /// names, so comparing a changed tracked file never runs a configured program. Reading the configuration runs nothing. A
-    /// driver name that cannot be overridden on the command line refuses the read.
-    fn neutral(&self, target: &Target) -> Result<Vec<String>, Unknown> {
-        if let Some(found) = self.neutral.borrow().as_ref() {
-            return Ok(found.clone());
-        }
-        let listed = match self.git(
-            target,
-            &["config", "--name-only", "--get-regexp", r"^filter\."],
-        )? {
-            Ok(listed) => listed,
-            // `git config --get-regexp` exits 1 with nothing on standard error when no key matches.
-            Err(stderr) if stderr.is_empty() => String::new(),
-            Err(_) => return Err(Unknown::NotARepository),
-        };
-        let mut names = BTreeSet::new();
-        for key in listed.split('\n').filter(|key| !key.is_empty()) {
-            let name = key
-                .strip_prefix("filter.")
-                .and_then(|rest| rest.rsplit_once('.'))
-                .map(|(name, _)| name);
-            match name {
-                Some(name)
-                    if !name.is_empty()
-                        && !name.contains('=')
-                        && !name.chars().any(char::is_control) =>
-                {
-                    names.insert(name.to_owned());
-                }
-                _ => return Err(Unknown::Unreachable),
-            }
-        }
-        let mut pairs = Vec::new();
-        for name in names {
-            for setting in ["clean=", "smudge=", "process=", "required=false"] {
-                pairs.extend(["-c".to_owned(), format!("filter.{name}.{setting}")]);
-            }
-        }
-        *self.neutral.borrow_mut() = Some(pairs.clone());
-        Ok(pairs)
-    }
-
-    /// Tracked changes and untracked files that are not ignored, file by file. No configured filter runs, and a submodule's
-    /// own work tree is not entered: a submodule counts when its commit differs, never by running Git inside it.
+    /// Tracked changes and untracked files that are not ignored, file by file, with the SSH reader's exact `status`: its
+    /// configuration, attributes and submodule handling decide, so both readers give one answer.
     fn status(&self, target: &Target) -> Result<(Vec<String>, Vec<String>), Unknown> {
-        let neutral = self.neutral(target)?;
-        let mut arguments: Vec<&str> = neutral.iter().map(String::as_str).collect();
-        arguments.extend([
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--no-renames",
-            "--ignore-submodules=dirty",
-        ]);
         let read = self
-            .git(target, &arguments)?
+            .git(
+                target,
+                &[
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                    "--no-renames",
+                ],
+            )?
             .map_err(|_| Unknown::NotARepository)?;
         let (mut modified, mut untracked) = (Vec::new(), Vec::new());
         for entry in read.split('\0').filter(|entry| !entry.is_empty()) {

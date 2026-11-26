@@ -86,6 +86,17 @@ pub trait System {
     /// The command's standard error when it fails or cannot start.
     fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String>;
 
+    /// Runs a command that the Node stops after `limit`, to the millisecond. A double that has no finer bound runs it with the
+    /// whole seconds that cover `limit`.
+    ///
+    /// # Errors
+    ///
+    /// The command's standard error when it fails, cannot start or is stopped.
+    fn run_for(&self, limit: std::time::Duration, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+        let seconds = u32::try_from(limit.as_millis().div_ceil(1000)).unwrap_or(u32::MAX).max(1);
+        self.run(seconds, argv, stdin)
+    }
+
     /// The content of a blob the executor read for this order, by its SHA-256.
     ///
     /// # Errors
@@ -132,10 +143,11 @@ impl NodeSystem {
     }
 }
 
-impl System for NodeSystem {
-    fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+impl NodeSystem {
+    /// Runs a command under `timeout <duration>`, with `stdin` as its standard input.
+    fn bounded(duration: &str, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
         let mut child = Command::new(TIMEOUT)
-            .arg(seconds.to_string())
+            .arg(duration)
             .args(argv)
             .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
@@ -154,6 +166,18 @@ impl System for NodeSystem {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
         }
+    }
+}
+
+impl System for NodeSystem {
+    fn run(&self, seconds: u32, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+        Self::bounded(&seconds.to_string(), argv, stdin)
+    }
+
+    fn run_for(&self, limit: std::time::Duration, argv: &[String], stdin: Option<&[u8]>) -> Result<String, String> {
+        // `timeout` takes a fractional duration: the bound ends to the millisecond, and never at zero, which would mean none.
+        let millis = limit.as_millis().max(1);
+        Self::bounded(&format!("{}.{:03}", millis / 1000, millis % 1000), argv, stdin)
     }
 
     fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {

@@ -94,9 +94,8 @@ fn clean_repository<'a>(
             "for-each-ref --format=%(objectname) %(refname) refs/heads refs/stash",
             Ok(refs),
         ),
-        (r"config --name-only --get-regexp ^filter\.", Err("")),
         (
-            "status --porcelain=v1 -z --untracked-files=all --no-renames --ignore-submodules=dirty",
+            "status --porcelain=v1 -z --untracked-files=all --no-renames",
             Ok(status),
         ),
         ("symbolic-ref -q --short HEAD", Ok("main\n")),
@@ -393,37 +392,170 @@ fn local_read(local: &LocalGit) -> Value {
         .expect("JSON")
 }
 
-#[test]
-fn a_changed_tracked_file_under_a_configured_filter_reads_dirty_without_running_the_filter() {
-    let local = LocalGit::new();
-    local.commit(".gitattributes", "*.txt filter=probe\n");
-    local.commit("notes.txt", "one\n");
-    // Configured after the commits, so only a read can run it: each command would leave its marker.
-    let marker = local.tree.path().join("filter-ran");
-    let probe = format!("touch {}; cat", marker.display());
-    for key in [
-        "filter.probe.clean",
-        "filter.probe.smudge",
-        "filter.probe.process",
-    ] {
-        local.git(&["config", key, &probe]);
-    }
-    local.git(&["config", "filter.probe.required", "true"]);
-    std::fs::write(local.tree.path().join("notes.txt"), "two\n").expect("change");
-    let answer = local_read(&local);
-    assert_eq!(answer["state"], "dirty", "{answer}");
-    assert_eq!(
-        answer["modified"],
-        json!({"count": 1, "names": ["notes.txt"]})
+/// Today's SSH reader (`apps/gateway/resources/instances/workspace-git-read.py`) on the same work tree, through an Incus
+/// stand-in that runs its Git calls exactly as `LocalGit` runs the signed reader's.
+fn python_read(local: &LocalGit) -> Value {
+    let bin = tempfile::tempdir().expect("stand-in folder");
+    let incus = bin.path().join("incus");
+    std::fs::write(
+        &incus,
+        r#"#!/usr/bin/python3
+import json, os, subprocess, sys
+a = sys.argv[1:]
+if a[0] == "query":
+    print(json.dumps({"status": "Running"}))
+    sys.exit(0)
+tree = os.environ["FIXTURE_TREE"]
+command = [part.replace("/srv/workspace", tree) for part in a[a.index("/usr/bin/git"):]]
+environment = dict(os.environ, HOME=tree, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
+result = subprocess.run(command, env=environment, stdin=subprocess.DEVNULL, capture_output=True, check=False)
+sys.stdout.buffer.write(result.stdout)
+sys.exit(result.returncode)
+"#,
+    )
+    .expect("stand-in");
+    std::process::Command::new("/bin/chmod")
+        .args(["0700"])
+        .arg(&incus)
+        .status()
+        .expect("chmod");
+    let reader = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../gateway/resources/instances/workspace-git-read.py"
+    ))
+    .expect("the SSH reader");
+    let prelude = "INSTANCE_PROJECTS = [\"orbit-instances\", \"orbit-instances-nested\"]\nBASELINE = None\nPUBLISHED = []\nBUDGET = 10\n";
+    let search = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap_or_default()
     );
-    assert!(!marker.exists(), "the read ran a configured filter");
-    // The same comparison without the overrides starts the filter (which then fails as a process filter): the probe is real.
-    let _ = std::process::Command::new("/usr/bin/git")
-        .args(["status", "--porcelain"])
-        .current_dir(local.tree.path())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output();
-    assert!(marker.exists(), "the probe filter is not configured");
+    let mut python = std::process::Command::new("/usr/bin/python3")
+        .args([
+            "-",
+            "read",
+            "orbit-instances",
+            "instance-12",
+            "/nonexistent/app-instance-12.asleep",
+        ])
+        .env("PATH", search)
+        .env("FIXTURE_TREE", local.tree.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("python3");
+    std::io::Write::write_all(
+        &mut python.stdin.take().expect("stdin"),
+        format!("{prelude}{reader}").as_bytes(),
+    )
+    .expect("reader source");
+    let output = python.wait_with_output().expect("the SSH reader ran");
+    serde_json::from_slice(&output.stdout).expect("the SSH reader's JSON")
+}
+
+/// Both readers on one work tree give one answer, whose tracked changes are `modified`. Every commit here is unpushed, so
+/// both read `dirty`: the changed files are what differ between the cases.
+fn same_answer(local: &LocalGit, modified: &Value) {
+    let signed = local_read(local);
+    assert_eq!(
+        signed,
+        python_read(local),
+        "the signed and the SSH reader differ"
+    );
+    assert_eq!(signed["modified"]["names"], *modified, "{signed}");
+}
+
+#[test]
+fn a_normalizing_filter_reads_as_the_ssh_reader_reads_it() {
+    let local = LocalGit::new();
+    local.git(&["config", "filter.norm.clean", "tr -d '\\r'"]);
+    local.git(&["config", "filter.norm.smudge", "cat"]);
+    local.commit(".gitattributes", "*.txt filter=norm\n");
+    local.commit("notes.txt", "one\r\n");
+    // Another stat for the same content: Git runs the filter to compare, and the cleaned bytes are the committed ones.
+    std::fs::write(local.tree.path().join("notes.txt"), "one\r\n").expect("rewrite");
+    let later = std::time::SystemTime::now() + Duration::from_secs(5);
+    std::fs::File::options()
+        .write(true)
+        .open(local.tree.path().join("notes.txt"))
+        .expect("open")
+        .set_modified(later)
+        .expect("mtime");
+    // A driver no path uses, whose name holds `=`, changes nothing.
+    local.git(&["config", "filter.a=b.clean", "cat"]);
+    same_answer(&local, &json!([]));
+    std::fs::write(local.tree.path().join("notes.txt"), "two\r\n").expect("change");
+    same_answer(&local, &json!(["notes.txt"]));
+}
+
+/// A work tree with a submodule `sub`, both committed.
+fn with_submodule() -> (LocalGit, LocalGit) {
+    let inner = LocalGit::new();
+    inner.commit("inner.txt", "inner\n");
+    let local = LocalGit::new();
+    local.commit("a.txt", "a\n");
+    let source = inner.tree.path().to_str().expect("UTF-8 path").to_owned();
+    local.git(&[
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        &source,
+        "sub",
+    ]);
+    local.git(&["commit", "-q", "-m", "sub"]);
+    (local, inner)
+}
+
+#[test]
+fn work_inside_a_submodule_reads_as_the_ssh_reader_reads_it() {
+    for change in ["unstaged", "staged", "untracked"] {
+        let (local, _inner) = with_submodule();
+        same_answer(&local, &json!([]));
+        let sub = local.tree.path().join("sub");
+        match change {
+            "unstaged" => std::fs::write(sub.join("inner.txt"), "edited\n").expect("edit"),
+            "staged" => {
+                std::fs::write(sub.join("inner.txt"), "staged\n").expect("edit");
+                let staged = std::process::Command::new("/usr/bin/git")
+                    .args(["add", "inner.txt"])
+                    .current_dir(&sub)
+                    .status()
+                    .expect("git add");
+                assert!(staged.success());
+            }
+            _ => std::fs::write(sub.join("loose.txt"), "loose\n").expect("untracked"),
+        }
+        same_answer(&local, &json!(["sub"]));
+    }
+}
+
+#[test]
+fn a_submodule_ignored_by_its_configuration_reads_as_the_ssh_reader_reads_it() {
+    let (local, _inner) = with_submodule();
+    local.git(&["config", "-f", ".gitmodules", "submodule.sub.ignore", "all"]);
+    local.git(&["commit", "-q", "-am", "ignore sub"]);
+    let sub = local.tree.path().join("sub");
+    let moved = std::process::Command::new("/usr/bin/git")
+        .args([
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.test",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "moved",
+        ])
+        .current_dir(&sub)
+        .status()
+        .expect("git commit");
+    assert!(moved.success());
+    let answer = local_read(&local);
+    assert_eq!(answer["modified"]["count"], 0, "{answer}");
+    assert_eq!(answer, python_read(&local));
 }
 
 #[test]
@@ -460,4 +592,21 @@ fn branches_at_one_unpushed_tip_count_that_tip_once_per_read() {
     // A second read counts afresh: nothing is kept across reads.
     local_read(&local);
     assert_eq!(*local.revlists.borrow(), 4);
+}
+
+#[test]
+fn the_node_stops_a_command_at_the_deadline_to_the_millisecond() {
+    let system = crate::NodeSystem::new("/nonexistent");
+    let started = Instant::now();
+    let stopped = system.run_for(
+        Duration::from_millis(200),
+        &["/bin/sleep".to_owned(), "3".to_owned()],
+        None,
+    );
+    assert!(stopped.is_err());
+    assert!(
+        started.elapsed() < Duration::from_millis(900),
+        "{:?}",
+        started.elapsed()
+    );
 }
