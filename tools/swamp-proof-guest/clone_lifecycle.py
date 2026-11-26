@@ -613,12 +613,15 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                 self.systemctl('gateway', 'restart', *APP_SERVICES)
                 admitted = self.admitted('DELETE', f'instances/{self.default}', {'force': True}, 'seed-cleanup')
                 self.terminal(int(admitted['id']))
-            code, _data, error = self.api('DELETE', f'projects/{self.project}')
-            require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
+            self.remove_project()
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'project_deleted': self.project, 'seed_deleted': self.default,
                                 'clones_absent': [clone['instance'] for clone in self.clones.values()], 'temporary_services_removed': True})
+
+    def remove_project(self):
+        code, _data, error = self.api('DELETE', f'projects/{self.project}')
+        require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
 
     def uninstall(self):
         self.guest(self.node, 'sh', '-c', '''
@@ -662,6 +665,11 @@ class SyncLane(CloneLane):
         self.groups = {}
         self.syncs = {}
         super().setup(repository, branch)
+
+    def remove_project(self):
+        for group in self.groups.values():
+            self.helper('task-copy-remove', group, self.project)
+        super().remove_project()
 
     def copy(self, name, sibling):
         self.create(sibling, 'engine')
