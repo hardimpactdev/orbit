@@ -278,3 +278,17 @@ it('admits a Node-local private proxy, and leaves a Process proxy to Swamp, from
         expect(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
     }
 })->with(['a Node-local loopback proxy' => false, 'a Process proxy' => true]);
+
+it('keeps a private Route on the engine when an unrelated Ingress serves its cluster', function (): void {
+    config(['orbit.engine.kinds' => ['route.destroy']]);
+    [$node] = destroyFleet();
+    $route = destroyFixture($node, 'gone', 'gone');
+    $ingress = destroyNode('ingress', '10.44.0.11');
+    $ingress->update(['cluster_id' => $route->cluster_id]);
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $route->cluster_id]);
+    [$operation] = destroyAdmission($route->refresh());
+
+    expect($route->cluster->ingressAssignment)->not->toBeNull()
+        ->and($operation->input['route_private_development'])->toBeTrue()
+        ->and(array_map(static fn ($step): string => $step->name, app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+});
