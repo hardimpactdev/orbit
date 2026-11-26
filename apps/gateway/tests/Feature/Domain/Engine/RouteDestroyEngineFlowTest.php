@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Engine\EngineContent;
 use App\Domain\Engine\EngineKinds;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
@@ -193,8 +194,8 @@ it('signs the guarded DNS and withdrawal orders in the wire shape the executor d
     };
     $fixture = static fn (string $file): array => json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/'.$file)), true)['fields']['input'];
 
-    $dns = App\Domain\Engine\EngineContent::upload($bus, 1, $flow->input(routeDestroyOperation(), 'dns-0', $run));
-    $withdraw = App\Domain\Engine\EngineContent::upload($bus, 3, $flow->input(routeDestroyOperation(), 'withdraw-3', $run));
+    $dns = EngineContent::upload($bus, 1, $flow->input(routeDestroyOperation(), 'dns-0', $run));
+    $withdraw = EngineContent::upload($bus, 3, $flow->input(routeDestroyOperation(), 'withdraw-3', $run));
 
     expect($dns['records'])->toBe(['blob' => ['sha256' => hash('sha256', "address=/other.example/10.44.0.8\n")],
         'from_sha256' => hash('sha256', "address=/shop.example/10.44.0.7\naddress=/other.example/10.44.0.8\n")])

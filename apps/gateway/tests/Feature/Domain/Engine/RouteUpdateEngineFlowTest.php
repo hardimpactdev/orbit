@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
+use App\Actions\Routes\RouteMutationState;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteUpdateEngineFlow;
@@ -19,6 +21,7 @@ use App\Models\OperationEngineStep;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -158,7 +161,7 @@ it('settles a failed cutover by whether its authority transaction committed', fu
     $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
     $replacement = Route::query()->findOrFail($operation->input['route_update']['result_route_id']);
     if ($committed) {
-        app(App\Actions\Routes\RouteMutationState::class)->cutover($this->route->refresh(), $replacement);
+        app(RouteMutationState::class)->cutover($this->route->refresh(), $replacement);
     }
     $failed = (new OperationEngineStep)->forceFill(['name' => 'cutover', 'status' => 'failed', 'error_code' => 'engine.local_failed', 'node_id' => 0]);
     app(RouteUpdateEngineFlow::class)->finish($operation->refresh(), new EngineRun($operation->id, ['cutover' => $failed], 1_800_000_000_000, 1_800_000_001_000));
@@ -190,7 +193,7 @@ it('holds its serving Nodes from admission, so a second update on the same Node 
     $first = updatedRoute($this->route);
     $second = updatedRoute($sibling, 'journal.outside.test');
 
-    expect(App\Domain\Operations\RoutePublicationHolds::nodes($first))->toContain($this->node->id)
-        ->and(Illuminate\Support\Facades\DB::table('route_publication_holds')->where('operation_id', $first->id)->pluck('node_id')->all())->toContain($this->node->id)
+    expect(RoutePublicationHolds::nodes($first))->toContain($this->node->id)
+        ->and(DB::table('route_publication_holds')->where('operation_id', $first->id)->pluck('node_id')->all())->toContain($this->node->id)
         ->and($second->refresh()->status->value)->toBe('waiting');
 });

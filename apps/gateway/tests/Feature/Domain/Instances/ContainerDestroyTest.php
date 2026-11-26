@@ -1247,3 +1247,59 @@ it('keeps the release outcome and the container\'s own failure when the removal 
         'route_hold_released' => $released, 'route_hold_release_status' => $released ? 200 : 0])
         ->and($operation->result)->not->toHaveKey('withdrawal_error_code');
 })->with(['released' => true, 'refused' => false]);
+
+it('withdraws a Route-owning clone through the engine, keeps it fenced across a lost withdrawal receipt, and removes it once', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $clone->node->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    $route = Route::query()->create(['kind' => 'app', 'node_id' => $clone->node_id, 'project_id' => $clone->project_id, 'domain' => 'feature.outside.test',
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $clone->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
+    $node = $clone->node_id;
+    $sent = [];
+    destroyOrderBus(function (string $subject, mixed $payload) use ($node, &$sent): object {
+        if (str_starts_with($subject, '$JS.API.DIRECT.GET.KV_NODES.')) {
+            return new Payload('{"actions":["instance.destroy","route.withdraw_site","dns.publish_records"],"features":["dns.guarded_records"]}');
+        }
+        if (str_starts_with($subject, '$JS.API.CONSUMER.CREATE.ORDERS.')) {
+            return (object) [];
+        }
+        if ($subject === "orbit.node.{$node}.orders" && $payload instanceof Payload) {
+            $sent[] = json_decode((string) base64_decode(explode('.', $payload->body)[0], true), true, flags: JSON_THROW_ON_ERROR);
+        }
+
+        return new Payload('{"seq":1}');
+    });
+    $operation = signedDestroy($clone);
+    app(StartSwampRun::class)->start($operation);
+    $engine = app(Engine::class);
+    $engine->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $receipt = static fn (array $order, array $result): array => ['node' => $node, 'line' => ['action' => $order['action'], 'target' => $order['target'],
+        'operation' => $order['operation'], ...$result]];
+
+    expect(array_column($sent, 'operation'))->toBe([$operation->id.":dns-{$node}"])
+        ->and($sent[0]['input']['records'])->toHaveKeys(['blob', 'from_sha256'])->and($sent[0]['input']['records']['blob'])->toHaveKey('sha256');
+    $engine->onReceipt($receipt($sent[0], ['status' => 'applied', 'changes' => 2]));
+    expect(array_column($sent, 'operation'))->toBe([$operation->id.":dns-{$node}", $operation->id.":withdraw-{$node}"]);
+
+    // The withdrawal's receipt is lost: the deadline sends the same step again, and the Instance stays fenced meanwhile.
+    $this->travel(31)->seconds();
+    $engine->onEvent('orbit.engine.deadline', ['operation' => $operation->id]);
+    $withdrawals = array_values(array_filter($sent, static fn (array $order): bool => $order['operation'] === $operation->id.":withdraw-{$node}"));
+    expect($withdrawals)->toHaveCount(2)->and($withdrawals[1]['nonce'])->not->toBe($withdrawals[0]['nonce'])
+        ->and($withdrawals[1]['input'])->toBe($withdrawals[0]['input'])
+        ->and($operation->refresh()->lock_key)->toBe(OperationStore::lockKey('instance', $clone->id))
+        ->and(array_column($sent, 'action'))->not->toContain('instance.destroy');
+
+    // The Node's journal answers the second send with the stored result of the one execution.
+    $engine->onReceipt($receipt($withdrawals[1], ['status' => 'refused', 'reason' => 'replayed_nonce',
+        'first' => ['action' => 'route.withdraw_site', 'target' => (string) $node, 'operation' => $operation->id.":withdraw-{$node}", 'status' => 'applied', 'changes' => 3, 'repeat' => true]]));
+    $remove = array_values(array_filter($sent, static fn (array $order): bool => $order['action'] === 'instance.destroy'));
+    expect($remove)->toHaveCount(1)
+        ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->route_withdrawn_at)->not->toBeNull();
+
+    $engine->onReceipt($receipt($remove[0], ['status' => 'done']));
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($operation->result)->toMatchArray(['removed' => true, 'route_hold_released' => true])
+        ->and(OperationEngineStep::query()->where('operation_id', $operation->id)->where('name', "withdraw-{$node}")->value('sends'))->toBe(2);
+});

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Engine\EngineRun;
+use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRoutePublicationInput;
@@ -265,5 +266,5 @@ it('leaves a Process proxy Route\'s removal to Swamp from its captured placement
     [$operation] = destroyAdmission(destroyFixture($node, 'proxy', 'proxy'));
 
     expect($operation->input['route_private_development'])->toBeFalse()
-        ->and(fn () => app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation))->toThrow(App\Domain\Engine\EngineUnsupported::class);
+        ->and(fn () => app(RouteDestroyEngineFlow::class)->steps($operation))->toThrow(EngineUnsupported::class);
 });
