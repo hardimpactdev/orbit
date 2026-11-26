@@ -11,6 +11,7 @@ use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\ReceiptBoundDefinition;
 use App\Domain\Engine\StepSpec;
 use App\Models\Operation;
+use App\Models\OperationEngineStep;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -128,7 +129,8 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
             'csr' => RouteEngineFlow::csrInput(RouteExecutionProof::objects(self::plan($operation)['leaves'])[(int) $index]),
             'site' => $this->siteInput($operation, (int) $index, static fn (int $leaf): string => $run->output("sign-{$leaf}")
                 ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
-            'late' => $this->lateInput($operation, (int) $index, static fn (int $leaf): string => $run->output("sign-{$leaf}")
+            'late' => $this->lateInput($source = self::resumed($operation) ?? $operation, (int) $index,
+                static fn (int $leaf): string => ($source === $operation ? $run : self::recorded($source))->output("sign-{$leaf}")
                 ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
             'dns' => $this->dnsInput($operation, (int) $index),
             'withdraw' => $this->withdrawInput(self::resumed($operation) ?? $operation, (int) $index),
@@ -146,7 +148,7 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
             'sign' => $this->create->sign($operation, RouteExecutionProof::objects($plan['leaves'])[$index], $run->output("csr-{$index}") ?? '', $run),
             'probe' => $this->create->probe(RouteExecutionProof::objects($plan['probes'])[$index]),
             'cutover' => $this->cutover($operation),
-            'grace', 'sibling' => $this->destroy->local($this->old($operation), $step, $run),
+            'grace', 'sibling' => $this->destroy->local($this->old($operation), $step, ($earlier = self::resumed($operation)) !== null ? self::recorded($earlier) : $run),
             default => throw new LogicException("Step [{$step}] runs on a Node."),
         };
     }
@@ -364,14 +366,43 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
     private function resumeSteps(Operation $operation): array
     {
         $earlier = self::resumed($operation) ?? throw new EngineUnsupported('A retry without a recorded cutover runs on Swamp.');
+        $plan = self::plan($earlier);
         $steps = [];
-        foreach (array_values(array_unique(ValidatedData::integerList(self::plan($earlier)['retire_nodes']))) as $node) {
+        $after = [];
+        // The grace runs again from the recorded DNS receipt: it waits only what is left of it.
+        if (RouteExecutionProof::objects($plan['dns']) !== []) {
+            $steps[] = new StepSpec('grace', 0, 'route.dns_grace', 'gateway', budgetMs: 60_000);
+            $after = ['grace'];
+        }
+        $late = [];
+        foreach (ValidatedData::integerList(ValidatedData::object($plan['retire'])['leaf_indexes']) as $index) {
+            $late[ValidatedData::integer(RouteExecutionProof::objects($plan['leaves'])[$index]['node_id'])] = true;
+        }
+        foreach (array_keys($late) as $node) {
+            // The late leaves again, from the run's own signatures: a repeat places the same files (`applied: 0`).
+            RouteEngineFlow::fits($this->lateInput($earlier, $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
+            $steps[] = new StepSpec("late-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 300_000, resendMs: 30_000);
+        }
+        foreach (array_values(array_unique(ValidatedData::integerList($plan['retire_nodes']))) as $node) {
+            // The final Caddyfile placed and reloaded again, then read back: success needs its digest live.
             RouteEngineFlow::fits($this->withdrawInput($earlier, $node));
-            $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, budgetMs: 600_000, resendMs: 30_000);
+            $steps[] = new StepSpec("withdraw-{$node}", $node, 'route.withdraw_site', (string) $node, isset($late[$node]) ? [...$after, "late-{$node}"] : $after,
+                budgetMs: 600_000, resendMs: 30_000);
             $steps[] = new StepSpec("sibling-{$node}", 0, 'route.probe', 'gateway', ["withdraw-{$node}"], budgetMs: 60_000);
         }
 
         return $steps;
+    }
+
+    /** The recorded steps of a resumed run: its DNS receipts time the grace, and its signatures the late leaves. */
+    private static function recorded(Operation $earlier): EngineRun
+    {
+        $steps = [];
+        foreach (OperationEngineStep::query()->where('operation_id', $earlier->id)->get() as $step) {
+            $steps[$step->name] = $step;
+        }
+
+        return new EngineRun($earlier->id, $steps, 0, null);
     }
 
     /**
@@ -391,8 +422,10 @@ final readonly class RouteUpdateEngineFlow implements EngineDefinition, ReceiptB
             return null;
         }
 
+        // The run that recorded the cutover holds the original prepared and final Caddyfiles; later failed retries do not.
         return Operation::query()->where('kind', 'route.update')->where('target_type', 'route')->where('target_id', $source->id)
-            ->where('status', 'failed')->where('id', '<', $operation->id)->orderByDesc('id')->get()
-            ->first(static fn (Operation $earlier): bool => (ValidatedData::object($earlier->input['route_update'] ?? [])['result_route_id'] ?? null) === $selected->id);
+            ->where('status', 'failed')->where('id', '<', $operation->id)->orderBy('id')->get()
+            ->first(static fn (Operation $earlier): bool => (ValidatedData::object($earlier->input['route_update'] ?? [])['result_route_id'] ?? null) === $selected->id
+                && OperationEngineStep::query()->where('operation_id', $earlier->id)->where('name', 'cutover')->where('status', 'done')->exists());
     }
 }

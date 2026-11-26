@@ -290,5 +290,5 @@ it('keeps a private Route on the engine when an unrelated Ingress serves its clu
 
     expect($route->cluster->ingressAssignment)->not->toBeNull()
         ->and($operation->input['route_private_development'])->toBeTrue()
-        ->and(array_map(static fn ($step): string => $step->name, app(App\Domain\Routes\RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
+        ->and(array_map(static fn ($step): string => $step->name, app(RouteDestroyEngineFlow::class)->steps($operation)))->toContain("withdraw-{$node->id}");
 });

@@ -10,6 +10,7 @@ use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Routes\NativeRoutePublicationInput;
+use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteUpdateEngineFlow;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -198,31 +199,67 @@ it('holds its serving Nodes from admission, so a second update on the same Node 
         ->and($second->refresh()->status->value)->toBe('waiting');
 });
 
-it('resumes the identical request after a failure past the cutover with the old site\'s withdrawal alone, and settles once', function (): void {
-    $operation = updatedRoute($this->route);
+/** Runs the engine update up to its cutover and fails it at `$failedAt`, with its steps recorded as the engine records them. */
+function updateFailedAfterCutover(Route $route, int $node, string $failedAt): Operation
+{
+    $operation = updatedRoute($route);
     $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => EngineRun::runIdOf($operation->id)]]);
     $flow = app(RouteUpdateEngineFlow::class);
-    $node = $this->node->id;
-    $run = new EngineRun($operation->id, ['sign-0' => (new OperationEngineStep)->forceFill(['output' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n"]),
-        'sign-1' => (new OperationEngineStep)->forceFill(['output' => "-----BEGIN CERTIFICATE-----\nLATE\n-----END CERTIFICATE-----\n"])], 0, null);
-    $prepared = $flow->input($operation, "site-{$node}", $run)['caddy']['blob']['content'];
-    $lasting = $flow->input($operation, "withdraw-{$node}", $run)['caddy']['content'];
+    $record = static fn (string $name, string $status, ?string $output = null, ?int $doneMs = null, ?string $code = null): OperationEngineStep => OperationEngineStep::query()->create([
+        'operation_id' => $operation->id, 'name' => $name, 'node_id' => 0, 'action' => 'route.step', 'target' => 'gateway', 'after' => [], 'status' => $status,
+        'budget_ms' => 60_000, 'resend_ms' => 5_000, 'output' => $output, 'done_ms' => $doneMs, 'error_code' => $code]);
+    $steps = ['sign-0' => $record('sign-0', 'done', "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n"),
+        'sign-1' => $record('sign-1', 'done', "-----BEGIN CERTIFICATE-----\nLATE\n-----END CERTIFICATE-----\n"),
+        'dns-0' => $record('dns-0', 'done', '2', (int) floor(microtime(true) * 1000) - 40_000), 'cutover' => $record('cutover', 'done')];
     $flow->local($operation, 'cutover', new EngineRun($operation->id, [], 0, null));
-    $failed = (new OperationEngineStep)->forceFill(['name' => "withdraw-{$node}", 'status' => 'failed', 'error_code' => 'route.withdraw_failed', 'node_id' => $node]);
-    $flow->finish($operation->refresh(), new EngineRun($operation->id, ["withdraw-{$node}" => $failed], 1_800_000_000_000, 1_800_000_001_000));
-    $replacement = Route::query()->findOrFail($operation->input['route_update']['result_route_id']);
+    $steps[$failedAt] = $record($failedAt, 'failed', null, null, 'route.withdraw_failed');
+    $flow->finish($operation->refresh(), new EngineRun($operation->id, $steps, 1_800_000_000_000, 1_800_000_001_000));
 
+    return $operation->refresh();
+}
+
+it('resumes every step past the cutover from the run that recorded it, and settles once', function (string $failedAt): void {
+    $node = $this->node->id;
+    $failedAt = str_replace('N', (string) $node, $failedAt);
+    $original = updateFailedAfterCutover($this->route, $node, $failedAt);
+    $flow = app(RouteUpdateEngineFlow::class);
+    $replacement = Route::query()->findOrFail($original->input['route_update']['result_route_id']);
+    $recorded = new EngineRun($original->id, ['sign-0' => OperationEngineStep::query()->where('operation_id', $original->id)->where('name', 'sign-0')->firstOrFail(),
+        'sign-1' => OperationEngineStep::query()->where('operation_id', $original->id)->where('name', 'sign-1')->firstOrFail()], 0, null);
+    $prepared = $flow->input($original, "site-{$node}", $recorded)['caddy']['blob']['content'];
+    $lasting = $flow->input($original, "withdraw-{$node}", $recorded)['caddy']['content'];
+
+    // A retry that itself failed on Swamp does not hide the run with the original Caddyfiles.
+    $failedRetry = updatedRoute($this->route->refresh());
+    $failedRetry->update(['status' => 'failed']);
     $retry = updatedRoute($this->route->refresh());
+    $run = new EngineRun($retry->id, [], 0, null);
 
-    expect(array_map(static fn ($step): string => $step->name, $flow->steps($retry)))->toBe(["withdraw-{$node}", "sibling-{$node}"])
-        ->and($flow->input($retry, "withdraw-{$node}", new EngineRun($retry->id, [], 0, null))['caddy'])
-        ->toBe(['from_sha256' => hash('sha256', $prepared), 'content' => $lasting]);
+    expect(array_map(static fn ($step): array => [$step->name, $step->after], $flow->steps($retry)))->toBe([
+        ['grace', []], ["late-{$node}", ['grace']], ["withdraw-{$node}", ['grace', "late-{$node}"]], ["sibling-{$node}", ["withdraw-{$node}"]],
+    ])->and($flow->input($retry, "withdraw-{$node}", $run)['caddy'])->toBe(['from_sha256' => hash('sha256', $prepared), 'content' => $lasting])
+        ->and(array_column($flow->input($retry, "late-{$node}", $run)['leaves'], 'certificate'))->toBe([['blob' => ['content' => "-----BEGIN CERTIFICATE-----\nLATE\n-----END CERTIFICATE-----\n"]]])
+        ->and($flow->local($retry, 'grace', $run))->toBe('waited 0 ms');
 
     $retry->update(['status' => 'running', 'state' => [...$retry->state, 'swamp_run_id' => EngineRun::runIdOf($retry->id)]]);
     $done = static fn (string $name): OperationEngineStep => (new OperationEngineStep)->forceFill(['name' => $name, 'status' => 'done', 'node_id' => 0]);
-    $flow->finish($retry->refresh(), new EngineRun($retry->id, ["withdraw-{$node}" => $done("withdraw-{$node}"), "sibling-{$node}" => $done("sibling-{$node}")], 1_800_000_000_000, 1_800_000_001_000));
+    $flow->finish($retry->refresh(), new EngineRun($retry->id, ['grace' => $done('grace'), "late-{$node}" => $done("late-{$node}"),
+        "withdraw-{$node}" => $done("withdraw-{$node}"), "sibling-{$node}" => $done("sibling-{$node}")], 1_800_000_000_000, 1_800_000_001_000));
 
     expect($retry->refresh()->status->value)->toBe('succeeded')
         ->and(Route::query()->find($this->route->id))->toBeNull()
         ->and($replacement->refresh()->status)->toBe(RouteStatus::Active);
+})->with(['at the withdrawal' => 'withdraw-N', 'at the grace' => 'grace', 'at the late leaf' => 'late-N']);
+
+it('keeps the old Route retiring when a retry past the cutover succeeds on Swamp without withdrawing its site', function (): void {
+    $original = updateFailedAfterCutover($this->route, $this->node->id, "withdraw-{$this->node->id}");
+    $retry = updatedRoute($this->route->refresh());
+    $retry->update(['status' => 'running', 'state' => [...$retry->state, 'swamp_run_id' => 'swamp-run']]);
+
+    app(NativeRouteUpdateProjection::class)->apply($retry->refresh(), ['run_id' => 'swamp-run', 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($retry->refresh()->status->value)->toBe('failed')
+        ->and($retry->error_code)->toBe('route.withdraw_failed')
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Retiring);
 });

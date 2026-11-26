@@ -6,6 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Actions\Routes\RouteMutationState;
 use App\Domain\Analytics\AnalyticsRoutePlan;
+use App\Domain\Engine\EngineRun;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\NativeFailedStep;
@@ -50,6 +51,12 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $wasTerminal = $operation->status->terminal();
+            // A retry after the cutover succeeds only where the old site's withdrawal ran and was read back: the engine's resumed run.
+            // A run that did not withdraw it (Swamp's plan of a retry has no final Caddyfile) leaves the old Route retiring.
+            if ($data['status'] === 'succeeded' && $this->cutOver($operation) && ($operation->state['swamp_run_id'] ?? null) !== EngineRun::runIdOf($operation->id)) {
+                $data = [...$data, 'status' => 'failed', 'error_code' => 'route.withdraw_failed',
+                    'failure' => ['failed_step' => 'Withdraw the old site', 'stderr_recorded' => false]];
+            }
             $step = NativeFailedStep::label($data, array_keys(self::StepCodes));
             if ($data['status'] === 'failed') {
                 $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.update_failed') : self::StepCodes[$step];
@@ -116,5 +123,16 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
             ($renamed ? $selected : $source)->update([...($renamed ? ['status' => RouteStatus::Failed] : []),
                 'failed_step' => $failedStep ?? 'native-update', 'error_code' => $operation->error_code]);
         }
+    }
+
+    /** Whether the update's authority switch is already recorded: the old Route retiring, its replacement active and no longer naming it. */
+    private function cutOver(Operation $operation): bool
+    {
+        $intent = ValidatedData::object($operation->input['route_update']);
+        $source = Route::query()->find(ValidatedData::integer($intent['route_id']));
+        $selected = Route::query()->find(ValidatedData::integer($intent['result_route_id']));
+
+        return $source !== null && $selected !== null && $source->id !== $selected->id && $source->status === RouteStatus::Retiring
+            && $source->replaced_by_route_id === $selected->id && $selected->status === RouteStatus::Active && $selected->replaces_route_id === null;
     }
 }
