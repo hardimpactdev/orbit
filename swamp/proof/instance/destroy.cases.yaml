@@ -32,7 +32,7 @@ cases:
     summary: >-
       Read a disposable clone's unsaved work through Conn's GET .../work (instance/container/work-read-engine) by the signed executor
       read and by today's SSH reader in clean, dirty (tracked edit, untracked file, stash, new branch), running, stopped and asleep
-      states; both answer alike, the signed read opens no SSH login, a stalled executor answers unknown/timeout, the unacknowledged
+      states; both answer alike, only the signed read spends executor CPU, a stalled executor answers unknown/timeout, the unacknowledged
       destroy POST refuses dirty work with no Operation, and p50 latency over 12 reads is recorded for each reader.
     exclusive: true
     fails_on_base: true

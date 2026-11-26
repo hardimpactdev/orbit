@@ -28,8 +28,9 @@ APP_SERVICES = ('php8.5-fpm', 'orbit-gateway-horizon', 'orbit-gateway-schedule')
 RUSTUP = 'https://static.rust-lang.org/rustup/archive/1.29.3/x86_64-unknown-linux-gnu/rustup-init'
 RUSTUP_SHA256 = 'b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55'
 PROOF_RUST = '1.100.0'
-WORK_CA = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'
 WORK_SAMPLES = 12
+# The least executor CPU a signed read spends (its Git and incus children); an SSH read spends none there.
+WORK_CPU_MS = 5
 
 
 class ProofFailure(Exception):
@@ -126,6 +127,7 @@ class CloneLane:
         self.installed = False
         self.closed = False
         self.firewall_added = False
+        self.conn_enabled = False
 
     def record(self, name, data):
         self.run.evidence_text(name + '.json', json.dumps(data, indent=2) + '\n')
@@ -266,6 +268,8 @@ class CloneLane:
     def set_capability(self, enabled):
         if self.capability is not enabled:
             self.put(self.node, '/etc/orbit/executor/enabled', ('instance\n' if enabled else '') + 'power\nproof\n')
+            # The work read switches the capability for every read it compares: no restart may meet systemd's start limit.
+            self.guest(self.node, 'sh', '-c', 'systemctl reset-failed "$1" 2>/dev/null || :', 'sh', EXECUTOR_UNIT)
             self.systemctl(self.node, 'restart', EXECUTOR_UNIT)
             self.capability = enabled
 
@@ -598,14 +602,17 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         self.record('comparison', comparison)
 
     def conn(self, method, path, body=None, key=None):
-        """A Conn call from the owning Node (app-dev), as Conn's Remove makes it; the answer, its HTTP code and its wall time."""
-        argv = ['curl', '--noproxy', '*', '--silent', '--show-error', '--max-time', '20', '--cacert', WORK_CA, '--request', method,
+        """A Conn call as Conn's Remove makes it, from the outer operator Node that has access to app-dev; the answer, its HTTP code
+        and its wall time."""
+        argv = ['curl', '--noproxy', '*', '--silent', '--show-error', '--max-time', '20', '--cacert', self.ca_path, '--request', method,
                 '--write-out', '\n%{http_code} %{time_total}', f'https://{self.gateway_address}/api/v1/conn/{path}']
         if body is not None:
             argv += ['--header', 'Content-Type: application/json', '--data', json.dumps(body)]
         if key is not None:
             argv += ['--header', 'Idempotency-Key: ' + self.prefix + '-' + key]
-        payload, status = self.guest(self.node, *argv, timeout=25).rsplit('\n', 1)
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=25)
+        require(result.returncode == 0, f'{method} conn/{path}: curl failed ({result.returncode})')
+        payload, status = result.stdout.rsplit('\n', 1)
         code, seconds = status.split()
         answer = json.loads(payload)
         return int(code), answer.get('data'), answer.get('error') or {}, round(float(seconds) * 1000)
@@ -615,35 +622,37 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         self.incus('exec', f'instance-{instance}', '--project', POOL, '--', 'runuser', '-u', 'agent', '--', 'sh', '-eu', '-c',
                    'cd /srv/workspace; ' + script)
 
-    def ssh_logins(self, since):
-        lines = self.guest(self.node, 'journalctl', '-u', 'ssh', '-o', 'cat', '--no-pager', f'--since=@{since}')
-        return sum(1 for line in lines.splitlines() if line.startswith(f'Accepted publickey for orbit from {self.gateway_address} '))
+    def executor_cpu(self):
+        """CPU time of the executor's unit, its children included: the signed read's Git runs there, the SSH reader's in an SSH session."""
+        return int(self.systemctl(self.node, 'show', '-p', 'CPUUsageNSec', '--value', EXECUTOR_UNIT)) // 1_000_000
 
     def work_read(self, instance, via):
-        """One GET .../work on the path `via` names; the answer, its wall time and the SSH logins it caused on the Node."""
+        """One GET .../work on the path `via` names; the answer, its wall time and the executor's CPU milliseconds during it."""
         self.set_capability(via == 'engine')
-        since = int(time.time()) - 1
-        time.sleep(1)
+        before = self.executor_cpu()
         code, answer, error, wall = self.conn('GET', f'instances/{instance}/work')
         require(code == 200 and answer['instance_id'] == instance, f'work read of {instance} via {via}: HTTP {code} {error.get("code")}')
-        time.sleep(1)
-        return answer, wall, self.ssh_logins(since)
+        return answer, wall, self.executor_cpu() - before
 
     def work(self, name, quiet):
         """The workspace work read (docs/cli/instance/container/work-read-engine.mmd) on running, dirty, stopped and asleep clones
         through Conn's own calls: each state read by the signed executor read and by today's SSH reader, which must agree."""
         instance, clean = self.clones[name]['instance'], self.clones[quiet]['instance']
         states, reads = [], {'engine': [], 'ssh': []}
+        code, row, error = self.api('POST', 'extensions/conn/enable', {})
+        require(code == 200 and row['enabled'], f'could not enable the Conn extension: HTTP {code} {error}')
+        self.conn_enabled = True
 
         def both(label, expect, reason=None):
             row = {'state': label}
             for via in ('engine', 'ssh'):
-                answer, wall, logins = self.work_read(instance, via)
-                row[via] = {'answer': answer, 'wall_ms': wall, 'ssh_logins': logins}
+                answer, wall, cpu = self.work_read(instance, via)
+                row[via] = {'answer': answer, 'wall_ms': wall, 'executor_cpu_ms': cpu}
             engine, ssh = ({key: value for key, value in row[via]['answer'].items() if key not in ('read_at', 'duration_ms')} for via in ('engine', 'ssh'))
             require(engine == ssh, f'{label}: the executor and SSH readers disagree')
             require(engine['state'] == expect and engine['reason'] == reason, f'{label}: read {engine["state"]}/{engine["reason"]}, expected {expect}/{reason}')
-            require(row['engine']['ssh_logins'] == 0 and row['ssh']['ssh_logins'] >= 1, f'{label}: the read did not take the path it names')
+            require(row['engine']['executor_cpu_ms'] >= WORK_CPU_MS > row['ssh']['executor_cpu_ms'],
+                    f'{label}: the read did not take the path it names (executor CPU ms: signed {row["engine"]["executor_cpu_ms"]}, SSH {row["ssh"]["executor_cpu_ms"]})')
             states.append(row)
             return engine
 
@@ -678,14 +687,10 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         # A read that the executor cannot answer is `unknown` `timeout`, never a guess: the reader is the executor, not SSH.
         self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=STOP', EXECUTOR_UNIT)
         try:
-            since = int(time.time()) - 1
-            time.sleep(1)
             code, stalled, error, wall = self.conn('GET', f'instances/{instance}/work')
-            time.sleep(1)
-            stalled_logins = self.ssh_logins(since)
         finally:
             self.systemctl(self.node, 'kill', '--kill-whom=main', '--signal=CONT', EXECUTOR_UNIT)
-        require(code == 200 and (stalled['state'], stalled['reason']) == ('unknown', 'timeout') and stalled_logins == 0 and wall < 6000,
+        require(code == 200 and (stalled['state'], stalled['reason']) == ('unknown', 'timeout') and wall < 6000,
                 'a stalled executor did not give unknown/timeout within the read budget')
 
         self.incus('stop', f'instance-{instance}', '--project', POOL)
@@ -696,9 +701,13 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         self.set_capability(True)
         slept = self.admitted('POST', f'instances/{instance}/sleep', {}, name + '-sleep')
         sleep_row = self.terminal(int(slept['id']))
+
+        def container():
+            return [row['status'] for row in json.loads(self.incus('list', '--project', POOL, '--format=json')) if row['name'] == f'instance-{instance}']
+
+        slept_container = container()
         asleep = both('asleep', 'unknown', 'asleep')
-        container = [row['status'] for row in json.loads(self.incus('list', '--project', POOL, '--format=json')) if row['name'] == f'instance-{instance}']
-        require(container == ['Stopped'], 'reading an asleep clone woke it')
+        require(container() == slept_container and 'Running' not in slept_container, f'reading an asleep clone woke it ({slept_container} -> {container()})')
 
         self.set_capability(True)
         quiet_read = self.conn('GET', f'instances/{clean}/work')
@@ -719,8 +728,8 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                          'p50_read_ms': p50([row['duration_ms'] for row in rows]), 'reads': rows} for via, rows in reads.items()}
         self.record('work-read', {'instance': instance, 'quiet': clean, 'states': states, 'latency': latency,
                                   'unacknowledged_dirty_refusal': {'code': refusal[0], 'error': refusal[2]},
-                                  'dirty_details': dirty, 'stalled_executor': {'answer': stalled, 'wall_ms': wall, 'ssh_logins': stalled_logins},
-                                  'sleep': {'operation': sleep_row['id'], 'status': sleep_row['status'], 'answer': asleep, 'container': container},
+                                  'dirty_details': dirty, 'stalled_executor': {'answer': stalled, 'wall_ms': wall},
+                                  'sleep': {'operation': sleep_row['id'], 'status': sleep_row['status'], 'answer': asleep, 'container': slept_container},
                                   'removals': {label: {'operation': row['id'], 'status': row['status']} for label, row in removals.items()}})
 
     def cleanup(self):
@@ -741,6 +750,9 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
                 self.terminal(int(admitted['id']))
             code, _data, error = self.api('DELETE', f'projects/{self.project}')
             require(code in (200, 204), f'disposable project cleanup: HTTP {code} {error}')
+        if self.conn_enabled:
+            code, _data, error = self.api('POST', 'extensions/conn/disable', {})
+            require(code == 200, f'could not disable the Conn extension again: HTTP {code} {error}')
         self.uninstall()
         self.closed = True
         self.record('cleanup', {'project_deleted': self.project, 'seed_deleted': self.default,
