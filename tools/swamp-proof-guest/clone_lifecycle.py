@@ -95,6 +95,15 @@ def stage_executor(log=False):
     return manifest
 
 
+def parsed(source, text):
+    # A reply that is not JSON names its source and a short, printable excerpt of what came back, so a failed run says what it read.
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        excerpt = re.sub(r'[^ -~]', '?', text[:300])
+        raise ProofInfrastructure(f'{source}: not JSON ({len(text)} bytes): {excerpt!r}') from None
+
+
 def wait_for(read, message, seconds, interval=0.25):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -143,10 +152,10 @@ class CloneLane:
         require(result.returncode == 0, f'{node}: could not install {Path(path).name}')
 
     def db(self, sql):
-        return json.loads(self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '-json', GATEWAY_DB, sql) or '[]')
+        return parsed('sqlite3', self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'sqlite3', '-cmd', '.timeout 3000', '-json', GATEWAY_DB, sql) or '[]')
 
     def helper(self, *args):
-        return json.loads(self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.guest_helper, *args))
+        return parsed('helper ' + args[0], self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.guest_helper, *args))
 
     def gateway_php(self, *args, timeout=45):
         self.guest('gateway', 'runuser', '-u', 'orbit', '--', 'php', self.gateway_app + '/artisan', *args, timeout=timeout)
@@ -286,7 +295,7 @@ class CloneLane:
         result = subprocess.run(argv, capture_output=True, text=True, timeout=50)
         require(result.returncode == 0, f'{method} {path}: curl failed ({result.returncode})')
         payload, code = result.stdout.rsplit('\n', 1)
-        answer = json.loads(payload)
+        answer = parsed(f'{method} {path} HTTP {code}', payload)
         error = answer.get('error') or {}
         fields = sorted((error.get('details') or {}).items()) if error.get('code') == 'validation.failed' else None
         return int(code), answer.get('data'), f'{error["code"]} {fields}' if fields else error.get('code')
@@ -328,7 +337,7 @@ for line in open('/var/lib/orbit/executor/journal'):
         found.append({key: row.get(key) for key in ('record', 'operation', 'action', 'target', 'at_ms')}
                      | {'outcome': {key: row.get('outcome', {}).get(key) for key in ('status', 'code')}})
 print(json.dumps(found))'''
-        return json.loads(self.guest(self.node, 'python3', '-c', code, operation))
+        return parsed('executor journal', self.guest(self.node, 'python3', '-c', code, operation))
 
     def operation(self, operation, via):
         summary = self.db(f'''SELECT id,kind,target_id,status,request_id,lock_key,created_at,started_at,finished_at,error_code,
@@ -665,7 +674,16 @@ class SyncLane(CloneLane):
         self.branch = branch
         self.groups = {}
         self.syncs = {}
+        self.extensions = None
         super().setup(repository, branch)
+        # task:start and task:sync need the tasks extension; the fixture records what it found and puts it back in cleanup.
+        code, found, error = self.api('GET', 'extensions')
+        require(code == 200, f'extension list: HTTP {code} {error}')
+        self.extensions = {name: found[name] for name in ('tasks', 'conn')}
+        if not found['tasks']:
+            code, _row, error = self.api('POST', 'extensions/tasks/enable', {})
+            require(code == 200, f'tasks extension: HTTP {code} {error}')
+        self.record('extensions-before', self.extensions)
 
     def cleanup(self):
         # Groups first: a discarding cancel ends each group and removes its copy, so the Project can go.
@@ -678,7 +696,17 @@ class SyncLane(CloneLane):
                 wait_for(lambda: self.runtime(instance) is None, f'copy {instance} outlived its cancelled group', 300, 2)
                 require(not any(self.resources(instance).values()), f'copy {instance} left Node resources after its cancelled group')
                 del self.clones[name]
-        super().cleanup()
+        try:
+            super().cleanup()
+        finally:
+            if self.extensions is not None and not self.extensions['tasks']:
+                code, _row, error = self.api('POST', 'extensions/tasks/disable', {})
+                require(code == 200, f'tasks extension restore: HTTP {code} {error}')
+            if self.extensions is not None:
+                after = self.api('GET', 'extensions')[1]
+                require({name: after[name] for name in self.extensions} == self.extensions, 'the extension state was not restored')
+                self.record('extensions-after', self.extensions)
+                self.extensions = None
 
     def copy(self, name, sibling):
         self.create(sibling, 'engine')
