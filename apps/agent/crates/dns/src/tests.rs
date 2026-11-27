@@ -184,7 +184,7 @@ fn the_gateway_signed_guarded_input_decodes() {
 /// state: Swamp keeps its merge's key order and writes `{}` for the empty overrides, PHP writes `requesters` first and `[]`.
 const SWAMP_CATALOG: &[u8] = b"{\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":{}}\n";
 const GATEWAY_CATALOG: &[u8] = b"{\"requesters\":{\"10.45.0.1\":1,\"10.45.0.10\":2,\"10.45.0.2\":3,\"10.45.0.3\":4},\"records\":{\"gateway.orbit\":\"10.45.0.1\",\"reverb.orbit\":\"10.45.0.1\",\"swamp.orbit\":\"10.45.0.1\"},\"suffixes\":{\"nested-dev\":\"10.45.0.2\",\"nested-prod\":\"10.45.0.3\"},\"overrides\":[]}\n";
-/// The canonical digest both sides compute; the Gateway's test (RouteFileGuardsTest) pins the same value.
+/// The canonical digest both sides compute; the Gateway's test (`RouteFileGuardsTest`) pins the same value.
 const CANONICAL_CATALOG_SHA256: &str = "141b5eab6c46db1a9c5e2615fc229b8b9bf0253d3f4079b95e6ce4470a03baba";
 
 #[test]
