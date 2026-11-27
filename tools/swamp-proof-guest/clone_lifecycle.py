@@ -142,7 +142,9 @@ class CloneLane:
     def guest(self, node, *argv, stdin=None, timeout=45):
         result = self.run.fleet.sh(node, shlex.join(map(str, argv)), timeout=timeout, stdin_text=stdin)
         if result.returncode != 0:
-            raise ProofInfrastructure(f'{node}: {argv[0]} {argv[1] if len(argv) > 1 else ""} failed ({result.returncode})')
+            # Inside a container, the command run there and its first word; never an argument that could carry content.
+            inner = [str(word) for word in argv[argv.index('--') + 1:] if str(word) not in ('runuser', '-u', 'agent', '--')][:2] if '--' in argv else []
+            raise ProofInfrastructure(f'{node}: {argv[0]} {argv[1] if len(argv) > 1 else ""} {" ".join(inner)} failed ({result.returncode})'.replace('  ', ' '))
         return result.stdout.strip()
 
     def push(self, node, source, path):
