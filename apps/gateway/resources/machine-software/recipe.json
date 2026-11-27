@@ -1726,21 +1726,21 @@
                 }
             },
             "conn-server": {
-                "version": "0.5.5",
+                "version": "0.5.6",
                 "artifacts": {
                     "amd64": {
-                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-linux-x64.tar.gz",
-                        "sha256": "a60cf81991be8c0a3195b7123ddb62bb2e6c7479a03fb7e1ad7a8a841f9e9f4b"
+                        "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.6/conn-server-0.5.6-linux-x64.tar.gz",
+                        "sha256": "ba3d0496c8f6ff329752631c212965f0c20b56b75d50231cc0838adc1e37c688"
                     }
                 },
                 "macos_arm64": {
-                    "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.5/conn-server-0.5.5-macos-arm64.zip",
-                    "sha256": "3c07362bf96157df8f0b5628abbaad45f598e692096d5edd25fe3b4bb9b0d4da",
+                    "url": "https://github.com/nckrtl/conn/releases/download/conn-server-v0.5.6/conn-server-0.5.6-macos-arm64.zip",
+                    "sha256": "e796cbf403a10a9705b80e39ce55870faec985d12e0cae175e798719707b61a4",
                     "bundle_id": "com.nckrtl.conn-server",
                     "team_id": "9SVJ4SYB9B"
                 },
                 "bin": {
-                    "conn-server": "conn-server-0.5.5-linux-x64/conn-server"
+                    "conn-server": "conn-server-0.5.6-linux-x64/conn-server"
                 },
                 "release_canary": true
             },
