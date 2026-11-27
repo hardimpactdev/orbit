@@ -31,6 +31,7 @@ use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Models\Cluster;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -404,19 +405,24 @@ it('decides eligibility from the Process and its placement, on the intents admis
 });
 
 it('runs a Process on the engine only on a Node the Gateway places in development, whatever the Node reports', function (string $kind): void {
-    $node = fn (string $name, array $roles): Node => tap(Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active',
-        'platform' => 'linux', 'wireguard_ip' => '10.44.1.'.Node::query()->count(), 'public_ssh_host' => $name, 'user' => 'orbit'])),
-        fn (Node $node) => array_map(fn (RoleName $role) => $node->roles()->create(['role' => $role, 'status' => 'active']), $roles));
+    // An ingress role belongs to the Node's Cluster.
+    $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => 'active']);
+    $node = fn (string $name, array $roles, array $settings = []): Node => tap(Node::withoutEvents(fn (): Node => Node::query()->create(['name' => $name, 'status' => 'active',
+        'platform' => 'linux', 'wireguard_ip' => '10.44.1.'.Node::query()->count(), 'public_ssh_host' => $name, 'user' => 'orbit', 'settings' => $settings,
+        'cluster_id' => in_array(RoleName::Ingress, $roles, true) ? $cluster->id : null])),
+        fn (Node $node) => array_map(fn (RoleName $role) => $node->roles()->create(['role' => $role, 'status' => 'active',
+            'cluster_id' => $role === RoleName::Ingress ? $cluster->id : null]), $roles));
     $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
         'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
-    $operation = function (Node $node, ?Instance $owner = null, array $input = []) use ($kind): Operation {
+    $operation = function (Node $node, ?Instance $owner = null, array $input = [], string $runtime = 'systemd') use ($kind): Operation {
         $process = Process::query()->create(['owner_type' => $owner === null ? Node::class : 'instance', 'owner_id' => $owner->id ?? $node->id,
-            'name' => 'worker'.Process::query()->count(), 'runtime' => 'systemd', 'runtime_config' => ['command' => ['php', 'artisan', 'queue:work']],
+            'name' => 'worker'.Process::query()->count(), 'runtime' => $runtime,
+            'runtime_config' => $runtime === 'docker' ? ['image' => 'redis:7'] : ['command' => ['php', 'artisan', 'queue:work']],
             'restart_policy' => 'always', 'desired_state' => 'running', 'status' => 'active']);
 
         return Operation::query()->create(['kind' => $kind, 'target_type' => 'process', 'target_id' => $process->id, 'node_id' => $node->id,
             'status' => OperationStatus::Queued, 'input' => ['process_id' => $process->id, 'node_id' => $node->id, 'name' => "orbit-process-{$process->id}-web.service",
-                'runtime' => 'systemd', 'on_demand' => false, 'vite' => null, ...$input]]);
+                'runtime' => $runtime, 'on_demand' => false, 'vite' => null, ...($runtime === 'docker' ? ['image' => 'redis:7'] : []), ...$input]]);
     };
     $instance = fn (Node $node): Instance => Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'i'.Instance::query()->count(),
         'checkout_path' => '/home/orbit/apps/i'.Instance::query()->count(), 'branch' => 'main', 'vite_port' => 5173, 'status' => 'active',
@@ -437,11 +443,21 @@ it('runs a Process on the engine only on a Node the Gateway places in developmen
         ->and($routes($operation($both, $instance($both))))->toBeFalse()
         ->and($routes($operation($plain)))->toBeFalse();
 
-    // A production-placed Instance whose Process names a development Node, a Node Process that names another Node, and a Node the
-    // Gateway has no row for stay on Swamp too.
+    // A CI place places only development proof copies: a Node with `ci-runner` and no app role keeps its own Processes on Swamp,
+    // alone or beside a shared role, for a unit and a container, while a proof copy on it still reads as development.
+    $ci = ['ci' => ['places' => 2, 'proof_only' => false]];
+    foreach ([[RoleName::CiRunner], [RoleName::CiRunner, RoleName::Database], [RoleName::CiRunner, RoleName::Ingress]] as $index => $roles) {
+        $runner = $node("ci-{$index}", $roles, $ci);
+        expect($runner->placementEnvironment())->toBe('development')
+            ->and($routes($operation($runner)))->toBeFalse()
+            ->and($routes($operation($runner, runtime: 'docker')))->toBeFalse();
+    }
+
+    // A production-placed Instance whose Process names a development Node, an app-prod Node's Process whose intent names the
+    // development Node, and a Node the Gateway has no row for stay on Swamp too.
     $live = $operation($this->node, $placed);
-    $other = $operation($this->node);
-    $other->forceFill(['node_id' => $prod->id, 'input' => [...$other->input, 'node_id' => $prod->id]]);
+    $other = $operation($prod);
+    $other->forceFill(['node_id' => $this->node->id, 'input' => [...$other->input, 'node_id' => $this->node->id]]);
     $gone = $operation($this->node);
     $gone->forceFill(['node_id' => 9_999, 'input' => [...$gone->input, 'node_id' => 9_999]]);
     expect($routes($live))->toBeFalse()

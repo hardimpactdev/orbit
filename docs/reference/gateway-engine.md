@@ -160,6 +160,7 @@ Eligibility comes from the Process and its placement, for both verbs, so one Pro
 - any Process on a Node that the Gateway's own roles do not place in development (`Node::placementEnvironment`, the rule Instance placement reads);
 - any Process on an app-prod Node, a Node with both app roles or neither, or a Node with no row;
 - a Node Process whose intent names another Node;
+- a Node's own Process on a Node without the app-dev role, such as a CI-only Node, whose CI places put only proof copies in development;
 - any intent with `production_control`, a production release.
 
 The production limit reads only the Gateway's records, never the agent version or the Node's capability report: an app-prod Node that reports the process actions still runs the Swamp workflow. Admitting app-prod is a separate change.
