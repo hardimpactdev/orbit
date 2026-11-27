@@ -21,8 +21,19 @@ class CancelWatchTest(unittest.TestCase):
         self.assertEqual(watch.sample(False, RUNNING, RUNNING, 1, 100), [])
         self.assertEqual(names(watch.sample(False, SUCCEEDED, SUCCEEDED, 0, 300)), ['copy record gone', 'destroy ended', 'cancel ended'])
         self.assertTrue(watch.ended)
+        # A poll after the terminal snapshot still sees the CLI running: only then is its exit strictly after the end.
+        self.assertEqual(watch.sample(False, SUCCEEDED, SUCCEEDED, 0, 400), [])
         self.assertEqual(names(watch.sample(True, SUCCEEDED, SUCCEEDED, 0, 500)), ['cli task:cancel exited'])
         self.assertEqual(watch.cli_order, 'after the cancel ended')
+        self.assertTrue(watch.done)
+
+    def test_exit_just_before_the_end_commits_claims_no_order(self):
+        # The poll before the terminal snapshot sees the CLI running; it exits, then the end commits, and the next poll sees the exit.
+        # Nothing tells that exit from one after the end, so no order is claimed.
+        watch = CancelWatch(10)
+        watch.sample(False, SUCCEEDED, SUCCEEDED, 0, 300)
+        self.assertEqual(names(watch.sample(True, SUCCEEDED, SUCCEEDED, 0, 500)), ['cli task:cancel exited'])
+        self.assertEqual(watch.cli_order, 'not distinguished from the cancel end')
         self.assertTrue(watch.done)
 
     def test_cli_exit_before_the_cancel_ends_fails(self):

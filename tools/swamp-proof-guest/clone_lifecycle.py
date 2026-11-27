@@ -1334,6 +1334,8 @@ class CancelWatch:
         self.cancel = cancel
         self.seen = {}
         self.cli_order = None
+        # The CLI was seen running in a poll taken after a snapshot that already showed the cancel ended.
+        self.running_after_end = False
 
     @property
     def ended(self):
@@ -1345,6 +1347,9 @@ class CancelWatch:
 
     def sample(self, exited, destroy, cancel, runtime, now):
         events = []
+        # This sample's poll came after every earlier sample's snapshot, but before its own.
+        if not exited and self.ended:
+            self.running_after_end = True
         if runtime == 0 and 'record_gone' not in self.seen:
             self.seen['record_gone'] = now
             events.append(('copy record gone', {'cancel': cancel, 'destroy': destroy}))
@@ -1357,10 +1362,11 @@ class CancelWatch:
             self.seen['cancel'] = now
             events.append(('cancel ended', {'cancel': cancel, 'destroy': destroy}))
         if exited and 'cli' not in self.seen:
-            # The exit was read before this snapshot: a snapshot that still shows the cancel unended means the CLI left early. An exit and an
-            # end first seen in the same sample cannot be told apart, and no order is claimed for them.
+            # The exit was read before this snapshot: a snapshot that still shows the cancel unended means the CLI left early. Otherwise the
+            # exit may have come between the poll before the terminal snapshot and the end's commit: a strict order holds only when a poll
+            # after that snapshot still saw the CLI running. The CLI's own answer is the evidence either way.
             require(self.ended, f'the CLI exited while cancel {self.cancel} was still {cancel["status"]}')
-            self.cli_order = 'after the cancel ended' if self.seen['cancel'] < now else 'not distinguished from the cancel end'
+            self.cli_order = 'after the cancel ended' if self.running_after_end else 'not distinguished from the cancel end'
             self.seen['cli'] = now
             events.append(('cli task:cancel exited', {'order': self.cli_order}))
         return events
