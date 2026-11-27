@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -84,6 +85,9 @@ final class FailureStepDefinition implements EngineDefinition
     /** How many more times the projection throws after it wrote the terminal result. */
     public static int $throwsAfterEnd = 0;
 
+    /** The projection's network read, before it takes the writer (a Node, the vault, the bus). */
+    public static ?Closure $network = null;
+
     public function __construct(private int $node) {}
 
     public function steps(Operation $operation): array
@@ -115,13 +119,19 @@ final class FailureStepDefinition implements EngineDefinition
             throw new RuntimeException('projection refused');
         }
         self::$finished = ($run->failed()?->name ?? 'none').':'.($run->succeeded() ? 'succeeded' : 'not succeeded');
-        $operation->forceFill(['status' => $run->failed() === null ? OperationStatus::Succeeded : OperationStatus::Failed])->save();
-        if (self::$throwsAfterEnd > 0) {
-            self::$throwsAfterEnd--;
-
-            throw new RuntimeException('runtime write refused');
+        if (self::$network !== null) {
+            (self::$network)();
         }
-        $operation->forceFill(['result' => ['runtime' => 'written']])->save();
+        // As a projection must: the terminal result and the write that depends on it in one transaction.
+        DB::transaction(static function () use ($operation, $run): void {
+            $operation->forceFill(['status' => $run->failed() === null ? OperationStatus::Succeeded : OperationStatus::Failed])->save();
+            if (self::$throwsAfterEnd > 0) {
+                self::$throwsAfterEnd--;
+
+                throw new RuntimeException('runtime write refused');
+            }
+            $operation->forceFill(['result' => ['runtime' => 'written']])->save();
+        });
     }
 }
 
@@ -137,6 +147,7 @@ beforeEach(function (): void {
     FailureStepDefinition::$throws = 0;
     FailureStepDefinition::$finishes = 0;
     FailureStepDefinition::$throwsAfterEnd = 0;
+    FailureStepDefinition::$network = null;
     $this->app->instance(InstanceCreateEngineFlow::class, new FailureStepDefinition($this->node->id));
     $this->operation = Operation::query()->forceCreate(['kind' => 'instance.create', 'status' => OperationStatus::Running, 'target_type' => 'instance',
         'target_id' => 7, 'node_id' => $this->node->id, 'input' => []]);
@@ -280,4 +291,17 @@ it('rolls back a terminal result whose following write failed, and retries until
     expect(FailureStepDefinition::$finishes)->toBe(2)
         ->and($this->operation->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($this->operation->result)->toBe(['runtime' => 'written']);
+});
+
+it('runs a projection\'s network read outside any transaction, so it holds no writer lock while it waits', function (): void {
+    $outside = DB::transactionLevel();
+    $levels = [];
+    FailureStepDefinition::$network = static function () use (&$levels): void {
+        $levels[] = DB::transactionLevel();
+    };
+    ($this->receipt)('make', ['status' => 'applied', 'changes' => 1]);
+    ($this->receipt)('use', ['status' => 'applied', 'changes' => 1]);
+
+    expect($levels)->toBe([$outside])
+        ->and($this->operation->refresh()->status)->toBe(OperationStatus::Succeeded);
 });

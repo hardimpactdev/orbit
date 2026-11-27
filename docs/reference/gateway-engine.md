@@ -258,7 +258,7 @@ The engine mirrors step state into `state.native_progress` so `operation:show` m
 
 A projection that throws is acknowledged, not redelivered: the engine records `state.engine.finish_attempts`, and a deadline retries it after 2 s, then 4 s. After the third failure the Operation ends `failed` with `engine.projection_failed` and the step `projection`, and its lock is released. When that terminal write fails too, because a lifecycle hook it runs (such as a linked task's update) is what keeps throwing, the engine writes the end without the hooks.
 
-The engine runs each projection in one transaction, so its terminal result commits together with every write that follows it, such as a create's runtime power state or a fetch credential's removal, or none does and the end stays retryable. A later message for an ended Operation does nothing.
+A projection does its network work outside the database writer: a Node read, a bus lookup or a vault call. It then commits its terminal result in one transaction with the database writes that depend on it, such as a create's runtime power state. When one of those writes fails, the transaction rolls back and the end stays retryable. Cache and vault cleanup is not rolled back: a failed fetch's read credential is removed before the transaction, it stays removed, and the retry records the rest. A later message for an ended Operation does nothing.
 
 ### Orders and receipts
 

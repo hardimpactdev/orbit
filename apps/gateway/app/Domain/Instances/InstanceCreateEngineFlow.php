@@ -161,17 +161,16 @@ final readonly class InstanceCreateEngineFlow implements EngineDefinition
         } else {
             $data = self::ended($operation, $run);
         }
-        $this->projection->apply($operation, [...$data, ...$run->times()], $session, $pairing);
+        // A failed fetch's read credential goes before the end is recorded, outside its transaction: removing it again on a retry
+        // changes nothing.
         if ($run->failed()?->name === 'fetch') {
             app(InstanceGitHubReadTokens::class)->forget($operation);
         }
-        if ($data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done') {
-            // The copy started before the create failed. Its `stop` step stopped it for a retry or a destroy; when that failed, it runs,
-            // and the record says so.
-            $stopped = ($run->steps['stop'] ?? null)?->status === 'done';
-            Instance::query()->findOrFail($operation->target_id)->runtime()->first()
-                ?->update(['power_state' => $stopped ? InstanceRuntimePowerState::Stopped : InstanceRuntimePowerState::Running]);
-        }
+        // The copy started before the create failed. Its `stop` step stopped it for a retry or a destroy; when that failed, it runs,
+        // and the record says so, in the transaction of the end.
+        $power = $data['status'] !== 'succeeded' && ($run->steps['start'] ?? null)?->status === 'done'
+            ? (($run->steps['stop'] ?? null)?->status === 'done' ? InstanceRuntimePowerState::Stopped : InstanceRuntimePowerState::Running) : null;
+        $this->projection->apply($operation, [...$data, ...$run->times()], $session, $pairing, $power);
     }
 
     /**

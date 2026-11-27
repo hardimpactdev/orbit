@@ -419,9 +419,9 @@ final readonly class Engine
             return; // A backed-off retry waits for its own deadline.
         }
         try {
-            // One transaction: the terminal result commits with every write the projection makes after it, or none does and the
-            // end stays retryable.
-            DB::transaction(fn () => $definition->finish($operation, $this->run($operation->id)));
+            // No transaction here: a projection reads the network (a Node, the vault, the bus) before it takes the writer, and
+            // commits its terminal result with the writes that depend on it in its own transaction.
+            $definition->finish($operation, $this->run($operation->id));
 
             return;
         } catch (Throwable $exception) {

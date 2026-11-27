@@ -59,6 +59,7 @@ use App\Models\ProcessDefinition;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Database\Events\TransactionBeginning;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -1301,4 +1302,22 @@ it('hands the completion the clone\'s database plan from the create it admitted'
     expect($completion->input['direct_provisioning']['database'])->toBe($create->input['direct_provisioning']['database'])
         ->and($run['intent']['route'])->toBe($completion->input['route_create'])
         ->and($run['execution_secrets']['process_environments']['key'])->toBe('instance-complete-processes-'.$completion->id);
+});
+
+it('records a failed create\'s copy power with its end: a refused power write leaves the end retryable, and the retry converges', function (): void {
+    $operation = handoverCreate(handoverDefault(containerDefaultNode()));
+    $failed = ['status' => 'failed', 'run_id' => 'run-1', 'error_code' => 'instance.create_clone_failed', 'started_at' => now()->subSeconds(9)->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'failure' => ['failed_step' => 'clone', 'stderr_recorded' => false],
+        'result' => ['ready' => false, 'instance_id' => $operation->target_id, 'failed_step' => 'clone', 'error_code' => 'instance.create_clone_failed']];
+    DB::unprepared("CREATE TRIGGER proof_power_refused BEFORE UPDATE OF power_state ON instance_runtimes BEGIN SELECT RAISE(ABORT, 'power write refused'); END;");
+
+    expect(fn () => app(DevelopmentInstanceCreateProjection::class)->apply($operation, $failed, runtimePower: InstanceRuntimePowerState::Stopped))
+        ->toThrow(QueryException::class, 'power write refused');
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+
+    DB::unprepared('DROP TRIGGER proof_power_refused;');
+    app(DevelopmentInstanceCreateProjection::class)->apply($operation, $failed, runtimePower: InstanceRuntimePowerState::Stopped);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and(Instance::query()->findOrFail($operation->target_id)->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 });

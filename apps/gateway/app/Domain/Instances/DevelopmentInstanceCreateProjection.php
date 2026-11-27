@@ -18,6 +18,7 @@ use App\Infrastructure\Instances\ContainerWorkspaceRead;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -48,7 +49,8 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
      *
      * @param  array<string, mixed>|null  $pairing
      */
-    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null, #[\SensitiveParameter] ?array $pairing = null): Operation
+    public function apply(Operation $operation, array $data, #[\SensitiveParameter] ?string $session = null, #[\SensitiveParameter] ?array $pairing = null,
+        ?InstanceRuntimePowerState $runtimePower = null): Operation
     {
         // A clone's T3 session is read from the vault, and its workspace baseline from its Node, before the transaction, so no lock waits
         // on the network.
@@ -72,162 +74,180 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             $handover = false;
         }
 
-        return DB::transaction(function () use ($operation, $data, $container, $server, $baseline, $handover): Operation {
-            $operation->refresh();
-            $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            $result = ValidatedData::object($data['result'] ?? []);
-            if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null)) {
-                // A default's container phase writes its failed task and its refusal or stderr tail into the run's result file, because
-                // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again. Any
-                // other step's detail, such as a proof copy's CI hold guidance, stays in the result.
-                if (trim($result['detail']) !== '') {
-                    $native = ValidatedData::object($data['failure'] ?? []);
-                    $data['failure'] = app(NativeStepFailure::class)->written(
-                        is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation, head: true);
-                }
-                unset($result['detail']);
-            }
-            if (is_array($operation->input['model_route'] ?? null)) {
-                $result['model_route'] = $operation->input['model_route'];
-            }
-            if (is_array($container) && isset($container['club_key'])) {
-                // What this nested-fleet start did with its Club key, from the run's own word.
-                $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
-            }
-            unset($result['club_key']);
-            // A removal admitted during the run cancelled it and owns the Instance: the run's end changes no record of it, and no completion
-            // starts (docs/reference/conn.md#remove-an-instance).
-            if (Instance::query()->find($operation->target_id)?->status === InstanceState::Removing) {
-                return $this->direct->project($operation, $data, $result);
-            }
-            if (is_array($operation->input['branch_selection'] ?? null)) {
-                $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
-                $result['branch'] = $selection->target;
-                $result['base_branch'] = $selection->base;
-            }
-            if ($data['status'] === 'succeeded') {
-                $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
-            }
-            if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $recovery = $this->recovery($operation, ValidatedData::object($container));
-                if ($recovery === null) {
-                    return $this->direct->project($operation, $data, $result);
-                }
-                $result['recovery'] = $recovery;
-            }
-            $instance = app(InstanceLifecycleState::class)->instance($operation);
-            if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
-                return $this->direct->project($operation, $data, $result);
-            }
-            if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null))) {
-                throw new ResourceOperationException('instance.result_invalid', 'Native creation did not prove its complete terminal result.');
-            }
-            if (! $operation->status->terminal()) {
-                // The run returns only the checked-out commit; branch, profile and environment are admitted facts.
-                $input = $operation->input;
-                if (is_string($result['commit'] ?? null)) {
-                    $instance->update(['status' => InstanceState::SourceResolved, 'provisioning_step' => 'php-selected',
-                        'branch' => ValidatedData::string(ValidatedData::object(ValidatedData::object($input['direct_provisioning'])['resolve'])['branch']),
-                        'starting_commit' => ValidatedData::string($result['commit']),
-                        'selected_php_version' => ValidatedData::nullableString($input['php_version'] ?? null), 'source_is_laravel' => ($input['laravel'] ?? false) === true,
-                        ...(($input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
-                }
-                if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes', 'route', 'deploy', 'seed'], true)) {
-                    $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
-                }
-                $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
-                // A clone's address never decides its create. A published one is active whatever the create's end, also when the progress
-                // event of `clone-route` was lost; this transaction's terminal state frees the Route Nodes. A failed one is marked, and the
-                // completion publishes it again (docs/reference/development-containers.md#the-address-during-the-create).
-                $publication = ClonePublication::outcome($operation, $result);
-                if ($publication !== null) {
-                    $result[ClonePublication::Field] = $publication;
-                    $reason = ClonePublication::reason($operation, $publication);
-                    if ($reason !== null) {
-                        $result[ClonePublication::ReasonField] = $reason;
-                    }
-                    match ($publication) {
-                        'published' => app(ClonePublication::class)->activate($operation),
-                        'failed' => app(ClonePublication::class)->failed($operation),
-                        default => null,
-                    };
-                }
-                if ($handover && $server !== null) {
-                    // A clone's thread is usable: it runs, the Conn layer records its T3 server, and the baseline records what the workspace
-                    // held before any pairing (development-containers.md#workspace-work-state). It stays `source_resolved`: only its
-                    // completion makes it active.
-                    $instance->update(['failed_step' => null, 'error_code' => null]);
-                    $runtime = $instance->runtime()->lockForUpdate()->firstOrFail();
-                    $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
-                        ...(is_array($baseline) && $runtime->workspace_baseline === null ? ['workspace_baseline' => $baseline, 'workspace_baseline_at' => now()] : [])]);
-                    app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
-                } elseif ($data['status'] === 'succeeded') {
-                    // An active routed Instance needs its active Route, so the Route turns active first.
-                    $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
-                    $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null,
-                        ...($container === null ? [] : ['development_projection_pending' => false])]);
-                    if ($container !== null) {
-                        // A container default runs, and clones start at the seed snapshot the run took of its commit.
-                        $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => ValidatedData::string($result['commit']), 'seed_taken_at' => now()]);
-                    }
-                } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
-                    $instance->update(['failed_step' => $result['failed_step'] ?? 'source', 'error_code' => $data['error_code'] ?? 'operation.cancelled']);
-                    if (($data['error_code'] ?? null) === self::BaselineUnavailable) {
-                        // The run ended without its container stop: the copy runs until a retry or a destroy.
-                        $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running]);
-                    }
-                    if (($result['failed_step'] ?? null) === 'route') {
-                        $route?->update(['failed_step' => 'native-create', 'error_code' => $result['error_code'] ?? 'instance.create_route_failed']);
-                    }
-                }
-                app(ProcessInstanceOperation::class)->completeMembers($operation, OperationStatus::from(ValidatedData::string($data['status'])),
-                    ValidatedData::nullableString($data['error_code'] ?? null), $result);
-                $container = ValidatedData::object($input['direct_provisioning'])['container'] ?? null;
-                if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
-                    // A clone's Processes start in its completion, whose end records them; a create that failed only at its baseline read
-                    // started none.
-                    if (! $handover && ($data['error_code'] ?? null) !== self::BaselineUnavailable) {
-                        app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
-                            ValidatedData::nullableString($data['error_code'] ?? null));
-                    }
-                    if ($data['status'] === 'succeeded') {
-                        // A clone installs, but does not start, a Process that is stopped on its default.
-                        $result['processes_stopped'] = $instance->processes()->where('desired_state', DesiredProcessState::Stopped)
-                            ->orderBy('name')->pluck('name')->all();
-                    }
-                }
-            }
-            $ended = $operation->status->terminal();
-            $operation = $this->direct->project($operation, $data, $result);
-            // A reserved clone's completion follows its finalize, which gives it the name its database and Route take.
-            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id']) && ($operation->input['completion_deferred'] ?? false) !== true) {
-                // A Conn launch admits its own completion under the parent cancel fence.
-                // The ordinary create ends and hands its hold to completion here.
-                // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
-                // nothing takes the Instance in between. Its vault copy and its Swamp start run after the commit.
-                // The admission runs in its own savepoint. A refusal, such as a Route whose Cluster lost its Router since the create's
-                // admission, is recorded as a failed completion, so the create still ends and names it; any other error is recorded the
-                // same way with `operation.admission_failed`, rather than leave the create to the reconciler until its budget ends.
-                $complete = app(StartInstanceCompleteAction::class);
-                try {
-                    $completion = DB::transaction(fn (): Operation => app(OperationIdempotency::class)->suspended(
-                        fn (): Operation => $complete->admit($instance, $operation->triggered_by, $operation->request_id)));
-                } catch (ResourceOperationException $refusal) {
-                    $completion = $complete->refused($instance, $operation, $refusal->errorCode, $refusal->getMessage());
-                } catch (Throwable $error) {
-                    report($error);
-                    $completion = $complete->refused($instance, $operation, 'operation.admission_failed', 'The completion could not be admitted.');
-                }
-                app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'completion_operation_id' => $completion->id]]);
-                $operation->refresh();
-            }
-            if ($handover && ! $ended && ($result['fleet_start'] ?? null) === 'background') {
-                // The clone's fleet starts beside its completion: its wait holds no lock and never fails the create.
-                app(InstanceFleetOperation::class)->admit($operation);
+        return DB::transaction(function () use ($operation, $data, $container, $server, $baseline, $handover, $runtimePower): Operation {
+            $operation = $this->recordEnd($operation, $data, $container, $server, $baseline, $handover);
+            // A failed create's copy power, in the transaction of its end: neither commits without the other, so a failed write
+            // leaves the end to the engine's retry.
+            if ($runtimePower !== null) {
+                InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $runtimePower]);
             }
 
             return $operation;
         });
+    }
+
+    /**
+     * The end's records, inside the caller's transaction.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>|null  $server
+     */
+    private function recordEnd(Operation $operation, array $data, mixed $container, ?array $server, mixed $baseline, bool $handover): Operation
+    {
+        $operation->refresh();
+        $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
+        $result = ValidatedData::object($data['result'] ?? []);
+        if (($result['failed_step'] ?? null) === 'container' && is_string($result['detail'] ?? null)) {
+            // A default's container phase writes its failed task and its refusal or stderr tail into the run's result file, because
+            // the command step keeps no stderr of a failed playbook: it becomes the failure's recorded stderr, redacted again. Any
+            // other step's detail, such as a proof copy's CI hold guidance, stays in the result.
+            if (trim($result['detail']) !== '') {
+                $native = ValidatedData::object($data['failure'] ?? []);
+                $data['failure'] = app(NativeStepFailure::class)->written(
+                    is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'container', $result['detail'], $operation, head: true);
+            }
+            unset($result['detail']);
+        }
+        if (is_array($operation->input['model_route'] ?? null)) {
+            $result['model_route'] = $operation->input['model_route'];
+        }
+        if (is_array($container) && isset($container['club_key'])) {
+            // What this nested-fleet start did with its Club key, from the run's own word.
+            $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
+        }
+        unset($result['club_key']);
+        // A removal admitted during the run cancelled it and owns the Instance: the run's end changes no record of it, and no completion
+        // starts (docs/reference/conn.md#remove-an-instance).
+        if (Instance::query()->find($operation->target_id)?->status === InstanceState::Removing) {
+            return $this->direct->project($operation, $data, $result);
+        }
+        if (is_array($operation->input['branch_selection'] ?? null)) {
+            $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
+            $result['branch'] = $selection->target;
+            $result['base_branch'] = $selection->base;
+        }
+        if ($data['status'] === 'succeeded') {
+            $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
+        }
+        if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
+            $recovery = $this->recovery($operation, ValidatedData::object($container));
+            if ($recovery === null) {
+                return $this->direct->project($operation, $data, $result);
+            }
+            $result['recovery'] = $recovery;
+        }
+        $instance = app(InstanceLifecycleState::class)->instance($operation);
+        if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
+            return $this->direct->project($operation, $data, $result);
+        }
+        if ($data['status'] === 'succeeded' && (($result['ready'] ?? false) !== true || ($result['instance_id'] ?? null) !== $instance->id || ! is_string($result['commit'] ?? null))) {
+            throw new ResourceOperationException('instance.result_invalid', 'Native creation did not prove its complete terminal result.');
+        }
+        if (! $operation->status->terminal()) {
+            // The run returns only the checked-out commit; branch, profile and environment are admitted facts.
+            $input = $operation->input;
+            if (is_string($result['commit'] ?? null)) {
+                $instance->update(['status' => InstanceState::SourceResolved, 'provisioning_step' => 'php-selected',
+                    'branch' => ValidatedData::string(ValidatedData::object(ValidatedData::object($input['direct_provisioning'])['resolve'])['branch']),
+                    'starting_commit' => ValidatedData::string($result['commit']),
+                    'selected_php_version' => ValidatedData::nullableString($input['php_version'] ?? null), 'source_is_laravel' => ($input['laravel'] ?? false) === true,
+                    ...(($input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
+            }
+            if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes', 'route', 'deploy', 'seed'], true)) {
+                $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
+            }
+            $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
+            // A clone's address never decides its create. A published one is active whatever the create's end, also when the progress
+            // event of `clone-route` was lost; this transaction's terminal state frees the Route Nodes. A failed one is marked, and the
+            // completion publishes it again (docs/reference/development-containers.md#the-address-during-the-create).
+            $publication = ClonePublication::outcome($operation, $result);
+            if ($publication !== null) {
+                $result[ClonePublication::Field] = $publication;
+                $reason = ClonePublication::reason($operation, $publication);
+                if ($reason !== null) {
+                    $result[ClonePublication::ReasonField] = $reason;
+                }
+                match ($publication) {
+                    'published' => app(ClonePublication::class)->activate($operation),
+                    'failed' => app(ClonePublication::class)->failed($operation),
+                    default => null,
+                };
+            }
+            if ($handover && $server !== null) {
+                // A clone's thread is usable: it runs, the Conn layer records its T3 server, and the baseline records what the workspace
+                // held before any pairing (development-containers.md#workspace-work-state). It stays `source_resolved`: only its
+                // completion makes it active.
+                $instance->update(['failed_step' => null, 'error_code' => null]);
+                $runtime = $instance->runtime()->lockForUpdate()->firstOrFail();
+                $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
+                    ...(is_array($baseline) && $runtime->workspace_baseline === null ? ['workspace_baseline' => $baseline, 'workspace_baseline_at' => now()] : [])]);
+                app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
+            } elseif ($data['status'] === 'succeeded') {
+                // An active routed Instance needs its active Route, so the Route turns active first.
+                $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+                $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null,
+                    ...($container === null ? [] : ['development_projection_pending' => false])]);
+                if ($container !== null) {
+                    // A container default runs, and clones start at the seed snapshot the run took of its commit.
+                    $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => ValidatedData::string($result['commit']), 'seed_taken_at' => now()]);
+                }
+            } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
+                $instance->update(['failed_step' => $result['failed_step'] ?? 'source', 'error_code' => $data['error_code'] ?? 'operation.cancelled']);
+                if (($data['error_code'] ?? null) === self::BaselineUnavailable) {
+                    // The run ended without its container stop: the copy runs until a retry or a destroy.
+                    $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running]);
+                }
+                if (($result['failed_step'] ?? null) === 'route') {
+                    $route?->update(['failed_step' => 'native-create', 'error_code' => $result['error_code'] ?? 'instance.create_route_failed']);
+                }
+            }
+            app(ProcessInstanceOperation::class)->completeMembers($operation, OperationStatus::from(ValidatedData::string($data['status'])),
+                ValidatedData::nullableString($data['error_code'] ?? null), $result);
+            $container = ValidatedData::object($input['direct_provisioning'])['container'] ?? null;
+            if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
+                // A clone's Processes start in its completion, whose end records them; a create that failed only at its baseline read
+                // started none.
+                if (! $handover && ($data['error_code'] ?? null) !== self::BaselineUnavailable) {
+                    app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
+                        ValidatedData::nullableString($data['error_code'] ?? null));
+                }
+                if ($data['status'] === 'succeeded') {
+                    // A clone installs, but does not start, a Process that is stopped on its default.
+                    $result['processes_stopped'] = $instance->processes()->where('desired_state', DesiredProcessState::Stopped)
+                        ->orderBy('name')->pluck('name')->all();
+                }
+            }
+        }
+        $ended = $operation->status->terminal();
+        $operation = $this->direct->project($operation, $data, $result);
+        // A reserved clone's completion follows its finalize, which gives it the name its database and Route take.
+        if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id']) && ($operation->input['completion_deferred'] ?? false) !== true) {
+            // A Conn launch admits its own completion under the parent cancel fence.
+            // The ordinary create ends and hands its hold to completion here.
+            // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
+            // nothing takes the Instance in between. Its vault copy and its Swamp start run after the commit.
+            // The admission runs in its own savepoint. A refusal, such as a Route whose Cluster lost its Router since the create's
+            // admission, is recorded as a failed completion, so the create still ends and names it; any other error is recorded the
+            // same way with `operation.admission_failed`, rather than leave the create to the reconciler until its budget ends.
+            $complete = app(StartInstanceCompleteAction::class);
+            try {
+                $completion = DB::transaction(fn (): Operation => app(OperationIdempotency::class)->suspended(
+                    fn (): Operation => $complete->admit($instance, $operation->triggered_by, $operation->request_id)));
+            } catch (ResourceOperationException $refusal) {
+                $completion = $complete->refused($instance, $operation, $refusal->errorCode, $refusal->getMessage());
+            } catch (Throwable $error) {
+                report($error);
+                $completion = $complete->refused($instance, $operation, 'operation.admission_failed', 'The completion could not be admitted.');
+            }
+            app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'completion_operation_id' => $completion->id]]);
+            $operation->refresh();
+        }
+        if ($handover && ! $ended && ($result['fleet_start'] ?? null) === 'background') {
+            // The clone's fleet starts beside its completion: its wait holds no lock and never fails the create.
+            app(InstanceFleetOperation::class)->admit($operation);
+        }
+
+        return $operation;
     }
 
     /**
