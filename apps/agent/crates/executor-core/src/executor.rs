@@ -544,6 +544,39 @@ mod tests {
     }
 
     #[test]
+    fn a_withdrawal_step_that_expired_before_its_lock_runs_on_a_fresh_nonce_after_restart() {
+        for (action, step) in [("dns.publish_records", "dns-0"), ("route.withdraw_site", "withdraw-7")] {
+            let order = |nonce: &str| {
+                let mut fields = payload();
+                fields["action"] = action.into();
+                fields["target"] = "7".into();
+                fields["operation"] = format!("42:{step}").into();
+                fields["nonce"] = nonce.into();
+                fields["expires_ms"] = (NOW + 5000).into();
+                fields["input"] = serde_json::json!({});
+                let keys = pinned(1);
+                let enabled = Enabled::parse("dns\nroute").expect("valid");
+                let node = "7".parse().expect("id");
+                crate::order::check(&sign(1, &fields), &Checks { keys: &keys, enabled: &enabled, node: &node }, NOW).expect("valid withdrawal order")
+            };
+            let directory = tempfile::tempdir().expect("scratch");
+            let path = directory.path().join("journal");
+            let runs = Arc::new(AtomicUsize::new(0));
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("start");
+            let expired = order(N1);
+            assert_eq!(executor.handle(&expired, expired.expires_ms()).expect("expires").outcome, Outcome::failed(ORDER_EXPIRED));
+            drop(executor);
+
+            let (executor, _) = Executor::start(&path, Counting(Arc::clone(&runs)), || NOW, |_| {}).expect("restart");
+            let fresh = executor.handle(&order(N2), NOW).expect("fresh order acts");
+            assert!(!fresh.repeat, "{action}");
+            let again = executor.handle(&order(N3), NOW).expect("lost receipt");
+            assert!(again.repeat, "{action}: two sends, one execution");
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "{action}");
+        }
+    }
+
+    #[test]
     fn only_fenced_actions_keep_an_expiry_out_of_the_journal() {
         assert!(Action::InstanceDestroy.receipt_fenced() && Action::InstanceSyncBase.receipt_fenced() && Action::InstanceClearBase.receipt_fenced()
             && Action::InstanceFetchBranch.receipt_fenced());

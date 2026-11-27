@@ -36,7 +36,7 @@ final readonly class Engine
      * Kinds whose target stays fenced until each sent step's terminal receipt: no budget fails a sent step, no expiry ends the
      * Operation, and a lost receipt is sent again under the same step ID, so the executor's journal repeats the stored result.
      */
-    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind];
+    private const array ReceiptBound = [InstanceDestroyEngineFlow::Kind, TaskSyncEngineFlow::Kind, 'route.destroy'];
 
     /** The one successful receipt status each fenced action answers; any other success status is not its result. */
     private const array FencedSuccess = ['instance.destroy' => 'done', 'dns.publish_records' => 'applied', 'route.withdraw_site' => 'applied', 'instance.fetch_branch' => 'output', 'instance.sync_base' => 'output',
@@ -280,8 +280,8 @@ final readonly class Engine
             $done = static fn (string $dep): bool => ($steps[$dep] ?? null)?->status === 'done';
             $receiptBound = self::requiresReceipt($operation);
             $cancel = $operation->cancel_requested_at !== null;
-            // A receipt-bound cancel sends no new step: it waits for each published order's terminal receipt, then runs the failure
-            // steps for the work that was done, and ends. A step whose first order was never published did nothing.
+            // A receipt-bound cancel or failure sends no new step: it waits for each published order's terminal receipt, then runs
+            // the failure steps for the work that was done, and ends. A step whose first order was never published did nothing.
             $published = static fn (OperationEngineStep $step): bool => $step->first_order_expires_ms !== null;
             $outstanding = array_any($steps, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step));
             $acted = array_any($steps, $published);
@@ -292,9 +292,10 @@ final readonly class Engine
             }
             $main = array_filter($steps, static fn (OperationEngineStep $step): bool => ! $step->on_failure && ! $step->optional);
             $failed = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'failed');
-            $rescue = $failed || ($receiptBound && $cancel && $acted && ! array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step)));
+            $pending = array_any($main, static fn (OperationEngineStep $step): bool => $step->status === 'sent' && $published($step));
+            $rescue = $receiptBound ? ($failed || ($cancel && $acted)) && ! $pending : $failed;
             foreach ($steps as $step) {
-                if ($receiptBound && $cancel && ! $step->on_failure) {
+                if ($receiptBound && ($cancel || $failed) && ! $step->on_failure) {
                     if ($step->status !== 'sent' || ! $published($step)) {
                         continue; // Only a published order is resent until its terminal receipt.
                     }
@@ -325,7 +326,7 @@ final readonly class Engine
             // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result. A failed run
             // ends once its failure steps ended.
             $end = match (true) {
-                $failed => $rescued ? 'failed' : null,
+                $failed => $rescued && ! ($receiptBound && $outstanding) ? 'failed' : null,
                 array_all($main, static fn (OperationEngineStep $step): bool => $step->status === 'done') => 'succeeded',
                 $receiptBound && $cancel => ! $outstanding && (! $acted || $rescued) ? 'cancelled' : null,
                 $cancel => 'cancelled',
