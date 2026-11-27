@@ -858,6 +858,7 @@ fn each_failed_phase_carries_its_own_code() {
             "/usr/bin/systemctl show --property=LoadState",
             &[
                 Ok(&show("loaded", "active", "enabled")),
+                Ok(&show("loaded", "active", "enabled")),
                 Err("Failed to connect to bus"),
             ],
         )
@@ -870,26 +871,106 @@ fn each_failed_phase_carries_its_own_code() {
 
 #[test]
 fn the_receipt_outputs_are_the_contract_fixture() {
-    // The executor serializes each answer with `serde_json::json!(…).to_string()`; the Gateway checks these exact strings.
+    // The executor serializes each answer with `serde_json::json!(…).to_string()`; member order is not part of the contract
+    // (`preserve_order` changes it), so the fixture and the answer compare as parsed values.
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../contract/fixtures/executor-process-restart-output.json"
     ))
     .expect("fixture");
+    let parsed = |text: &serde_json::Value| -> serde_json::Value {
+        serde_json::from_str(text.as_str().expect("an output string")).expect("output JSON")
+    };
+    let serialized = |value: serde_json::Value| -> serde_json::Value {
+        serde_json::from_str(&value.to_string()).expect("output JSON")
+    };
     assert_eq!(
-        fixture["read"],
-        json!(Instance {
+        parsed(&fixture["read"]),
+        serialized(json!(Instance {
             instance: "aaa".to_owned()
-        })
-        .to_string()
+        }))
     );
     for restarted in ["now", "already", "recovered"] {
         assert_eq!(
-            fixture[restarted],
-            json!(Restart {
+            parsed(&fixture[restarted]),
+            serialized(json!(Restart {
                 restarted,
                 instance: "bbb".to_owned()
-            })
-            .to_string()
+            }))
+        );
+    }
+}
+
+#[test]
+fn an_enabled_unit_not_yet_started_after_a_reboot_is_waited_for_and_never_restarted_again() {
+    // The order's attempt is on disk; the Node rebooted and systemd has not started the enabled unit yet: no run at all.
+    let fake = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[
+                Ok(&show("loaded", "inactive", "enabled")),
+                Ok(&show("loaded", "inactive", "enabled")),
+                Ok(&show("loaded", "inactive", "enabled")),
+                Ok(&show("loaded", "activating", "enabled")),
+                Ok(&show("loaded", "active", "enabled")),
+            ],
+        )
+        .on(INVOCATION, &[Ok(""), Ok(""), Ok("bbb"), Ok("bbb")]);
+    fake.begin_attempt("42-restart").expect("attempt");
+    assert_eq!(
+        restart(&fake, "42-restart", &restart_input("enabled"))
+            .map(|done| (done.restarted, done.instance)),
+        Ok(("recovered", "bbb".to_owned()))
+    );
+    assert_eq!(restarts(&fake), 0);
+    // It never starts within the bound: unresolved, still without a restart.
+    let never = Fake::default()
+        .on(
+            "/usr/bin/systemctl show --property=LoadState",
+            &[Ok(&show("loaded", "inactive", "enabled"))],
+        )
+        .on(INVOCATION, &[Ok("")]);
+    never.begin_attempt("42-restart").expect("attempt");
+    assert_eq!(
+        restart(&never, "42-restart", &restart_input("enabled")).map_err(|failure| failure.code),
+        Err("process.restart_unresolved")
+    );
+    assert_eq!(restarts(&never), 0);
+}
+
+#[test]
+fn a_run_that_changes_while_the_boot_policy_applies_is_left_alone() {
+    for (file, boot, verb) in [
+        ("disabled", "enabled", "enable"),
+        ("enabled", "disabled", "disable"),
+    ] {
+        let fake = Fake::default()
+            .on(
+                "/usr/bin/systemctl show --property=LoadState",
+                &[
+                    Ok(&show("loaded", file, file)),
+                    Ok(&show("loaded", "active", boot)),
+                ],
+            )
+            // The pinned run was `aaa`; it was replaced by `zzz` while systemctl changed the boot policy.
+            .on(INVOCATION, &[Ok("zzz")]);
+        assert_eq!(
+            restart(&fake, "42-restart", &restart_input(boot)).map(|done| done.restarted),
+            Ok("already"),
+            "{verb}"
+        );
+        assert_eq!(restarts(&fake), 0, "{verb}");
+        let calls = fake.calls();
+        let policy = calls
+            .iter()
+            .position(|call| call.starts_with(&format!("/usr/bin/systemctl {verb} ")))
+            .expect("policy");
+        let read = calls
+            .iter()
+            .position(|call| call.starts_with(INVOCATION))
+            .expect("read");
+        assert!(
+            policy < read,
+            "{verb}: the run is read after the boot policy"
         );
     }
 }

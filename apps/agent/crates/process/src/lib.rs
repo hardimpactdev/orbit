@@ -90,46 +90,76 @@ impl System for NodeSystem {
     }
 
     fn begin_attempt(&self, key: &str) -> Result<(), String> {
-        std::fs::create_dir_all(ATTEMPTS).map_err(|error| error.to_string())?;
-        prune_attempts();
-        let file = std::fs::File::create(attempt_path(key)).map_err(|error| error.to_string())?;
+        Attempts::node().begin(key)
+    }
+
+    fn attempted(&self, key: &str) -> bool {
+        Attempts::node().attempted(key)
+    }
+}
+
+/// Where a restart's attempt records live on a Node, beside the executor's journal.
+const ATTEMPTS: &str = "/var/lib/orbit/executor/process-restart";
+
+/// How old an attempt must be before a prune removes it: past the journal's 24-hour `done` retention, after which the
+/// Gateway sends its order no more.
+const ATTEMPT_RETENTION: std::time::Duration = std::time::Duration::from_secs(2 * 24 * 60 * 60);
+
+/// The restart attempts of one directory: one empty, synced file per order (`<operation>-<step>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attempts {
+    dir: std::path::PathBuf,
+}
+
+impl Attempts {
+    /// The Node's attempts.
+    pub fn node() -> Self {
+        Self::at(ATTEMPTS)
+    }
+
+    /// The attempts in `dir`.
+    pub fn at(dir: impl Into<std::path::PathBuf>) -> Self {
+        Self { dir: dir.into() }
+    }
+
+    /// Durably records the order's attempt.
+    ///
+    /// # Errors
+    ///
+    /// Why the record could not be written and synced.
+    pub fn begin(&self, key: &str) -> Result<(), String> {
+        std::fs::create_dir_all(&self.dir).map_err(|error| error.to_string())?;
+        let file = std::fs::File::create(self.dir.join(key)).map_err(|error| error.to_string())?;
         file.sync_all().map_err(|error| error.to_string())?;
-        std::fs::File::open(ATTEMPTS)
+        std::fs::File::open(&self.dir)
             .and_then(|directory| directory.sync_all())
             .map_err(|error| error.to_string())
     }
 
-    fn attempted(&self, key: &str) -> bool {
-        attempt_path(key).exists()
+    /// Whether the order recorded an attempt.
+    pub fn attempted(&self, key: &str) -> bool {
+        self.dir.join(key).exists()
     }
-}
 
-/// Where a restart's attempt records live, beside the executor's journal.
-const ATTEMPTS: &str = "/var/lib/orbit/executor/process-restart";
-
-/// How long an attempt keeps its order spent: past the journal's `done` retention, when the Gateway sends the order no more.
-const ATTEMPT_RETENTION: std::time::Duration = std::time::Duration::from_secs(2 * 24 * 60 * 60);
-
-/// Removes the attempts of orders no send can reach any more.
-fn prune_attempts() {
-    let Ok(entries) = std::fs::read_dir(ATTEMPTS) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let old = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .ok()
-            .and_then(|modified| modified.elapsed().ok())
-            .is_some_and(|age| age > ATTEMPT_RETENTION);
-        if old {
-            let _ = std::fs::remove_file(entry.path());
+    /// Removes the attempts older than two days. Call it only once the journal has recovered every order it held open: each
+    /// older attempt then belongs to an order with a durable `done` record, which answers its every resend, so no attempt
+    /// of a recoverable order is ever removed. An order that starts meanwhile records a fresh attempt, which stays.
+    pub fn prune_recovered(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let old = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > ATTEMPT_RETENTION);
+            if old {
+                let _ = std::fs::remove_file(entry.path());
+            }
         }
     }
-}
-
-fn attempt_path(key: &str) -> std::path::PathBuf {
-    std::path::Path::new(ATTEMPTS).join(key)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
@@ -730,7 +760,8 @@ fn act(
 }
 
 /// Reads the Process until it runs a verified new run, for at most [`SETTLE_POLLS`] reads: it waits while the pinned run is
-/// still in place or the new one is still changing state, and stops at a new run that settled anywhere but ready.
+/// still in place, no run has started yet, or the new one is still changing state, and stops at a new run that settled
+/// anywhere but ready.
 fn settle(
     system: &impl System,
     key: &str,
@@ -738,20 +769,24 @@ fn settle(
     restarted: &'static str,
     read: &dyn Fn() -> Result<Run, Failure>,
 ) -> Result<Restart, Failure> {
+    // An empty identity is no run yet, such as a unit not yet started during boot: the wait goes on for it.
+    let new = |run: &Run| !run.instance.is_empty() && run.instance != pinned;
     let mut run = read()?;
     for _ in 1..SETTLE_POLLS {
-        let new = run.instance != pinned;
-        if new && (run.ready || !run.settling) {
+        if new(&run) && (run.ready || !run.settling) {
             break;
         }
         system.pause();
         run = read()?;
     }
-    if run.instance == pinned {
+    if !new(&run) {
         return Err(if restarted == "recovered" {
             Failure::new(
                 "process.restart_unresolved",
-                format!("{key}: an earlier attempt left the pinned run {pinned} in place"),
+                format!(
+                    "{key}: after an earlier attempt no new run showed: {}",
+                    run.detail
+                ),
             )
         } else {
             Failure::new(
@@ -779,7 +814,7 @@ fn restart_unit(
     boot: Boot,
 ) -> Result<Restart, Failure> {
     let name = input.name.as_str();
-    let (before, current) = invocation(system, name, "process.apply_failed")?;
+    let before = show(system, name, "process.apply_failed")?;
     if !Unit::is(before.load.as_ref(), "loaded") {
         return Err(Failure::new(
             "process.unit_missing",
@@ -804,6 +839,8 @@ fn restart_unit(
                 Failure::new("process.boot_failed", format!("systemctl {verb}: {detail}"))
             })?;
     }
+    // The run is read after the boot policy, so a run that changed meanwhile is left alone.
+    let (_, current) = invocation(system, name, "process.apply_failed")?;
     let restarted = act(system, key, &input.instance, &current, &|| {
         systemctl(system, 60, "restart", name)
     })?;
