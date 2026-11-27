@@ -20,6 +20,8 @@ The extension switch and fleet deployment are independent:
 - `orbit ai-router:destroy` removes the collector and withdraws the hostname.
 - `orbit extension:disable ai-router` hides and refuses extension routes (`extension.disabled`) without tearing down the collector.
 
+While a [Gateway engine run](/reference/gateway-engine#processstart-and-processstop) holds the collector Process, setup refuses `operation.target_busy` before it writes the collector source or calls the Node.
+
 ### Valkey placement and setup
 
 Shared Valkey runs as a [Valkey Database server](/reference/database-servers#a-valkey-server) on an active `database` Node (or an external Redis host with no Node). Setup validates the cache connection (`ai_router.cache_missing`, `ai_router.cache_invalid`, `ai_router.cache_unplaced`) and target Node (`ai_router.node_invalid`, active Linux Node with WireGuard IP), refusing any existing Process attached as a Node service target (`process.node_service_ownership_conflict`):
