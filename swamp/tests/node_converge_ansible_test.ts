@@ -615,17 +615,19 @@ Deno.test("every Tools phase applies the Homebrew prefix rule from the Tool help
         const names = tasks.map((task) => task.name);
         const rule = names.indexOf("Make the Homebrew prefix readable");
         assertEquals(names.slice(rule - 2, rule + 1), ["Look for the Linux Homebrew prefix", "Compile the Homebrew prefix rule", "Make the Homebrew prefix readable"]);
-        assertEquals([tasks[rule - 2].when, tasks[rule - 1].when, tasks[rule].when, tasks[rule].become], [undefined, "brew_program.stat.exists", "brew_program.stat.exists", false]);
+        assertEquals([tasks[rule - 2].when, tasks[rule - 1].when, tasks[rule].when, tasks[rule].become], [undefined, "brew_prefix.stat.isdir | default(false)", "brew_prefix.stat.isdir | default(false)", false]);
         assertEquals(rule > names.indexOf("Record bounded Tool results"), true);
         const helper = fileURLToPath(new URL("../extensions/behaviors/operations/ansible-input/converge_tool.ts", import.meta.url));
         const compiled = await new Deno.Command(Deno.execPath(), { args: ["run", "--no-prompt", "--allow-read", helper, "readable"], stdout: "piped" }).output();
         const argv = JSON.parse(new TextDecoder().decode(compiled.stdout)) as string[];
         assertEquals(argv[1], "/home/linuxbrew/.linuxbrew");
+        // The phase looks for the prefix it repairs, not for the brew program inside it.
+        assertEquals((tasks[rule - 2]["ansible.builtin.stat"] as { path: string }).path, argv[1]);
         const prefix = `${folder}/prefix`;
         await Deno.mkdir(`${prefix}/Cellar/git/2.52.0`, { recursive: true });
         for (const path of ["", "/Cellar/git"]) await Deno.chmod(prefix + path, 0o700);
         await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{ hosts: "localhost", connection: "local", gather_facts: false,
-            vars: { brew_program: { stat: { exists: true } }, brew_readable: { stdout: JSON.stringify([argv[0], prefix, ...argv.slice(2)]) } },
+            vars: { brew_prefix: { stat: { exists: true, isdir: true } }, brew_readable: { stdout: JSON.stringify([argv[0], prefix, ...argv.slice(2)]) } },
             tasks: [tasks[rule]] }]));
         const apply = async () => {
             const result = await new Deno.Command("ansible-playbook", { args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",

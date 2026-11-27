@@ -28,13 +28,13 @@ pub fn apt_packages(status: &str) -> Vec<Value> {
             _ => continue,
         };
         if let (Some(name), Some(version)) = (field("Package"), field("Version")) {
-            packages.entry(name.to_owned()).or_insert_with(|| {
-                let mut row = json!({"name": name, "version": version});
-                if held {
-                    row["held"] = json!(true);
-                }
-                row
-            });
+            // A package is held when any of its installed architectures is held, whatever the stanza order.
+            let row = packages
+                .entry(name.to_owned())
+                .or_insert_with(|| json!({"name": name, "version": version}));
+            if held {
+                row["held"] = json!(true);
+            }
         }
     }
     packages.into_values().collect()
@@ -274,6 +274,19 @@ mod tests {
                 json!({"name": "php8.5-xml", "version": "8.5.0-1", "held": true})
             ]
         );
+    }
+
+    #[test]
+    fn apt_marks_a_package_held_when_any_architecture_is_held() {
+        for status in [
+            "Package: libfoo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0\n\nPackage: libfoo\nStatus: hold ok installed\nArchitecture: i386\nVersion: 1.0\n",
+            "Package: libfoo\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 1.0\n\nPackage: libfoo\nStatus: install ok installed\nArchitecture: i386\nVersion: 1.0\n",
+        ] {
+            assert_eq!(
+                apt_packages(status),
+                vec![json!({"name": "libfoo", "version": "1.0", "held": true})]
+            );
+        }
     }
 
     fn dir(name: &str) -> std::path::PathBuf {

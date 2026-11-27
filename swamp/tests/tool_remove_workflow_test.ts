@@ -38,3 +38,20 @@ Deno.test("a Linux Homebrew removal makes the prefix readable after its package 
     assertEquals(brew["Remove the package"].end <= brew["Make the Homebrew prefix readable"].start, true);
     assertEquals(run({ "Prepare package commands": { outputs: { remove_repository: false, readable: null } } })["Make the Homebrew prefix readable"].status, "skipped");
 });
+
+Deno.test("a failed Linux Homebrew removal still makes the prefix readable, and the run keeps the failure", () => {
+    const outcomes = {
+        "Prepare package commands": { outputs: { remove_repository: false, readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, remove: true } },
+        "Decode package state": { outputs: { compliant: false, absent: false, present: true } },
+        "Remove the package": { status: "failed" },
+    };
+    const brew = runWorkflow("workflow-operation-tool-remove-209.yaml", "tool.remove", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null, package_owned: true,
+    }, outcomes, () => ({}));
+    const unprepared = runWorkflow("workflow-operation-tool-remove-209.yaml", "tool.remove", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null, package_owned: true,
+    }, { ...outcomes, "Prepare package commands": { status: "failed" } }, () => ({}));
+    assertEquals(unprepared["Make the Homebrew prefix readable"].status, "skipped");
+    assertEquals([brew["Remove the package"].status, brew["Make the Homebrew prefix readable"].status, brew["Assert package state"].status], ["failed", "succeeded", "failed"]);
+});

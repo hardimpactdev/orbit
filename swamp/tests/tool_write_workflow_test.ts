@@ -64,3 +64,20 @@ Deno.test("a Linux Homebrew write makes the prefix readable after its package st
     assertEquals(brew["Apply the package"].end <= brew["Make the Homebrew prefix readable"].start, true);
     assertEquals(run({})["Make the Homebrew prefix readable"].status, "skipped");
 });
+
+Deno.test("a failed Linux Homebrew write still makes the prefix readable, and the run keeps the failure", () => {
+    const outcomes = {
+        "Prepare package commands": { outputs: { readable: ["/usr/bin/find"] } },
+        "Choose package action": { outputs: { ready: true, mutate: true } },
+        "Decode package state": { outputs: { compliant: false, present: false } },
+        "Apply the package": { status: "failed" },
+    };
+    const brew = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, outcomes, () => ({}));
+    const unprepared = runWorkflow("workflow-operation-tool-write-209.yaml", "tool.install", {
+        instance_id: 0, manager: "brew", package: "git", platform: "linux", architecture: "x86_64", repository: null,
+    }, { ...outcomes, "Prepare package commands": { status: "failed" } }, () => ({}));
+    assertEquals(unprepared["Make the Homebrew prefix readable"].status, "skipped");
+    assertEquals([brew["Apply the package"].status, brew["Make the Homebrew prefix readable"].status, brew["Assert package state"].status], ["failed", "succeeded", "failed"]);
+});

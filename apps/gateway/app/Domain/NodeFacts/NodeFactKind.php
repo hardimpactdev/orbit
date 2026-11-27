@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\NodeFacts;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use Closure;
 
 /**
  * The kinds of fact a Node agent reports, each with the validation rules of its `data`. The agent only observes; the
@@ -140,7 +141,11 @@ enum NodeFactKind: string
                 'packages.*.name' => ['required', 'string', 'max:255'],
                 'packages.*.version' => ['required', 'string', 'max:255'],
                 // An apt package held with `apt-mark hold`; earlier agents leave held packages out.
-                'packages.*.held' => ['sometimes', 'boolean', 'accepted'],
+                'packages.*.held' => ['sometimes', static function (string $attribute, mixed $value, Closure $fail): void {
+                    if ($value !== true) {
+                        $fail("The {$attribute} field must be true.");
+                    }
+                }],
                 'roots' => ['sometimes', 'array', 'list', 'max:1000'],
                 'roots.*' => ['required', 'string', 'max:255'],
                 'sources' => ['sometimes', 'array', 'list', 'max:256'],

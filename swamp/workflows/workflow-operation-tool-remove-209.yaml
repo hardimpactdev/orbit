@@ -54,8 +54,9 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ inputs.intent.manager == "apt" ? ["timeout","120","/usr/bin/env","LC_ALL=C","DEBIAN_FRONTEND=noninteractive","/usr/bin/dpkg","--remove","--",inputs.intent.package] : ["timeout","900"] + steps["Prepare package commands"].outputs.remove }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Make the Homebrew prefix readable
     labels: {role: swamp}
-    dependsOn: [{step: Remove the package, condition: {type: succeeded}}]
-    guard: ${{ steps["Prepare package commands"].outputs.readable == null }}
+    # Whatever the package step did: a failed one can leave files behind, and the run keeps its failure. The rule changes nothing twice.
+    dependsOn: [{step: Remove the package, condition: {type: always}}]
+    guard: ${{ !("Prepare package commands" in steps) || steps["Prepare package commands"].status != "succeeded" || steps["Prepare package commands"].outputs.readable == null }}
     writes: true
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tool-brew-readable-" + string(inputs.node_id) }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 305, argv: '${{ ["timeout","300"] + steps["Prepare package commands"].outputs.readable }}'}, globalArgs: {name: '${{ "tool-brew-readable-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Check apt absence

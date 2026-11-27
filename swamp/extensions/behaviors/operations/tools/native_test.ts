@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { WriteInput } from "./write.ts";
+import { ToolRefusal } from "./contract.ts";
 import {
     after,
     aptWrite,
@@ -208,4 +209,42 @@ Deno.test("an apt package held with apt-mark hold reads as installed and held", 
     assertEquals([held.versions, (held as Record<string, unknown>).held], [["2.3.1-1"], true]);
     const normal = inventory(input("apt"), step("apt 3.1"), step("hello\tinstall ok installed\t2.3.1-1\n"));
     assertEquals([normal.versions, "held" in normal], [["2.3.1-1"], false]);
+});
+
+Deno.test("the Homebrew prefix rule leaves a file hard-linked from outside the prefix as it is", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/prefix`);
+        await Deno.writeTextFile(`${folder}/outside`, "");
+        await Deno.chmod(`${folder}/outside`, 0o600);
+        await Deno.link(`${folder}/outside`, `${folder}/prefix/alias`);
+        const [program, ...args] = homebrewReadable(`${folder}/prefix`);
+        assertEquals((await new Deno.Command(program, { args }).output()).code, 0);
+        assertEquals((await Deno.stat(`${folder}/outside`)).mode! & 0o777, 0o600);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the Homebrew prefix rule does not descend into another file system mounted in the prefix", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/prefix/mounted`, { recursive: true });
+        const rule = homebrewReadable(`${folder}/prefix`).map((arg) => `'${arg}'`).join(" ");
+        // A private mount namespace of an unprivileged user mounts a tmpfs inside the prefix, as a bind mount would.
+        const script = `mount -t tmpfs -o mode=0755 none '${folder}/prefix/mounted' && mkdir -m 0700 '${folder}/prefix/mounted/private' ` +
+            `&& : > '${folder}/prefix/mounted/secret' && chmod 0600 '${folder}/prefix/mounted/secret' && ${rule} >/dev/null ` +
+            `&& stat -c %a '${folder}/prefix/mounted/private' '${folder}/prefix/mounted/secret'`;
+        const result = await new Deno.Command("unshare", { args: ["-rm", "sh", "-c", script], stdout: "piped", stderr: "piped" }).output();
+        assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+        assertEquals(new TextDecoder().decode(result.stdout).trim().split("\n"), ["700", "600"]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("several dpkg rows of one package read as one version, held when any row is held, and disagreeing versions are unclear", () => {
+    const step = (stdout: string) => ({ status: "succeeded", outputs: { exitCode: 0, stdout } });
+    const read = (rows: string) => inventory(input("apt"), step("apt 3.1"), step(rows)) as Record<string, unknown>;
+    for (const rows of ["hello\tinstall ok installed\t1.0\nhello\thold ok installed\t1.0\n", "hello\thold ok installed\t1.0\nhello\tinstall ok installed\t1.0\n"]) {
+        assertEquals([read(rows).versions, read(rows).held], [["1.0"], true]);
+    }
+    assertEquals("held" in read("hello\tinstall ok installed\t1.0\nhello\tinstall ok installed\t1.0\n"), false);
+    assertThrows(() => read("hello\tinstall ok installed\t1.0\nhello\thold ok installed\t1.1\n"), ToolRefusal, "tool.version_probe_failed");
 });

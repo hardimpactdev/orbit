@@ -56,9 +56,10 @@ export function refreshed(step: Step): void {
  */
 export function homebrewReadable(prefix = "/home/linuxbrew/.linuxbrew"): string[] {
     return [
-        "/usr/bin/find", prefix,
+        // Only entries of the prefix: no other file system, and no file hard-linked from elsewhere.
+        "/usr/bin/find", prefix, "-xdev",
         "(", "-type", "d", "!", "-perm", "-055", "-print", "-exec", "/usr/bin/chmod", "go+rx", "{}", "+", ")", "-o",
-        "(", "!", "-type", "d", "!", "-type", "l", "!", "-perm", "-044", "-print", "-exec", "/usr/bin/chmod", "go+r", "{}", "+", ")",
+        "(", "!", "-type", "d", "!", "-type", "l", "-links", "1", "!", "-perm", "-044", "-print", "-exec", "/usr/bin/chmod", "go+r", "{}", "+", ")",
     ];
 }
 /** Public argv only. Scope ownership is admission's concern, not a Node phase. */
@@ -269,19 +270,26 @@ export function inventory(
                 `dpkg-query: no packages found matching ${input.package}`
         ) versions = [];
         else {
-            const [name, status, value] = text.trim().split("\t");
-            if (query?.outputs?.exitCode !== 0 || name !== input.package) {
-                throw new ToolRefusal("tool.version_probe_failed");
+            // One row per installed architecture: a package is held when any row is held, and its rows must agree on one version.
+            const installed = new Set<string>();
+            let held = false;
+            for (const row of text.trim().split("\n")) {
+                const [name, status, value] = row.split("\t");
+                if (query?.outputs?.exitCode !== 0 || name !== input.package) {
+                    throw new ToolRefusal("tool.version_probe_failed");
+                }
+                // A package held with `apt-mark hold` is installed; apt will not change it.
+                if (status === "install ok installed" || status === "hold ok installed") {
+                    installed.add(value);
+                    held ||= status === "hold ok installed";
+                } else if (
+                    !/^(deinstall|purge|unknown) ok (config-files|not-installed)$/
+                        .test(status)
+                ) throw new ToolRefusal("tool.version_probe_failed");
             }
-            // A package held with `apt-mark hold` is installed; apt will not change it.
-            if (status === "install ok installed") versions = [value];
-            else if (status === "hold ok installed") {
-                versions = [value];
-                extra = { held: true };
-            } else if (
-                !/^(deinstall|purge|unknown) ok (config-files|not-installed)$/
-                    .test(status)
-            ) throw new ToolRefusal("tool.version_probe_failed");
+            if (installed.size > 1) throw new ToolRefusal("tool.version_probe_failed");
+            versions = [...installed];
+            if (held) extra = { held: true };
         }
     } else {
         const raw = JSON.parse(text);

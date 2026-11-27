@@ -48,6 +48,13 @@ it('counts managed Tools and reports literal drift, absence and unusable facts',
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->withToken('agent-secret')
         ->postJson('/api/v1/agent/facts', ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => now()->addSecond()->format('Y-m-d\\TH:i:s\\Z'), 'data' => $held])
         ->assertNoContent();
+    // Only boolean true marks a held row, as ObservedPackages reads it.
+    foreach ([1, '1', 'true', false] as $mark) {
+        test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])->withToken('agent-secret')
+            ->postJson('/api/v1/agent/facts', ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => now()->addSeconds(2)->format('Y-m-d\\TH:i:s\\Z'),
+                'data' => ['scope' => '/usr/bin/apt', 'packages' => [['name' => 'tree', 'version' => '1.10', 'held' => $mark]]]])
+            ->assertUnprocessable();
+    }
     expect($fact->refresh()->data['packages'][0])->toBe(['name' => 'tree', 'version' => '1.10', 'held' => true])
         ->and($read())->toMatchArray(['checked' => 1, 'status' => 'healthy']);
 });

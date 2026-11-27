@@ -62,10 +62,10 @@
 # After the results, so a failure here fails the phase but keeps every verified Tool. The rule runs in every Tools phase, so a prefix
 # that a brew write or a hand change left private becomes readable for the Node agent's observer (docs/reference/tools.md#readable-homebrew-prefix).
 - name: Look for the Linux Homebrew prefix
-  ansible.builtin.stat: { path: /home/linuxbrew/.linuxbrew/bin/brew, get_checksum: false }
-  register: brew_program
+  ansible.builtin.stat: { path: /home/linuxbrew/.linuxbrew, get_checksum: false }
+  register: brew_prefix
 - name: Compile the Homebrew prefix rule
-  when: brew_program.stat.exists
+  when: brew_prefix.stat.isdir | default(false)
   ansible.builtin.command:
     argv: ["{{ converge_deno }}", run, --no-prompt, --allow-read, "{{ converge_tool_helper }}", readable]
   delegate_to: localhost
@@ -73,7 +73,7 @@
   changed_when: false
   register: brew_readable
 - name: Make the Homebrew prefix readable
-  when: brew_program.stat.exists
+  when: brew_prefix.stat.isdir | default(false)
   ansible.builtin.command: { argv: "{{ brew_readable.stdout | from_json }}" }
   become: false
   changed_when: brew_readable_run.stdout != ''
