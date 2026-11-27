@@ -108,6 +108,17 @@ final class Operation extends Model
         $query->where('kind', '!=', 'instance.fleet');
     }
 
+    /**
+     * Leaves out a task copy's cancel (`tasks.cancel`) while it waits for the copy's destroy: it holds no lock and blocks no work on
+     * its group, as when it ended at its admission (TaskEnd). The copy's own guards still see the destroy.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeExceptCancelWait(Builder $query): void
+    {
+        $query->where('kind', '!=', 'tasks.cancel');
+    }
+
     /** @param Builder<self> $query */
     public function scopePubliclyVisible(Builder $query): void
     {

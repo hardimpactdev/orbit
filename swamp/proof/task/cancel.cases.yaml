@@ -1,0 +1,25 @@
+command: task:cancel
+chart: task/cancel
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+cases:
+  - id: cancel-ends-with-copy-destroy
+    batch: fresh-fleet
+    covers: ["path:copy-destroy", "path:destroy-failed"]
+    summary: Cancel two task groups that each own a copy through the CLI. The first cancel stays running, without a lock, while its copy's signed destroy has no receipt; operation:cancel on it and a repeat task:cancel both name the destroy in human and JSON output; it succeeds only after the destroy succeeded and the copy is gone, and the CLI exits after it. The second copy's destroy fails on a held volume, so the cancel fails with instance.removal_incomplete, the group stays as it was and bound, and a second cancel succeeds.
+    exclusive: true
+    fails_on_base: true
+    timeout: 2400
+    setup:
+      - cancel_fixture: {repository: "https://github.com/laravel/prompts.git", branch: main}
+    act:
+      - cancel_copy: {name: waits}
+      - task_cancel: {name: waits, fault: held-receipt}
+      - cancel_copy: {name: fails}
+      - task_cancel: {name: fails, fault: removal}
+    expect:
+      - clone_cleanup: {}
+uncovered:
+  "path:copy-destroy": "The copy comes from task:start of a new external group on a disposable Project, with its create and destroy on the signed executor (the clone_fixture install). The hold stops the Gateway engine's receipt consumer (orbit-gateway-engine) from before the cancel until the refusals are checked, so the destroy cannot end while they run; the cancel's signed workspace read and the destroy's order still go out. Fixture only: the nested fleet has no AI router, so the fixture sets the tasks extension's stored state directly and restores what it read. A destroy through Swamp, a budget that runs out (operation.timed_out), a group admission beside the waiting cancel and the reconciler's sweep are covered only by Gateway tests."
+  "path:destroy-failed": "The failure holds the copy's owned inner volume (a fixture volume, as clone_destroy's held-volume fault) in an Incus profile, so the signed destroy deletes the container and then fails; the profile goes before the second cancel, which passes --discard because the half-removed copy reads unknown. A lost destroy receipt that a later receipt corrects is covered only by Gateway tests."

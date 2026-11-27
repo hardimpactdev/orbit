@@ -19,7 +19,7 @@ The agent binary also serves signed executor orders in a separate service mode. 
 `orbit-agent` is a Rust binary installed on managed Linux Nodes. It operates in four modes:
 
 - **Observer (`orbit-agent`):** A long-running systemd service that reports presence, Process states, facts, task workspaces, and live logs, and forwards `executor-order` events.
-- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10966.0` / agent `0.31.0`, which adds the signed Process state action `process.ensure_state`).
+- **Executor (`orbit-agent execute serve` / `relay`):** Runs signed orders on the local socket and the [Gateway engine](/reference/gateway-engine) machine bus (pinned at `cli-v0.10969.0` / agent `0.32.0`, which adds the signed Route site withdrawal `route.withdraw_site`).
 - **Command mode (`orbit-agent command <name>`):** Runs one typed Node action over pinned SSH (or locally on the Gateway Node) and exits.
 - **Service entry points (`orbit-agent service <name>`):** Fixed systemd helpers such as `schedules-run <uuid>` and `schedules-complete <uuid>` ([Schedules](/reference/schedules#node-timers)).
 
@@ -192,7 +192,7 @@ The subscriber also acts as the [executor result listener](/reference/executor#t
 
 ## Delivery
 
-Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10966.0` / agent `0.31.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
+Gateway releases pin one verified delivery manifest in `apps/gateway/resources/agent/frozen-manifest.json` (currently `cli-v0.10969.0` / agent `0.32.0`, overrideable via `ORBIT_AGENT_DELIVERY`). Its format is:
 
 ```json
 {

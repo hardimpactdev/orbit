@@ -51,9 +51,12 @@ final readonly class TaskCancelIntent
             if ($held !== null && $kind !== 'tasks.cancel') {
                 throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
             }
-            if (Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
-                ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
-                throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
+            $owner = Operation::query()->whereIn('kind', ['tasks.cancel', 'tasks.maintenance_finish'])->where('target_type', 'task_group')->where('target_id', $group->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->first();
+            if ($owner !== null) {
+                // A cancel that waits for its copy's destroy answers a repeat cancel with that destroy.
+                throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409,
+                    details: TaskEnd::waitsForDestroy($owner) ? ['operation_id' => $owner->result['destroy_operation_id'] ?? null] : []);
             }
             // Every refusal comes before the cancel changes anything. Approved work that origin does not have refuses it: task:publish
             // comes first.
@@ -76,7 +79,7 @@ final readonly class TaskCancelIntent
                 if ($copy !== null) {
                     return app(TaskEnd::class)->cancel($group, $copy['instance'], $copy['read'], $caller, $request);
                 }
-            } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
+            } elseif (Operation::query()->exceptCancelWait()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }

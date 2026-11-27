@@ -102,7 +102,7 @@ final readonly class TaskGroupDone
             return false;
         }
 
-        return ! Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+        return ! Operation::query()->exceptCancelWait()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->whereNotIn('status', OperationStatus::terminalValues())->exists();
     }
 }

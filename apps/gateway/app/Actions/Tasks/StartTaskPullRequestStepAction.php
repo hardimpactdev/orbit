@@ -60,7 +60,7 @@ final readonly class StartTaskPullRequestStepAction
             }
             $group->refresh();
             $this->groups->requireOpenExternal($group);
-            if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            if (Operation::query()->exceptCancelWait()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
             }

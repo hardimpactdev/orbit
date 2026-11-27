@@ -435,6 +435,21 @@ describe('operation commands', function (): void {
             ->and(Artisan::output())->toContain('Cancel requested', 'orbit operation:show 42');
         $mock->assertSent(static fn ($request): bool => $request instanceof CancelOperationRequest && (string) $request->body() === '{}');
     });
+
+    it('names the destroy that a task cancel waits for when the Gateway refuses to stop that cancel', function (): void {
+        MockClient::global([
+            CancelOperationRequest::class => MockResponse::make(['error' => [
+                'code' => 'tasks.cancel_waits_for_destroy',
+                'message' => 'This cancel ends when its task copy\'s destroy ends; it cannot be stopped.',
+                'details' => ['operation_id' => 57],
+            ]], 409, ['X-Orbit-Request-Id' => OPERATION_REQUEST_ID]),
+        ]);
+
+        expect(Artisan::call('operation:cancel', ['operation' => '42', '--json' => true, '--no-interaction' => true]))->toBe(1)
+            ->and(json_decode(trim(Artisan::output()), true)['error']['details'] ?? null)->toBe(['operation_id' => 57]);
+        expect(Artisan::call('operation:cancel', ['operation' => '42', '--no-interaction' => true]))->toBe(1)
+            ->and(Artisan::output())->toContain('57');
+    });
 });
 
 describe('task:start', function (): void {

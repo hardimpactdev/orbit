@@ -46,13 +46,14 @@ final readonly class StartOperationAction
     /**
      * R1: validated intent that needs no Node work becomes a succeeded Operation at once, with no native run.
      * The caller writes the record change in the same transaction. `$with` runs once for a new record, after its create took the lock
-     * key and before its success; its answer joins the result.
+     * key and before its success; its answer joins the result. `$open` records it running instead, with its lock released: the
+     * Operation that `$with` admitted ends it (TaskEnd::destroyEnded).
      *
      * @param  array<string,mixed>  $input
      * @param  array<string,mixed>  $result
      * @param  (Closure(): array<string,mixed>)|null  $with
      */
-    public function record(string $kind, string $targetType, int $targetId, int $nodeId, array $input, array $result, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null, ?Closure $with = null): Operation
+    public function record(string $kind, string $targetType, int $targetId, int $nodeId, array $input, array $result, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null, ?Closure $with = null, bool $open = false): Operation
     {
         app(DirectOperation::class)->writer($kind);
         if (($existing = $this->idempotency->replay($kind)) !== null) {
@@ -62,7 +63,8 @@ final readonly class StartOperationAction
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
         if ($operation->wasRecentlyCreated) {
             $result = $with === null ? $result : [...$result, ...$with()];
-            $this->store->change($operation, ['status' => OperationStatus::Succeeded, 'result' => $result, 'started_at' => now(), 'finished_at' => now(), 'lock_key' => null]);
+            $this->store->change($operation, ['status' => $open ? OperationStatus::Running : OperationStatus::Succeeded, 'result' => $result,
+                'started_at' => now(), 'finished_at' => $open ? null : now(), 'lock_key' => null]);
         }
 
         return $operation;
