@@ -15,6 +15,7 @@ use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use Closure;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, records
@@ -119,19 +120,52 @@ final readonly class TaskEnd
     }
 
     /**
-     * Every end of an `instance.destroy` reaches here (OperationStore::change): a run's report, a refused start, an expired budget. The
-     * cancel that admitted it ends with it: succeeded, or failed with the destroy's error code. The destroy's budget bounds the cancel.
+     * Every end of an `instance.destroy` reaches here (OperationStore::change): a run's report, a refused start, an expired budget, and
+     * a later receipt that corrects that end. The cancel that admitted it takes the destroy's outcome: succeeded, or failed with the
+     * destroy's error code. The destroy's budget bounds the cancel.
      */
     public function destroyEnded(Operation $destroy): void
     {
         $cancel = Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->where('result->destroy_operation_id', $destroy->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->lockForUpdate()->first();
-        if ($cancel === null) {
+            ->lockForUpdate()->first();
+        if ($cancel !== null) {
+            $this->follow($cancel, $destroy);
+        }
+    }
+
+    /**
+     * Ends each waiting cancel whose destroy a worker without destroyEnded recorded, as during a release's worker handover
+     * (ReconcileSwampOperations). A succeeded destroy ends the group as TaskLifecycle::destroyed does for a cancel's copy.
+     */
+    public function sweep(): void
+    {
+        Operation::query()->where('kind', 'tasks.cancel')->where('target_type', 'task_group')->whereNotIn('status', OperationStatus::terminalValues())
+            ->whereNotNull('result->destroy_operation_id')->lazyById()->each(function (Operation $waiting): void {
+                DB::transaction(function () use ($waiting): void {
+                    $cancel = Operation::query()->lockForUpdate()->findOrFail($waiting->id);
+                    $destroy = Operation::query()->find($cancel->result['destroy_operation_id'] ?? null);
+                    if ($cancel->status->terminal() || $destroy === null || ! $destroy->status->terminal()) {
+                        return;
+                    }
+                    $group = Task::topLevel()->lockForUpdate()->find($cancel->target_id);
+                    if ($destroy->status === OperationStatus::Succeeded && $group !== null
+                        && ! in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true)
+                        && in_array($group->taskable_id, [null, $cancel->input['instance_id'] ?? null], true)) {
+                        app(TaskGroupEnding::class)->settle($group, 'tasks.cancel');
+                    }
+                    $this->follow($cancel, $destroy);
+                });
+            });
+    }
+
+    private function follow(Operation $cancel, Operation $destroy): void
+    {
+        $status = $destroy->status === OperationStatus::Succeeded ? OperationStatus::Succeeded : OperationStatus::Failed;
+        $code = $status === OperationStatus::Succeeded ? null : ($destroy->error_code ?? 'operation.'.$destroy->status->value);
+        if ($cancel->status === $status && $cancel->error_code === $code) {
             return;
         }
-        $succeeded = $destroy->status === OperationStatus::Succeeded;
-        app(OperationStore::class)->change($cancel, ['status' => $succeeded ? OperationStatus::Succeeded : OperationStatus::Failed, 'finished_at' => now(),
-            'error_code' => $succeeded ? null : ($destroy->error_code ?? 'operation.'.$destroy->status->value)], onlyWhileOpen: true);
+        app(OperationStore::class)->change($cancel, ['status' => $status, 'finished_at' => now(), 'error_code' => $code]);
     }
 
     /** A cancel that waits for its copy's destroy has no deadline of its own: the destroy's budget ends both (OperationRunBudgets). */

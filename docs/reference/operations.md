@@ -84,7 +84,7 @@ Every direct Operation tracks its execution budget from `started_at`. `Operation
 
 Unbound admissions with zero attempts have a separate 600-second admission budget.
 
-A `tasks.cancel` that waits for its task copy's `instance.destroy` has no deadline: it is recorded `running` without a lock, and it ends when the destroy ends, succeeded or failed with the destroy's error code. The destroy's budget bounds it ([`task:cancel`](/cli/task/cancel)).
+A `tasks.cancel` that waits for its task copy's `instance.destroy` has no deadline: it is recorded `running` without a lock, and it ends when the destroy ends, succeeded or failed with the destroy's error code. The destroy's budget bounds it, except a [signed clone removal](/reference/gateway-engine#instancedestroy), which stays fenced past its budget until its Node returns the result ([`task:cancel`](/cli/task/cancel)).
 
 When a bound Operation reaches its deadline, the reconciler marks it `failed` with `operation.timed_out`, sets `overdue_since` (queuing one `operation:overdue-alert` webhook on `tasks`), and forwards `workflow.cancel` to Swamp. Target holds stay locked until Swamp confirms the bound run is terminal or 60 minutes elapse (`native_terminal_status: unproven`). If a bound run actually completed before its deadline and its terminal history arrives later, the reconciler reopens and projects the true outcome.
 

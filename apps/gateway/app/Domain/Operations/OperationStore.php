@@ -204,7 +204,8 @@ final readonly class OperationStore
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskLifecycle::class)->createEnded($operation);
             }
-            if ($operation->kind === 'instance.destroy' && ! $current->status->terminal() && $operation->status->terminal()) {
+            if ($operation->kind === 'instance.destroy' && $operation->status->terminal()
+                && ($current->status !== $operation->status || $current->error_code !== $operation->error_code)) {
                 app(TaskEnd::class)->destroyEnded($operation);
             }
             if (is_int($operation->state['conn_launch_owner'] ?? null)) {

@@ -133,11 +133,11 @@ final readonly class TaskOperations
             });
     }
 
-    /** @return Builder<Operation> A cancel that waits for its copy's destroy holds nothing to stop: the destroy ends it (TaskEnd). */
+    /** @return Builder<Operation> */
     private function holders(Task $group): Builder
     {
-        return Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->whereIn('kind', array_diff(array_keys(app(DirectOperation::class)->definitions()), ['tasks.cancel']))
+        return Operation::query()->exceptCancelWait()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->whereIn('kind', array_keys(app(DirectOperation::class)->definitions()))
             ->whereNotIn('status', OperationStatus::terminalValues());
     }
 }
