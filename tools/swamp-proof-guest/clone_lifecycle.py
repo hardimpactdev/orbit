@@ -636,7 +636,7 @@ for path in sorted(pathlib.Path(sys.argv[1]).glob('laravel*.log'), reverse=True)
         self.guest('gateway', 'sh', '-eu', '-c', '''
             systemctl stop orbit-gateway-engine.service nats-server.service 2>/dev/null || :
             cat "$1/gateway-env" > "$2/.env"
-            rm -rf "$1" /etc/nats/nats.conf /var/lib/nats /usr/local/bin/nats-server /etc/systemd/system/nats-server.service /etc/systemd/system/orbit-gateway-engine.service
+            rm -rf "$1" /etc/nats /var/lib/nats /usr/local/bin/nats-server /etc/systemd/system/nats-server.service /etc/systemd/system/orbit-gateway-engine.service
             userdel nats 2>/dev/null || :
             systemctl daemon-reload
         ''', 'sh', GUEST_STATE, self.gateway_app)

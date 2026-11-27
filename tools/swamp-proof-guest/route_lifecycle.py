@@ -124,7 +124,14 @@ class RouteLane(CloneLane):
         instance = self.clones[clone]['instance']
         body = {'instance_id': instance, 'domain': domain} | ({'web_root': web_root} if web_root else {})
         row = self.admitted('POST', 'routes', body, name + '-route-create')
-        self.terminal(int(row['id']), seconds=240)
+        try:
+            self.terminal(int(row['id']), seconds=240)
+        except ProofFailure:
+            self.run.evidence_text(name + '-route-create-failure.log', self.guest(self.node, 'sh', '-c', '''
+                grep -n -A12 -F -- "$1" /etc/caddy/Caddyfile | head -40; ls -la /etc/caddy/orbit-certificates
+                incus exec --project orbit-instances "instance-$2" -- sh -c 'ls -la /srv/workspace 2>/dev/null | head -30' || :
+                journalctl --no-pager -u caddy.service -n 15 -o cat''', 'sh', domain, instance, timeout=40) + '\n')
+            raise
         route = self.db(f"SELECT id FROM routes WHERE domain='{domain}'")
         require(len(route) == 1, f'Route {domain} has no record')
         scope = f'route-{int(route[0]["id"])}' if web_root else f'app-instance-{instance}'
