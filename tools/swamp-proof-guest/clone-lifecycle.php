@@ -68,7 +68,7 @@ if ($mode === 'configuration') {
             $line = json_decode($data, true, flags: JSON_THROW_ON_ERROR)['line'];
         }
         if ($message['subject'] !== $subject || $line['operation'] !== $operation.':'.$step || $line['target'] !== $target
-            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : $line['status'] !== 'done')) {
+            || $line['action'] !== $action || ($isOrder ? $line['node'] !== $node : ! in_array($line['status'], ['done', 'applied'], true))) {
             throw new RuntimeException('The queued message does not belong to this proof destroy.');
         }
         if (! $isOrder && ($request('$JS.API.STREAM.MSG.DELETE.RECEIPTS', ['seq' => $message['seq']])['success'] ?? false) !== true) {
