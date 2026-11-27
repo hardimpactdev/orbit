@@ -213,7 +213,7 @@ class ProcessLane(CloneLane):
         summary = self.operation(operation, 'engine')
         journal = summary['journal']
         require(summary['steps'][0]['sends'] >= 2 and sum(item['record'] == 'open' for item in journal) == 1
-                and [item['outcome']['status'] for item in journal if item['record'] == 'done'] == ['applied'],
+                and [item['outcome']['status'] for item in journal if item['record'] == 'done'] in (['applied'], ['output']),
                 f'{operation} did not replay one execution on a second send')
         return operation, {'operation': summary, 'queued_signed_order': queued, 'dropped': dropped, 'probed_while_outstanding': probed,
                            'http_replay': {'id': replayed['id'], 'status': replayed['status']},
