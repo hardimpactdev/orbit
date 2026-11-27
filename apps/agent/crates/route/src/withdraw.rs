@@ -4,10 +4,11 @@
 //! from by its SHA-256. The live Caddyfile must be either that one or already the desired one; anything else is a change
 //! outside this Route and refuses before any write. Then pools, Caddyfile and the Route's leaf folders converge to the
 //! desired state, Caddy reloads on every run, also a repeat that finds nothing to change, and the Caddy admin API is read
-//! back: the withdrawn names no longer appear in its live configuration.
+//! back until the withdrawn names no longer appear in its live configuration, for about 5 s at most.
 
 use std::fs;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -27,6 +28,11 @@ const POOL_FAILED: &str = "route.pool_failed";
 
 /// Caddy's admin endpoint on the Node, read back after the reload.
 const ADMIN: &str = "http://127.0.0.1:2019/config/";
+
+/// `systemctl reload caddy` returns once Caddy has the signal, before it loads the new configuration, so the admin API is
+/// read up to this many times, this far apart: about 5 s for Caddy to load it before a name it still serves fails.
+const ADMIN_READS: u32 = 20;
+const ADMIN_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -256,7 +262,8 @@ fn rollback(system: &impl System, previous: &[(String, Option<Vec<u8>>)], pools:
     let _ = system.run(60, &strings(&["/usr/bin/systemctl", "reload", "caddy"]));
 }
 
-/// The read-back: the desired Caddyfile is live, no leaf folder remains, and Caddy's admin API serves none of the names.
+/// The read-back: the desired Caddyfile is live, no leaf folder remains, and Caddy's admin API serves none of the names once
+/// it has loaded the reloaded configuration, read again every [`ADMIN_INTERVAL`] up to [`ADMIN_READS`] times.
 fn verify(system: &impl System, input: &Input, desired: &[u8], home: &str) -> Result<(), Failure> {
     let unverified = |detail: &str| Failure::new("route.withdraw_unverified", detail.to_owned());
     if fs::read(system.path(CADDYFILE)).map_err(|_| unverified("Caddyfile unreadable"))? != desired {
@@ -269,13 +276,19 @@ fn verify(system: &impl System, input: &Input, desired: &[u8], home: &str) -> Re
             return Err(unverified("a leaf folder remains"));
         }
     }
-    let config = system
-        .run(15, &strings(&["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", "10", ADMIN]))
-        .map_err(|_| unverified("Caddy admin API"))?;
-    if input.domains.iter().any(|domain| config.contains(&format!("\"{domain}\""))) {
-        return Err(unverified("Caddy still serves a withdrawn name"));
+    let mut last = unverified("Caddy admin API");
+    for read in 0..ADMIN_READS {
+        if read > 0 {
+            system.sleep(ADMIN_INTERVAL);
+        }
+        // An admin API that does not answer while Caddy loads the configuration is read again too.
+        match system.run(5, &strings(&["/usr/bin/curl", "--silent", "--show-error", "--fail", "--max-time", "2", ADMIN])) {
+            Ok(config) if input.domains.iter().any(|domain| config.contains(&format!("\"{domain}\""))) => last = unverified("Caddy still serves a withdrawn name"),
+            Ok(_) => return Ok(()),
+            Err(_) => last = unverified("Caddy admin API"),
+        }
     }
-    Ok(())
+    Err(last)
 }
 
 fn validate(input: &Input) -> Result<(), Failure> {
