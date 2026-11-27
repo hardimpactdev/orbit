@@ -462,6 +462,10 @@ jobs:
         env:
           ORBIT_CHECK_PROCESSES: '2'
         run: composer test -- --fail-on-empty-test-suite
+      - name: Check executor actions against the primitive catalogue
+        env:
+          BASE: ${{ needs.changes.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+        run: node bin/check-executor-actions
       - name: Check flow charts
         env:
           BASE: ${{ needs.changes.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
