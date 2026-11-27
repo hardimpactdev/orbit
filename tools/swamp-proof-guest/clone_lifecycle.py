@@ -1380,10 +1380,11 @@ class CancelLane(SyncLane):
                 f'{label} --json: expected {code} naming Operation {operation}, got rc {result["rc"]} {error.get("code")} {details}')
         return {'rc': result['rc'], 'code': error.get('code'), 'operation_id': details.get('operation_id')}
 
-    def human_refusal(self, label, result, code, operation):
+    def human_refusal(self, label, result, message, operation):
+        # Human output prints the error's message and its details, not its code (the --json form names the code).
         text = result['stdout'] + result['stderr']
-        require(result['rc'] != 0 and code in text and re.search(rf'\b{operation}\b', text),
-                f'{label}: the human output does not name {code} and Operation {operation}')
+        require(result['rc'] != 0 and message in text and re.search(rf'\b{operation}\b', text),
+                f'{label}: the human output does not say "{message}" and name Operation {operation}')
         return {'rc': result['rc'], 'text': text.strip()[-600:]}
 
     def cancel(self, name, fault=None):
@@ -1427,9 +1428,9 @@ class CancelLane(SyncLane):
             repeat_json = self.cli('task:cancel', str(group), '--yes')
             repeat_human = self.cli('task:cancel', str(group), '--yes', form='human')
             evidence['operation_cancel'] = {'json': self.refusal('operation:cancel', refused_json, 'tasks.cancel_waits_for_destroy', destroy),
-                                            'human': self.human_refusal('operation:cancel', refused_human, 'tasks.cancel_waits_for_destroy', destroy)}
+                                            'human': self.human_refusal('operation:cancel', refused_human, 'cannot be stopped', destroy)}
             evidence['repeat_cancel'] = {'json': self.refusal('repeat task:cancel', repeat_json, 'operation.target_busy', destroy),
-                                         'human': self.human_refusal('repeat task:cancel', repeat_human, 'operation.target_busy', destroy)}
+                                         'human': self.human_refusal('repeat task:cancel', repeat_human, 'Task cancellation already owns this group', destroy)}
             still = self.operation_times(cancel)
             require(still['status'] == 'running' and self.cancels(group) == [cancel] and process.poll() is None,
                     f'the refusals changed cancel {cancel} or admitted another cancel')
@@ -1439,6 +1440,10 @@ class CancelLane(SyncLane):
             if process is not None:
                 process.kill()
                 process.communicate()
+            self.systemctl('gateway', 'start', ENGINE_UNIT)
+            # The destroy goes on: cleanup meets the group only after its cancel ended.
+            if cancel := evidence.get('cancel'):
+                wait_for(lambda: self.operation_times(cancel)['status'] in TERMINAL, f'cancel {cancel} did not end', 300, 1)
             raise
         finally:
             self.systemctl('gateway', 'start', ENGINE_UNIT)
