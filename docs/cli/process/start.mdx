@@ -16,8 +16,8 @@ On a container Instance, a Process whose definition the Project removed answers 
 
 <div className="flow-at" data-chart="process/start"></div>
 
-### Proposed executor path
+### Executor path
 
-On the Gateway engine, the start is one desired-state primitive of the `process` family: host systemd units first, then Docker and Instance-container Processes. Gateway release-container and Vite Processes stay on Swamp. This design awaits implementation and runtime proof. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
+On the Gateway engine, the start is one signed `process.ensure_state` order on the Process's Node, for a host systemd unit or a host Docker container of a Node Process or an app-dev Instance Process. It applies the boot policy (disabled for an on-demand Process) and reads the state back. A dev-server Process (`vp-dev`, `vite`), a Process of an Instance outside app-dev, a unit in an Instance container, a Gateway release-container Process and a Node's host Horizon unit stay on Swamp. A failure records `operation.native_failed` as the Swamp flow does; the order's own code stays on its engine step. The run holds the Process lock until its terminal receipt, and another Operation on the Process is refused `operation.target_busy` meanwhile. Runtime proof on a nested fleet is pending. When the Gateway engine does not admit the whole Operation, it runs the Swamp flow above.
 
 <div className="flow-at" data-chart="process/engine/start"></div>

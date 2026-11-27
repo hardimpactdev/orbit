@@ -6,12 +6,14 @@ namespace App\Domain\Processes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -34,6 +36,8 @@ final readonly class ProcessOperationAdmission
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId, $namedInstanceId): Operation {
             self::assertNotUpgrading($process);
+            // A Process an engine run holds stays fenced until its terminal receipt (docs/cli/process/engine/start.mmd).
+            EngineTargetFence::free(OperationStore::lockKey('process', $process->id));
             if (in_array($verb, ['start', 'stop', 'restart'], true) && $process->status === LifecycleStatus::Removing
                 && $this->targets->forInspection($process)->container !== null) {
                 // Its definition is gone; the default's next deployment removes it (docs/reference/development-containers.md#processes).

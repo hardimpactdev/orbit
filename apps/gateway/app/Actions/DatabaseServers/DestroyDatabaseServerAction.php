@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
@@ -32,6 +33,7 @@ final readonly class DestroyDatabaseServerAction
                     ? 'The server has an unfinished create intent.' : 'The server has an unfinished removal intent.', 409);
             }
             $process = $server->process;
+            EngineTargetFence::processesFree($process === null ? [] : [$process->id]);
             $requestId = request()->attributes->getString('orbit.request_id');
             // R1: a server without a Process has nothing on its Node; the record goes at once.
             if ($process === null) {

@@ -345,6 +345,14 @@ swamp/extensions/behaviors/operations/routes/update-command/manifest.yaml  insta
 swamp/extensions/behaviors/operations/schedule-run/manifest.yaml  instance:clone
 swamp/extensions/behaviors/operations/tools/manifest.yaml  instance:clone
 
+# The process family on the signed executor: process:start's cases also prove process:stop and the Node-timer schedule:enable.
+swamp/proof/process/start.cases.yaml             process:start
+swamp/workflows/workflow-operation-process-start.yaml  instance:create process:start
+swamp/workflows/workflow-operation-process-stop.yaml   process:start
+apps/gateway/app/Domain/Processes/ProcessControl*.php  process:start
+apps/gateway/app/Domain/Schedules/ScheduleEnableEngineFlow.php  process:start
+apps/agent/crates/process/**                     process:start
+
 # The proof tooling is shared code of every case; its own tests are not a proof.
 swamp/proof/selection.txt                        none: shared code; a proof runs only when a command's own code or cases change
 swamp/proof/batches.yaml                         none: batch setup changes select their users by definition

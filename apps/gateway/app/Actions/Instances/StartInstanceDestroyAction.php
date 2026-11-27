@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Engine\EngineTargetFence;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
@@ -36,6 +37,7 @@ use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
@@ -76,6 +78,7 @@ final readonly class StartInstanceDestroyAction
         }
 
         self::refuseWhileSyncHolds($instance);
+        self::refuseWhileProcessFenced($instance);
         ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
@@ -119,11 +122,18 @@ final readonly class StartInstanceDestroyAction
         });
     }
 
+    /** Its projection deletes the Instance's Processes (ProjectDirectInstanceDestroyAction): none may be held by an engine run. */
+    private static function refuseWhileProcessFenced(Instance $instance): void
+    {
+        EngineTargetFence::processesFree(Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->pluck('id')->all());
+    }
+
     /** @param array<string, mixed> $snapshot */
     private function record(Instance $instance, array $snapshot, ?string $caller, ?string $requestId, string $kind, ?int $completion): Operation
     {
         // Again in the removal's transaction, so a sync admitted at the same time and this check never both pass.
         self::refuseWhileSyncHolds($instance);
+        self::refuseWhileProcessFenced($instance);
         $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
         if ($completion !== null) {
             // After the record, which took the Instance and marked it removing: the order the create's and the completion's

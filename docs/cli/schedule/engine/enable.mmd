@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% schedule.enable of a retained host Node timer on the Gateway engine: the timer path of schedule/enable.mmd (workflow operation-schedule-control) as one executor primitive. A `production_control` plan (workflow production-schedule-control: the timer inside the selected live release) stays on Swamp. Design for ADR 0267 and ADR 0271; no engine flow exists yet. Step names describe effects; the implementation settles action names unless an existing action is named.
+  %% schedule.enable of a retained host Node timer on the Gateway engine: the timer path of schedule/enable.mmd (workflow operation-schedule-control) as one executor primitive. A `production_control` plan (workflow production-schedule-control: the timer inside the selected live release) stays on Swamp. ADR 0267 and ADR 0271; ScheduleEnableEngineFlow, primitive `schedule.ensure_timer`. Runtime proof on a nested fleet is pending.
   %% A native cron Schedule has no Node timer: it keeps the synchronous Swamp trigger set and its succeeded Operation, with no executor order.
-  %% status: draft
+  %% status: built
   %% command: schedule:enable
   %% kind: schedule.enable
   autonumber
@@ -31,13 +31,14 @@ sequenceDiagram
       %%> - the flow accepts the plan shape; a part it does not cover throws `EngineUnsupported` before any order
       %%> - eligible plan: a host timer on the Schedule's Node, no `production_control` and no `container`
       Note over GW: Bind steps, take the lock<br/>commit, publish the start
-      %%> - the step rows and the Operation lock commit in one transaction before the start event; an Operation never moves between engines after this
+      %%> - the step rows and the Schedule's own Operation lock (`schedule:<uuid>`; the owner's other Schedules stay free) commit in one transaction before the start event; an Operation never moves between engines after this
+      %%> - binding refuses `operation.target_busy` while another open Operation acts on this Schedule; while the lock is held, any admission for this Schedule, a create's reservation included, refuses `operation.target_busy` before it changes the row
       GW-->>CLI: 202 Accepted<br/>task ID
       EN->>N: Enable and start the timer<br/>owned unit only
       %%> Desired state: the Schedule's own timer is enabled and active; an already-running timer only gets its enablement checked
       %%> The unit name comes from the admitted Schedule; any other unit refuses with `schedule.input_invalid`
       N-->>EN: Observed timer<br/>enabled · active · next elapse
-      %%> Verification read-back in the same primitive, as Swamp's `Check the timer`
+      %%> Verification read-back in the same primitive, as Swamp's `Check the timer`: LoadState=loaded, UnitFileState=enabled, ActiveState=active, and NextElapseUSecRealtime answered (empty when the calendar has none left); a property systemd leaves out fails the step
       opt the receipt is lost
         EN->>N: Resend the same step<br/>fresh nonce · same step ID
         %%> When:
@@ -54,6 +55,7 @@ sequenceDiagram
       else a step fails
         EN--xGW: Failed step<br/>error_code · redacted detail
         %%> - a deterministic refusal is a terminal receipt too; the journal keeps it and a resend repeats it
+        %%> - the step keeps a code for its phase (`schedule.input_invalid`, `schedule.timer_missing`, `schedule.apply_failed` for the change, `schedule.read_failed` for the read-back read, `schedule.state_mismatch` for a read of another state); the Operation records what Swamp records: `operation.native_failed`, failed step `timer`, `check_timer` or `Check the timer`; a cancel records no error code, the step code in the failure's detail
         Note over GW: Keep the prior state<br/>desired state unchanged
         %%> - retry: the same command; enabling an enabled timer changes nothing
       end

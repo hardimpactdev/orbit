@@ -59,11 +59,22 @@ STEPS = {
     'cancel_fixture': (('setup',), {'repository', 'branch'}, set()),
     'cancel_copy': (('act',), {'name'}, set()),
     'task_cancel': (('act',), {'name', 'fault'}, set()),
+    'process_fixture': (('setup',), set(), set()),
+    'host_instance': (('act',), {'name'}, set()),
+    'process_create': (('act',), {'name'}, {'runtime', 'start', 'instance'}),
+    'schedule_create': (('act',), {'name', 'calendar'}, {'retained', 'instance'}),
+    'process_control': (('act',), {'name', 'via'}, {'sibling', 'on_demand'}),
+    'process_replay': (('act',), {'name'}, {'parent'}),
+    'process_retry': (('act',), {'name'}, set()),
+    'schedule_enable': (('act',), {'name', 'via'}, {'fault'}),
+    'process_refused': (('act',), {'name', 'kind'}, set()),
+    'process_compare': (('expect',), set(), set()),
+    'process_cleanup': (('expect',), set(), set()),
 }
 FILE_KEYS = {'command', 'chart', 'target', 'sources', 'baseline', 'vars', 'fixtures', 'uncovered', 'waits', 'cases', 'spread', 'parallel'}
 CASE_KEYS = {'id', 'batch', 'covers', 'summary', 'setup', 'act', 'expect', 'stages', 'variants', 'fails_today', 'fails_on_base', 'negative', 'timeout', 'node', 'exclusive', 'read_only', 'waits'}
 DEFAULT_PARALLEL = 4
-GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request', 'executor_key', 'clone_fixture', 'sync_fixture', 'cancel_fixture'}
+GLOBAL_STEPS = {'node_down', 'agent_report', 'node_access_remove', 'ipv6_addresses', 'node_fixture', 'recorded_request', 'executor_key', 'clone_fixture', 'sync_fixture', 'process_fixture', 'cancel_fixture'}
 READ_STEPS = {'probe', 'ufw', 'record', 'doctor', 'unchanged', 'package'}
 # Only commands with a known write target can use a scoped no-Operation audit. A read such as firewall:list has no
 # Operation kind of its own: audit it without filters so an unexpected write is still seen.
