@@ -63,7 +63,7 @@ Routes that need an Ingress edge, Cluster Router LAN rules, a production `.env`,
 The engine runs the admitted withdrawal plan (`route_lifecycle.plan`, the plan of `operation-route-removal`) with the Route Nodes held from admission to the terminal state. Its steps run in this order:
 
 1. `dns-<i>`: `dns.publish_records` writes each VPN Node's records and catalog without the Route. Each file carries the digest of the bytes the Gateway rendered from at admission. Admission requires `dns.guarded_records` in the VPN Node's `features`.
-2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt. A redelivered receipt does not move that time. A repeat waits only what is left.
+2. `grace`: The Gateway waits until 31 seconds (TTL 30 s + 1 s) after the last DNS receipt, as Swamp's `route-dns-grace` does. The wait is a [timed Gateway step](#waits): a restart of the consumer, the Gateway or Horizon waits only what is left, never from zero and never less. A redelivered receipt does not move that time. A cancel during the wait ends the Operation `cancelled` without withdrawing, with the DNS answers withdrawn and the Route kept.
 3. `withdraw-<node>`: `route.withdraw_site` writes the Node's Caddyfile and pools without the Route and removes its leaf folders. It writes only over the Caddyfile the Gateway rendered from. A repeat reports `applied: 0`.
 4. `sibling-<node>`: The Gateway completes a TLS handshake with another private Route on that Node, as `route.create`'s probe does. A Node that serves no other Route needs no probe.
 
@@ -227,6 +227,10 @@ Each flow sets its own resend interval and step budget:
 | Instance create (`clone`, `fetch`, `prepare`, `start`, `checkout`, `t3`) | 30–120 seconds | 120–600 seconds |
 
 Every minute, the reconciler sends an immediate deadline nudge to any unfinished engine Operation with a pending step or a sent step more than 30 seconds past its resend time. This recovers starts or orders lost if the Gateway stopped between commit and publish. The reconciler also ends engine Operations whose overall budget expires.
+
+### Waits
+
+A kind that implements `EngineWait` names the time before which a Gateway step must not run, from the steps as recorded. When such a step is ready before that time, the engine marks it sent, keeps the time as its `resend_at_ms`, and schedules its deadline for it. No process sleeps through the wait. The deadline, or the reconciler's nudge if the deadline was lost, runs the step once the time has passed; an earlier event runs nothing. A cancel during the wait sends nothing more, because the step published no order.
 
 ### Cancel
 

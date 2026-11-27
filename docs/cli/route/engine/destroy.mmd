@@ -40,8 +40,10 @@ sequenceDiagram
       %%> `dnsmasq --test`, then the restart, on every run, also a replay, so files written before a crash are loaded; a failed check puts the previous files back and restarts nothing
       V-->>EN: Files and restart<br/>applied · catalog digest
       Note over EN: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
-      %%> A Gateway step (`grace`) after every `dns-i`: it waits until 31 s after the last recorded DNS receipt (`done_ms`); a redelivered receipt or a resend never moves that time, and a repeat of the step waits only what is left
-      %%> Differs from the draft: the wait runs in the Gateway step, not a NATS schedule, because the engine has no delayed-step primitive yet; a retry Operation is a new run, whose own DNS step (`applied: 0`) starts a full 31 s again, which is never shorter than the draft's
+      %%> A Gateway step (`grace`) after every `dns-i`: it runs no earlier than 31 s after the last recorded DNS receipt (`done_ms`), as Swamp's `route-dns-grace`; a redelivered receipt or a resend never moves that time
+      %%> The engine keeps that time on the step (`EngineWait`) and schedules its deadline on the bus; no process sleeps, so a restart of the engine consumer, the Gateway or Horizon resumes only what is left, and a lost deadline is run by the reconciler's nudge, late but never early
+      %%> A cancel during the wait ends the Operation `cancelled` with nothing withdrawn from the Route Node: the DNS answers stay withdrawn and the Route is kept
+      %%> A retry Operation is a new run, whose own DNS step (`applied: 0`) starts a full 31 s again
     end
     EN->>N: Withdraw site and leaf<br/>withdraw_site · node
     %%> One Node-local primitive under the Node target lock and Swamp's own publication lock (`flock` on `/etc/caddy/.orbit-publish.lock`): the live Caddyfile must equal the digest of the one the Gateway rendered from at admission, or already the desired bytes, so every other site stays byte for byte; a shared pool is merged by scope as Swamp's withdrawal does: each scope the render changes must still hold its rendered-from or desired state, its group written as the account's gid or as its group's name; every other scope keeps its live state, also its absence, and an absent pool is never created

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Engine\Engine;
 use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
+use App\Domain\Engine\EngineWait;
 use App\Domain\Engine\StepSpec;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -21,14 +23,14 @@ use RuntimeException;
  * Gateway admitted (`route_lifecycle.plan`, NativeRouteRemovalSteps) and the digests of the files it was rendered from:
  *
  * - `dns-<i>`: `dns.publish_records` on each VPN Node, guarded by the digests of the records and catalog it rendered from;
- * - `grace`: the Gateway waits 31 s from the last DNS receipt, so resolvers that honour the TTL stop asking first;
+ * - `grace`: the Gateway waits 31 s from the last DNS receipt, so resolvers that honour the TTL stop asking first ([EngineWait]);
  * - `withdraw-<node>`: `route.withdraw_site` on each Node that served the Route, guarded by its Caddyfile's digest;
  * - `sibling-<node>`: a TLS handshake with another Route on that Node, so Caddy still serves the rest.
  *
  * `--offline`, a replacement, LAN rules, the Ingress edge and any URL write start on Swamp ([EngineUnsupported]). Step
  * labels map onto the Swamp chart's, so a failure records the same `failed_step` and error code.
  */
-final readonly class RouteDestroyEngineFlow implements EngineDefinition
+final readonly class RouteDestroyEngineFlow implements EngineDefinition, EngineWait
 {
     /** The input a VPN Node must take: per-file digests of what the Gateway rendered from. */
     public const string GuardedDns = 'dns.guarded_records';
@@ -160,10 +162,28 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
     }
 
     /**
-     * Waits what is left of the grace after the last DNS receipt the Gateway recorded. A redelivered receipt does not move
-     * that time, and a repeat of this step waits only what is left.
+     * The grace ends 31 s after the last DNS receipt the Gateway recorded (`done_ms`, which a redelivered receipt does not move),
+     * so a restart waits only what is left. No time without a receipt: the step then runs and fails.
      */
+    public function waitUntilMs(Operation $operation, string $step, EngineRun $run): ?int
+    {
+        $done = self::lastDns($run);
+
+        return $step === 'grace' && $done > 0 ? $done + self::GraceMs : null;
+    }
+
+    /** Runs once the engine found the grace over ([waitUntilMs]): it records how long after the DNS receipt that was. */
     private static function grace(EngineRun $run): string
+    {
+        $done = self::lastDns($run);
+        if ($done === 0) {
+            throw new RuntimeException('route.dns_grace_failed: no DNS receipt');
+        }
+
+        return 'waited '.(Engine::nowMs() - $done).' ms after the DNS receipt';
+    }
+
+    private static function lastDns(EngineRun $run): int
     {
         $done = 0;
         foreach ($run->steps as $name => $step) {
@@ -171,15 +191,8 @@ final readonly class RouteDestroyEngineFlow implements EngineDefinition
                 $done = max($done, (int) $step->done_ms);
             }
         }
-        if ($done === 0) {
-            throw new RuntimeException('route.dns_grace_failed: no DNS receipt');
-        }
-        $left = $done + self::GraceMs - (int) floor(microtime(true) * 1000);
-        if ($left > 0) {
-            usleep($left * 1000);
-        }
 
-        return 'waited '.max(0, $left).' ms';
+        return $done;
     }
 
     /**
